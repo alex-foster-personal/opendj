@@ -5,12 +5,17 @@ Entry points::
     # Dry-run: prints preview + writes data/reconcile/patch.json (safe).
     python -m apps.reconcile.apply --dry-run
 
-    # Live: writes to the live master.db. Requires all three flags plus a
-    # typed "yes I understand" prompt. Max 3 IDs per invocation.
+    # Live (cautious, 1–3 IDs): writes to the live master.db. Requires all
+    # three flags plus a typed "yes I understand" prompt.
     python -m apps.reconcile.apply --live --i-understand-the-risks \\
         --tracks 12345,67890
 
-Safety rails for ``--live`` (all must pass or we abort):
+    # Live (bulk): applies EVERY triple-validated row from located.csv that
+    # is still broken in the current audit (data/rb_missing_files.csv).
+    # Additional confirmation prompt requires typing "apply N updates".
+    python -m apps.reconcile.apply --live --bulk --i-understand-the-risks
+
+Safety rails for ``--live --tracks`` (all must pass or we abort):
   1. Typed confirmation prompt ("yes I understand").
   2. Refuse to run if Rekordbox is open (pgrep -if rekordbox).
   3. Timestamped backup of master.db before any write.
@@ -18,6 +23,19 @@ Safety rails for ``--live`` (all must pass or we abort):
   5. Reopen the live DB, verify FolderPath reads back + file exists on disk.
   6. Emit a stand-alone ``reverse-{ts}.py`` script that restores the old
      FolderPath values.
+
+Extra rails for ``--live --bulk`` (on top of all six above):
+  a. Intersects located.csv ∩ rb_missing_files.csv so we only touch rows
+     that are currently broken.
+  b. Pre-flight filesystem check: every new_path must exist on disk; any
+     miss aborts BEFORE the backup is taken.
+  c. Count-confirmation prompt: user must type ``apply N updates`` where N
+     is the computed count (case-insensitive). A race check re-computes the
+     count from disk right before commit; if it drifted, we abort.
+  d. Single batched ``db.commit()`` — any per-row exception bubbles up and
+     the whole transaction is discarded (session closed without commit).
+  e. Progress output every 10 rows + final rich summary table
+     (attempted / succeeded / failed).
 """
 from __future__ import annotations
 
@@ -42,9 +60,11 @@ console = Console(width=120)
 DEFAULT_INPUT: Path = _locate.OUT_CSV
 DEFAULT_PATCH: Path = paths.DATA_DIR / "reconcile" / "patch.json"
 DEFAULT_BACKUP_DIR: Path = paths.DATA_DIR / "reconcile" / "backups"
+DEFAULT_BROKEN_CSV: Path = paths.DATA_DIR / "rb_missing_files.csv"
 
 CONFIRMATION_PHRASE = "yes i understand"
 MAX_LIVE_TRACKS = 3
+BULK_PROGRESS_EVERY = 10
 
 
 @dataclass(slots=True)
@@ -297,6 +317,234 @@ if __name__ == "__main__":
     return out
 
 
+# ------------------------------------------------------------------ bulk
+
+
+def _load_broken_ids(broken_csv: Path) -> set[str]:
+    """Return the set of RB IDs that are currently broken per the audit."""
+    if not broken_csv.exists():
+        console.print(
+            f"[red]Missing {broken_csv}[/red]. Run "
+            "`python -m apps.audit.rekordbox_vs_music` first."
+        )
+        raise SystemExit(2)
+    ids: set[str] = set()
+    with broken_csv.open("r", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            tid = row.get("id")
+            if tid:
+                ids.add(tid)
+    return ids
+
+
+def _select_bulk_updates(
+    all_updates: list[Update],
+    broken_ids: set[str],
+) -> list[Update]:
+    """Triple-validated ∩ still-broken ∩ has-new-path."""
+    return [
+        u for u in all_updates
+        if u.triple_validated
+        and u.id in broken_ids
+        and u.new_path
+    ]
+
+
+def _preflight_fs_check(updates: list[Update]) -> list[Update]:
+    """Return updates whose new_path does NOT exist on disk (empty == OK)."""
+    return [u for u in updates if not Path(u.new_path).exists()]
+
+
+def _confirm_bulk_count(expected: int) -> bool:
+    """Require user to type ``apply N updates`` (case-insensitive)."""
+    phrase = f"apply {expected} updates"
+    console.print(
+        f"[bold red]BULK MODE.[/bold red] About to apply "
+        f"[bold]{expected}[/bold] updates to the live "
+        f"{paths.REKORDBOX_LIVE_DB}."
+    )
+    console.print(
+        f"Type exactly [bold]{phrase}[/bold] to proceed "
+        "(case-insensitive):"
+    )
+    try:
+        answer = input("> ").strip().lower()
+    except EOFError:
+        return False
+    return answer == phrase
+
+
+def _apply_updates_strict(updates: list[Update]) -> list[tuple[Update, str]]:
+    """Bulk apply: any per-row error aborts the whole batch without committing.
+
+    Returns an empty list on success. On failure, returns the single
+    (update, error) pair that triggered the abort — the caller should
+    treat ANY non-empty return as "batch not committed".
+    """
+    db = _open_live_db()
+    committed = False
+    errors: list[tuple[Update, str]] = []
+    try:
+        for i, u in enumerate(updates, start=1):
+            try:
+                row = db.get_content(ID=u.id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append((u, f"lookup failed: {exc}"))
+                break
+            if row is None:
+                errors.append((u, "ID not found in live DB"))
+                break
+            try:
+                row.FolderPath = u.new_path
+            except Exception as exc:  # noqa: BLE001
+                errors.append((u, f"assign failed: {exc}"))
+                break
+            if i % BULK_PROGRESS_EVERY == 0 or i == len(updates):
+                console.print(
+                    f"  [dim]staged {i}/{len(updates)}[/dim]"
+                )
+        if not errors:
+            db.commit()
+            committed = True
+    finally:
+        if not committed:
+            # Best-effort rollback; pyrekordbox exposes the SA session.
+            try:
+                db.session.rollback()  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return errors
+
+
+def _run_bulk(
+    all_updates: list[Update],
+    broken_csv: Path,
+    backup_dir: Path,
+) -> int:
+    # Selection.
+    broken_ids = _load_broken_ids(broken_csv)
+    updates = _select_bulk_updates(all_updates, broken_ids)
+    if not updates:
+        console.print(
+            "[yellow]No triple-validated rows intersect the current "
+            f"{broken_csv.name}. Nothing to do.[/yellow]"
+        )
+        return 1
+    expected_count = len(updates)
+
+    _print_preview(updates, f"BULK LIVE — about to write {expected_count} rows")
+
+    # Rail 2: is Rekordbox running?
+    if _rekordbox_running():
+        console.print(
+            "[red]ABORT:[/red] Rekordbox is running. Quit Rekordbox "
+            "completely (check the menu bar too) and retry. I will NOT "
+            "auto-kill it."
+        )
+        return 3
+
+    # Extra rail (b): pre-flight FS check BEFORE any backup or prompt.
+    missing = _preflight_fs_check(updates)
+    if missing:
+        console.print(
+            f"[red]ABORT:[/red] pre-flight filesystem check failed — "
+            f"{len(missing)} candidate paths do not exist on disk:"
+        )
+        for u in missing[:10]:
+            console.print(f"  ✗ {u.id}: {u.new_path}")
+        if len(missing) > 10:
+            console.print(f"  ... and {len(missing) - 10} more")
+        return 7
+
+    # Rail 1: typed "yes i understand".
+    if not _confirm():
+        console.print("[yellow]Confirmation not given. Aborting.[/yellow]")
+        return 4
+
+    # Extra rail (c): count-confirmation.
+    if not _confirm_bulk_count(expected_count):
+        console.print(
+            "[yellow]Count confirmation mismatch. Aborting.[/yellow]"
+        )
+        return 4
+
+    # Race check: re-derive the actionable set right before backup. If the
+    # count moved between prompt and commit, bail loud.
+    current_broken = _load_broken_ids(broken_csv)
+    current = _select_bulk_updates(all_updates, current_broken)
+    if len(current) != expected_count:
+        console.print(
+            f"[red]ABORT:[/red] actionable count drifted during prompt "
+            f"({expected_count} → {len(current)}). Re-run to re-confirm."
+        )
+        return 8
+
+    # Rail 3: backup.
+    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    backup = _backup_db(backup_dir)
+
+    # Rail 4 + extra rail (d): batched apply.
+    console.print(
+        f"[bold]Applying {expected_count} updates "
+        "(single commit)…[/bold]"
+    )
+    errors = _apply_updates_strict(updates)
+    if errors:
+        console.print(
+            "[red]Errors during bulk apply (batch NOT committed):[/red]"
+        )
+        for u, msg in errors:
+            console.print(f"  ✗ {u.id}: {msg}")
+        console.print(
+            f"[red]Backup (unused but intact):[/red] cp {backup} "
+            f"{paths.REKORDBOX_LIVE_DB}"
+        )
+        return 5
+
+    # Rail 5: verify.
+    console.print("[bold]Verifying readback…[/bold]")
+    failures = _verify(updates)
+
+    # Rail 6: reversal script (covers the full batch regardless of per-row
+    # verify failures, so the user can always roll back).
+    rev = _write_reversal_script(updates, backup, backup_dir, ts)
+    console.print(f"[green]Reversal script → {rev}[/green]")
+    console.print(f"[green]Full DB backup → {backup}[/green]")
+
+    # Summary table.
+    attempted = len(updates)
+    failed = len(failures)
+    succeeded = attempted - failed
+    summary = Table(title="Bulk apply summary", show_lines=False)
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Count", justify="right")
+    summary.add_row("Attempted", str(attempted))
+    summary.add_row("Succeeded (verified)", str(succeeded))
+    summary.add_row(
+        "Failed verification",
+        f"[red]{failed}[/red]" if failed else "0",
+    )
+    console.print(summary)
+
+    if failures:
+        console.print("[red]Verification failures:[/red]")
+        for u, msg in failures[:20]:
+            console.print(f"  ✗ {u.id}: {msg}")
+        if len(failures) > 20:
+            console.print(f"  ... and {len(failures) - 20} more")
+        console.print(
+            f"[yellow]Reversal script covers all {attempted} rows; "
+            f"restore with:[/yellow] python {rev}"
+        )
+        return 6
+
+    return 0
+
+
 # ------------------------------------------------------------------ flows
 
 
@@ -314,8 +562,8 @@ def _run_live(updates: list[Update], backup_dir: Path) -> int:
     if len(updates) > MAX_LIVE_TRACKS:
         console.print(
             f"[red]Refusing:[/red] {len(updates)} updates exceeds "
-            f"MAX_LIVE_TRACKS={MAX_LIVE_TRACKS}. A bulk mode does not yet "
-            "exist — re-run with fewer --tracks or use --dry-run."
+            f"MAX_LIVE_TRACKS={MAX_LIVE_TRACKS}. Use `--bulk` for larger "
+            "batches, or re-run with fewer --tracks."
         )
         return 2
 
@@ -400,18 +648,60 @@ def _build_parser() -> argparse.ArgumentParser:
         "--tracks",
         type=str,
         default=None,
-        help="comma-separated RB IDs. Required for --live; max 3. "
-        "In --dry-run, omit to include all triple-validated rows.",
+        help="comma-separated RB IDs. Required for --live (unless --bulk); "
+        "max 3. In --dry-run, omit to include all triple-validated rows.",
+    )
+    p.add_argument(
+        "--bulk",
+        action="store_true",
+        help="apply ALL triple-validated rows still broken per "
+        "rb_missing_files.csv. Mutually exclusive with --tracks and "
+        "--dry-run. Requires --live + --i-understand-the-risks plus a "
+        "typed count-confirmation prompt.",
     )
     p.add_argument("--input", type=Path, default=DEFAULT_INPUT, help="located.csv path")
     p.add_argument("--patch-out", type=Path, default=DEFAULT_PATCH, help="patch.json path")
     p.add_argument("--backup-dir", type=Path, default=DEFAULT_BACKUP_DIR, help="backup dir")
+    p.add_argument(
+        "--broken-csv",
+        type=Path,
+        default=DEFAULT_BROKEN_CSV,
+        help="path to current rb_missing_files.csv (bulk-mode selection)",
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # --bulk mutual exclusivity.
+    if args.bulk:
+        if args.dry_run:
+            console.print(
+                "[red]--bulk is mutually exclusive with --dry-run.[/red] "
+                "Aborting."
+            )
+            return 2
+        if args.tracks:
+            console.print(
+                "[red]--bulk is mutually exclusive with --tracks.[/red] "
+                "Aborting."
+            )
+            return 2
+        if not args.live:
+            console.print(
+                "[red]--bulk requires --live.[/red] Aborting."
+            )
+            return 2
+        if not args.i_understand_the_risks:
+            console.print(
+                "[red]--bulk requires --i-understand-the-risks.[/red] "
+                "Aborting."
+            )
+            return 2
+        all_updates = _load_updates(args.input)
+        return _run_bulk(all_updates, args.broken_csv, args.backup_dir)
 
     # No flags? Show help.
     if not args.dry_run and not args.live:
@@ -429,13 +719,14 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if not track_ids:
             console.print(
-                "[red]--live requires --tracks[/red] (comma-separated, 1–3 IDs)."
+                "[red]--live requires --tracks[/red] (comma-separated, 1–3 IDs) "
+                "or --bulk."
             )
             return 2
         if len(track_ids) > MAX_LIVE_TRACKS:
             console.print(
                 f"[red]Refusing:[/red] {len(track_ids)} IDs > MAX_LIVE_TRACKS"
-                f"={MAX_LIVE_TRACKS}. No bulk mode yet — run a smaller batch or --dry-run."
+                f"={MAX_LIVE_TRACKS}. Use `--bulk` for larger batches."
             )
             return 2
         return _run_live(updates, args.backup_dir)
