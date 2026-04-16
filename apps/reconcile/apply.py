@@ -205,7 +205,7 @@ def _apply_updates(updates: list[Update]) -> list[tuple[Update, str]]:
     try:
         for u in updates:
             try:
-                row = db.get_content(ID=u.id).one_or_none()
+                row = db.get_content(ID=u.id)
             except Exception as exc:  # noqa: BLE001
                 errors.append((u, f"lookup failed: {exc}"))
                 continue
@@ -228,7 +228,7 @@ def _verify(updates: list[Update]) -> list[tuple[Update, str]]:
     failures: list[tuple[Update, str]] = []
     try:
         for u in updates:
-            row = db.get_content(ID=u.id).one_or_none()
+            row = db.get_content(ID=u.id)
             if row is None:
                 failures.append((u, "ID missing after write"))
                 continue
@@ -277,7 +277,7 @@ def main() -> None:
     db = Rekordbox6Database(path=LIVE_DB)
     try:
         for entry in ORIGINALS:
-            row = db.get_content(ID=entry["id"]).one_or_none()
+            row = db.get_content(ID=entry["id"])
             if row is None:
                 print(f"  ! ID {{entry['id']}} not found; skipping")
                 continue
