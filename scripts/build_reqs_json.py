@@ -235,6 +235,13 @@ def _build_payload() -> dict:
                 if req["id"] in trace:
                     req["phase"] = trace[req["id"]]
 
+    # Render source as a repo-relative path when possible, absolute otherwise
+    # (so tests can monkeypatch SOURCE outside the repo root without crashing).
+    try:
+        source_str = str(SOURCE.relative_to(REPO_ROOT))
+    except ValueError:
+        source_str = str(SOURCE)
+
     payload = {
         # Deterministic generated_at keeps --check hermetic: we re-derive the
         # payload in-memory, and the on-disk file uses the same fixed
@@ -242,7 +249,7 @@ def _build_payload() -> dict:
         "generated_at": _dt.datetime.fromtimestamp(
             SOURCE.stat().st_mtime, tz=_dt.timezone.utc
         ).isoformat(timespec="seconds"),
-        "source": str(SOURCE.relative_to(REPO_ROOT)),
+        "source": source_str,
         "v1": v1,
         "v2": v2,
         "out_of_scope": oos,
@@ -308,9 +315,13 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         on_disk = OUTPUT.read_text(encoding="utf-8")
         if on_disk != serialized:
+            try:
+                src_shown = SOURCE.relative_to(REPO_ROOT)
+            except ValueError:
+                src_shown = SOURCE
             print(
                 f"[reqs-check] {OUTPUT.name} is out of sync with "
-                f"{SOURCE.relative_to(REPO_ROOT)}. Run "
+                f"{src_shown}. Run "
                 "`python -m scripts.build_reqs_json` and commit.",
                 file=sys.stderr,
             )
@@ -320,10 +331,11 @@ def main(argv: list[str] | None = None) -> int:
 
     _write_output(payload)
     _write_matrix_template()
-    print(
-        f"Wrote {OUTPUT.relative_to(REPO_ROOT)} "
-        f"({len(_all_ids(payload))} requirements)"
-    )
+    try:
+        shown = OUTPUT.relative_to(REPO_ROOT)
+    except ValueError:
+        shown = OUTPUT
+    print(f"Wrote {shown} ({len(_all_ids(payload))} requirements)")
     return 0
 
 

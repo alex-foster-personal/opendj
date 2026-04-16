@@ -66,3 +66,23 @@ def tmp_rb_db(rb_plain_db_path: Path, tmp_path: Path) -> Path:
     dst = tmp_path / "master.plain.db"
     shutil.copy2(rb_plain_db_path, dst)
     return dst
+
+
+@pytest.fixture
+def rb_pyrekordbox_db(tmp_rb_db: Path):
+    """Yield a pyrekordbox Rekordbox6Database over a per-test fixture copy.
+
+    Opens with ``unlock=False`` because the fixture is already plain
+    SQLite — attempting SQLCipher unlock would fail. Callers get a real
+    ORM handle so they can iterate ``get_content()`` / ``get_playlist()``.
+    """
+    from pyrekordbox import Rekordbox6Database  # local import → optional dep
+
+    db = Rekordbox6Database(path=str(tmp_rb_db), unlock=False)
+    try:
+        yield db
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
