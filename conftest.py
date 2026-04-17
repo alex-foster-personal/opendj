@@ -68,6 +68,41 @@ def tmp_rb_db(rb_plain_db_path: Path, tmp_path: Path) -> Path:
     return dst
 
 
+# ---------------------------------------------------------------------------
+# External-host fixtures (LaCie). See tests/fixtures/_resolver.py.
+#
+# We expose ``big_usb_fixture`` at the repo-root conftest so it's visible to
+# every test under tests/, not just tests/fixtures/. It returns the resolved
+# Path to the 1586-track Pioneer USB export hosted on LaCie, or skips cleanly
+# when the external host isn't mounted.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def big_usb_fixture():
+    """Yield the Path to the LaCie-hosted rb-usb-export-big fixture.
+
+    Session-scoped so downstream module-scoped parsers (e.g. the big
+    reader test) can cache a single ``read_usb_export`` call rather
+    than re-parsing the 1586-track export per test. Skips the test
+    (rather than erroring) if the external host isn't mounted or the
+    subpath is missing — cloning the repo on a fresh machine must not
+    break the suite.
+    """
+    # Local import so tests/fixtures/_resolver.py stays optional: a
+    # fresh clone without the resolver module (unlikely but defensible)
+    # still collects the rest of the suite.
+    from tests.fixtures._resolver import (  # type: ignore[import-not-found]
+        FixtureNotAvailable,
+        fixture_path,
+    )
+
+    try:
+        return fixture_path("rb-usb-export-big")
+    except (FixtureNotAvailable, FileNotFoundError) as exc:
+        pytest.skip(f"rb-usb-export-big not available: {exc}")
+
+
 @pytest.fixture
 def rb_pyrekordbox_db(tmp_rb_db: Path):
     """Yield a pyrekordbox Rekordbox6Database over a per-test fixture copy.

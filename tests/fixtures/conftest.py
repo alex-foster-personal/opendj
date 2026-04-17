@@ -1,17 +1,14 @@
-"""Pytest helpers for external-host fixtures.
+"""Pytest helpers scoped to ``tests/fixtures/``.
 
 Exposes:
 
 * :func:`requires_fixture` — a decorator that skips the wrapped test if
-  a named fixture isn't resolvable on the current machine (e.g. LaCie
-  is unmounted).
-* :func:`big_usb_fixture` — a pytest fixture for the 1586-track
-  Rekordbox USB export hosted at ``rb-usb-export-big`` on the
-  external host. Skips cleanly if the host is missing.
+  a named fixture isn't resolvable on the current machine.
 
-Keeping these in ``tests/fixtures/conftest.py`` (rather than the repo
-root ``conftest.py``) means they're auto-discovered for any test file
-under ``tests/`` without bloating the root conftest.
+The sibling ``big_usb_fixture`` pytest fixture lives in the repo-root
+``conftest.py`` so that tests anywhere under ``tests/`` can consume it
+(pytest conftests only propagate fixtures downward, and tests outside
+``tests/fixtures/`` wouldn't see a fixture defined here).
 """
 from __future__ import annotations
 
@@ -24,7 +21,7 @@ from tests.fixtures._resolver import (
     fixture_path,
 )
 
-__all__ = ["requires_fixture", "big_usb_fixture"]
+__all__ = ["requires_fixture"]
 
 F = TypeVar("F", bound=Callable[..., object])
 
@@ -56,17 +53,3 @@ def requires_fixture(name: str) -> Callable[[F], F]:
         return fn
 
     return decorator
-
-
-@pytest.fixture
-def big_usb_fixture():
-    """Yield the Path to the 1586-track LaCie-hosted USB export.
-
-    Skips the test (rather than erroring) if LaCie isn't mounted or the
-    subpath is missing — cloning the repo on a fresh machine must not
-    break the suite.
-    """
-    try:
-        return fixture_path("rb-usb-export-big")
-    except (FixtureNotAvailable, FileNotFoundError) as exc:
-        pytest.skip(f"rb-usb-export-big not available: {exc}")

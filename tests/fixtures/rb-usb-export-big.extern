@@ -1,0 +1,7 @@
+# LaCie-hosted Pioneer USB export fixture for CAT-06 (Pioneer/CDJ USB export).
+# Source: "MAINTAINER" USB, Rekordbox 7.2.x, snapshotted 2026-04-17.
+# Content: 1586 tracks + ANLZ + OneLibrary; too large for in-repo (11k files, ~447 MiB apparent).
+# Resolver reads the first non-comment line as a subpath under MUX_FIXTURE_HOST
+# (defaults to /Volumes/LaCie/music-dj-tools-fixtures).
+# Privacy: real user library — do not publish without scrubbing.
+rb-usb-export-big
