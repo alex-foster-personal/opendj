@@ -121,6 +121,78 @@ class TestStateBackedBus:
         finally:
             b.close()
 
+    def test_publish_commits_so_row_survives_process_restart(
+        self, tmp_path, monkeypatch,
+    ):
+        """Adversarial R4 F2: publish() must explicitly commit.
+
+        Simulates a daemon crash by publishing, closing the bus (without
+        the original connection doing anything else that could force a
+        commit), then reopening the raw SQLite file and asserting the
+        event row is durable.
+        """
+        from apps.shared.state import paths as state_paths
+        monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
+        b = bus.StateBackedBus()
+        try:
+            eid = b.publish({"kind": "SEARCH", "slots": {"query": "x"}})
+            assert eid >= 1
+            # Read from a fresh connection BEFORE close(): if publish()
+            # did not commit, this independent reader would see zero rows
+            # because SQLite's deferred transaction is still open on the
+            # writer connection.
+            import sqlite3 as _sqlite3
+            with _sqlite3.connect(str(tmp_path / "state.db")) as probe:
+                rows = probe.execute(
+                    "SELECT kind FROM events WHERE actor = 'voice'"
+                ).fetchall()
+            assert rows == [("SEARCH",)], (
+                "publish() did not commit; fresh reader saw no rows"
+            )
+        finally:
+            b.close()
+
+    def test_publish_is_durable_when_fanout_raises(
+        self, tmp_path, monkeypatch, caplog,
+    ):
+        """Adversarial R4 F1: a raising in-process subscriber (or closed
+        fanout bus) must not silently leave DB and bus out of sync.
+
+        The invariant we enforce: fanout failures are logged at ERROR
+        level, the DB row is committed, the publisher does not die, and
+        ``recent()`` (which reads from the same committed table) returns
+        the event.
+        """
+        import logging
+        from apps.shared.state import paths as state_paths
+        monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
+        b = bus.StateBackedBus()
+        try:
+            # Force the in-process fanout to raise. We monkey-patch the
+            # bound EventBus instance's publish so the real Phase 5 code
+            # path fires but the fanout call explodes.
+            def _boom(_event):  # noqa: ANN001
+                raise RuntimeError("fanout exploded")
+            monkeypatch.setattr(b._bus, "publish", _boom)
+
+            caplog.set_level(logging.ERROR, logger="apps.voice.bus")
+            eid = b.publish({"kind": "SEARCH", "slots": {}})
+            assert eid >= 1, "publisher must not die when fanout raises"
+
+            # DB row is committed + readable via recent() (which is the
+            # observable "DB view" of the bus).
+            rows = b.recent("SEARCH")
+            assert len(rows) == 1
+            assert rows[0]["kind"] == "SEARCH"
+
+            # Loud failure: structured error log, not silent desync.
+            assert any(
+                "fanout failed" in rec.getMessage()
+                for rec in caplog.records
+            ), "expected structured error log for fanout failure"
+        finally:
+            b.close()
+
     def test_recent_filters_by_kind(self, tmp_path, monkeypatch):
         from apps.shared.state import paths as state_paths
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")

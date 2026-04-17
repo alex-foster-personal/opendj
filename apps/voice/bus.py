@@ -13,6 +13,7 @@ but Phase 5 is shipped and the real bus is now the default.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -20,6 +21,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
+
+log = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -136,6 +139,14 @@ class StateBackedBus:
         # payload is the full enriched dict so ``recent`` can reconstruct
         # the caller's original shape (slots, bpm, arbitrary extras).
         payload_json = json.dumps(enriched, sort_keys=True)
+        safe_stable_id = stable_id if isinstance(stable_id, (str, type(None))) else None
+        # Hold the lock across INSERT, commit, and in-process fanout so that
+        # a durable events row and the in-process EventBus stay in sync. The
+        # explicit commit (adversarial R4 F2) makes the row survive a daemon
+        # crash; fanout failures are trapped (adversarial R4 F1) so a noisy
+        # subscriber or a closed in-process bus cannot mask the durable write
+        # or bring the producer down. A structured error log surfaces the
+        # desync loudly rather than silently.
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "
@@ -149,17 +160,25 @@ class StateBackedBus:
                 ),
             )
             new_id = int(cur.lastrowid or 0)
-        enriched["id"] = new_id
-        safe_stable_id = stable_id if isinstance(stable_id, (str, type(None))) else None
-        self._bus.publish(
-            self._Event(
-                ts=enriched["ts"],
-                kind=kind,
-                stable_id=safe_stable_id,
-                payload=enriched,
-                actor="voice",
-            )
-        )
+            self._conn.commit()
+            enriched["id"] = new_id
+            try:
+                self._bus.publish(
+                    self._Event(
+                        ts=enriched["ts"],
+                        kind=kind,
+                        stable_id=safe_stable_id,
+                        payload=enriched,
+                        actor="voice",
+                    )
+                )
+            except Exception:  # noqa: BLE001 - isolate producer from fanout
+                log.exception(
+                    "StateBackedBus fanout failed for kind=%s id=%s; "
+                    "events row committed but in-process subscribers "
+                    "did not receive this event",
+                    kind, new_id,
+                )
         return new_id
 
     def recent(self, kind: str, limit: int = 10) -> list[dict]:
