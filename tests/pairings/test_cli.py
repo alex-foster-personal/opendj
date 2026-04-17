@@ -156,3 +156,51 @@ def test_three_add_one_remove_one_list(db_path: Path) -> None:
     pairs = {(r["from_stable_id"], r["to_stable_id"], r["direction"])
              for r in data}
     assert pairs == {("a", "b", "into"), ("b", "c", "either")}
+
+
+def test_add_closes_conn_on_unexpected_exception(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: adv-r4 finding. If repo.add() raises a non-PairingsError,
+    # the old code fell through a bare `finally: pass` and then hit an
+    # unguarded `print(edge...)` referencing an unbound name. The conn
+    # was never closed. After the fix, the outer try/finally must close
+    # the conn regardless of the exception type, and the exception must
+    # propagate out.
+    import apps.pairings.add as cli_add_mod
+
+    real_build_repo = cli_add_mod.build_repo
+
+    class _BoomRepo:
+        def add(self, *a: object, **kw: object) -> None:
+            raise ValueError("boom")
+
+    class _TrackingConn:
+        def __init__(self, inner) -> None:  # type: ignore[no-untyped-def]
+            self._inner = inner
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+            self._inner.close()
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(self._inner, name)
+
+    tracker: dict[str, _TrackingConn] = {}
+
+    def fake_build_repo(path):  # type: ignore[no-untyped-def]
+        _repo, conn = real_build_repo(path)
+        wrapped = _TrackingConn(conn)
+        tracker["conn"] = wrapped
+        return _BoomRepo(), wrapped
+
+    monkeypatch.setattr(cli_add_mod, "build_repo", fake_build_repo)
+
+    with pytest.raises(ValueError, match="boom"):
+        cli_add_mod.main([
+            "--db", str(db_path),
+            "--from", "a", "--to", "b", "--direction", "into",
+        ])
+
+    assert tracker["conn"].close_calls >= 1
