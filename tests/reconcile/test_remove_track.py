@@ -216,6 +216,13 @@ def test_live_removes_row_and_cascades(
     # Bypass interactive confirm + RB-running check.
     monkeypatch.setattr(remove_track, "_rekordbox_running", lambda: False)
     monkeypatch.setattr(remove_track, "_confirm", lambda: True)
+    # pyrekordbox's Rekordbox6Database.commit() calls get_rekordbox_pid()
+    # internally and raises if RB is running on the host. Our app-layer
+    # gate is already patched above; also stub the library-level check so
+    # commits succeed inside the test harness.
+    monkeypatch.setattr(
+        "pyrekordbox.db6.database.get_rekordbox_pid", lambda: 0
+    )
 
     before = _count_orphans(tmp_rb_db, tid)
     assert before["djmdContent"] == 1
@@ -281,6 +288,11 @@ def test_backup_is_taken_before_delete(
     monkeypatch.setattr(remove_track, "_rekordbox_running", lambda: False)
     monkeypatch.setattr(remove_track, "_confirm", lambda: True)
     monkeypatch.setattr(remove_track, "_apply_removals", _spy_apply_removals)
+    # See note in test_live_removes_row_and_cascades: also stub pyrekordbox's
+    # internal pid check so commit() works when RB is running on the host.
+    monkeypatch.setattr(
+        "pyrekordbox.db6.database.get_rekordbox_pid", lambda: 0
+    )
 
     rc = remove_track.main(
         [
@@ -316,6 +328,11 @@ def test_reversal_script_restores_row(
     tid = _pick_id_with_children(tmp_rb_db)
     monkeypatch.setattr(remove_track, "_rekordbox_running", lambda: False)
     monkeypatch.setattr(remove_track, "_confirm", lambda: True)
+    # See note in test_live_removes_row_and_cascades: also stub pyrekordbox's
+    # internal pid check so commit() works when RB is running on the host.
+    monkeypatch.setattr(
+        "pyrekordbox.db6.database.get_rekordbox_pid", lambda: 0
+    )
 
     before = _count_orphans(tmp_rb_db, tid)
 
