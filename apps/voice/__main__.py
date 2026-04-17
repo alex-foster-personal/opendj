@@ -1,0 +1,215 @@
+"""CLI entrypoint for ``python -m apps.voice``.
+
+Subcommands:
+  run             -- start the mic -> wake -> stt -> dispatch -> tts daemon.
+  probe           -- pipe transcripts through grammar + dispatch, no mic.
+  bench           -- run the smoke harness and print percentile timings.
+  list-devices    -- rich table of `sd.query_devices()`.
+  say             -- subprocess `say` shortcut for smoke-testing TTS.
+
+Plan 1 ships the skeleton; Plan 2 wires ``run`` to parse -> dispatch.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from typing import Sequence
+
+from apps.voice import audio, tts
+
+
+def _cmd_list_devices(args: argparse.Namespace) -> int:
+    """Print the list of audio devices via ``sd.query_devices()``."""
+    try:
+        sd = audio._sounddevice()  # lazy import so --help works without it
+    except RuntimeError as exc:
+        print(f"[voice] {exc}", file=sys.stderr)
+        return 2
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        table = Table(title="audio devices (sounddevice)")
+        table.add_column("idx", justify="right")
+        table.add_column("name")
+        table.add_column("in", justify="right")
+        table.add_column("out", justify="right")
+        table.add_column("sr", justify="right")
+        for idx, dev in enumerate(sd.query_devices()):
+            table.add_row(
+                str(idx),
+                str(dev.get("name", "?")),
+                str(dev.get("max_input_channels", 0)),
+                str(dev.get("max_output_channels", 0)),
+                f"{float(dev.get('default_samplerate', 0)):.0f}",
+            )
+        Console().print(table)
+    except ImportError:
+        # rich is a project dep (requirements.txt) but guard anyway.
+        for idx, dev in enumerate(sd.query_devices()):
+            print(f"{idx}\t{dev.get('name', '?')}")
+    return 0
+
+
+def _cmd_say(args: argparse.Namespace) -> int:
+    engine = tts.make_tts()
+    result = engine.speak(args.text)
+    print(f"[voice] spoke via {result.backend}: {result.text!r}")
+    return result.returncode
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Start the voice daemon. Plan 2 wires grammar + dispatch."""
+    # Lazy import so `run` cost is not paid for `--help`.
+    from apps.voice import context as ctx_mod
+
+    print(
+        "[voice] Phase 14 Plan 1 skeleton: the full mic loop is wired in "
+        "Plan 2 + Plan 3. Use `python -m apps.voice probe` to exercise the "
+        "grammar + dispatch pipeline without a microphone."
+    )
+    if args.echo:
+        print("[voice] --echo mode requested; requires installed audio stack.")
+    # Sanity-check the components resolve even without audio wheels.
+    ctx = ctx_mod.VoiceContext.from_env()
+    print(f"[voice] context resolved: mute_until={ctx.mute_until!r}")
+    return 0
+
+
+def _cmd_probe(args: argparse.Namespace) -> int:
+    """Read one or more transcripts from --text / stdin; print events."""
+    from apps.voice import grammar, bus, actions, context as ctx_mod
+
+    transcripts: list[str] = []
+    if args.text:
+        transcripts.append(args.text)
+    else:
+        for line in sys.stdin:
+            s = line.strip()
+            if s:
+                transcripts.append(s)
+
+    event_bus = bus.make_bus(force_stub=args.dry_bus)
+    rec_tts = tts.RecordingTts()
+    ctx = ctx_mod.VoiceContext.from_env(event_bus=event_bus, tts_engine=rec_tts)
+    registry = actions.default_registry()
+
+    out: list[dict] = []
+    for transcript in transcripts:
+        intent = grammar.parse(transcript)
+        if intent is None:
+            print(
+                json.dumps(
+                    {"transcript": transcript, "intent": None, "response": "grammar_miss"},
+                    sort_keys=True,
+                )
+            )
+            continue
+        response = registry.dispatch(intent, ctx)
+        event_dict = {
+            "transcript": transcript,
+            "intent": intent.kind,
+            "slots": intent.slots,
+            "response": response.reply,
+            "published": response.published,
+            "dry_run": response.dry_run,
+        }
+        out.append(event_dict)
+        print(json.dumps(event_dict, sort_keys=True))
+    if not out and not transcripts:
+        print("[voice] no transcripts supplied (use --text or pipe stdin)")
+    return 0
+
+
+def _cmd_bench(args: argparse.Namespace) -> int:
+    """Run the grammar + dispatch loop N times; print percentile timings."""
+    import statistics
+    from apps.voice import grammar, bus, actions, context as ctx_mod
+
+    sample = args.text or "find daft punk"
+    event_bus = bus.make_bus(force_stub=True)
+    rec_tts = tts.RecordingTts()
+    ctx = ctx_mod.VoiceContext.from_env(event_bus=event_bus, tts_engine=rec_tts)
+    registry = actions.default_registry()
+    durations: list[float] = []
+    for _ in range(args.iterations):
+        import time as _t
+        t0 = _t.perf_counter()
+        intent = grammar.parse(sample)
+        if intent:
+            registry.dispatch(intent, ctx)
+        durations.append((_t.perf_counter() - t0) * 1000)
+    durations.sort()
+    p50 = durations[len(durations) // 2]
+    p95 = durations[min(int(len(durations) * 0.95), len(durations) - 1)]
+    print(
+        json.dumps(
+            {
+                "iterations": args.iterations,
+                "sample": sample,
+                "p50_ms": round(p50, 3),
+                "p95_ms": round(p95, 3),
+                "max_ms": round(max(durations), 3),
+                "mean_ms": round(statistics.fmean(durations), 3),
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="apps.voice",
+        description="Voice commands daemon + diagnostics (Phase 14).",
+    )
+    sub = p.add_subparsers(dest="cmd", required=False)
+
+    sp = sub.add_parser("run", help="start the voice daemon")
+    sp.add_argument("--echo", action="store_true", help="echo-transcribe smoke mode")
+    sp.add_argument(
+        "--enable-destructive",
+        action="store_true",
+        help="allow SAVE_CUE / RATE_TRACK to publish non-dry-run events",
+    )
+    sp.add_argument("--dry-bus", action="store_true", help="force the JSONL stub bus")
+    sp.add_argument(
+        "--allow-low-memory",
+        action="store_true",
+        help="skip the 12 GB RAM pre-flight check",
+    )
+    sp.set_defaults(func=_cmd_run)
+
+    sp = sub.add_parser("probe", help="parse a transcript through grammar + dispatch")
+    sp.add_argument("--text", help="transcript to parse (else read stdin lines)")
+    sp.add_argument("--dry-bus", action="store_true", help="force the JSONL stub bus")
+    sp.set_defaults(func=_cmd_probe)
+
+    sp = sub.add_parser("bench", help="run the grammar+dispatch loop N times")
+    sp.add_argument("--iterations", type=int, default=10)
+    sp.add_argument("--text", default=None)
+    sp.set_defaults(func=_cmd_bench)
+
+    sp = sub.add_parser("list-devices", help="list audio devices via sounddevice")
+    sp.set_defaults(func=_cmd_list_devices)
+
+    sp = sub.add_parser("say", help="speak a string via the `say` subprocess")
+    sp.add_argument("text")
+    sp.set_defaults(func=_cmd_say)
+
+    return p
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if getattr(args, "func", None) is None:
+        parser.print_help()
+        return 0
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

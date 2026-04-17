@@ -1,0 +1,29 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Cue Test",
+      "artists": ["DJ Fixture"],
+      "beats": [],
+      "bpm": 125.0,
+      "color_rgb": null,
+      "cues": [
+        {"color_rgb": 13791913, "index": 0, "length_ms": null, "name": "Intro", "position_ms": 0, "type": "hot"},
+        {"color_rgb": 13791913, "index": 1, "length_ms": null, "name": "Verse", "position_ms": 15000, "type": "hot"},
+        {"color_rgb": 13791913, "index": 2, "length_ms": null, "name": "Chorus", "position_ms": 30000, "type": "hot"},
+        {"color_rgb": 13791913, "index": 3, "length_ms": null, "name": "Bridge", "position_ms": 45000, "type": "hot"}
+      ],
+      "duration_ms": 240000,
+      "extensions": {},
+      "file_path": "/Music/fixture/03/cues.mp3",
+      "isrc": null,
+      "key_camelot": null,
+      "play_count": 0,
+      "rating": null,
+      "title": "Four Hot Cues",
+      "track_id": "fixture-03-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

@@ -1,0 +1,41 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Baseline",
+      "artists": ["Alice"],
+      "beats": [],
+      "bpm": 128.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 180000,
+      "extensions": {},
+      "file_path": "/Music/fixture/01/one.mp3",
+      "isrc": null,
+      "key_camelot": "8A",
+      "play_count": 0,
+      "rating": 4,
+      "title": "Sample One",
+      "track_id": "fixture-01-one"
+    },
+    {
+      "album": "Baseline",
+      "artists": ["Bob"],
+      "beats": [],
+      "bpm": 124.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 200000,
+      "extensions": {},
+      "file_path": "/Music/fixture/01/two.mp3",
+      "isrc": null,
+      "key_camelot": "5A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Sample Two",
+      "track_id": "fixture-01-two"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

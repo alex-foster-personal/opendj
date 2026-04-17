@@ -1,0 +1,36 @@
+# Example USB mirror profile. Copy to `usb-profiles/local/<name>.yaml`
+# (that folder is gitignored) and edit for your drive.
+#
+# Schema contract: apps/sync/usb/profile.py. Keys are strict -- unknown
+# keys raise ProfileError.
+name: example
+drive_label: EXAMPLE-USB
+
+# Optional: written by the first successful apply. If set here, every
+# run checks the drive's VolumeUUID matches. Prevents accidental wipe of
+# the wrong drive that happens to share the label.
+# drive_uuid: AABBCCDD-1122-3344-5566-778899AABBCC
+
+# Playlists to mirror; must match Rekordbox playlist names exactly.
+playlists:
+  - "Warmup"
+  - "Peak Time A"
+
+# copy-as-is (default) | mp3@320 (requires ffmpeg)
+format: copy-as-is
+
+# Artist/Album/Track | Playlist/NN - Artist - Track | flat
+layout: "Artist/Album/Track"
+
+# m3u8 | none
+playlist_files: m3u8
+
+# canonical-wins | skip | backup-then-overwrite
+conflict_policy: canonical-wins
+
+# Optional: path prefixes (under drive root) we should leave alone,
+# even when diff says "not in profile -> delete".
+exclusions: []
+
+# Phase 15 flag; default false.
+export_opendj: false

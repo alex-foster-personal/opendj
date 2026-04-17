@@ -1,0 +1,96 @@
+{
+  "adapter": "traktor",
+  "fields": [
+    {
+      "field": "track_id",
+      "rationale": "computed from LOCATION path",
+      "supports": "lossless"
+    },
+    {
+      "field": "file_path",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "title",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "artists",
+      "rationale": "Traktor stores a single string; artists joined on ' & '.",
+      "supports": "lossy"
+    },
+    {
+      "field": "album",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "bpm",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "key_camelot",
+      "rationale": "Mapped through Camelot <-> open-key 0..23 table.",
+      "supports": "lossless"
+    },
+    {
+      "field": "rating",
+      "rationale": "Stored as INFO @RANKING in steps of 51.",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.hot",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.memory",
+      "rationale": "Traktor has no memory-cue concept; encoded as hot cues on write.",
+      "supports": "lossy"
+    },
+    {
+      "field": "cue_points.loop",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.color",
+      "rationale": "Traktor uses fixed-per-type palette (D6); user colours on write are replaced.",
+      "supports": "lossy"
+    },
+    {
+      "field": "beats",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "color_rgb",
+      "rationale": "Traktor COLOR is a 1..16 palette index, not 24-bit RGB.",
+      "supports": "lossy"
+    },
+    {
+      "field": "play_count",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "isrc",
+      "rationale": "No native ISRC field; stored in x_traktor_isrc extension.",
+      "supports": "unsupported"
+    },
+    {
+      "field": "smart_playlists",
+      "rationale": "Opaque SMARTLIST passthrough as x_traktor_smartlist.",
+      "supports": "unsupported"
+    },
+    {
+      "field": "extended_data",
+      "rationale": "EXTENDEDDATA preserved as base64 extension when preserve_extended_data=True.",
+      "supports": "lossless"
+    }
+  ],
+  "version": "0.1.0"
+}

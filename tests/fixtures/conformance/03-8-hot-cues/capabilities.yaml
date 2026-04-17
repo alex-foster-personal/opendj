@@ -1,0 +1,10 @@
+source: manual
+applies:
+  serato:
+    drops: ["duration_ms", "bpm", "cues"]   # Serato cues live in per-file GEOB frames, not the crate DB
+  traktor:
+    drops: ["cue_points.color", "bpm"]
+  rekordbox:
+    drops: ["bpm"]
+  djay:
+    drops: ["bpm"]

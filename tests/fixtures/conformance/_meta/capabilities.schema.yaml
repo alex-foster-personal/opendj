@@ -1,0 +1,19 @@
+# Meta-schema for tests/fixtures/conformance/*/capabilities.yaml.
+#
+# Each fixture dir ships a capabilities.yaml describing per-adapter lossy
+# masks. The conformance harness (tests/test_conformance.py) applies these
+# masks before JCS-equality checks so a lossy Serato drop (rating) does not
+# fail a round-trip that Rekordbox + djay would pass.
+#
+# Shape:
+#   adapters:
+#     rekordbox:
+#       applies: bool          # if false, skip this adapter for this fixture
+#       drops:   [field, ...]  # fields the adapter is allowed to drop
+#     djay: { ... }
+#     serato: { ... }
+#     traktor: { ... }
+#
+# The harness validates this shape at collection time.
+version: 0.1
+required_adapters: ["rekordbox", "djay", "serato", "traktor"]

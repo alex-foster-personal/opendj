@@ -1,0 +1,24 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Unicode Suite",
+      "artists": ["日本語アーティスト"],
+      "beats": [],
+      "bpm": 132.5,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 215000,
+      "extensions": {},
+      "file_path": "/Music/fixture/02/track-ünicode.mp3",
+      "isrc": null,
+      "key_camelot": "11B",
+      "play_count": 0,
+      "rating": 3,
+      "title": "テスト Track  resumé",
+      "track_id": "fixture-02-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}
