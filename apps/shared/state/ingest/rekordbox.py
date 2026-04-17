@@ -186,9 +186,24 @@ def ingest_rb(
         for i, track in enumerate(_rb_rows(rb_db)):
             if limit is not None and i >= limit:
                 break
-            path_str = track["folder_path"] if not track["is_streaming"] else ""
+            # Always feed the raw folder_path into the tier-3 hash so
+            # streaming rows (spotify:/tidal:/http[s]:) collide only
+            # when their URIs are identical. The previous behaviour
+            # (empty path for streaming) meant every ISRC-less
+            # streaming track hashed to sha1("|0.0"), so the
+            # seen_sids guard below silently dropped all but the first.
+            # See .planning/FAN-OUT-V2-TRIAGE-2026-04-17.md (2/3).
+            path_str = track["folder_path"]
             mtime = 0.0
-            if path_str and os.path.exists(path_str):
+            # Only hit the filesystem for real local paths; skip
+            # streaming URIs so we do not spuriously call
+            # os.path.exists / os.path.getmtime on schemes that will
+            # never resolve on disk.
+            if (
+                path_str
+                and not track["is_streaming"]
+                and os.path.exists(path_str)
+            ):
                 try:
                     mtime = os.path.getmtime(path_str)
                 except OSError:
