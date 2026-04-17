@@ -1,0 +1,40 @@
+[package]
+name = "launcher"
+version = "0.1.0"
+description = "Hyper-K Launcher -- Tauri 2 menu-bar palette with drag-drop to djay (Phase 17)"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-drag = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-store = "2"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "launcher"
+path = "src/main.rs"
+
+[[example]]
+name = "search_bench"
+path = "examples/search_bench.rs"
+
+[profile.dev]
+opt-level = 0
+debug = true
+incremental = true
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

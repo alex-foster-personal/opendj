@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Hyper-K",
+  "version": "0.1.0",
+  "identifier": "com.musicdjtools.launcher",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "palette",
+        "title": "Hyper-K",
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "width": 720,
+        "height": 480,
+        "center": true,
+        "skipTaskbar": true,
+        "resizable": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "app",
+    "icon": ["icons/128x128.png"],
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "providerShortName": null
+    },
+    "publisher": "music-dj-tools"
+  },
+  "plugins": {}
+}

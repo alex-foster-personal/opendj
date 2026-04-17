@@ -1,0 +1,51 @@
+/* Hyper-K palette -- minimal dark glass theme. v1 inline; redesign later. */
+* { box-sizing: border-box; }
+html, body, #root {
+  margin: 0; padding: 0; height: 100%;
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  background: transparent;
+  color: #f5f5f5;
+}
+.palette-shell {
+  height: 100vh;
+  padding: 12px;
+  background: rgba(24, 24, 28, 0.85);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.palette-command { display: flex; flex-direction: column; height: 100%; }
+.palette-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 16px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.palette-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px 0;
+}
+.palette-empty {
+  padding: 12px;
+  opacity: 0.5;
+  font-size: 13px;
+}
+.palette-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: grab;
+  user-select: none;
+}
+.palette-item[data-selected="true"] {
+  background: rgba(255, 255, 255, 0.08);
+}
+.palette-row { display: flex; align-items: center; gap: 6px; }
+.palette-title { font-weight: 600; }
+.palette-artist { opacity: 0.8; }
+.palette-meta { margin-left: auto; opacity: 0.6; font-size: 12px; }
