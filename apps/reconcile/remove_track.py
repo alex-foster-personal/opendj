@@ -133,17 +133,22 @@ def _open_db(db_path: Path):
     return Rekordbox6Database(path=str(db_path), unlock=not is_plain)
 
 
-def _resolve_db_path(override: Path | None) -> Path:
+def _resolve_db_path(override: Path | None, *, live: bool) -> Path:
     """Return the DB path to operate on.
 
-    Mirrors apply.py's resolution chain: explicit override → working copy
-    (refreshed from live if missing) → live.
+    * Explicit ``--db`` always wins.
+    * In ``--live`` mode (no override) we ALWAYS go against
+      ``paths.REKORDBOX_LIVE_DB`` — matching apply.py — so writes land
+      in the real DB, never in the stale working copy.
+    * In dry-run mode (no override) we refresh the working copy from
+      live and read that instead.
     """
     if override is not None:
         return Path(override)
-    # Refresh the working copy from live if it's stale/missing.
-    if not paths.REKORDBOX_WORKING_DB.exists():
-        paths.copy_live_dbs()
+    if live:
+        return paths.REKORDBOX_LIVE_DB
+    # Dry-run: read from a fresh snapshot of the live DB.
+    paths.copy_live_dbs()
     if paths.REKORDBOX_WORKING_DB.exists():
         return paths.REKORDBOX_WORKING_DB
     return paths.REKORDBOX_LIVE_DB
@@ -768,7 +773,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    db_path = _resolve_db_path(args.db)
+    db_path = _resolve_db_path(args.db, live=bool(args.live))
 
     if args.live:
         if not args.i_understand_the_risks:
