@@ -189,6 +189,45 @@ def test_subcrate_playlist_name_cannot_escape_subcrates_dir(tmp_path) -> None:
     assert not (target.parent.parent / "evil.crate").exists()
 
 
+@pytest.mark.requirement("OPEN-02c")
+def test_playlist_membership_roundtrip(tmp_path) -> None:
+    """Regression: subcrate membership must survive write -> read.
+
+    Before the fix, crate-read built track IDs with title="" while
+    library-read built them with the real title, so every playlist came
+    back with a bogus track_id that matched no library track and
+    membership was silently lost.
+    """
+    adapter = SeratoAdapter()
+    track = Track(
+        track_id="ignored_on_write",
+        file_path="Music/fixture/only.mp3",
+        title="Only Song",
+        artists=("Solo",),
+        album="Fixture",
+        bpm=120.0,
+        key_camelot="1A",
+    )
+    lib = OpenDjLibrary(
+        version="0.1",
+        tracks=(track,),
+        playlists=(Playlist(name="main", track_ids=(track.track_id,)),),
+    )
+    target = tmp_path / "_Serato_"
+    adapter.write(lib, target)
+
+    lib_back, _ = adapter.read(target)
+    assert len(lib_back.playlists) == 1
+    pl_back = lib_back.playlists[0]
+    assert pl_back.name == "main"
+    assert len(pl_back.track_ids) == 1
+    assert pl_back.track_ids[0] == lib_back.tracks[0].track_id, (
+        "subcrate membership lost: playlist track_id does not match any "
+        "library track_id (crate read must key _stable_track_id on the "
+        "track's title, not the empty string)"
+    )
+
+
 # ====================================================================
 # GEOB cue + beatgrid write/read round-trip via mutagen (GH #2 / P0).
 # ====================================================================

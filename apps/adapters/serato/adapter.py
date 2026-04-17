@@ -343,10 +343,18 @@ class SeratoAdapter:
         playlists: list[Playlist] = []
         subcrates_dir = source / "Subcrates"
         if subcrates_dir.is_dir():
+            # Subcrate entries carry only the file path, not the title, but
+            # _stable_track_id keys on (file_path, title). Look up the title
+            # from the library tracks we just built so membership IDs match
+            # the tracks' IDs. Without this, crate lookups return empty.
+            title_by_path = {row.file_path: row.title for row in db.tracks}
             # sort for deterministic order -- fixture round-trip depends on it
             for crate_file in sorted(subcrates_dir.glob("*.crate")):
                 crate = Subcrate.read(crate_file)
-                ids = tuple(_stable_track_id(p, "") for p in crate.track_paths)
+                ids = tuple(
+                    _stable_track_id(p, title_by_path.get(p, ""))
+                    for p in crate.track_paths
+                )
                 playlists.append(Playlist(name=crate.name, track_ids=ids))
                 report.bump("playlists_read")
 
