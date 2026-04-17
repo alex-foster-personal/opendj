@@ -1,0 +1,802 @@
+"""Remove Rekordbox track rows (and cascade dependents) from master.db.
+
+Entry point::
+
+    python -m apps.reconcile.remove_track [--dry-run | --live] \\
+        [--i-understand-the-risks] --tracks ID[,ID[,ID]] \\
+        [--db PATH] [--backup-dir PATH] [--reason "text"]
+
+Safety rails for ``--live`` (all must pass or we abort):
+  1. Typed ``yes i understand`` confirmation prompt.
+  2. Refuse to run if Rekordbox is open (``pgrep -if rekordbox``).
+  3. Timestamped backup of master.db before any write (size > 0 verified).
+  4. Open the live DB, delete rows via pyrekordbox's ``delete()``, commit,
+     then re-open and verify each row is gone.
+  5. Emit a stand-alone ``restore-{ts}.py`` reversal script that re-inserts
+     the removed content + cascade rows using values captured from the
+     pre-delete state (idempotent — skips IDs that already exist).
+
+Per-invocation cap: ``MAX_LIVE_TRACKS`` (3). No bulk mode for removals.
+
+Cascade behaviour (verified against the plain RB fixture, see
+``tests/fixtures/rekordbox/master.plain.db``):
+
+  * pyrekordbox ``db.delete(content)`` automatically cascades to
+    ``djmdCue`` and ``djmdMixerParam``.
+  * It does NOT cascade to ``djmdSongPlaylist``, ``contentCue``, or
+    ``contentFile`` — this script cleans those up via raw SQL after the
+    ORM commit so playlist rows don't retain references to a ghost
+    ``ContentID``.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import json
+import shutil
+import sqlite3
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from rich.console import Console
+from rich.table import Table
+
+from apps.shared import paths
+
+console = Console(width=120)
+
+DEFAULT_BACKUP_DIR: Path = paths.DATA_DIR / "reconcile" / "backups"
+DEFAULT_PLAN_DIR: Path = paths.DATA_DIR / "reconcile"
+
+CONFIRMATION_PHRASE = "yes i understand"
+MAX_LIVE_TRACKS = 3
+
+# Tables carrying a ``ContentID`` column that we must clean up manually
+# after ``db.delete(content); db.commit()`` (pyrekordbox cascades
+# djmdCue + djmdMixerParam for us, but not these).
+#
+# Order matters only if there were cross-table FKs; in practice there are
+# none in master.db — we delete sequentially for simplicity.
+MANUAL_CASCADE_TABLES: tuple[str, ...] = (
+    "djmdSongPlaylist",
+    "djmdSongHistory",
+    "djmdSongHotCueBanklist",
+    "djmdSongMyTag",
+    "djmdSongRelatedTracks",
+    "djmdSongSampler",
+    "djmdSongTagList",
+    "djmdActiveCensor",
+    "djmdCloudExportSongPlaylist",
+    "contentActiveCensor",
+    "contentCue",
+    "contentFile",
+)
+
+
+# ------------------------------------------------------------------ models
+
+
+@dataclass(slots=True)
+class Footprint:
+    """The before-removal state for one RB track ID."""
+
+    id: str
+    exists: bool
+    title: str = ""
+    artist: str = ""
+    folder_path: str = ""
+    playlists: list[str] = field(default_factory=list)
+    cue_points: int = 0
+    beatgrid_entries: int = 0
+    analysis_entries: int = 0
+    mixer_param_entries: int = 0
+    manual_cascade_counts: dict[str, int] = field(default_factory=dict)
+    cascade_rows: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    content_row: dict[str, Any] = field(default_factory=dict)
+
+    def to_plan_entry(self, reason: str) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "artist": self.artist,
+            "folder_path": self.folder_path,
+            "playlists": list(self.playlists),
+            "cue_points": self.cue_points,
+            "beatgrid_entries": self.beatgrid_entries,
+            "analysis_entries": self.analysis_entries,
+            "reason": reason,
+        }
+
+
+# ------------------------------------------------------------------ open
+
+
+def _open_db(db_path: Path):
+    """Open a Rekordbox DB via pyrekordbox.
+
+    For the live DB we leave ``unlock`` at its default (True). For plain
+    SQLite fixtures used in tests, callers pass ``unlock=False`` via the
+    working-path resolution; we infer that by checking the sqlite header
+    — a plain file starts with ``SQLite format 3``.
+    """
+    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+
+    # Peek at the header so we pass unlock=False for plain fixtures.
+    try:
+        header = db_path.read_bytes()[:16]
+    except OSError:
+        header = b""
+    is_plain = header.startswith(b"SQLite format 3")
+    return Rekordbox6Database(path=str(db_path), unlock=not is_plain)
+
+
+def _resolve_db_path(override: Path | None) -> Path:
+    """Return the DB path to operate on.
+
+    Mirrors apply.py's resolution chain: explicit override → working copy
+    (refreshed from live if missing) → live.
+    """
+    if override is not None:
+        return Path(override)
+    # Refresh the working copy from live if it's stale/missing.
+    if not paths.REKORDBOX_WORKING_DB.exists():
+        paths.copy_live_dbs()
+    if paths.REKORDBOX_WORKING_DB.exists():
+        return paths.REKORDBOX_WORKING_DB
+    return paths.REKORDBOX_LIVE_DB
+
+
+# ------------------------------------------------------------------ probe
+
+
+def _capture_footprint(db, db_path: Path, track_id: str) -> Footprint:
+    """Inspect one RB ID and return its dependency footprint.
+
+    Uses pyrekordbox for ``DjmdContent``/playlist names and raw SQL for the
+    dependent tables (pyrekordbox only surfaces a subset of them).
+    """
+    fp = Footprint(id=track_id, exists=False)
+    row = db.get_content(ID=track_id)
+    if row is None:
+        return fp
+
+    fp.exists = True
+    fp.title = row.Title or ""
+    # Artist is a relationship; pull the display name safely.
+    fp.artist = getattr(getattr(row, "Artist", None), "Name", "") or ""
+    fp.folder_path = row.FolderPath or ""
+
+    # Snapshot the content row for the reversal script.
+    fp.content_row = _row_to_dict(db_path, "djmdContent", "ID", track_id)[0] if fp.exists else {}
+
+    # Playlist names via the ORM — iterate get_playlist() and check Songs.
+    names: list[str] = []
+    for p in db.get_playlist():
+        for s in getattr(p, "Songs", []) or []:
+            if str(getattr(s, "ContentID", "")) == str(track_id):
+                names.append(p.Name or "")
+                break
+    fp.playlists = sorted(set(names))
+
+    # Raw-SQL counts for cue/beatgrid/analysis — accurate regardless of what
+    # pyrekordbox's ORM exposes.
+    with sqlite3.connect(db_path) as con:
+        cur = con.cursor()
+        # djmdCue stores both hot cues and memory cues for this track. The
+        # fixture has exactly one "beatgrid"-style row per track in
+        # djmdMixerParam; we surface both counts separately.
+        try:
+            fp.cue_points = cur.execute(
+                "SELECT COUNT(*) FROM djmdCue WHERE ContentID=?", (track_id,)
+            ).fetchone()[0]
+        except sqlite3.Error:
+            fp.cue_points = 0
+        try:
+            fp.mixer_param_entries = cur.execute(
+                "SELECT COUNT(*) FROM djmdMixerParam WHERE ContentID=?", (track_id,)
+            ).fetchone()[0]
+        except sqlite3.Error:
+            fp.mixer_param_entries = 0
+        # "beatgrid_entries" in RB's schema is stored inline on djmdContent
+        # (StockDate/Commnt/AnlzFileSize/etc.) + referenced via contentFile
+        # (ANLZ payloads on disk). We count the per-track analysis files.
+        try:
+            fp.analysis_entries = cur.execute(
+                "SELECT COUNT(*) FROM contentFile WHERE ContentID=?", (track_id,)
+            ).fetchone()[0]
+        except sqlite3.Error:
+            fp.analysis_entries = 0
+        # Plain-SQLite "beatgrid" is surfaced via djmdMixerParam on this
+        # schema; there's no dedicated djmdBeatGrid table.
+        fp.beatgrid_entries = fp.mixer_param_entries
+
+        # Full per-table row dump for the reversal script.
+        for tbl in MANUAL_CASCADE_TABLES:
+            try:
+                rows = _row_to_dict(db_path, tbl, "ContentID", track_id, _cursor=cur)
+            except sqlite3.Error:
+                rows = []
+            fp.manual_cascade_counts[tbl] = len(rows)
+            if rows:
+                fp.cascade_rows[tbl] = rows
+        # Also snapshot the ORM-cascaded tables so the reversal script can
+        # fully restore them if needed.
+        for tbl in ("djmdCue", "djmdMixerParam"):
+            try:
+                rows = _row_to_dict(db_path, tbl, "ContentID", track_id, _cursor=cur)
+            except sqlite3.Error:
+                rows = []
+            if rows:
+                fp.cascade_rows[tbl] = rows
+
+    return fp
+
+
+def _row_to_dict(
+    db_path: Path,
+    table: str,
+    col: str,
+    value: str,
+    _cursor: sqlite3.Cursor | None = None,
+) -> list[dict[str, Any]]:
+    """Return rows from ``table`` where ``col == value`` as list-of-dicts."""
+    owns = _cursor is None
+    con = sqlite3.connect(db_path) if owns else None
+    cur = _cursor if _cursor is not None else con.cursor()  # type: ignore[union-attr]
+    try:
+        cols = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+        rows = cur.execute(
+            f"SELECT * FROM {table} WHERE {col}=?",  # noqa: S608 — table name is internal
+            (value,),
+        ).fetchall()
+        return [dict(zip(cols, r, strict=True)) for r in rows]
+    finally:
+        if owns and con is not None:
+            con.close()
+
+
+# ------------------------------------------------------------------ preview
+
+
+def _print_footprint_table(footprints: list[Footprint]) -> None:
+    """Rich table of what each ID's removal would touch."""
+    t = Table(title="Removal footprint", show_lines=True)
+    t.add_column("ID", style="bold")
+    t.add_column("Title")
+    t.add_column("Artist")
+    t.add_column("FolderPath")
+    t.add_column("Playlists", overflow="fold")
+    t.add_column("Cues", justify="right")
+    t.add_column("Beatgrid", justify="right")
+    t.add_column("Analysis", justify="right")
+    t.add_column("Cascade", overflow="fold")
+    for fp in footprints:
+        if not fp.exists:
+            t.add_row(
+                fp.id,
+                "[red]<not found>[/red]",
+                "", "", "", "-", "-", "-", "-",
+            )
+            continue
+        cascade_summary = ", ".join(
+            f"{tbl}={n}"
+            for tbl, n in sorted(fp.manual_cascade_counts.items())
+            if n > 0
+        ) or "-"
+        t.add_row(
+            fp.id,
+            fp.title,
+            fp.artist,
+            f"[dim]{fp.folder_path}[/dim]",
+            "\n".join(fp.playlists) if fp.playlists else "-",
+            str(fp.cue_points),
+            str(fp.beatgrid_entries),
+            str(fp.analysis_entries),
+            cascade_summary,
+        )
+    console.print(t)
+
+
+def _write_plan(footprints: list[Footprint], reason: str, plan_dir: Path) -> Path:
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    out = plan_dir / f"remove-plan-{ts}.json"
+    payload = [fp.to_plan_entry(reason) for fp in footprints if fp.exists]
+    out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+    return out
+
+
+# ------------------------------------------------------------------ safety
+
+
+def _rekordbox_running() -> bool:
+    """True if any process matches ``rekordbox`` via pgrep -if."""
+    try:
+        r = subprocess.run(
+            ["pgrep", "-if", "rekordbox"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        console.print("[yellow]pgrep not available — cannot verify RB is closed.[/yellow]")
+        return False
+    return r.returncode == 0 and bool(r.stdout.strip())
+
+
+def _confirm() -> bool:
+    console.print(
+        "[bold red]LIVE REMOVAL MODE.[/bold red] This will delete rows from "
+        f"{paths.REKORDBOX_LIVE_DB} (and their cascade dependents)."
+    )
+    console.print(f"Type exactly [bold]{CONFIRMATION_PHRASE}[/bold] to proceed:")
+    try:
+        answer = input("> ").strip().lower()
+    except EOFError:
+        return False
+    return answer == CONFIRMATION_PHRASE
+
+
+def _backup_db(db_path: Path, backup_dir: Path) -> tuple[Path, str]:
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    dst = backup_dir / f"master.{ts}.db"
+    shutil.copy2(db_path, dst)
+    size = dst.stat().st_size
+    if size <= 0:
+        raise RuntimeError(f"Backup failed: {dst} has size {size}")
+    console.print(f"[green]Backup OK[/green] → {dst} ({size:,} bytes)")
+    return dst, ts
+
+
+# ------------------------------------------------------------------ delete
+
+
+def _apply_removals(
+    db_path: Path,
+    footprints: list[Footprint],
+) -> list[tuple[str, str]]:
+    """Delete each present track via pyrekordbox + manual cascade cleanup.
+
+    Returns a list of ``(id, error)`` pairs for IDs that failed. An empty
+    list means every requested ID was removed cleanly.
+    """
+    errors: list[tuple[str, str]] = []
+    existing = [fp for fp in footprints if fp.exists]
+    if not existing:
+        return errors
+
+    db = _open_db(db_path)
+    try:
+        for fp in existing:
+            try:
+                row = db.get_content(ID=fp.id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append((fp.id, f"lookup failed: {exc}"))
+                continue
+            if row is None:
+                errors.append((fp.id, "ID not found in live DB"))
+                continue
+            try:
+                db.delete(row)
+            except Exception as exc:  # noqa: BLE001
+                errors.append((fp.id, f"delete failed: {exc}"))
+                continue
+        if not errors:
+            db.commit()
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if errors:
+        return errors
+
+    # Manual cascade cleanup.
+    #
+    # Two kinds of cleanup happen here:
+    #   (a) Tables pyrekordbox doesn't touch at all (MANUAL_CASCADE_TABLES):
+    #       delete rows by ContentID.
+    #   (b) Tables pyrekordbox "cascades" by NULLing out ContentID rather
+    #       than deleting the row (djmdCue, djmdMixerParam on this schema):
+    #       remove those orphan rows by primary-key ID, using the IDs we
+    #       captured in the footprint. If we skip (b), verification still
+    #       passes (no rows match ContentID=<id>) but any reversal script
+    #       fails with UNIQUE constraint on ID.
+    try:
+        with sqlite3.connect(db_path) as con:
+            cur = con.cursor()
+            for fp in existing:
+                for tbl in MANUAL_CASCADE_TABLES:
+                    try:
+                        cur.execute(
+                            f"DELETE FROM {tbl} WHERE ContentID=?",  # noqa: S608
+                            (fp.id,),
+                        )
+                    except sqlite3.Error as exc:
+                        errors.append((fp.id, f"cascade {tbl}: {exc}"))
+                # (b) clean pyrekordbox's NULL-ContentID orphans.
+                for tbl in ("djmdCue", "djmdMixerParam"):
+                    captured = fp.cascade_rows.get(tbl, [])
+                    for row in captured:
+                        row_id = row.get("ID")
+                        if not row_id:
+                            continue
+                        try:
+                            cur.execute(
+                                f"DELETE FROM {tbl} WHERE ID=?",  # noqa: S608
+                                (row_id,),
+                            )
+                        except sqlite3.Error as exc:
+                            errors.append((fp.id, f"orphan-clean {tbl}: {exc}"))
+            con.commit()
+    except sqlite3.Error as exc:
+        errors.append(("*", f"cascade commit failed: {exc}"))
+    return errors
+
+
+def _verify_removed(db_path: Path, footprints: list[Footprint]) -> list[tuple[str, str]]:
+    """Re-open the DB and assert every requested ID is gone + has no stragglers."""
+    failures: list[tuple[str, str]] = []
+    db = _open_db(db_path)
+    try:
+        for fp in footprints:
+            if not fp.exists:
+                continue
+            try:
+                row = db.get_content(ID=fp.id)
+            except Exception as exc:  # noqa: BLE001
+                failures.append((fp.id, f"post-delete lookup failed: {exc}"))
+                continue
+            if row is not None:
+                failures.append((fp.id, "still present after delete"))
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Also check the manual cascade tables are clean.
+    with sqlite3.connect(db_path) as con:
+        cur = con.cursor()
+        for fp in footprints:
+            if not fp.exists:
+                continue
+            for tbl in MANUAL_CASCADE_TABLES + ("djmdCue", "djmdMixerParam"):
+                try:
+                    n = cur.execute(
+                        f"SELECT COUNT(*) FROM {tbl} WHERE ContentID=?",  # noqa: S608
+                        (fp.id,),
+                    ).fetchone()[0]
+                except sqlite3.Error:
+                    continue
+                if n:
+                    failures.append((fp.id, f"orphans remain in {tbl}: {n}"))
+    return failures
+
+
+# ------------------------------------------------------------------ reversal
+
+
+def _write_reversal_script(
+    footprints: list[Footprint],
+    backup: Path,
+    backup_dir: Path,
+    ts: str,
+    db_path: Path,
+) -> Path:
+    """Emit a self-contained restore-{ts}.py script.
+
+    The script re-inserts the removed ``djmdContent`` rows plus every row
+    we dumped from the manual-cascade tables. It's idempotent: it checks
+    each primary-key column before inserting so re-running won't trip
+    ``UNIQUE`` constraints.
+    """
+    out = backup_dir / f"restore-{ts}.py"
+
+    # Build a compact payload the restore script can read directly.
+    payload: dict[str, Any] = {
+        "live_db": str(db_path),
+        "backup": str(backup),
+        "timestamp": ts,
+        "entries": [],
+    }
+    for fp in footprints:
+        if not fp.exists:
+            continue
+        payload["entries"].append({
+            "id": fp.id,
+            "content_row": fp.content_row,
+            "cascade_rows": fp.cascade_rows,
+        })
+
+    # We embed the payload as a JSON string literal that the script parses at
+    # runtime. This avoids Python/JSON literal mismatches (null vs None,
+    # true/false vs True/False) and keeps the script self-contained.
+    payload_json = json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+
+    body = '''#!/usr/bin/env python3
+"""Auto-generated reversal for reconcile remove_track run __TS__.
+
+Re-inserts the content rows + cascade dependents that were removed. If
+this script itself fails, you can always fall back to the full DB
+backup:
+
+    cp "__BACKUP__" "__DB_PATH__"
+
+This script is idempotent — it uses INSERT OR IGNORE so re-running
+won't raise UNIQUE errors.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+
+LIVE_DB = r"__DB_PATH__"
+PAYLOAD = json.loads(r"""__PAYLOAD__""")
+
+
+def _insert_row(cur: sqlite3.Cursor, table: str, row: dict) -> int:
+    cols = list(row.keys())
+    placeholders = ",".join(["?"] * len(cols))
+    collist = ",".join('"' + c + '"' for c in cols)
+    sql = "INSERT OR IGNORE INTO " + table + " (" + collist + ") VALUES (" + placeholders + ")"
+    cur.execute(sql, [row[c] for c in cols])
+    return cur.rowcount
+
+
+def main() -> int:
+    con = sqlite3.connect(LIVE_DB)
+    try:
+        cur = con.cursor()
+        total_inserted = 0
+        for entry in PAYLOAD["entries"]:
+            tid = entry["id"]
+            content = entry.get("content_row") or {}
+            if content:
+                n = _insert_row(cur, "djmdContent", content)
+                print("  djmdContent id=" + str(tid) + ": +" + str(n))
+                total_inserted += n
+            for tbl, rows in (entry.get("cascade_rows") or {}).items():
+                for row in rows:
+                    n = _insert_row(cur, tbl, row)
+                    total_inserted += n
+                print("  " + tbl + " id=" + str(tid) + ": " + str(len(rows)) + " attempted")
+        con.commit()
+        print("Done. Rows inserted: " + str(total_inserted))
+        return 0
+    finally:
+        con.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+    body = (
+        body.replace("__TS__", ts)
+            .replace("__BACKUP__", str(backup))
+            .replace("__DB_PATH__", str(db_path))
+            .replace("__PAYLOAD__", payload_json)
+    )
+    out.write_text(body)
+    out.chmod(0o755)
+    return out
+
+
+# ------------------------------------------------------------------ flows
+
+
+def _run_dry_run(
+    db_path: Path,
+    track_ids: list[str],
+    reason: str,
+    plan_dir: Path,
+) -> int:
+    db = _open_db(db_path)
+    try:
+        footprints = [_capture_footprint(db, db_path, tid) for tid in track_ids]
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+    missing = [fp.id for fp in footprints if not fp.exists]
+    if missing:
+        console.print(
+            f"[yellow]Warning:[/yellow] IDs not found in DB — will be skipped: "
+            f"{', '.join(missing)}"
+        )
+    _print_footprint_table(footprints)
+    plan = _write_plan(footprints, reason, plan_dir)
+    console.print(f"[green]Wrote plan → {plan}[/green]")
+    console.print("[dim]DRY-RUN — master.db untouched.[/dim]")
+    return 0
+
+
+def _run_live(
+    db_path: Path,
+    track_ids: list[str],
+    reason: str,
+    backup_dir: Path,
+    plan_dir: Path,
+) -> int:
+    # Probe first (no writes).
+    db = _open_db(db_path)
+    try:
+        footprints = [_capture_footprint(db, db_path, tid) for tid in track_ids]
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    _print_footprint_table(footprints)
+
+    present = [fp for fp in footprints if fp.exists]
+    if not present:
+        console.print("[yellow]No matching IDs in the DB. Nothing to remove.[/yellow]")
+        return 1
+
+    # Rail 2: Rekordbox running?
+    if _rekordbox_running():
+        console.print(
+            "[red]ABORT:[/red] Rekordbox is running. Quit Rekordbox completely "
+            "(check the menu bar too) and retry. I will NOT auto-kill it."
+        )
+        return 3
+
+    # Rail 1: typed confirmation.
+    if not _confirm():
+        console.print("[yellow]Confirmation not given. Aborting.[/yellow]")
+        return 4
+
+    # Rail 3: backup.
+    backup, ts = _backup_db(db_path, backup_dir)
+
+    # Rail 4: apply + cascade.
+    console.print("[bold]Removing rows…[/bold]")
+    errors = _apply_removals(db_path, footprints)
+    if errors:
+        console.print("[red]Errors during removal:[/red]")
+        for tid, msg in errors:
+            console.print(f"  ✗ {tid}: {msg}")
+        console.print(f"[red]Restore with:[/red] cp {backup} {db_path}")
+        return 5
+
+    # Rail 5: verify.
+    console.print("[bold]Verifying cascade…[/bold]")
+    failures = _verify_removed(db_path, footprints)
+
+    # Rail 6: reversal script (always emitted so user can always roll back).
+    rev = _write_reversal_script(footprints, backup, backup_dir, ts, db_path)
+    console.print(f"[green]Reversal script → {rev}[/green]")
+    console.print(f"[green]Full DB backup → {backup}[/green]")
+
+    # Also write the plan/audit alongside, so we have a record of what we did.
+    _write_plan(footprints, reason, plan_dir)
+
+    # Summary.
+    ok = Table(title="Removal summary", show_lines=False)
+    ok.add_column("ID", style="bold")
+    ok.add_column("Title")
+    ok.add_column("Status")
+    failure_ids = {tid for tid, _ in failures}
+    for fp in footprints:
+        if not fp.exists:
+            status = "[yellow]skipped (not found)[/yellow]"
+        elif fp.id in failure_ids:
+            status = "[red]failed[/red]"
+        else:
+            status = "[green]removed[/green]"
+        ok.add_row(fp.id, fp.title or "-", status)
+    console.print(ok)
+
+    if failures:
+        console.print("[red]Verification failures:[/red]")
+        for tid, msg in failures:
+            console.print(f"  ✗ {tid}: {msg}")
+        console.print(
+            f"[yellow]Reversal script restores everything; run:[/yellow] python {rev}"
+        )
+        return 6
+
+    return 0
+
+
+# ------------------------------------------------------------------ CLI
+
+
+def _parse_ids(raw: str | None) -> list[str] | None:
+    if not raw:
+        return None
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="apps.reconcile.remove_track",
+        description="Remove Rekordbox track rows (+ cascade deps). Dry-run by default.",
+    )
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="(default) preview + plan only")
+    mode.add_argument("--live", action="store_true", help="actually delete from master.db")
+    p.add_argument(
+        "--i-understand-the-risks",
+        action="store_true",
+        help="required companion flag for --live",
+    )
+    p.add_argument(
+        "--tracks",
+        type=str,
+        default=None,
+        help=f"comma-separated RB IDs (1–{MAX_LIVE_TRACKS}). Required.",
+    )
+    p.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="override DB path (default: working copy, refreshed from live).",
+    )
+    p.add_argument(
+        "--backup-dir",
+        type=Path,
+        default=DEFAULT_BACKUP_DIR,
+        help="directory for pre-delete backups + reversal scripts",
+    )
+    p.add_argument(
+        "--plan-dir",
+        type=Path,
+        default=DEFAULT_PLAN_DIR,
+        help="where remove-plan-*.json files are written",
+    )
+    p.add_argument(
+        "--reason",
+        type=str,
+        default="",
+        help="free-text justification; recorded in the plan/audit JSON.",
+    )
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    track_ids = _parse_ids(args.tracks)
+    if not track_ids:
+        console.print("[red]--tracks is required[/red] (comma-separated RB IDs).")
+        return 2
+    if len(track_ids) > MAX_LIVE_TRACKS:
+        console.print(
+            f"[red]Refusing:[/red] {len(track_ids)} IDs > MAX_LIVE_TRACKS="
+            f"{MAX_LIVE_TRACKS}. No bulk mode for removals — run again with fewer."
+        )
+        return 2
+
+    db_path = _resolve_db_path(args.db)
+
+    if args.live:
+        if not args.i_understand_the_risks:
+            console.print(
+                "[red]--live requires --i-understand-the-risks[/red]. Aborting."
+            )
+            return 2
+        return _run_live(
+            db_path,
+            track_ids,
+            args.reason,
+            args.backup_dir,
+            args.plan_dir,
+        )
+
+    # Dry-run (default).
+    return _run_dry_run(db_path, track_ids, args.reason, args.plan_dir)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
