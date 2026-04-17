@@ -145,7 +145,12 @@ class S3Client(Protocol):
     def put_object_if_match(
         self, bucket: str, key: str, body: bytes, etag: str
     ) -> tuple[bool, str | None]:
-        """CAS write. Returns ``(ok, new_etag)``. ``ok=False`` on mismatch."""
+        """CAS write. Returns ``(ok, new_etag)``. ``ok=False`` on mismatch.
+
+        ``etag="*"`` is the S3 wildcard meaning "match any existing
+        object" (i.e. succeed iff the key exists, regardless of its
+        current etag). Any other string is a strict etag match.
+        """
 
     def delete_object_if_match(
         self, bucket: str, key: str, etag: str
@@ -190,7 +195,11 @@ class FakeS3Client:
     ) -> tuple[bool, str | None]:
         with self._lock:
             existing = self._store.get((bucket, key))
-            if existing is None or existing[1] != etag:
+            if existing is None:
+                return False, None
+            # ``etag="*"`` is the S3 wildcard: match any existing object.
+            # Any other value is a strict etag comparison.
+            if etag != "*" and existing[1] != etag:
                 return False, None
             new_etag = self._etag(body)
             self._store[(bucket, key)] = (body, new_etag)
