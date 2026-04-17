@@ -376,9 +376,16 @@ def write_geob_frames(
 
     Only MP3 is supported in v1; callers must screen the path themselves or
     use :func:`is_mp3_like_path`. For non-MP3 this raises ``ValueError``.
+
+    Raises :class:`ImportError` (via :func:`apps.shared._mutagen.require`)
+    when the optional ``mutagen`` dep is not installed; install with
+    ``pip install 'music-dj-tools[tags]'``.
     """
     from pathlib import Path as _Path
 
+    from apps.shared._mutagen import require as _require_mutagen
+
+    _require_mutagen()
     from mutagen.id3 import ID3, GEOB, ID3NoHeaderError  # local import -- optional dep
 
     path = _Path(audio_path)
@@ -423,10 +430,18 @@ def read_geob_frames(audio_path) -> SeratoGEOB:
     """Read every Serato GEOB frame from an MP3 into a :class:`SeratoGEOB`.
 
     Returns an empty bundle if the file lacks an ID3 tag or has no Serato
-    frames. Non-MP3 paths return an empty bundle (v1 scope).
+    frames. Non-MP3 paths return an empty bundle (v1 scope). Also returns
+    an empty bundle when the optional ``mutagen`` dep is absent, so Serato
+    *read* is soft-fail (callers can still iterate a Serato DB without tags
+    installed); :func:`write_geob_frames` is hard-fail because the caller
+    genuinely needs mutagen to encode the frames.
     """
     from pathlib import Path as _Path
 
+    from apps.shared._mutagen import HAS_MUTAGEN
+
+    if not HAS_MUTAGEN:
+        return SeratoGEOB()
     from mutagen.id3 import ID3, ID3NoHeaderError  # local import -- optional dep
 
     path = _Path(audio_path)

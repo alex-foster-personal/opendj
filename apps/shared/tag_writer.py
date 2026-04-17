@@ -205,7 +205,13 @@ def _read_flac_ogg(path: Path) -> TagRead:
 def read_tags(path: Path) -> TagRead:
     """Read tags from ``path``. Raises :class:`UnsupportedContainer`
     for ``.aiff`` / ``.wav``.
+
+    Raises :class:`ImportError` when the optional ``mutagen`` dep is not
+    installed (``pip install 'music-dj-tools[tags]'``).
     """
+    from ._mutagen import require as _require_mutagen
+
+    _require_mutagen()
     ext = _ext(path)
     if ext in _UNSUPPORTED:
         raise UnsupportedContainer(f"Unsupported container: {ext}")
@@ -361,7 +367,14 @@ def _write_flac_ogg(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult
 def write_tags(
     path: Path, unified: UnifiedTags, *, dry_run: bool = True
 ) -> WriteResult:
-    """Dispatch to the right backend; return a :class:`WriteResult`."""
+    """Dispatch to the right backend; return a :class:`WriteResult`.
+
+    Raises :class:`ImportError` when the optional ``mutagen`` dep is not
+    installed (``pip install 'music-dj-tools[tags]'``).
+    """
+    from ._mutagen import require as _require_mutagen
+
+    _require_mutagen()
     ext = _ext(path)
     if ext in _UNSUPPORTED:
         raise UnsupportedContainer(f"Unsupported container: {ext}")

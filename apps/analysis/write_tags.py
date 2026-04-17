@@ -87,6 +87,9 @@ def _container_kind(path: Path) -> str:
 
 
 def _read_current_tags(path: Path) -> dict[str, str]:
+    from apps.shared._mutagen import require as _require_mutagen
+
+    _require_mutagen()
     kind = _container_kind(path)
     if kind == "mp3":
         return _read_mp3(path)
@@ -100,6 +103,9 @@ def _read_current_tags(path: Path) -> dict[str, str]:
 
 
 def _write_tags(path: Path, new: dict[str, str]) -> None:
+    from apps.shared._mutagen import require as _require_mutagen
+
+    _require_mutagen()
     kind = _container_kind(path)
     if kind == "mp3":
         _write_mp3(path, new)

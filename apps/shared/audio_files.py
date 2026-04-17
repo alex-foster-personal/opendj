@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-import mutagen
-
 from . import paths
+from ._mutagen import HAS_MUTAGEN
 
 
 @dataclass(slots=True)
@@ -70,7 +69,16 @@ def _first(tags, key: str) -> str | None:
 
 
 def read_metadata(path: Path) -> AudioMetadata | None:
-    """Read audio metadata via mutagen's easy interface. ``None`` on failure."""
+    """Read audio metadata via mutagen's easy interface. ``None`` on failure.
+
+    When the optional ``mutagen`` dep (``music-dj-tools[tags]``) is not
+    installed this is a best-effort no-op that returns ``None``; the scanner
+    layer still yields :class:`AudioFile` entries from the filesystem.
+    """
+    if not HAS_MUTAGEN:
+        return None
+    import mutagen  # type: ignore  # guarded above
+
     try:
         f = mutagen.File(str(path), easy=True)
     except Exception:
