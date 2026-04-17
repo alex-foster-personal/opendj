@@ -25,8 +25,11 @@ import argparse
 import datetime as _dt
 import json
 import logging
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,6 +50,10 @@ MAX_LIVE_TRACKS = 3
 
 BACKUP_ROOT: Path = DATA_DIR / "analysis" / "tag-backups"
 REVERSAL_ROOT: Path = DATA_DIR / "analysis" / "reversal"
+# [P06-F01 / META-02] Byte-level pre-write file snapshots so a mid-write
+# failure can restore the original audio file (the JSON tag-backup under
+# ``BACKUP_ROOT`` only captures the tag block, not the file bytes).
+FILE_BACKUP_ROOT: Path = DATA_DIR / "analysis" / "tag-file-backups"
 
 OPENDJ_NAMESPACE = "OPENDJ"
 
@@ -313,6 +320,90 @@ def reversal_path(stable_id: str, ts: str) -> Path:
     return REVERSAL_ROOT / f"{stable_id}-{ts}.py"
 
 
+def file_backup_path(stable_id: str, ts: str, suffix: str) -> Path:
+    FILE_BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    return FILE_BACKUP_ROOT / f"{stable_id}-{ts}{suffix}"
+
+
+def _snapshot_file(delta: TagDelta, ts: str) -> Path:
+    """Byte-exact copy of the original audio file before any mutation.
+
+    Returns the snapshot path so the write loop can restore it on failure.
+    Uses ``shutil.copy2`` to preserve mtime/mode -- a successful write will
+    not delete this; keeping it makes a manual rollback trivial.
+    """
+    snap = file_backup_path(delta.stable_id, ts, delta.path.suffix)
+    shutil.copy2(delta.path, snap)
+    return snap
+
+
+def _atomic_write_tags(path: Path, new: dict[str, str]) -> None:
+    """Write tags via tmp copy + fsync + os.replace for crash atomicity.
+
+    Mutagen writes in-place; if the process dies mid-write the file is left
+    in an inconsistent partial state. We instead copy the original to a
+    sibling tmp file, mutate that copy, fsync it, then atomically
+    ``os.replace`` over the original. On failure the tmp is removed and
+    the original is untouched. (META-02 / P06-F01.)
+    """
+    parent = path.parent
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.opendj-", suffix=path.suffix, dir=str(parent)
+    )
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        shutil.copy2(path, tmp)
+        _write_tags(tmp, new)
+        with open(tmp, "rb") as fh:
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        # Best-effort directory fsync so the rename is durable.
+        try:
+            dir_fd = os.open(str(parent), os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(dir_fd)
+        except OSError:
+            pass
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _restore_from_snapshot(snapshot: Path, target: Path) -> None:
+    """Restore ``target`` byte-for-byte from a prior snapshot.
+
+    Best-effort: if the snapshot itself is missing we leave the target
+    alone and let the caller surface the original failure.
+    """
+    if not snapshot.exists():
+        return
+    parent = target.parent
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{target.name}.restore-", suffix=target.suffix, dir=str(parent)
+    )
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        shutil.copy2(snapshot, tmp)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+        raise
+
+
 def _write_backup(delta: TagDelta, ts: str) -> Path:
     bp = backup_path(delta.stable_id, ts)
     bp.write_text(
@@ -448,10 +539,18 @@ def apply_writes(
     ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     for d in to_write:
+        snapshot: Path | None = None
         try:
             backup = _write_backup(d, ts)
             summary.backups.append(backup)
-            _write_tags(d.path, d.new)
+            # [P06-F01 / META-02] Take a byte-exact file snapshot BEFORE
+            # touching the audio file so we can restore it if anything
+            # downstream raises. ``_atomic_write_tags`` publishes the new
+            # bytes via a tmp-file + fsync + os.replace so a crash mid-
+            # write leaves the original untouched; the post-write verify
+            # below still runs against the real path.
+            snapshot = _snapshot_file(d, ts)
+            _atomic_write_tags(d.path, d.new)
             after = _read_current_tags(d.path)
             for k, v in d.new.items():
                 got = after.get(k)
@@ -467,6 +566,17 @@ def apply_writes(
             summary.written += 1
         except Exception as exc:
             log.error("write failed for %s: %s", d.path, exc)
+            # Best-effort: restore the original bytes so the file is never
+            # left in a partially-written state even if verify or the
+            # reversal-script write raises after the atomic replace landed.
+            if snapshot is not None:
+                try:
+                    _restore_from_snapshot(snapshot, d.path)
+                except Exception as restore_exc:  # noqa: BLE001
+                    log.error(
+                        "restore failed for %s after write error: %s",
+                        d.path, restore_exc,
+                    )
             summary.failed += 1
 
     summary.skipped_unchanged = len(deltas) - summary.would_write

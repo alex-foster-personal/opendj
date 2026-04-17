@@ -36,6 +36,30 @@ _log = logging.getLogger(__name__)
 _ClockFn = Callable[[], _dt.datetime]
 
 
+class _DryRunSilentBus:
+    """Drop-in replacement for :class:`EventBus` that discards publishes.
+
+    Used by :func:`ingest_rb` during ``dry_run=True`` so that the outer
+    SAVEPOINT's ROLLBACK does not leave subscribers with phantom events
+    for SQL mutations that were never committed. It records the number of
+    events it swallowed for diagnostics/tests but never invokes any
+    subscriber (addresses Codex P05-F02 / INFRA-03).
+    """
+
+    def __init__(self) -> None:
+        self.suppressed: int = 0
+
+    def publish(self, event: Any) -> None:  # noqa: ANN401 - mirrors Event type
+        self.suppressed += 1
+
+    def subscribe(self, kind: str, callback: Any) -> None:  # pragma: no cover
+        # Dry-run lifetime is a single call; no-op is safe.
+        return None
+
+    def close(self, timeout: float | None = None) -> None:  # noqa: ARG002
+        return None
+
+
 @dataclasses.dataclass
 class IngestReport:
     """Counters emitted by :func:`ingest_rb` for CLI + tests."""
@@ -175,6 +199,16 @@ def ingest_rb(
     conn = writer.raw_conn
     savepoint = "phase5_ingest_rb"
 
+    # [P05-F02 / INFRA-03] During dry-run, the outer SAVEPOINT is rolled back
+    # at the end, so any ``writer.bus.publish`` calls made during the run
+    # would leak phantom events to subscribers for mutations that never
+    # actually landed in state.db. Swap the bus for a silent drop-in for
+    # the duration of the dry-run so publishes are simply discarded. Live
+    # runs keep the real bus.
+    original_bus = writer.bus
+    if dry_run:
+        writer.bus = _DryRunSilentBus()
+
     conn.execute(f"SAVEPOINT {savepoint}")
     try:
         rb_to_stable: dict[str, str] = {}
@@ -307,6 +341,8 @@ def ingest_rb(
         conn.execute(f"RELEASE SAVEPOINT {savepoint}")
         raise
     finally:
+        # Always restore the real bus, even if the ingest raised.
+        writer.bus = original_bus
         try:
             rb_db.close()
         except sqlite3.Error as exc:
