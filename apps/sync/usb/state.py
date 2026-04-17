@@ -186,8 +186,16 @@ def load_canonical_tracks(
     TODO marker.
     """
     if use_shared_state:
-        # TODO(phase-5): switch to apps.shared.state once it publishes
-        # tracks+playlists+memberships with content_hash + stable_id.
+        # Phase 5 status: ``apps.shared.state`` ships the tracks,
+        # playlists and playlist_memberships tables with a ``content_hash``
+        # column on tracks and a ``stable_id`` primary key, but
+        # ``apps.shared.state.ingest.rekordbox`` currently writes
+        # ``content_hash=None`` (see rekordbox.py:215) and no reader
+        # helper projects rows into :class:`CanonicalTrack`. Until
+        # content_hash population lands and a reader exposes the
+        # (track, playlist, membership) join in CanonicalTrack shape,
+        # fall through to the RB shim. Tracked in STATE.md as a Phase
+        # 5 follow-up (shared-state USB sync reader).
         pass
     return load_from_rekordbox(
         playlist_names=playlist_names,
