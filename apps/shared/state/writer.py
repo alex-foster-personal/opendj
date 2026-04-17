@@ -244,7 +244,7 @@ class StateWriter:
                 payload={"tier": stable_id_tier, "had_isrc": bool(isrc)},
                 ts=now,
             )
-        self.bus.publish(ev)
+            self.bus.publish(ev)
         return True
 
     # --- vendor ids -------------------------------------------------
@@ -265,7 +265,7 @@ class StateWriter:
                 payload={"vendor": vendor, "vendor_id": vendor_id},
                 ts=now,
             )
-        self.bus.publish(ev)
+            self.bus.publish(ev)
 
     # --- wrapped fields --------------------------------------------
 
@@ -353,7 +353,7 @@ class StateWriter:
                 },
                 ts=now,
             )
-        self.bus.publish(ev)
+            self.bus.publish(ev)
         return True
 
     def set_playlist_memberships(
@@ -381,7 +381,7 @@ class StateWriter:
                 },
                 ts=now,
             )
-        self.bus.publish(ev)
+            self.bus.publish(ev)
 
     # --- adapters ---------------------------------------------------
 
@@ -414,7 +414,7 @@ class StateWriter:
                 },
                 ts=now,
             )
-        self.bus.publish(ev)
+            self.bus.publish(ev)
 
 
 __all__ = ["StateWriter", "compute_playlist_id"]
