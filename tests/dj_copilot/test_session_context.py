@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 
 import pytest
 
@@ -11,6 +10,7 @@ from apps.dj_copilot.session_context import (
     SessionContext,
     load_session_context,
 )
+from tests.dj_copilot.conftest import FIXED_NOW
 
 pytestmark = pytest.mark.requirement("AI-01")
 
@@ -39,7 +39,7 @@ def test_manual_source(tmp_path) -> None:
             bpm=120.0,
             key_camelot="8A",
             energy=5,
-            played_at=datetime.now(timezone.utc),
+            played_at=FIXED_NOW,
         )
     ]
     ctx = load_session_context(source="manual", manual=tracks)
@@ -63,7 +63,7 @@ def test_phase12_source(tmp_path) -> None:
     conn = sqlite3.connect(str(db), isolation_level=None)
     try:
         _seed_phase12_events(conn)
-        now = datetime.now(timezone.utc).isoformat()
+        now = FIXED_NOW.isoformat()
         conn.executemany(
             "INSERT INTO session_events"
             "(stable_id, artist, bpm, key_camelot, energy, played_at, action) "
@@ -89,7 +89,7 @@ def test_auto_prefers_phase12(tmp_path) -> None:
             "INSERT INTO session_events"
             "(stable_id, artist, bpm, key_camelot, energy, played_at, action) "
             "VALUES (?, ?, ?, ?, ?, ?, 'now_playing')",
-            ("t-a", "A", 120.0, "8A", 5, datetime.now(timezone.utc).isoformat()),
+            ("t-a", "A", 120.0, "8A", 5, FIXED_NOW.isoformat()),
         )
         ctx = load_session_context(conn=conn, source="auto")
         assert ctx.source == "phase12"
@@ -106,7 +106,7 @@ def test_ignores_non_now_playing(tmp_path) -> None:
             "INSERT INTO session_events"
             "(stable_id, artist, bpm, key_camelot, energy, played_at, action) "
             "VALUES (?, ?, ?, ?, ?, ?, 'skipped')",
-            ("t-x", "X", 120.0, "8A", 5, datetime.now(timezone.utc).isoformat()),
+            ("t-x", "X", 120.0, "8A", 5, FIXED_NOW.isoformat()),
         )
         ctx = load_session_context(conn=conn, source="phase12")
         assert ctx.recent == []

@@ -24,7 +24,7 @@ def _row(**overrides: object) -> dict[str, str]:
         "id": "42",
         "title": "Test Track",
         "artist": "Test Artist",
-        "original_path": "/Users/dev3/Music/Convert temp 2 (BACKUP)/foo/track.mp3",
+        "original_path": "/music/Convert temp 2 (BACKUP)/foo/track.mp3",
         "basename": "track.mp3",
         "duration_s": "200",
         "file_size": "1000",

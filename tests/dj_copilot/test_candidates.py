@@ -1,13 +1,12 @@
 """Candidate filter tests (AI-01, AI-02)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from apps.dj_copilot.candidates import filter_candidates
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.shared.harmonic import TrackFeature
+from tests.dj_copilot.conftest import FIXED_NOW
 
 pytestmark = [
     pytest.mark.requirement("AI-01"),
@@ -17,7 +16,7 @@ pytestmark = [
 
 def _ctx(recent: list[PlayedTrack]) -> SessionContext:
     return SessionContext(
-        recent=recent, source="manual", captured_at=datetime.now(timezone.utc)
+        recent=recent, source="manual", captured_at=FIXED_NOW
     )
 
 
@@ -28,7 +27,7 @@ def _cur(**kw) -> PlayedTrack:
         "bpm": 120.0,
         "key_camelot": "8A",
         "energy": 5,
-        "played_at": datetime.now(timezone.utc),
+        "played_at": FIXED_NOW,
     }
     defaults.update(kw)
     return PlayedTrack(**defaults)
@@ -64,7 +63,7 @@ def test_artist_cooldown() -> None:
             bpm=120.0,
             key_camelot="8A",
             energy=5,
-            played_at=datetime.now(timezone.utc),
+            played_at=FIXED_NOW,
         )
         for i in range(3)
     ]
@@ -94,7 +93,7 @@ def test_energy_slope_cap_rejects_reverse() -> None:
             bpm=120.0,
             key_camelot="8A",
             energy=3 + i,
-            played_at=datetime.now(timezone.utc),
+            played_at=FIXED_NOW,
         )
         for i in range(5)
     ]

@@ -6,8 +6,12 @@ Phase 16 scope (OPEN-02c):
     into an ``OpenDjLibrary``.
   * Write an ``OpenDjLibrary`` back into a ``database V2`` + subcrates.
   * Emit structured warnings for every lossy translation.
-  * Compute a stable track_id from ``file_path`` + ``title`` (Phase 5 will
-    replace with ``apps.shared.stable_id`` when shipped -- see TODO below).
+  * Compute a stable track_id from ``file_path`` + ``title``. Phase 5's
+    ``apps.shared.state.ids.stable_id`` is the archival dedup ID keyed on
+    ISRC/fingerprint/path+mtime; Serato's database.V2 lacks those signals
+    at read time, so this adapter keeps a local SHA-1 over
+    ``file_path|title`` with a ``serato_`` prefix (see
+    :func:`_stable_track_id` below for rationale).
 
 Per-file GEOB frame mutation (via mutagen) is plumbed through
 ``SeratoAdapter.write()`` via :func:`apps.adapters.serato.geob.write_geob_frames`

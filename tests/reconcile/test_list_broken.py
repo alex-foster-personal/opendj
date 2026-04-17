@@ -57,7 +57,7 @@ def test_collect_broken_skips_streaming_and_existing_files(
 ) -> None:
     """Only is_streaming=False tracks with non-existent file_path are emitted."""
     # Force every track in the fixture to "not exist" by monkeypatching
-    # Path.exists to return False for any /Users/dev3/Music path — that way
+    # Path.exists to return False for any local music library path — that way
     # we can count non-streaming, non-empty-path rows unambiguously.
     rows = list_broken._collect_broken(rb_pyrekordbox_db)
     # Every emitted row is non-streaming with a local file path that doesn't

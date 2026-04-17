@@ -315,8 +315,9 @@ def test_round_trip(fixture_id: str, adapter_name: str, tmp_path) -> None:
     lib_back, _ = adapter.read(target)
 
     # Normalise -- adapters may produce different ``track_id`` values since
-    # our Phase 16 stable_id shim uses adapter-scoped prefixes (see TODO in
-    # each adapter). Mask that before JCS-comparing.
+    # our Phase 16 stable_id shim uses adapter-scoped prefixes (rationale
+    # in each adapter's ``_stable_track_id`` docstring). Mask that before
+    # JCS-comparing.
     actual_masked = _mask(_library_to_dict(lib_back), drops + ["track_id", "file_path"])
     expected_masked_ids = _mask(expected_masked, ["track_id", "file_path"])
 

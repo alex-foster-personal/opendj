@@ -2,20 +2,20 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 
 import pytest
 
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.dj_copilot.suggester import suggest_next
 from apps.shared.harmonic import TrackFeature
+from tests.dj_copilot.conftest import FIXED_NOW
 
 pytestmark = pytest.mark.requirement("AI-01")
 
 
 def _ctx(recent: list[PlayedTrack]) -> SessionContext:
     return SessionContext(
-        recent=recent, source="manual", captured_at=datetime.now(timezone.utc)
+        recent=recent, source="manual", captured_at=FIXED_NOW
     )
 
 

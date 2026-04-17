@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 
 import pytest
 
 from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.dj_copilot.suggester import suggest_next
 from apps.shared.harmonic import TrackFeature
+from tests.dj_copilot.conftest import FIXED_NOW
 
 pytestmark = pytest.mark.requirement("AI-02")
 
@@ -21,12 +21,12 @@ def _ctx(energies: list[int]) -> SessionContext:
             bpm=120.0,
             key_camelot="8A",
             energy=e,
-            played_at=datetime.now(timezone.utc),
+            played_at=FIXED_NOW,
         )
         for i, e in enumerate(energies)
     ]
     return SessionContext(
-        recent=recent, source="manual", captured_at=datetime.now(timezone.utc)
+        recent=recent, source="manual", captured_at=FIXED_NOW
     )
 
 

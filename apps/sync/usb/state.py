@@ -182,8 +182,8 @@ def load_canonical_tracks(
 
     When ``use_shared_state=True`` and the shared-state projection exists
     and carries the required fields, we would route there; until Phase 5
-    publishes its reader, we always fall through to the RB shim with a
-    TODO marker.
+    publishes its reader (tracked in STATE.md), we always fall through to
+    the RB shim.
     """
     if use_shared_state:
         # Phase 5 status: ``apps.shared.state`` ships the tracks,

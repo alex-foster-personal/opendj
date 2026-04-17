@@ -254,12 +254,22 @@ def test_cloud_lock_released_only_after_litestream_exit():
     def factory(_argv: list[str]) -> SlowExitProc:
         return fake_proc
 
+    # Use an interruptible Event.wait as the sleep tick instead of
+    # raw time.sleep — matches the pattern from PR #115 and keeps the
+    # test free of wall-clock dependencies in the Replicator's own code
+    # path. time.monotonic() still advances naturally via the OS scheduler
+    # for the SlowExitProc's terminate->exit delay check.
+    _sleep_gate = threading.Event()
+
+    def fake_sleep(seconds: float) -> None:
+        _sleep_gate.wait(seconds)
+
     rep = Replicator(
         make_cfg("host-a"),
         s3,
         subprocess_factory=factory,
         heartbeat_seconds=600,
-        sleep_fn=time.sleep,  # real sleep so the exit-wait actually advances
+        sleep_fn=fake_sleep,
     )
 
     # Wrap lock.release to record timestamp.

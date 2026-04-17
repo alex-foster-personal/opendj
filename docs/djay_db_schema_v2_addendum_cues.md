@@ -65,7 +65,7 @@ lengths.
 `apps/shared/rb_color_palette.py`; `0` means "no colour" and is omitted
 from the encoding.
 
-### Puzzling bytes (TODO(O1))
+### Puzzling bytes (open question O1)
 
 1. Algoriddim may or may not include additional per-cue flags we have
    not reverse-engineered (e.g. "call-out" / "auto-loop enabled"). If

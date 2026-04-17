@@ -434,9 +434,9 @@ def test_suggest_next_uses_source_arg(
         captured["source"] = source
         captured["manual_passed"] = manual
         from apps.dj_copilot.session_context import SessionContext
-        from datetime import datetime, timezone
+        from tests.dj_copilot.conftest import FIXED_NOW
         return SessionContext(
-            recent=[], source=source, captured_at=datetime.now(timezone.utc)
+            recent=[], source=source, captured_at=FIXED_NOW
         )
 
     monkeypatch.setattr(cli, "load_session_context", _fake_loader)

@@ -3,11 +3,25 @@ from __future__ import annotations
 
 import random
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from apps.shared.harmonic import TrackFeature
+
+
+# Frozen "now" for deterministic dj_copilot tests. Using a fixed UTC instant
+# avoids wall-clock drift when tests stamp ``captured_at`` / ``played_at``
+# fields that later get compared or serialised. Prefer this over
+# ``datetime.now(timezone.utc)`` inside dj_copilot tests.
+FIXED_NOW = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def fixed_now() -> datetime:
+    """Deterministic UTC timestamp for dj_copilot test payloads."""
+    return FIXED_NOW
 
 
 _CAMELOT_ORDER = [f"{n}A" for n in range(1, 13)] + [f"{n}B" for n in range(1, 13)]

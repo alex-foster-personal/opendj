@@ -24,7 +24,7 @@ from apps.shared import rekordbox_db
         ("tidal:track:def456", True),
         ("http://example.com/stream", True),
         ("https://example.com/stream", True),
-        ("/Users/dev3/Music/Manual Library/foo.mp3", False),
+        ("/music/Manual Library/foo.mp3", False),
         ("/tmp/some-file.flac", False),
     ],
 )
