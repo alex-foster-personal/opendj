@@ -17,6 +17,9 @@ from typing import Any
 from . import paths as sets_paths
 from . import record as record_mod
 from . import retention as retention_mod
+from .classify import classify_session
+from .classify import model as classify_model
+from .label import label_session
 from .state import SetsState
 
 
@@ -172,7 +175,60 @@ def _build_parser() -> argparse.ArgumentParser:
     sp_prune.add_argument("--apply", action="store_true")
     sp_prune.set_defaults(func=_dispatch_prune)
 
+    sp_classify = sub.add_parser(
+        "classify", help="classify transitions for a session"
+    )
+    sp_classify.add_argument("session_id")
+    sp_classify.add_argument("--force-rules", action="store_true")
+    sp_classify.set_defaults(func=_dispatch_classify)
+
+    sp_label = sub.add_parser("label", help="hand-label transitions")
+    sp_label.add_argument("session_id")
+    sp_label.add_argument("--relabel", action="store_true")
+    sp_label.set_defaults(func=_dispatch_label)
+
+    sp_train = sub.add_parser("train", help="train the transition classifier")
+    sp_train.add_argument(
+        "--sessions",
+        nargs="+",
+        default=None,
+        help="session_ids to include; default = every session with labels.jsonl",
+    )
+    sp_train.set_defaults(func=_dispatch_train)
+
     return p
+
+
+def _dispatch_classify(args: argparse.Namespace) -> int:
+    state = SetsState()
+    out = classify_session(
+        args.session_id,
+        state=state,
+        force_rules=args.force_rules,
+    )
+    print(f"wrote {out}")
+    return 0
+
+
+def _dispatch_label(args: argparse.Namespace) -> int:
+    label_session(args.session_id, relabel=args.relabel)
+    return 0
+
+
+def _dispatch_train(args: argparse.Namespace) -> int:
+    sessions = args.sessions
+    if sessions is None:
+        state = SetsState()
+        sessions = [s.session_id for s in state.list_sessions()]
+    report = classify_model.train(sessions)
+    print(json.dumps({
+        "n_training_sessions": report.n_training_sessions,
+        "n_labeled_transitions": report.n_labeled_transitions,
+        "macro_f1": report.macro_f1,
+        "accepted": report.accepted,
+        "model_path": str(report.model_path) if report.model_path else None,
+    }, indent=2))
+    return 0 if report.accepted else 2
 
 
 def main(argv: list[str] | None = None) -> int:
