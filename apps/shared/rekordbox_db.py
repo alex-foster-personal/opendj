@@ -31,13 +31,18 @@ class RBTrack:
     artist: str
     album: str
     genre: str
-    folder_path: str  # raw FolderPath — may be absolute path, URI, or empty
+    folder_path: str  # raw FolderPath -- may be absolute path, URI, or empty
     file_path: Path | None  # None for streaming / empty
     is_streaming: bool
     bpm: float | None
     rating: int | None
     file_size: int | None
     date_added: str | None
+    # Phase 15 widening: ISRC (tier-1 stable_id seed, Phase 9 spotify match)
+    # and duration in seconds (Phase 2 matcher signal #4). Optional with
+    # defaults so existing RBTrack(...) callsites stay backward-compatible.
+    isrc: str | None = None
+    duration_s: float | None = None
 
 
 @dataclass(slots=True)
@@ -112,9 +117,19 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
         folder_path = t.FolderPath or ""
         streaming = is_streaming_path(folder_path)
 
-        # BPM is stored as BPM*100 integer. Anything else → None.
+        # BPM is stored as BPM*100 integer. Anything else -> None.
         bpm_raw = _coerce_int(t.BPM)
         bpm = bpm_raw / 100.0 if bpm_raw else None
+
+        # Length is stored in milliseconds on DjmdContent; surface as
+        # seconds for Phase 2 matcher + Phase 15 adapter. Some pyrekordbox
+        # builds expose ``Length`` (ms) while older rows may be missing --
+        # fall back to None when unavailable.
+        length_ms = _coerce_int(getattr(t, "Length", None))
+        duration_s = (length_ms / 1000.0) if length_ms else None
+
+        isrc_raw = getattr(t, "ISRC", None)
+        isrc = isrc_raw.strip() if isinstance(isrc_raw, str) and isrc_raw.strip() else None
 
         yield RBTrack(
             id=str(t.ID),
@@ -129,6 +144,8 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
             rating=_coerce_int(t.Rating),
             file_size=_coerce_int(t.FileSize),
             date_added=_date_to_str(t.DateCreated),
+            isrc=isrc,
+            duration_s=duration_s,
         )
 
 

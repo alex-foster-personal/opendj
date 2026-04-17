@@ -82,13 +82,15 @@ def from_rbtrack(rb) -> RBTrackInput:
     artists_raw = rb.artist or ""
     artists = [a.strip() for a in artists_raw.split(",") if a.strip()] or [artists_raw]
     fp = rb.file_path
+    # ISRC + duration surfaced on RBTrack as of Phase 15.2 widening.
+    duration_ms = int(round(rb.duration_s * 1000)) if rb.duration_s else 0
     return RBTrackInput(
         rb_id=str(rb.id),
         title=rb.title or "",
         artists=artists,
         album=rb.album or "",
-        isrc=None,  # pyrekordbox ISRC lives on DjmdContent.ISRC -- wire in Phase 16.
-        duration_ms=0,  # RBTrack doesn't surface Length directly.
+        isrc=rb.isrc,
+        duration_ms=duration_ms,
         file_path=str(fp) if fp else None,
         size_bytes=rb.file_size,
         mtime=None,
