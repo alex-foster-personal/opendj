@@ -84,7 +84,14 @@ def test_main_live_without_mode_aborts(tmp_path: Path):
     assert rc == 2
 
 
-def test_main_bulk_without_cautious_aborts(tmp_path: Path):
+def test_bulk_all_tracks_without_only_tracks_flag_permitted(tmp_path: Path):
+    """Regression for adversarial #4 (HIGH): the previous gate refused
+    ``--bulk`` without ``--tracks``, which blocked the legitimate
+    bulk-all-tracks workflow. ``--bulk`` paired with
+    ``--i-understand-the-risks`` and no ``--tracks`` MUST proceed (empty
+    diff exits 0; the ``--i-understand-the-risks`` requirement is the
+    real safety gate and is enforced in main()).
+    """
     path = _make_diff(tmp_path, [])
     rc = main(
         [
@@ -94,8 +101,8 @@ def test_main_bulk_without_cautious_aborts(tmp_path: Path):
             "--i-understand-the-risks",
         ]
     )
-    # bulk without tracks set (no prior cautious) -> aborts with 2
-    assert rc == 2
+    assert rc != 2, "bulk-all-tracks must not be blocked by the --tracks gate"
+    assert rc == 0
 
 
 def test_main_missing_csv_dry_run(tmp_path: Path, capsys):

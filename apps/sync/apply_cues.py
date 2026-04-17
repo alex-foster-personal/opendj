@@ -1,8 +1,13 @@
 """Phase 4 SYNC-04 bulk cue sync CLI.
 
 Dry-run default. Live modes require ``--live --cautious --tracks ...``
-(5-10 track cautious pass) or ``--live --bulk`` (gated behind cautious
-having been completed).
+(5-10 track cautious pass) or ``--live --bulk`` (paired with
+``--i-understand-the-risks``; optionally narrowed by ``--tracks``).
+
+Prior to v1.0 adversarial review fix #4, ``--bulk`` without ``--tracks``
+was erroneously gated -- that gate has been removed because it blocked
+the legitimate bulk-all-tracks workflow and the real safety rail is
+``--i-understand-the-risks`` (enforced in main()).
 """
 from __future__ import annotations
 
@@ -60,14 +65,13 @@ def live_run(
     if not cautious and not bulk:
         print("[apply_cues] need --cautious or --bulk with --live", file=sys.stderr)
         return 2
-    if bulk and only_tracks is None:
-        # Gate: require the user to have already run cautious.
-        print(
-            "[apply_cues] --bulk requires prior cautious pass. "
-            "Run --cautious --tracks UUID1,UUID2,... first.",
-            file=sys.stderr,
-        )
-        return 2
+    # v1.0 adversarial review (#4, HIGH): the previous gate refused
+    # ``--bulk`` whenever ``only_tracks is None``, which blocked the
+    # legitimate bulk-all-tracks workflow (``--bulk`` paired with
+    # ``--i-understand-the-risks`` and NO ``--tracks``). Mirrors
+    # ``apply_ratings``: the ``--i-understand-the-risks`` requirement is
+    # enforced in ``main`` before reaching here, so no extra gate is
+    # needed. Callers can still narrow with ``--tracks`` if desired.
 
     # [I1 fix] Loud banner so users cannot mistake this CLI path for a real
     # write. The actual rb_writer.write_cues / djay_writer.patch_cue_points
