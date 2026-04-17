@@ -54,25 +54,85 @@ class TestMakeBus:
         b = bus.make_bus(force_stub=True)
         assert isinstance(b, bus.JsonlStubBus)
 
-    def test_falls_back_when_state_events_missing(self, monkeypatch):
-        """Simulate the Phase-5-not-yet-shipped case.
+    def test_returns_state_backed_when_phase5_available(self, monkeypatch, tmp_path):
+        """Phase 5 is shipped, so the happy path is StateBackedBus.
 
-        Phase 5 currently ships only schema/db/ids/paths; the `events`
-        submodule is absent so real construction raises ImportError and
-        make_bus must fall back to the JSONL stub.
+        We point the state DB at ``tmp_path`` to avoid touching the
+        developer's real ``data/state/state.db``.
         """
+        monkeypatch.setattr(
+            "apps.shared.state.paths.STATE_DB", tmp_path / "state.db"
+        )
+        # The module-level constant used by db.open_rw's default path
+        # lives in apps.shared.state.paths; the db module re-imports it,
+        # so patch both spellings to be safe.
+        from apps.shared.state import db as state_db
+        from apps.shared.state import paths as state_paths
+        monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         warnings: list[str] = []
+        b = bus.make_bus(warn=warnings.append)
+        try:
+            assert isinstance(b, bus.StateBackedBus)
+            assert warnings == []
+        finally:
+            b.close()
 
-        # StateBackedBus __init__ will try `from apps.shared.state import events`.
-        # That import is expected to fail at time of this phase since
-        # Phase 5's events layer is not yet shipped. Verify the fallback.
+    def test_falls_back_when_state_db_cannot_open(self, monkeypatch):
+        """A broken state layer must fall back to JSONL with one warning."""
+        def _boom(*a, **kw):  # noqa: ANN001,ANN002,ANN003
+            raise RuntimeError("state DB not available")
+
+        monkeypatch.setattr(
+            "apps.shared.state.db.open_rw", _boom
+        )
+        warnings: list[str] = []
         b = bus.make_bus(warn=warnings.append)
         assert isinstance(b, bus.JsonlStubBus)
         assert any("JSONL stub" in w for w in warnings)
 
-    def test_warning_is_once_per_run(self):
+    def test_warning_is_once_per_run(self, monkeypatch):
+        def _boom(*a, **kw):  # noqa: ANN001,ANN002,ANN003
+            raise RuntimeError("state DB not available")
+
+        monkeypatch.setattr(
+            "apps.shared.state.db.open_rw", _boom
+        )
         warnings: list[str] = []
         bus.make_bus(warn=warnings.append)
         bus.make_bus(warn=warnings.append)
         # One warning only for the fallback path.
         assert sum("JSONL stub" in w for w in warnings) == 1
+
+
+class TestStateBackedBus:
+    def test_publish_writes_to_events_table(self, tmp_path, monkeypatch):
+        from apps.shared.state import paths as state_paths
+        monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
+        b = bus.StateBackedBus()
+        try:
+            eid = b.publish({"kind": "SEARCH", "slots": {"query": "x"}})
+            assert eid >= 1
+            import sqlite3 as _sqlite3
+            with _sqlite3.connect(str(tmp_path / "state.db")) as conn:
+                rows = conn.execute(
+                    "SELECT kind, actor FROM events WHERE actor = 'voice'"
+                ).fetchall()
+            assert rows == [("SEARCH", "voice")]
+        finally:
+            b.close()
+
+    def test_recent_filters_by_kind(self, tmp_path, monkeypatch):
+        from apps.shared.state import paths as state_paths
+        monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
+        b = bus.StateBackedBus()
+        try:
+            b.publish({"kind": "SEARCH"})
+            b.publish({"kind": "READ_BPM", "slots": {}})
+            b.publish({"kind": "SEARCH"})
+            searches = b.recent("SEARCH")
+            reads = b.recent("READ_BPM")
+            assert len(searches) == 2
+            assert len(reads) == 1
+            assert reads[0]["kind"] == "READ_BPM"
+        finally:
+            b.close()

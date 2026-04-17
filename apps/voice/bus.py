@@ -1,22 +1,21 @@
 """Event bus adapter.
 
 Voice intents publish JSON events to the shared-state event bus
-(``apps/shared/state/events``, Phase 5). Phase 5 has only partially
-shipped at the time Phase 14 starts, so we always fall back to a
-JSONL stub under ``data/voice/events.jsonl`` when the real bus does
-not import cleanly.
+(:mod:`apps.shared.state.events`, Phase 5). ``StateBackedBus`` now
+writes into Phase 5's durable ``events`` table via
+:func:`apps.shared.state.db.open_rw` and fans events out on an
+:class:`apps.shared.state.events.EventBus` instance.
 
-This is the D6 integration boundary from CONTEXT. Follow the stub
-policy: import is lazy, failure is logged once, tests mock.
-
-TODO(phase-5): wire ``StateBackedBus`` through ``apps.shared.state.events``
-when that module lands. Today Phase 5 only ships ``schema`` / ``db`` /
-``ids`` / ``paths``. See phase-5 CONTEXT.
+This is the D6 integration boundary from CONTEXT. A ``JsonlStubBus``
+fallback remains for the ``--dry-bus`` / test-without-state-db path,
+but Phase 5 is shipped and the real bus is now the default.
 """
 from __future__ import annotations
 
 import json
 import os
+import sqlite3
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,57 +95,119 @@ class InMemoryBus:
 class StateBackedBus:
     """Adapter for the Phase 5 state layer.
 
-    Imports ``apps.shared.state.events.publish`` at construction time.
-    If that module does not exist yet, the factory falls back to the
-    stub bus and logs a once-per-run warning.
+    Holds one :class:`apps.shared.state.events.EventBus` for in-process
+    fanout and one :class:`sqlite3.Connection` (opened through
+    :func:`apps.shared.state.db.open_rw`) for durable appends to the
+    ``events`` table. ``recent`` reads back from the same table so
+    voice consumers (``/voice/recent``) see every publish -- including
+    events other phases wrote.
 
-    TODO(phase-5): when Phase 5 ships ``events`` + ``writer``, swap this
-    to a real wrapper that also reads the ``events`` table for ``recent``.
+    ``publish`` continues to accept a dict (Phase 14 callers have not
+    adopted :class:`apps.shared.state.types.Event` yet) and returns the
+    monotonic row id SQLite hands back, matching the Phase 14
+    :class:`EventBus` protocol.
     """
 
-    def __init__(self) -> None:
-        # Imported here so the absence of the module is a RuntimeError we
-        # can catch in ``make_bus`` -- NOT a module-load-time failure.
-        from apps.shared.state import events as _events  # type: ignore[attr-defined]
+    def __init__(
+        self,
+        *,
+        db_path: Path | None = None,
+    ) -> None:
+        # Imported lazily so earlier phases of the repo (or a test env
+        # where apps.shared.state was deleted) surface ImportError to
+        # make_bus, which catches and falls back to the JSONL stub.
+        from apps.shared.state import db as _state_db
+        from apps.shared.state.events import EventBus as _EventBus
+        from apps.shared.state.types import Event as _Event
 
-        if not hasattr(_events, "publish"):
-            raise RuntimeError(
-                "apps.shared.state.events lacks publish(); Phase 5 "
-                "events layer not yet shipped. Falling back to JSONL stub."
-            )
-        self._publish = _events.publish
-        self._recent = getattr(_events, "recent", None)
+        self._Event = _Event
+        self._conn = _state_db.open_rw(
+            Path(db_path) if db_path is not None else None
+        )
+        self._bus = _EventBus()
+        self._lock = threading.Lock()
 
     def publish(self, event: dict) -> int:
         enriched = dict(event)
         enriched.setdefault("ts", _now_iso())
         enriched.setdefault("source", "voice")
-        return int(self._publish(enriched))
+        kind = str(enriched.get("kind", ""))
+        stable_id = enriched.get("stable_id")
+        # payload is the full enriched dict so ``recent`` can reconstruct
+        # the caller's original shape (slots, bpm, arbitrary extras).
+        payload_json = json.dumps(enriched, sort_keys=True)
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    enriched["ts"],
+                    kind,
+                    stable_id,
+                    payload_json,
+                    "voice",
+                ),
+            )
+            new_id = int(cur.lastrowid or 0)
+        enriched["id"] = new_id
+        safe_stable_id = stable_id if isinstance(stable_id, (str, type(None))) else None
+        self._bus.publish(
+            self._Event(
+                ts=enriched["ts"],
+                kind=kind,
+                stable_id=safe_stable_id,
+                payload=enriched,
+                actor="voice",
+            )
+        )
+        return new_id
 
     def recent(self, kind: str, limit: int = 10) -> list[dict]:
-        if self._recent is None:
-            return []
-        return list(self._recent(kind=kind, limit=limit))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, payload_json FROM events "
+                "WHERE kind = ? AND actor = 'voice' "
+                "ORDER BY id DESC LIMIT ?",
+                (kind, int(limit)),
+            ).fetchall()
+        out: list[dict] = []
+        for row in reversed(rows):
+            try:
+                payload = json.loads(row[1]) if row[1] else {}
+            except json.JSONDecodeError:
+                payload = {}
+            payload["id"] = int(row[0])
+            out.append(payload)
+        return out
+
+    def close(self) -> None:
+        try:
+            self._bus.close()
+        finally:
+            self._conn.close()
 
 
 _WARNED_STUB = False
 
 
 def make_bus(force_stub: bool = False, warn=print) -> EventBus:
-    """Factory: StateBackedBus when possible, else JsonlStubBus.
+    """Factory: :class:`StateBackedBus` when Phase 5 is importable,
+    :class:`JsonlStubBus` otherwise.
 
-    ``force_stub`` is used by ``--dry-bus`` + tests. Emits a one-shot
-    warning the first time the stub fallback activates.
+    Phase 5 is shipped, so the expected path is ``StateBackedBus``. The
+    fallback only trips when ``apps.shared.state`` cannot import or the
+    state DB cannot be opened (e.g. read-only filesystem during a test
+    sandbox), or when ``force_stub`` / ``--dry-bus`` is set.
     """
     global _WARNED_STUB
     if force_stub:
         return JsonlStubBus()
     try:
         return StateBackedBus()
-    except (RuntimeError, ImportError, AttributeError) as exc:
+    except (RuntimeError, ImportError, AttributeError, sqlite3.Error, OSError) as exc:
         if not _WARNED_STUB:
             warn(
-                "[voice] Phase 5 state layer missing or incomplete "
+                "[voice] Phase 5 state layer unavailable "
                 f"({exc}); writing to JSONL stub bus at data/voice/events.jsonl"
             )
             _WARNED_STUB = True
