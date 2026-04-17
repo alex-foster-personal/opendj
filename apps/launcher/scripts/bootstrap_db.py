@@ -199,7 +199,11 @@ def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
     if they are missing. Returns a dict flagging what we actually added
     this invocation so callers can log.
     """
-    result = {"tracks_fts_created": False, "tracks_frecency_created": False}
+    result = {
+        "tracks_fts_created": False,
+        "tracks_frecency_created": False,
+        "tracks_fts_backfilled": 0,
+    }
     if not db_path.exists():
         return result
     conn = sqlite3.connect(str(db_path))
@@ -242,6 +246,50 @@ def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
         )
         result["tracks_frecency_created"] = not had_frec
         conn.commit()
+
+        # P17-01: Always backfill ``tracks_fts`` when it is empty but the
+        # core ``tracks`` table has rows. Without this, a launcher that
+        # finds Phase 5's ``state.db`` reports SHARED_STATE_READY while
+        # every palette search returns zero results -- the FTS index was
+        # created (or already existed) but never populated. Idempotent:
+        # a non-empty FTS table short-circuits the backfill.
+        if _table_exists(conn, "tracks"):
+            fts_count = conn.execute(
+                "SELECT COUNT(*) FROM tracks_fts"
+            ).fetchone()[0]
+            tracks_count = conn.execute(
+                "SELECT COUNT(*) FROM tracks"
+            ).fetchone()[0]
+            if fts_count == 0 and tracks_count > 0:
+                # Phase 5's ``tracks`` table only guarantees ``title`` and
+                # ``album``; ``artist``, ``genre``, ``key`` arrive via the
+                # EAV ``track_fields`` table or denormalised columns added
+                # by later migrations. We probe the live schema and fall
+                # back to '' for absent columns so the backfill works on
+                # any Phase 5 / launcher-bootstrap variant.
+                cols = {
+                    r[1] for r in conn.execute(
+                        "PRAGMA table_info(tracks)"
+                    ).fetchall()
+                }
+
+                def _col_or_empty(name: str) -> str:
+                    return f"COALESCE({name}, '')" if name in cols else "''"
+
+                conn.execute(
+                    f"""INSERT INTO tracks_fts(rowid, title, artist, album,
+                                               genre, key, tags)
+                        SELECT rowid,
+                               {_col_or_empty('title')},
+                               {_col_or_empty('artist')},
+                               {_col_or_empty('album')},
+                               {_col_or_empty('genre')},
+                               {_col_or_empty('key')},
+                               ''
+                          FROM tracks"""
+                )
+                conn.commit()
+                result["tracks_fts_backfilled"] = tracks_count
     finally:
         conn.close()
     return result
@@ -265,6 +313,12 @@ def main() -> int:
         if has_tracks:
             added = apply_launcher_migration(SHARED_DB)
             extras = [k for k, v in added.items() if v]
+            if added.get("tracks_fts_backfilled"):
+                print(
+                    "[bootstrap] backfilled tracks_fts with "
+                    f"{added['tracks_fts_backfilled']} rows",
+                    file=sys.stderr,
+                )
             if extras:
                 print(
                     "[bootstrap] using Phase 5 state.db; "

@@ -223,9 +223,19 @@ pub(crate) fn split_for_nml(path: &str) -> (String, String, String) {
     (volume, dir, file)
 }
 
+/// F18-02: Detect an existing `<LOCATION>` for `file_path` in a Traktor
+/// `collection.nml`. Matches on the full ``DIR="..." FILE="..."`` pair so
+/// two tracks with the same basename in different directories do not
+/// silently collide. The previous implementation matched on ``FILE`` alone,
+/// which made `~/Library/A/song.mp3` shadow `~/Library/B/song.mp3` --
+/// the second drag was dropped as "already in collection".
 pub(crate) fn nml_has_entry(content: &str, file_path: &str) -> bool {
-    let (_, _dir, file) = split_for_nml(file_path);
-    let needle = format!("FILE=\"{}\"", nml_escape(&file));
+    let (_volume, dir, file) = split_for_nml(file_path);
+    let needle = format!(
+        "DIR=\"{}\" FILE=\"{}\"",
+        nml_escape(&dir),
+        nml_escape(&file),
+    );
     content.contains(&needle)
 }
 
@@ -322,10 +332,96 @@ mod traktor_tests {
 
     #[test]
     fn nml_has_entry_detects_existing_file() {
-        let (_v, _d, file) = split_for_nml("/Users/test/Music/Library/song.mp3");
-        let content = format!("<LOCATION FILE=\"{}\"/>", nml_escape(&file));
+        // Build a realistic LOCATION node (the same shape build_nml_entry
+        // emits) so dedup matches DIR + FILE together (F18-02).
+        let (_v, dir, file) = split_for_nml("/Users/test/Music/Library/song.mp3");
+        let content = format!(
+            "<LOCATION DIR=\"{}\" FILE=\"{}\" VOLUME=\"\"/>",
+            nml_escape(&dir),
+            nml_escape(&file),
+        );
         assert!(nml_has_entry(&content, "/Users/test/Music/Library/song.mp3"));
         assert!(!nml_has_entry(&content, "/other/file.mp3"));
+    }
+
+    /// F18-02 regression: same basename in two different directories must
+    /// NOT collide. Before the fix, the second drag was treated as
+    /// "already in collection" and silently dropped.
+    #[test]
+    fn nml_has_entry_distinguishes_same_basename_in_different_dirs() {
+        let path_a = "/Users/test/Music/Library/A/song.mp3";
+        let path_b = "/Users/test/Music/Library/B/song.mp3";
+
+        let track_a = Track {
+            file_path: PathBuf::from(path_a),
+            title: "Song A".into(),
+            artist: "Artist A".into(),
+            album: String::new(),
+            vendor_ids: Default::default(),
+            size_bytes: None,
+            total_time_secs: Some(180),
+        };
+        let entry_a = build_nml_entry(&track_a);
+
+        // Only A's entry is in the collection. B (same basename, diff dir)
+        // must report as NOT present.
+        assert!(nml_has_entry(&entry_a, path_a));
+        assert!(
+            !nml_has_entry(&entry_a, path_b),
+            "dedup must key on full path; same basename collided"
+        );
+    }
+
+    /// F18-02 end-to-end: dragging a same-basename-different-dir track when
+    /// one is already in `collection.nml` must append a new ENTRY rather
+    /// than reporting "already in collection".
+    #[test]
+    fn append_nml_fallback_does_not_collide_on_basename() {
+        let tmp = TempDir::new().unwrap();
+        let nml_path = tmp.path().join("collection.nml");
+
+        let track_a = Track {
+            file_path: PathBuf::from("/Users/test/Music/Library/A/song.mp3"),
+            title: "Song A".into(),
+            artist: "Artist A".into(),
+            album: String::new(),
+            vendor_ids: Default::default(),
+            size_bytes: None,
+            total_time_secs: Some(180),
+        };
+        let track_b = Track {
+            file_path: PathBuf::from("/Users/test/Music/Library/B/song.mp3"),
+            title: "Song B".into(),
+            artist: "Artist B".into(),
+            album: String::new(),
+            vendor_ids: Default::default(),
+            size_bytes: None,
+            total_time_secs: Some(200),
+        };
+
+        // Pre-seed A into the collection.
+        let seeded = minimal_nml().replace(
+            "  </COLLECTION>\n",
+            &format!("{}  </COLLECTION>\n", build_nml_entry(&track_a)),
+        );
+        fs::write(&nml_path, &seeded).unwrap();
+
+        let adapter = adapter_for(nml_path.clone(), tmp.path());
+        let host = MockHost::new();
+        let outcome = adapter.append_nml_fallback(&host, &track_b).unwrap();
+        match outcome {
+            DragOutcome::Fallback1Taken { detail } => {
+                assert!(
+                    detail.contains("appended to"),
+                    "expected B to be appended, got {detail}"
+                );
+            }
+            other => panic!("expected Fallback1Taken append, got {:?}", other),
+        }
+        let after = fs::read_to_string(&nml_path).unwrap();
+        // Both A and B now in the collection (distinct DIR attributes).
+        assert!(after.contains("TITLE=\"Song A\""));
+        assert!(after.contains("TITLE=\"Song B\""));
     }
 
     #[test]

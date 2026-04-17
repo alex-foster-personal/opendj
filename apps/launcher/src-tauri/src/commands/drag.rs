@@ -152,28 +152,89 @@ fn launcher_data_dir() -> PathBuf {
     repo.join("data").join("launcher")
 }
 
+/// Resolve `$HOME` from the environment. Returned as `Option` so non-macOS
+/// builds (or stripped CI environments) gracefully degrade to no fallback-1.
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+/// F18-01: Discover the standard Rekordbox export-XML path
+/// (`~/Music/rekordbox/rekordbox.xml`). Returns `None` when the file does
+/// not exist on disk so the dispatcher correctly skips fallback-1 instead
+/// of attempting to write to a phantom path.
+fn discover_rekordbox_xml() -> Option<PathBuf> {
+    let p = home_dir()?.join("Music").join("rekordbox").join("rekordbox.xml");
+    p.exists().then_some(p)
+}
+
+/// F18-01: Discover the newest Traktor `collection.nml` under
+/// `~/Documents/Native Instruments/Traktor <version>/collection.nml`. Picks
+/// the version directory whose name sorts last (Traktor uses semantic version
+/// suffixes like ``Traktor 3.11.1``). Returns `None` if no such directory or
+/// `collection.nml` is found.
+fn discover_traktor_nml() -> Option<PathBuf> {
+    let root = home_dir()?
+        .join("Documents")
+        .join("Native Instruments");
+    let entries = std::fs::read_dir(&root).ok()?;
+
+    let mut candidates: Vec<(String, PathBuf)> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.starts_with("Traktor ") {
+                return None;
+            }
+            let nml = e.path().join("collection.nml");
+            nml.exists().then_some((name, nml))
+        })
+        .collect();
+
+    // Lexicographic sort approximates semver for ``X.Y.Z`` triples up to 9.
+    // Good enough for picking the newest install; users with multiple major
+    // versions installed are vanishingly rare and can override via config.
+    candidates.sort_by(|a, b| a.0.cmp(&b.0));
+    candidates.pop().map(|(_, p)| p)
+}
+
 /// Build the `Dispatcher` used by `start_track_drag`, with the Rekordbox and
 /// Traktor adapters configured to write backups/reversals/audit under the
 /// absolute `<repo>/data/launcher/` tree instead of inheriting the drag-core
-/// CWD-relative defaults. `xml_path` / `nml_path` are intentionally left as
-/// `None` so fallback-1 no-ops until Phase 17 wiring populates them; the
-/// dispatcher will drop to clipboard in that case.
+/// CWD-relative defaults. `xml_path` / `nml_path` are now resolved via the
+/// `discover_*` helpers below (F18-01); when neither file exists the
+/// dispatcher cleanly drops to the clipboard fallback as before.
 fn build_dispatcher_with_absolute_paths() -> Dispatcher {
     let data = launcher_data_dir();
     let backup_dir = data.join("backups");
     let reversal_dir = data.join("reversals");
     let audit_log = Some(data.join("audit.jsonl"));
 
-    let rekordbox = RekordboxAdapter::default().with_sidecar_dirs(
-        backup_dir.clone(),
-        reversal_dir.clone(),
-        audit_log.clone(),
-    );
-    let traktor = TraktorAdapter::default().with_sidecar_dirs(
-        backup_dir,
-        reversal_dir,
-        audit_log,
-    );
+    let rekordbox = match discover_rekordbox_xml() {
+        Some(xml) => RekordboxAdapter::with_paths(
+            xml,
+            backup_dir.clone(),
+            reversal_dir.clone(),
+            audit_log.clone(),
+        ),
+        None => RekordboxAdapter::default().with_sidecar_dirs(
+            backup_dir.clone(),
+            reversal_dir.clone(),
+            audit_log.clone(),
+        ),
+    };
+    let traktor = match discover_traktor_nml() {
+        Some(nml) => TraktorAdapter::with_paths(
+            nml,
+            backup_dir,
+            reversal_dir,
+            audit_log,
+        ),
+        None => TraktorAdapter::default().with_sidecar_dirs(
+            backup_dir,
+            reversal_dir,
+            audit_log,
+        ),
+    };
 
     Dispatcher::new(vec![
         Box::new(DjayAdapter::new()),
