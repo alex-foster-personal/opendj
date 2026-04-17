@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-04-17
+
+Patch release capturing post-v1.0 safety rails, robustness fixes, refactors,
+hygiene, and documentation. ~30 PRs merged since v1.0 (tag `ecbd31d`). See
+[`RELEASE-NOTES-v1.0.1.md`](RELEASE-NOTES-v1.0.1.md) for the full ledger.
+
+### Added
+- P1-A `apply_plan` self-guard against in-place writes (#110).
+- P1-B `DjayPlaylistWriter` self-guard (#111).
+- P2 djay-db write-path contract enforcement (#116).
+- TSAF constant startup validation (#124).
+- `.env.sample` documentation (#124).
+- `MILESTONES.md` release ledger (#119).
+- `CODEBASE-MAP-v1` full module tree audit (#126).
+- 76 new regression tests (2251 → 2327 passing).
+
+### Changed
+- Voice daemon degrades gracefully on missing `sounddevice` (rc=0) (#113).
+- `matcher.py` decomposed into focused modules (#120).
+- `scratch/` and `demo/` relocated out of `apps/` (#109).
+- `pyproject.toml` dependency cleanup (#123).
+- `.mailmap` unified to a single canonical identity (#107, #118).
+- Sleep-based tests converted to event-wait patterns (#115).
+- Frozen datetime + 5 additional MEDIUM/LOW diagnose cleanups (#125).
+
+### Fixed
+- LIC-1 license-isolation documentation gap closed (#124).
+
+### Documentation
+- Health audit (#106), forensics audit (#105), progress report (#114),
+  diagnose audit (#121), codebase-map (#126).
+
 ## [1.0.0] - 2026-04-17
 
 Stable v1.0 release. Rolls up the rc3 line plus 39 commits of final adversarial
