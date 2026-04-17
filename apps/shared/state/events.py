@@ -43,9 +43,10 @@ class EventBus:
     # --- public API -------------------------------------------------
 
     def publish(self, event: Event) -> None:
-        if self._closed:
-            raise RuntimeError("EventBus is closed")
-        self._q.put(event)
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("EventBus is closed")
+            self._q.put(event)
 
     def subscribe(self, kind: str, callback: Callback) -> None:
         with self._lock:
@@ -53,10 +54,11 @@ class EventBus:
 
     def close(self, timeout: float | None = 5.0) -> None:
         """Drain the queue and stop the worker thread."""
-        if self._closed:
-            return
-        self._closed = True
-        self._q.put(_SHUTDOWN)
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._q.put(_SHUTDOWN)
         self._thread.join(timeout=timeout)
 
     # --- worker -----------------------------------------------------

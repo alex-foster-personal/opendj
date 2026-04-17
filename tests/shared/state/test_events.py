@@ -95,6 +95,34 @@ def test_publish_after_close_raises() -> None:
         bus.publish(_make_event())
 
 
+def test_publish_close_race_does_not_corrupt_state() -> None:
+    """Regression: publish and close both guard _closed under the lock.
+
+    If publish reads _closed without the lock (TOCTOU), a concurrent
+    close() could set _closed=True between the check and the put(),
+    leaving an event in the queue after the SHUTDOWN sentinel.
+    """
+    bus = EventBus()
+    errors: list[BaseException] = []
+
+    def publisher() -> None:
+        for _ in range(50):
+            try:
+                bus.publish(_make_event())
+            except RuntimeError:
+                pass
+            except BaseException as exc:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=publisher) for _ in range(4)]
+    for t in threads:
+        t.start()
+    bus.close(timeout=3.0)
+    for t in threads:
+        t.join(timeout=2.0)
+    assert not errors, f"unexpected errors: {errors}"
+
+
 def test_fake_event_bus_records_inline() -> None:
     bus = FakeEventBus()
     received: list[Event] = []
