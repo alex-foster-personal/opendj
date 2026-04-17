@@ -1,7 +1,7 @@
 source: manual
 applies:
   serato:
-    drops: ["duration_ms", "bpm", "cues"]   # Serato cues live in per-file GEOB frames, not the crate DB
+    drops: ["duration_ms", "bpm"]   # cues now round-trip via per-file GEOB frames (Phase 16 GH#2)
   traktor:
     drops: ["cue_points.color", "bpm"]
   rekordbox:
