@@ -1,0 +1,6 @@
+{
+  "op": "not",
+  "children": [
+    {"field": "genre", "op": "=", "value": "House"}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "op": "and",
+  "children": [
+    {"field": "genre", "op": "=", "value": "House"},
+    {"field": "bpm", "op": "between", "value": [120, 128]}
+  ]
+}

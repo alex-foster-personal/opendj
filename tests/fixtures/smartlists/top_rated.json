@@ -1,0 +1,7 @@
+{
+  "op": "and",
+  "children": [
+    {"field": "rating", "op": ">=", "value": 4},
+    {"field": "added_date", "op": ">", "value": "2025-10-01"}
+  ]
+}

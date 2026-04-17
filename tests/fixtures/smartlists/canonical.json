@@ -1,0 +1,9 @@
+{
+  "op": "and",
+  "children": [
+    {"field": "genre", "op": "=", "value": "House"},
+    {"field": "bpm", "op": "between", "value": [120, 128]},
+    {"field": "rating", "op": ">=", "value": 4},
+    {"field": "added_date", "op": ">", "value": "2025-10-01"}
+  ]
+}
