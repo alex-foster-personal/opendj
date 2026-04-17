@@ -1,0 +1,34 @@
+[package]
+name = "launcher-drag-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Phase 18 drag-drop adapter core for the music-dj-tools launcher. Vendor-agnostic DragAdapter trait + dispatcher + per-vendor adapters + sidecar XML safety."
+
+# Phase 18 notes:
+# - This crate is a LIBRARY, deliberately with NO Tauri dep. It implements
+#   the drag-adapter core logic (dispatcher routing, Rekordbox/Serato/Traktor
+#   per-vendor adapters, sidecar-XML safety utility) behind a `HostBridge`
+#   trait. The host (Phase 17's main launcher bin) wires `tauri-plugin-drag`,
+#   `tauri-plugin-clipboard-manager`, and `objc2 NSWorkspace.runningApplications`
+#   into `HostBridge` at integration time.
+# - Separating this from `apps/launcher/src-tauri/` means Phase 18 tests run
+#   in seconds with zero macOS-SDK linkage, and that Phase 17 can evolve its
+#   shell independently without breaking adapter tests.
+# - Integration plan: after both phases stabilise, Phase 17 adds
+#   `launcher-drag-core = { path = "../drag-core" }` to its Cargo.toml and
+#   calls `Dispatcher::default_set()` from the `start_track_drag` command.
+#   See .planning/phases/18-*/18-VERIFICATION.md for the wiring TODO list.
+
+[lib]
+name = "launcher_drag_core"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3"
