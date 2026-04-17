@@ -337,6 +337,16 @@ def run_apply(
     backup = _timestamped_backup(rb_db, backup_dir)
     result["backup"] = str(backup)
 
+    # v1.0 adversarial review (#3, HIGH): the reversal script must be
+    # emitted BEFORE the live write, not after. If the rewrite crashes
+    # mid-commit (SIGKILL, power loss, pyrekordbox exception during
+    # commit), the operator needs a one-liner to restore master.db from
+    # the timestamped backup we just took. Previously the script was
+    # written only AFTER verify, so a crash mid-write produced a backup
+    # with no recovery path.
+    reversal = _write_reversal_script(backup, rb_db, backup_dir)
+    result["reversal"] = str(reversal)
+
     count, errors = _apply_rewrites_live(plan, rb_db_path=rb_db)
     result["applied"] = count
     result["errors"].extend(errors)
@@ -347,8 +357,6 @@ def run_apply(
         result["errors"].extend(bad)
         shutil.copy2(backup, rb_db)
 
-    reversal = _write_reversal_script(backup, rb_db, backup_dir)
-    result["reversal"] = str(reversal)
     return result
 
 
