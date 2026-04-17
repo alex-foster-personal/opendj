@@ -315,8 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.stable_ids:
         records = fetch_records_by_ids(args.stable_ids, backend=args.backend)
     else:
-        from apps.shared.state import analysis_shim as _shim
-        rows = _shim.fetch_records(backend=args.backend)
+        from apps.analysis import store as _store
+        rows = _store.fetch_records(backend=args.backend)
         records = [AnalysisRecord.from_json(r["record_json"]) for r in rows]
 
     proposals = run(

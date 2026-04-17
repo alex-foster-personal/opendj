@@ -276,8 +276,8 @@ def main(argv: list[str] | None = None) -> int:
         records = fetch_records_by_ids(args.stable_ids, backend=args.backend)
     else:
         # No ids given -> dump every row for this backend.
-        from apps.shared.state import analysis_shim as _shim
-        rows = _shim.fetch_records(backend=args.backend)
+        from apps.analysis import store as _store
+        rows = _store.fetch_records(backend=args.backend)
         records = [AnalysisRecord.from_json(r["record_json"]) for r in rows]
 
     flags = run(

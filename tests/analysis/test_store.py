@@ -1,4 +1,9 @@
-"""State shim + store tests (META-01)."""
+"""State store tests (META-01).
+
+Covers the Phase 6 <-> Phase 5 wire path: upsert + publish_event now
+route through :func:`apps.shared.state.db.open_rw` and fan out on the
+shared :class:`EventBus`.
+"""
 from __future__ import annotations
 
 import dataclasses
@@ -8,13 +13,15 @@ from pathlib import Path
 
 import pytest
 
+from apps.analysis import store as analysis_store
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import (
     fetch_records_by_ids,
+    open_conn,
     publish_event,
     upsert_record,
 )
-from apps.shared.state import analysis_shim
+from apps.shared.state.events import FakeEventBus
 
 
 def _rec(sid: str = "a", *, bpm: float = 120.0) -> AnalysisRecord:
@@ -99,13 +106,49 @@ def test_fetch_filters_by_backend(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-01")
-def test_shim_creates_tables(tmp_path: Path) -> None:
-    conn = analysis_shim.open_conn(tmp_path / "state.db")
+def test_store_creates_tables(tmp_path: Path) -> None:
+    conn = open_conn(tmp_path / "state.db")
     try:
         names = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         )}
         assert "analysis" in names
         assert "analysis_events" in names
+        # Phase 5's durable event log is present because open_conn now
+        # routes through apps.shared.state.db.open_rw.
+        assert "events" in names
     finally:
         conn.close()
+
+
+@pytest.mark.requirement("META-01")
+def test_upsert_publishes_on_shared_bus(tmp_path: Path) -> None:
+    """Every analyze write lands on the Phase 5 :class:`EventBus`."""
+    fake = FakeEventBus()
+    analysis_store.set_event_bus(fake)
+    try:
+        db = tmp_path / "state.db"
+        upsert_record(_rec("sidG"), db_path=db)
+        kinds = [e.kind for e in fake.events]
+        assert kinds == ["analyze"]
+        assert fake.events[0].stable_id == "sidG"
+        assert fake.events[0].actor == "apps.analysis"
+    finally:
+        analysis_store.set_event_bus(None)
+
+
+@pytest.mark.requirement("META-01")
+def test_publish_event_mirrors_into_phase5_events_table(tmp_path: Path) -> None:
+    """publish_event writes both analysis_events and Phase 5's events."""
+    db = tmp_path / "state.db"
+    publish_event(
+        "beatgrid.flag",
+        {"reasons": ["DOWNBEAT_TRANSIENT_GAP"]},
+        stable_id="sidH",
+        db_path=db,
+    )
+    with sqlite3.connect(str(db)) as conn:
+        rows = conn.execute(
+            "SELECT kind, stable_id, actor FROM events WHERE kind='beatgrid.flag'"
+        ).fetchall()
+    assert rows == [("beatgrid.flag", "sidH", "apps.analysis")]
