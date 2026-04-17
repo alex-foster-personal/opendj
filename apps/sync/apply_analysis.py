@@ -16,6 +16,35 @@ from apps.sync.djay_writer import (
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
 
+# ----- Path resolution (mirrors apply_ratings._live_*_db_path) ----------
+#
+# v1.0 adversarial review (#1, CRITICAL): prior ``main`` passed no
+# ``rb_db_path`` / ``djay_db_path`` into ``live_run`` and so silently
+# routed every ``--live`` write into the WORKING DB copies under
+# ``data/`` -- never the user's real library. Fix mirrors
+# ``apps.sync.apply_ratings``: helpers below resolve the correct path
+# per ``--live``, and ``live_run`` now REQUIRES the caller to pass
+# them (no more WORKING defaults silently hiding a missing route).
+
+
+def _live_rb_db_path(live: bool) -> Path:
+    """Return the Rekordbox DB path we will open.
+
+    ``--live`` MUST resolve to :data:`paths.REKORDBOX_LIVE_DB`; otherwise
+    we open the working copy under ``data/``.
+    """
+    return paths.REKORDBOX_LIVE_DB if live else paths.REKORDBOX_WORKING_DB
+
+
+def _live_djay_db_path(live: bool) -> Path:
+    """Return the djay DB path we will open.
+
+    ``--live`` MUST resolve to :data:`paths.DJAY_LIVE_DB`; otherwise we
+    open the working copy under ``data/``.
+    """
+    return paths.DJAY_LIVE_DB if live else paths.DJAY_WORKING_DB
+
+
 def _load_diff(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -192,9 +221,14 @@ def live_run(
     fields: set[str] | None = None,
     only_tracks: set[str] | None = None,
     flag_ok: bool = False,
-    rb_db_path: Path = paths.REKORDBOX_WORKING_DB,
-    djay_db_path: Path = paths.DJAY_WORKING_DB,
+    rb_db_path: Path,
+    djay_db_path: Path,
 ) -> int:
+    # v1.0 adversarial review (#1, CRITICAL): ``rb_db_path`` and
+    # ``djay_db_path`` are required -- callers MUST decide live vs
+    # working explicitly via ``_live_rb_db_path`` / ``_live_djay_db_path``.
+    # Default values were removed here so a missing kwarg in ``main`` is
+    # a loud TypeError instead of a silent WORKING-DB misroute.
     from apps.shared.rekordbox_db import open_db
 
     written = 0
@@ -323,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
             fields=fields,
             only_tracks=only_tracks,
             flag_ok=args.i_understand_the_risks,
+            rb_db_path=_live_rb_db_path(args.live),
+            djay_db_path=_live_djay_db_path(args.live),
         )
     except SafetyAbort as e:
         print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
