@@ -34,7 +34,6 @@ import argparse
 import datetime as _dt
 import json
 import shutil
-import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -43,6 +42,7 @@ from typing import Any
 
 from rich.console import Console
 from rich.table import Table
+from sqlalchemy import text
 
 from apps.shared import paths
 
@@ -152,11 +152,11 @@ def _resolve_db_path(override: Path | None) -> Path:
 # ------------------------------------------------------------------ probe
 
 
-def _capture_footprint(db, db_path: Path, track_id: str) -> Footprint:
+def _capture_footprint(db, track_id: str) -> Footprint:
     """Inspect one RB ID and return its dependency footprint.
 
-    Uses pyrekordbox for ``DjmdContent``/playlist names and raw SQL for the
-    dependent tables (pyrekordbox only surfaces a subset of them).
+    All SQL goes through pyrekordbox's SQLAlchemy engine so encrypted
+    (pysqlcipher) and plain-SQLite fixtures work identically.
     """
     fp = Footprint(id=track_id, exists=False)
     row = db.get_content(ID=track_id)
@@ -165,14 +165,14 @@ def _capture_footprint(db, db_path: Path, track_id: str) -> Footprint:
 
     fp.exists = True
     fp.title = row.Title or ""
-    # Artist is a relationship; pull the display name safely.
     fp.artist = getattr(getattr(row, "Artist", None), "Name", "") or ""
     fp.folder_path = row.FolderPath or ""
 
-    # Snapshot the content row for the reversal script.
-    fp.content_row = _row_to_dict(db_path, "djmdContent", "ID", track_id)[0] if fp.exists else {}
+    # Snapshot the content row itself for the reversal script.
+    content_rows = _rows_by_col(db, "djmdContent", "ID", track_id)
+    fp.content_row = content_rows[0] if content_rows else {}
 
-    # Playlist names via the ORM — iterate get_playlist() and check Songs.
+    # Playlist names via the ORM.
     names: list[str] = []
     for p in db.get_playlist():
         for s in getattr(p, "Songs", []) or []:
@@ -181,81 +181,52 @@ def _capture_footprint(db, db_path: Path, track_id: str) -> Footprint:
                 break
     fp.playlists = sorted(set(names))
 
-    # Raw-SQL counts for cue/beatgrid/analysis — accurate regardless of what
-    # pyrekordbox's ORM exposes.
-    with sqlite3.connect(db_path) as con:
-        cur = con.cursor()
-        # djmdCue stores both hot cues and memory cues for this track. The
-        # fixture has exactly one "beatgrid"-style row per track in
-        # djmdMixerParam; we surface both counts separately.
-        try:
-            fp.cue_points = cur.execute(
-                "SELECT COUNT(*) FROM djmdCue WHERE ContentID=?", (track_id,)
-            ).fetchone()[0]
-        except sqlite3.Error:
-            fp.cue_points = 0
-        try:
-            fp.mixer_param_entries = cur.execute(
-                "SELECT COUNT(*) FROM djmdMixerParam WHERE ContentID=?", (track_id,)
-            ).fetchone()[0]
-        except sqlite3.Error:
-            fp.mixer_param_entries = 0
-        # "beatgrid_entries" in RB's schema is stored inline on djmdContent
-        # (StockDate/Commnt/AnlzFileSize/etc.) + referenced via contentFile
-        # (ANLZ payloads on disk). We count the per-track analysis files.
-        try:
-            fp.analysis_entries = cur.execute(
-                "SELECT COUNT(*) FROM contentFile WHERE ContentID=?", (track_id,)
-            ).fetchone()[0]
-        except sqlite3.Error:
-            fp.analysis_entries = 0
-        # Plain-SQLite "beatgrid" is surfaced via djmdMixerParam on this
-        # schema; there's no dedicated djmdBeatGrid table.
-        fp.beatgrid_entries = fp.mixer_param_entries
+    # Counts via the engine.
+    fp.cue_points = _count_by_col(db, "djmdCue", "ContentID", track_id)
+    fp.mixer_param_entries = _count_by_col(db, "djmdMixerParam", "ContentID", track_id)
+    fp.analysis_entries = _count_by_col(db, "contentFile", "ContentID", track_id)
+    # No dedicated djmdBeatGrid table on this schema — beatgrid data is
+    # carried inline on djmdMixerParam.
+    fp.beatgrid_entries = fp.mixer_param_entries
 
-        # Full per-table row dump for the reversal script.
-        for tbl in MANUAL_CASCADE_TABLES:
-            try:
-                rows = _row_to_dict(db_path, tbl, "ContentID", track_id, _cursor=cur)
-            except sqlite3.Error:
-                rows = []
-            fp.manual_cascade_counts[tbl] = len(rows)
-            if rows:
-                fp.cascade_rows[tbl] = rows
-        # Also snapshot the ORM-cascaded tables so the reversal script can
-        # fully restore them if needed.
-        for tbl in ("djmdCue", "djmdMixerParam"):
-            try:
-                rows = _row_to_dict(db_path, tbl, "ContentID", track_id, _cursor=cur)
-            except sqlite3.Error:
-                rows = []
-            if rows:
-                fp.cascade_rows[tbl] = rows
+    # Row dump for the reversal script — both manual-cascade and
+    # ORM-cascade tables.
+    for tbl in MANUAL_CASCADE_TABLES:
+        rows = _rows_by_col(db, tbl, "ContentID", track_id)
+        fp.manual_cascade_counts[tbl] = len(rows)
+        if rows:
+            fp.cascade_rows[tbl] = rows
+    for tbl in ("djmdCue", "djmdMixerParam"):
+        rows = _rows_by_col(db, tbl, "ContentID", track_id)
+        if rows:
+            fp.cascade_rows[tbl] = rows
 
     return fp
 
 
-def _row_to_dict(
-    db_path: Path,
-    table: str,
-    col: str,
-    value: str,
-    _cursor: sqlite3.Cursor | None = None,
-) -> list[dict[str, Any]]:
-    """Return rows from ``table`` where ``col == value`` as list-of-dicts."""
-    owns = _cursor is None
-    con = sqlite3.connect(db_path) if owns else None
-    cur = _cursor if _cursor is not None else con.cursor()  # type: ignore[union-attr]
+def _rows_by_col(db, table: str, col: str, value: str) -> list[dict[str, Any]]:
+    """Return rows where ``col == value`` as list-of-dicts via the engine."""
     try:
-        cols = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
-        rows = cur.execute(
-            f"SELECT * FROM {table} WHERE {col}=?",  # noqa: S608 — table name is internal
-            (value,),
-        ).fetchall()
-        return [dict(zip(cols, r, strict=True)) for r in rows]
-    finally:
-        if owns and con is not None:
-            con.close()
+        with db.engine.connect() as con:
+            result = con.execute(
+                text(f'SELECT * FROM "{table}" WHERE "{col}" = :v'),  # noqa: S608
+                {"v": value},
+            )
+            return [dict(row._mapping) for row in result]
+    except Exception:  # noqa: BLE001 — missing tables / driver issues
+        return []
+
+
+def _count_by_col(db, table: str, col: str, value: str) -> int:
+    try:
+        with db.engine.connect() as con:
+            result = con.execute(
+                text(f'SELECT COUNT(*) FROM "{table}" WHERE "{col}" = :v'),  # noqa: S608
+                {"v": value},
+            )
+            return int(result.scalar() or 0)
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 # ------------------------------------------------------------------ preview
@@ -396,7 +367,8 @@ def _apply_removals(
     if errors:
         return errors
 
-    # Manual cascade cleanup.
+    # Manual cascade cleanup via pyrekordbox's own engine (works for both
+    # encrypted master.db and plain-SQLite fixtures).
     #
     # Two kinds of cleanup happen here:
     #   (a) Tables pyrekordbox doesn't touch at all (MANUAL_CASCADE_TABLES):
@@ -407,17 +379,17 @@ def _apply_removals(
     #       captured in the footprint. If we skip (b), verification still
     #       passes (no rows match ContentID=<id>) but any reversal script
     #       fails with UNIQUE constraint on ID.
+    db = _open_db(db_path)
     try:
-        with sqlite3.connect(db_path) as con:
-            cur = con.cursor()
+        with db.engine.begin() as con:
             for fp in existing:
                 for tbl in MANUAL_CASCADE_TABLES:
                     try:
-                        cur.execute(
-                            f"DELETE FROM {tbl} WHERE ContentID=?",  # noqa: S608
-                            (fp.id,),
+                        con.execute(
+                            text(f'DELETE FROM "{tbl}" WHERE "ContentID" = :v'),  # noqa: S608
+                            {"v": fp.id},
                         )
-                    except sqlite3.Error as exc:
+                    except Exception as exc:  # noqa: BLE001
                         errors.append((fp.id, f"cascade {tbl}: {exc}"))
                 # (b) clean pyrekordbox's NULL-ContentID orphans.
                 for tbl in ("djmdCue", "djmdMixerParam"):
@@ -427,15 +399,19 @@ def _apply_removals(
                         if not row_id:
                             continue
                         try:
-                            cur.execute(
-                                f"DELETE FROM {tbl} WHERE ID=?",  # noqa: S608
-                                (row_id,),
+                            con.execute(
+                                text(f'DELETE FROM "{tbl}" WHERE "ID" = :v'),  # noqa: S608
+                                {"v": row_id},
                             )
-                        except sqlite3.Error as exc:
+                        except Exception as exc:  # noqa: BLE001
                             errors.append((fp.id, f"orphan-clean {tbl}: {exc}"))
-            con.commit()
-    except sqlite3.Error as exc:
+    except Exception as exc:  # noqa: BLE001
         errors.append(("*", f"cascade commit failed: {exc}"))
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001
+            pass
     return errors
 
 
@@ -461,21 +437,20 @@ def _verify_removed(db_path: Path, footprints: list[Footprint]) -> list[tuple[st
             pass
 
     # Also check the manual cascade tables are clean.
-    with sqlite3.connect(db_path) as con:
-        cur = con.cursor()
+    db2 = _open_db(db_path)
+    try:
         for fp in footprints:
             if not fp.exists:
                 continue
             for tbl in MANUAL_CASCADE_TABLES + ("djmdCue", "djmdMixerParam"):
-                try:
-                    n = cur.execute(
-                        f"SELECT COUNT(*) FROM {tbl} WHERE ContentID=?",  # noqa: S608
-                        (fp.id,),
-                    ).fetchone()[0]
-                except sqlite3.Error:
-                    continue
+                n = _count_by_col(db2, tbl, "ContentID", fp.id)
                 if n:
                     failures.append((fp.id, f"orphans remain in {tbl}: {n}"))
+    finally:
+        try:
+            db2.close()
+        except Exception:  # noqa: BLE001
+            pass
     return failures
 
 
@@ -529,49 +504,64 @@ backup:
     cp "__BACKUP__" "__DB_PATH__"
 
 This script is idempotent — it uses INSERT OR IGNORE so re-running
-won't raise UNIQUE errors.
+won't raise UNIQUE errors. It opens the DB via pyrekordbox so it works
+against both the encrypted live master.db and plain-SQLite fixtures.
 """
 from __future__ import annotations
 
 import json
-import sqlite3
 import sys
+
+from pyrekordbox import Rekordbox6Database
+from sqlalchemy import text
 
 LIVE_DB = r"__DB_PATH__"
 PAYLOAD = json.loads(r"""__PAYLOAD__""")
 
 
-def _insert_row(cur: sqlite3.Cursor, table: str, row: dict) -> int:
+def _insert_row(con, table: str, row: dict) -> int:
     cols = list(row.keys())
-    placeholders = ",".join(["?"] * len(cols))
+    placeholders = ",".join([":c" + str(i) for i in range(len(cols))])
     collist = ",".join('"' + c + '"' for c in cols)
-    sql = "INSERT OR IGNORE INTO " + table + " (" + collist + ") VALUES (" + placeholders + ")"
-    cur.execute(sql, [row[c] for c in cols])
-    return cur.rowcount
+    sql = 'INSERT OR IGNORE INTO "' + table + '" (' + collist + ") VALUES (" + placeholders + ")"
+    params = {"c" + str(i): row[c] for i, c in enumerate(cols)}
+    result = con.execute(text(sql), params)
+    return result.rowcount
 
 
 def main() -> int:
-    con = sqlite3.connect(LIVE_DB)
+    # Detect plain SQLite fixtures (no SQLCipher) by header byte check.
     try:
-        cur = con.cursor()
-        total_inserted = 0
-        for entry in PAYLOAD["entries"]:
-            tid = entry["id"]
-            content = entry.get("content_row") or {}
-            if content:
-                n = _insert_row(cur, "djmdContent", content)
-                print("  djmdContent id=" + str(tid) + ": +" + str(n))
-                total_inserted += n
-            for tbl, rows in (entry.get("cascade_rows") or {}).items():
-                for row in rows:
-                    n = _insert_row(cur, tbl, row)
-                    total_inserted += n
-                print("  " + tbl + " id=" + str(tid) + ": " + str(len(rows)) + " attempted")
-        con.commit()
-        print("Done. Rows inserted: " + str(total_inserted))
+        with open(LIVE_DB, "rb") as fh:
+            header = fh.read(16)
+    except OSError:
+        header = b""
+    is_plain = header.startswith(b"SQLite format 3")
+    db = Rekordbox6Database(path=LIVE_DB, unlock=not is_plain)
+    try:
+        total = 0
+        with db.engine.begin() as con:
+            for entry in PAYLOAD["entries"]:
+                tid = entry["id"]
+                content = entry.get("content_row") or {}
+                if content:
+                    n = _insert_row(con, "djmdContent", content)
+                    print("  djmdContent id=" + str(tid) + ": +" + str(n))
+                    total += n
+                for tbl, rows in (entry.get("cascade_rows") or {}).items():
+                    attempted = 0
+                    for row in rows:
+                        n = _insert_row(con, tbl, row)
+                        total += n
+                        attempted += n
+                    print("  " + tbl + " id=" + str(tid) + ": +" + str(attempted) + " of " + str(len(rows)))
+        print("Done. Rows inserted: " + str(total))
         return 0
     finally:
-        con.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
@@ -599,7 +589,7 @@ def _run_dry_run(
 ) -> int:
     db = _open_db(db_path)
     try:
-        footprints = [_capture_footprint(db, db_path, tid) for tid in track_ids]
+        footprints = [_capture_footprint(db, tid) for tid in track_ids]
     finally:
         try:
             db.close()
@@ -628,7 +618,7 @@ def _run_live(
     # Probe first (no writes).
     db = _open_db(db_path)
     try:
-        footprints = [_capture_footprint(db, db_path, tid) for tid in track_ids]
+        footprints = [_capture_footprint(db, tid) for tid in track_ids]
     finally:
         try:
             db.close()
