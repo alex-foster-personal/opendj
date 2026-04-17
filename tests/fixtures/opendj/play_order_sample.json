@@ -1,0 +1,33 @@
+{
+  "schema_version": "0.1",
+  "playlist_id": "pl-demo",
+  "name": "PLAY IT peak",
+  "generated_by": "play-it",
+  "goal_json": "{\"duration_min\":90,\"peak_at_min\":45,\"floor_energy\":3,\"ceiling_energy\":9,\"open_on_key\":null,\"close_on_energy\":null}",
+  "entries": [
+    {
+      "track_id": "open-dj-t-00000001",
+      "position": 0,
+      "target_key": null,
+      "target_tempo": null,
+      "key_sync": null,
+      "transition_hint": "bpm-match"
+    },
+    {
+      "track_id": "open-dj-t-00000002",
+      "position": 1,
+      "target_key": "8A",
+      "target_tempo": 128.0,
+      "key_sync": true,
+      "transition_hint": "camelot-step-2"
+    },
+    {
+      "track_id": "open-dj-t-00000003",
+      "position": 2,
+      "target_key": null,
+      "target_tempo": null,
+      "key_sync": false,
+      "transition_hint": "hardcut"
+    }
+  ]
+}

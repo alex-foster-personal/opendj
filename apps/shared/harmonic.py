@@ -23,6 +23,22 @@ from dataclasses import dataclass
 
 
 # ---------------------------------------------------------------------------
+# Module-level constants (Phase 13)
+# ---------------------------------------------------------------------------
+# Tight step-to-step BPM window used by the PLAY IT solver + AI-01 filter.
+# The companion bpm_compatibility() keeps its historical 10.0% default so
+# the 45 ported tests remain green; Phase 13's higher layers pass this
+# tighter window explicitly.
+MAX_BPM_DIFF_PCT: float = 6.0
+
+# Camelot step budgets: 0/2 = harmonically compatible, 4 = stretchy mix,
+# 6+ = hard cut. Exposed here so the solver + UI share one scale.
+CAMELOT_STEP_BUDGET_COMPATIBLE: int = 2
+CAMELOT_STEP_BUDGET_STRETCHY: int = 4
+CAMELOT_STEP_BUDGET_HARDCUT: int = 6
+
+
+# ---------------------------------------------------------------------------
 # Camelot Key
 # ---------------------------------------------------------------------------
 
@@ -67,7 +83,7 @@ _KEY_TO_CAMELOT: dict[str, tuple[int, str]] = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CamelotKey:
     """Represents a position on the Camelot wheel (1-12, A or B)."""
 
@@ -319,3 +335,34 @@ def suggest_next(
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored[:top_n]
+
+
+# ---------------------------------------------------------------------------
+# TrackFeature (Phase 13)
+# ---------------------------------------------------------------------------
+#
+# Shared feature struct consumed by the PLAY IT solver (apps/dj_copilot)
+# and the AI-01 suggester. Lives here because it's the common input to the
+# whole harmonic-math pipeline; the solver + suggester import it rather
+# than re-declaring per-module.
+
+@dataclass(slots=True)
+class TrackFeature:
+    """Compact scoring features for a single track.
+
+    Fields
+    ------
+    stable_id: open-dj stable id (see apps.shared.state.ids).
+    artist:    Primary artist string; used by artist-repeat cooldown. May
+               be ``None`` on libraries that have not been enriched.
+    bpm:       Tempo in beats-per-minute, post Phase 6 analysis.
+    key_camelot: Camelot notation ("8A", "12B"). Use ``key_to_camelot`` to
+               parse other notations before constructing.
+    energy:    MIK / Phase 6 energy rating on the 1-10 scale.
+    """
+
+    stable_id: str
+    artist: str | None
+    bpm: float | None
+    key_camelot: str | None
+    energy: int | None

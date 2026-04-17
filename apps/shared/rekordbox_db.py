@@ -155,11 +155,122 @@ def iter_playlists(db: Rekordbox6Database) -> Iterator[RBPlaylist]:
         )
 
 
+# ----- Phase 4: cue + analysis readers ---------------------------------
+
+
+def _rb_kind_to_normalised(kind: int | None, index_hint: int | None) -> tuple[str, int | None]:
+    """Map pyrekordbox ``DjmdCue.Kind`` to a ``NormalisedCue`` kind/index.
+
+    Kind semantics (pyrekordbox ``db6/tables.py`` DjmdCue):
+      * 0 = memory cue.
+      * 1..8 = hot cue slot (1-indexed in RB -> we surface 0..7).
+      * Some builds use 3 for load cue and 4 for loop; treat 4 as loop
+        when ``ActiveLoop`` is true, otherwise fold into hot.
+    """
+    k = _coerce_int(kind)
+    if k is None or k == 0:
+        return "memory", None
+    if 1 <= k <= 8:
+        return "hot", (index_hint if index_hint is not None else k - 1)
+    if k == 4:
+        return "loop", None
+    return "hot", index_hint
+
+
+def iter_cues(db: Rekordbox6Database, content_id: str) -> list:
+    """Return the normalised cue list for a RB track by ContentID."""
+    from .normalised import NormalisedCue
+    from .rb_color_palette import color_index_to_rgb
+
+    cues: list = []
+    # Prefer the ORM's filtered query; fall back to scanning all rows.
+    rows = []
+    try:
+        rows = list(db.get_cue(ContentID=str(content_id)))
+    except Exception:
+        try:
+            rows = [r for r in db.get_cue() if str(getattr(r, "ContentID", "")) == str(content_id)]
+        except Exception:
+            rows = []
+    for row in rows:
+        in_msec = _coerce_int(getattr(row, "InMsec", None))
+        if in_msec is None:
+            continue
+        kind = getattr(row, "Kind", None)
+        color_idx = _coerce_int(getattr(row, "Color", None))
+        active_loop = bool(getattr(row, "ActiveLoop", False))
+        out_msec = _coerce_int(getattr(row, "OutMsec", None))
+        comment = getattr(row, "Comment", None) or None
+        # pyrekordbox doesn't expose an explicit hot-cue slot column; some
+        # builds use ``Kind - 1`` as the slot. Fall back to enumeration order.
+        kind_str, index = _rb_kind_to_normalised(kind, None)
+        if (kind_str == "hot" and index is None):
+            index = len([c for c in cues if c.kind == "hot"])
+        if kind_str == "hot" and index is not None and index > 7:
+            index = None
+        if active_loop and out_msec and out_msec > in_msec:
+            kind_str = "loop"
+            index = None
+        loop_length = (out_msec - in_msec) if (kind_str == "loop" and out_msec) else None
+        cue = NormalisedCue(
+            position_msec=int(in_msec),
+            kind=kind_str,  # type: ignore[arg-type]
+            index=index,
+            color_rgb=color_index_to_rgb(color_idx),
+            name=str(comment) if comment else None,
+            loop_length_msec=loop_length,
+        )
+        cues.append(cue)
+    cues.sort(
+        key=lambda c: (
+            c.position_msec,
+            c.kind,
+            c.index if c.index is not None else -1,
+        )
+    )
+    return cues
+
+
+def iter_analysis(db: Rekordbox6Database) -> "Iterator":
+    """Yield ``NormalisedAnalysis`` for every RB track.
+
+    BPM is read from ``DjmdContent.BPM`` (stored as BPM×100). Key is
+    resolved through the harmonic module's Camelot mapping. Energy uses
+    ``ColorID`` as the one-to-one proxy (see 04-RESEARCH §1).
+    """
+    from .harmonic import key_to_camelot
+    from .normalised import NormalisedAnalysis
+
+    for t in db.get_content():
+        bpm_raw = _coerce_int(t.BPM)
+        bpm = bpm_raw / 100.0 if bpm_raw else None
+        color_id = _coerce_int(getattr(t, "ColorID", None))
+        key_name = _safe_name(getattr(t, "Key", None))
+        camelot = None
+        if key_name:
+            try:
+                camelot = str(key_to_camelot(key_name))
+            except ValueError:
+                camelot = None
+        yield NormalisedAnalysis(
+            uuid_or_id=str(t.ID),
+            source="rb",
+            bpm=bpm,
+            manual_bpm=None,
+            key_camelot=camelot,
+            energy=color_id,
+            tags=None,
+            is_straight_grid=None,
+        )
+
+
 __all__ = [
     "RBTrack",
     "RBPlaylist",
     "open_db",
     "iter_tracks",
     "iter_playlists",
+    "iter_cues",
+    "iter_analysis",
     "is_streaming_path",
 ]
