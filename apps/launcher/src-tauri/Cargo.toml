@@ -13,6 +13,7 @@ tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-drag = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-store = "2"
 # Phase 17 originally imported `tauri_plugin_drag::start_drag` directly, but
 # that symbol is private to the plugin -- the public backend lives in the

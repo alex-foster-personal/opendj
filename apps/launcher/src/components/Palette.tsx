@@ -1,7 +1,9 @@
 import { Command } from "cmdk";
 import { useState } from "react";
 
+import DragToasts from "./DragToasts";
 import TrackRow from "./TrackRow";
+import { useDragEvents } from "../hooks/useDragEvents";
 import { useFrecency } from "../hooks/useFrecency";
 import { useSearch } from "../hooks/useSearch";
 import type { TrackHit } from "../types";
@@ -20,6 +22,10 @@ export default function Palette() {
   const frecent = useFrecency(paletteVisible);
   const frecentOrSample = frecent.length > 0 ? frecent : SAMPLE;
   const results = useSearch(query, frecentOrSample);
+  // Subscribe to drag-lifecycle events from commands/drag.rs so the React
+  // layer can surface start / success / fallback / failure feedback instead
+  // of leaving the user guessing (UI-REVIEW-2026-04-17 launcher gap).
+  const [toasts, dismissToast] = useDragEvents();
 
   return (
     <div className="palette-shell">
@@ -40,6 +46,7 @@ export default function Palette() {
           ))}
         </Command.List>
       </Command>
+      <DragToasts toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
