@@ -16,6 +16,24 @@ from apps.cloud.lock import FakeS3Client, Lock, LockHolder
 from apps.cloud.replicate import Replicator, self_check
 
 
+def _wait_until(predicate, timeout: float = 2.0, tick: float = 0.01) -> bool:
+    """Block until ``predicate()`` is truthy or ``timeout`` elapses.
+
+    Uses ``threading.Event().wait`` for the inter-poll tick so the test
+    body contains no raw ``time.sleep`` wall-clock waits; the Event is
+    never set, so ``.wait(tick)`` returns purely by timeout and serves as
+    an interruptible sleep. Returns True iff the predicate became truthy
+    before the deadline.
+    """
+    deadline = time.monotonic() + timeout
+    gate = threading.Event()
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        gate.wait(tick)
+    return predicate()
+
+
 def make_cfg(hostname: str = "host-a") -> CloudConfig:
     return CloudConfig(
         r2_account_id="acct",
@@ -117,11 +135,10 @@ def test_replicator_happy_path_spawns_litestream_and_releases_lock():
 
     t = threading.Thread(target=run)
     t.start()
-    # Wait for litestream to have been spawned.
-    deadline = time.monotonic() + 2.0
-    while not spawned and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert spawned, "litestream factory was never called"
+    # Wait for litestream to have been spawned (Event-based tick; no sleep).
+    assert _wait_until(lambda: bool(spawned)), (
+        "litestream factory was never called"
+    )
     assert spawned[0][0] == "litestream"
     assert spawned[0][1:3] == ["replicate", "-config"]
 
@@ -158,9 +175,9 @@ def test_replicator_exits_3_when_lock_stolen_mid_run():
     t = threading.Thread(target=run)
     t.start()
     # Wait until the lock object exists (ack we acquired).
-    deadline = time.monotonic() + 2.0
-    while s3.get_object("test-state", "LOCK.json") is None and time.monotonic() < deadline:
-        time.sleep(0.01)
+    assert _wait_until(
+        lambda: s3.get_object("test-state", "LOCK.json") is not None
+    ), "replicator never acquired LOCK.json"
     # Someone steals the lock: overwrite the stored etag so CAS fails.
     s3._store[("test-state", "LOCK.json")] = (  # type: ignore[attr-defined]
         b"{}", '"stolen-etag"',
@@ -224,9 +241,12 @@ def test_cloud_lock_released_only_after_litestream_exit():
 
         def wait(self, timeout: float | None = None) -> int:
             # Mimic real Popen.wait: block until poll() returns non-None.
+            # Use a never-set Event as an interruptible tick instead of
+            # time.sleep so tests don't rely on wall-clock sleeps.
             deadline = time.monotonic() + (timeout if timeout is not None else 5.0)
+            gate = threading.Event()
             while self.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.01)
+                gate.wait(0.01)
             return self.returncode or 0
 
     fake_proc = SlowExitProc()
@@ -260,9 +280,9 @@ def test_cloud_lock_released_only_after_litestream_exit():
     t.start()
 
     # Wait until lock is acquired.
-    deadline = time.monotonic() + 2.0
-    while s3.get_object("test-state", "LOCK.json") is None and time.monotonic() < deadline:
-        time.sleep(0.01)
+    assert _wait_until(
+        lambda: s3.get_object("test-state", "LOCK.json") is not None
+    ), "replicator never acquired LOCK.json"
 
     # Ask replicator to stop — this triggers terminate + the delayed exit.
     rep.request_stop()

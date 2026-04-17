@@ -230,9 +230,19 @@ def test_recorder_heartbeat_thread_emits_heartbeat(
         },
     )
     recorder.start_threads()
-    # Wait briefly for the heartbeat loop.
+    # Poll until the heartbeat thread has emitted at least one event, rather
+    # than relying on a wall-clock sleep. A never-set Event provides the
+    # inter-poll tick so this test has no raw time.sleep waits.
+    import threading
     import time
-    time.sleep(0.05)
+    deadline = time.monotonic() + 2.0
+    gate = threading.Event()
+    hb: list = []
+    while time.monotonic() < deadline:
+        hb = state.fetch_events(recorder.session_id, action="heartbeat")
+        if hb:
+            break
+        gate.wait(0.005)
     record_mod.stop(recorder)
     hb = state.fetch_events(recorder.session_id, action="heartbeat")
     assert len(hb) >= 1

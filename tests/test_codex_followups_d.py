@@ -22,8 +22,6 @@ from __future__ import annotations
 import io
 import sys
 from pathlib import Path
-from unittest import mock
-
 import pytest
 
 from apps.dj_copilot.session_context import (
@@ -87,25 +85,55 @@ def test_p14_f03_run_honours_enable_destructive_and_dry_bus(
 # -- P16-F03 --------------------------------------------------------------
 
 
+class _StubSeratoModule:
+    """Minimal stand-in for ``apps.adapters.serato``.
+
+    Only exposes the two attributes the conformance loader touches:
+    ``SeratoAdapter`` and ``SeratoAdapterOptions``. Using a narrow class
+    instead of ``MagicMock()`` means any unexpected attribute access the
+    loader might grow in the future fails loudly (AttributeError) rather
+    than being silently papered over by a magic mock.
+    """
+
+    __name__ = "apps.adapters.serato"
+
+    def __init__(self, adapter_cls: type) -> None:
+        self.SeratoAdapter = adapter_cls
+        self.SeratoAdapterOptions = lambda **kw: None
+
+
+@pytest.fixture
+def stub_serato_adapter(monkeypatch: pytest.MonkeyPatch):
+    """Install a narrow stub ``apps.adapters.serato`` in ``sys.modules``.
+
+    Yields a callable ``install(adapter_cls)`` the test uses to choose the
+    ``SeratoAdapter`` class (typically one whose ``__init__`` raises, to
+    assert the conformance loader does not swallow the exception). The
+    monkeypatch context removes the stub after the test so other tests see
+    the real adapter module.
+    """
+
+    def _install(adapter_cls: type) -> _StubSeratoModule:
+        module = _StubSeratoModule(adapter_cls)
+        monkeypatch.setitem(sys.modules, "apps.adapters.serato", module)
+        return module
+
+    return _install
+
+
 def test_p16_f03_conformance_loader_only_swallows_module_not_found(
-    monkeypatch: pytest.MonkeyPatch,
+    stub_serato_adapter,
 ) -> None:
     """Real adapter exceptions must propagate; only ModuleNotFoundError is
     silently skipped.
     """
     from tests import test_conformance as tc
 
-    # Inject a fake ``apps.adapters.serato`` that raises ValueError on
-    # construction. The loader must NOT swallow this.
     class _Boom:
         def __init__(self, *a, **kw):
             raise ValueError("real adapter regression")
 
-    fake_module = mock.MagicMock()
-    fake_module.SeratoAdapter = _Boom
-    fake_module.SeratoAdapterOptions = lambda **kw: None
-
-    monkeypatch.setitem(sys.modules, "apps.adapters.serato", fake_module)
+    stub_serato_adapter(_Boom)
     with pytest.raises(ValueError, match="real adapter regression"):
         tc._load_adapter("serato")
 
