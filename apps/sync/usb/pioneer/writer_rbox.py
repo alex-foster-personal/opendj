@@ -238,6 +238,29 @@ def write_onelibrary(
             f"Output path exists and overwrite=False: {output}"
         )
 
+    # --- Fixture-safety guards (defense-in-depth) --------------------
+    # rbox's OneLibrary(path) has no read-only mode: every open may write
+    # to the DB and materialise -shm/-wal sidecars next to it. If the
+    # caller accidentally points template_path at the committed fixture
+    # (or passes the same path as template and output), that will mutate
+    # files under tests/fixtures/ on every run. Catch both cases loudly.
+    if template == output:
+        raise OneLibraryWriteError(
+            "template_path must not equal output_path: rbox would open "
+            "the template in-place and corrupt it "
+            f"(got {template})"
+        )
+    # ``tests/fixtures/`` is a sentinel marker: the committed fixture
+    # tree lives there and must never be opened read/write. Callers
+    # should copy the fixture into tmp_path and pass THAT path instead.
+    if any(part == "fixtures" for part in template.parts) and "tests" in template.parts:
+        raise OneLibraryWriteError(
+            "refusing to operate on fixture path: template_path is "
+            f"under tests/fixtures/ ({template}). Copy the fixture to a "
+            "scratch directory (e.g. tmp_path) first and pass that "
+            "copy as template_path."
+        )
+
     _ensure_parent(output)
     # Use shutil.copyfile (not copy2) so we inherit a clean mtime and
     # don't carry UNIX permissions from the fixture.
