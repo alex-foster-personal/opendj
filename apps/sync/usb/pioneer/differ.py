@@ -980,11 +980,17 @@ def run_matrix(
 
 
 def render_matrix_markdown(rows: list[MatrixRow], *, now: _dt.datetime | None = None) -> str:
-    when = (now or _dt.datetime.now(_dt.timezone.utc)).replace(microsecond=0).isoformat()
+    # Emit RFC3339-ish UTC without the bare 'Z' suffix (the timezone
+    # is already carried as '+00:00' thanks to the tz-aware now()).
+    when = (
+        (now or _dt.datetime.now(_dt.timezone.utc))
+        .replace(microsecond=0)
+        .isoformat()
+    )
     out = [
         "# USB Export Diff Matrix",
         "",
-        f"Generated: {when}Z",
+        f"Generated: {when}",
         "",
         "| Fixture | Mode | Tracks | Playlists | Δ content | Δ playlist | Verdict |",
         "|---|---|---:|---:|---:|---:|---|",
