@@ -1,0 +1,210 @@
+/* Minimal baseline styles for the music-dj-tools web UI.
+ * Full Tailwind wiring lives in a follow-on PR; v1 uses vanilla CSS so
+ * the bundle stays tiny for the localhost use-case. */
+:root {
+  --bg: #0b0d11;
+  --fg: #e6e9ef;
+  --muted: #9aa4b2;
+  --accent: #ffb43a;
+  --accent-dim: #7a5a1f;
+  --danger: #ff5a5a;
+  --border: #1c222c;
+  --surface: #121720;
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text",
+    "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1rem;
+}
+.sidebar h1 {
+  font-size: 1rem;
+  margin: 0 0 1rem 0;
+  color: var(--accent);
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.sidebar nav a {
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  color: var(--fg);
+}
+.sidebar nav a:hover,
+.sidebar nav a.active {
+  background: #1a212c;
+  text-decoration: none;
+}
+
+.content {
+  padding: 1.5rem;
+  overflow-x: auto;
+}
+
+.banner-warning {
+  background: var(--danger);
+  color: #fff;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+table.library {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+table.library thead th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+table.library tbody tr {
+  cursor: pointer;
+}
+table.library tbody tr:hover {
+  background: #141a24;
+}
+table.library td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.star {
+  color: var(--accent-dim);
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+.star.filled {
+  color: var(--accent);
+}
+
+.chip {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #1a212c;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-right: 0.25rem;
+}
+
+.conflict-dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+}
+.conflict-dialog .panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 640px;
+  width: 90%;
+}
+.conflict-dialog .actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+button {
+  background: #1a212c;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover {
+  background: #222a38;
+}
+button.primary {
+  background: var(--accent);
+  color: #0b0d11;
+  border-color: var(--accent);
+}
+
+input,
+select,
+textarea {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.toast-stack {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  z-index: 500;
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  min-width: 240px;
+}
+.toast.error {
+  border-color: var(--danger);
+}
