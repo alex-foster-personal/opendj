@@ -48,6 +48,21 @@ def _write_rb_rating(db, content_id: str, rating: int) -> bool:
         return False
 
 
+def _verify_rb_rating(db, content_id: str, expected: int) -> bool:
+    """Rail 4 (post-write verify): re-read the Rating and compare.
+
+    Returns ``True`` iff the row exists and its ``Rating`` matches.
+    A write session that receives a ``False`` here will prompt the
+    user to abort/skip/continue (non-tty defaults to abort, matching
+    :class:`apps.sync.safety.LiveWriteSession`).
+    """
+    try:
+        again = db.get_content(ID=str(content_id)).one()
+    except Exception:
+        return False
+    return int(getattr(again, "Rating", -1)) == int(expected)
+
+
 def _write_djay_rating(db_path: Path, uuid: str, rating: int) -> bool:
     import sqlite3
 
@@ -76,6 +91,30 @@ def _write_djay_rating(db_path: Path, uuid: str, rating: int) -> bool:
             (uuid,),
         ).fetchone()
     return bool(again) and extract_rating_from_tsaf(again[0]) == int(rating)
+
+
+def _verify_djay_rating(db_path: Path, uuid: str, expected: int) -> bool:
+    """Rail 4 (post-write verify): re-read the TSAF rating and compare.
+
+    Opens the DB read-only and checks that the patched ``Rating`` byte
+    round-trips through :func:`extract_rating_from_tsaf`.
+    """
+    import sqlite3
+
+    from apps.shared.djay_db import extract_rating_from_tsaf
+
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
+            row = con.execute(
+                "SELECT data FROM database2 "
+                "WHERE collection = 'mediaItemUserData' AND key = ?",
+                (uuid,),
+            ).fetchone()
+    except Exception:
+        return False
+    if not row:
+        return False
+    return extract_rating_from_tsaf(row[0]) == int(expected)
 
 
 def live_run(
@@ -117,17 +156,30 @@ def live_run(
 
         db = open_db(rb_db_path)
         try:
+            # Rail 4: post-write verify is routed through the session's
+            # verifier callback. Mapping per-track track_id -> expected
+            # Rating so the callback can readback on demand.
+            rb_expected: dict[str, int] = {
+                str(cid): int(rating) for cid, rating in targets_rb
+            }
+
+            def rb_verifier(track_id: str, _unused: object = None) -> bool:
+                return _verify_rb_rating(
+                    db, track_id, rb_expected[str(track_id)],
+                )
+
             with LiveWriteSession(
                 target="rekordbox",
                 reason="SYNC-06 bulk ratings (RB side)",
                 flag_ok=flag_ok,
                 db_path=rb_db_path,
+                verifier=rb_verifier,
             ) as sess:
                 for content_id, rating in targets_rb:
                     with sess.per_track(content_id) as w:
                         ok = _write_rb_rating(db, content_id, rating)
                         w.write(rating)
-                        if ok:
+                        if ok and w.verify_readback():
                             w.append_reverse(
                                 f"# revert RB rating for ContentID={content_id}"
                             )
@@ -139,17 +191,27 @@ def live_run(
                 pass
 
     if targets_djay:
+        djay_expected: dict[str, int] = {
+            str(uuid): int(rating) for uuid, rating in targets_djay
+        }
+
+        def djay_verifier(track_id: str, _unused: object = None) -> bool:
+            return _verify_djay_rating(
+                djay_db_path, track_id, djay_expected[str(track_id)],
+            )
+
         with LiveWriteSession(
             target="djay",
             reason="SYNC-06 bulk ratings (djay side)",
             flag_ok=flag_ok,
             db_path=djay_db_path,
+            verifier=djay_verifier,
         ) as sess:
             for uuid, rating in targets_djay:
                 with sess.per_track(uuid) as w:
                     ok = _write_djay_rating(djay_db_path, uuid, rating)
                     w.write(rating)
-                    if ok:
+                    if ok and w.verify_readback():
                         w.append_reverse(
                             f"# revert djay rating for uuid={uuid}"
                         )
