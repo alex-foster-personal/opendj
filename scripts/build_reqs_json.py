@@ -37,10 +37,10 @@ COVERAGE_MATRIX_TEMPLATE: Path = REPO_ROOT / "coverage-matrix.md"
 
 _CATEGORY_RE = re.compile(r"^###\s+(.+?)\s+\(([A-Z]+)\)\s*$")
 _BULLET_V1_RE = re.compile(
-    r"^-\s+(?:\[( |x)\]\s+)?\*\*([A-Z]+-\d+)\*\*(.*)$"
+    r"^-\s+(?:\[( |x)\]\s+)?\*\*([A-Z]+-\d+[a-z]?)\*\*(.*)$"
 )
 # v2 bullets often lack a checkbox: `- **CROSS-01**: Linux support`
-_BULLET_V2_RE = re.compile(r"^-\s+\*\*([A-Z]+-\d+)\*\*\s*:?\s*(.*)$")
+_BULLET_V2_RE = re.compile(r"^-\s+\*\*([A-Z]+-\d+[a-z]?)\*\*\s*:?\s*(.*)$")
 _SHIPPED_PHASE_RE = re.compile(r"\(shipped\s+(Phase\s+[\w.]+)\)", re.IGNORECASE)
 _TRACE_ROW_RE = re.compile(
     r"^\|\s*([A-Z]+-\d+|[A-Z]+-\*|[A-Z]+-[\d.]+(?:\.\.\d+)?(?:,\s*[A-Z]+-\d+)*)"
@@ -211,7 +211,7 @@ def _parse_traceability(lines: list[str]) -> dict[str, str]:
         if "*" in req_spec or ".." in req_spec:
             continue
         for token in (t.strip() for t in req_spec.split(",")):
-            if re.fullmatch(r"[A-Z]+-\d+", token):
+            if re.fullmatch(r"[A-Z]+-\d+[a-z]?", token):
                 mapping[token] = phase
     return mapping
 
