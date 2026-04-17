@@ -9,12 +9,13 @@ contributors. Read it once; the conventions are load-bearing.
 1. [Project structure](#project-structure)
 2. [Dev setup](#dev-setup)
 3. [Running tests and lint](#running-tests-and-lint)
-4. [Conventional commits](#conventional-commits)
-5. [The six-rail safety pattern](#the-six-rail-safety-pattern)
-6. [Proposing a new phase](#proposing-a-new-phase)
-7. [House rules](#house-rules)
-8. [Developer Certificate of Origin](#developer-certificate-of-origin)
-9. [Licensing](#licensing)
+4. [Branching convention](#branching-convention)
+5. [Conventional commits](#conventional-commits)
+6. [The six-rail safety pattern](#the-six-rail-safety-pattern)
+7. [Proposing a new phase](#proposing-a-new-phase)
+8. [House rules](#house-rules)
+9. [Developer Certificate of Origin](#developer-certificate-of-origin)
+10. [Licensing](#licensing)
 
 ## Project structure
 
@@ -74,6 +75,39 @@ make fixture      # rebuild the Rekordbox test fixture DB
 Lint and formatting tools are not yet wired into `make`. Match the
 existing code style; CI will grow ruff + mypy incrementally. PRs that
 reformat unrelated code will be asked to split that out.
+
+## Branching convention
+
+Starting with the v1.1 cycle, no change lands on `master` directly.
+Every change, including one-line docs tweaks, goes through a pull
+request from a feature, seed, fix, or docs branch:
+
+```
+feat/<slug>     # new feature or phase
+fix/<slug>      # non-trivial bug fix
+seed/<seed-id>  # exploratory branch spawned from .planning/seeds/
+docs/<slug>     # docs only
+chore/<slug>    # tooling, CI, dependency bumps
+refactor/<slug> # behaviour-preserving code move
+test/<slug>     # tests only
+```
+
+v1 and earlier work lived on `master` with no PR trail. That history is
+kept as-is; the milestone tags (`v1.0-rc*`, `v1.0`) are the audit
+record. The convention starts from v1.1.
+
+Server-side branch protection is not enabled (this repo is private on
+GitHub Free, which does not support the protection API). The client
+side stand-in is the pre-push hook at
+[`scripts/githooks/pre-push-master-guard.sh`](scripts/githooks/pre-push-master-guard.sh).
+Install it once after cloning:
+
+```bash
+ln -sf ../../scripts/githooks/pre-push-master-guard.sh .git/hooks/pre-push
+```
+
+The full rationale, grammar, and lifecycle are in
+[`docs/branching.md`](docs/branching.md).
 
 ## Conventional commits
 
@@ -185,6 +219,8 @@ be licensed under its [Apache License 2.0](LICENSE).
 ## Related documents
 
 - [`README.md`](README.md) for the product-level overview.
+- [`docs/branching.md`](docs/branching.md) for the post-v1 branching
+  and PR convention.
 - [`SECURITY.md`](SECURITY.md) for how to report vulnerabilities.
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community conduct.
 - [`docs/operator-setup.md`](docs/operator-setup.md) for feature-by-feature
