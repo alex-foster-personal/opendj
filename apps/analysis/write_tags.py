@@ -11,7 +11,7 @@ Safety rails (mirror :mod:`apps.reconcile.apply` / ``remove_track``):
 
 1. Typed confirm (``--confirm "WRITE TAGS TO N FILES"``) for ``--bulk``.
 2. ``--live`` requires ``--i-understand-the-risks``.
-3. ``pgrep -if rekordbox|djay`` warn rail.
+3. ``pgrep -if rekordbox|djay`` warn rail (warn-only; writes proceed).
 4. Timestamped JSON backup of each file's tag block pre-write.
 5. Post-write verify: re-open and assert round-trip.
 6. Reversal script at ``data/analysis/reversal/<sid>-<ts>.py``.
@@ -272,7 +272,18 @@ def plan_deltas(
 # ---------------------------------------------------------------------------
 
 
-def pgrep_abort_rail() -> list[str]:
+def pgrep_warn_rail() -> list[str]:
+    """Return names of conflicting DJ apps (``rekordbox``/``djay``) currently running.
+
+    This is a WARN-ONLY rail for tag writes: callers log offenders but
+    proceed with the write. That is deliberate. Tag writes mutate audio
+    files on disk, not vendor SQLite databases, so there is no live DB
+    corruption risk if rekordbox/djay are open. Contrast with the DB
+    writers in ``apps.reconcile.apply`` / ``remove_track``, which abort
+    hard when the same pgrep returns a hit. Renamed from the old
+    ``pgrep_abort_rail`` to avoid misleading future maintainers into
+    assuming this has abort semantics.
+    """
     offenders: list[str] = []
     for name in ("rekordbox", "djay"):
         try:
@@ -421,7 +432,7 @@ def apply_writes(
                 f"bulk mode requires --confirm {expected!r}; aborting."
             )
 
-    offenders = pgrep_abort_rail()
+    offenders = pgrep_warn_rail()
     if offenders:
         console.print(
             f"[yellow]warning: {', '.join(offenders)} appears to be running"
