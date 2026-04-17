@@ -94,11 +94,19 @@ def live_run(
             )
             return 0
 
+    # Rail 4: post-write verifier for the stub cue sync. Since the stub
+    # does not mutate cue bytes, the verifier is a pure shape-check -- it
+    # exercises the session's verify plumbing so the rail is present and
+    # observable even before live cue writes are wired up.
+    def _stub_verifier(_tid: str, _unused: object = None) -> bool:
+        return True
+
     with LiveWriteSession(
         target="rekordbox",
         reason="SYNC-04 cue sync (RB side)",
         flag_ok=flag_ok,
         db_path=rb_db_path,
+        verifier=_stub_verifier,
     ) as sess:
         for row in rows:
             tid = row.get("rb_content_id") or row.get("djay_uuid") or "?"
@@ -107,9 +115,11 @@ def live_run(
                 # The actual per-cue insert/update is the smoke-test path
                 # (test_phase4_smoke) once the user has run a cautious pass.
                 w.write({"rb_only": row.get("rb_only_positions", "")})
-                w.append_reverse(
-                    f"# revert RB cues for content_id={row.get('rb_content_id')}"
-                )
+                if w.verify_readback():
+                    w.append_reverse(
+                        f"# revert RB cues for "
+                        f"content_id={row.get('rb_content_id')}"
+                    )
     print(
         f"[apply_cues] cautious pass complete on {len(rows)} rows "
         "(STUB -- no cue bytes were written; see banner above)."

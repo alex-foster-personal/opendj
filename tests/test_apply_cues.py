@@ -1,4 +1,12 @@
-"""Phase 4 SYNC-04: apply_cues CLI tests (dry-run + safety gating)."""
+"""Phase 4 SYNC-04: apply_cues CLI tests (dry-run + safety gating + rails).
+
+Covers:
+  * dry-run + flag-gating (existing tests)
+  * six-rail safety harness for the stub live path:
+      - rail 1 (pgrep gate)
+      - rail 2 (timestamped backup)
+      - rail 4 (verifier wired into LiveWriteSession)
+"""
 from __future__ import annotations
 
 import csv
@@ -6,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from apps.sync.apply_cues import dry_run, main
+from apps.sync.apply_cues import dry_run, live_run, main
+from apps.sync.safety import SafetyAbort
 
 pytestmark = pytest.mark.requirement("SYNC-04")
 
@@ -102,6 +111,107 @@ def test_main_prefer_flag_accepted(tmp_path: Path):
 def test_main_prune_flag_accepted(tmp_path: Path):
     path = _make_diff(tmp_path, [])
     assert main(["--diff-csv", str(path), "--prune"]) == 0
+
+
+# ---------------------------------------------------- six-rail live tests
+
+
+def _cue_rows() -> list[dict]:
+    return [
+        {
+            "rb_content_id": "1",
+            "djay_uuid": "a",
+            "rb_cue_count": "1",
+            "djay_cue_count": "1",
+            "rb_only_positions": "500",
+            "djay_only_positions": "",
+            "conflicting_positions": "",
+            "union_count": "1",
+        }
+    ]
+
+
+class TestCuesLiveRails:
+    def test_pgrep_aborts_stub(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb")
+        djay_db = tmp_path / "ml.db"
+        djay_db.write_bytes(b"dj")
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running",
+            lambda name: name == "Rekordbox",
+        )
+        with pytest.raises(SafetyAbort, match="Rekordbox is running"):
+            live_run(
+                _cue_rows(),
+                flag_ok=True,
+                cautious=True,
+                rb_db_path=rb_db,
+                djay_db_path=djay_db,
+            )
+
+    def test_backup_created_before_stub_writes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+    ) -> None:
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb-contents")
+        djay_db = tmp_path / "ml.db"
+        djay_db.write_bytes(b"dj")
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running", lambda _n: False,
+        )
+        rc = live_run(
+            _cue_rows(),
+            flag_ok=True,
+            cautious=True,
+            rb_db_path=rb_db,
+            djay_db_path=djay_db,
+        )
+        assert rc == 0
+        backups = list(rb_db.parent.glob("master.db.bak.*"))
+        assert len(backups) == 1
+        assert backups[0].read_bytes() == b"rb-contents"
+
+    def test_stub_verifier_path_runs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Rail 4 wiring: the stub verifier is invoked for each row.
+
+        We assert the reversal shell script received a snippet (which
+        only happens when ``verify_readback`` returned True inside
+        live_run).
+        """
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb")
+        djay_db = tmp_path / "ml.db"
+        djay_db.write_bytes(b"dj")
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running", lambda _n: False,
+        )
+        rc = live_run(
+            _cue_rows(),
+            flag_ok=True,
+            cautious=True,
+            rb_db_path=rb_db,
+            djay_db_path=djay_db,
+        )
+        assert rc == 0
+        scripts = list(
+            (rb_db.parent.parent).rglob("reverse.sh"),
+        )
+        # The session's reversal script lives under
+        # <data>/sync/reversal/<ts>/reverse.sh. When we point db_path at
+        # tmp_path/master.db the default reversal_root resolves to
+        # tmp_path.parent/sync/reversal. Walk broadly to find it.
+        assert any(
+            "revert RB cues" in p.read_text() for p in scripts
+        ) or any(
+            "revert RB cues" in p.read_text()
+            for p in tmp_path.rglob("reverse.sh")
+        )
+
 
 
 def test_live_cautious_emits_stub_banner(tmp_path: Path, capsys):
