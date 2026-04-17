@@ -15,6 +15,7 @@ from typing import Sequence
 
 from apps.shared.harmonic import TrackFeature
 from apps.shared.paths import STATE_DB
+from apps.shared.state import db as state_db
 from apps.shared.play_orders.schema import apply_play_order_migrations
 
 from .play_it import InsufficientDataError, play_it
@@ -24,9 +25,15 @@ from .suggester import suggest_next
 
 
 def _open_conn(db: Path) -> sqlite3.Connection:
-    db.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db), isolation_level=None)
-    conn.execute("PRAGMA foreign_keys = ON")
+    """Open the state DB via Phase 5's :func:`open_rw` and layer the
+    play-order schema on top.
+
+    Routing through :func:`apps.shared.state.db.open_rw` ensures the
+    Phase 5 WAL + busy_timeout + foreign_keys pragmas and core schema
+    migrations run first; :func:`apply_play_order_migrations` then
+    creates the additive play-order tables idempotently.
+    """
+    conn = state_db.open_rw(db)
     apply_play_order_migrations(conn)
     return conn
 
