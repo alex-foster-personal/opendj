@@ -45,9 +45,9 @@ def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend
 
 
 def get_write_state(
+    request: Request,
     backend: StateBackend = Depends(get_backend),
     lock_status: Optional[dict[str, Any]] = Depends(get_lock_status),
-    request: Request = None,  # type: ignore[assignment]
 ) -> StateBackend:
     local_host = getattr(request.app.state, "hostname", "localhost")
     if lock_status and lock_status.get("holder") and lock_status["holder"] != local_host:
