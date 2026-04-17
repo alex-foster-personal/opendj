@@ -219,7 +219,14 @@ def _cmd_export(args: argparse.Namespace) -> int:
         else:  # class family (serato / traktor)
             adapter = load_adapter(spec.name)
             library, _report = adapter.read(source)
-            doc = _library_to_dict(library)
+            # Route the typed dataclass through the v0.2 wire serializer
+            # rather than ``asdict``: the on-disk shape wraps authored
+            # fields in ``ProvenanceValue`` envelopes, renames ``cues``
+            # to ``cue_points``, collapses ``beats`` into ``beatgrid``,
+            # and requires ``schema_version`` + ``kind``. (codex P15)
+            from apps.open_dj.wire import library_to_wire_document
+
+            doc = library_to_wire_document(library, source=spec.name)
     except FileNotFoundError as exc:
         print(f"{args.source}: {exc}", file=sys.stderr)
         return 1
