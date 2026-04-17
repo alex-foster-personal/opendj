@@ -116,3 +116,24 @@ class TestRun:
         assert rc == 0, out
         assert "daemon starting" in out
         assert seen == ["SEARCH"], seen
+
+    def test_run_ok_without_sounddevice(self, capsys, monkeypatch):
+        """VOICE-01: on a host without PortAudio/sounddevice, ``voice run``
+        must degrade to text-only mode (single warning line, rc=0) instead
+        of hard-failing rc=2. This recovers CI + fresh-install ergonomics.
+        """
+        from apps.voice import audio
+
+        def _boom():
+            raise RuntimeError(
+                "sounddevice not importable; install PortAudio + the "
+                "`sounddevice` wheel or re-run without mic capture"
+            )
+
+        monkeypatch.setattr(audio, "_sounddevice", _boom)
+
+        rc = cli.main(["run", "--dry-bus", "--max-iters", "1"])
+        captured = capsys.readouterr()
+        assert rc == 0, (captured.out, captured.err)
+        assert "daemon starting" in captured.out
+        assert "mic capture disabled: sounddevice not importable" in captured.err

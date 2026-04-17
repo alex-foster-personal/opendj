@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import sys
 from typing import Sequence
 
@@ -70,7 +71,17 @@ def _capture_transcripts(args: argparse.Namespace):
     """
     from apps.voice import audio, wake, stt
 
-    sd = audio._sounddevice()
+    try:
+        sd = audio._sounddevice()
+    except RuntimeError:
+        # VOICE-01 / Phase 5: tolerate hosts without PortAudio/sounddevice.
+        # The daemon stays alive (in text-only mode) instead of bailing rc=2.
+        print(
+            "[voice] mic capture disabled: sounddevice not importable",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
     backend = wake.make_backend()
     client = stt.make_client()
     sample_rate = 16_000
@@ -114,6 +125,28 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     max_iters = getattr(args, "max_iters", None)
     iters = 0
+
+    # Install a SIGTERM handler that flips a flag checked by the capture loop
+    # (and, more importantly, converts SIGTERM into a KeyboardInterrupt-like
+    # clean exit instead of the default abrupt termination).
+    _shutdown = {"requested": False}
+
+    def _on_sigterm(signum, frame):  # noqa: ARG001
+        _shutdown["requested"] = True
+        print("[voice] SIGTERM received; shutting down", flush=True)
+
+    prev_handler = None
+    try:
+        prev_handler = signal.signal(signal.SIGTERM, _on_sigterm)
+    except (ValueError, OSError):
+        # signal.signal() only works on the main thread; tests that invoke
+        # _cmd_run from a worker thread should still succeed.
+        prev_handler = None
+
+    # Phase 5/VOICE-01: when sounddevice is unavailable, ``_capture_transcripts``
+    # prints a single-line warning and returns immediately, so the daemon
+    # degrades to text-only mode instead of bailing rc=2. CI / fresh installs
+    # can therefore run ``voice run`` without PortAudio.
     try:
         for transcript in _capture_transcripts(args):
             iters += 1
@@ -128,14 +161,23 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     f"[voice] {intent.kind} -> {response.reply!r} "
                     f"(published={response.published})"
                 )
+            if _shutdown["requested"]:
+                break
             if max_iters is not None and iters >= max_iters:
                 break
     except KeyboardInterrupt:
         print("[voice] interrupted; shutting down")
     except RuntimeError as exc:
-        # Audio stack missing (sounddevice/whisper not installed).
+        # Audio stack present-but-broken at runtime (e.g. whisper missing
+        # mid-stream). Keep the legacy rc=2 contract for that case.
         print(f"[voice] daemon error: {exc}", file=sys.stderr)
         return 2
+    finally:
+        if prev_handler is not None:
+            try:
+                signal.signal(signal.SIGTERM, prev_handler)
+            except (ValueError, OSError):
+                pass
     return 0
 
 
