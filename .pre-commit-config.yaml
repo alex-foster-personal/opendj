@@ -1,0 +1,24 @@
+# Minimal pre-commit hooks for music-dj-tools.
+#
+# Install once with: pip install pre-commit && pre-commit install
+# Run on the whole tree with: pre-commit run --all-files
+#
+# Black is intentionally NOT included — the repo uses ruff for both linting
+# and formatting. If black is ever adopted, add `psf/black-pre-commit-mirror`
+# here with `language_version: python3.11`.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-yaml
+      - id: check-merge-conflict
