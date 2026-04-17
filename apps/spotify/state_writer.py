@@ -209,7 +209,8 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 '''
-    script_path.write_text(script)
+    # P09-F02: reversal scripts may contain non-ASCII paths; pin UTF-8.
+    script_path.write_text(script, encoding="utf-8")
     return script_path
 
 

@@ -86,7 +86,9 @@ def build_report_dir(
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, newline="")
+    # P09-F02: pin UTF-8 so non-ASCII track/artist names survive locales
+    # whose default encoding is not UTF-8 (e.g. legacy cp1252).
+    tmp.write_text(text, newline="", encoding="utf-8")
     os.replace(tmp, path)
 
 

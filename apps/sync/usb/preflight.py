@@ -161,14 +161,25 @@ def preflight(
                     )
 
     # -- no_other_writer -------------------------------------------------
-    if write_probe and not _skip("no_other_writer"):
-        if root.exists():
-            writers = _lsof_writers(root)
-            if writers:
-                res.warnings.append(
-                    f"no_other_writer: {len(writers)} other processes "
-                    "have files open for write on the drive"
-                )
+    # P10-F03: previously this check only ran in ``write_probe`` (apply)
+    # mode and even then was warning-only, which made plan/verify blind to
+    # concurrent writers on the drive. We now:
+    #   * run the probe in any mode when the drive is mounted, and
+    #   * promote the finding to an error in ``write_probe`` mode while
+    #     keeping it a warning in read-only (plan/verify) mode, so an
+    #     apply cannot silently proceed while another process has files
+    #     open for write on the drive.
+    if not _skip("no_other_writer") and root.exists():
+        writers = _lsof_writers(root)
+        if writers:
+            msg = (
+                f"no_other_writer: {len(writers)} other processes "
+                "have files open for write on the drive"
+            )
+            if write_probe:
+                res.errors.append(msg)
+            else:
+                res.warnings.append(msg)
 
     # -- ffmpeg_available ------------------------------------------------
     if not _skip("ffmpeg_available"):

@@ -9,10 +9,16 @@ let _toastSeq = 0;
 export const toasts = $state<Toast[]>([]);
 
 export function pushToast(message: string, kind: 'info' | 'error' = 'info'): void {
-	toasts.push({ id: ++_toastSeq, message, kind });
+	// P11-F03: capture *this* toast's id in the closure. The previous
+	// implementation closed over the module-level `_toastSeq` counter,
+	// which meant overlapping toasts would cause each timer to dismiss
+	// the most-recently-pushed toast instead of the one that was
+	// actually due to expire.
+	const id = ++_toastSeq;
+	toasts.push({ id, message, kind });
 	// Auto-dismiss after 5s.
 	setTimeout(() => {
-		const i = toasts.findIndex((t) => t.id === _toastSeq);
+		const i = toasts.findIndex((t) => t.id === id);
 		if (i >= 0) toasts.splice(i, 1);
 	}, 5000);
 }

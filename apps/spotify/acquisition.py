@@ -165,5 +165,7 @@ def render_markdown_file(
     text = render_markdown(
         playlist, entries, include_timestamp=include_timestamp
     )
-    out_path.write_text(text)
+    # P09-F02: pin the text encoding so non-ASCII track/artist names are
+    # not corrupted under locales where the default encoding is not UTF-8.
+    out_path.write_text(text, encoding="utf-8")
     return out_path
