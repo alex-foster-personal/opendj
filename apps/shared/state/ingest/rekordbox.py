@@ -17,6 +17,7 @@ import argparse
 import csv
 import dataclasses
 import datetime as _dt
+import logging
 import os
 import sqlite3
 import sys
@@ -29,6 +30,8 @@ from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state.writer import StateWriter, compute_playlist_id
+
+_log = logging.getLogger(__name__)
 
 _ClockFn = Callable[[], _dt.datetime]
 
@@ -285,8 +288,14 @@ def ingest_rb(
     finally:
         try:
             rb_db.close()
-        except Exception:  # pragma: no cover - cleanup only
-            pass
+        except sqlite3.Error as exc:
+            _log.warning("Failed to close Rekordbox DB", exc_info=exc)
+        except Exception as exc:  # pragma: no cover - defensive cleanup path
+            # Do not re-raise: a cleanup failure in the finally block must not
+            # mask a successful ingest or shadow an in-flight exception from
+            # the try body. Log loudly with a traceback so the failure is
+            # visible to operators without breaking otherwise-successful runs.
+            _log.error("Unexpected error closing Rekordbox DB", exc_info=exc)
         report.duration_s = round(time.perf_counter() - start, 3)
 
     return report
