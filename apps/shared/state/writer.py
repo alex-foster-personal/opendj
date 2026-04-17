@@ -279,36 +279,47 @@ class StateWriter:
         modified_at: str,
         confidence: float | None = None,
     ) -> bool:
-        """Set a provenance-wrapped field. Returns True on change."""
-        changed = _prov.write_field(
-            self._conn,
-            stable_id=stable_id,
-            field_name=field_name,
-            value=value,
-            source=source,
-            modified_at=modified_at,
-            confidence=confidence,
-            actor=self._actor,
-            now=self._now_iso(),
-        )
-        if changed:
-            payload: dict[str, Any] = {
-                "field_name": field_name,
-                "value": value,
-                "source": source,
-                "modified_at": modified_at,
-            }
-            if confidence is not None:
-                payload["confidence"] = confidence
-            self.bus.publish(
-                Event(
-                    ts=self._now_iso(),
-                    kind="track.field.set",
-                    stable_id=stable_id,
-                    payload=payload,
-                    actor=self._actor,
-                )
+        """Set a provenance-wrapped field. Returns True on change.
+
+        The DB mutation and the bus publish are ordered inside one outer
+        SAVEPOINT: if ``bus.publish`` raises, the mutation is rolled back so
+        subscribers and the ``track_fields`` row can never drift. This keeps
+        the durable log + in-process fanout invariant the module docstring
+        promises -- addresses Codex P05 finding on mutation/publish ordering.
+        """
+        with self._tx():
+            changed = _prov.write_field(
+                self._conn,
+                stable_id=stable_id,
+                field_name=field_name,
+                value=value,
+                source=source,
+                modified_at=modified_at,
+                confidence=confidence,
+                actor=self._actor,
+                now=self._now_iso(),
             )
+            if changed:
+                payload: dict[str, Any] = {
+                    "field_name": field_name,
+                    "value": value,
+                    "source": source,
+                    "modified_at": modified_at,
+                }
+                if confidence is not None:
+                    payload["confidence"] = confidence
+                # Publish inside the SAVEPOINT: a raising bus propagates out
+                # of ``_tx`` and triggers ROLLBACK TO, reverting write_field's
+                # already-RELEASEd inner SAVEPOINT.
+                self.bus.publish(
+                    Event(
+                        ts=self._now_iso(),
+                        kind="track.field.set",
+                        stable_id=stable_id,
+                        payload=payload,
+                        actor=self._actor,
+                    )
+                )
         return changed
 
     # --- playlists --------------------------------------------------
