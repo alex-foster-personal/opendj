@@ -87,11 +87,17 @@ class SeratoAdapterOptions:
 
 
 def _stable_track_id(file_path: str, title: str) -> str:
-    """Phase 16 placeholder for ``apps.shared.stable_id.stable_id_for``.
+    """Per-adapter stable track ID (Phase 16, open-dj v0.1).
 
-    TODO(phase-5): replace with the real helper once Phase 5 ships. The shape
-    (short hex digest) is intentional so downstream ID comparisons still work
-    after the wire-up.
+    Phase 5 ships ``apps.shared.state.ids.stable_id`` which returns
+    ``(sha1_hex, tier)`` keyed on ISRC / fingerprint / path+mtime. That
+    is the archival dedup ID, not what this adapter needs: Serato's
+    database.V2 typically lacks ISRC, fingerprint, and mtime at read
+    time but does carry file_path + title. We therefore keep a local
+    SHA-1 over ``file_path|title`` with a ``serato_`` prefix so IDs stay
+    stable across round-trips and are visually distinguishable from the
+    Traktor adapter output. Phase 7 dedup re-keys to the archival
+    stable_id when better signals (ISRC, fingerprint) become available.
     """
     blob = f"{file_path}|{title}".encode("utf-8")
     return "serato_" + hashlib.sha1(blob).hexdigest()[:16]
