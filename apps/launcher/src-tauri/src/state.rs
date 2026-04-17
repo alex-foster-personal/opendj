@@ -66,13 +66,32 @@ pub fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Process-wide mutex used to serialise tests that mutate `HYPERK_DB_PATH`.
+    ///
+    /// `cargo test` runs tests in parallel threads by default. `std::env::set_var`
+    /// and `std::env::remove_var` are process-global and not thread-safe: if any
+    /// other test (or helper) reads `HYPERK_DB_PATH` while the override window
+    /// is open, the value it observes is racy. Guarding every test that touches
+    /// this env var with the same `Mutex` ensures at most one thread is inside
+    /// the set/read/remove window at a time, which restores determinism without
+    /// forcing `RUST_TEST_THREADS=1` for the whole crate.
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
 
     #[test]
     fn env_override_takes_precedence() {
+        let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        // Save any caller-provided value so we restore it (rather than unset it)
+        // on scope exit, in case the surrounding process actually uses it.
+        let prev = std::env::var("HYPERK_DB_PATH").ok();
         std::env::set_var("HYPERK_DB_PATH", "/tmp/override.sqlite");
         let p = get_db_path().unwrap();
         assert_eq!(p, PathBuf::from("/tmp/override.sqlite"));
-        std::env::remove_var("HYPERK_DB_PATH");
+        match prev {
+            Some(v) => std::env::set_var("HYPERK_DB_PATH", v),
+            None => std::env::remove_var("HYPERK_DB_PATH"),
+        }
     }
 
     #[test]
