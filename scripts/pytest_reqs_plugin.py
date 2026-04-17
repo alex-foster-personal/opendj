@@ -38,18 +38,42 @@ def pytest_addoption(parser) -> None:  # type: ignore[no-untyped-def]
         default=False,
         help="Run tests marked live_db (off by default to protect live DBs).",
     )
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Run tests marked integration (Phase 4 smoke; off by default).",
+    )
 
 
 def pytest_collection_modifyitems(config, items) -> None:  # type: ignore[no-untyped-def]
-    """Skip ``live_db`` tests unless ``--live-db`` was passed."""
+    """Skip ``live_db`` tests unless ``--live-db`` was passed.
+
+    Also skip ``integration`` tests unless ``--run-integration`` or
+    ``pytest -m integration`` was explicitly passed.
+    """
     import pytest
 
-    if config.getoption("--live-db"):
-        return
-    skip = pytest.mark.skip(reason="needs --live-db; this test touches a live DB")
-    for item in items:
-        if "live_db" in item.keywords:
-            item.add_marker(skip)
+    if not config.getoption("--live-db"):
+        skip_live = pytest.mark.skip(
+            reason="needs --live-db; this test touches a live DB"
+        )
+        for item in items:
+            if "live_db" in item.keywords:
+                item.add_marker(skip_live)
+
+    # If -m integration or --run-integration is set, run them; otherwise skip.
+    markexpr = str(getattr(config.option, "markexpr", "") or "")
+    run_integration = (
+        config.getoption("--run-integration") or "integration" in markexpr
+    )
+    if not run_integration:
+        skip_int = pytest.mark.skip(
+            reason="integration test -- run via `make integration` or -m integration"
+        )
+        for item in items:
+            if "integration" in item.keywords:
+                item.add_marker(skip_int)
 
 
 # ------------------------------------------------------------------ collect

@@ -133,9 +133,93 @@ def resolve_conflict(
     return "accept_rb"
 
 
+# ----- Plan 3: cue-array resolver --------------------------------------
+
+
+@dataclass(slots=True, frozen=True)
+class CueArrayResolution:
+    """Three-way split of a cue diff into actionable buckets."""
+
+    rb_additions: tuple  # cues to add to RB (came from djay)
+    djay_additions: tuple  # cues to add to djay (came from RB)
+    conflicts: tuple  # ``(rb_cue, djay_cue)`` pairs with attribute mismatches
+
+
+def resolve_cue_array(
+    rb_cues,
+    djay_cues,
+    *,
+    tolerance_msec: int = 20,
+) -> CueArrayResolution:
+    """Union two cue lists with ±tolerance_msec matching on position+kind+index.
+
+    Returns::
+
+        (rb_additions, djay_additions, conflicts)
+
+    ``rb_additions`` are djay cues that have no RB match (so we'd add to RB).
+    ``djay_additions`` are RB cues that have no djay match (so we'd add to djay).
+    ``conflicts`` are near-matches (within tolerance and same kind/index)
+    whose metadata (name, colour, loop length) differs. Hot-cue index
+    collisions (same slot, positions > tolerance apart) also go into conflicts.
+    """
+    rb_matched: set[int] = set()
+    dj_matched: set[int] = set()
+    conflicts: list = []
+
+    def _position_hit(a, b):
+        if a.kind != b.kind:
+            return False
+        if abs(a.position_msec - b.position_msec) > tolerance_msec:
+            return False
+        if a.kind == "hot" and a.index is not None and b.index is not None:
+            return a.index == b.index
+        return True
+
+    for i, a in enumerate(rb_cues):
+        for j, b in enumerate(djay_cues):
+            if j in dj_matched:
+                continue
+            if _position_hit(a, b):
+                rb_matched.add(i)
+                dj_matched.add(j)
+                if (
+                    (a.name or "") != (b.name or "")
+                    or a.color_rgb != b.color_rgb
+                    or (a.loop_length_msec or 0) != (b.loop_length_msec or 0)
+                ):
+                    conflicts.append((a, b))
+                break
+
+    # Hot-cue index collisions: same kind="hot" and same index but
+    # positions > tolerance apart -> conflict (don't silently move).
+    for i, a in enumerate(rb_cues):
+        if i in rb_matched or a.kind != "hot" or a.index is None:
+            continue
+        for j, b in enumerate(djay_cues):
+            if j in dj_matched or b.kind != "hot" or b.index is None:
+                continue
+            if a.index == b.index:
+                conflicts.append((a, b))
+                rb_matched.add(i)
+                dj_matched.add(j)
+                break
+
+    rb_additions = tuple(b for j, b in enumerate(djay_cues) if j not in dj_matched)
+    djay_additions = tuple(a for i, a in enumerate(rb_cues) if i not in rb_matched)
+
+    return CueArrayResolution(
+        rb_additions=rb_additions,
+        djay_additions=djay_additions,
+        conflicts=tuple(conflicts),
+    )
+
+
 __all__ = [
     "ConflictResolution",
     "ConflictInput",
+    "CueArrayResolution",
     "resolve_conflict",
+    "resolve_cue_array",
     "DEFAULT_WINDOW_DAYS",
 ]
