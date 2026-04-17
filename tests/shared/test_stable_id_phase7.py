@@ -25,7 +25,8 @@ from apps.shared.stable_id import (
 def test_isrc_branch_deterministic() -> None:
     digest, tier = stable_id_for(isrc="USRC17607839", fingerprint=None)
     assert tier == "isrc"
-    assert len(digest) == 16
+    # Phase 5 canonical implementation returns a full 40-char sha1 hex.
+    assert len(digest) == 40
     # Re-run must match.
     digest2, _ = stable_id_for(isrc="USRC17607839", fingerprint=None)
     assert digest == digest2
@@ -62,7 +63,7 @@ def test_fingerprint_branch_deterministic() -> None:
         isrc=None, fingerprint="AQAAAAABC", duration_ms=180000, size_bytes=3_000_000
     )
     assert tier == "fingerprint"
-    assert len(digest) == 16
+    assert len(digest) == 40
     digest2, _ = stable_id_for(
         isrc=None, fingerprint="AQAAAAABC", duration_ms=180000, size_bytes=3_000_000
     )
@@ -98,7 +99,7 @@ def test_inferred_branch_uses_path_mtime() -> None:
         isrc=None, fingerprint=None, abs_path="/a/b/c.mp3", mtime=1700000000.0
     )
     assert tier == "inferred"
-    assert len(digest) == 16
+    assert len(digest) == 40
 
 
 @pytest.mark.requirement("META-03")
@@ -140,4 +141,4 @@ def test_stable_id_returns_tuple() -> None:
 @pytest.mark.requirement("META-03")
 def test_stable_id_str_returns_digest_only() -> None:
     digest = stable_id_str(isrc="USRC17607839")
-    assert isinstance(digest, str) and len(digest) == 16
+    assert isinstance(digest, str) and len(digest) == 40
