@@ -1,0 +1,26 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Ratings",
+      "artists": [
+        "Rated"
+      ],
+      "beats": [],
+      "bpm": 127.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 200000,
+      "extensions": {},
+      "file_path": "/Music/fixture/11/five-star.mp3",
+      "isrc": null,
+      "key_camelot": "1A",
+      "play_count": 0,
+      "rating": 5,
+      "title": "Peak Time Banger",
+      "track_id": "fixture-11-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

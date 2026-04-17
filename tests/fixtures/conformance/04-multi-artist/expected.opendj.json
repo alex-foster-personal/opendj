@@ -1,0 +1,26 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Collab LP",
+      "artists": [
+        "Alice, Bob, Charlie"
+      ],
+      "beats": [],
+      "bpm": 126.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 220000,
+      "extensions": {},
+      "file_path": "/Music/fixture/04/collab.mp3",
+      "isrc": null,
+      "key_camelot": "7A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Three Way Split",
+      "track_id": "fixture-04-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

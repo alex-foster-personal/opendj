@@ -1,0 +1,75 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Ordering Suite",
+      "artists": [
+        "One"
+      ],
+      "beats": [],
+      "bpm": 120.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 180000,
+      "extensions": {},
+      "file_path": "/Music/fixture/13/a.mp3",
+      "isrc": null,
+      "key_camelot": "8A",
+      "play_count": 0,
+      "rating": null,
+      "title": "A",
+      "track_id": "fixture-13-a"
+    },
+    {
+      "album": "Ordering Suite",
+      "artists": [
+        "Two"
+      ],
+      "beats": [],
+      "bpm": 122.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 180000,
+      "extensions": {},
+      "file_path": "/Music/fixture/13/b.mp3",
+      "isrc": null,
+      "key_camelot": "9A",
+      "play_count": 0,
+      "rating": null,
+      "title": "B",
+      "track_id": "fixture-13-b"
+    },
+    {
+      "album": "Ordering Suite",
+      "artists": [
+        "Three"
+      ],
+      "beats": [],
+      "bpm": 124.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 180000,
+      "extensions": {},
+      "file_path": "/Music/fixture/13/c.mp3",
+      "isrc": null,
+      "key_camelot": "10A",
+      "play_count": 0,
+      "rating": null,
+      "title": "C",
+      "track_id": "fixture-13-c"
+    }
+  ],
+  "playlists": [
+    {
+      "children": [],
+      "name": "Set order",
+      "track_ids": []
+    },
+    {
+      "children": [],
+      "name": "Warmup order",
+      "track_ids": []
+    }
+  ],
+  "extensions": {}
+}

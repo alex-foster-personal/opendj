@@ -1,0 +1,10 @@
+source: manual
+applies:
+  serato:
+    drops: ["rating", "duration_ms", "bpm"]
+  traktor:
+    drops: ["bpm"]
+  rekordbox:
+    drops: ["bpm"]
+  djay:
+    drops: ["bpm"]

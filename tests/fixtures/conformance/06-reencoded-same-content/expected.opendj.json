@@ -1,0 +1,45 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Reencoded",
+      "artists": [
+        "Alice"
+      ],
+      "beats": [],
+      "bpm": 124.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 210000,
+      "extensions": {},
+      "file_path": "/Music/fixture/06/song.flac",
+      "isrc": null,
+      "key_camelot": "6A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Same Content",
+      "track_id": "fixture-06-flac"
+    },
+    {
+      "album": "Reencoded",
+      "artists": [
+        "Alice"
+      ],
+      "beats": [],
+      "bpm": 124.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 210000,
+      "extensions": {},
+      "file_path": "/Music/fixture/06/song-320.mp3",
+      "isrc": null,
+      "key_camelot": "6A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Same Content",
+      "track_id": "fixture-06-mp3"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

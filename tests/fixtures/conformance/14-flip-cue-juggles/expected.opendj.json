@@ -1,0 +1,91 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Flip Style",
+      "artists": [
+        "Juggler"
+      ],
+      "beats": [],
+      "bpm": 93.0,
+      "color_rgb": null,
+      "cues": [
+        {
+          "color_rgb": 13791913,
+          "index": 0,
+          "length_ms": null,
+          "name": "J1",
+          "position_ms": 10000,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 1,
+          "length_ms": null,
+          "name": "J2",
+          "position_ms": 10500,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 2,
+          "length_ms": null,
+          "name": "J3",
+          "position_ms": 11000,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 3,
+          "length_ms": null,
+          "name": "J4",
+          "position_ms": 11500,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 4,
+          "length_ms": null,
+          "name": "J5",
+          "position_ms": 12000,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 5,
+          "length_ms": null,
+          "name": "J6",
+          "position_ms": 12500,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 6,
+          "length_ms": null,
+          "name": "J7",
+          "position_ms": 13000,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 13791913,
+          "index": 7,
+          "length_ms": null,
+          "name": "J8",
+          "position_ms": 13500,
+          "type": "hot"
+        }
+      ],
+      "duration_ms": 210000,
+      "extensions": {},
+      "file_path": "/Music/fixture/14/flip.mp3",
+      "isrc": null,
+      "key_camelot": null,
+      "play_count": 0,
+      "rating": null,
+      "title": "Eight Cue Juggle",
+      "track_id": "fixture-14-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

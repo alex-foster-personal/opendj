@@ -1,0 +1,59 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Cue Colour Edge",
+      "artists": [
+        "Colourist"
+      ],
+      "beats": [],
+      "bpm": 126.0,
+      "color_rgb": null,
+      "cues": [
+        {
+          "color_rgb": 16711935,
+          "index": 0,
+          "length_ms": null,
+          "name": "Magenta",
+          "position_ms": 0,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 65535,
+          "index": 1,
+          "length_ms": null,
+          "name": "Cyan",
+          "position_ms": 30000,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 16776960,
+          "index": 2,
+          "length_ms": null,
+          "name": "Yellow",
+          "position_ms": 60000,
+          "type": "hot"
+        },
+        {
+          "color_rgb": 8388736,
+          "index": 3,
+          "length_ms": null,
+          "name": "Purple",
+          "position_ms": 90000,
+          "type": "hot"
+        }
+      ],
+      "duration_ms": 240000,
+      "extensions": {},
+      "file_path": "/Music/fixture/12/colours.mp3",
+      "isrc": null,
+      "key_camelot": null,
+      "play_count": 0,
+      "rating": null,
+      "title": "No Traktor Palette Match",
+      "track_id": "fixture-12-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

@@ -1,0 +1,45 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Versions",
+      "artists": [
+        "Alice"
+      ],
+      "beats": [],
+      "bpm": 120.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 200000,
+      "extensions": {},
+      "file_path": "/Music/fixture/07/track.mp3",
+      "isrc": null,
+      "key_camelot": "3A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Moonrise",
+      "track_id": "fixture-07-original"
+    },
+    {
+      "album": "Versions (Remixes)",
+      "artists": [
+        "Alice, DJ Bob"
+      ],
+      "beats": [],
+      "bpm": 128.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 240000,
+      "extensions": {},
+      "file_path": "/Music/fixture/07/track-djbob-remix.mp3",
+      "isrc": null,
+      "key_camelot": "3A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Moonrise (DJ Bob Remix)",
+      "track_id": "fixture-07-remix"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

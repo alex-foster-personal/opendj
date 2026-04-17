@@ -1,0 +1,26 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Orphan",
+      "artists": [
+        "Unknown"
+      ],
+      "beats": [],
+      "bpm": 118.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 195000,
+      "extensions": {},
+      "file_path": "/Music/fixture/05/no-isrc.mp3",
+      "isrc": null,
+      "key_camelot": "4B",
+      "play_count": 0,
+      "rating": null,
+      "title": "No ISRC Edit",
+      "track_id": "fixture-05-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

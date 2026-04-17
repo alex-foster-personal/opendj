@@ -1,0 +1,10 @@
+source: manual
+applies:
+  serato:
+    drops: ["duration_ms", "bpm", "cues"]
+  traktor:
+    drops: ["cue_points.color", "bpm"]
+  rekordbox:
+    drops: ["bpm"]
+  djay:
+    drops: ["bpm"]

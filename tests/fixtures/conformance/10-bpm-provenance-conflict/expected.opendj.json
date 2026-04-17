@@ -1,0 +1,26 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Provenance Stress",
+      "artists": [
+        "Provenance Pete"
+      ],
+      "beats": [],
+      "bpm": 123.45,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 180000,
+      "extensions": {},
+      "file_path": "/Music/fixture/10/disputed.mp3",
+      "isrc": null,
+      "key_camelot": "5A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Four Vendors Disagree",
+      "track_id": "fixture-10-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

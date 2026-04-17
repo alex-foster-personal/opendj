@@ -1,0 +1,26 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Tempo Studies",
+      "artists": [
+        "Variable Tempo Project"
+      ],
+      "beats": [],
+      "bpm": 132.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 300000,
+      "extensions": {},
+      "file_path": "/Music/fixture/08/variable.mp3",
+      "isrc": null,
+      "key_camelot": "9A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Accel 120 to 144",
+      "track_id": "fixture-08-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

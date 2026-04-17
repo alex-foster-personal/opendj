@@ -1,0 +1,26 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Streaming",
+      "artists": [
+        "Cloud Artist"
+      ],
+      "beats": [],
+      "bpm": 100.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 185000,
+      "extensions": {},
+      "file_path": "tidal://track/123456789",
+      "isrc": null,
+      "key_camelot": "2B",
+      "play_count": 0,
+      "rating": null,
+      "title": "Streaming Only Track",
+      "track_id": "fixture-09-one"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}

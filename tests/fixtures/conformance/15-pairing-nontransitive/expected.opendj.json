@@ -1,0 +1,64 @@
+{
+  "version": "0.1",
+  "tracks": [
+    {
+      "album": "Pairings",
+      "artists": [
+        "A"
+      ],
+      "beats": [],
+      "bpm": 128.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 200000,
+      "extensions": {},
+      "file_path": "/Music/fixture/15/a.mp3",
+      "isrc": null,
+      "key_camelot": "8A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Track A",
+      "track_id": "fixture-15-a"
+    },
+    {
+      "album": "Pairings",
+      "artists": [
+        "B"
+      ],
+      "beats": [],
+      "bpm": 128.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 200000,
+      "extensions": {},
+      "file_path": "/Music/fixture/15/b.mp3",
+      "isrc": null,
+      "key_camelot": "9A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Track B",
+      "track_id": "fixture-15-b"
+    },
+    {
+      "album": "Pairings",
+      "artists": [
+        "C"
+      ],
+      "beats": [],
+      "bpm": 128.0,
+      "color_rgb": null,
+      "cues": [],
+      "duration_ms": 200000,
+      "extensions": {},
+      "file_path": "/Music/fixture/15/c.mp3",
+      "isrc": null,
+      "key_camelot": "10A",
+      "play_count": 0,
+      "rating": null,
+      "title": "Track C",
+      "track_id": "fixture-15-c"
+    }
+  ],
+  "playlists": [],
+  "extensions": {}
+}
