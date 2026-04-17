@@ -69,6 +69,33 @@ impl<'a> SidecarWrite<'a> {
         M: FnOnce(&mut String) -> Result<(), String>,
         V: FnOnce(&str) -> Result<(), String>,
     {
+        // 0. Absolute-path guard: sidecar directories MUST be absolute so that
+        //    backups/reversals/audit land in a deterministic location rather
+        //    than being resolved relative to the process CWD. This catches
+        //    callers that skip the Phase 17 `build_dispatcher_with_absolute_paths`
+        //    wire-up and would otherwise silently scatter artifacts under the
+        //    launcher's current working directory.
+        if !self.backup_dir.is_absolute() {
+            return Err(DragError::SidecarRefused(format!(
+                "sidecar backup_dir must be absolute, got {}",
+                self.backup_dir.display()
+            )));
+        }
+        if !self.reversal_dir.is_absolute() {
+            return Err(DragError::SidecarRefused(format!(
+                "sidecar reversal_dir must be absolute, got {}",
+                self.reversal_dir.display()
+            )));
+        }
+        if let Some(audit) = self.audit_log {
+            if !audit.is_absolute() {
+                return Err(DragError::SidecarRefused(format!(
+                    "sidecar audit_log must be absolute, got {}",
+                    audit.display()
+                )));
+            }
+        }
+
         // 1. Running-app gate
         for forbidden in self.forbid_if_running {
             if self.running_bundle_ids.iter().any(|b| b == forbidden) {
@@ -447,6 +474,105 @@ mod sidecar_tests {
         // Target unchanged.
         let final_content = fs::read_to_string(&target).unwrap();
         assert_eq!(final_content, "<ROOT>hello</ROOT>\n");
+    }
+
+    #[test]
+    fn refuses_relative_backup_dir() {
+        // Regression for adv-v2-fanout 2/3 (task 3): a caller that constructs a
+        // SidecarWrite with a relative backup_dir (e.g. via RekordboxAdapter's
+        // CWD-relative Default impl) must be refused BEFORE we touch disk, so
+        // sidecar artifacts never land under the process CWD.
+        let (_tmp, target, _backup_dir_abs, reversal_dir, audit) = setup();
+        let running: Vec<String> = vec![];
+        let relative_backup = PathBuf::from("data/launcher/backups");
+        assert!(!relative_backup.is_absolute(), "fixture sanity check");
+        let sc = SidecarWrite {
+            label: "test-xml",
+            target_path: &target,
+            backup_dir: &relative_backup,
+            reversal_dir: &reversal_dir,
+            audit_log: Some(&audit),
+            forbid_if_running: &[],
+            running_bundle_ids: &running,
+            timestamp_override: Some("20260417T000000Z"),
+        };
+        let err = sc
+            .with_backup(|_| Ok(()), |_| Ok(()))
+            .unwrap_err();
+        match err {
+            DragError::SidecarRefused(msg) => {
+                assert!(
+                    msg.contains("backup_dir must be absolute"),
+                    "unexpected message: {}",
+                    msg
+                );
+                assert!(msg.contains("data/launcher/backups"), "msg: {}", msg);
+            }
+            other => panic!("expected SidecarRefused, got {:?}", other),
+        }
+        // Target left untouched.
+        let final_content = fs::read_to_string(&target).unwrap();
+        assert_eq!(final_content, "<ROOT>hello</ROOT>\n");
+    }
+
+    #[test]
+    fn refuses_relative_reversal_dir() {
+        let (_tmp, target, backup_dir, _reversal_dir_abs, audit) = setup();
+        let running: Vec<String> = vec![];
+        let relative_reversal = PathBuf::from("data/launcher/reversals");
+        let sc = SidecarWrite {
+            label: "test-xml",
+            target_path: &target,
+            backup_dir: &backup_dir,
+            reversal_dir: &relative_reversal,
+            audit_log: Some(&audit),
+            forbid_if_running: &[],
+            running_bundle_ids: &running,
+            timestamp_override: Some("20260417T000000Z"),
+        };
+        let err = sc
+            .with_backup(|_| Ok(()), |_| Ok(()))
+            .unwrap_err();
+        match err {
+            DragError::SidecarRefused(msg) => {
+                assert!(
+                    msg.contains("reversal_dir must be absolute"),
+                    "unexpected message: {}",
+                    msg
+                );
+            }
+            other => panic!("expected SidecarRefused, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn refuses_relative_audit_log() {
+        let (_tmp, target, backup_dir, reversal_dir, _audit_abs) = setup();
+        let running: Vec<String> = vec![];
+        let relative_audit = PathBuf::from("data/launcher/audit.jsonl");
+        let sc = SidecarWrite {
+            label: "test-xml",
+            target_path: &target,
+            backup_dir: &backup_dir,
+            reversal_dir: &reversal_dir,
+            audit_log: Some(&relative_audit),
+            forbid_if_running: &[],
+            running_bundle_ids: &running,
+            timestamp_override: Some("20260417T000000Z"),
+        };
+        let err = sc
+            .with_backup(|_| Ok(()), |_| Ok(()))
+            .unwrap_err();
+        match err {
+            DragError::SidecarRefused(msg) => {
+                assert!(
+                    msg.contains("audit_log must be absolute"),
+                    "unexpected message: {}",
+                    msg
+                );
+            }
+            other => panic!("expected SidecarRefused, got {:?}", other),
+        }
     }
 
     #[test]
