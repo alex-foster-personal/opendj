@@ -62,9 +62,9 @@ masks for `track_id` and `file_path`.
 ## Adding an adapter
 
 1. Land `apps/adapters/<name>/` implementing the `Adapter` Protocol in
-   [`apps/adapters/_shim/__init__.py`](../../apps/adapters/_shim/__init__.py)
-   (to be moved to `apps/open_dj/` once Phase 15 ships its typed
-   dataclass layer).
+   [`apps/open_dj/schema.py`](../../apps/open_dj/schema.py).
+   (The former `apps/adapters/_shim/` package was retired in phase 16-15
+   when `apps.open_dj` shipped its typed dataclass layer.)
 2. Register the adapter in
    [`tests/test_conformance.py`](../../tests/test_conformance.py)
    `_load_adapter` with a short name.
