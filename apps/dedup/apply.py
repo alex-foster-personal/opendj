@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as _dt
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -309,6 +310,15 @@ def run_apply(
 
     if not live:
         return result
+
+    # ``allow_rb_running`` exists solely as a test-only bypass for rail 2
+    # (pgrep abort). Production callers must never pass True. We enforce
+    # this by requiring a pytest context when the flag is set; this makes
+    # accidental production misuse loud instead of a silent rail bypass.
+    if allow_rb_running and not os.getenv("PYTEST_CURRENT_TEST"):
+        raise RuntimeError(
+            "allow_rb_running is a test-only bypass; refusing to run outside pytest."
+        )
 
     if not allow_rb_running and _rekordbox_running():
         result["errors"].append("Rekordbox is running; refusing to write.")

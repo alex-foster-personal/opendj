@@ -201,13 +201,26 @@ class LiveWriteSession:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        if exc is not None:
-            return None
-        with self.reverse_script_path.open("a", encoding="utf-8") as fp:
-            fp.write(
-                "\n# Last-resort full restore (uncomment to use):\n"
-                f"# cp -n '{self._backup_path}' '{self.db_path}'\n"
-            )
+        # [I2 fix] Always append the last-resort restore footer to the reverse
+        # script, even when an exception escapes the ``with`` block. Without
+        # this, a crash mid-session would leave the user with a partial
+        # reverse.sh that lacks the one-liner needed to roll back the whole DB.
+        try:
+            with self.reverse_script_path.open("a", encoding="utf-8") as fp:
+                if exc is not None:
+                    exc_name = exc_type.__name__ if exc_type is not None else "Unknown"
+                    fp.write(
+                        f"\n# NOTE: session aborted with exception "
+                        f"{exc_name}: {exc!s}\n"
+                    )
+                fp.write(
+                    "\n# Last-resort full restore (uncomment to use):\n"
+                    f"# cp -n '{self._backup_path}' '{self.db_path}'\n"
+                )
+        except Exception:  # pragma: no cover - best-effort footer write
+            # Never let footer-write failures mask the original exception.
+            pass
+        return None
 
     @property
     def reverse_script_path(self) -> Path:

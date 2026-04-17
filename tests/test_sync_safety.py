@@ -199,3 +199,30 @@ def test_reverse_script_appends_incrementally(tmp_path: Path):
             w.append_reverse("# undo b")
     text = sess.reverse_script_path.read_text(encoding="utf-8")
     assert "undo a" in text and "undo b" in text
+
+
+def test_reverse_script_footer_written_on_exception(tmp_path: Path):
+    """Regression for [I2]: reverse.sh must still receive the last-resort
+    restore footer when the ``with`` block exits via an exception, so the
+    user can roll back manually even after a crash mid-session.
+    """
+    src = _make_db(tmp_path)
+    sess = LiveWriteSession(
+        target="rekordbox",
+        reason="test",
+        flag_ok=True,
+        db_path=src,
+        process_gate_override=lambda t: None,
+        reversal_root=tmp_path / "reversal",
+    )
+    with pytest.raises(RuntimeError):
+        with sess:
+            with sess.per_track("boom") as w:
+                w.write("x")
+                w.append_reverse("# pre-crash undo")
+                raise RuntimeError("simulated crash")
+    text = sess.reverse_script_path.read_text(encoding="utf-8")
+    assert "pre-crash undo" in text
+    assert "cp -n" in text
+    assert "Last-resort full restore" in text
+    assert "session aborted with exception" in text

@@ -233,7 +233,15 @@ def run_apply(
     finally:
         conn.close()
 
-    reversal = _write_reversal(results, reversal_dir) if not dry_run else None
+    # Only emit a reversal script when there is at least one successful
+    # backup to reverse. An empty script (just the shebang) would be a
+    # confusing artefact when every file errored before backup.
+    has_reversible = any(r.backup and r.error is None for r in results)
+    reversal = (
+        _write_reversal(results, reversal_dir)
+        if not dry_run and has_reversible
+        else None
+    )
 
     return {
         "results": results,
