@@ -37,6 +37,17 @@ integration:
 clean:
 	rm -rf .pytest_cache htmlcov .coverage coverage-matrix.md
 
+# ----- Phase 9: Spotify importer (CAT-01) --------------------------------
+# Wrap with doppler so SPOTIFY_CLIENT_ID flows in without being committed.
+# Dry-run is the default inside the CLI; add --live + --i-understand-the-risks
+# and type the confirmation prompt to flip to a live write.
+spotify-import:
+	doppler run -p construct -c dev_af -- $(PY) -m apps.spotify import $(URL)
+
+spotify-rematch:
+	doppler run -p construct -c dev_af -- $(PY) -m apps.spotify rematch \
+		--playlist-id $(PLAYLIST_ID)
+
 # ----- Phase 11: cloud sync + web UI (CAT-04, CAT-05) --------------------
 .PHONY: webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
 
