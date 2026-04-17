@@ -1,4 +1,4 @@
-.PHONY: test cov reqs reqs-check fixture ci clean
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -22,6 +22,17 @@ fixture:
 # CI composite: canonical ordering = reqs-check first (fast fail on drift),
 # then tests + coverage.
 ci: reqs-check cov
+
+# ----- Phase 4 audit + integration targets -------------------------------
+
+audit-cues:
+	$(PY) -m apps.audit.cue_comparison
+
+audit-sync:
+	$(PY) -m apps.audit.sync_diff
+
+integration:
+	$(PYTEST) -m integration -q
 
 clean:
 	rm -rf .pytest_cache htmlcov .coverage coverage-matrix.md
