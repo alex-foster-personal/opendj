@@ -1,18 +1,30 @@
 """Per-set SQLite shim (session + event timeline).
 
-Plan 12-01 Step 1. The shim intentionally lives in its own file
+Plan 12-01 Step 1. By default this shim lives in its own file
 (``data/sets/sets.db``) so Phase 12 can ship without a hard dep on
 Phase 5's ``apps.shared.state``. Event shape is per CONTEXT D3:
 
     {session_id, timestamp_s, wall_clock, deck, track_stable_id,
      action, value, source}
 
-If Phase 5 later adds a compatible ``sets`` table to ``state.db`` we
-migrate the rows over via a follow-up plan; the API here is chosen to
-match what Phase 5 will expose (``record_event`` / ``fetch_events``).
+A ``backend=`` parameter (Option A from the Phase 5 wire-up brief)
+now lets a caller pass in a custom ``Callable[[], sqlite3.Connection]``
+(for example :func:`apps.shared.state.db.open_rw`), so the sets tables
+can be layered on top of the same ``state.db`` the rest of Phase 5
+uses. When the Phase 5 backend is in play, the per-set timeline table
+is created as ``set_events`` (instead of ``events``) to avoid
+colliding with Phase 5's own ``events`` table, and all reads/writes
+are routed through that aliased name.
+
+TODO(phase-5-full-migration): Option B would migrate the session + event
+timeline into Phase 5's shared schema (events via kind='set_event' on
+the main events table, sets via a new Phase 5 migration). That is the
+longer-term target; this Option A keeps Phase 12 shippable today while
+unlocking the shared-DB path for tests and tools that want a single
+sqlite file.
 
 Every write goes through :class:`SetsState`. Tests use the
-``SETS_DB`` path override for hermetic runs.
+``SETS_DB`` path override or the ``backend=`` hook for hermetic runs.
 """
 from __future__ import annotations
 
@@ -23,7 +35,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from . import paths as sets_paths
 
@@ -58,6 +70,37 @@ SCHEMA_SQL: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, timestamp_s)",
 )
+
+
+# Alternative schema for the Phase 5-backend path. Renames ``events``
+# to ``set_events`` so we do not collide with the canonical Phase 5
+# events table (which has a completely different shape: ts/kind/
+# stable_id/payload_json/actor). ``sets`` stays the same.
+_PHASE5_SCHEMA_SQL: tuple[str, ...] = (
+    SCHEMA_SQL[0],
+    """
+    CREATE TABLE IF NOT EXISTS set_events (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id      TEXT NOT NULL REFERENCES sets(session_id) ON DELETE CASCADE,
+        timestamp_s     REAL NOT NULL,
+        wall_clock      TEXT NOT NULL,
+        deck            TEXT,
+        track_stable_id TEXT,
+        action          TEXT NOT NULL,
+        value_json      TEXT,
+        source          TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_set_events_session "
+    "ON set_events(session_id, timestamp_s)",
+)
+
+
+# Type alias for the backend hook. The callable receives the caller's
+# configured db_path and must return an already-open sqlite3.Connection
+# with Phase 5 pragmas + migrations applied. :func:`apps.shared.state.
+# db.open_rw` matches this signature exactly.
+Backend = Callable[[Path], sqlite3.Connection]
 
 
 # ---------------------------------------------------------------------------
@@ -104,36 +147,56 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
-def _ensure_schema(conn: sqlite3.Connection) -> None:
-    for stmt in SCHEMA_SQL:
+def _ensure_schema(conn: sqlite3.Connection, *, events_table: str = "events") -> None:
+    schema = _PHASE5_SCHEMA_SQL if events_table == "set_events" else SCHEMA_SQL
+    for stmt in schema:
         conn.execute(stmt)
 
 
 class SetsState:
-    """Thread-safe writer over the shim DB.
+    """Thread-safe writer over the sets DB.
 
-    Creates its own connection per call; SQLite handles cross-thread work
-    via ``check_same_thread=False`` and a lock. This mirrors the pattern
-    from ``apps.shared.state.db`` but with a lighter surface.
+    Creates its own connection per call; SQLite handles cross-thread
+    work via ``check_same_thread=False`` and a lock. This mirrors the
+    pattern from :mod:`apps.shared.state.db` but with a lighter
+    surface.
+
+    Pass ``backend=apps.shared.state.db.open_rw`` (or any other
+    ``Callable[[Path], sqlite3.Connection]``) to route connections
+    through Phase 5's open_rw helper. In that mode the timeline table
+    is called ``set_events`` (not ``events``) so we don't collide with
+    Phase 5's canonical events table.
     """
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        *,
+        backend: Backend | None = None,
+    ) -> None:
         self.db_path: Path = Path(db_path) if db_path is not None else sets_paths.SETS_DB
+        self._backend = backend
+        # Under the Phase 5 backend we rename the timeline table.
+        self._events_table: str = "set_events" if backend is not None else "events"
         self._lock = threading.Lock()
         self._ensured = False
 
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(
-            str(self.db_path),
-            isolation_level=None,
-            check_same_thread=False,
-        )
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")
+        if self._backend is not None:
+            # Phase 5 backend owns pragmas + core migrations.
+            conn = self._backend(self.db_path)
+        else:
+            conn = sqlite3.connect(
+                str(self.db_path),
+                isolation_level=None,
+                check_same_thread=False,
+            )
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA busy_timeout = 5000")
         if not self._ensured:
-            _ensure_schema(conn)
+            _ensure_schema(conn, events_table=self._events_table)
             self._ensured = True
         return conn
 
@@ -217,14 +280,16 @@ class SetsState:
     # --- events --------------------------------------------------------
 
     def record_event(self, event: Event) -> int:
-        """Append a timeline event to the ``events`` table.
+        """Append a timeline event to the timeline table (``events`` or
+        ``set_events`` depending on backend).
 
         Returns the new row id.
         """
+        tbl = self._events_table
         with self._rw() as conn:
             cur = conn.execute(
-                """
-                INSERT INTO events(session_id, timestamp_s, wall_clock, deck,
+                f"""
+                INSERT INTO {tbl}(session_id, timestamp_s, wall_clock, deck,
                                    track_stable_id, action, value_json, source)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -249,11 +314,12 @@ class SetsState:
         action: str | None = None,
     ) -> list[Event]:
         """Return events for ``session_id`` in chronological order."""
+        tbl = self._events_table
         sql = [
-            """
+            f"""
             SELECT session_id, timestamp_s, wall_clock, deck, track_stable_id,
                    action, value_json, source
-            FROM events WHERE session_id = ?
+            FROM {tbl} WHERE session_id = ?
             """
         ]
         args: list[Any] = [session_id]
@@ -269,9 +335,10 @@ class SetsState:
         return [_row_to_event(r) for r in rows]
 
     def count_events(self, session_id: str) -> int:
+        tbl = self._events_table
         with self._rw() as conn:
             row = conn.execute(
-                "SELECT COUNT(*) FROM events WHERE session_id = ?",
+                f"SELECT COUNT(*) FROM {tbl} WHERE session_id = ?",
                 (session_id,),
             ).fetchone()
         return int(row[0] if row else 0)
@@ -294,6 +361,7 @@ def _row_to_event(row: tuple[Any, ...]) -> Event:
 
 __all__ = [
     "SCHEMA_SQL",
+    "Backend",
     "SessionRow",
     "Event",
     "SetsState",

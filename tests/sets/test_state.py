@@ -119,3 +119,89 @@ def test_list_sessions_orders_by_started_at_desc(sets_state: SetsState):
         "2026-04-17T22-00-00",
         "2026-04-17T21-30-00",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 backend hook (Option A from the wire-up brief)
+# ---------------------------------------------------------------------------
+
+
+def test_phase5_backend_uses_shared_state_db_and_aliased_table(tmp_path):
+    """SetsState(backend=apps.shared.state.db.open_rw) runs on state.db."""
+    from apps.shared.state import db as state_db
+    from apps.sets.state import Event, SetsState
+
+    db = tmp_path / "state.db"
+    ss = SetsState(db, backend=state_db.open_rw)
+    ss.open_session("sess-1", capture_device="rekordbox")
+    ss.record_event(
+        Event(
+            session_id="sess-1",
+            timestamp_s=0.0,
+            wall_clock="2026-04-17T22:00:00",
+            action="LOAD",
+            source="rekordbox",
+            deck="A",
+            track_stable_id="t1",
+        )
+    )
+
+    # state.db should contain:
+    #  * the Phase 5 core tables (tracks, events, adapters, ...)
+    #  * the sets table
+    #  * the aliased set_events (NOT our own events table)
+    with sqlite3.connect(str(db)) as conn:
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "tracks" in tables  # Phase 5 schema applied
+        assert "sets" in tables
+        assert "set_events" in tables
+        # Phase 5's canonical events table with (ts, kind, ...) columns
+        # is the one that owns the 'events' name.
+        cols = [
+            r[1]
+            for r in conn.execute("PRAGMA table_info(events)").fetchall()
+        ]
+        assert "kind" in cols and "payload_json" in cols
+
+        # The set_events row we just wrote is readable.
+        rows = conn.execute(
+            "SELECT action, source FROM set_events WHERE session_id = ?",
+            ("sess-1",),
+        ).fetchall()
+    assert rows == [("LOAD", "rekordbox")]
+
+
+def test_default_backend_still_uses_sets_db(tmp_path):
+    """Without backend=, SetsState keeps its own data/sets/sets.db schema."""
+    from apps.sets.state import Event, SetsState
+
+    db = tmp_path / "sets.db"
+    ss = SetsState(db)
+    ss.open_session("sess-2", capture_device="rekordbox")
+    ss.record_event(
+        Event(
+            session_id="sess-2",
+            timestamp_s=0.0,
+            wall_clock="2026-04-17T22:00:00",
+            action="LOAD",
+            source="rekordbox",
+        )
+    )
+
+    with sqlite3.connect(str(db)) as conn:
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert tables == {"sets", "events", "sqlite_sequence"} or (
+            tables >= {"sets", "events"}
+        )
+        # No Phase 5 core tables under the default backend.
+        assert "tracks" not in tables
