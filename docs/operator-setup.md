@@ -170,10 +170,48 @@ pnpm tauri dev
 
 - Hotkey: `Alt+Space` (fallback `Ctrl+Cmd+Space`). Type 2+ characters to filter. Drag a row onto djay Pro's Deck A / B to load.
 
+## Safety rail updates in the v1.0 ship window
+
+Three rail-2 and rail-6 tightenings landed just before the v1.0 ship
+sweep. They change how you see failures but do not change the CLI
+contract for normal use.
+
+- **`pgrep` is now fail-closed (PR #81).** If `pgrep` is missing or
+  errors on your machine, `apps/sync/playlist_apply.py` refuses to run
+  a live write instead of silently skipping the running-app check. The
+  escape hatch is `--force-no-pgrep`, which you should only pass after
+  manually confirming Rekordbox AND djay Pro are both quit. See
+  `apps/sync/playlist_apply.py:79` and `:492`.
+- **`allow_app_running=True` is test-only (PR #86).** `apps/tags/apply.py`
+  now raises `RuntimeError` if the `allow_app_running` kwarg is passed
+  from outside a pytest run (`_in_pytest()` guard at
+  `apps/tags/apply.py:129`). Production callers cannot silently skip
+  the process check.
+- **Cloud write guard is fail-closed (PR #85).** The lock probe in
+  `apps/webui/server/deps.py:get_lock_status` used to swallow probe
+  exceptions and return `None`, which the write guard read as "no peer
+  holds the lock". It now returns a sentinel that
+  `get_write_state` translates into `503 lock_probe_failed`. Paired
+  fix in `apps/cloud/replicate.py` keeps the cloud lock held until the
+  Litestream subprocess has actually exited (`_wait_for_proc_exit`
+  with a 30-second timeout plus a hard-kill fallback).
+- **Playlist-apply verify is in-transaction (PR #81).** Readback
+  verification runs inside the per-op `BEGIN IMMEDIATE` / `COMMIT`
+  block. A mismatch triggers `ROLLBACK` and the op is marked `failed`
+  with `readback mismatch (rolled back): ...`; the bad rows are never
+  durable on disk.
+
+If a write fails with one of the new messages, treat the underlying
+cause as the bug. Do not reach for `--force-no-pgrep` to get past a
+real "app still running" condition.
+
 ## Troubleshooting
 
-- "Rekordbox is running" error on any write path: quit Rekordbox (Cmd+Q) before running commands that write to `master.db`. The safety rail uses `pgrep` to abort early.
+- "Rekordbox is running" error on any write path: quit Rekordbox (Cmd+Q) before running commands that write to `master.db`. The safety rail uses `pgrep` to abort early (PR #81 tightened this to fail closed when `pgrep` itself is missing).
 - "djay is running" error on any playlist or cue write: quit djay Pro AI first. Same reason.
+- `PlaylistApplyError: pgrep not found (or failed)`: your host has no `pgrep` on `$PATH`. Install one (`brew install pgrep` ships with the `proctools` formula, or `pgrep` is in BSD userland on macOS by default). Only after you have confirmed Rekordbox and djay are both quit, rerun with `--force-no-pgrep` to override rail 2.
+- `503 lock_probe_failed` from the web UI: a cloud peer lock probe raised. Check `apps/cloud/replicate.py` logs for the underlying exception and confirm your Litestream / R2 credentials are still valid before retrying writes.
+- `readback mismatch (rolled back): ...` in a playlist apply run: the write was refused and rolled back; no durable change. Investigate the specific mismatch in the error message before retrying.
 - `tflite-runtime` wheel not found during `pip install`: your Python is probably 3.12 or newer. Install Python 3.11 in a separate venv (via `pyenv install 3.11` or a conda env) and reinstall. This only matters for the voice feature; everything else is fine on 3.14.
 - `fpcalc: command not found`: `brew install chromaprint`.
 - `ffmpeg: command not found`: `brew install ffmpeg`.

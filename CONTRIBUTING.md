@@ -138,7 +138,12 @@ the Safety section of [`README.md`](README.md) for the summary.
    just "y"). Use the helpers in `apps/sync/safety.py`.
 2. **Running-app check.** `pgrep` for Rekordbox / djay / Serato /
    Traktor and abort if the target app is running. Catch the lock before
-   you touch the file.
+   you touch the file. A missing or erroring `pgrep` is now a hard
+   error (PR #81); the CLI override `--force-no-pgrep` exists only for
+   operators who have manually confirmed the vendor app is quit. Test
+   code may pass `allow_app_running=True` into `apps/tags/apply.py`,
+   but the `_in_pytest()` guard rejects that kwarg anywhere outside a
+   pytest run (PR #86).
 3. **Timestamped backup.** Copy the target file to a timestamped path
    before the write. Every rail-3 backup must be restorable by the
    reversal script in rail 6.
@@ -150,7 +155,17 @@ the Safety section of [`README.md`](README.md) for the summary.
 6. **Post-write readback plus reversal script.** Re-open the written file
    and verify the change took; emit a reversal script that restores the
    rail-3 backup. A new writer without a reversal script will not be
-   merged.
+   merged. For DB writers, run the readback inside the same
+   `BEGIN IMMEDIATE` / `COMMIT` as the write so a mismatch can
+   `ROLLBACK` before anything becomes durable (`apps/sync/playlist_apply.py`,
+   PR #81 is the reference implementation).
+
+Parallel fail-closed rule for cloud write guards: if a peer-lock probe
+raises, the FastAPI dependency must return `503 lock_probe_failed`
+rather than defaulting to "no peer holds the lock"
+(`apps/webui/server/deps.py:get_lock_status`, PR #85). The lock itself
+must be held until the Litestream subprocess has actually exited
+(`apps/cloud/replicate.py:_wait_for_proc_exit`).
 
 Voice intents that are destructive are additionally gated behind
 `--enable-destructive`. New destructive CLI surfaces should follow the
