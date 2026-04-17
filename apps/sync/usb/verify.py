@@ -131,14 +131,24 @@ def _hash_parallel(
     def _work(p: Path) -> tuple[Path, str]:
         return p, sha256_file(p)
 
+    # Workers return tuples; the pool writes to ``hits`` (main thread only,
+    # via the _cf.map iterator) and the cache write is deferred until after
+    # the pool has joined. HashCache wraps a sqlite3.Connection that is
+    # bound to the thread that created it (check_same_thread defaults to
+    # True); performing put() only on the main thread after the pool exits
+    # makes the thread-safety contract explicit and defends against future
+    # refactors that might move the call inside ``_work``.
+    results: list[tuple[Path, str]] = []
     with _cf.ThreadPoolExecutor(max_workers=workers) as pool:
         for path, digest in pool.map(_work, todo):
             hits[path] = digest
-            if cache is not None:
-                try:
-                    cache.put(path, digest)
-                except OSError:
-                    pass
+            results.append((path, digest))
+    if cache is not None:
+        for path, digest in results:
+            try:
+                cache.put(path, digest)
+            except OSError:
+                pass
     return hits
 
 

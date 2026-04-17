@@ -242,3 +242,68 @@ def test_plan_from_verify_builds_rename_ops(
     )
     kinds = [op.kind for op in plan.ops]
     assert "rename" in kinds
+
+
+@pytest.mark.requirement("CAT-02")
+def test_hash_parallel_with_hashcache_multiple_workers(tmp_path: Path) -> None:
+    """Regression: adv-r4 finding R4-01.
+
+    ``_hash_parallel`` previously called ``HashCache.put`` from inside the
+    pool.map loop. In practice the iteration ran on the main thread, but
+    the review flagged that a refactor moving the call into the worker
+    function would trip SQLite's check_same_thread guard. After the fix
+    the cache is written only after the pool joins, so this test proves
+    that supplying a ``HashCache`` with workers > 1 and multiple files
+    populates both entries without raising ``sqlite3.ProgrammingError``.
+    """
+    from apps.shared.hashing import HashCache, sha256_file
+    from apps.sync.usb.verify import _hash_parallel
+
+    # Create four files with distinct bodies so every hash is unique.
+    files = []
+    for i in range(4):
+        p = tmp_path / f"track{i}.bin"
+        p.write_bytes(f"payload-{i}".encode() * 256)
+        files.append(p)
+
+    cache_db = tmp_path / "hash.db"
+    cache = HashCache(cache_db)
+    # Record which thread called put() so the test asserts put() is only
+    # invoked on the main thread (the thread that constructed the cache).
+    import threading
+
+    put_thread_ids: list[int] = []
+    real_put = cache.put
+
+    def _tracked_put(path, digest):  # type: ignore[no-untyped-def]
+        put_thread_ids.append(threading.get_ident())
+        return real_put(path, digest)
+
+    cache.put = _tracked_put  # type: ignore[method-assign]
+    main_tid = threading.get_ident()
+
+    try:
+        hits = _hash_parallel(files, cache, max_workers=4)
+    finally:
+        cache.close()
+
+    # Every file hashed.
+    assert set(hits.keys()) == set(files)
+    for p, digest in hits.items():
+        assert digest == sha256_file(p)
+
+    # put() must be called once per file, all on the main thread.
+    assert len(put_thread_ids) == len(files)
+    assert all(tid == main_tid for tid in put_thread_ids), (
+        f"HashCache.put called from non-main threads: {put_thread_ids} "
+        f"(main={main_tid})"
+    )
+
+    # Cache populated for every file (via a fresh connection to avoid the
+    # sqlite3.Connection thread affinity from the writer thread).
+    cache2 = HashCache(cache_db)
+    try:
+        for p, digest in hits.items():
+            assert cache2.get(p) == digest, f"cache miss for {p}"
+    finally:
+        cache2.close()
