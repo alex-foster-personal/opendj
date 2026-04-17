@@ -190,6 +190,22 @@ impl<'a> SidecarWrite<'a> {
                 ))
             })?;
         }
+
+        // 6b. Pre-rename mtime re-check. The existing step-3b check only
+        //     covers the read-stat window; a concurrent writer (iCloud,
+        //     Syncthing, Traktor auto-save) could still mutate the target
+        //     between our read and the `fs::rename` below and we would
+        //     happily clobber their change. Re-stat right before the rename
+        //     and refuse if the target has advanced since the pre-read
+        //     snapshot. This does not fully close the window (only flock
+        //     would) but narrows it from O(mutator + io) to O(stat + rename).
+        //     (adv-v2-fanout 2/3)
+        if let Err(e) = check_mtime_unchanged_before_rename(self.target_path, pre_mtime) {
+            // Best-effort cleanup of the orphaned temp file.
+            let _ = fs::remove_file(&tmp_path);
+            return Err(e);
+        }
+
         fs::rename(&tmp_path, self.target_path).map_err(|e| {
             DragError::SidecarFailed(format!(
                 "rename {} -> {}: {}",
@@ -253,6 +269,24 @@ fn read_mtime(path: &Path) -> Result<SystemTime, DragError> {
     meta.modified().map_err(|e| {
         DragError::SidecarFailed(format!("mtime {}: {}", path.display(), e))
     })
+}
+
+/// Re-stat `target_path` and return `SidecarRefused` if its mtime has
+/// advanced past the pre-read snapshot. Extracted so tests can drive the
+/// TOCTOU narrow-window check directly without having to force a real race
+/// through the full `with_backup` pipeline. (adv-v2-fanout 2/3, task 5.)
+pub(crate) fn check_mtime_unchanged_before_rename(
+    target_path: &Path,
+    pre_read_mtime: SystemTime,
+) -> Result<(), DragError> {
+    let pre_rename_mtime = read_mtime(target_path)?;
+    if pre_rename_mtime != pre_read_mtime {
+        return Err(DragError::SidecarRefused(format!(
+            "{} changed on disk between read and rename",
+            target_path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn write_reversal_script(
@@ -677,5 +711,71 @@ mod sidecar_tests {
             .expect("fsync should succeed on a normal temp dir");
         assert!(!outcome.rolled_back);
         assert!(fs::read_to_string(&target).unwrap().contains("sync-ok"));
+    }
+
+    #[test]
+    fn check_mtime_unchanged_before_rename_accepts_unchanged() {
+        let (_tmp, target, _backup_dir, _reversal_dir, _audit) = setup();
+        let snap = read_mtime(&target).unwrap();
+        check_mtime_unchanged_before_rename(&target, snap).expect("unchanged mtime path");
+    }
+
+    #[test]
+    fn check_mtime_unchanged_before_rename_refuses_after_concurrent_write() {
+        let (_tmp, target, _backup_dir, _reversal_dir, _audit) = setup();
+        let snap = read_mtime(&target).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        fs::write(&target, "<ROOT>mutated-by-concurrent-writer</ROOT>\n").unwrap();
+        let new_mtime = read_mtime(&target).unwrap();
+        assert!(new_mtime > snap, "concurrent write should advance mtime");
+
+        let err = check_mtime_unchanged_before_rename(&target, snap).unwrap_err();
+        match err {
+            DragError::SidecarRefused(msg) => {
+                assert!(msg.contains("changed on disk between read and rename"));
+                assert!(msg.contains(&target.display().to_string()));
+            }
+            other => panic!("expected SidecarRefused, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn with_backup_refuses_when_target_changes_between_read_and_rename() {
+        let (_tmp, target, backup_dir, reversal_dir, audit) = setup();
+        let running: Vec<String> = vec![];
+        let sc = SidecarWrite {
+            label: "test-xml",
+            target_path: &target,
+            backup_dir: &backup_dir,
+            reversal_dir: &reversal_dir,
+            audit_log: Some(&audit),
+            forbid_if_running: &[],
+            running_bundle_ids: &running,
+            timestamp_override: Some("20260417T000000Z"),
+        };
+        let target_for_mutator = target.clone();
+        let err = sc
+            .with_backup(
+                move |s| {
+                    *s = s.replace("hello", "our-change");
+                    std::thread::sleep(std::time::Duration::from_millis(1100));
+                    fs::write(
+                        &target_for_mutator,
+                        "<ROOT>mutated-by-concurrent-writer</ROOT>\n",
+                    )
+                    .unwrap();
+                    Ok(())
+                },
+                |_| Ok(()),
+            )
+            .unwrap_err();
+        match err {
+            DragError::SidecarRefused(msg) => {
+                assert!(msg.contains("changed on disk between read and rename"));
+            }
+            other => panic!("expected SidecarRefused, got {:?}", other),
+        }
+        let final_content = fs::read_to_string(&target).unwrap();
+        assert_eq!(final_content, "<ROOT>mutated-by-concurrent-writer</ROOT>\n");
     }
 }
