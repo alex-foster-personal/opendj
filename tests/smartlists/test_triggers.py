@@ -136,3 +136,48 @@ def test_arm_all_materialises_every_smartlist(
     clock.advance(10.0)
     results = runner.run_ready()
     assert len(results) == 2
+
+
+def test_triggers_subscribe_signature_matches_bus(
+    seeded_two_lists, smartlists_repo, clock,
+) -> None:
+    """P08-01 regression: ``subscribe_to`` must call the real Phase 5 bus.
+
+    ``apps.shared.state.events.EventBus.subscribe`` is
+    ``subscribe(kind, callback)``. The earlier ``TriggerRunner`` called
+    ``event_bus.subscribe(self.handle_event)`` (one positional arg),
+    which raised ``TypeError`` against the real bus and silently broke
+    SMART-03 in production. This test wires the real bus, publishes a
+    field-scoped event, and asserts the smartlist actually wakes.
+    """
+    from apps.shared.state.events import EventBus, FakeEventBus
+    from apps.shared.state.types import Event
+
+    row_house, row_bpm = seeded_two_lists
+    runner = _make_runner(smartlists_repo, clock)
+
+    # 1) Real EventBus: subscribe_to must call subscribe(kind, callback)
+    #    correctly. The buggy version called subscribe(callback), which
+    #    raised TypeError immediately on the real bus.
+    real_bus = EventBus()
+    try:
+        runner.subscribe_to(real_bus)  # must not raise TypeError
+    finally:
+        real_bus.close(timeout=1.0)
+
+    # 2) Functional check on a synchronous FakeEventBus (same public API
+    #    as EventBus, but invokes subscribers inline -- avoids
+    #    cross-thread sqlite issues for this assertion).
+    fake_bus = FakeEventBus()
+    runner.subscribe_to(fake_bus)
+    fake_bus.publish(Event(
+        ts="2026-01-01T00:00:00Z",
+        kind="track.tag_edited",
+        stable_id="a",
+        payload={"changed_fields": ["genre"]},
+        actor="test",
+    ))
+
+    pending = runner.pending()
+    assert row_house.id in pending
+    assert row_bpm.id not in pending

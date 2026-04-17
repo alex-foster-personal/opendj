@@ -98,13 +98,42 @@ def test_refresh_live_with_flag_runs(
 ) -> None:
     # Phase 3 writers are wired via refresh._build_writers. In this test
     # we only verify the CLI path itself runs -- stub the writers list to
-    # stay away from live vendor DBs.
-    monkeypatch.setattr(cli_refresh, "_build_writers", lambda **kw: [])
+    # stay away from live vendor DBs. P08-02: --live with zero writers is
+    # now fatal, so we hand back a real FakeWriter rather than [].
+    from apps.smartlists.writers import FakeWriter
+
+    monkeypatch.setattr(
+        cli_refresh, "_build_writers",
+        lambda **kw: [FakeWriter("rekordbox")],
+    )
     _seed_smartlist(db_path, "x", "high_energy.json")
     rc = cli_refresh.main([
         "--db", str(db_path), "--live", "--i-understand-the-risks",
     ])
     assert rc == 0
+
+
+@pytest.mark.requirement("SMART-03")
+def test_live_refresh_fails_when_no_vendor_writers(
+    db_path: Path,
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P08-02 regression: --live with zero vendor writers must be fatal.
+
+    Previously ``main`` would happily build a ``Materializer`` with an
+    empty writer list and print an "OK" summary, masking the fact that
+    no vendor DB was actually reachable. We now require a non-zero exit
+    and an explanatory error on stderr.
+    """
+    monkeypatch.setattr(cli_refresh, "_build_writers", lambda **kw: [])
+    _seed_smartlist(db_path, "x", "high_energy.json")
+    rc = cli_refresh.main([
+        "--db", str(db_path), "--live", "--i-understand-the-risks",
+    ])
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "no vendor playlist writers" in err
 
 
 def test_refresh_name_not_found_returns_1(

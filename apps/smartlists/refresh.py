@@ -81,7 +81,20 @@ def main(argv: list[str] | None = None, *, out=None) -> int:
 
     repo, conn = build_smartlists_repo(args.db)
     try:
-        materializer = Materializer(repo, _build_writers(live=do_live))
+        writers = _build_writers(live=do_live)
+        if do_live and not writers:
+            # P08-02: refusing to silently "succeed" with zero writers in
+            # --live mode. If every vendor factory returned None (RB + djay
+            # DBs unreachable, Rekordbox running, etc.) we have nothing to
+            # apply and must surface that as a failure rather than print
+            # "OK" for a no-op.
+            print(
+                "error: --live requested but no vendor playlist writers "
+                "could be built (RB and djay DBs unreachable?)",
+                file=sys.stderr,
+            )
+            return 1
+        materializer = Materializer(repo, writers)
         try:
             return _run(args, repo, materializer, stream, do_dry=do_dry,
                         do_live=do_live)

@@ -65,10 +65,40 @@ class TriggerRunner:
         self.live = live
 
     def subscribe_to(self, event_bus) -> None:
-        event_bus.subscribe(self.handle_event)
+        """Subscribe to a Phase 5 ``EventBus``-style bus.
+
+        The real Phase 5 bus (``apps.shared.state.events.EventBus``)
+        exposes ``subscribe(kind, callback)`` and emits ``types.Event``
+        instances -- not :class:`StateEvent`. We register a single
+        wildcard subscriber and adapt each ``Event`` into a
+        :class:`StateEvent` before handing it to :meth:`handle_event`,
+        projecting ``payload['changed_fields']`` into the smartlists
+        DTO shape.
+        """
+        event_bus.subscribe("*", self._on_bus_event)
 
     def unsubscribe_from(self, event_bus) -> None:
-        event_bus.unsubscribe(self.handle_event)
+        # EventBus has no unsubscribe; support fakes that do, otherwise no-op.
+        unsub = getattr(event_bus, "unsubscribe", None)
+        if unsub is not None:
+            unsub("*", self._on_bus_event)
+
+    def _on_bus_event(self, event) -> None:
+        """Adapt a Phase 5 ``Event`` (or a ``StateEvent``) to our handler."""
+        if isinstance(event, StateEvent):
+            self.handle_event(event)
+            return
+        payload = getattr(event, "payload", None) or {}
+        raw_fields = payload.get("changed_fields") or ()
+        try:
+            changed = frozenset(raw_fields)
+        except TypeError:
+            changed = frozenset()
+        self.handle_event(StateEvent(
+            kind=getattr(event, "kind", ""),
+            stable_id=getattr(event, "stable_id", None),
+            changed_fields=changed,
+        ))
 
     def handle_event(self, event: StateEvent) -> None:
         always_wake = event.kind in _MEMBERSHIP_KINDS
