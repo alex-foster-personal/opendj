@@ -1,0 +1,104 @@
+"""Test fixtures for the webui daemon (CAT-05)."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from apps.webui.server.app import create_app
+from apps.webui.server.backend import (
+    InMemoryBackend, Pairing, Playlist, Provenance, QueueItem, Track,
+)
+from apps.webui.server.etag import compute_etag
+
+
+def _iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+@pytest.fixture
+def seed_backend() -> InMemoryBackend:
+    """5 tracks, 2 playlists, 1 pairing, 1 dedup candidate."""
+    backend = InMemoryBackend()
+    base = datetime(2026, 4, 17, 10, 0, 0, tzinfo=timezone.utc)
+    for i, (title, artist, bpm, key, rating, tags) in enumerate(
+        [
+            ("Midnight Drive", "the maintainer", 124.0, "8A", 4, ["deep-house"]),
+            ("Oxide", "Beta", 128.0, "7A", 3, ["techno"]),
+            ("Gulf", "Gamma", 118.0, "5A", 5, ["ambient", "downtempo"]),
+            ("Phoenix", "Delta", 140.0, "11A", 2, ["trance"]),
+            ("Nest", "Epsilon", 92.0, "3B", 4, ["breaks"]),
+        ], start=1,
+    ):
+        sid = f"track-{i:03d}"
+        created = _iso(base)
+        backend.seed_track(Track(
+            stable_id=sid, title=title, artist=artist,
+            bpm=bpm, key=key, rating=rating, tags=tags,
+            created_at=created, updated_at=created,
+            provenance={
+                "rating": Provenance(value=rating, source="rekordbox",
+                                     confidence=1.0, modified_at=created),
+                "bpm": Provenance(value=bpm, source="rekordbox",
+                                  confidence=0.95, modified_at=created),
+            },
+        ))
+    backend.seed_playlist(Playlist(
+        playlist_id="pl-001", name="Opener Set", vendor="rekordbox",
+        items=["track-003", "track-005"],
+        created_at=_iso(base), updated_at=_iso(base),
+    ))
+    backend.seed_playlist(Playlist(
+        playlist_id="pl-002", name="Peak Hour", vendor="djay",
+        items=["track-001", "track-002", "track-004"],
+        created_at=_iso(base), updated_at=_iso(base),
+    ))
+    backend.seed_pairing(Pairing(
+        pairing_id="p-001", from_stable_id="track-001",
+        to_stable_id="track-002", direction="->", source="manual",
+        notes="great opener transition",
+        created_at=_iso(base), updated_at=_iso(base),
+    ))
+    backend.seed_queue("dedup", [
+        QueueItem(stable_id="track-003", kind="dedup", payload={
+            "cluster": ["track-003", "track-003-dup"],
+            "canonical": "track-003", "similarity": 0.98,
+        })
+    ])
+    return backend
+
+
+@pytest.fixture
+def client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
+    app = create_app(
+        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
+        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+    )
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def insecure_client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
+    app = create_app(backend=seed_backend, bind_host="0.0.0.0",
+                     hostname="test-host")
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def locked_client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
+    app = create_app(
+        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
+        lock_status_fn=lambda: {"holder": "other-host",
+                                 "expires_at": "2099-01-01T00:00:00Z"},
+    )
+    with TestClient(app) as c:
+        yield c
+
+
+def current_etag(backend: InMemoryBackend, stable_id: str) -> str:
+    track = backend.get_track(stable_id)
+    return compute_etag(track.stable_id, track.updated_at)

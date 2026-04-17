@@ -59,3 +59,11 @@ pytest>=8.0
 pytest-cov>=5.0
 coverage[toml]>=7.4
 soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
+
+# --- Phase 11 -- web UI daemon (CAT-05) + cloud sync (CAT-04) ---
+# FastAPI + uvicorn are MIT; pydantic is MIT. httpx is BSD-3 (test client).
+# boto3 (Apache-2) is opt-in, used only by apps.cloud.replicate in
+# production (lazy-imported so tests run without it).
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.28

@@ -1,0 +1,357 @@
+"""StateBackend protocol + InMemoryBackend reference implementation.
+
+The FastAPI routes never talk to SQLite directly. They call methods on a
+:class:`StateBackend` instance, which:
+
+  * in tests, is :class:`InMemoryBackend` (fast, deterministic, no IO)
+  * in production, will be a sqlite-backed impl wired by Phase 5's
+    ``apps.shared.state`` (TODO(phase-5): wire when shipped)
+
+This is the stub-policy boundary for Phase 5. When Phase 5 merges, create
+``apps.shared.state.webui_adapter`` implementing StateBackend against the
+``apps.shared.state`` primitives; swap the default factory in
+:mod:`apps.webui.server.deps`.
+
+All methods are synchronous. FastAPI handles the thread pool.
+"""
+from __future__ import annotations
+
+import threading
+from dataclasses import dataclass, field, asdict, replace
+from datetime import datetime, timezone
+from typing import Any, Iterable, Literal, Protocol
+
+# --- data models (dict-shaped; pydantic is a view layer) -----------------
+
+QueueKind = Literal["dedup", "bad_beatgrid", "auto_cue"]
+Source = Literal[
+    "mik", "rekordbox", "djay", "serato", "traktor",
+    "open-dj-tool", "manual", "inferred", "webui",
+]
+
+DEFAULT_LIMIT: int = 200
+MAX_LIMIT: int = 1000
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+@dataclass
+class Provenance:
+    """Provenance envelope per open-dj v0 strawman section 6 / OPEN-01c."""
+    value: Any
+    source: Source
+    confidence: float | None
+    modified_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Track:
+    """Track with a merged-view flat facade plus per-field provenance."""
+    stable_id: str
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    duration_ms: int | None = None
+    bpm: float | None = None
+    key: str | None = None
+    rating: int | None = None
+    tags: list[str] = field(default_factory=list)
+    notes: str | None = None
+    last_played_at: str | None = None
+    file_path: str | None = None
+    created_at: str = field(default_factory=_utcnow_iso)
+    updated_at: str = field(default_factory=_utcnow_iso)
+    provenance: dict[str, Provenance] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["provenance"] = {k: v for k, v in data["provenance"].items()}
+        return data
+
+
+@dataclass
+class Playlist:
+    playlist_id: str
+    name: str
+    vendor: str = "unknown"
+    items: list[str] = field(default_factory=list)
+    created_at: str = field(default_factory=_utcnow_iso)
+    updated_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass
+class Pairing:
+    pairing_id: str
+    from_stable_id: str
+    to_stable_id: str
+    direction: Literal["->", "<->"]
+    source: Literal["manual", "learned", "ai"]
+    notes: str | None
+    created_at: str = field(default_factory=_utcnow_iso)
+    updated_at: str = field(default_factory=_utcnow_iso)
+
+
+@dataclass
+class QueueItem:
+    """One row in the M3 triage queues (dedup / bad_beatgrid / auto_cue)."""
+    stable_id: str
+    kind: QueueKind
+    payload: dict[str, Any]
+
+
+@dataclass
+class TrackFilter:
+    q: str | None = None
+    bpm_min: float | None = None
+    bpm_max: float | None = None
+    key: str | None = None
+    rating_min: int | None = None
+    tag: str | None = None
+    cursor: str | None = None
+    limit: int = DEFAULT_LIMIT
+
+
+@dataclass
+class Page:
+    """Paginated response envelope."""
+    items: list[Any]
+    next_cursor: str | None
+
+
+class BackendError(RuntimeError):
+    """Base class for backend errors."""
+
+
+class NotFoundError(BackendError):
+    """Raised when an entity does not exist."""
+
+
+class ConflictError(BackendError):
+    """Raised when If-Match does not match the stored etag."""
+    def __init__(self, current: dict[str, Any], etag: str) -> None:
+        self.current = current
+        self.etag = etag
+        super().__init__("If-Match mismatch")
+
+
+class StateBackend(Protocol):
+    """Narrow surface the web UI needs from the state layer."""
+    def list_tracks(self, flt: TrackFilter) -> Page: ...
+    def get_track(self, stable_id: str) -> Track: ...
+    def list_playlists(self) -> list[Playlist]: ...
+    def get_playlist(self, playlist_id: str) -> Playlist: ...
+    def list_pairings(self, *, from_stable_id: str | None = None,
+                      to_stable_id: str | None = None,
+                      source: str | None = None) -> list[Pairing]: ...
+    def get_queue(self, kind: QueueKind) -> tuple[list[QueueItem], str | None]: ...
+    def update_track(self, stable_id: str, patch: dict[str, Any], *,
+                     expected_etag: str, source: Source = "webui") -> Track: ...
+    def create_pairing(self, pairing: Pairing) -> Pairing: ...
+    def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None: ...
+    def stats(self) -> dict[str, Any]: ...
+    def last_writer(self) -> tuple[str, str] | None: ...
+
+
+class InMemoryBackend:
+    """Deterministic, thread-safe in-memory StateBackend for tests + v1."""
+
+    def __init__(self) -> None:
+        self._mutex = threading.RLock()
+        self._tracks: dict[str, Track] = {}
+        self._playlists: dict[str, Playlist] = {}
+        self._pairings: dict[str, Pairing] = {}
+        self._queues: dict[QueueKind, tuple[list[QueueItem], str | None]] = {
+            "dedup": ([], None),
+            "bad_beatgrid": ([], None),
+            "auto_cue": ([], None),
+        }
+        self._last_writer: tuple[str, str] | None = None
+
+    def seed_track(self, track: Track) -> None:
+        with self._mutex:
+            self._tracks[track.stable_id] = track
+
+    def seed_playlist(self, playlist: Playlist) -> None:
+        with self._mutex:
+            self._playlists[playlist.playlist_id] = playlist
+
+    def seed_pairing(self, pairing: Pairing) -> None:
+        with self._mutex:
+            self._pairings[pairing.pairing_id] = pairing
+
+    def seed_queue(self, kind: QueueKind, items: list[QueueItem],
+                   note: str | None = None) -> None:
+        with self._mutex:
+            self._queues[kind] = (list(items), note)
+
+    def mark_queue_unavailable(self, kind: QueueKind, note: str) -> None:
+        """Used when the upstream Phase 6/7 tables are not merged yet."""
+        with self._mutex:
+            self._queues[kind] = ([], note)
+
+    def list_tracks(self, flt: TrackFilter) -> Page:
+        with self._mutex:
+            tracks = list(self._tracks.values())
+        if flt.q:
+            needle = flt.q.casefold()
+            tracks = [t for t in tracks
+                      if (t.title and needle in t.title.casefold())
+                      or (t.artist and needle in t.artist.casefold())]
+        if flt.bpm_min is not None:
+            tracks = [t for t in tracks if t.bpm is not None and t.bpm >= flt.bpm_min]
+        if flt.bpm_max is not None:
+            tracks = [t for t in tracks if t.bpm is not None and t.bpm <= flt.bpm_max]
+        if flt.key:
+            tracks = [t for t in tracks if t.key == flt.key]
+        if flt.rating_min is not None:
+            tracks = [t for t in tracks if t.rating is not None and t.rating >= flt.rating_min]
+        if flt.tag:
+            tracks = [t for t in tracks if flt.tag in (t.tags or [])]
+        tracks.sort(key=lambda t: t.stable_id)
+        limit = max(1, min(flt.limit, MAX_LIMIT))
+        start = 0
+        if flt.cursor:
+            for i, t in enumerate(tracks):
+                if t.stable_id > flt.cursor:
+                    start = i
+                    break
+            else:
+                start = len(tracks)
+        page = tracks[start : start + limit]
+        next_cursor = page[-1].stable_id if len(page) == limit else None
+        return Page(items=page, next_cursor=next_cursor)
+
+    def get_track(self, stable_id: str) -> Track:
+        with self._mutex:
+            track = self._tracks.get(stable_id)
+        if track is None:
+            raise NotFoundError(f"track not found: {stable_id}")
+        return track
+
+    def list_playlists(self) -> list[Playlist]:
+        with self._mutex:
+            return list(self._playlists.values())
+
+    def get_playlist(self, playlist_id: str) -> Playlist:
+        with self._mutex:
+            pl = self._playlists.get(playlist_id)
+        if pl is None:
+            raise NotFoundError(f"playlist not found: {playlist_id}")
+        return pl
+
+    def list_pairings(self, *, from_stable_id: str | None = None,
+                      to_stable_id: str | None = None,
+                      source: str | None = None) -> list[Pairing]:
+        with self._mutex:
+            out = list(self._pairings.values())
+        if from_stable_id:
+            out = [p for p in out if p.from_stable_id == from_stable_id]
+        if to_stable_id:
+            out = [p for p in out if p.to_stable_id == to_stable_id]
+        if source:
+            out = [p for p in out if p.source == source]
+        out.sort(key=lambda p: p.created_at)
+        return out
+
+    def get_queue(self, kind: QueueKind) -> tuple[list[QueueItem], str | None]:
+        with self._mutex:
+            if kind not in self._queues:
+                raise NotFoundError(f"unknown queue kind: {kind}")
+            items, note = self._queues[kind]
+            return list(items), note
+
+    def update_track(self, stable_id: str, patch: dict[str, Any], *,
+                     expected_etag: str, source: Source = "webui") -> Track:
+        from .etag import compute_etag, strip_quotes
+        with self._mutex:
+            track = self._tracks.get(stable_id)
+            if track is None:
+                raise NotFoundError(f"track not found: {stable_id}")
+            current_etag = compute_etag(track.stable_id, track.updated_at)
+            if strip_quotes(current_etag) != strip_quotes(expected_etag):
+                raise ConflictError(current=track.to_dict(), etag=current_etag)
+            now = _utcnow_iso()
+            updated = replace(track, updated_at=now)
+            prov = dict(updated.provenance)
+            if "rating" in patch:
+                rating = patch["rating"]
+                if rating is not None and not (0 <= rating <= 5):
+                    raise BackendError("rating must be between 0 and 5")
+                updated.rating = rating
+                prov["rating"] = Provenance(value=rating, source=source,
+                                             confidence=1.0, modified_at=now)
+            if "notes" in patch:
+                notes = patch["notes"]
+                updated.notes = notes
+                prov["notes"] = Provenance(value=notes, source=source,
+                                            confidence=1.0, modified_at=now)
+            tags = list(updated.tags or [])
+            if patch.get("tags_add"):
+                for t in patch["tags_add"]:
+                    if t and t not in tags:
+                        tags.append(t)
+            if patch.get("tags_remove"):
+                tags = [t for t in tags if t not in patch["tags_remove"]]
+            if "tags_add" in patch or "tags_remove" in patch:
+                updated.tags = tags
+                prov["tags"] = Provenance(value=list(tags), source=source,
+                                           confidence=1.0, modified_at=now)
+            updated.provenance = prov
+            self._tracks[stable_id] = updated
+            self._last_writer = (source, now)
+            return updated
+
+    def create_pairing(self, pairing: Pairing) -> Pairing:
+        with self._mutex:
+            for existing in self._pairings.values():
+                if (existing.from_stable_id == pairing.from_stable_id
+                        and existing.to_stable_id == pairing.to_stable_id
+                        and existing.direction == pairing.direction):
+                    if pairing.notes and pairing.notes != existing.notes:
+                        merged_notes = f"{existing.notes or ''}\n{pairing.notes}".strip()
+                        updated = replace(existing, notes=merged_notes,
+                                          updated_at=_utcnow_iso())
+                        self._pairings[existing.pairing_id] = updated
+                        return updated
+                    return existing
+            self._pairings[pairing.pairing_id] = pairing
+            self._last_writer = (pairing.source, pairing.created_at)
+            return pairing
+
+    def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
+        from .etag import compute_etag, strip_quotes
+        with self._mutex:
+            existing = self._pairings.get(pairing_id)
+            if existing is None:
+                raise NotFoundError(f"pairing not found: {pairing_id}")
+            current = compute_etag(existing.pairing_id, existing.updated_at)
+            if strip_quotes(current) != strip_quotes(expected_etag):
+                raise ConflictError(
+                    current={"pairing_id": existing.pairing_id,
+                             "updated_at": existing.updated_at},
+                    etag=current,
+                )
+            del self._pairings[pairing_id]
+            self._last_writer = ("webui", _utcnow_iso())
+
+    def stats(self) -> dict[str, Any]:
+        with self._mutex:
+            return {"tracks": len(self._tracks),
+                    "playlists": len(self._playlists),
+                    "pairings": len(self._pairings)}
+
+    def last_writer(self) -> tuple[str, str] | None:
+        with self._mutex:
+            return self._last_writer
+
+
+__all__ = [
+    "BackendError", "ConflictError", "DEFAULT_LIMIT", "InMemoryBackend",
+    "MAX_LIMIT", "NotFoundError", "Page", "Pairing", "Playlist", "Provenance",
+    "QueueItem", "QueueKind", "Source", "StateBackend", "Track", "TrackFilter",
+]

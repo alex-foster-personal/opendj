@@ -36,3 +36,22 @@ integration:
 
 clean:
 	rm -rf .pytest_cache htmlcov .coverage coverage-matrix.md
+
+# ----- Phase 11: cloud sync + web UI (CAT-04, CAT-05) --------------------
+.PHONY: webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
+
+webui.dev:
+	$(VENV)/bin/uvicorn apps.webui.server.app:app --reload --port 8585
+
+webui.prod:
+	doppler run -p music-dj-tools -c prod -- $(VENV)/bin/uvicorn \
+		apps.webui.server.app:app --host $${MUSIC_DJ_BIND_HOST:-127.0.0.1} --port 8585
+
+webui.openapi:
+	$(PY) -m apps.webui.server --dump-openapi apps/webui/openapi.json
+
+cloud.replicate:
+	doppler run -p music-dj-tools -c prod -- $(PY) -m apps.cloud.replicate
+
+cloud.self-check:
+	$(PY) -m apps.cloud.replicate --self-check

@@ -1,0 +1,69 @@
+"""FastAPI dependencies for the webui daemon.
+
+The read/write split follows the plan 11-02 step 2 design:
+
+  * ``get_read_state`` -- any GET endpoint.
+  * ``get_write_state`` -- any PATCH / POST / DELETE. If ``apps.cloud.lock``
+    reports that another host is currently holding the writer lock, the
+    dependency raises HTTP 503 with the holder info so the UI can surface
+    the "another laptop is writing" state.
+
+Backend selection:
+  * tests override via ``app.dependency_overrides[get_backend] = ...``
+  * production wires a real backend in :mod:`apps.webui.server.app` at
+    startup (currently defaults to :class:`InMemoryBackend`; Phase 5 will
+    provide a sqlite-backed adapter -- see TODO(phase-5) in backend.py).
+"""
+from __future__ import annotations
+
+from typing import Any, Callable, Optional
+
+from fastapi import Depends, HTTPException, Request, status
+
+from .backend import InMemoryBackend, StateBackend
+
+
+def get_backend(request: Request) -> StateBackend:
+    backend: StateBackend | None = getattr(request.app.state, "backend", None)
+    if backend is None:  # pragma: no cover - app always seeds one
+        raise HTTPException(status_code=500, detail="state backend is not configured")
+    return backend
+
+
+def get_lock_status(request: Request) -> Optional[dict[str, Any]]:
+    fn: Callable[[], Any] | None = getattr(request.app.state, "lock_status_fn", None)
+    if fn is None:
+        return None
+    try:
+        return fn()
+    except Exception:  # pragma: no cover
+        return None
+
+
+def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:
+    return backend
+
+
+def get_write_state(
+    backend: StateBackend = Depends(get_backend),
+    lock_status: Optional[dict[str, Any]] = Depends(get_lock_status),
+    request: Request = None,  # type: ignore[assignment]
+) -> StateBackend:
+    local_host = getattr(request.app.state, "hostname", "localhost")
+    if lock_status and lock_status.get("holder") and lock_status["holder"] != local_host:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "locked_by_peer",
+                "message": (
+                    f"Another host ({lock_status['holder']}) currently holds "
+                    "the cloud lock; writes are disabled until it releases or "
+                    "its TTL expires."
+                ),
+                "holder": lock_status,
+            },
+        )
+    return backend
+
+
+__all__ = ["get_backend", "get_lock_status", "get_read_state", "get_write_state"]

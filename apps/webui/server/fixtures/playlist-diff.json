@@ -1,0 +1,8 @@
+{
+  "rb_only": ["stable-aaa", "stable-bbb"],
+  "djay_only": ["stable-ccc"],
+  "both": ["stable-ddd", "stable-eee", "stable-fff"],
+  "conflicts": [
+    {"stable_id": "stable-ddd", "rb_position": 5, "djay_position": 7}
+  ]
+}
