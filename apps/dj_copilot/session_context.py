@@ -130,4 +130,14 @@ def load_session_context(
         elif s == "djay_history":
             _logger.info("djay_history adapter not yet wired; returning empty")
 
+    # P13-F02: when the caller explicitly requested a non-auto source, do
+    # not silently relabel the empty result as "empty" -- that made an
+    # intentional phase12/rekordbox_history/djay_history request
+    # indistinguishable from a fall-through. Preserve the requested label
+    # so callers (and test harnesses) can see the request was honored but
+    # yielded no rows.
+    if source != "auto":
+        return SessionContext(
+            recent=_load_empty(), source=source, captured_at=now
+        )
     return SessionContext(recent=_load_empty(), source="empty", captured_at=now)

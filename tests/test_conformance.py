@@ -201,6 +201,10 @@ def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | Non
     ``file_path`` against staged audio stubs in tmp_path (so the GEOB write
     path has a real .mp3 to mutate). Other adapters ignore the hint.
     """
+    # P16-F03: only swallow ModuleNotFoundError (adapter not implemented
+    # yet in the current tree). All other errors must propagate so real
+    # adapter regressions surface in CI instead of silently turning into
+    # a pytest.skip.
     try:
         if name == "serato":
             from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
@@ -225,7 +229,7 @@ def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | Non
         if name == "djay":
             from apps.adapters.djay import DjayAdapter  # type: ignore
             return DjayAdapter()
-    except Exception:
+    except ModuleNotFoundError:
         return None
     return None
 

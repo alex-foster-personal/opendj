@@ -110,6 +110,9 @@ def test_ignores_non_now_playing(tmp_path) -> None:
         )
         ctx = load_session_context(conn=conn, source="phase12")
         assert ctx.recent == []
-        assert ctx.source == "empty"
+        # P13-F02: an explicit source request returning an empty result
+        # must preserve the requested source label so callers can tell
+        # the request was honored but yielded no rows.
+        assert ctx.source == "phase12"
     finally:
         conn.close()

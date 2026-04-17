@@ -206,14 +206,29 @@ impl DragAdapter for RekordboxAdapter {
         let running = host.running_app_bundle_ids();
         let major = self.detect_major(&running);
 
-        if major == RekordboxMajor::Seven {
+        // F18-03: treat Unknown identically to Seven. Previously a closed
+        // RB7 installation surfaced as Unknown (no running bundle id) and
+        // fell through to the XML sidecar path, which is an RB6-only
+        // artefact -- we have no reliable way to tell a closed RB7 apart
+        // from a closed RB6 by process list alone. Until F18-01 lands a
+        // proper installation probe, the safe default is clipboard.
+        if major == RekordboxMajor::Seven || major == RekordboxMajor::Unknown {
+            let (outcome, detail) = if major == RekordboxMajor::Seven {
+                (
+                    "rb7-clipboard",
+                    "Rekordbox 7 detected. Path copied; drop into RB or File > Import.",
+                )
+            } else {
+                (
+                    "rb-unknown-clipboard",
+                    "Rekordbox major version unknown (RB closed). Path copied; drop into RB.",
+                )
+            };
             host.emit_event(DragEvent {
                 name: "drag-fallback",
                 vendor: Vendor::Rekordbox,
-                outcome: "rb7-clipboard".into(),
-                detail:
-                    "Rekordbox 7 detected. Path copied; drop into RB or File > Import."
-                        .into(),
+                outcome: outcome.into(),
+                detail: detail.into(),
             });
             return self.copy_path_fallback(host, track);
         }

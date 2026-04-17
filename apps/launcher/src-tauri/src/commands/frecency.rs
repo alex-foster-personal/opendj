@@ -71,7 +71,16 @@ pub fn get_frecent_top_impl(
             let drags: i64 = r.get(9)?;
             let last_played: Option<i64> = r.get(10)?;
             let last_dragged: Option<i64> = r.get(11)?;
-            let last = last_dragged.or(last_played);
+            // P17-02: use the MOST RECENT of the two timestamps rather than
+            // the first non-None one. `last_dragged.or(last_played)` would
+            // pin decay to a stale drag timestamp even if the track has
+            // been played very recently, distorting top-200 ranking.
+            let last = match (last_played, last_dragged) {
+                (Some(p), Some(d)) => Some(p.max(d)),
+                (Some(p), None) => Some(p),
+                (None, Some(d)) => Some(d),
+                (None, None) => None,
+            };
             Ok(FrecentHit {
                 track: TrackHit {
                     stable_id: r.get(0)?,

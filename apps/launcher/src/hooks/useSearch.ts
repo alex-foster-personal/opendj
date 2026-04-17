@@ -27,7 +27,13 @@ export function useSearch<T extends TrackHit>(query: string, frecencyTop: T[]): 
       try {
         const hits = await invoke<T[]>("search_tracks", { query: q, limit: 20 });
         setResults(hits);
-      } catch {
+      } catch (err) {
+        // P17-03: surface backend search failures to the devtools console
+        // instead of silently degrading to the in-memory top-200 cache.
+        // The UX still falls back so the user can keep typing, but FTS
+        // regressions are observable rather than invisible.
+        // eslint-disable-next-line no-console
+        console.error("[launcher] search_tracks failed; falling back to cache", err);
         setResults(matchSorter(frecencyTop, q, { keys: ["title", "artist"] }));
       }
     }, 80);

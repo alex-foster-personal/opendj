@@ -63,7 +63,7 @@ def _cmd_say(args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     """Start the voice daemon. Plan 2 wires grammar + dispatch."""
     # Lazy import so `run` cost is not paid for `--help`.
-    from apps.voice import context as ctx_mod
+    from apps.voice import bus as bus_mod, context as ctx_mod
 
     print(
         "[voice] Phase 14 Plan 1 skeleton: the full mic loop is wired in "
@@ -72,9 +72,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     if args.echo:
         print("[voice] --echo mode requested; requires installed audio stack.")
-    # Sanity-check the components resolve even without audio wheels.
-    ctx = ctx_mod.VoiceContext.from_env()
-    print(f"[voice] context resolved: mute_until={ctx.mute_until!r}")
+    # P14-F03: honour --dry-bus and --enable-destructive on the `run`
+    # subcommand. Previously both flags were silently ignored, so an
+    # operator asking for the JSONL stub bus or for destructive mode had
+    # no way to confirm their flag landed.
+    event_bus = bus_mod.make_bus(force_stub=bool(getattr(args, "dry_bus", False)))
+    ctx = ctx_mod.VoiceContext.from_env(event_bus=event_bus)
+    if getattr(args, "enable_destructive", False):
+        ctx.destructive = True
+    print(
+        f"[voice] context resolved: mute_until={ctx.mute_until!r} "
+        f"destructive={ctx.destructive} dry_bus={bool(getattr(args, 'dry_bus', False))}"
+    )
     return 0
 
 
