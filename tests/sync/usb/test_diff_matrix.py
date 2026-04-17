@@ -42,11 +42,19 @@ from apps.sync.usb.pioneer.differ import (
     round_trip_via_writer,
     snapshot_onelibrary,
 )
+from apps.sync.usb.pioneer.writer_rbox import RBOX_AVAILABLE, RBOX_IMPORT_ERROR
 from tests.fixtures._resolver import FixtureNotAvailable, fixture_path
 
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
     pytest.mark.slow,
+    pytest.mark.skipif(
+        not RBOX_AVAILABLE,
+        reason=(
+            f"rbox (PyPI) is not installed: {RBOX_IMPORT_ERROR}. "
+            "Install with `pip install rbox` to run the diff-matrix."
+        ),
+    ),
 ]
 
 
