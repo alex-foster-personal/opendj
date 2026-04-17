@@ -1,0 +1,281 @@
+"""Phase 4 seven-rail safety harness (D7).
+
+Rails:
+  1. Backup: copy the target DB to ``<path>.bak.<ISO8601>`` before any write.
+  2. Process check: abort if Rekordbox or djay Pro is running.
+  3. Typed confirm: user passed ``--i-understand-the-risks`` (flag_ok=True).
+  4. Post-write verify: each track writer may ``verify_readback()`` after
+     writing; on mismatch the session pauses and prompts continue/abort/skip.
+  5. Reversal script: emit ``data/sync/reversal/<ISO8601>/reverse.sh``
+     incrementally as each track succeeds.
+  6. Reason field: every write is tagged with a provenance string.
+  7. iCloud coherence (djay only): WAL mtime quiesce + ``brctl status``.
+"""
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Iterable, Iterator, Literal
+
+TargetName = Literal["rekordbox", "djay"]
+
+
+class SafetyAbort(RuntimeError):
+    """Raised when any of the seven rails refuses to proceed."""
+
+
+@dataclass(slots=True)
+class WriteRecord:
+    track_id: str
+    reason: str
+    status: Literal["pending", "written", "verified", "failed", "skipped"]
+    reverse_snippet: str = ""
+
+
+def _iso_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _is_running(process_name: str) -> bool:
+    try:
+        res = subprocess.run(
+            ["pgrep", "-x", process_name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        return res.returncode == 0 and bool(res.stdout.strip())
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def target_process_name(target: TargetName) -> str:
+    return {"rekordbox": "Rekordbox", "djay": "djay Pro"}[target]
+
+
+def assert_target_not_running(target: TargetName) -> None:
+    """Rail 2."""
+    name = target_process_name(target)
+    if _is_running(name):
+        raise SafetyAbort(f"{name} is running. Quit it before any live write.")
+
+
+def brctl_status(path: Path) -> str:
+    try:
+        res = subprocess.run(
+            ["brctl", "status", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        return (res.stdout or "") + (res.stderr or "")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ""
+
+
+def assert_icloud_quiesced(
+    db_path: Path,
+    *,
+    wal_quiesce_seconds: int = 60,
+    brctl_abort_tokens: Iterable[str] = ("error", "uploading", "downloading"),
+) -> None:
+    """Rail 7 (djay-only): WAL mtime + brctl status gate."""
+    wal = Path(str(db_path) + "-wal")
+    if wal.exists():
+        age = time.time() - wal.stat().st_mtime
+        if age < wal_quiesce_seconds:
+            raise SafetyAbort(
+                f"{wal} modified {age:.1f}s ago; need {wal_quiesce_seconds}s "
+                "quiesce. djay may be actively syncing; wait and retry."
+            )
+    output = brctl_status(db_path.parent)
+    lowered = output.lower()
+    for token in brctl_abort_tokens:
+        if token in lowered and "in sync" not in lowered.split(token)[0][-40:]:
+            raise SafetyAbort(
+                f"brctl status indicates iCloud activity ({token!r}) on "
+                f"{db_path.parent}; wait for sync to settle and retry."
+            )
+
+
+def backup_db(db_path: Path) -> Path:
+    """Rail 1: copy the DB aside with a timestamped suffix."""
+    if not db_path.exists():
+        raise SafetyAbort(f"DB to back up is missing: {db_path}")
+    bak = db_path.with_suffix(db_path.suffix + f".bak.{_iso_stamp()}")
+    shutil.copy2(db_path, bak)
+    return bak
+
+
+def require_typed_confirm(flag_ok: bool) -> None:
+    """Rail 3."""
+    if not flag_ok:
+        raise SafetyAbort(
+            "Typed confirm required. Pass --i-understand-the-risks to proceed."
+        )
+
+
+@dataclass(slots=True)
+class _TrackWriter:
+    track_id: str
+    reason: str
+    session: "LiveWriteSession"
+    _written_ok: bool = False
+    _verified_ok: bool = False
+
+    def write(self, payload: object) -> None:
+        """Record that a write occurred. Auto-marks verified when no verifier."""
+        self._written_ok = True
+        if self.session.verifier is None:
+            self._verified_ok = True
+
+    def verify_readback(self, expected: object | None = None) -> bool:
+        verifier = self.session.verifier
+        if verifier is None:
+            self._verified_ok = True
+            return True
+        ok = bool(verifier(self.track_id, expected))
+        self._verified_ok = ok
+        return ok
+
+    def append_reverse(self, snippet: str) -> None:
+        self.session._reverse_lines.append(snippet)
+        with self.session.reverse_script_path.open("a", encoding="utf-8") as fp:
+            fp.write(snippet.rstrip() + "\n")
+
+
+@dataclass(slots=True)
+class LiveWriteSession:
+    target: TargetName
+    reason: str
+    flag_ok: bool
+    db_path: Path
+    wal_quiesce_seconds: int = 60
+    reversal_root: Path | None = None
+    verifier: Callable[[str, object | None], bool] | None = None
+    process_gate_override: Callable[[TargetName], None] | None = None
+    icloud_gate_override: Callable[[Path, int], None] | None = None
+
+    _reverse_dir: Path | None = field(init=False, default=None)
+    _reverse_lines: list[str] = field(init=False, default_factory=list)
+    _backup_path: Path | None = field(init=False, default=None)
+    _failed_tracks: list[str] = field(init=False, default_factory=list)
+    _skipped_tracks: list[str] = field(init=False, default_factory=list)
+    _written_tracks: list[str] = field(init=False, default_factory=list)
+
+    def __enter__(self) -> "LiveWriteSession":
+        require_typed_confirm(self.flag_ok)
+        if self.process_gate_override is not None:
+            self.process_gate_override(self.target)
+        else:
+            assert_target_not_running(self.target)
+        if self.target == "djay":
+            if self.icloud_gate_override is not None:
+                self.icloud_gate_override(self.db_path, self.wal_quiesce_seconds)
+            else:
+                assert_icloud_quiesced(
+                    self.db_path, wal_quiesce_seconds=self.wal_quiesce_seconds
+                )
+        self._backup_path = backup_db(self.db_path)
+
+        stamp = _iso_stamp()
+        root = self.reversal_root or (self.db_path.parent.parent / "sync" / "reversal")
+        self._reverse_dir = root / stamp
+        self._reverse_dir.mkdir(parents=True, exist_ok=True)
+        self.reverse_script_path.write_text(
+            "#!/usr/bin/env bash\n"
+            f"# Phase 4 reversal script -- target={self.target} "
+            f"reason={self.reason!r}\n"
+            f"# Backup: {self._backup_path}\n"
+            "set -euo pipefail\n",
+            encoding="utf-8",
+        )
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if exc is not None:
+            return None
+        with self.reverse_script_path.open("a", encoding="utf-8") as fp:
+            fp.write(
+                "\n# Last-resort full restore (uncomment to use):\n"
+                f"# cp -n '{self._backup_path}' '{self.db_path}'\n"
+            )
+
+    @property
+    def reverse_script_path(self) -> Path:
+        assert self._reverse_dir is not None
+        return self._reverse_dir / "reverse.sh"
+
+    @property
+    def backup_path(self) -> Path | None:
+        return self._backup_path
+
+    @contextmanager
+    def per_track(self, track_id: str) -> Iterator[_TrackWriter]:
+        writer = _TrackWriter(track_id=track_id, reason=self.reason, session=self)
+        try:
+            yield writer
+        except Exception:
+            self._failed_tracks.append(track_id)
+            raise
+        if writer._written_ok and writer._verified_ok:
+            self._written_tracks.append(track_id)
+        elif writer._written_ok and not writer._verified_ok:
+            action = self._prompt_on_verify_failure(track_id)
+            if action == "abort":
+                raise SafetyAbort(
+                    f"verify_readback failed for {track_id}; batch aborted."
+                )
+            if action == "skip":
+                self._skipped_tracks.append(track_id)
+            else:
+                self._written_tracks.append(track_id)
+        else:
+            self._skipped_tracks.append(track_id)
+
+    def _prompt_on_verify_failure(self, track_id: str) -> str:
+        if not sys.stdin.isatty():
+            return "abort"
+        print(
+            f"\n[safety] verify failed for {track_id}. "
+            "[c]ontinue, [a]bort, [s]kip: ",
+            end="",
+            flush=True,
+        )
+        try:
+            answer = sys.stdin.readline().strip().lower()[:1]
+        except Exception:
+            return "abort"
+        return {"c": "continue", "a": "abort", "s": "skip"}.get(answer, "abort")
+
+    @property
+    def written_tracks(self) -> list[str]:
+        return list(self._written_tracks)
+
+    @property
+    def skipped_tracks(self) -> list[str]:
+        return list(self._skipped_tracks)
+
+    @property
+    def failed_tracks(self) -> list[str]:
+        return list(self._failed_tracks)
+
+
+__all__ = [
+    "SafetyAbort",
+    "LiveWriteSession",
+    "WriteRecord",
+    "assert_target_not_running",
+    "assert_icloud_quiesced",
+    "backup_db",
+    "require_typed_confirm",
+    "target_process_name",
+]
