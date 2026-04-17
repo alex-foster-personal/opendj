@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.adapters._shim import serialize_jcs
+from apps.open_dj import serialize_jcs
 from apps.adapters.traktor import capabilities
 
 SNAPSHOT_PATH = (

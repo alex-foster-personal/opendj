@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.adapters._shim import (
+from apps.open_dj import (
     Adapter,
     CuePoint,
     OpenDjLibrary,

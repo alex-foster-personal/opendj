@@ -23,7 +23,7 @@ from pathlib import Path
 from apps.adapters.serato.capabilities import SERATO_CAPABILITIES
 from apps.adapters.serato.database_v2 import CrateTrack, DatabaseV2, Subcrate
 from apps.adapters.serato.safety import guard_live_write
-from apps.adapters._shim import (
+from apps.open_dj import (
     AdapterReport,
     Capabilities,
     OpenDjLibrary,

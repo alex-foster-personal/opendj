@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from apps.adapters._shim import (
+from apps.open_dj import (
     AdapterReport,
     Capabilities,
     CuePoint,

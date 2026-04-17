@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
-from apps.adapters._shim import (
+from apps.open_dj import (
     Adapter,
     AdapterReport,
     CuePoint,

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from apps.adapters.serato import capabilities
-from apps.adapters._shim import serialize_jcs
+from apps.open_dj import serialize_jcs
 
 SNAPSHOT_PATH = (
     Path(__file__).resolve().parents[2]

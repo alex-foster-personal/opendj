@@ -15,7 +15,7 @@ The descriptor is pure data -- snapshot tests compare its JCS bytes against
 
 from __future__ import annotations
 
-from apps.adapters._shim import Capabilities, CapabilityField
+from apps.open_dj import Capabilities, CapabilityField
 
 
 SERATO_CAPABILITIES = Capabilities(

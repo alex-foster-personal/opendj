@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from apps.adapters._shim import Capabilities, CapabilityField
+from apps.open_dj import Capabilities, CapabilityField
 
 
 TRAKTOR_CAPABILITIES = Capabilities(
