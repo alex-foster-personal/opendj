@@ -1,17 +1,16 @@
-// Hyper-K Launcher entry point (Phase 17).
+// Hyper-K Launcher entry point (Phase 17 + Phase 18 wiring).
 //
 // Menu-bar-resident Tauri app. Alt+Space toggles a floating cmdk palette that
-// drags tracks into djay Pro. Phase 18 layers multi-vendor drag dispatch on
-// top; search backend (FTS5) is in `commands::search` + `commands::frecency`.
+// drags tracks into the currently-running DJ app. Multi-vendor drag dispatch
+// lives in the `launcher-drag-core` crate (see `apps/launcher/drag-core/`);
+// `commands::drag::TauriHostBridge` is the production HostBridge impl that
+// wires the `drag` crate, `tauri-plugin-clipboard-manager`, and the macOS
+// NSWorkspace running-apps probe into the dispatcher. Search backend (FTS5)
+// is in `commands::search` + `commands::frecency`.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // All real code lives in the library crate (src/lib.rs); this binary is a
 // thin entry point so `search_bench` can share the same modules.
-//
-// Phase 18 owns `src/drag/` in the *library* crate (declared under
-// `#[cfg(any())]` in lib.rs for now); the dispatcher is wired into
-// invoke_handler! in a Phase 17/18 gap-fill pass (see
-// .planning/phases/17-*/17-03-SUMMARY.md follow-ups).
 use launcher::commands::{drag::start_track_drag, frecency::{get_frecent_top, record_drag},
                hotkey::register_hotkey, search::search_tracks, window::toggle_palette_visibility};
 use tauri::{
@@ -23,6 +22,7 @@ use tauri::{
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_drag::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .setup(|app| {

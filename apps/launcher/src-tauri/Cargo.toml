@@ -11,11 +11,23 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-drag = "2"
+tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-store = "2"
+# Phase 17 originally imported `tauri_plugin_drag::start_drag` directly, but
+# that symbol is private to the plugin -- the public backend lives in the
+# `drag` crate (the plugin is a thin Tauri wrapper). We depend on `drag`
+# directly so the Rust side of our drag dispatcher can call `start_drag`.
+drag = "2.1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+launcher-drag-core = { path = "../drag-core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = ["NSString", "NSArray"] }
+objc2-app-kit = { version = "0.2", features = ["NSWorkspace", "NSRunningApplication"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
