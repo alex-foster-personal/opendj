@@ -82,6 +82,7 @@ def _sample_library() -> OpenDjLibrary:
 # ------------------------------------------------------------ dataclass
 
 
+@pytest.mark.requirement("OPEN-01")
 class TestDataclasses:
     def test_track_defaults(self) -> None:
         t = Track(track_id="x", file_path="/x.mp3")
@@ -162,11 +163,13 @@ class _MissingName:
         return Capabilities(adapter="x", version="1.0", fields=())
 
 
+@pytest.mark.requirement("OPEN-01")
 class TestAdapterProtocol:
     def test_structural_match(self) -> None:
         assert isinstance(_GoodAdapter(), Adapter)
 
 
+@pytest.mark.requirement("OPEN-01")
 class TestAdapterReport:
     def test_bump_increments(self) -> None:
         r = AdapterReport()
@@ -192,6 +195,7 @@ class TestAdapterReport:
 # ----------------------------------------------------------- serialize
 
 
+@pytest.mark.requirement("OPEN-01")
 class TestSerializeJcs:
     def test_dataclass_to_canonical_bytes(self) -> None:
         lib = _sample_library()
