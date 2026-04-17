@@ -272,15 +272,53 @@ Location=\"{loc}\"/>\n",
 }
 
 /// Rekordbox XML Location fields are URI-encoded file URLs rooted at `file://`.
+///
+/// Paths with spaces, `#`, `%`, or non-ASCII characters (e.g. accented
+/// filenames) must be percent-encoded or Rekordbox silently fails to find
+/// the track when it re-imports the XML. We preserve `/` unescaped so the
+/// URL still reads as a path, and we pass anything that already starts with
+/// `file://` through verbatim so pre-encoded inputs are not double-escaped.
+///
+/// (adv-v2-fanout 2/3, task 6.)
 pub(crate) fn file_path_to_rb_location(path: &str) -> String {
-    // Don't URL-encode for now; a production impl would call percent-encoding
-    // on reserved bytes. rekordbox tolerates literal paths in our testing.
     if path.starts_with("file://") {
-        path.to_string()
-    } else {
-        format!("file://localhost{}", path)
+        return path.to_string();
     }
+    let mut out = String::with_capacity(path.len() + 16);
+    out.push_str("file://localhost");
+    for &b in path.as_bytes() {
+        if is_rb_location_unreserved(b) {
+            out.push(b as char);
+        } else {
+            // Hex-escape the byte. Matches percent-encoding's
+            // `NON_ALPHANUMERIC.remove(b'/').remove(b'-').remove(b'.').remove(b'_').remove(b'~')`
+            // character set.
+            out.push('%');
+            out.push(UPPER_HEX[(b >> 4) as usize] as char);
+            out.push(UPPER_HEX[(b & 0x0f) as usize] as char);
+        }
+    }
+    out
 }
+
+/// Bytes that are safe to leave literal inside a Rekordbox Location URL.
+/// Equivalent to RFC 3986 `unreserved` plus `/` (path separators stay raw).
+#[inline]
+fn is_rb_location_unreserved(b: u8) -> bool {
+    matches!(
+        b,
+        b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'/'
+            | b'-'
+            | b'.'
+            | b'_'
+            | b'~'
+    )
+}
+
+const UPPER_HEX: &[u8; 16] = b"0123456789ABCDEF";
 
 pub(crate) fn stable_track_id(path: &str) -> u32 {
     // Simple FNV-1a over bytes. Good enough for uniqueness within a single
@@ -396,6 +434,71 @@ mod rekordbox_tests {
         ] {
             assert!(node.contains(needle), "node missing {}: {}", needle, node);
         }
+    }
+
+    #[test]
+    fn file_path_to_rb_location_leaves_plain_ascii_untouched() {
+        // Baseline: an ASCII path with no reserved bytes round-trips as
+        // `file://localhost<path>` exactly as before.
+        assert_eq!(
+            file_path_to_rb_location("/Users/test/Music/Library/song.mp3"),
+            "file://localhost/Users/test/Music/Library/song.mp3"
+        );
+    }
+
+    #[test]
+    fn file_path_to_rb_location_percent_encodes_spaces() {
+        // Regression for adv-v2-fanout 2/3 (task 6): spaces must become %20
+        // or Rekordbox silently drops the track at import time.
+        assert_eq!(
+            file_path_to_rb_location("/Users/dj/Music/My Tracks/song.mp3"),
+            "file://localhost/Users/dj/Music/My%20Tracks/song.mp3"
+        );
+    }
+
+    #[test]
+    fn file_path_to_rb_location_percent_encodes_non_ascii() {
+        // Regression for adv-v2-fanout 2/3 (task 6): the i-with-diaeresis
+        // (U+00EF) encodes to UTF-8 bytes 0xC3 0xAF, and each byte must be
+        // hex-escaped independently as %C3%AF.
+        assert_eq!(
+            file_path_to_rb_location("/Users/dj/Music/Naïve.mp3"),
+            "file://localhost/Users/dj/Music/Na%C3%AFve.mp3"
+        );
+    }
+
+    #[test]
+    fn file_path_to_rb_location_percent_encodes_hash_and_percent() {
+        // `#` would otherwise be parsed as a URL fragment delimiter and `%`
+        // is itself the escape introducer. Both MUST be escaped.
+        assert_eq!(
+            file_path_to_rb_location("/Users/dj/Music/a#b.mp3"),
+            "file://localhost/Users/dj/Music/a%23b.mp3"
+        );
+        assert_eq!(
+            file_path_to_rb_location("/Users/dj/Music/50%.mp3"),
+            "file://localhost/Users/dj/Music/50%25.mp3"
+        );
+    }
+
+    #[test]
+    fn file_path_to_rb_location_passes_file_urls_through_unchanged() {
+        // If the caller already produced a `file://` URL (perhaps already
+        // percent-encoded by another pipeline), we must not double-escape it.
+        let already = "file://localhost/Users/dj/Music/My%20Tracks/song.mp3";
+        assert_eq!(file_path_to_rb_location(already), already);
+
+        let host_elided = "file:///Users/dj/Music/song.mp3";
+        assert_eq!(file_path_to_rb_location(host_elided), host_elided);
+    }
+
+    #[test]
+    fn file_path_to_rb_location_preserves_path_separators() {
+        // `/` stays literal (RFC 3986 unreserved set for Rekordbox Location)
+        // so the result still reads as a path, not as `%2F`-encoded bytes.
+        let encoded = file_path_to_rb_location("/Users/dj/Music/x y/z.mp3");
+        assert!(encoded.contains("/Users/dj/Music/x%20y/z.mp3"));
+        assert!(!encoded.contains("%2F"), "/ should not be escaped: {}", encoded);
     }
 
     #[test]
