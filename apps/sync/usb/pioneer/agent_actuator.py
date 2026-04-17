@@ -668,6 +668,42 @@ class Actuator:
                 return {"ok": False, "error": err, "meta": payload}
             pt = self._to_points(coord)
             payload["point"] = list(pt)
+            # --- Click-guard (Fix 6): reject off-window clicks. mouse_move
+            # is harmless so we don't guard it. Display-mode captures
+            # have no isolated window bounds so is_point_inside_window
+            # is a no-op (always True).
+            if (
+                self.enforce_click_guard
+                and a in {"left_click", "right_click", "double_click"}
+                and self._last_capture_meta is not None
+                and not is_point_inside_window(
+                    pt[0], pt[1], self._last_capture_meta
+                )
+            ):
+                bounds = self._last_capture_meta.get("window_bounds") or {}
+                err = (
+                    f"click at ({pt[0]},{pt[1]}) falls outside "
+                    f"Rekordbox window bounds "
+                    f"x={bounds.get('x', 0):.0f},"
+                    f"y={bounds.get('y', 0):.0f},"
+                    f"w={bounds.get('w', 0):.0f},"
+                    f"h={bounds.get('h', 0):.0f}. "
+                    "Re-assess from the latest screenshot — the target "
+                    "UI element you clicked is NOT inside Rekordbox."
+                )
+                payload["outcome"] = "rejected: click outside window"
+                payload["guard_error"] = err
+                self.trace.record("action", payload)
+                return {"ok": False, "error": err, "meta": payload}
+            # --- Frontmost enforcement (Fix 3): re-activate Rekordbox if
+            # another app stole focus. Skip for mouse_move (no focus
+            # needed) and when simulated (unit tests).
+            if (
+                a != "mouse_move"
+                and not self.simulated
+                and self.frontmost_app is not None
+            ):
+                ensure_frontmost(self.frontmost_app, max_attempts=2)
             if self.simulated and a != "mouse_move":
                 payload["outcome"] = "simulated skip"
                 self.trace.record("action", payload)

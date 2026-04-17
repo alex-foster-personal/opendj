@@ -48,8 +48,12 @@ from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     DisplayGeometry,
     Trace,
     _translate_key_combo,
+    capture_window,
+    ensure_frontmost,
+    is_point_inside_window,
     scaled_to_points,
     take_screenshot,
+    window_scaled_to_global_points,
 )
 
 
@@ -275,6 +279,257 @@ class TestAgentDryRunInit:
         assert result.estimated_cost_usd == pytest.approx(
             100 / 1_000_000 * 3.0 + 20 / 1_000_000 * 15.0
         )
+
+
+# --------------------------------------------------------------------------- #
+# Window-isolated capture + click-guard + frontmost enforcement (Fixes 1/3/6)
+# --------------------------------------------------------------------------- #
+
+
+class TestWindowIsolatedCapture:
+    """``capture_window`` must emit the documented metadata shape in
+    both window and display-fallback modes, and (critically) must
+    translate clicks back to GLOBAL screen points using the window's
+    origin \u2014 not just the display frame.
+    """
+
+    def test_window_mode_metadata_shape(self) -> None:
+        raw = _synthetic_png(1600, 1000)
+        injected = {
+            "window_id": 42,
+            "owner_name": "rekordbox",
+            "title": "rekordbox 7.2.14",
+            "bounds": {"x": 100.0, "y": 200.0, "w": 1600.0, "h": 1000.0},
+            "layer": 0,
+        }
+        png, meta = capture_window(
+            app_name_substring="rekordbox",
+            downsample_width=800,
+            _raw_bytes=raw,
+            _injected_window=injected,
+        )
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+        assert meta["capture_mode"] == "window"
+        assert meta["window_id"] == 42
+        assert meta["owner_name"] == "rekordbox"
+        assert meta["window_bounds"] == {
+            "x": 100.0, "y": 200.0, "w": 1600.0, "h": 1000.0,
+        }
+        assert meta["downsample_width"] == 800
+        assert meta["downsample_height"] == 500
+        assert meta["physical_width"] == 1600
+        assert meta["physical_height"] == 1000
+        assert meta["backing_scale"] == pytest.approx(1.0)
+
+    def test_window_coord_translation_adds_origin(self) -> None:
+        """A click at the CENTRE of the downsampled frame should land
+        at the centre of the window in GLOBAL screen coords \u2014 i.e.
+        the window origin must be added after coordinate scaling.
+        """
+        meta = {
+            "capture_mode": "window",
+            "window_bounds": {"x": 500.0, "y": 300.0, "w": 1600.0, "h": 1000.0},
+            "window_id": 1,
+            "owner_name": "rekordbox",
+            "title": "",
+            "downsample_width": 800,
+            "downsample_height": 500,
+            "physical_width": 1600,
+            "physical_height": 1000,
+            "backing_scale": 1.0,
+        }
+        gx, gy = window_scaled_to_global_points(400, 250, meta)
+        assert gx == 500 + 800
+        assert gy == 300 + 500
+
+    def test_display_fallback_when_no_window_injected(self) -> None:
+        """When no window is injected and no live app matches, we fall
+        back to display-mode capture with capture_mode="display".
+        """
+        raw = _synthetic_png(2560, 1440)
+        png, meta = capture_window(
+            app_name_substring="__definitely_not_a_real_app__",
+            downsample_width=1920,
+            _raw_bytes=raw,
+        )
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+        assert meta["capture_mode"] == "display"
+        assert meta["window_bounds"]["x"] == 0.0
+        assert meta["window_bounds"]["y"] == 0.0
+        assert meta["downsample_width"] == 1920
+
+
+class TestClickGuard:
+    """``is_point_inside_window`` + Actuator integration enforce Fix 6
+    \u2014 clicks outside the Rekordbox window are rejected.
+    """
+
+    def test_point_inside_passes(self) -> None:
+        meta = {
+            "capture_mode": "window",
+            "window_bounds": {"x": 100.0, "y": 100.0, "w": 1000.0, "h": 800.0},
+        }
+        assert is_point_inside_window(500, 500, meta) is True
+        assert is_point_inside_window(100, 100, meta) is True
+        assert is_point_inside_window(1099, 899, meta) is True
+
+    def test_point_outside_fails(self) -> None:
+        meta = {
+            "capture_mode": "window",
+            "window_bounds": {"x": 100.0, "y": 100.0, "w": 1000.0, "h": 800.0},
+        }
+        assert is_point_inside_window(50, 50, meta) is False
+        assert is_point_inside_window(2000, 500, meta) is False
+        assert is_point_inside_window(500, 2000, meta) is False
+
+    def test_display_mode_always_passes(self) -> None:
+        """Display-mode captures have no window bounds to enforce;
+        the guard is a no-op."""
+        meta = {
+            "capture_mode": "display",
+            "window_bounds": {"x": 0.0, "y": 0.0, "w": 5120.0, "h": 2160.0},
+        }
+        assert is_point_inside_window(999999, 999999, meta) is True
+
+    def test_actuator_rejects_off_window_click(self, tmp_path: Path) -> None:
+        """End-to-end: Actuator.execute_action must reject a left_click
+        whose translated global point falls outside the active window,
+        return ok=False, and surface a helpful error to Claude.
+        """
+        tr = Trace.new(tmp_path)
+        act = Actuator(
+            tr,
+            downsample_width=200,
+            simulated=True,
+            frontmost_app=None,
+        )
+        act._last_capture_meta = {
+            "capture_mode": "window",
+            "window_bounds": {"x": 1000.0, "y": 500.0, "w": 400.0, "h": 300.0},
+            "window_id": 7,
+            "owner_name": "rekordbox",
+            "title": "rekordbox",
+            "downsample_width": 200,
+            "downsample_height": 150,
+            "physical_width": 400,
+            "physical_height": 300,
+            "backing_scale": 1.0,
+        }
+        act._last_scaled = (200, 150)
+        result = act.execute_action(
+            {"action": "left_click", "coordinate": [500, 500]}
+        )
+        assert result["ok"] is False
+        assert "outside" in result["error"].lower()
+        assert "rekordbox" in result["error"].lower()
+        events = sorted(tr.root.glob("step_*_action.json"))
+        assert len(events) == 1
+
+    def test_actuator_allows_on_window_click(self, tmp_path: Path) -> None:
+        """Click within bounds is accepted (simulated=True so no mouse)."""
+        tr = Trace.new(tmp_path)
+        act = Actuator(
+            tr,
+            downsample_width=200,
+            simulated=True,
+            frontmost_app=None,
+        )
+        act._last_capture_meta = {
+            "capture_mode": "window",
+            "window_bounds": {"x": 1000.0, "y": 500.0, "w": 400.0, "h": 300.0},
+            "window_id": 7,
+            "owner_name": "rekordbox",
+            "title": "rekordbox",
+            "downsample_width": 200,
+            "downsample_height": 150,
+            "physical_width": 400,
+            "physical_height": 300,
+            "backing_scale": 1.0,
+        }
+        act._last_scaled = (200, 150)
+        result = act.execute_action(
+            {"action": "left_click", "coordinate": [100, 75]}
+        )
+        assert result["ok"] is True
+        assert result.get("skipped") is True
+
+
+class TestEnsureFrontmost:
+    """Fix 3: re-activate Rekordbox before each click if focus drifted.
+    Offline \u2014 we inject the probe + activate callables.
+    """
+
+    def test_already_frontmost_short_circuits(self) -> None:
+        calls = {"activate": 0, "probe": 0}
+
+        def probe() -> str | None:
+            calls["probe"] += 1
+            return "rekordbox"
+
+        def activate() -> None:
+            calls["activate"] += 1
+
+        ok = ensure_frontmost(
+            "rekordbox",
+            max_attempts=3,
+            wait_ms=0,
+            _frontmost_probe=probe,
+            _activate=activate,
+        )
+        assert ok is True
+        assert calls["activate"] == 0
+        assert calls["probe"] == 1
+
+    def test_activates_when_another_app_focused(self) -> None:
+        """First probe shows Safari; activate runs; second probe shows
+        rekordbox. Must return True with exactly one activate call."""
+        states = iter(["Safari", "rekordbox", "rekordbox"])
+        calls = {"activate": 0}
+
+        def probe() -> str | None:
+            return next(states)
+
+        def activate() -> None:
+            calls["activate"] += 1
+
+        ok = ensure_frontmost(
+            "rekordbox",
+            max_attempts=3,
+            wait_ms=0,
+            _frontmost_probe=probe,
+            _activate=activate,
+        )
+        assert ok is True
+        assert calls["activate"] == 1
+
+    def test_returns_false_after_max_attempts(self) -> None:
+        calls = {"activate": 0}
+
+        def probe() -> str | None:
+            return "Safari"
+
+        def activate() -> None:
+            calls["activate"] += 1
+
+        ok = ensure_frontmost(
+            "rekordbox",
+            max_attempts=3,
+            wait_ms=0,
+            _frontmost_probe=probe,
+            _activate=activate,
+        )
+        assert ok is False
+        assert calls["activate"] == 3
+
+    def test_case_insensitive_match(self) -> None:
+        ok = ensure_frontmost(
+            "rekordbox",
+            max_attempts=1,
+            wait_ms=0,
+            _frontmost_probe=lambda: "Rekordbox",
+            _activate=lambda: None,
+        )
+        assert ok is True
 
 
 # --------------------------------------------------------------------------- #
