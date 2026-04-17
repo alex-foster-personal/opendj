@@ -45,6 +45,8 @@ except ImportError:  # pragma: no cover - WIP six-rail adapter, not yet merged
     )
 from apps.sync.safety import SafetyAbort
 
+pytestmark = pytest.mark.requirement("SMART-02")
+
 
 # ---------------------------------------------------------------- state DB
 

@@ -24,6 +24,8 @@ from apps.webui.server.backend import (
 from apps.webui.server import sqlite_backend as sb_mod
 from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
 
+pytestmark = pytest.mark.requirement("CAT-05")
+
 
 ISO = "2026-04-17T10:00:00.000000Z"
 
