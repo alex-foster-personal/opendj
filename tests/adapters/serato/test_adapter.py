@@ -154,6 +154,41 @@ def test_adapter_report_type() -> None:
     assert isinstance(AdapterReport(), AdapterReport)
 
 
+@pytest.mark.requirement("OPEN-02c")
+def test_subcrate_playlist_name_cannot_escape_subcrates_dir(tmp_path) -> None:
+    """Regression: a hostile playlist name like ``../../evil`` must not
+    cause the subcrate file to be written outside the Subcrates/ dir.
+    """
+    adapter = SeratoAdapter()
+    track = Track(
+        track_id="ignored",
+        file_path="Music/fixture/x.mp3",
+        title="X",
+        artists=(),
+    )
+    lib = OpenDjLibrary(
+        version="0.1",
+        tracks=(track,),
+        playlists=(
+            Playlist(name="../../evil", track_ids=(track.track_id,)),
+        ),
+    )
+    target = tmp_path / "_Serato_"
+    adapter.write(lib, target)
+
+    subcrates_dir = (target / "Subcrates").resolve()
+    # Every *.crate file must live directly inside Subcrates/, never above.
+    crate_files = list(subcrates_dir.glob("*.crate"))
+    assert len(crate_files) == 1, f"expected one crate, got {crate_files!r}"
+    crate_path = crate_files[0].resolve()
+    assert subcrates_dir in crate_path.parents or crate_path.parent == subcrates_dir, (
+        f"subcrate file {crate_path} escaped Subcrates dir {subcrates_dir}"
+    )
+    # And nothing should have been created up the tree.
+    assert not (target.parent / "evil.crate").exists()
+    assert not (target.parent.parent / "evil.crate").exists()
+
+
 # ====================================================================
 # GEOB cue + beatgrid write/read round-trip via mutagen (GH #2 / P0).
 # ====================================================================

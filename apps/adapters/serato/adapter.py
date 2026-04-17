@@ -103,6 +103,31 @@ def _stable_track_id(file_path: str, title: str) -> str:
     return "serato_" + hashlib.sha1(blob).hexdigest()[:16]
 
 
+def _safe_subcrate_filename(name: str) -> str:
+    """Coerce a playlist name into a safe subcrate filename (no traversal).
+
+    Serato subcrate files live at ``<target>/Subcrates/<name>.crate``. A
+    hostile or typo'd playlist name like ``../../evil`` would escape the
+    Subcrates directory. Strip path separators, NULs, and any ``..``
+    components; fall back to ``_`` if the result is empty.
+    """
+    # Drop directory separators, NULs, and any stray control bytes.
+    cleaned = "".join(
+        "_" if ch in ("/", "\\", "\x00") or ord(ch) < 0x20 else ch
+        for ch in name
+    )
+    # Collapse ``..`` path components so they cannot climb out of the dir.
+    # A single "." as a whole name is also unsafe (current dir); replace it.
+    if cleaned in ("", ".", ".."):
+        return "_"
+    # After stripping separators the string can no longer contain a path
+    # component: for example "../a" becomes ".._a", which resolves inside
+    # Subcrates/ rather than climbing out. A leading literal "." with no
+    # separators is allowed (Serato permits dot-prefixed names), so we
+    # only guard the whole-name-equals-dots cases above.
+    return cleaned
+
+
 def _parse_rating_from_extension(raw: bytes) -> int | None:
     try:
         value = int(raw.decode("ascii", errors="ignore").strip())
@@ -382,7 +407,10 @@ class SeratoAdapter:
                 # lookup; ids are opaque so we store path list verbatim.
                 lookup = {t.track_id: t.file_path for t in library.tracks}
                 paths = tuple(lookup.get(tid, "") for tid in pl.track_ids if lookup.get(tid))
-                Subcrate(name=pl.name, track_paths=paths).write(subdir / f"{pl.name}.crate")
+                # Playlist names are user-controlled. Sanitise to prevent
+                # path traversal out of Subcrates/ (e.g. name="../../evil").
+                safe_name = _safe_subcrate_filename(pl.name)
+                Subcrate(name=pl.name, track_paths=paths).write(subdir / f"{safe_name}.crate")
                 report.bump("playlists_written")
 
         # Per-audio-file GEOB frame upsert. This is the real Serato write
