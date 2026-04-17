@@ -1,6 +1,7 @@
 """CLI surface tests for apps.spotify.__main__."""
 from __future__ import annotations
 
+import io
 import sqlite3
 from pathlib import Path
 
@@ -51,3 +52,56 @@ def test_cli_rematch_with_no_pending(
     rc = cli_main(["rematch", "--playlist-id", "37i9dQZF1DXcBWIGoYBM5M"])
     assert rc == 0
     assert "rematch" in capsys.readouterr().out
+
+
+@pytest.mark.requirement("CAT-01")
+def test_cli_rematch_live_without_flag_refuses(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    rc = cli_main([
+        "rematch",
+        "--playlist-id",
+        "37i9dQZF1DXcBWIGoYBM5M",
+        "--live",
+    ])
+    assert rc == 3
+    assert "i-understand-the-risks" in capsys.readouterr().err
+
+
+@pytest.mark.requirement("CAT-01")
+def test_cli_rematch_live_typed_confirm_mismatch_refuses(
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    state_db_path: Path,
+) -> None:
+    """Typing the wrong playlist id at the confirm prompt must abort the live write."""
+    monkeypatch.setattr("sys.stdin", io.StringIO("wrong-id\n"))
+    rc = cli_main([
+        "rematch",
+        "--playlist-id",
+        "37i9dQZF1DXcBWIGoYBM5M",
+        "--live",
+        "--i-understand-the-risks",
+    ])
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "typed confirmation mismatch" in err
+
+
+@pytest.mark.requirement("CAT-01")
+def test_cli_rematch_live_eof_at_prompt_refuses(
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    state_db_path: Path,
+) -> None:
+    """EOF at the typed-confirm prompt must abort rather than proceed."""
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    rc = cli_main([
+        "rematch",
+        "--playlist-id",
+        "37i9dQZF1DXcBWIGoYBM5M",
+        "--live",
+        "--i-understand-the-risks",
+    ])
+    assert rc == 3
+    assert "aborted" in capsys.readouterr().err

@@ -157,6 +157,24 @@ def _cmd_rematch(args: argparse.Namespace) -> int:
         return rc
 
     if args.live:
+        print(
+            f"LIVE rematch requested for playlist {vendor_pl_id}.\n"
+            "This will (1) snapshot the state DB, (2) promote resolved "
+            "pending tracks into playlist_memberships, (3) emit a reversal "
+            "script. Type the playlist id to confirm:"
+        )
+        try:
+            typed = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\naborted.", file=sys.stderr)
+            return EXIT_SAFETY
+        if typed != vendor_pl_id:
+            print(
+                "typed confirmation mismatch; aborting.",
+                file=sys.stderr,
+            )
+            return EXIT_SAFETY
+
         backup = backup_state_db()
         reversal = emit_reversal_script(backup)
         print(f"[spotify] backup: {backup}")
