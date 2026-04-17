@@ -10,7 +10,7 @@ Why this exists
 ---------------
 
 Before this test the writer-vs-real-export comparison lived in a
-bespoke script (``apps/scratch/diff_usb_exports.py``) that was run by
+bespoke script (``scripts/scratch/diff_usb_exports.py``) that was run by
 hand for one fixture (``rb-usb-export-big``). With CAT-06 expanding
 and new real-Rekordbox dumps arriving, we need adding a new fixture
 to be a one-step operation: drop a ``<name>.extern`` marker (or an

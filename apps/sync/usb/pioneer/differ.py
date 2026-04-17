@@ -1,6 +1,6 @@
 """Structural diff for Pioneer USB exports (``exportLibrary.db`` focus).
 
-This module is the typed successor of ``apps/scratch/diff_usb_exports.py``.
+This module is the typed successor of ``scripts/scratch/diff_usb_exports.py``.
 That script grew organically while we chased the writer-vs-real-export
 divergence for CAT-06; the logic is sound but the outputs were ad-hoc
 markdown strings, which is awkward to consume from pytest or from a
@@ -642,7 +642,7 @@ def _diff_anlz(a_root: Path, b_root: Path, n: int = 5) -> list[str]:
 def build_report(a_root: Path, b_root: Path, title: str) -> str:
     """Legacy pair-wise markdown report (file-presence + ANLZ + OneLibrary).
 
-    Equivalent to the old ``apps.scratch.diff_usb_exports`` output;
+    Equivalent to the old ``scripts.scratch.diff_usb_exports`` output;
     reproduced here so the scratch CLI can delegate.
     """
     a_root = a_root.resolve()
@@ -694,7 +694,7 @@ def build_report(a_root: Path, b_root: Path, title: str) -> str:
 def diff_pair_cli(argv: list[str] | None = None) -> int:
     """Thin CLI: the old ``diff_usb_exports`` entrypoint.
 
-    Preserved so ``apps.scratch.diff_usb_exports`` keeps working for
+    Preserved so ``scripts.scratch.diff_usb_exports`` keeps working for
     humans regenerating pair-wise reports (e.g. the existing
     ``docs/rb-usb-export-writer-diff-report.md``).
     """
