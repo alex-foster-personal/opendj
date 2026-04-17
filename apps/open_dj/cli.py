@@ -423,6 +423,127 @@ def _unwrap_prov(value: Any) -> Any:
     return value
 
 
+def _color_hex_to_int(value: Any) -> int | None:
+    """Inverse of :func:`apps.open_dj.wire._color_int_to_hex`.
+
+    Accepts ``"#rrggbb"``, ``"rrggbb"``, or a plain int. Returns ``None``
+    on anything it cannot parse so loaders degrade gracefully rather than
+    crashing on vendor-emitted oddities.
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value & 0xFFFFFF
+    if isinstance(value, str):
+        s = value.strip().lstrip("#")
+        if not s:
+            return None
+        try:
+            return int(s, 16) & 0xFFFFFF
+        except ValueError:
+            return None
+    return None
+
+
+def _cues_from_doc(raw: list[dict[str, Any]], CuePoint) -> tuple:
+    """Rehydrate wire-format cue list into typed ``CuePoint`` tuples.
+
+    The v0.2 wire splits a typed ``loop`` cue into a ``loop_in`` /
+    ``loop_out`` pair keyed by ``position_ms`` + ``name``; collapse the
+    pair back into a single ``loop`` so round-trips through the typed
+    layer are lossless. Cue ``color`` is emitted as a ``#rrggbb`` string
+    on the wire but stored as an int on the typed layer, so parse here.
+    ``index`` is wire-optional (the schema exposes it as a convenience
+    for some vendors), so fall back to positional order.
+    """
+    out: list = []
+    skip_next_loop_out_key: set[tuple[int, str]] = set()
+    # First pass: collect loop_in -> matching loop_out by (position+length, name)
+    # so we can emit a single collapsed loop cue.
+    loop_ins: dict[tuple[int, str], dict[str, Any]] = {}
+    for c in raw or []:
+        if c.get("type") == "loop_in":
+            loop_ins[(int(c.get("position_ms", 0)), c.get("name", ""))] = c
+
+    next_index = 0
+    for c in raw or []:
+        ctype = c.get("type")
+        # Collapse loop_in + loop_out -> single "loop"; skip the loop_out.
+        if ctype == "loop_out":
+            key = (int(c.get("position_ms", 0)), c.get("name", ""))
+            if key in skip_next_loop_out_key:
+                continue  # handled by its loop_in partner
+        length_ms = c.get("length_ms")
+        if ctype == "loop_in":
+            emit_type = "loop"
+            # Look for a partner loop_out to recover length_ms.
+            pos_in = int(c.get("position_ms", 0))
+            name = c.get("name", "")
+            partner_pos = None
+            for cc in raw or []:
+                if (
+                    cc.get("type") == "loop_out"
+                    and cc.get("name", "") == name
+                    and int(cc.get("position_ms", 0)) >= pos_in
+                ):
+                    partner_pos = int(cc.get("position_ms", 0))
+                    skip_next_loop_out_key.add((partner_pos, name))
+                    break
+            if length_ms is None and partner_pos is not None:
+                length_ms = partner_pos - pos_in
+        else:
+            emit_type = ctype
+        idx = c.get("index")
+        if idx is None:
+            idx = next_index
+        next_index = int(idx) + 1
+        out.append(
+            CuePoint(
+                index=int(idx),
+                position_ms=int(c.get("position_ms", 0)),
+                type=emit_type,
+                name=c.get("name", ""),
+                color_rgb=_color_hex_to_int(c.get("color") or c.get("color_rgb")),
+                length_ms=int(length_ms) if length_ms is not None else None,
+            )
+        )
+    return tuple(out)
+
+
+def _beats_from_doc(raw: Any, BeatGridPoint) -> tuple:
+    """Rehydrate a v0.2 ``beatgrid`` object into ``BeatGridPoint`` tuple.
+
+    Wire shape: ``{"origin_ms": float, "bpm": float, "algorithm": str,
+    "beats": [position_ms, ...], "source": ProvenanceValue}``. We treat
+    the first anchor's BPM as the locked BPM for all constant grids;
+    for variable grids the wire does not (yet) carry per-anchor BPMs, so
+    we fall back to the header BPM across the board. This is lossless
+    for the constant case (overwhelmingly common) and conservative for
+    variable grids. The last anchor is marked ``terminal`` so writers
+    that need a sentinel (e.g. Serato) can emit one.
+    """
+    if not raw:
+        return ()
+    if isinstance(raw, list):
+        # Permit a bare list of positions; rare, but some callers emit it.
+        beats_list = raw
+        header_bpm = 0.0
+    else:
+        beats_list = raw.get("beats") or []
+        header_bpm = float(raw.get("bpm") or 0.0)
+    out: list = []
+    n = len(beats_list)
+    for i, pos in enumerate(beats_list):
+        out.append(
+            BeatGridPoint(
+                position_ms=int(pos),
+                bpm=header_bpm,
+                terminal=(i == n - 1),
+            )
+        )
+    return tuple(out)
+
+
 def _dict_to_library(doc: dict[str, Any]):
     """Inverse of :func:`_library_to_dict` -- JSON doc -> ``OpenDjLibrary``.
 
@@ -431,8 +552,17 @@ def _dict_to_library(doc: dict[str, Any]):
     dependency from the CLI. Provenance-wrapped scalars (``bpm``,
     ``rating``, ``key``) are unwrapped here because the typed layer
     stores raw scalars.
+
+    This loader is the inverse of :mod:`apps.open_dj.wire`, so it
+    accepts both v0.1-style docs (``cues``, plain ``track_ids``) and the
+    v0.2 wire (``cue_points`` with hex ``color``, ``beatgrid`` object,
+    ``tracks_ordered`` playlist entries). Dropping any of these on the
+    way in would silently lose user data on the next write, so the
+    lossy-on-import bug (Codex finding P15-F2) is fixed by plumbing
+    ``beatgrid``, ``tracks_ordered``, and cue ``color`` through to the
+    typed model.
     """
-    from apps.open_dj import CuePoint, OpenDjLibrary, Playlist, Track
+    from apps.open_dj import BeatGridPoint, CuePoint, OpenDjLibrary, Playlist, Track
 
     tracks = tuple(
         Track(
@@ -445,19 +575,16 @@ def _dict_to_library(doc: dict[str, Any]):
             key_camelot=_unwrap_prov(t.get("key") or t.get("key_camelot")),
             rating=_unwrap_prov(t.get("rating")),
             duration_ms=t.get("duration_ms"),
-            play_count=t.get("play_count", 0),
-            color_rgb=t.get("color_rgb"),
-            cues=tuple(
-                CuePoint(
-                    index=c["index"],
-                    position_ms=c["position_ms"],
-                    type=c["type"],
-                    name=c.get("name", ""),
-                    color_rgb=c.get("color_rgb"),
-                    length_ms=c.get("length_ms"),
-                )
-                for c in (t.get("cues") or t.get("cue_points") or []) or []
+            # ``x_play_count`` / ``x_color_rgb`` are the wire-side
+            # passthroughs for typed-only scalars; accept either form so
+            # docs produced by either side of the boundary round-trip.
+            play_count=t.get("play_count", t.get("x_play_count", 0)) or 0,
+            color_rgb=t.get("color_rgb", t.get("x_color_rgb")),
+            cues=_cues_from_doc(
+                list(t.get("cue_points") or t.get("cues") or []),
+                CuePoint,
             ),
+            beats=_beats_from_doc(t.get("beatgrid"), BeatGridPoint),
             isrc=t.get("isrc"),
             extensions=t.get("extensions", {}) or {},
         )
@@ -466,7 +593,10 @@ def _dict_to_library(doc: dict[str, Any]):
     playlists = tuple(
         Playlist(
             name=p["name"],
-            track_ids=tuple(p.get("track_ids", ())),
+            # v0.2 wire uses ``tracks_ordered``; v0.1 docs and the
+            # in-memory round-trip form use ``track_ids``. Accept both
+            # so an imported v0.2 JSON actually keeps its playlists.
+            track_ids=tuple(p.get("tracks_ordered") or p.get("track_ids", ())),
         )
         for p in doc.get("playlists", [])
     )

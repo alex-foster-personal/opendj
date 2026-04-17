@@ -235,3 +235,69 @@ def test_import_unknown_adapter_rejected(tmp_path: Path) -> None:
             ]
         )
     assert excinfo.value.code == 2
+
+
+# ---------------------------------------------------------- Codex P15-F2
+
+
+@pytest.mark.requirement("OPEN-01")
+def test_opendj_import_preserves_beatgrid_and_cue_color(tmp_path: Path) -> None:
+    """Regression for Codex finding P15-F2.
+
+    ``apps/open_dj/cli.py::_dict_to_library`` previously ignored the
+    v0.2 wire fields ``beatgrid``, ``tracks_ordered``, and cue
+    ``color``; importing a v0.2 open-dj JSON would silently strip the
+    beatgrid, erase playlist membership, and blank out hot-cue colour.
+    After the fix the loader is the true inverse of
+    :mod:`apps.open_dj.wire` and these fields survive the JSON -> typed
+    conversion.
+    """
+    from apps.open_dj.cli import _dict_to_library
+
+    doc = {
+        "schema_version": "0.2",
+        "tracks": [
+            {
+                "track_id": "t1",
+                "file_path": "/m/01.mp3",
+                "title": "One",
+                "bpm": {"value": 128.0, "source": "user", "modified_at": "2024-01-01T00:00:00Z"},
+                "cue_points": [
+                    {
+                        "index": 0,
+                        "position_ms": 1000,
+                        "type": "hot",
+                        "name": "Intro",
+                        "color": "#ff8800",
+                    },
+                ],
+                "beatgrid": {
+                    "origin_ms": 0.0,
+                    "bpm": 128.0,
+                    "algorithm": "constant",
+                    "beats": [0, 468, 937, 1406],
+                },
+            },
+        ],
+        "playlists": [
+            {"name": "warmup", "tracks_ordered": ["t1"]},
+        ],
+    }
+
+    lib = _dict_to_library(doc)
+    assert len(lib.tracks) == 1
+    t = lib.tracks[0]
+    # cue color round-trip: "#ff8800" -> 0xFF8800
+    assert len(t.cues) == 1
+    assert t.cues[0].color_rgb == 0xFF8800
+    assert t.cues[0].type == "hot"
+    assert t.cues[0].name == "Intro"
+    # beatgrid -> BeatGridPoint tuple
+    assert len(t.beats) == 4
+    assert [b.position_ms for b in t.beats] == [0, 468, 937, 1406]
+    assert t.beats[0].bpm == 128.0
+    assert t.beats[-1].terminal is True
+    # tracks_ordered -> track_ids
+    assert len(lib.playlists) == 1
+    assert lib.playlists[0].track_ids == ("t1",)
+

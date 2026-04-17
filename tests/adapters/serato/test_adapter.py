@@ -465,3 +465,52 @@ def test_geob_write_skips_track_when_backup_fails(
         for w in report.warnings
     )
 
+
+
+# ---------------------------------------------------------- Codex P16-F01
+
+
+@pytest.mark.requirement("OPEN-02")
+def test_serato_playlist_membership_roundtrip(tmp_path) -> None:
+    """Regression for Codex finding P16-F01.
+
+    The Serato adapter hashes track IDs over ``file_path|title`` but
+    previously hashed playlist-entry paths over ``file_path|""``. The
+    two key spaces never intersected, so every subcrate came back with
+    track_ids that matched no track row; playlist membership was
+    silently broken on READ. After the fix, crate entries resolve via a
+    file_path -> track_id map built from the just-read tracks.
+    """
+    adapter = SeratoAdapter()
+    t1 = Track(
+        track_id="ignored",
+        file_path="Music/fixture/01.mp3",
+        title="Sample One",
+        artists=("Alice",),
+        bpm=128.0,
+    )
+    t2 = Track(
+        track_id="ignored",
+        file_path="Music/fixture/02.mp3",
+        title="Sample Two",
+        artists=("Bob",),
+        bpm=124.5,
+    )
+    lib = OpenDjLibrary(
+        version="0.1",
+        tracks=(t1, t2),
+        playlists=(Playlist(name="warmup", track_ids=(t1.track_id, t2.track_id)),),
+    )
+    target = tmp_path / "_Serato_"
+    adapter.write(lib, target)
+
+    lib_back, _ = adapter.read(target)
+    assert len(lib_back.playlists) == 1
+    track_ids = {t.track_id for t in lib_back.tracks}
+    pl_members = set(lib_back.playlists[0].track_ids)
+    assert pl_members, "playlist must not be empty after round-trip"
+    # Every playlist member must resolve to a real track row.
+    assert pl_members.issubset(track_ids), (
+        f"playlist members {pl_members} not in track set {track_ids}"
+    )
+    assert len(lib_back.playlists[0].track_ids) == 2

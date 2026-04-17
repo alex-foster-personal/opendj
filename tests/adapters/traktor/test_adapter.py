@@ -175,3 +175,69 @@ def test_playlists_roundtrip(tmp_path) -> None:
     lib_back, _ = adapter.read(target)
     assert len(lib_back.playlists) == 1
     assert lib_back.playlists[0].name == "set-a"
+
+
+# ---------------------------------------------------------- Codex P16-F02
+
+
+@pytest.mark.requirement("OPEN-02")
+def test_traktor_playlist_membership_roundtrip(tmp_path) -> None:
+    """Regression for Codex finding P16-F02.
+
+    Traktor ``_write_playlists`` used to emit the typed (already-hashed)
+    ``track_id`` as ``PRIMARYKEY@KEY``; ``_read_playlists`` then hashed
+    that key again, so the resulting playlist track_ids never matched
+    the hashed file_path of any entry. After the fix, PRIMARYKEY carries
+    the source file_path so write+read hash the same value once.
+    """
+    adapter = TraktorAdapter()
+    t1 = Track(
+        track_id="ignored",
+        file_path="/Music/fixture/01.mp3",
+        title="Sample One",
+        artists=("Alice",),
+        bpm=128.0,
+        key_camelot="8A",
+    )
+    t2 = Track(
+        track_id="ignored",
+        file_path="/Music/fixture/02.mp3",
+        title="Sample Two",
+        artists=("Bob",),
+        bpm=124.5,
+    )
+    # Resolve to the adapter's own stable IDs so we can assert set equality.
+    from apps.adapters.traktor.adapter import _stable_track_id as _traktor_id
+    expected_ids = {_traktor_id(t1.file_path), _traktor_id(t2.file_path)}
+
+    import dataclasses as _dc
+    # Rewrite playlist to reference the hashed IDs as a typed library would.
+    hashed_lib = OpenDjLibrary(
+        version="0.1",
+        tracks=(
+            # Make the typed track_ids match what read() would produce,
+            # simulating the normal upstream flow where a previous read
+            # populated track_id from file_path.
+            _dc.replace(t1, track_id=_traktor_id(t1.file_path)),
+            _dc.replace(t2, track_id=_traktor_id(t2.file_path)),
+        ),
+        playlists=(
+            Playlist(
+                name="warmup",
+                track_ids=(_traktor_id(t1.file_path), _traktor_id(t2.file_path)),
+            ),
+        ),
+    )
+
+    target = tmp_path / "collection.nml"
+    adapter.write(hashed_lib, target)
+    lib_back, _ = adapter.read(target)
+
+    assert len(lib_back.playlists) == 1
+    pl_members = set(lib_back.playlists[0].track_ids)
+    assert pl_members, "playlist must not be empty after round-trip"
+    track_ids_back = {t.track_id for t in lib_back.tracks}
+    assert pl_members.issubset(track_ids_back), (
+        f"playlist members {pl_members} not in track set {track_ids_back}"
+    )
+    assert pl_members == expected_ids

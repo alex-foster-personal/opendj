@@ -340,22 +340,39 @@ class SeratoAdapter:
             )
             report.bump("tracks_read")
 
+        # Playlists resolve track references by file_path -> track_id.
+        # Serato subcrates store only the path, not the title, so we
+        # must look up the already-hashed ID (which was computed over
+        # ``file_path|title``) rather than rehashing with an empty title
+        # -- that produced an ID that never matched any track and
+        # silently broke playlist membership on read (Codex P16-F01).
+        path_to_id = {t.file_path: t.track_id for t in tracks}
         playlists: list[Playlist] = []
         subcrates_dir = source / "Subcrates"
         if subcrates_dir.is_dir():
-            # Subcrate entries carry only the file path, not the title, but
-            # _stable_track_id keys on (file_path, title). Look up the title
-            # from the library tracks we just built so membership IDs match
-            # the tracks' IDs. Without this, crate lookups return empty.
-            title_by_path = {row.file_path: row.title for row in db.tracks}
             # sort for deterministic order -- fixture round-trip depends on it
             for crate_file in sorted(subcrates_dir.glob("*.crate")):
                 crate = Subcrate.read(crate_file)
-                ids = tuple(
-                    _stable_track_id(p, title_by_path.get(p, ""))
-                    for p in crate.track_paths
-                )
-                playlists.append(Playlist(name=crate.name, track_ids=ids))
+                ids: list[str] = []
+                for p in crate.track_paths:
+                    tid = path_to_id.get(p)
+                    if tid is None:
+                        # Crate references a path not in database V2 --
+                        # emit the best-effort hashed ID so callers can
+                        # still see the reference and warn so the gap
+                        # is visible in the adapter report.
+                        tid = _stable_track_id(p, "")
+                        report.warn(
+                            field="playlist_entry",
+                            track_id=tid,
+                            action="dropped",
+                            reason=(
+                                f"crate {crate.name!r} references path "
+                                f"{p!r} which has no database V2 row"
+                            ),
+                        )
+                    ids.append(tid)
+                playlists.append(Playlist(name=crate.name, track_ids=tuple(ids)))
                 report.bump("playlists_read")
 
         library = OpenDjLibrary(version="0.1", tracks=tuple(tracks), playlists=tuple(playlists))

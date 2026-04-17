@@ -114,7 +114,13 @@ class TraktorAdapter:
         for track in library.tracks:
             entry = doc.add_entry()
             self._write_entry(entry, track, report)
-        self._write_playlists(doc, library.playlists)
+        # Resolve typed track_ids back to their source file_paths so
+        # ``_write_playlists`` emits Traktor-native PRIMARYKEY entries
+        # that survive a write/read round-trip (Codex P16-F02).
+        id_to_path = {
+            _stable_track_id(t.file_path): t.file_path for t in library.tracks
+        }
+        self._write_playlists(doc, library.playlists, id_to_path=id_to_path)
         doc.write(target)
         report.counts["tracks_written"] = len(library.tracks)
         report.counts["playlists_written"] = len(library.playlists)
@@ -288,7 +294,8 @@ class TraktorAdapter:
         return playlists
 
     def _write_playlists(
-        self, doc: NMLDocument, playlists: tuple[Playlist, ...]
+        self, doc: NMLDocument, playlists: tuple[Playlist, ...],
+        id_to_path: dict[str, str] | None = None,
     ) -> None:
         root_pls = doc.root.find("PLAYLISTS")
         if root_pls is None:
@@ -306,7 +313,18 @@ class TraktorAdapter:
             )
             for tid in pl.track_ids:
                 entry_el = ET.SubElement(playlist_el, "ENTRY")
-                ET.SubElement(entry_el, "PRIMARYKEY", {"KEY": tid, "TYPE": "TRACK"})
+                # PRIMARYKEY must carry the Traktor-native reference (the
+                # file path, which read() will re-hash through the same
+                # ``_stable_track_id`` helper). Writing the already-hashed
+                # typed ``track_id`` here means read() would hash the
+                # hash, permanently breaking playlist membership on
+                # round-trip (Codex P16-F02). Fall back to the raw id
+                # only for orphan references so we never write an empty
+                # PRIMARYKEY.
+                key = (id_to_path or {}).get(tid, tid)
+                ET.SubElement(
+                    entry_el, "PRIMARYKEY", {"KEY": key, "TYPE": "TRACK"}
+                )
 
 
 def _split_location(file_path: str) -> tuple[str, str, str]:
