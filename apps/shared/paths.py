@@ -27,6 +27,12 @@ DJAY_LIVE_DB: Path = (
 )
 DJAY_WORKING_DB: Path = DATA_DIR / "djay_MediaLibrary.db.copy"
 
+# ----- Shared-state layer (Phase 5) --------------------------------------
+# Local canonical projection. Derivative of vendor DBs; safe to delete.
+# Always gitignored under ``data/``. Phase 11 (Litestream) may relocate.
+STATE_DIR: Path = DATA_DIR / "state"
+STATE_DB: Path = STATE_DIR / "state.db"
+
 # ----- Filesystem music library -----------------------------------------
 # We scan the whole ``~/Music`` tree so comparison catches files outside the
 # curated "Manual Library" subfolder too.

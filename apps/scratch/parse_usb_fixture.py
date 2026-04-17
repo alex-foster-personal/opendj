@@ -361,7 +361,11 @@ def render_report(
     # --- exportLibrary.db tables -----------------------------------------
     p("## `exportLibrary.db` (SQLite / SQLCipher?)")
     p("")
-    p(f"- Path: `{export_lib['path']}`")
+    try:
+        lib_rel = Path(export_lib["path"]).relative_to(REPO).as_posix()
+    except Exception:  # noqa: BLE001
+        lib_rel = export_lib["path"]
+    p(f"- Path: `{lib_rel}`")
     p(f"- First 16 header bytes: `{export_lib.get('magic')}`")
     if export_lib.get("error"):
         p(f"- **Could not open as plain SQLite**: {export_lib['error']}")
