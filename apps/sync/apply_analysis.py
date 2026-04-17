@@ -16,6 +16,14 @@ from apps.sync.djay_writer import (
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
 
+# Codex P04-02: RB-side writes are only implemented for these fields.
+# ``apply_analysis`` used to silently skip any other field and still
+# exit 0, which made the CLI report success after a partial apply.
+# See ``_write_rb_field`` and ``live_run`` below: unsupported RB fields
+# now fail the run with a non-zero exit instead of being dropped.
+_SUPPORTED_RB_WRITE_FIELDS = frozenset({"bpm", "energy"})
+
+
 # ----- Path resolution (mirrors apply_ratings._live_*_db_path) ----------
 #
 # v1.0 adversarial review (#1, CRITICAL): prior ``main`` passed no
@@ -81,7 +89,24 @@ def _camelot_to_djay_key_idx(camelot: str) -> int | None:
     return None
 
 
+class UnsupportedRbFieldError(RuntimeError):
+    """RB-side write scheduled for a field we can't safely write.
+
+    Codex P04-02: ``_write_rb_field`` previously returned ``False`` for
+    ``manual_bpm`` / ``key_camelot`` / ``tags`` and the CLI still exited
+    ``0``. This exception is how we now refuse unsupported fields
+    loudly; ``main()`` converts it to a non-zero exit.
+    """
+
+
 def _write_rb_field(db, content_id: str, field: str, value) -> bool:
+    if field not in _SUPPORTED_RB_WRITE_FIELDS:
+        # Refuse rather than silently skip. See P04-02 note above.
+        raise UnsupportedRbFieldError(
+            f"RB-side write for field {field!r} is not implemented; "
+            "refusing to partial-apply. Supported: "
+            f"{sorted(_SUPPORTED_RB_WRITE_FIELDS)}."
+        )
     try:
         content = db.get_content(ID=str(content_id)).one()
     except Exception:
@@ -96,8 +121,6 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
             content.ColorID = int(value)
         except (TypeError, ValueError):
             return False
-    else:
-        return False
     db.commit()
     return True
 
@@ -248,6 +271,22 @@ def live_run(
         elif res == "accept_djay" and rb_id:
             rb_plan.append((rb_id, field, r.get("djay_value", "")))
 
+    # Codex P04-02: refuse to open a live session if the plan contains
+    # any RB-side field we can't actually write. Previously these rows
+    # were silently skipped inside ``_write_rb_field`` and the CLI
+    # exited 0, misreporting a partial apply as success.
+    unsupported_rb = sorted({
+        fld for _cid, fld, _val in rb_plan
+        if fld not in _SUPPORTED_RB_WRITE_FIELDS
+    })
+    if unsupported_rb:
+        raise UnsupportedRbFieldError(
+            "Refusing to apply: RB-side writes not implemented for "
+            f"fields {unsupported_rb}. Re-run with --fields limited to "
+            f"{sorted(_SUPPORTED_RB_WRITE_FIELDS)} or resolve those "
+            "rows on the djay side first."
+        )
+
     if rb_plan:
         db = open_db(rb_db_path)
         try:
@@ -385,6 +424,11 @@ def main(argv: list[str] | None = None) -> int:
     except SafetyAbort as e:
         print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
         return 3
+    except UnsupportedRbFieldError as e:
+        # Codex P04-02: non-zero exit on unsupported RB-side fields so
+        # the CLI no longer reports success after a partial apply.
+        print(f"[apply_analysis] UnsupportedRbField: {e}", file=sys.stderr)
+        return 4
 
     if rc == 0 and only_tracks and not args.bulk:
         mark_cautious_success("apply_analysis")

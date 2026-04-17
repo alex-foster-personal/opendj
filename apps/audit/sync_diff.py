@@ -67,8 +67,20 @@ def build_analysis_diff(
         djay_a = djay_analysis_by_uuid.get(djay_uuid)
         rb_r = rb_rating_by_id.get(rb_id)
         djay_r = djay_rating_by_uuid.get(djay_uuid)
+        rb_mtime = getattr(rb_a, "modified_at", None) if rb_a else None
+        djay_mtime = getattr(djay_a, "modified_at", None) if djay_a else None
         if rb_r is not None or djay_r is not None:
-            res = resolve_conflict("rating", rb_r or 0, djay_r or 0, prefer=prefer)
+            # Codex P04-01: pass per-side modified timestamps so
+            # ``prefer="newest"`` actually uses newest-wins instead of
+            # silently collapsing to RB-default.
+            res = resolve_conflict(
+                "rating",
+                rb_r or 0,
+                djay_r or 0,
+                rb_mtime,
+                djay_mtime,
+                prefer=prefer,
+            )
             rating_rows.append(
                 DiffRow(
                     rb_content_id=rb_id,
@@ -87,10 +99,14 @@ def build_analysis_diff(
             djay_v = getattr(djay_a, field, None) if djay_a else None
             if rb_v is None and djay_v is None:
                 continue
+            # Codex P04-01: per-side timestamps must reach the resolver
+            # or ``--prefer newest`` collapses to RB-default.
             res = resolve_conflict(
                 field if field != "manual_bpm" else "manual_bpm",
                 rb_v,
                 djay_v,
+                rb_mtime,
+                djay_mtime,
                 prefer=prefer,
             )
             analysis_rows.append(

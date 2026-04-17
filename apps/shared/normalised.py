@@ -9,6 +9,7 @@ See ``.planning/phases/04-cue-beatgrid-metadata-sync/04-RESEARCH.md`` §9.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 CueKind = Literal["memory", "hot", "load", "loop"]
@@ -54,6 +55,11 @@ class NormalisedAnalysis:
     energy: int | None = None
     tags: str | None = None
     is_straight_grid: bool | None = None
+    # Per-side last-modified timestamp used by the newest-wins conflict
+    # resolver. Codex P04-01: without this, ``--prefer newest`` in
+    # ``apps.audit.sync_diff`` silently collapsed to RB-default for every
+    # row because timestamps were never plumbed through.
+    modified_at: datetime | None = None
 
 
 __all__ = ["CueKind", "NormalisedCue", "NormalisedAnalysis"]
