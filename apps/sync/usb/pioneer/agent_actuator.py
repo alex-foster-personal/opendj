@@ -536,16 +536,28 @@ class Actuator:
         self,
         trace: Trace,
         *,
-        downsample_width: int = 1280,
+        downsample_width: int = 1920,
         dry_run: bool = False,
         simulated: bool = False,
+        window_app: str | None = "rekordbox",
+        frontmost_app: str | None = "rekordbox",
+        enforce_click_guard: bool = True,
     ) -> None:
         self.trace = trace
         self.downsample_width = downsample_width
         self.dry_run = dry_run
         self.simulated = simulated
+        # When set, ``capture()`` isolates this app's window via
+        # CGWindowListCreateImage (Fix 1). None = legacy full display.
+        self.window_app = window_app
+        # App to re-activate before click/type/key (Fix 3). None disables.
+        self.frontmost_app = frontmost_app
+        # Click-guard (Fix 6): reject mouse clicks whose translated
+        # global point falls outside window-mode bounds.
+        self.enforce_click_guard = enforce_click_guard
         self._last_geom: DisplayGeometry | None = None
         self._last_scaled: tuple[int, int] | None = None
+        self._last_capture_meta: dict[str, Any] | None = None
         self._last_cursor: tuple[int, int] = (0, 0)
 
     # -- screenshot helper used by the agent loop --------------------- #

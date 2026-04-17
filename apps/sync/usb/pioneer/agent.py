@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .agent_actuator import Actuator, Trace
+from .agent_actuator import Actuator, Trace, ensure_frontmost
 
 LOGGER = logging.getLogger("rb.agent")
 
@@ -97,11 +97,19 @@ class AgentConfig:
     usb_path: str
     dry_run: bool = True
     max_steps: int = MAX_STEPS_DEFAULT
-    downsample_width: int = 1280
+    # Bumped 1280→1920: Sonnet 4.5 accepts this reliably and it keeps
+    # small widgets (Sync Manager button) visible after downsampling.
+    # Cost delta at 30 screenshots: ~+45k input tokens = +$0.14.
+    downsample_width: int = 1920
     trace_dir: Path = Path("apps/sync/usb/pioneer/traces")
     model_candidates: tuple[str, ...] = DEFAULT_MODEL_CANDIDATES
     beta_header: str = COMPUTER_BETA_HEADER
     api_key: str | None = None
+    # When set, screenshots are isolated to this app's window (Fix 1).
+    # Set to None to always full-display-capture (legacy).
+    window_app: str | None = "rekordbox"
+    # App to re-activate before clicks (Fix 3). None disables.
+    frontmost_app: str | None = "rekordbox"
 
 
 @dataclass
@@ -155,45 +163,85 @@ TASK
 Export the playlist named "{cfg.playlist}" to the USB volume mounted at \
 "{cfg.usb_path}".
 
-CONTEXT
--------
-* Rekordbox 7.2.14 is already running on the macOS desktop. DO NOT launch \
-  it yourself — assume the window is already on screen (or behind other \
-  windows, in which case you may need to click its icon in the Dock).
-* The USB "MAINTAINER" is already mounted; it shows up inside Rekordbox \
-  under the "Devices" section of the left sidebar once you locate the \
-  tree view.
-* The canonical export path in Rekordbox 7 is either:
-  1. SYNC MANAGER — there is a "Sync Manager" button at the bottom-left of \
-     the Rekordbox window. Click it, tick the checkbox next to \
-     "{cfg.playlist}" in the playlist list, confirm the USB is chosen as \
-     the destination, then click the Sync / Export arrow button.
-  2. TREE-VIEW DRAG — drag the playlist from the Collection tree onto the \
-     "MAINTAINER" node in the Devices section of the sidebar.
-  Prefer Sync Manager; it is more deterministic and has clearer feedback.
+SCREENSHOT SCOPE — READ THIS FIRST
+----------------------------------
+The screenshots you receive are **cropped to the Rekordbox window only**
+(not the full desktop). Coordinates (0,0) are the TOP-LEFT of the
+Rekordbox window. The runtime translates your click back to the
+correct screen position — you don't need to compensate for window
+placement yourself.
+
+If a screenshot looks unusually small or like a plain desktop (no decks,
+no waveforms), that means Rekordbox is minimised / not visible and the
+runtime fell back to full-display capture. In that case your first
+action should be a screenshot after a short `wait` — the runtime will
+re-activate Rekordbox for you.
+
+REKORDBOX 7.2.14 WINDOW LAYOUT
+------------------------------
+* **Top area (roughly top 45% of window height):** decks with
+  waveforms, jog wheels, track info. IGNORE this area for export —
+  nothing you need is up there.
+* **Left sidebar (column of the lower half, ~15% of width):**
+  the "Media Browser" tree with nodes:
+    - COLLECTION            (your whole library)
+    - RELATED TRACKS / HISTORY / TAG LIST (metadata views)
+    - PLAYLISTS             ← "{cfg.playlist}" lives under here
+    - DEVICES / USB DRIVES  ← "MAINTAINER" appears here when mounted
+* **Bottom-left toolbar:** a row of small icons just above the track
+  list or at the very bottom of the window. Icons include
+  search, filter, create-playlist, and (the important one)
+  the **Sync Manager** button — a small icon with **two opposing
+  arrows** (``⇄`` / ``↔``). Hovering it shows the tooltip
+  "Sync Manager". It is usually at X ≈ 15–60 of the window-local
+  frame, near the bottom edge (Y ≈ 90% of window height).
+* **Right of the sidebar:** the track list — columns like #, Title,
+  Artist, BPM, Key, Rating.
+
+CANONICAL EXPORT FLOW
+---------------------
+1. Click the **Sync Manager button** (two-arrow icon, bottom-left).
+2. A panel/window opens with a library tree on its LEFT and device
+   contents on its RIGHT.
+3. Find "{cfg.playlist}" in the left tree and TICK ITS CHECKBOX.
+4. Click the right-pointing Export / Sync arrow button at the TOP
+   of the Sync Manager panel.
+5. Handle any confirmation dialog (usually "Start export?" → OK).
+6. Wait for the progress bar / "Export complete" to appear.
+
+ALTERNATIVE (use only if Sync Manager unreachable)
+--------------------------------------------------
+* Find "{cfg.playlist}" under Playlists in the sidebar.
+* Drag it directly onto the "MAINTAINER" node under Devices.
+* Confirm any dialog that appears.
 
 OPERATING RULES
 ---------------
-1. ALWAYS take a screenshot first to see the current state. Do not act \
-   blind.
-2. Be patient. After each click, wait briefly (use the `wait` action with \
-   0.5–1.0 seconds) and take another screenshot to verify the UI \
-   responded.
-3. Prefer small, targeted clicks. Avoid dragging unless explicitly \
-   needed.
-4. If you see a modal dialog you don't recognise (conversion prompt, \
-   USB format warning, OneLibrary prompt), STOP, describe the dialog, \
-   and include "UNEXPECTED_DIALOG" in your response — do not dismiss it.
-5. Do NOT quit Rekordbox, close its windows, or sign out. Do not click \
-   anywhere outside Rekordbox's own windows if you can avoid it.
-6. If you cannot find the playlist after 3 attempts, give up and report \
-   what you saw — do not guess wildly.
+1. ALWAYS take a screenshot first to see current state. Do not act blind.
+2. After each click, use `wait` ~0.5s and take another screenshot to
+   verify the UI responded.
+3. **Only click inside the Rekordbox window.** The runtime rejects
+   clicks that fall outside — if you get an error saying "click
+   outside window", you have mis-identified where the target is.
+   Take a fresh screenshot and reassess.
+4. If you can't find the Sync Manager button after 3 screenshots,
+   switch to the drag alternative.
+5. Prefer small, targeted clicks (≤ 40px element). Avoid dragging
+   unless intentional.
+6. If you see a licensing / sign-in / demo / subscription dialog,
+   STOP and reply with `EXPORT_FAILED: <describe dialog>`.
+7. If you see a modal dialog you don't recognise (conversion prompt,
+   USB format warning, OneLibrary prompt), STOP, describe it, and
+   include "UNEXPECTED_DIALOG" in your response — do not dismiss it.
+8. Do NOT quit Rekordbox, close its windows, or sign out.
+9. If you cannot find the playlist after 3 attempts, report what you
+   saw and stop. Do not guess wildly.
 {dry_note}
 SUCCESS CRITERIA
 ----------------
 Stop and say "END_TURN: COMPLETE" when one of:
-* (dry-run) you have selected the playlist in Sync Manager and are \
-  looking at the Export button.
+* (dry-run) you have "{cfg.playlist}" ticked in Sync Manager and are
+  looking at the Export button. End with "END_TURN: DRY-RUN COMPLETE".
 * (live) a progress indicator or "Export complete" message is visible.
 """
 
@@ -318,7 +366,22 @@ def run_export_agent(
         trace,
         downsample_width=cfg.downsample_width,
         dry_run=cfg.dry_run,
+        window_app=cfg.window_app,
+        frontmost_app=cfg.frontmost_app,
     )
+    # Pre-flight: bring Rekordbox to the front BEFORE the first
+    # capture so the window-isolated path finds it on-screen (Fix 3).
+    # Non-fatal if it can't — capture_window falls back to display.
+    if cfg.frontmost_app:
+        try:
+            ok = ensure_frontmost(cfg.frontmost_app, max_attempts=3)
+            trace.record(
+                "preflight_frontmost",
+                {"app": cfg.frontmost_app, "ok": bool(ok)},
+            )
+        except Exception as exc:  # pragma: no cover
+            LOGGER.warning("frontmost preflight failed: %s", exc)
+
     # Use the SCALED screenshot size as the logical display for Claude —
     # that is what it actually "sees". The actuator handles conversion
     # back to screen points internally.
