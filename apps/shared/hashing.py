@@ -84,8 +84,12 @@ class HashCache:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._ensure_schema()
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._ensure_schema()
+        except Exception:
+            self._conn.close()
+            raise
 
     def _ensure_schema(self) -> None:
         cur = self._conn.execute("PRAGMA user_version")

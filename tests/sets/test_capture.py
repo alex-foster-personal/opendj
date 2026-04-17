@@ -177,6 +177,36 @@ def test_stop_capture_closes_log_fh_even_on_kill_path(tmp_path: Path):
 
 
 @pytest.mark.requirement("SET-01")
+def test_start_capture_closes_log_fh_on_popen_failure(tmp_path: Path):
+    """If Popen raises, the stderr log fd must be closed -- not leaked.
+
+    if start_capture does not close log_fh on Popen failure then broken
+    """
+    captured_fh = {}
+
+    original_open = Path.open
+
+    def _spy_open(self, *args, **kwargs):
+        fh = original_open(self, *args, **kwargs)
+        if self.name == "ffmpeg.stderr.log":
+            captured_fh["fh"] = fh
+        return fh
+
+    class _ExplodingPopen:
+        def __init__(self, *args, **kwargs):
+            raise OSError("simulated Popen failure")
+
+    import unittest.mock as _um
+
+    with _um.patch.object(Path, "open", _spy_open):
+        with pytest.raises(OSError, match="simulated Popen failure"):
+            capture.start_capture(tmp_path, 1, popen=_ExplodingPopen)
+
+    assert "fh" in captured_fh, "log file handle was never opened"
+    assert captured_fh["fh"].closed, "log_fh leaked -- not closed after Popen failure"
+
+
+@pytest.mark.requirement("SET-01")
 def test_check_silence_returns_neg_inf_for_empty_file(tmp_path: Path):
     mp3 = tmp_path / "empty.mp3"
     mp3.touch()

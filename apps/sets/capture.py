@@ -204,12 +204,16 @@ def start_capture(
     popen_cls = popen if popen is not None else subprocess.Popen
     # Open the log fresh each start; stderr_log cleanup is retention's job.
     log_fh = stderr_log.open("ab", buffering=0)
-    proc = popen_cls(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=log_fh,
-    )
+    try:
+        proc = popen_cls(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=log_fh,
+        )
+    except Exception:
+        log_fh.close()
+        raise
     return CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh)
 
 
