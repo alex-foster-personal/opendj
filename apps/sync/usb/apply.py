@@ -163,8 +163,16 @@ def _run_plan(
     drive_uuid: str | None,
     ffmpeg: str | None,
     tag: str = "apply",
-) -> tuple[int, int, ReversalLog]:
-    """Execute every op in ``plan``; return (ok_count, fail_count, reversal)."""
+) -> tuple[int, int, ReversalLog, set[str]]:
+    """Execute every op in ``plan``.
+
+    Returns ``(ok_count, fail_count, reversal, touched_stable_ids)`` where
+    ``touched_stable_ids`` is the set of canonical ``stable_id`` values whose
+    on-drive bytes were successfully mutated during this run (copy /
+    transcode / overwrite / rename). ``delete`` / ``skip`` ops do not
+    contribute — they do not warrant rewriting the playlists that reference
+    other tracks on the drive.
+    """
     reversal = ReversalLog.open(
         dir_=REVERSAL_DIR,
         profile_name=plan.profile_name,
@@ -175,6 +183,8 @@ def _run_plan(
     )
     ok = 0
     fail = 0
+    touched_stable_ids: set[str] = set()
+    write_kinds = {"copy", "transcode", "overwrite", "rename"}
     with Progress(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
@@ -188,6 +198,8 @@ def _run_plan(
             reversal.append(result)
             if result.ok:
                 ok += 1
+                if op.kind in write_kinds and op.stable_id is not None:
+                    touched_stable_ids.add(op.stable_id)
             else:
                 fail += 1
                 console.print(
@@ -195,7 +207,7 @@ def _run_plan(
                 )
             bar.advance(t)
     reversal.close(summary=f"{ok} ok / {fail} failed")
-    return ok, fail, reversal
+    return ok, fail, reversal, touched_stable_ids
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -310,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         f"[bold]apply[/bold] mode={mode} profile={profile.name} "
         f"drive={drive_root} ops={len(plan.ops)}"
     )
-    ok, fail, reversal = _run_plan(
+    ok, fail, reversal, touched_stable_ids = _run_plan(
         plan=plan,
         profile=profile,
         mode=mode,
@@ -321,12 +333,26 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # --- m3u8 emission ------------------------------------------------------
+    # Codex finding P10-F01: cautious-mode apply must not rewrite playlists
+    # that had no tracks actually touched in this run — doing so silently
+    # mutates out-of-scope playlist files (e.g. when the canonical source
+    # reordered tracks in an unrelated playlist) and breaks the "cautious"
+    # contract. In bulk mode we still rewrite every playlist the profile
+    # declares, matching pre-fix behaviour.
     tracks_by_playlist = group_by_playlist(canonical)
+    only_playlists: set[str] | None = None
+    if mode == "cautious":
+        only_playlists = {
+            name
+            for name, tracks in tracks_by_playlist.items()
+            if any(t.stable_id in touched_stable_ids for t in tracks)
+        }
     try:
         written = write_m3u8s(
             profile=profile,
             tracks_by_playlist=tracks_by_playlist,
             drive_root=drive_root,
+            only=only_playlists,
         )
         for p in written:
             console.print(f"[green]wrote[/green] {p.relative_to(drive_root)}")

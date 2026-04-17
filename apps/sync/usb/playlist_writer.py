@@ -63,10 +63,16 @@ def write_m3u8s(
     profile: Profile,
     tracks_by_playlist: dict[str, list[CanonicalTrack]],
     drive_root: Path,
+    only: set[str] | None = None,
 ) -> list[Path]:
     """Write one .m3u8 per profile playlist. Returns the list of paths.
 
     Does nothing (returns ``[]``) when ``profile.playlist_files == "none"``.
+
+    When ``only`` is provided, restricts emission to the named subset of
+    ``profile.playlists``. This is used by cautious-mode apply so that
+    playlists whose tracks were not touched in the current run are not
+    silently rewritten (Codex finding P10-F01).
     """
     if profile.playlist_files == "none":
         return []
@@ -75,6 +81,8 @@ def write_m3u8s(
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for playlist_name in profile.playlists:
+        if only is not None and playlist_name not in only:
+            continue
         tracks = tracks_by_playlist.get(playlist_name, [])
         lines = _m3u8_lines_for(tracks=tracks, profile=profile)
         path = out_dir / _playlist_filename(playlist_name)

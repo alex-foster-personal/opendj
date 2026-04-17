@@ -189,3 +189,40 @@ def test_apply_reversal_script_is_valid_bash(
     assert "profile:    fixtureA" in text
     assert "mode:       bulk" in text
     assert "reason:     unit-test" in text
+
+
+@pytest.mark.requirement("CAT-04")
+def test_cautious_apply_only_rewrites_touched_playlists(
+    profile_file, drive_root, patched_state, isolated_reversal_dir
+) -> None:
+    """Regression for Codex P10-F01.
+
+    A cautious apply scoped to a single playlist must not rewrite the
+    .m3u8 files of other playlists. We seed a sentinel Warmup.m3u8 on the
+    drive, run cautious apply for Peak only, and assert Warmup.m3u8 still
+    holds the sentinel bytes while Peak.m3u8 is (re)generated.
+    """
+    pl_dir = drive_root / "Playlists"
+    pl_dir.mkdir(parents=True, exist_ok=True)
+    sentinel = "#EXTM3U\n# sentinel - must not be rewritten\n"
+    warmup = pl_dir / "Warmup.m3u8"
+    warmup.write_text(sentinel, encoding="utf-8")
+
+    rc = apply_mod.main(
+        [
+            "--profile",
+            str(profile_file),
+            "--drive-root",
+            str(drive_root),
+            "--cautious",
+            "--playlists",
+            "Peak",
+            "--skip-check",
+            "no_other_writer",
+        ]
+    )
+    assert rc == 0
+    peak = pl_dir / "Peak.m3u8"
+    assert peak.exists()
+    assert "../Carol/CC/Three.mp3" in peak.read_text(encoding="utf-8")
+    assert warmup.read_text(encoding="utf-8") == sentinel

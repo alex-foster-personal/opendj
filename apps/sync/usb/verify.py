@@ -308,27 +308,53 @@ def verify_drive(
         pl_root = drive_root / PLAYLISTS_DIRNAME
         if pl_root.exists():
             for m3u8 in sorted(pl_root.glob("*.m3u8")):
+                # Codex finding P10-F02: the pre-fix check only asserted
+                # that entry lines *resolved*, so a truncated/corrupted
+                # playlist (empty file, missing #EXTM3U header, or a
+                # file with zero entry lines) silently passed as healthy.
+                # We now require a valid header AND at least one resolved
+                # entry; any unresolvable entry classifies the playlist
+                # as broken.
                 try:
                     text = m3u8.read_text(encoding="utf-8")
-                except OSError:
+                except (OSError, UnicodeDecodeError):
+                    report.playlists_broken.append(m3u8.name)
+                    continue
+                lines = text.splitlines()
+                # Find the first non-blank line; it must be the #EXTM3U
+                # header per the playlist writer's output contract.
+                header: str | None = None
+                for ln in lines:
+                    stripped = ln.strip()
+                    if stripped:
+                        header = stripped
+                        break
+                if header != "#EXTM3U":
                     report.playlists_broken.append(m3u8.name)
                     continue
                 broken = False
-                for line in text.splitlines():
+                entry_count = 0
+                drive_resolved = drive_root.resolve()
+                for line in lines:
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
                     # Resolve relative to the m3u8's dir.
-                    target = (m3u8.parent / line).resolve()
                     try:
-                        target.relative_to(drive_root.resolve())
+                        target = (m3u8.parent / line).resolve()
+                    except OSError:
+                        broken = True
+                        break
+                    try:
+                        target.relative_to(drive_resolved)
                     except ValueError:
                         broken = True
                         break
                     if not target.exists():
                         broken = True
                         break
-                if broken:
+                    entry_count += 1
+                if broken or entry_count == 0:
                     report.playlists_broken.append(m3u8.name)
                 else:
                     report.playlists_ok += 1

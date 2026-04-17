@@ -307,3 +307,40 @@ def test_hash_parallel_with_hashcache_multiple_workers(tmp_path: Path) -> None:
             assert cache2.get(p) == digest, f"cache miss for {p}"
     finally:
         cache2.close()
+
+
+@pytest.mark.requirement("CAT-04")
+def test_verify_catches_corrupted_playlist(fixture_canonical, drive_root) -> None:
+    """Regression for Codex P10-F02.
+
+    A corrupted playlist file (empty / truncated / missing #EXTM3U header,
+    or with zero resolvable entries) must be classified as broken by
+    verify_drive — not silently pass as healthy. The pre-fix
+    implementation only checked .exists() on entry lines, so any of the
+    corruption shapes below incorrectly counted as OK.
+    """
+    _apply(fixture_canonical, drive_root)
+    pl = drive_root / "Playlists"
+    pl.mkdir(exist_ok=True)
+
+    # Shape 1: completely empty file.
+    empty = pl / "Empty.m3u8"
+    empty.write_text("", encoding="utf-8")
+
+    # Shape 2: header present but no entries (e.g. a truncated write).
+    header_only = pl / "HeaderOnly.m3u8"
+    header_only.write_text("#EXTM3U\n", encoding="utf-8")
+
+    # Shape 3: entries present but header missing.
+    no_header = pl / "NoHeader.m3u8"
+    no_header.write_text(
+        "#EXTINF:120,Alice - One\n../Alice/AA/One.mp3\n",
+        encoding="utf-8",
+    )
+
+    report = verify_drive(
+        profile=_profile(), canonical=fixture_canonical, drive_root=drive_root
+    )
+    assert "Empty.m3u8" in report.playlists_broken
+    assert "HeaderOnly.m3u8" in report.playlists_broken
+    assert "NoHeader.m3u8" in report.playlists_broken
