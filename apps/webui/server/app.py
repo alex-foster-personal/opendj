@@ -66,6 +66,14 @@ def create_app(
     app.add_exception_handler(BackendError, handle_backend_error)
 
     if enable_cors:
+        # NOTE: wildcard allow_methods/allow_headers is safe because
+        # allow_origins is restricted to the SvelteKit dev server on
+        # loopback. If you set MUSIC_DJ_BIND_HOST to expose the daemon
+        # on LAN / Tailscale, tighten these to an explicit list:
+        # allow_methods=["GET","POST","PATCH","DELETE"] and
+        # allow_headers=["Content-Type","If-Match"]. The If-Match header
+        # must remain allowed for optimistic-concurrency preflights.
+        # See apps/webui/README.md -> "CORS policy" for rationale.
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
