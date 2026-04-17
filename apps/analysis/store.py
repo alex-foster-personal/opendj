@@ -169,9 +169,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def upsert(record: AnalysisRecord, db_path: Path | None = None) -> UpsertResult:
-    """Insert/replace ``record``; idempotent on its semantic contents."""
-    conn = open_conn(db_path)
+def upsert(
+    record: AnalysisRecord,
+    db_path: Path | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> UpsertResult:
+    """Insert/replace ``record``; idempotent on its semantic contents.
+
+    If ``conn`` is provided the caller owns its lifecycle (used by batch
+    drivers to avoid thousands of open/close cycles across a run). When
+    ``conn`` is ``None`` a fresh connection is opened and closed per
+    call; this preserves the original single-shot API for ad-hoc CLI
+    use.
+    """
+    owned = conn is None
+    if conn is None:
+        conn = open_conn(db_path)
     try:
         row = conn.execute(
             """
@@ -210,12 +224,13 @@ def upsert(record: AnalysisRecord, db_path: Path | None = None) -> UpsertResult:
                 new_json,
             ),
         )
-        # open_rw returns an autocommit connection (isolation_level=None),
-        # so the INSERT above has already been persisted. No explicit
-        # commit needed.
+        # open_rw returns an autocommit connection (isolation_level=None,
+        # the Phase 5 shared-connection contract), so the INSERT above
+        # has already been persisted. No explicit commit needed.
         return UpsertResult(inserted=row is None, unchanged=False)
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 def publish(
@@ -224,11 +239,18 @@ def publish(
     *,
     stable_id: str | None = None,
     db_path: Path | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
-    """Append an event row (analysis_events + Phase 5 events) and fan out."""
+    """Append an event row (analysis_events + Phase 5 events) and fan out.
+
+    ``conn`` is optional; when provided the caller owns its lifecycle
+    (used by batch drivers to share one connection across many events).
+    """
     ts = _now_iso()
     payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    conn = open_conn(db_path)
+    owned = conn is None
+    if conn is None:
+        conn = open_conn(db_path)
     try:
         cur = conn.execute(
             """
@@ -250,7 +272,8 @@ def publish(
             (ts, event_type, stable_id, payload_json, "apps.analysis"),
         )
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
     _get_shared_bus().publish(
         Event(
@@ -303,9 +326,14 @@ def upsert_record(
     record: AnalysisRecord,
     *,
     db_path: Path | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> UpsertResult:
-    """Persist ``record``; emit an ``analyze`` event on insert/update."""
-    result = upsert(record, db_path=db_path)
+    """Persist ``record``; emit an ``analyze`` event on insert/update.
+
+    When ``conn`` is provided it is reused for both the upsert and the
+    follow-up event publish, avoiding two open/close cycles per record.
+    """
+    result = upsert(record, db_path=db_path, conn=conn)
     if not result.unchanged:
         publish(
             event_type="analyze",
@@ -321,6 +349,7 @@ def upsert_record(
             },
             stable_id=record.stable_id,
             db_path=db_path,
+            conn=conn,
         )
     return result
 
@@ -331,6 +360,7 @@ def publish_event(
     *,
     stable_id: str | None = None,
     db_path: Path | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """Generic event passthrough (used by 06-02 consumers)."""
     return publish(
@@ -338,6 +368,7 @@ def publish_event(
         payload=payload,
         stable_id=stable_id,
         db_path=db_path,
+        conn=conn,
     )
 
 

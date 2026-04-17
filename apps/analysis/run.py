@@ -34,7 +34,7 @@ from rich.table import Table
 from .backends import get_backend
 from .backends.base import BackendNotAvailable, TrackTooLong
 from .record import AnalysisRecord
-from .store import fetch_records_by_ids, upsert_record
+from .store import fetch_records_by_ids, open_conn, upsert_record
 
 log = logging.getLogger("apps.analysis.run")
 console = Console()
@@ -194,34 +194,44 @@ def run(
     table.add_column("duration_s")
     table.add_column("status")
 
-    for sid, rec, err in rows:
-        if rec is None:
-            summary.failed += 1
-            summary.errors.append((sid, err or "unknown error"))
-            table.add_row(sid[:14], "-", "-", "-", "-", f"[red]{err}[/red]")
-            continue
-        status = "dry-run" if dry_run else "-"
-        if not dry_run:
-            result = upsert_record(rec, db_path=db_path)
-            status = (
-                "new" if result.inserted
-                else "unchanged" if result.unchanged
-                else "updated"
-            )
-            if result.unchanged:
-                summary.skipped_existing += 1
+    # Share one state-DB connection across the whole batch when writing.
+    # upsert()/publish() previously opened + closed per call, which forced
+    # thousands of WAL checkpoints on multi-track runs; a single shared
+    # connection keeps the batch in one WAL window. Only opened for live
+    # writes; dry-run stays pure.
+    shared_conn = open_conn(db_path) if not dry_run else None
+    try:
+        for sid, rec, err in rows:
+            if rec is None:
+                summary.failed += 1
+                summary.errors.append((sid, err or "unknown error"))
+                table.add_row(sid[:14], "-", "-", "-", "-", f"[red]{err}[/red]")
+                continue
+            status = "dry-run" if dry_run else "-"
+            if not dry_run:
+                result = upsert_record(rec, db_path=db_path, conn=shared_conn)
+                status = (
+                    "new" if result.inserted
+                    else "unchanged" if result.unchanged
+                    else "updated"
+                )
+                if result.unchanged:
+                    summary.skipped_existing += 1
+                else:
+                    summary.analysed += 1
             else:
                 summary.analysed += 1
-        else:
-            summary.analysed += 1
-        table.add_row(
-            sid[:14],
-            f"{rec.bpm:.1f}",
-            rec.key_camelot,
-            str(rec.energy),
-            f"{rec.duration_s:.1f}",
-            status,
-        )
+            table.add_row(
+                sid[:14],
+                f"{rec.bpm:.1f}",
+                rec.key_camelot,
+                str(rec.energy),
+                f"{rec.duration_s:.1f}",
+                status,
+            )
+    finally:
+        if shared_conn is not None:
+            shared_conn.close()
 
     console.print(table)
     console.print(
