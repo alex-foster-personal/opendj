@@ -1,0 +1,100 @@
+"""Re-evaluation triggers (SMART-03).
+
+Subscribes to the Phase 5 state event bus (via an opaque ``event_bus``
+with ``.subscribe / .unsubscribe``) and re-materialises only the
+smartlists whose referenced fields overlap the event's
+``changed_fields``. Per-smartlist 5s debounce coalesces bursts.
+
+TODO(phase-5): import ``StateEvent`` from ``apps.shared.state.events``
+once that module is stable; the ``changed_fields`` + ``kind`` fields
+must match the shape below.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Callable
+
+from apps.smartlists.debounce import Debouncer
+from apps.smartlists.materializer import MaterializeResult, Materializer
+from apps.smartlists.repo import SmartlistsRepo
+
+
+_MEMBERSHIP_KINDS: frozenset[str] = frozenset({
+    "track.added",
+    "track.removed",
+})
+
+
+@dataclass(frozen=True)
+class StateEvent:
+    kind: str
+    stable_id: str | None = None
+    changed_fields: frozenset[str] = field(default_factory=frozenset)
+
+
+class TriggerRunner:
+    """Coordinates event-driven smartlist re-evaluation."""
+
+    def __init__(
+        self,
+        sm_repo: SmartlistsRepo,
+        materializer: Materializer,
+        *,
+        debounce_seconds: float = 5.0,
+        field_scope: bool = True,
+        dry_run: bool = False,
+        live: bool = True,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        self.sm_repo = sm_repo
+        self.materializer = materializer
+        if clock is not None:
+            self.debouncer = Debouncer(
+                window_seconds=debounce_seconds, clock=clock,
+            )
+        else:
+            self.debouncer = Debouncer(window_seconds=debounce_seconds)
+        self.field_scope = field_scope
+        self.dry_run = dry_run
+        self.live = live
+
+    def subscribe_to(self, event_bus) -> None:
+        event_bus.subscribe(self.handle_event)
+
+    def unsubscribe_from(self, event_bus) -> None:
+        event_bus.unsubscribe(self.handle_event)
+
+    def handle_event(self, event: StateEvent) -> None:
+        always_wake = event.kind in _MEMBERSHIP_KINDS
+        changed = frozenset(event.changed_fields or ())
+        for row in self.sm_repo.list_all():
+            if always_wake or not self.field_scope:
+                self.debouncer.arm(row.id)
+                continue
+            if row.referenced_fields & changed:
+                self.debouncer.arm(row.id)
+
+    def arm_all(self) -> None:
+        for row in self.sm_repo.list_all():
+            self.debouncer.arm(row.id)
+
+    def run_ready(
+        self,
+        *,
+        now: float | None = None,
+    ) -> list[MaterializeResult]:
+        ready_ids = self.debouncer.ready(now=now)
+        results: list[MaterializeResult] = []
+        for sid in ready_ids:
+            results.append(
+                self.materializer.materialize(
+                    sid, dry_run=self.dry_run, live=self.live,
+                )
+            )
+        return results
+
+    def pending(self) -> list[str]:
+        return self.debouncer.pending()
+
+
+__all__ = ["StateEvent", "TriggerRunner"]
