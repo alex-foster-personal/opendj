@@ -160,7 +160,10 @@ def ingest_rb(
     now_fn = clock or (lambda: _dt.datetime.now(_dt.timezone.utc))
 
     rb_db = Rekordbox6Database(path=str(rb_db_path), unlock=False)
-    conn = writer._conn  # noqa: SLF001 - deliberate coupling.
+    # [I2] Use the public ``raw_conn`` accessor so this outer SAVEPOINT
+    # composes with StateWriter's internal SAVEPOINTs without reaching into
+    # private attributes.
+    conn = writer.raw_conn
     savepoint = "phase5_ingest_rb"
 
     conn.execute(f"SAVEPOINT {savepoint}")

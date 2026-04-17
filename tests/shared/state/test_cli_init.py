@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import cli as state_cli
+from apps.shared.state import schema as state_schema
 
 
 pytestmark = pytest.mark.requirement("INFRA-01")
@@ -17,7 +18,7 @@ def test_init_creates_state_db(tmp_path: Path, capsys: pytest.CaptureFixture) ->
     assert rc == 0
     assert target.exists()
     out = capsys.readouterr().out
-    assert "schema version: 1" in out
+    assert f"schema version: {state_schema.SCHEMA_VERSION}" in out
     assert "tracks: 0" in out
 
 
@@ -28,7 +29,7 @@ def test_init_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture) -> No
     assert state_cli.main(["--db", str(target), "init"]) == 0
     out = capsys.readouterr().out
     assert "opened" in out
-    assert "schema version: 1" in out
+    assert f"schema version: {state_schema.SCHEMA_VERSION}" in out
 
 
 def test_stats_on_empty_db(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

@@ -46,6 +46,19 @@ class StateWriter:
 
     Owns its own event bus unless one is injected. Tests can pass in a
     :class:`FakeEventBus` to capture events synchronously.
+
+    Lifecycle
+    ---------
+    When no bus is injected, ``__init__`` starts a daemon thread via
+    :class:`EventBus`. Callers MUST release that thread by one of:
+
+    - using the writer as a context manager (``with StateWriter(...) as w:``),
+    - calling :meth:`close` explicitly (preferred in ``try/finally``), or
+    - dropping all references and relying on the ``__del__`` backstop.
+
+    The ``__del__`` backstop is best-effort only -- Python does not
+    guarantee finaliser ordering, so production code should use explicit
+    ``close`` to avoid daemon-thread leaks under long-running processes.
     """
 
     def __init__(
@@ -62,6 +75,22 @@ class StateWriter:
         self._clock = clock or _default_clock
         self._actor = actor
         self._sp_counter = itertools.count()
+        self._closed = False
+
+    @property
+    def raw_conn(self) -> sqlite3.Connection:
+        """Public accessor for the underlying ``sqlite3.Connection``.
+
+        Intended for adapters that need to open an outer SAVEPOINT around a
+        batch of writer calls (e.g. a dry-run ingest that rolls the whole
+        batch back). Prefer this over poking ``_conn`` from the outside so
+        internal refactors do not break call sites.
+
+        Callers MUST NOT issue ``BEGIN``/``COMMIT`` on this connection --
+        that would fight the writer's SAVEPOINT semantics. Use
+        ``SAVEPOINT <name>`` / ``RELEASE`` / ``ROLLBACK TO`` instead.
+        """
+        return self._conn
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
@@ -86,6 +115,9 @@ class StateWriter:
     # --- lifecycle --------------------------------------------------
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         if self._own_bus:
             self.bus.close()
 
@@ -94,6 +126,16 @@ class StateWriter:
 
     def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
         self.close()
+
+    def __del__(self) -> None:
+        # [I3] Best-effort backstop for callers that forget to close().
+        # Finalisers can run during interpreter shutdown when attributes are
+        # already torn down, so swallow everything.
+        try:
+            if not getattr(self, "_closed", True):
+                self.close()
+        except Exception:
+            pass
 
     # --- helpers ----------------------------------------------------
 
