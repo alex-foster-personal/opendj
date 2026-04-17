@@ -118,9 +118,16 @@ def ensure_aux_tables(conn: sqlite3.Connection) -> None:
         conn.execute(stmt)
 
 
-@dataclass
+@dataclass(frozen=True)
 class WriteSummary:
-    """What actually happened during a ``--live`` write."""
+    """What actually happened during a ``--live`` write.
+
+    Frozen so callers can treat the returned summary as an immutable
+    record. ``backup_path`` / ``reversal_script_path`` are injected by
+    the caller (importer) via keyword args to
+    :func:`write_playlist_and_pending` so the summary never carries
+    sentinel values.
+    """
 
     playlist_id: str
     vendor_pl_id: str
@@ -243,14 +250,17 @@ def write_playlist_and_pending(
     playlist: SpotifyPlaylist,
     result: MatchResult,
     *,
+    backup_path: Path,
+    reversal_script_path: Path,
     force: bool = False,
 ) -> WriteSummary:
     """Insert / refresh playlist + memberships + pending rows.
 
-    All writes happen inside one transaction. Caller should have taken
-    a backup + reversal script BEFORE calling (so a mid-commit crash is
-    still recoverable). Backup path is injected back into the returned
-    :class:`WriteSummary` by the importer.
+    All writes happen inside one transaction. Caller must have taken
+    the backup + written the reversal script BEFORE calling (so a
+    mid-commit crash is still recoverable) and must pass those paths
+    in as ``backup_path`` / ``reversal_script_path`` so the returned
+    :class:`WriteSummary` is self-consistent and free of sentinels.
     """
     ensure_aux_tables(conn)
 
@@ -260,8 +270,8 @@ def write_playlist_and_pending(
             playlist_id=_state_playlist_id(playlist.id),
             vendor_pl_id=playlist.id,
             snapshot_id=playlist.snapshot_id,
-            backup_path=Path("/dev/null"),
-            reversal_script_path=Path("/dev/null"),
+            backup_path=backup_path,
+            reversal_script_path=reversal_script_path,
             matched_written=0,
             pending_written=0,
             skipped_existing_snapshot=True,
@@ -384,8 +394,8 @@ def write_playlist_and_pending(
         playlist_id=playlist_id,
         vendor_pl_id=playlist.id,
         snapshot_id=playlist.snapshot_id,
-        backup_path=Path("/dev/null"),
-        reversal_script_path=Path("/dev/null"),
+        backup_path=backup_path,
+        reversal_script_path=reversal_script_path,
         matched_written=len(matched_rows),
         pending_written=len(pending_rows),
         skipped_existing_snapshot=False,

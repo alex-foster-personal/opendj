@@ -51,7 +51,13 @@ def _seed_unmatched_playlist(conn: sqlite3.Connection, pid="pl123") -> str:
         id=pid, name="P", snapshot_id="s1", owner="o", description="",
         tracks=(src,),
     )
-    write_playlist_and_pending(conn, playlist, result)
+    write_playlist_and_pending(
+        conn,
+        playlist,
+        result,
+        backup_path=Path("/tmp/test-backup.db"),
+        reversal_script_path=Path("/tmp/test-reverse.py"),
+    )
     return _state_playlist_id(pid)
 
 

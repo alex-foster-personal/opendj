@@ -126,12 +126,16 @@ def run_import(
         reversal = emit_reversal_script(backup, state_db_path)
         conn = open_state_rw_with_aux(state_db_path)
         try:
-            summary = write_playlist_and_pending(conn, playlist, result, force=force)
+            write_summary = write_playlist_and_pending(
+                conn,
+                playlist,
+                result,
+                backup_path=backup,
+                reversal_script_path=reversal,
+                force=force,
+            )
         finally:
             conn.close()
-        summary.backup_path = backup
-        summary.reversal_script_path = reversal
-        write_summary = summary
         progress(f"backup: {backup}")
         progress(f"reversal script: {reversal}")
 

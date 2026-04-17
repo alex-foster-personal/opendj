@@ -61,6 +61,25 @@ def _mk_local(sid="s1", isrc=None) -> LocalTrack:
     return LocalTrack(stable_id=sid, isrc=isrc, title="x", artists=(), duration_ms=0)
 
 
+# Sentinel paths for tests that don't care about real backup/reversal files.
+# These are required kwargs to write_playlist_and_pending; the function just
+# stores them on the returned WriteSummary verbatim.
+_TEST_BACKUP = Path("/tmp/test-backup.db")
+_TEST_REVERSAL = Path("/tmp/test-reverse.py")
+
+
+def _write(state_conn, playlist, result, *, force: bool = False):
+    """Thin wrapper that supplies the required backup/reversal kwargs."""
+    return write_playlist_and_pending(
+        state_conn,
+        playlist,
+        result,
+        backup_path=_TEST_BACKUP,
+        reversal_script_path=_TEST_REVERSAL,
+        force=force,
+    )
+
+
 @pytest.mark.requirement("CAT-01")
 def test_ensure_aux_tables_idempotent(state_conn: sqlite3.Connection) -> None:
     ensure_aux_tables(state_conn)
@@ -81,7 +100,7 @@ def test_write_playlist_matched_only(state_conn: sqlite3.Connection) -> None:
     ])
     playlist = _mk_playlist(pid="pl123", tracks=(src,))
 
-    summary = write_playlist_and_pending(state_conn, playlist, result)
+    summary = _write(state_conn, playlist, result)
     assert summary.matched_written == 1
     assert summary.pending_written == 0
 
@@ -111,7 +130,7 @@ def test_write_playlist_with_pending(state_conn: sqlite3.Connection) -> None:
     ])
     playlist = _mk_playlist(pid="pl123", tracks=(src_matched, src_unmatched))
 
-    summary = write_playlist_and_pending(state_conn, playlist, result)
+    summary = _write(state_conn, playlist, result)
     assert summary.matched_written == 1
     assert summary.pending_written == 1
 
@@ -131,10 +150,14 @@ def test_snapshot_short_circuit(state_conn: sqlite3.Connection) -> None:
     result = MatchResult(pairs=[MatchedPair(src, tgt, 0.35, ("isrc",), "matched")])
     playlist = _mk_playlist(pid="pl123", snapshot="snap-1", tracks=(src,))
 
-    write_playlist_and_pending(state_conn, playlist, result)
-    summary2 = write_playlist_and_pending(state_conn, playlist, result)
+    _write(state_conn, playlist, result)
+    summary2 = _write(state_conn, playlist, result)
     assert summary2.skipped_existing_snapshot is True
     assert summary2.matched_written == 0
+    # [I2] regression: the short-circuit summary must carry the real
+    # backup/reversal paths passed in, not sentinel /dev/null values.
+    assert summary2.backup_path == _TEST_BACKUP
+    assert summary2.reversal_script_path == _TEST_REVERSAL
 
 
 @pytest.mark.requirement("CAT-01")
@@ -144,9 +167,12 @@ def test_force_overrides_snapshot_short_circuit(state_conn: sqlite3.Connection) 
     result = MatchResult(pairs=[MatchedPair(src, tgt, 0.35, ("isrc",), "matched")])
     playlist = _mk_playlist(pid="pl123", snapshot="snap-1", tracks=(src,))
 
-    write_playlist_and_pending(state_conn, playlist, result)
-    summary = write_playlist_and_pending(state_conn, playlist, result, force=True)
+    _write(state_conn, playlist, result)
+    summary = _write(state_conn, playlist, result, force=True)
     assert summary.skipped_existing_snapshot is False
+    # [I2] regression: full-write path also carries real paths.
+    assert summary.backup_path == _TEST_BACKUP
+    assert summary.reversal_script_path == _TEST_REVERSAL
 
 
 @pytest.mark.requirement("CAT-01")
@@ -180,7 +206,7 @@ def test_mark_pending_abandoned(state_conn: sqlite3.Connection) -> None:
     src = _mk_src(sid="t1", isrc=None, title="Mystery")
     result = MatchResult(pairs=[MatchedPair(src, None, 0.0, (), "unmatched")])
     playlist = _mk_playlist(pid="pl123", tracks=(src,))
-    write_playlist_and_pending(state_conn, playlist, result)
+    _write(state_conn, playlist, result)
 
     pendings = fetch_pending_tracks(state_conn, _state_playlist_id("pl123"))
     ids = [p.pending_id for p in pendings]
