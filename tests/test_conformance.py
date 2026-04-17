@@ -204,7 +204,17 @@ def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | Non
     try:
         if name == "serato":
             from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
-            opts = SeratoAdapterOptions(audio_root=audio_root)
+            # Anchor pre-mutation MP3 backups to the tmp-scoped audio_root so
+            # Rail 2 artifacts from the conformance harness don't leak into
+            # the repo's .planning/ tree.
+            backup_dir = (
+                audio_root.parent / "_serato_backups"
+                if audio_root is not None
+                else None
+            )
+            opts = SeratoAdapterOptions(
+                audio_root=audio_root, backup_dir=backup_dir,
+            )
             return SeratoAdapter(options=opts)
         if name == "traktor":
             from apps.adapters.traktor import TraktorAdapter

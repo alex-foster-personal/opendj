@@ -36,7 +36,7 @@ from apps.adapters.serato.geob import (
     read_geob_frames,
     write_geob_frames,
 )
-from apps.adapters.serato.safety import guard_live_write
+from apps.adapters.serato.safety import backup_file, guard_live_write
 from apps.open_dj import (
     AdapterReport,
     BeatGridPoint,
@@ -408,10 +408,32 @@ class SeratoAdapter:
             return root / raw.relative_to(raw.anchor)
         return root / raw
 
+    def _resolve_backup_dir(self) -> Path:
+        """Return the directory used for pre-mutation MP3 backups.
+
+        When ``options.backup_dir`` is None we default to
+        ``<project_root>/.planning/adapters/serato/backups`` per the
+        dataclass docstring.
+        """
+        if self.options.backup_dir is not None:
+            return Path(self.options.backup_dir)
+        from apps.shared import paths as _paths
+        return _paths.PROJECT_ROOT / ".planning" / "adapters" / "serato" / "backups"
+
     def _write_geob_for_library(
         self, library: OpenDjLibrary, report: AdapterReport
     ) -> None:
-        """Upsert Serato Markers2 + BeatGrid GEOB frames onto each audio file."""
+        """Upsert Serato Markers2 + BeatGrid GEOB frames onto each audio file.
+
+        Rail 2 (timestamped backup): each MP3 is copied into
+        :meth:`_resolve_backup_dir` *before* any mutagen mutation, so a
+        crash mid-write leaves a bit-exact restore source on disk. If
+        the backup step itself fails we skip the track with a structured
+        warning rather than proceeding blind -- this was the v1.0
+        adversarial blocker #2 (HIGH): the docstring claimed Rail 2 but
+        no backup was actually taken.
+        """
+        backup_dir = self._resolve_backup_dir()
         for track in library.tracks:
             audio_path = self._resolve_audio_path(track.file_path)
             has_content = bool(track.cues) or bool(track.beats)
@@ -436,6 +458,21 @@ class SeratoAdapter:
                     reason=(
                         f"audio file missing at {audio_path}; skipped GEOB write "
                         f"(database V2 row was still emitted)"
+                    ),
+                )
+                continue
+            # Rail 2: back up the MP3 BEFORE any mutagen mutation. A
+            # failed backup is a safety violation, not a write failure.
+            try:
+                backup_file(audio_path, backup_dir)
+            except Exception as exc:  # noqa: BLE001 -- downgrade to warning
+                report.warn(
+                    field="cue_points.hot",
+                    track_id=track.track_id,
+                    action="dropped",
+                    reason=(
+                        f"pre-write backup failed for {audio_path}: {exc!s}; "
+                        f"skipping GEOB write (Rail 2 enforcement)"
                     ),
                 )
                 continue

@@ -178,7 +178,11 @@ def _stage_mp3(tmp_path: Path, rel: str = "audio/track.mp3") -> tuple[Path, Path
 def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
     """Library with hot cues + loop -> Serato write -> read back -> identical cues."""
     audio_root, _ = _stage_mp3(tmp_path)
-    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=audio_root))
+    adapter = SeratoAdapter(
+        options=SeratoAdapterOptions(
+            audio_root=audio_root, backup_dir=tmp_path / "_backups",
+        )
+    )
     cues = (
         CuePoint(index=0, position_ms=0, type="hot", name="Intro", color_rgb=0xCC0000),
         CuePoint(index=1, position_ms=15_000, type="hot", name="Verse", color_rgb=0x00CC00),
@@ -231,7 +235,11 @@ def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
 def test_geob_beatgrid_roundtrip(tmp_path) -> None:
     """Beatgrid written to GEOB frame round-trips back through the adapter."""
     audio_root, _ = _stage_mp3(tmp_path)
-    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=audio_root))
+    adapter = SeratoAdapter(
+        options=SeratoAdapterOptions(
+            audio_root=audio_root, backup_dir=tmp_path / "_backups",
+        )
+    )
     beats = (
         BeatGridPoint(position_ms=0, bpm=124.0),
         BeatGridPoint(position_ms=120_000, bpm=124.0, terminal=True),
@@ -300,4 +308,86 @@ def test_geob_write_skips_non_mp3_with_warning(tmp_path) -> None:
     report = adapter.write(lib, tmp_path / "_Serato_")
     assert report.counts.get("geob_frames_written", 0) == 0
     assert any(".flac" in w.reason or "mp3" in w.reason for w in report.warnings)
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
+    """Rail 2 regression (adversarial #2, HIGH): a GEOB write MUST
+    produce a pre-mutation backup copy of the MP3 on disk before any
+    mutagen mutation runs. Pre-fix ``_write_geob_for_library`` claimed
+    Rail 2 in its docstring but took no backup.
+    """
+    import hashlib
+
+    audio_root, full = _stage_mp3(tmp_path)
+    backup_dir = tmp_path / "serato_backups"
+    # Capture the pre-write sha256 of the MP3 -- the backup record should
+    # carry the same digest.
+    pre_sha = hashlib.sha256(full.read_bytes()).hexdigest()
+
+    adapter = SeratoAdapter(
+        options=SeratoAdapterOptions(
+            audio_root=audio_root, backup_dir=backup_dir,
+        )
+    )
+    track = Track(
+        track_id="backup-regression",
+        file_path="audio/track.mp3",
+        title="Rail 2 guard",
+        artists=("Test",),
+        cues=(
+            CuePoint(index=0, position_ms=0, type="hot", name="Intro"),
+        ),
+    )
+    lib = OpenDjLibrary(version="0.1", tracks=(track,))
+    report = adapter.write(lib, tmp_path / "_Serato_")
+    assert report.counts.get("geob_frames_written") == 1
+
+    # A backup file must exist under the configured backup_dir, and its
+    # contents must hash to the pre-write MP3 sha256.
+    backups = list(backup_dir.glob("*.bak"))
+    assert len(backups) == 1, f"expected exactly one .bak, got {backups}"
+    backup_sha = hashlib.sha256(backups[0].read_bytes()).hexdigest()
+    assert backup_sha == pre_sha, (
+        "backup was taken AFTER the mutation instead of before; "
+        f"backup_sha={backup_sha} pre_sha={pre_sha}"
+    )
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_geob_write_skips_track_when_backup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rail 2 hardening: if the backup step raises we MUST skip the track
+    with a structured warning, NOT proceed to mutate the MP3 unbacked.
+    """
+    audio_root, _ = _stage_mp3(tmp_path)
+    backup_dir = tmp_path / "serato_backups"
+    adapter = SeratoAdapter(
+        options=SeratoAdapterOptions(
+            audio_root=audio_root, backup_dir=backup_dir,
+        )
+    )
+
+    def _boom(*_a: object, **_kw: object) -> None:
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(
+        "apps.adapters.serato.adapter.backup_file", _boom,
+    )
+
+    track = Track(
+        track_id="backup-fails",
+        file_path="audio/track.mp3",
+        title="Should not be mutated",
+        artists=("Test",),
+        cues=(CuePoint(index=0, position_ms=0, type="hot"),),
+    )
+    lib = OpenDjLibrary(version="0.1", tracks=(track,))
+    report = adapter.write(lib, tmp_path / "_Serato_")
+    assert report.counts.get("geob_frames_written", 0) == 0
+    assert any(
+        "backup failed" in w.reason and "Rail 2" in w.reason
+        for w in report.warnings
+    )
 
