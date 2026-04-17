@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-17
+
+Stable v1.0 release. Rolls up the rc3 line plus 39 commits of final adversarial
+remediation: 17 codex / GPT-5.4 phase-by-phase fixes (phases 02–18), the
+launcher drag-core fan-out v2 sweep, the rc3-deferred resource-leak fixes
+(#23, #25), three security red-team fixes (#59), and a license isolation that
+moves GPL `mutagen` to an opt-in extra (#60). See
+[`RELEASE-NOTES-v1.0.md`](RELEASE-NOTES-v1.0.md) for the full ledger.
+
+Metrics (authoritative; measured on `master` at v1.0 cut):
+
+- Tests: 2251 passing, 45 skipped, 0 failing on `make test`.
+- Requirements: 53 v1 requirements, **51 shipped**, 2 deferred to v1.1
+  (`LAUNCH-03`, `SMART-04`). Source: [`reqs.json`](reqs.json).
+- Phases: 1–18 all delivered.
+
+### Added
+- `RELEASE-NOTES-v1.0.md` ship-state document.
+
+### Changed
+- Version bumped from `1.0.0rc3` to `1.0.0`.
+- `reqs.json` regenerated against `.planning/REQUIREMENTS.md`.
+- `mutagen` moved from runtime deps to optional `[tags]` extra (GPL vs Apache).
+
+### Fixed
+- **Codex / GPT-5.4 adversarial sweep (phases 02–18):** RB matcher candidate
+  scoring (#74), playlist apply verify-in-tx + pgrep-fail-safe (#81), state
+  writer rollback on bus publish failure (#75), Spotify `--max-tracks` safe
+  default (#77), `apps.sets` stop finalizes recorder + manifest (#76),
+  `open-dj-tool export` routed through v0.2 wire serializer (#79).
+- **Serato adapter (R4 findings):** preserve subcrate playlist membership on
+  read (#65), preserve cues+loops when `__raw__` GEOB present (#62), sanitize
+  playlist name before subcrate write (#67).
+- **Other R4 findings:** voice/bus commit-and-isolate (#63), pairings/add
+  conn close on any exception (#64), USB verify HashCache write
+  serialization (#66), webui sqlite_backend update_track serialization (#68),
+  cloud/lock FakeS3Client `If-Match '*'` wildcard semantics (#69).
+- **Launcher drag-core fan-out v2:** mtime re-check before sidecar rename
+  (#56), sidecar fsync error propagation (#55), percent-encode rekordbox file
+  URL (#57), reject relative sidecar dirs in default_set (#53), `stable_id`
+  derivation for streaming tracks (#54), preserve `BPM=0` as `0.0` (#52).
+- **Resource leaks rolled forward from rc3:** HashCache conn close on
+  `_ensure_schema` failure (#23), capture stderr_log fd close on Popen
+  failure (#25).
+- **Security red team:** one HIGH + two MEDIUM findings (#59).
+
+### Audits + governance
+- M7 round-2 re-verification (#40), M2–M4 post-merge re-audit (#47),
+  M5+M6 re-audit (#49), check-plan round-2 sweep across 18 phases / 19 PRs
+  (#73), validate-work round-2 Nyquist coverage sweep (#72), fan-out v2
+  triage with 3/3 + 2/3 consensus (#51), merge-watch round-2 report (#80),
+  e2e re-run of reconcile / sync-cues / open-dj-roundtrip (#46), 17-file
+  codex-pro triage (#78), GPT-5.4 Mux routing verification (#70), Sourcery
+  web-scanner integration design (#61), planning-doc secret/identifier
+  redaction (#92), codex CLI ChatGPT Pro OAuth doc (#58).
+
 ## [1.0.0-rc2] - 2026-04-17
 
 Follow-up release candidate on top of `v1.0-rc1`. Fixes the wheel / sdist build, finishes Phase 16 (Serato GEOB cue write), lands the Phase 15 / 16 CLI surface, the docs site, and a governance + anti-slop sweep. Covers Wave 5 through Wave 7 follow-up work and the Wave 8 release-asset fixes.
