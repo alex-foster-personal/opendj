@@ -22,7 +22,6 @@ file has a stable shape):
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import re
 import sys
@@ -243,12 +242,10 @@ def _build_payload() -> dict:
         source_str = str(SOURCE)
 
     payload = {
-        # Deterministic generated_at keeps --check hermetic: we re-derive the
-        # payload in-memory, and the on-disk file uses the same fixed
-        # timestamp seeded from the source mtime (UTC, second precision).
-        "generated_at": _dt.datetime.fromtimestamp(
-            SOURCE.stat().st_mtime, tz=_dt.timezone.utc
-        ).isoformat(timespec="seconds"),
+        # No generated_at field: a timestamp (even one seeded from mtime) makes
+        # reqs.json drift on every git checkout, which flakes the "in sync"
+        # test. The content is fully derivable from REQUIREMENTS.md, so the
+        # source path + parsed data is enough.
         "source": source_str,
         "v1": v1,
         "v2": v2,
