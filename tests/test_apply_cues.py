@@ -102,3 +102,31 @@ def test_main_prefer_flag_accepted(tmp_path: Path):
 def test_main_prune_flag_accepted(tmp_path: Path):
     path = _make_diff(tmp_path, [])
     assert main(["--diff-csv", str(path), "--prune"]) == 0
+
+
+def test_live_cautious_emits_stub_banner(tmp_path: Path, capsys):
+    """Regression for [I1]: the live-cautious CLI path must print a loud
+    'STUB LIVE MODE -- no real cue writes' banner to stderr so operators
+    cannot mistake a safety-rail-only pass for an actual cue write.
+
+    We exercise ``live_run`` directly with an empty rows list so the
+    banner fires before any LiveWriteSession rail would run. This keeps
+    the test sandbox-safe (no pgrep, no backup copy) while still asserting
+    the banner emission contract.
+    """
+    from apps.sync import apply_cues as mod
+
+    rc = mod.live_run(
+        rows=[],
+        flag_ok=True,
+        cautious=True,
+        bulk=False,
+        rb_db_path=tmp_path / "rb.db",
+        djay_db_path=tmp_path / "djay.db",
+    )
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "STUB LIVE MODE" in captured.err
+    assert "NO REAL CUE WRITES" in captured.err
+    assert "phase-04-probe-o2-runbook.md" in captured.err
+

@@ -56,6 +56,23 @@ impl TraktorAdapter {
         }
     }
 
+    /// Override just the sidecar directories + audit log. `nml_path` is left
+    /// untouched (so `Default::default().with_sidecar_dirs(...)` still leaves
+    /// the path resolution to Phase 17 wiring). Used by the Tauri wire-up to
+    /// route backups/reversals/audit under `app_data_dir()` instead of the
+    /// CWD-relative defaults.
+    pub fn with_sidecar_dirs(
+        mut self,
+        backup_dir: PathBuf,
+        reversal_dir: PathBuf,
+        audit_log: Option<PathBuf>,
+    ) -> Self {
+        self.backup_dir = backup_dir;
+        self.reversal_dir = reversal_dir;
+        self.audit_log = audit_log;
+        self
+    }
+
     pub fn append_nml_fallback(
         &self,
         host: &dyn HostBridge,

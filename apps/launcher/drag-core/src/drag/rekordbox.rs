@@ -9,10 +9,10 @@
 //!
 //! Bundle IDs: `["com.pioneerdj.rekordboxdj", "com.alphatheta.rekordbox"]`.
 //!
-//! The XML append logic uses `quick-xml`'s reader/writer in "append before the
-//! closing `</COLLECTION>` tag" mode. We do NOT do a full DOM parse; that keeps
-//! memory + allocation bounded and avoids subtle reformatting of the user's
-//! existing file.
+//! The XML append logic inserts content before the closing `</COLLECTION>`
+//! tag using literal string-find (no `quick-xml` / no DOM parser dependency).
+//! We do NOT do a full DOM parse; that keeps memory + allocation bounded and
+//! avoids subtle reformatting of the user's existing file.
 //
 // @requirement("LAUNCH-02b")
 
@@ -75,6 +75,23 @@ impl RekordboxAdapter {
 
     pub fn with_major(mut self, major: RekordboxMajor) -> Self {
         self.major_override = Some(major);
+        self
+    }
+
+    /// Override just the sidecar directories + audit log. `xml_path` is left
+    /// untouched (so `Default::default().with_sidecar_dirs(...)` still resolves
+    /// `rekordbox.xml` lazily from `$HOME/Music/rekordbox/rekordbox.xml`).
+    /// Used by Phase 17 wire-up to route backups/reversals/audit under the
+    /// Tauri `app_data_dir()` instead of the CWD-relative defaults.
+    pub fn with_sidecar_dirs(
+        mut self,
+        backup_dir: PathBuf,
+        reversal_dir: PathBuf,
+        audit_log: Option<PathBuf>,
+    ) -> Self {
+        self.backup_dir = backup_dir;
+        self.reversal_dir = reversal_dir;
+        self.audit_log = audit_log;
         self
     }
 

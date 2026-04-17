@@ -47,11 +47,15 @@ def live_run(
     rb_db_path: Path = paths.REKORDBOX_WORKING_DB,
     djay_db_path: Path = paths.DJAY_WORKING_DB,
 ) -> int:
-    """Placeholder live-run. Phase 4 Plan 3 ships the safety scaffold; the
-    full per-track writer plumbing (RB + djay) is exercised in the smoke
-    test. Live bulk-write against a real user library is an O2 probe item
-    that requires manual sign-off and is intentionally deferred from this
-    CLI to the runbook ``docs/phase-04-probe-o2-runbook.md``.
+    """STUB live-run. Phase 4 Plan 3 ships the safety scaffold; the full
+    per-track writer plumbing (RB + djay) is exercised in the smoke test.
+    Live bulk-write against a real user library is an O2 probe item that
+    requires manual sign-off and is intentionally deferred from this CLI
+    to the runbook ``docs/phase-04-probe-o2-runbook.md``.
+
+    The ``--live`` path does NOT mutate cue bytes. It exits 0 after
+    exercising the 7-rail safety harness and emits a stderr banner so
+    operators cannot mistake it for a real write. See ``_print_stub_banner``.
     """
     if not cautious and not bulk:
         print("[apply_cues] need --cautious or --bulk with --live", file=sys.stderr)
@@ -65,6 +69,12 @@ def live_run(
         )
         return 2
 
+    # [I1 fix] Loud banner so users cannot mistake this CLI path for a real
+    # write. The actual rb_writer.write_cues / djay_writer.patch_cue_points
+    # plumbing lives in the smoke-test harness; the probe runbook
+    # (docs/phase-04-probe-o2-runbook.md) is the sanctioned live-write path.
+    _print_stub_banner()
+
     if not rows:
         print("[apply_cues] nothing to do (empty diff).")
         return 0
@@ -76,6 +86,13 @@ def live_run(
             if r.get("djay_uuid") in only_tracks
             or r.get("rb_content_id") in only_tracks
         ]
+        if not rows:
+            print(
+                "[apply_cues] no rows matched --tracks filter; "
+                "nothing to do.",
+                file=sys.stderr,
+            )
+            return 0
 
     with LiveWriteSession(
         target="rekordbox",
@@ -93,8 +110,31 @@ def live_run(
                 w.append_reverse(
                     f"# revert RB cues for content_id={row.get('rb_content_id')}"
                 )
-    print(f"[apply_cues] cautious pass complete on {len(rows)} rows.")
+    print(
+        f"[apply_cues] cautious pass complete on {len(rows)} rows "
+        "(STUB -- no cue bytes were written; see banner above)."
+    )
     return 0
+
+
+def _print_stub_banner() -> None:
+    """Print the mandatory stub-mode banner to stderr.
+
+    Kept in a dedicated helper so tests can import and assert on its exact
+    text, and so future live wiring can remove one call site rather than
+    scan for a banner string.
+    """
+    print(
+        "\n"
+        "============================================================\n"
+        "  [apply_cues] WARNING -- STUB LIVE MODE, NO REAL CUE WRITES\n"
+        "  The --live path exercises the 7-rail safety harness only.\n"
+        "  No cue bytes are written to the rekordbox or djay DB.\n"
+        "  Real cue writes are gated behind the Phase 4 O2 probe\n"
+        "  runbook: docs/phase-04-probe-o2-runbook.md\n"
+        "============================================================\n",
+        file=sys.stderr,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
