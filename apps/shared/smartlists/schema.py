@@ -79,9 +79,40 @@ def _validate_predicate(node: dict, path: str) -> None:
     if op == "between":
         if not (isinstance(value, list) and len(value) == 2):
             raise _err(f"{path}.value", "between op expects [lo, hi] list")
+        # P08-04: validate element types so a malformed rule fails loud at
+        # plan time instead of yielding wrong query results at runtime.
+        ftype = FIELD_TYPES[field]
+        for i, elt in enumerate(value):
+            if ftype == "number" and not isinstance(elt, (int, float)):
+                raise _err(f"{path}.value[{i}]",
+                           f"between on {field!r} expects numbers")
+            if ftype == "string" and not isinstance(elt, str):
+                raise _err(f"{path}.value[{i}]",
+                           f"between on {field!r} expects strings")
+            if ftype == "date" and not (
+                isinstance(elt, str) or _is_relative_date(elt)
+            ):
+                raise _err(f"{path}.value[{i}]",
+                           f"between on {field!r} expects date strings "
+                           "or {'$relative': '-Nd'} objects")
     elif op == "in":
         if not isinstance(value, list):
             raise _err(f"{path}.value", "in op expects a list of values")
+        # P08-04: validate element types for 'in' the same way.
+        ftype = FIELD_TYPES[field]
+        for i, elt in enumerate(value):
+            if ftype == "number" and not isinstance(elt, (int, float)):
+                raise _err(f"{path}.value[{i}]",
+                           f"in on {field!r} expects numbers")
+            if ftype == "string" and not isinstance(elt, str):
+                raise _err(f"{path}.value[{i}]",
+                           f"in on {field!r} expects strings")
+            if ftype == "date" and not (
+                isinstance(elt, str) or _is_relative_date(elt)
+            ):
+                raise _err(f"{path}.value[{i}]",
+                           f"in on {field!r} expects date strings "
+                           "or {'$relative': '-Nd'} objects")
     elif op == "contains":
         if not isinstance(value, str):
             raise _err(f"{path}.value",

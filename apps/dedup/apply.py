@@ -168,7 +168,13 @@ See `rewrite-plan.csv` for the full list. No writes were performed.
     )
 
 
+class PgrepUnavailable(RuntimeError):
+    """P07-03: pgrep is missing; callers must fail safe."""
+
+
 def _rekordbox_running() -> bool:
+    # P07-03: match apps/sync/playlist_apply.py (P03-02) -- missing pgrep
+    # must not silently be treated as "Rekordbox not running".
     try:
         res = subprocess.run(
             ["pgrep", "-if", "rekordbox"],
@@ -176,9 +182,9 @@ def _rekordbox_running() -> bool:
             text=True,
             check=False,
         )
-        return bool(res.stdout.strip())
-    except FileNotFoundError:
-        return False
+    except FileNotFoundError as exc:
+        raise PgrepUnavailable("pgrep not installed on PATH") from exc
+    return bool(res.stdout.strip())
 
 
 def _confirm() -> bool:
@@ -320,9 +326,19 @@ def run_apply(
             "allow_rb_running is a test-only bypass; refusing to run outside pytest."
         )
 
-    if not allow_rb_running and _rekordbox_running():
-        result["errors"].append("Rekordbox is running; refusing to write.")
-        return result
+    if not allow_rb_running:
+        try:
+            rb_running = _rekordbox_running()
+        except PgrepUnavailable as exc:
+            # P07-03: fail-safe instead of fail-open on missing pgrep.
+            result["errors"].append(
+                f"pgrep unavailable ({exc}); refusing to write "
+                "(override with allow_rb_running in test-only contexts)."
+            )
+            return result
+        if rb_running:
+            result["errors"].append("Rekordbox is running; refusing to write.")
+            return result
 
     if confirm_fn is None:
         confirm_fn = _confirm

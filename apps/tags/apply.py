@@ -62,14 +62,21 @@ def _in_pytest() -> bool:
     return "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
 
 
+class PgrepUnavailable(RuntimeError):
+    """P07-03: pgrep is missing or errored; caller must decide fail-safe."""
+
+
 def _is_app_running(name: str) -> bool:
+    # P07-03: refuse to silently fail open when pgrep is unavailable.
+    # Callers translate the exception into an explicit guard result so the
+    # blast radius matches apps/sync/playlist_apply.py (P03-02).
     try:
         r = subprocess.run(
             ["pgrep", "-if", name], capture_output=True, text=True, check=False
         )
-        return bool(r.stdout.strip())
-    except FileNotFoundError:
-        return False
+    except FileNotFoundError as exc:
+        raise PgrepUnavailable("pgrep not installed on PATH") from exc
+    return bool(r.stdout.strip())
 
 
 def _backup(path: Path, root: Path) -> Path:
@@ -138,13 +145,20 @@ def apply_one(
             "used outside pytest; refusing to bypass the running-app safety check."
         )
     if not allow_app_running:
-        if _is_app_running("rekordbox"):
+        try:
+            if _is_app_running("rekordbox"):
+                return ApplyResult(
+                    path=path, applied={}, backup=None, error="rekordbox running"
+                )
+            if _is_app_running("djay"):
+                return ApplyResult(
+                    path=path, applied={}, backup=None, error="djay running"
+                )
+        except PgrepUnavailable as exc:
+            # P07-03: pgrep missing -> fail-safe (block the write) instead
+            # of silently treating it as "no app running".
             return ApplyResult(
-                path=path, applied={}, backup=None, error="rekordbox running"
-            )
-        if _is_app_running("djay"):
-            return ApplyResult(
-                path=path, applied={}, backup=None, error="djay running"
+                path=path, applied={}, backup=None, error=f"pgrep unavailable: {exc}"
             )
 
     sources = tag_collect.collect_for(
@@ -186,7 +200,21 @@ def apply_one(
         )
 
     if dedup_conn is not None and stable_id is not None:
-        _insert_provenance(dedup_conn, stable_id=stable_id, plan=plan)
+        # P07-02: the audio write has succeeded + been verified by this
+        # point. A provenance-insert failure used to propagate and abort
+        # the batch without rolling the file back, which was silently
+        # confusing: the file on disk is correct, but the dedup DB has no
+        # record of the change. Catch and surface as a non-fatal warning
+        # on the result so the caller can log it and continue.
+        try:
+            _insert_provenance(dedup_conn, stable_id=stable_id, plan=plan)
+        except sqlite3.DatabaseError as exc:
+            return ApplyResult(
+                path=path,
+                applied=result.applied,
+                backup=backup,
+                error=f"provenance log failed (audio write OK): {exc}",
+            )
 
     return ApplyResult(path=path, applied=result.applied, backup=backup)
 

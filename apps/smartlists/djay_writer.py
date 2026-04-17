@@ -184,7 +184,16 @@ class DjayPlaylistWriter:
         remove_uuids = self._resolve_or_raise(list(removed))
         remove_set = set(remove_uuids)
         target = [u for u in current_uuids if u and u not in remove_set]
-        target.extend(add_uuids)
+        # P08-03: dedupe while preserving order. On a force-adopt retry the
+        # caller may re-submit UUIDs that still live in ``current_uuids``;
+        # without this guard they would appear twice and djay surfaces them
+        # as duplicate rows in the playlist.
+        seen = set(target)
+        for u in add_uuids:
+            if u in seen:
+                continue
+            seen.add(u)
+            target.append(u)
 
         op = {
             "rb_id": "",

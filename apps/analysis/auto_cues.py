@@ -161,6 +161,11 @@ def _label_cues(
     else:
         median_rms = float(np.median([r for _, r in cues]))
     last_bin = bin_count - 1
+    # P06-F03: the "break" cue should be the cue whose time bin is adjacent
+    # to (one bin after) the drop's bin, not merely the next cue in the
+    # list. Otherwise a cue that happens to follow the drop in list order
+    # but sits several bins away gets mislabelled.
+    drop_bin = min(last_bin, int(cues[drop_idx][0] / bin_width))
     out: list[CueProposal] = []
     for i, (t, r) in enumerate(cues):
         b = min(last_bin, int(t / bin_width))
@@ -171,8 +176,14 @@ def _label_cues(
             label = "drop"
         elif b == last_bin and i == len(cues) - 1:
             label = "outro"
-        # "break" candidate: bin after drop with RMS < 0.6 * median
-        if label == "" and i == drop_idx + 1 and r < 0.6 * median_rms:
+        # "break" candidate: bin immediately after drop's bin with
+        # RMS < 0.6 * median. Skip the drop cue itself.
+        if (
+            label == ""
+            and i != drop_idx
+            and b == drop_bin + 1
+            and r < 0.6 * median_rms
+        ):
             label = "break"
         rms_dbfs = float(20.0 * np.log10(max(r, 1e-9)))
         # Confidence: relative RMS among cues, clipped [0, 1].
