@@ -242,7 +242,11 @@ class ApplyResult:
 
 
 def _apply_single_op(
-    con: sqlite3.Connection, op: dict, *, leaf_type_byte: int | None
+    con: sqlite3.Connection,
+    op: dict,
+    *,
+    leaf_type_byte: int | None,
+    live: bool = False,
 ) -> PlaylistOpResult:
     rb_id = op.get("rb_id", "")
     rb_name = op.get("rb_name", "")
@@ -253,6 +257,17 @@ def _apply_single_op(
         return PlaylistOpResult(
             rb_id=rb_id, rb_name=rb_name, op=op_kind, djay_uuid=djay_uuid,
             status="skipped", message="already_in_sync",
+        )
+
+    # Safety rail: block live create ops when the leaf TSAF type byte is
+    # not confirmed via --leaf-type-byte. The module-level placeholder
+    # PLAYLIST_TYPE_LEAF=0x01 is unconfirmed until a real djay fixture is
+    # captured (see scripts/capture_djay_playlist_fixture.py).
+    if op_kind == "create" and live and leaf_type_byte is None:
+        raise PlaylistApplyError(
+            "refusing live create op without --leaf-type-byte: the default "
+            "TSAF leaf type byte is an unconfirmed placeholder. Capture the "
+            "byte from a live djay fixture and pass --leaf-type-byte=<hex>."
         )
 
     target = [m["djay_uuid"] for m in op.get("target_members", [])]
@@ -325,8 +340,15 @@ def apply_plan(
     db_path: Path,
     playlist_filter: set[str] | None = None,
     leaf_type_byte: int | None = None,
+    live: bool = False,
 ) -> ApplyResult:
-    """Apply the plan against ``db_path``. One transaction per op."""
+    """Apply the plan against ``db_path``. One transaction per op.
+
+    Pass ``live=True`` when ``db_path`` points at the live djay DB. This
+    enables the leaf-type-byte safety rail: a live ``create`` op with an
+    unconfirmed :data:`playlist_tsaf.PLAYLIST_TYPE_LEAF` placeholder is
+    refused unless the caller supplies ``leaf_type_byte``.
+    """
     result = ApplyResult()
     con = sqlite3.connect(
         f"file:{db_path}?mode=rwc", uri=True, isolation_level=None
@@ -351,7 +373,7 @@ def apply_plan(
             con.execute("BEGIN IMMEDIATE")
             try:
                 op_result = _apply_single_op(
-                    con, op, leaf_type_byte=leaf_type_byte
+                    con, op, leaf_type_byte=leaf_type_byte, live=live
                 )
                 if op_result.status == "failed":
                     con.execute("ROLLBACK")
@@ -514,6 +536,7 @@ def main(argv: list[str] | None = None) -> int:
             db_path=db_path,
             playlist_filter=effective_filter,
             leaf_type_byte=args.leaf_type_byte,
+            live=True,
         )
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"apply raised: {exc}\n")

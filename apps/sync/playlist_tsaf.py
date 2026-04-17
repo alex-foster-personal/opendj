@@ -69,9 +69,10 @@ PLAYLIST_TYPE_ROOT = 0x00
 
 #: Leaf playlist type -- best-effort placeholder. Replace with the byte
 #: harvested from a live djay fixture (see
-#: ``scripts/capture_djay_playlist_fixture.py``). Until then the writer
-#: refuses to run against the live DB unless the caller explicitly
-#: overrides via ``--leaf-type-byte``.
+#: ``scripts/capture_djay_playlist_fixture.py``). Until then
+#: :func:`apps.sync.playlist_apply._apply_single_op` refuses live
+#: ``create`` ops unless the caller overrides via ``--leaf-type-byte``
+#: (enforced when ``apply_plan`` is invoked with ``live=True``).
 PLAYLIST_TYPE_LEAF = 0x01
 
 

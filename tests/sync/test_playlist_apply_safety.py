@@ -150,3 +150,92 @@ def test_playlists_and_bulk_are_mutex(tmp_path: Path) -> None:
 def test_missing_plan_returns_exit_2(tmp_path: Path) -> None:
     rc = pa.main(["--plan", str(tmp_path / "no.json")])
     assert rc == 2
+
+
+@pytest.mark.requirement("SYNC-03")
+def test_live_create_without_leaf_type_byte_is_refused() -> None:
+    """Live create ops must fail cleanly when --leaf-type-byte is absent.
+
+    The module-level ``PLAYLIST_TYPE_LEAF=0x01`` is an unconfirmed
+    placeholder; writing it to the live djay DB risks corrupting the
+    playlist TSAF schema. The guard in ``_apply_single_op`` raises
+    :class:`PlaylistApplyError` so the per-op transaction rolls back.
+    """
+    op = {
+        "rb_id": "r1",
+        "rb_name": "Peak",
+        "op": "create",
+        "djay_uuid": None,
+        "target_members": [],
+    }
+    with pytest.raises(pa.PlaylistApplyError) as exc:
+        pa._apply_single_op(None, op, leaf_type_byte=None, live=True)  # type: ignore[arg-type]
+    assert "--leaf-type-byte" in str(exc.value)
+
+
+@pytest.mark.requirement("SYNC-03")
+def test_live_create_with_leaf_type_byte_skips_guard(tmp_path: Path) -> None:
+    """When --leaf-type-byte is provided, the live guard lets the op run."""
+    import sqlite3
+
+    db_path = tmp_path / "djay.sqlite"
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE database2 ("
+        "rowid INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "collection TEXT NOT NULL, key TEXT NOT NULL, data BLOB, "
+        "UNIQUE(collection, key))"
+    )
+    con.execute(
+        "CREATE TABLE view_mediaItemPlaylistView_page ("
+        "pageKey TEXT PRIMARY KEY, \"group\" TEXT NOT NULL, "
+        "prevPageKey TEXT, count INTEGER NOT NULL, data BLOB)"
+    )
+    con.commit()
+    op = {
+        "rb_id": "r1",
+        "rb_name": "Peak",
+        "op": "create",
+        "djay_uuid": None,
+        "target_members": [],
+    }
+    # Supplying leaf_type_byte satisfies the guard; op should attempt the
+    # write path (empty target_members -> 0 rowids is fine).
+    result = pa._apply_single_op(con, op, leaf_type_byte=0x02, live=True)
+    con.close()
+    assert result.status == "written"
+
+
+@pytest.mark.requirement("SYNC-03")
+def test_non_live_create_without_leaf_type_byte_is_allowed(tmp_path: Path) -> None:
+    """In dry-run / working-DB mode (live=False), no guard should fire.
+
+    Existing integration tests rely on the default ``live=False`` so that
+    the working DB can be exercised against the placeholder type byte.
+    """
+    import sqlite3
+
+    db_path = tmp_path / "djay.sqlite"
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE database2 ("
+        "rowid INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "collection TEXT NOT NULL, key TEXT NOT NULL, data BLOB, "
+        "UNIQUE(collection, key))"
+    )
+    con.execute(
+        "CREATE TABLE view_mediaItemPlaylistView_page ("
+        "pageKey TEXT PRIMARY KEY, \"group\" TEXT NOT NULL, "
+        "prevPageKey TEXT, count INTEGER NOT NULL, data BLOB)"
+    )
+    con.commit()
+    op = {
+        "rb_id": "r1",
+        "rb_name": "Peak",
+        "op": "create",
+        "djay_uuid": None,
+        "target_members": [],
+    }
+    result = pa._apply_single_op(con, op, leaf_type_byte=None, live=False)
+    con.close()
+    assert result.status == "written"
