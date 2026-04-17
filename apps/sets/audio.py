@@ -69,7 +69,16 @@ def list_segments(
     on them.
     """
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
-    session_dir = root / session_id
+    root_resolved = root.resolve() if root.exists() else root
+    session_dir = (root / session_id).resolve() if root.exists() else root / session_id
+    # Defensive: reject any session_id that escapes the sets root.
+    if root.exists():
+        try:
+            session_dir.relative_to(root_resolved)
+        except ValueError as exc:
+            raise PathTraversalError(
+                f"session_id {session_id!r} escapes {root_resolved}"
+            ) from exc
     if not session_dir.exists():
         return []
     manifest_durations: dict[str, float | None] = {}
