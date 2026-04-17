@@ -47,10 +47,15 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="Write to the shared-state DB.")
     p_imp.add_argument("--i-understand-the-risks", action="store_true",
                        help="Required alongside --live.")
-    p_imp.add_argument("--max-tracks", type=int, default=None,
-                       help="Cautious-run cap; default unlimited.")
+    p_imp.add_argument("--max-tracks", type=int, default=10,
+                       help="Cautious-run cap on imported tracks "
+                            "(default: 10). Use 0 or --unlimited to "
+                            "disable the cap.")
+    p_imp.add_argument("--unlimited", action="store_true",
+                       help="Disable the cautious --max-tracks cap "
+                            "(equivalent to --max-tracks 0).")
     p_imp.add_argument("--bulk", action="store_true",
-                       help="Lift the cautious cap.")
+                       help="Lift the cautious cap (alias for --unlimited).")
     p_imp.add_argument("--force", action="store_true",
                        help="Ignore the snapshot_id short-circuit.")
     p_imp.add_argument("--no-cache", action="store_true",
@@ -95,7 +100,14 @@ def _cmd_import(args: argparse.Namespace) -> int:
     if rc != EXIT_OK:
         return rc
 
-    max_tracks = None if args.bulk else args.max_tracks
+    # Safe-default policy (CAT-02): --max-tracks has a conservative cap by
+    # default. Only --unlimited, --bulk, or an explicit --max-tracks 0 lift
+    # the cap. A bare ``spotify import ...`` must never import every track
+    # in a playlist against the live state DB.
+    if args.bulk or args.unlimited or args.max_tracks == 0:
+        max_tracks = None
+    else:
+        max_tracks = args.max_tracks
 
     if args.live:
         print(
