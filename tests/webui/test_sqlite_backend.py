@@ -329,6 +329,73 @@ class TestFallbackPaths:
         )
         assert updated.notes == "updated from webui"
 
+    def test_update_track_concurrent_updates_no_lost_update(
+        self, fresh_state_db: Path,
+    ) -> None:
+        """Adversarial R4 finding (TOCTOU on update_track).
+
+        Two threads acquire the same ``expected_etag`` and call
+        ``update_track`` concurrently. The pre-fix code released the
+        read path before the fallback write, so both threads would
+        read the same sqlite row, and the second thread would reseed
+        the fallback back to the stale sqlite state, silently
+        overwriting the first thread's commit. With the lock + the
+        "trust the fallback if it is already present" rule, exactly
+        one update must succeed cleanly and the other must observe a
+        conflict (ConflictError).
+        """
+        import threading
+        from apps.webui.server.backend import ConflictError
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        current = backend.get_track("sid-001")
+        shared_etag = compute_etag(current.stable_id, current.updated_at)
+
+        # Barrier to maximise the interleaving window: both threads
+        # hit ``update_track`` together, so whoever loses the race
+        # must be rejected by the lock + CAS rather than silently
+        # overwriting the winner.
+        start = threading.Barrier(2)
+        results: dict = {}
+
+        def _worker(tag: str, note: str) -> None:
+            start.wait()
+            try:
+                out = backend.update_track(
+                    "sid-001", {"notes": note},
+                    expected_etag=shared_etag, source="webui",
+                )
+                results[tag] = ("ok", out.notes)
+            except ConflictError as exc:
+                results[tag] = ("conflict", exc)
+
+        t1 = threading.Thread(target=_worker, args=("a", "note-A"))
+        t2 = threading.Thread(target=_worker, args=("b", "note-B"))
+        t1.start(); t2.start()
+        t1.join(timeout=5.0); t2.join(timeout=5.0)
+
+        outcomes = sorted(v[0] for v in results.values())
+        assert outcomes == ["conflict", "ok"], (
+            f"expected exactly one ok + one conflict, got {results}"
+        )
+
+        # Final state must reflect the winner, not be silently
+        # overwritten by the loser's stale seed.
+        winner_note = next(
+            v[1] for v in results.values() if v[0] == "ok"
+        )
+        final = backend.get_track("sid-001")
+        # get_track reads from sqlite, which is not written by
+        # update_track in this Phase 5 transitional path. Read the
+        # authoritative post-write state directly from the fallback.
+        final_fallback = backend._fallback.get_track("sid-001")  # type: ignore[attr-defined]
+        assert final_fallback.notes == winner_note
+        # Sanity: sqlite row unchanged by either update (matches
+        # existing transitional semantics that writes live only in
+        # the fallback).
+        assert final.stable_id == "sid-001"
+
     def test_create_and_delete_pairing_via_fallback(
         self, fresh_state_db: Path,
     ) -> None:

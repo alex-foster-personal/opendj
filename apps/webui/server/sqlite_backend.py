@@ -209,6 +209,14 @@ class SqliteBackend:
     ) -> None:
         self._path = Path(state_db_path)
         self._fallback = fallback if fallback is not None else InMemoryBackend()
+        # Serialise compound read-then-write paths (e.g. update_track, which
+        # reads via self.get_track / seeds the fallback / then hands off to
+        # InMemoryBackend.update_track for the ETag CAS). Without this lock,
+        # two concurrent writers race between the unlocked get_track read
+        # and the fallback update, so a second caller reseeds the fallback
+        # from a stale sqlite row and overwrites the first caller's write
+        # with the old value (lost update). Adversarial R4 finding.
+        self._write_lock = threading.RLock()
 
     # --- connection helper ------------------------------------------------
     @contextmanager
@@ -413,19 +421,34 @@ class SqliteBackend:
             "update_track",
             "webui writes not yet wired through apps.shared.state.writer",
         )
-        # Seed the fallback with the current row so the optimistic-concurrency
-        # ETag check matches what the caller just read.
-        try:
-            current = self.get_track(stable_id)
-        except NotFoundError:
-            raise
-        existing = self._fallback._tracks.get(stable_id)  # type: ignore[attr-defined]
-        if existing is None or existing.updated_at != current.updated_at:
-            self._fallback.seed_track(replace(current))
-        return self._fallback.update_track(
-            stable_id, patch,
-            expected_etag=expected_etag, source=source,
-        )
+        # Hold the write lock across the read-then-write sequence so a second
+        # caller cannot slip in between self.get_track (unlocked _ro read)
+        # and self._fallback.update_track and overwrite the first caller's
+        # commit with a stale seed. Also avoid reseeding the fallback from
+        # sqlite when the fallback is already ahead: Phase 5 writes still
+        # live in the fallback (sqlite is read-only from here), so if the
+        # fallback carries a later ``updated_at`` it is the authoritative
+        # post-write state; seeding from sqlite would silently clobber the
+        # prior writer's commit and the next CAS would accept a stale
+        # ``expected_etag``. Adversarial R4 finding (TOCTOU on update_track).
+        with self._write_lock:
+            try:
+                current = self.get_track(stable_id)
+            except NotFoundError:
+                raise
+            existing = self._fallback._tracks.get(stable_id)  # type: ignore[attr-defined]
+            # Seed only on cold-start, i.e. fallback has never seen this
+            # track. If ``existing`` is already present, trust it: the
+            # fallback is the authoritative post-write state (sqlite is
+            # read-only from this code path until Phase 5 ships real
+            # writes). The CAS inside ``_fallback.update_track`` will
+            # return ConflictError against a stale ``expected_etag``.
+            if existing is None:
+                self._fallback.seed_track(replace(current))
+            return self._fallback.update_track(
+                stable_id, patch,
+                expected_etag=expected_etag, source=source,
+            )
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
         _warn_fallback_once(
