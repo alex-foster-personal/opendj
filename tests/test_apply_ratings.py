@@ -19,7 +19,10 @@ from typing import Any
 
 import pytest
 
+from apps.shared import paths
 from apps.sync.apply_ratings import (
+    _live_djay_db_path,
+    _live_rb_db_path,
     _summarise_plan,
     _verify_djay_rating,
     _verify_rb_rating,
@@ -333,3 +336,106 @@ class TestMainLiveFlagGating:
         rc = main(["--diff-csv", str(path), "--live"])
         assert rc == 3
 
+
+# ---------------------------------------------------- live-DB path routing (#1)
+
+
+class TestLiveDbPathHelpers:
+    """``_live_rb_db_path`` / ``_live_djay_db_path`` mirror the pattern in
+    ``playlist_apply._live_db_path``: ``--live`` routes to LIVE_DB constants,
+    otherwise to WORKING_DB copies under ``data/``.
+    """
+
+    def test_rb_live_flag_returns_live_path(self) -> None:
+        assert _live_rb_db_path(True) == paths.REKORDBOX_LIVE_DB
+
+    def test_rb_default_returns_working_copy(self) -> None:
+        assert _live_rb_db_path(False) == paths.REKORDBOX_WORKING_DB
+
+    def test_djay_live_flag_returns_live_path(self) -> None:
+        assert _live_djay_db_path(True) == paths.DJAY_LIVE_DB
+
+    def test_djay_default_returns_working_copy(self) -> None:
+        assert _live_djay_db_path(False) == paths.DJAY_WORKING_DB
+
+
+class TestMainLiveRoutesToLiveDbPaths:
+    """P1 regression (#1): ``main(['--live', ...])`` MUST pass the LIVE DB
+    paths to ``live_run``, not the WORKING_DB defaults.
+    """
+
+    def test_main_live_forwards_live_db_paths_to_live_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Temp paths that stand in for the user's real LIVE DBs; we patch
+        # the module-level constants so _live_*_db_path resolves to these.
+        fake_rb_live = tmp_path / "fake_rb_live.db"
+        fake_rb_live.write_bytes(b"rb-live")
+        fake_djay_live = tmp_path / "fake_djay_live.db"
+        fake_djay_live.write_bytes(b"djay-live")
+
+        monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", fake_rb_live)
+        monkeypatch.setattr(paths, "DJAY_LIVE_DB", fake_djay_live)
+
+        # Rail 1: pgrep -> nothing is running.
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running", lambda _name: False,
+        )
+        # Typed-confirm rail: --i-understand-the-risks sets flag_ok=True,
+        # so require_typed_confirm is bypassed in LiveWriteSession. Still,
+        # we stub live_run so no real DB work is attempted.
+        captured: dict[str, Any] = {}
+
+        def _fake_live_run(
+            rows: list[dict], **kwargs: Any,
+        ) -> int:
+            captured["rows"] = rows
+            captured["kwargs"] = kwargs
+            return 0
+
+        monkeypatch.setattr(
+            "apps.sync.apply_ratings.live_run", _fake_live_run,
+        )
+
+        path = _make_diff(
+            tmp_path,
+            [
+                {
+                    "rb_content_id": "10",
+                    "djay_uuid": "u-10",
+                    "field": "rating",
+                    "rb_value": "0",
+                    "djay_value": "5",
+                    "resolution": "accept_djay",
+                    "action_hint": "",
+                }
+            ],
+        )
+        rc = main(
+            [
+                "--diff-csv", str(path),
+                "--live",
+                "--i-understand-the-risks",
+            ]
+        )
+        assert rc == 0
+        assert captured["kwargs"]["rb_db_path"] == fake_rb_live
+        assert captured["kwargs"]["djay_db_path"] == fake_djay_live
+
+    def test_main_non_live_dry_run_does_not_reach_live_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Complementary check: without --live, live_run must not be called
+        # (dry-run only); this guards against regressions in the branch.
+        called = {"hit": False}
+
+        def _boom(*_a: Any, **_kw: Any) -> int:
+            called["hit"] = True
+            return 0
+
+        monkeypatch.setattr(
+            "apps.sync.apply_ratings.live_run", _boom,
+        )
+        path = _make_diff(tmp_path, [])
+        assert main(["--diff-csv", str(path)]) == 0
+        assert called["hit"] is False

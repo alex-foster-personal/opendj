@@ -11,6 +11,27 @@ from apps.shared import paths
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
 
+# ----- Path resolution (mirrors playlist_apply._live_db_path) -----------
+
+
+def _live_rb_db_path(live: bool) -> Path:
+    """Return the Rekordbox DB path we will open.
+
+    ``--live`` MUST resolve to :data:`paths.REKORDBOX_LIVE_DB`; otherwise
+    we open the working copy under ``data/``.
+    """
+    return paths.REKORDBOX_LIVE_DB if live else paths.REKORDBOX_WORKING_DB
+
+
+def _live_djay_db_path(live: bool) -> Path:
+    """Return the djay DB path we will open.
+
+    ``--live`` MUST resolve to :data:`paths.DJAY_LIVE_DB`; otherwise we
+    open the working copy under ``data/``.
+    """
+    return paths.DJAY_LIVE_DB if live else paths.DJAY_WORKING_DB
+
+
 def _load_ratings_diff(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -258,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
             only_tracks=only_tracks,
             flag_ok=args.i_understand_the_risks,
             prefer=args.prefer,
+            rb_db_path=_live_rb_db_path(args.live),
+            djay_db_path=_live_djay_db_path(args.live),
         )
     except SafetyAbort as e:
         print(f"[apply_ratings] SafetyAbort: {e}", file=sys.stderr)
