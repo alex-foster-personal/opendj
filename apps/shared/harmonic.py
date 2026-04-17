@@ -143,6 +143,15 @@ def _camelot_distance(k1: CamelotKey, k2: CamelotKey) -> int:
     return min(diff, 12 - diff)
 
 
+def camelot_distance(k1: CamelotKey, k2: CamelotKey) -> int:
+    """Public circular distance on the Camelot wheel (0-6).
+
+    Stable public wrapper over the internal implementation so callers
+    outside this module do not depend on a private symbol.
+    """
+    return _camelot_distance(k1, k2)
+
+
 # ---------------------------------------------------------------------------
 # Compatibility Scorers
 # ---------------------------------------------------------------------------

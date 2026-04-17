@@ -28,6 +28,16 @@ from typing import Any, Callable, Iterable
 from apps.shared.djay_db import DjayTrack
 
 
+# NOTE: Weight sums to 1.30, not 1.00. This is deliberate and NOT a
+# probability distribution. Each signal independently contributes evidence;
+# overlapping high-value signals (ISRC + chromaprint) are rewarded. The
+# 3-signals-AND-confidence rule below (see MIN_SIGNALS_FOR_ACCEPT and
+# MIN_CONFIDENCE_FOR_ACCEPT) is the real accept gate. Do not rescale to 1.0
+# without also re-tuning the thresholds; existing test corpora are calibrated
+# to these values. A 2-signal ISRC+chromaprint hit (0.65 confidence, below the
+# 0.70 gate) falls to the review bucket by design: review bucket is cheap and
+# the goal is zero false auto-accepts on the first live pass. See
+# 02-CONTEXT.md D2 and 02-REVIEW.md [I2] for the deliberation.
 WEIGHTS: dict[str, float] = {
     "isrc_exact": 0.35,
     "filename_exact": 0.20,
@@ -38,9 +48,11 @@ WEIGHTS: dict[str, float] = {
 }
 
 #: Minimum number of signals that must fire for an auto-accept.
+#: Combined with MIN_CONFIDENCE_FOR_ACCEPT; both gates must pass.
 MIN_SIGNALS_FOR_ACCEPT: int = 3
 
 #: Minimum confidence threshold (summed weight) for an auto-accept.
+#: Combined with MIN_SIGNALS_FOR_ACCEPT; both gates must pass.
 MIN_CONFIDENCE_FOR_ACCEPT: float = 0.70
 
 

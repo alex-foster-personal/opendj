@@ -10,9 +10,9 @@ from apps.shared.harmonic import (
     CAMELOT_STEP_BUDGET_HARDCUT,
     MAX_BPM_DIFF_PCT,
     TrackFeature,
-    _camelot_distance,
     bpm_compatibility,
     camelot_compatibility,
+    camelot_distance as _camelot_distance,
     key_to_camelot,
 )
 
