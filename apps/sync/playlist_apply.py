@@ -356,6 +356,7 @@ def apply_plan(
     playlist_filter: set[str] | None = None,
     leaf_type_byte: int | None = None,
     live: bool = False,
+    safety_session: "object | None" = None,
 ) -> ApplyResult:
     """Apply the plan against ``db_path``. One transaction per op.
 
@@ -363,7 +364,34 @@ def apply_plan(
     enables the leaf-type-byte safety rail: a live ``create`` op with an
     unconfirmed :data:`playlist_tsaf.PLAYLIST_TYPE_LEAF` placeholder is
     refused unless the caller supplies ``leaf_type_byte``.
+
+    Defense-in-depth self-guard (P1-A): when ``live=True`` every direct
+    caller must either pass an active
+    :class:`apps.sync.safety.LiveWriteSession` via ``safety_session`` (so
+    the caller has already run rails 1-3: typed-confirm, process gate,
+    backup) or accept the inline process-check fallback executed below.
+    The fallback re-runs the djay + Rekordbox ``pgrep`` gate so a future
+    direct caller that forgets the surrounding safety harness cannot
+    silently write into a DB that a running app is about to clobber.
     """
+    if live and safety_session is None:
+        # Inline rail 2 re-check. Caller-side rails (backup, typed
+        # confirm, dry-run default) remain the caller's responsibility;
+        # this guard ONLY prevents the worst-case foot-gun: writing
+        # while djay / Rekordbox is alive.
+        from apps.sync.safety import SafetyAbort, assert_target_not_running
+
+        try:
+            assert_target_not_running("djay")
+            assert_target_not_running("rekordbox")
+        except SafetyAbort as exc:
+            raise PlaylistApplyError(
+                f"apply_plan self-guard refuses live write: {exc}. "
+                "Wrap this call in an apps.sync.safety.LiveWriteSession "
+                "and pass it via safety_session= to acknowledge the "
+                "caller has already run the full safety harness."
+            ) from exc
+
     result = ApplyResult()
     con = sqlite3.connect(
         f"file:{db_path}?mode=rwc", uri=True, isolation_level=None
