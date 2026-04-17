@@ -38,6 +38,23 @@ STATE_DB: Path = STATE_DIR / "state.db"
 # curated "Manual Library" subfolder too.
 MUSIC_ROOTS: list[Path] = [Path("/Users/dev3/Music")]
 
+# ----- Phase 7 dedup + tag unification ----------------------------------
+# Fallback SQLite store used when the Phase 5 shared-state DB is not yet
+# ready (or when callers want a dedicated dedup workspace). The same
+# schema works either way; migrating into state.db is a cheap chore.
+DEDUP_DIR: Path = DATA_DIR / "dedup"
+DEDUP_FALLBACK_DB: Path = DEDUP_DIR / "phase7.sqlite"
+DEDUP_CLUSTERS_CSV: Path = DEDUP_DIR / "clusters.csv"
+DEDUP_MANUAL_REVIEW_CSV: Path = DEDUP_DIR / "manual-review.csv"
+DEDUP_REWRITE_PLAN_CSV: Path = DEDUP_DIR / "rewrite-plan.csv"
+DEDUP_REWRITE_SUMMARY_MD: Path = DEDUP_DIR / "rewrite-summary.md"
+DEDUP_ARCHIVE_ROOT: Path = DEDUP_DIR / "archived"
+
+TAGS_DIR: Path = DATA_DIR / "tags"
+TAGS_BACKUPS_DIR: Path = TAGS_DIR / "backups"
+TAGS_UNIFIED_PREVIEW_CSV: Path = TAGS_DIR / "unified-preview.csv"
+TAGS_REVERSAL_DIR: Path = TAGS_DIR / "reversals"
+
 AUDIO_EXTENSIONS: frozenset[str] = frozenset(
     {".mp3", ".m4a", ".aac", ".wav", ".aiff", ".aif", ".flac", ".ogg", ".alac"}
 )
