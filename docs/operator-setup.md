@@ -2,8 +2,6 @@
 
 *The minimum you need to install on your Mac before any feature works. Each section is independent - install only what you want.*
 
-> Naming note: the repository historically uses the name `_sync-tools` in `README.md` and directory paths; `music-dj-tools` is the GitHub project name. They refer to the same repo.
-
 ## Baseline (every feature needs this)
 
 - macOS 13+ (arm64 or x86_64).

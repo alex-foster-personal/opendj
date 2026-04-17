@@ -41,7 +41,7 @@ This is the rc1 candidate. CI is green on 1834 tests. Expect rc2 once the Phase 
 - 10-track fixture roundtrip harness.
 - Spec published at `open-dj/spec/v0.2/` under CC BY 4.0.
 
-**Launcher (Hyper-K)**
+**cmd-K launcher**
 - Tauri + React cmd-K launcher with `Alt+Space` hotkey and FTS5 search backend.
 - Drag-drop adapters for djay, Rekordbox, Serato, and Traktor via a hermetic drag-core Rust crate.
 - Six-rail safety pattern extended to XML + NML write paths.
