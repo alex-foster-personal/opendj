@@ -11,8 +11,9 @@ The read/write split follows the plan 11-02 step 2 design:
 Backend selection:
   * tests override via ``app.dependency_overrides[get_backend] = ...``
   * production wires a real backend in :mod:`apps.webui.server.app` at
-    startup (currently defaults to :class:`InMemoryBackend`; Phase 5 will
-    provide a sqlite-backed adapter -- see TODO(phase-5) in backend.py).
+    startup (currently defaults to :class:`InMemoryBackend`; a
+    sqlite-backed adapter over Phase 5's ``apps.shared.state`` is a
+    planned follow-up -- see the Phase 5 status note in backend.py).
 """
 from __future__ import annotations
 

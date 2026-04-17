@@ -4,13 +4,21 @@ The FastAPI routes never talk to SQLite directly. They call methods on a
 :class:`StateBackend` instance, which:
 
   * in tests, is :class:`InMemoryBackend` (fast, deterministic, no IO)
-  * in production, will be a sqlite-backed impl wired by Phase 5's
-    ``apps.shared.state`` (TODO(phase-5): wire when shipped)
+  * in production, will be a sqlite-backed impl wired against Phase 5's
+    ``apps.shared.state`` primitives.
 
-This is the stub-policy boundary for Phase 5. When Phase 5 merges, create
-``apps.shared.state.webui_adapter`` implementing StateBackend against the
-``apps.shared.state`` primitives; swap the default factory in
-:mod:`apps.webui.server.deps`.
+Phase 5 status: ``apps.shared.state`` now ships ``db.open_ro/open_rw``,
+``writer.StateWriter``, ``events.EventBus`` and a tracks / playlists /
+pairings / events schema. What is still missing for production wiring
+is a dedicated ``apps.shared.state.webui_adapter`` module that exposes
+this Protocol's reader methods (``list_tracks`` with filter/cursor,
+``list_pairings``, ``get_queue`` for the M3 triage queues) on top of
+those primitives, plus writer plumbing that maps PATCH/POST/DELETE to
+``StateWriter`` calls with the correct ``Source`` + provenance
+envelopes. Until that adapter lands, the daemon defaults to
+:class:`InMemoryBackend` and the triage queues are gated by
+``InMemoryBackend.mark_queue_unavailable``. Tracked in STATE.md as a
+Phase 5 follow-up (webui sqlite adapter).
 
 All methods are synchronous. FastAPI handles the thread pool.
 """
