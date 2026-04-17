@@ -15,13 +15,25 @@ Coordinate model
 ----------------
 
 Claude sees a downsampled screenshot whose width is ``downsample_width``
-(default 1280). It returns click coordinates *in that downsampled frame*.
+(default 1920). It returns click coordinates *in that downsampled frame*.
 We must translate them back to macOS "points" (= CoreGraphics logical
-pixels) before handing them to ``cliclick``. On this host the main display
-reports pixel-width == point-width (no Retina scaling), so the scale factor
-is purely ``physical_width / downsample_width``. On a Retina display you'd
-additionally divide by the backing scale factor; ``_points_from_scaled``
-handles that generically.
+pixels) before handing them to ``cliclick``.
+
+Two capture modes are supported:
+
+* **window** (preferred) — we grab a specific Rekordbox window via
+  ``CGWindowListCreateImage``. The downsampled frame has origin
+  ``(0, 0)`` relative to the window's top-left; to get a global screen
+  point we (a) rescale downsampled → window physical pixels, (b) divide
+  by backing scale, (c) add the window's top-left origin in points.
+* **display** (fallback) — we grab the main display. Downsampled coords
+  rescale to the display's pixel frame, then map to points via backing
+  scale.  Used when Rekordbox isn't on-screen.
+
+Every ``capture()`` stashes a ``capture_meta`` dict (``capture_mode``,
+``window_bounds``, ``downsample_*``, ``backing_scale``) that subsequent
+``execute_action`` calls consult when translating clicks and rejecting
+off-window clicks via the click-guard.
 
 Requirement: CAT-06.
 """
@@ -185,6 +197,258 @@ def take_screenshot(
 
 
 # --------------------------------------------------------------------------- #
+# Window-isolated capture  (Fix 1) + frontmost enforcement  (Fix 3)
+# --------------------------------------------------------------------------- #
+
+
+def find_app_window(
+    app_name_substring: str,
+) -> dict[str, Any] | None:  # pragma: no cover - requires live window list
+    """Return the largest on-screen window whose owner name contains
+    ``app_name_substring`` (case-insensitive), or None.
+
+    Returned dict: ``window_id``, ``owner_name``, ``title``,
+    ``bounds`` (``{x,y,w,h}`` in global points), ``layer``.
+    """
+    if not _HAS_QUARTZ:
+        return None
+    needle = app_name_substring.lower()
+    opts = (
+        Quartz.kCGWindowListOptionOnScreenOnly
+        | Quartz.kCGWindowListExcludeDesktopElements
+    )
+    windows = Quartz.CGWindowListCopyWindowInfo(opts, Quartz.kCGNullWindowID)
+    if not windows:
+        return None
+    candidates: list[dict[str, Any]] = []
+    for w in windows:
+        owner = (w.get("kCGWindowOwnerName") or "").lower()
+        if needle not in owner:
+            continue
+        b = w.get("kCGWindowBounds") or {}
+        width = float(b.get("Width", 0))
+        height = float(b.get("Height", 0))
+        if width < 100 or height < 100:
+            continue
+        candidates.append({
+            "window_id": int(w.get("kCGWindowNumber", 0)),
+            "owner_name": str(w.get("kCGWindowOwnerName") or ""),
+            "title": str(w.get("kCGWindowName") or ""),
+            "bounds": {
+                "x": float(b.get("X", 0)),
+                "y": float(b.get("Y", 0)),
+                "w": width,
+                "h": height,
+            },
+            "layer": int(w.get("kCGWindowLayer", 0)),
+            "area": width * height,
+        })
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (c["layer"] != 0, -c["area"]))
+    best = candidates[0]
+    best.pop("area", None)
+    return best
+
+
+def _capture_window_cgimage(window_id: int):  # pragma: no cover - live only
+    if not _HAS_QUARTZ:
+        return None
+    return Quartz.CGWindowListCreateImage(
+        Quartz.CGRectNull,
+        Quartz.kCGWindowListOptionIncludingWindow,
+        int(window_id),
+        Quartz.kCGWindowImageBoundsIgnoreFraming
+        | Quartz.kCGWindowImageNominalResolution,
+    )
+
+
+def _display_fallback_metadata(
+    png: bytes,
+    geom: DisplayGeometry,
+    scaled: tuple[int, int],
+    *,
+    prev_owner: str = "",
+    prev_title: str = "",
+) -> dict[str, Any]:
+    return {
+        "capture_mode": "display",
+        "window_bounds": {
+            "x": 0.0,
+            "y": 0.0,
+            "w": float(geom.point_width),
+            "h": float(geom.point_height),
+        },
+        "window_id": None,
+        "owner_name": prev_owner,
+        "title": prev_title,
+        "downsample_width": scaled[0],
+        "downsample_height": scaled[1],
+        "physical_width": geom.pixel_width,
+        "physical_height": geom.pixel_height,
+        "backing_scale": geom.backing_scale,
+    }
+
+
+def capture_window(
+    app_name_substring: str = "rekordbox",
+    downsample_width: int = 1920,
+    *,
+    _raw_bytes: bytes | None = None,
+    _injected_window: dict[str, Any] | None = None,
+) -> tuple[bytes, dict[str, Any]]:
+    """Capture a single app window and return ``(png_bytes, metadata)``.
+
+    ``metadata`` has keys: ``capture_mode`` (``"window"`` or ``"display"``),
+    ``window_bounds``, ``window_id``, ``owner_name``, ``title``,
+    ``downsample_width``, ``downsample_height``, ``physical_width``,
+    ``physical_height``, ``backing_scale``.
+
+    Falls back to a full-display capture when no matching window is
+    visible (capture_mode="display").
+    """
+    window = _injected_window if _injected_window is not None else find_app_window(app_name_substring)
+    if window is None:
+        png, geom, scaled = take_screenshot(
+            downsample_width=downsample_width, _raw_bytes=_raw_bytes
+        )
+        return png, _display_fallback_metadata(png, geom, scaled)
+
+    if _raw_bytes is None:  # pragma: no cover - live capture
+        cg = _capture_window_cgimage(window["window_id"])
+        if cg is None:
+            png, geom, scaled = take_screenshot(downsample_width=downsample_width)
+            return png, _display_fallback_metadata(
+                png, geom, scaled,
+                prev_owner=window.get("owner_name", ""),
+                prev_title=window.get("title", ""),
+            )
+        raw_png = _cgimage_to_png_bytes(cg)
+    else:
+        raw_png = _raw_bytes
+
+    img = Image.open(io.BytesIO(raw_png))
+    physical_w, physical_h = img.width, img.height
+    if img.width > downsample_width:
+        new_h = int(img.height * (downsample_width / img.width))
+        img = img.resize((downsample_width, new_h), Image.LANCZOS)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    out = io.BytesIO()
+    img.save(out, format="PNG", optimize=True)
+    w_points = float(window["bounds"]["w"]) or 1.0
+    backing_scale = physical_w / w_points if w_points > 0 else 1.0
+    return out.getvalue(), {
+        "capture_mode": "window",
+        "window_bounds": dict(window["bounds"]),
+        "window_id": window["window_id"],
+        "owner_name": window.get("owner_name", ""),
+        "title": window.get("title", ""),
+        "downsample_width": img.width,
+        "downsample_height": img.height,
+        "physical_width": physical_w,
+        "physical_height": physical_h,
+        "backing_scale": backing_scale,
+    }
+
+
+def window_scaled_to_global_points(
+    x: int,
+    y: int,
+    metadata: dict[str, Any],
+) -> tuple[int, int]:
+    """Translate Claude-frame ``(x, y)`` to a global cliclick point.
+    On window-mode this accounts for the window's on-screen origin.
+    """
+    dw = max(1, int(metadata.get("downsample_width", 1)))
+    dh = max(1, int(metadata.get("downsample_height", 1)))
+    physical_w = max(1, int(metadata.get("physical_width", dw)))
+    physical_h = max(1, int(metadata.get("physical_height", dh)))
+    px_x = x * (physical_w / dw)
+    px_y = y * (physical_h / dh)
+    backing = float(metadata.get("backing_scale") or 1.0) or 1.0
+    pt_x = px_x / backing
+    pt_y = px_y / backing
+    bounds = metadata.get("window_bounds") or {"x": 0.0, "y": 0.0}
+    gx = pt_x + float(bounds.get("x", 0.0))
+    gy = pt_y + float(bounds.get("y", 0.0))
+    return int(round(gx)), int(round(gy))
+
+
+def is_point_inside_window(
+    global_x: int,
+    global_y: int,
+    metadata: dict[str, Any],
+    *,
+    margin: int = 2,
+) -> bool:
+    """Return True iff ``(global_x, global_y)`` falls inside the
+    window described by ``metadata``.
+
+    Display-mode always returns True (no isolated window to enforce).
+    """
+    if metadata.get("capture_mode") != "window":
+        return True
+    b = metadata.get("window_bounds") or {}
+    x0 = float(b.get("x", 0.0)) - margin
+    y0 = float(b.get("y", 0.0)) - margin
+    x1 = x0 + float(b.get("w", 0.0)) + 2 * margin
+    y1 = y0 + float(b.get("h", 0.0)) + 2 * margin
+    return x0 <= global_x <= x1 and y0 <= global_y <= y1
+
+
+def _frontmost_app_name() -> str | None:  # pragma: no cover - macOS only
+    try:
+        from AppKit import NSWorkspace  # type: ignore[import-not-found]
+    except Exception:
+        return None
+    try:
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if app is None:
+            return None
+        name = app.localizedName()
+        return str(name) if name else None
+    except Exception:
+        return None
+
+
+def ensure_frontmost(
+    app_name: str = "rekordbox",
+    *,
+    max_attempts: int = 3,
+    wait_ms: int = 500,
+    _frontmost_probe: Any = None,
+    _activate: Any = None,
+) -> bool:
+    """Ensure ``app_name`` is macOS frontmost. Returns True on success.
+
+    ``_frontmost_probe`` / ``_activate`` are test hooks.
+    """
+    needle = app_name.lower()
+    probe = _frontmost_probe or _frontmost_app_name
+
+    def _do_activate() -> None:
+        if _activate is not None:
+            _activate()
+            return
+        # pragma: no cover - live only
+        subprocess.run(
+            ["osascript", "-e", f'tell application "{app_name}" to activate'],
+            check=False, capture_output=True, text=True,
+        )
+
+    for _ in range(max_attempts):
+        current = probe()
+        if current and needle in current.lower():
+            return True
+        _do_activate()
+        if wait_ms > 0:
+            time.sleep(wait_ms / 1000.0)
+    final = probe()
+    return bool(final and needle in final.lower())
+
+
+# --------------------------------------------------------------------------- #
 # Coordinate scaling
 # --------------------------------------------------------------------------- #
 
@@ -286,23 +550,63 @@ class Actuator:
 
     # -- screenshot helper used by the agent loop --------------------- #
     def capture(self) -> dict[str, Any]:
-        png, geom, scaled = take_screenshot(downsample_width=self.downsample_width)
-        self._last_geom = geom
-        self._last_scaled = scaled
+        """Take a screenshot, record it in the trace, and return metadata.
+
+        When ``self.window_app`` is set (the default), this prefers
+        window-isolated capture (Fix 1). Returns a dict with
+        ``png_bytes``, ``capture_meta``, ``scaled_size``, ``base64``,
+        and (for display-mode compat) a ``geometry`` key when available.
+        """
+        if self.window_app is None:
+            # Legacy full-display path.
+            png, geom, scaled = take_screenshot(
+                downsample_width=self.downsample_width
+            )
+            meta = _display_fallback_metadata(png, geom, scaled)
+            self._last_geom = geom
+            self._last_scaled = scaled
+            self._last_capture_meta = meta
+            self.trace.record(
+                "screenshot",
+                {
+                    "physical_size": [geom.pixel_width, geom.pixel_height],
+                    "point_size": [geom.point_width, geom.point_height],
+                    "scaled_size": list(scaled),
+                    "bytes": len(png),
+                    "capture": meta,
+                },
+                png_bytes=png,
+            )
+            return {
+                "png_bytes": png,
+                "geometry": geom,
+                "scaled_size": scaled,
+                "capture_meta": meta,
+                "base64": base64.standard_b64encode(png).decode("ascii"),
+            }
+
+        # Preferred: window-isolated capture.
+        png, meta = capture_window(
+            app_name_substring=self.window_app,
+            downsample_width=self.downsample_width,
+        )
+        self._last_capture_meta = meta
+        self._last_scaled = (
+            int(meta["downsample_width"]),
+            int(meta["downsample_height"]),
+        )
         self.trace.record(
             "screenshot",
             {
-                "physical_size": [geom.pixel_width, geom.pixel_height],
-                "point_size": [geom.point_width, geom.point_height],
-                "scaled_size": list(scaled),
                 "bytes": len(png),
+                "capture": meta,
             },
             png_bytes=png,
         )
         return {
             "png_bytes": png,
-            "geometry": geom,
-            "scaled_size": scaled,
+            "capture_meta": meta,
+            "scaled_size": self._last_scaled,
             "base64": base64.standard_b64encode(png).decode("ascii"),
         }
 
@@ -480,18 +784,29 @@ class Actuator:
         return {"ok": False, "error": payload["outcome"], "meta": payload}
 
     def _to_points(self, coord: Any) -> tuple[int, int]:
-        if self._last_geom is None or self._last_scaled is None:
-            # First action before any screenshot — force one
+        """Translate a Claude-frame ``(x, y)`` to a global cliclick point.
+
+        Uses the latest capture metadata. On window-mode captures the
+        result accounts for the window's on-screen origin (Fix 2).
+        """
+        if self._last_capture_meta is None:
+            # First action before any screenshot — force one.
             self.capture()
-        assert self._last_geom is not None and self._last_scaled is not None
+        meta = self._last_capture_meta
+        if meta is None:
+            # Legacy path (unit tests that inject _last_geom + _last_scaled
+            # without capture_meta). Use old math.
+            assert self._last_geom is not None and self._last_scaled is not None
+            x, y = coord[0], coord[1]
+            return scaled_to_points(
+                int(x),
+                int(y),
+                scaled_width=self._last_scaled[0],
+                scaled_height=self._last_scaled[1],
+                geometry=self._last_geom,
+            )
         x, y = coord[0], coord[1]
-        return scaled_to_points(
-            int(x),
-            int(y),
-            scaled_width=self._last_scaled[0],
-            scaled_height=self._last_scaled[1],
-            geometry=self._last_geom,
-        )
+        return window_scaled_to_global_points(int(x), int(y), meta)
 
 
 def _build_scroll_applescript(direction: str, amount: int) -> str:
