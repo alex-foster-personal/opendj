@@ -31,14 +31,21 @@ def get_backend(request: Request) -> StateBackend:
     return backend
 
 
+_LOCK_PROBE_FAILED = "__lock_probe_failed__"
+
+
 def get_lock_status(request: Request) -> Optional[dict[str, Any]]:
     fn: Callable[[], Any] | None = getattr(request.app.state, "lock_status_fn", None)
     if fn is None:
         return None
     try:
         return fn()
-    except Exception:  # pragma: no cover
-        return None
+    except Exception:
+        # Fail-closed: if we cannot determine lock state, surface a sentinel
+        # that ``get_write_state`` translates into a 503. Never silently fall
+        # through to "no holder" — that would leave writes open during an
+        # outage of the cloud-lock probe (codex P11-F01).
+        return {"holder": _LOCK_PROBE_FAILED, "error": "lock_probe_failed"}
 
 
 def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:
@@ -51,6 +58,19 @@ def get_write_state(
     lock_status: Optional[dict[str, Any]] = Depends(get_lock_status),
 ) -> StateBackend:
     local_host = getattr(request.app.state, "hostname", "localhost")
+    if lock_status and lock_status.get("holder") == _LOCK_PROBE_FAILED:
+        # Probe raised — fail-closed (codex P11-F01).
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "lock_probe_failed",
+                "message": (
+                    "Cloud lock status is unavailable; writes are disabled "
+                    "until the probe recovers."
+                ),
+                "holder": lock_status,
+            },
+        )
     if lock_status and lock_status.get("holder") and lock_status["holder"] != local_host:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

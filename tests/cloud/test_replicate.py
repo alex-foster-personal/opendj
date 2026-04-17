@@ -177,3 +177,105 @@ def test_self_check_returns_zero(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "self-check OK" in out
+
+
+@pytest.mark.requirement("CAT-05")
+def test_cloud_lock_released_only_after_litestream_exit():
+    """P11-F02: lock must not be released while litestream may still flush.
+
+    We instrument a FakeSubprocess that records when .wait/.poll report
+    exit, and a Lock whose release() records when it is called. The release
+    timestamp must be at-or-after the subprocess's final poll-exit time.
+    Previously release() ran in ``finally`` before we waited for the
+    subprocess, creating a window for a concurrent writer to grab the lock
+    while litestream was still flushing WAL frames.
+    """
+    s3 = FakeS3Client()
+
+    release_times: list[float] = []
+    proc_exit_time: dict[str, float] = {}
+
+    class SlowExitProc(FakeSubprocess):
+        """Keeps returning 'running' for a short delay after terminate()."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._terminate_at: float | None = None
+            self._exit_delay = 0.15  # seconds after terminate before "exited"
+
+        def terminate(self) -> None:
+            with self._mutex:
+                self.terminated = True
+                self._terminate_at = time.monotonic()
+            # NOTE: do NOT set returncode yet — simulate a flushing tail.
+
+        def poll(self) -> int | None:
+            with self._mutex:
+                if self.returncode is not None:
+                    return self.returncode
+                if (
+                    self._terminate_at is not None
+                    and time.monotonic() - self._terminate_at >= self._exit_delay
+                ):
+                    self.returncode = -15
+                    proc_exit_time["t"] = time.monotonic()
+                    return self.returncode
+                return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            # Mimic real Popen.wait: block until poll() returns non-None.
+            deadline = time.monotonic() + (timeout if timeout is not None else 5.0)
+            while self.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            return self.returncode or 0
+
+    fake_proc = SlowExitProc()
+
+    def factory(_argv: list[str]) -> SlowExitProc:
+        return fake_proc
+
+    rep = Replicator(
+        make_cfg("host-a"),
+        s3,
+        subprocess_factory=factory,
+        heartbeat_seconds=600,
+        sleep_fn=time.sleep,  # real sleep so the exit-wait actually advances
+    )
+
+    # Wrap lock.release to record timestamp.
+    orig_release = rep.lock.release
+
+    def recording_release() -> None:
+        release_times.append(time.monotonic())
+        orig_release()
+
+    rep.lock.release = recording_release  # type: ignore[method-assign]
+
+    rc_holder: dict[str, int] = {}
+
+    def run() -> None:
+        rc_holder["rc"] = rep.start()
+
+    t = threading.Thread(target=run)
+    t.start()
+
+    # Wait until lock is acquired.
+    deadline = time.monotonic() + 2.0
+    while s3.get_object("test-state", "LOCK.json") is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    # Ask replicator to stop — this triggers terminate + the delayed exit.
+    rep.request_stop()
+
+    t.join(timeout=5.0)
+    assert not t.is_alive()
+
+    assert release_times, "lock.release was never called"
+    assert "t" in proc_exit_time, "subprocess never reported exit"
+    # The critical assertion: release happened at or after subprocess exit.
+    assert release_times[0] >= proc_exit_time["t"], (
+        "cloud lock was released BEFORE litestream reported exit "
+        f"(release={release_times[0]:.4f}, exit={proc_exit_time['t']:.4f})"
+    )
+    # And the lock is indeed gone from R2 at the end.
+    assert s3.get_object("test-state", "LOCK.json") is None

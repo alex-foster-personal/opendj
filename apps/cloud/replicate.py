@@ -197,7 +197,13 @@ class Replicator:
             self._proc = self._factory(self._argv())
             return self._supervise_loop()
         finally:
+            # Order matters (codex P11-F02): ensure Litestream has fully
+            # exited (flushing any pending WAL frames to R2) BEFORE we drop
+            # the cloud lock. Releasing early opens a window where another
+            # writer can acquire the lock while our litestream is still
+            # flushing, corrupting the replicated state.
             self._terminate_proc()
+            self._wait_for_proc_exit(timeout=30.0)
             self.lock.release()
 
     def _supervise_loop(self) -> int:
@@ -229,6 +235,34 @@ class Replicator:
         try:
             if self._proc.poll() is None:
                 self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=5)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _wait_for_proc_exit(self, timeout: float) -> None:
+        """Block until the litestream subprocess has fully exited.
+
+        We must not release the cloud lock while litestream may still be
+        flushing WAL frames to R2 (codex P11-F02). ``_terminate_proc`` only
+        signals SIGTERM and waits a few seconds; this method gives the
+        process the full configured budget to flush before we move on.
+        """
+        if self._proc is None:
+            return
+        deadline = time.monotonic() + timeout
+        try:
+            while self._proc.poll() is None and time.monotonic() < deadline:
+                self._sleep(0.05)
+            if self._proc.poll() is None:
+                # Still running after timeout: hard-kill to guarantee no
+                # writer races us for the lock.
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
                 try:
                     self._proc.wait(timeout=5)
                 except Exception:
