@@ -226,6 +226,31 @@ patch (the full DCO text is at https://developercertificate.org).
 git commit -s -m "feat(<scope>): <summary>"
 ```
 
+## Pre-release checks (`make release-check`)
+
+Before cutting a release (tagging `vX.Y.Z` or opening a PR targeting a
+`release/*` branch), run the aggregated gate:
+
+```
+source .venv/bin/activate
+make release-check
+```
+
+This runs, in order:
+
+1. `make test` — full pytest suite.
+2. `make lint` — `ruff check apps tests scripts`.
+3. `make build-dist` — `python -m build` producing wheel + sdist under `dist/`.
+4. `make reqs-check` — verifies `reqs.json` is in sync with
+   `.planning/REQUIREMENTS.md` (`python -m scripts.build_reqs_json --check`).
+5. A best-effort `gh release view v1.0.1` sanity check (non-fatal; skipped
+   if `gh` is unauthenticated or the release is not visible).
+
+CI enforces the same target via
+[`.github/workflows/release-check.yml`](.github/workflows/release-check.yml),
+which runs on pushes to `release/*` branches, PRs targeting `release/*`,
+and on `v*` tag creation.
+
 ## Licensing
 
 By contributing to this project, you agree that your contributions will

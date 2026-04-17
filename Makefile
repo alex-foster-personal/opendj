@@ -1,4 +1,4 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint build-dist release-check
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -35,7 +35,44 @@ integration:
 	$(PYTEST) -m integration -q
 
 clean:
-	rm -rf .pytest_cache htmlcov .coverage coverage-matrix.md
+	rm -rf .pytest_cache htmlcov .coverage coverage-matrix.md dist build *.egg-info
+
+# ----- Pre-release checks -----------------------------------------------
+# `release-check` is the single command CI and humans run before cutting a
+# release tag. It runs the standard gates in sequence:
+#   1. test        — full pytest suite
+#   2. lint        — ruff check across apps/tests/scripts
+#   3. build-dist  — python -m build (wheel + sdist)
+#   4. reqs-check  — verify reqs.json is fresh vs REQUIREMENTS.md
+#   5. prior-tag   — best-effort `gh release view v1.0.1` sanity check (non-fatal)
+# Keep this target serial; failures should halt the pipeline immediately.
+
+lint:
+	@# Prefer the venv-local ruff (CI installs it there); fall back to a
+	@# system-wide `ruff` on PATH for local dev machines that manage linters
+	@# outside the project venv.
+	@#
+	@# LINT_PATHS defaults to the top-level source trees. To replicate the
+	@# pre-commit experience (lint only files changed vs master) set
+	@# LINT_PATHS to the output of `git diff --name-only master... -- '*.py'`
+	@# when calling `make lint` / `make release-check`.
+	@ruff_bin="ruff"; \
+	if [ -x "$(VENV)/bin/ruff" ]; then ruff_bin="$(VENV)/bin/ruff"; fi; \
+	paths="$(LINT_PATHS)"; \
+	if [ -z "$$paths" ]; then paths="apps tests scripts"; fi; \
+	echo "$$ruff_bin check $$paths"; \
+	$$ruff_bin check $$paths
+
+build-dist:
+	rm -rf dist build
+	$(PY) -m build
+
+release-check: test lint build-dist reqs-check
+	@echo "[release-check] verifying prior release tag (non-fatal)..."
+	@gh release view v1.0.1 >/dev/null 2>&1 \
+		&& echo "[release-check] prior release v1.0.1 found." \
+		|| echo "[release-check] note: prior release v1.0.1 not visible (skipped)."
+	@echo "[release-check] OK"
 
 # ----- Phase 9: Spotify importer (CAT-01) --------------------------------
 # Wrap with doppler so SPOTIFY_CLIENT_ID flows in without being committed.
