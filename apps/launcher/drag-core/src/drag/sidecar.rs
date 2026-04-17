@@ -177,7 +177,18 @@ impl<'a> SidecarWrite<'a> {
             f.write_all(content.as_bytes()).map_err(|e| {
                 DragError::SidecarFailed(format!("write temp: {}", e))
             })?;
-            f.sync_all().ok();
+            // Propagate fsync errors. Previously swallowed via `.ok()`, which
+            // means a full-disk or network-FS fsync failure could leave the
+            // temp file incomplete while the subsequent `fs::rename` still
+            // promoted it over the target. Surface the failure so the caller
+            // can retry / degrade to clipboard. (adv-v2-fanout 2/3)
+            f.sync_all().map_err(|e| {
+                DragError::SidecarFailed(format!(
+                    "fsync {}: {}",
+                    tmp_path.display(),
+                    e
+                ))
+            })?;
         }
         fs::rename(&tmp_path, self.target_path).map_err(|e| {
             DragError::SidecarFailed(format!(
@@ -611,5 +622,60 @@ mod sidecar_tests {
         assert!(status.success());
         let restored = fs::read_to_string(&target).unwrap();
         assert_eq!(restored, "<ROOT>hello</ROOT>\n");
+    }
+
+    #[test]
+    fn fsync_error_is_propagated_not_swallowed() {
+        // Regression for adv-v2-fanout 2/3 (task 4): SidecarWrite::with_backup
+        // previously swallowed `f.sync_all()` failures via `.ok()`. On a
+        // full-disk or network-FS fsync failure the temp file could be
+        // incomplete while the subsequent `fs::rename` still promoted it,
+        // silently corrupting the target.
+        //
+        // We can't reliably force fsync to fail in a portable unit test
+        // (tmpfs will happily fsync 0 bytes), so at minimum this test pins
+        // the error-message format that the rename path now depends on. A
+        // future integration test with a crafted filesystem can reuse this
+        // format string.
+        let tmp_path = std::path::Path::new("/var/tmp/.test-xml-20260417T000000Z.tmp");
+        let err = DragError::SidecarFailed(format!(
+            "fsync {}: {}",
+            tmp_path.display(),
+            std::io::Error::new(std::io::ErrorKind::Other, "simulated no space")
+        ));
+        match err {
+            DragError::SidecarFailed(msg) => {
+                assert!(msg.starts_with("fsync "), "msg: {}", msg);
+                assert!(msg.contains(".test-xml-20260417T000000Z.tmp"), "msg: {}", msg);
+                assert!(msg.contains("simulated no space"), "msg: {}", msg);
+            }
+            other => panic!("expected SidecarFailed, got {:?}", other),
+        }
+
+        // And verify the happy path still writes successfully (i.e. the new
+        // `?` on sync_all does not regress normal tmpfs/APFS behaviour).
+        let (_tmp, target, backup_dir, reversal_dir, audit) = setup();
+        let running: Vec<String> = vec![];
+        let sc = SidecarWrite {
+            label: "test-xml",
+            target_path: &target,
+            backup_dir: &backup_dir,
+            reversal_dir: &reversal_dir,
+            audit_log: Some(&audit),
+            forbid_if_running: &[],
+            running_bundle_ids: &running,
+            timestamp_override: Some("20260417T000000Z"),
+        };
+        let outcome = sc
+            .with_backup(
+                |s| {
+                    *s = s.replace("hello", "sync-ok");
+                    Ok(())
+                },
+                |_| Ok(()),
+            )
+            .expect("fsync should succeed on a normal temp dir");
+        assert!(!outcome.rolled_back);
+        assert!(fs::read_to_string(&target).unwrap().contains("sync-ok"));
     }
 }
