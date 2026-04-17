@@ -18,6 +18,15 @@ Subcommands
     triggers the USB write. Traces are written to
     ``apps/sync/usb/pioneer/traces/<timestamp>/``.
 
+``write --template PATH --output PATH [--playlist NAME:ID,...]
+        [--track ID:FIELD=VALUE,...] [--apply]``
+    Prototype B: copy an existing Rekordbox-produced OneLibrary
+    (``exportLibrary.db``) to ``--output`` and overlay zero or more
+    new playlists + track metadata updates via the ``rbox`` Rust
+    crate. Defaults to dry-run (plan only). Pass ``--apply`` to
+    invoke the writer. See :mod:`apps.sync.usb.pioneer.writer_rbox`
+    for the capability matrix + safety guards.
+
 Requirement: CAT-06.
 """
 from __future__ import annotations
@@ -27,6 +36,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from .reader import read_usb_export, validate_invariants
 
@@ -40,6 +50,170 @@ def _cmd_read(args: argparse.Namespace) -> int:
     sys.stdout.write("\n")
     if args.validate and data["validation"]["errors"]:
         return 2
+    return 0
+
+
+# -----------------------------------------------------------------------
+# ``write`` subcommand (Prototype B: OneLibrary overlay writer).
+# -----------------------------------------------------------------------
+
+_WRITE_TRACK_FIELDS = {"title", "rating", "bpmx100", "dj_comment", "color_id"}
+
+
+def _parse_playlist_spec(raw: str) -> tuple[str, list[int]]:
+    """Parse a ``NAME:ID,ID,ID`` spec into ``(name, [int, ...])``.
+
+    Raises :class:`ValueError` with a human-readable message on bad
+    input. The name is allowed to contain ``:`` characters as long as
+    the rightmost ``:`` splits name from the id list.
+    """
+    if ":" not in raw:
+        raise ValueError(
+            f"playlist spec must contain ':' separating NAME from IDs: {raw!r}"
+        )
+    name, _, ids_part = raw.rpartition(":")
+    name = name.strip()
+    if not name:
+        raise ValueError(f"playlist name is empty in spec: {raw!r}")
+    ids_part = ids_part.strip()
+    if not ids_part:
+        return name, []
+    try:
+        ids = [int(x.strip()) for x in ids_part.split(",") if x.strip()]
+    except ValueError as exc:
+        raise ValueError(
+            f"playlist track ids must be integers: {raw!r} ({exc})"
+        ) from exc
+    return name, ids
+
+
+def _parse_track_spec(raw: str) -> tuple[int, dict[str, Any]]:
+    """Parse a ``ID:FIELD=VALUE,FIELD=VALUE`` spec.
+
+    ``rating``, ``bpmx100``, and ``color_id`` are coerced to ``int``;
+    every other whitelisted field stays as ``str``. Unknown fields
+    raise :class:`ValueError`.
+    """
+    if ":" not in raw:
+        raise ValueError(
+            f"track spec must contain ':' separating ID from FIELD=VALUE list: {raw!r}"
+        )
+    id_part, _, rest = raw.partition(":")
+    try:
+        track_id = int(id_part.strip())
+    except ValueError as exc:
+        raise ValueError(
+            f"track id must be an integer in spec: {raw!r} ({exc})"
+        ) from exc
+    overlay: dict[str, Any] = {}
+    for chunk in rest.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if "=" not in chunk:
+            raise ValueError(
+                f"track field must be FIELD=VALUE: {chunk!r} (in {raw!r})"
+            )
+        field, _, value = chunk.partition("=")
+        field = field.strip()
+        value = value.strip()
+        if field not in _WRITE_TRACK_FIELDS:
+            raise ValueError(
+                f"unknown track field {field!r}; "
+                f"expected one of {sorted(_WRITE_TRACK_FIELDS)}"
+            )
+        if field in {"rating", "bpmx100", "color_id"}:
+            try:
+                overlay[field] = int(value)
+            except ValueError as exc:
+                raise ValueError(
+                    f"track field {field!r} must be an integer: {value!r} ({exc})"
+                ) from exc
+        else:
+            overlay[field] = value
+    return track_id, overlay
+
+
+def _cmd_write(args: argparse.Namespace) -> int:
+    # Lazy import: writer_rbox pulls in the ``rbox`` Rust wheel which
+    # is not always installed on every dev host. Parsing + --help must
+    # still work without it.
+    try:
+        playlist_specs = [_parse_playlist_spec(p) for p in (args.playlist or [])]
+        track_specs = [_parse_track_spec(t) for t in (args.track or [])]
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    template = Path(args.template).expanduser().resolve()
+    output = Path(args.output).expanduser().resolve()
+
+    plan = {
+        "mode": "apply" if args.apply else "dry-run",
+        "template": str(template),
+        "output": str(output),
+        "playlists": [
+            {"name": name, "track_ids": ids} for name, ids in playlist_specs
+        ],
+        "track_updates": [
+            {"id": tid, "overlay": overlay} for tid, overlay in track_specs
+        ],
+    }
+
+    if not args.apply:
+        json.dump(plan, sys.stdout, indent=2, default=str)
+        sys.stdout.write("\n")
+        return 0
+
+    # Apply path: import writer + rbox lazily.
+    try:
+        from .writer_rbox import (
+            OneLibraryWriteError,
+            PlaylistSpec,
+            TrackUpdate,
+            write_onelibrary,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"error: writer_rbox import failed ({exc}); "
+            "install `rbox` with `pip install rbox`.",
+            file=sys.stderr,
+        )
+        return 4
+
+    playlists = [
+        PlaylistSpec(name=name, track_ids=tuple(ids)) for name, ids in playlist_specs
+    ]
+    track_updates = []
+    for tid, overlay in track_specs:
+        kwargs: dict[str, Any] = {"id": tid}
+        for field, value in overlay.items():
+            kwargs[field] = value
+        track_updates.append(TrackUpdate(**kwargs))
+
+    try:
+        result = write_onelibrary(
+            template_path=template,
+            output_path=output,
+            track_updates=track_updates,
+            playlists=playlists,
+            overwrite=args.overwrite,
+        )
+    except OneLibraryWriteError as exc:
+        print(f"error: OneLibrary write failed: {exc}", file=sys.stderr)
+        return 4
+
+    summary = {
+        "mode": "apply",
+        "output_path": str(result.output_path),
+        "tracks_updated": result.tracks_updated,
+        "playlists_written": result.playlists_written,
+        "playlist_ids": list(result.playlist_ids),
+        "output_size_bytes": result.output_size_bytes,
+        "rbox_version": result.rbox_version,
+    }
+    json.dump(summary, sys.stdout, indent=2, default=str)
+    sys.stdout.write("\n")
     return 0
 
 
@@ -100,6 +274,65 @@ def main(argv: list[str] | None = None) -> int:
         help="Run invariant checks and include a 'validation' key in the output.",
     )
     read.set_defaults(func=_cmd_read)
+
+    write = sub.add_parser(
+        "write",
+        help=(
+            "Overlay playlists + track updates on a OneLibrary template "
+            "(Prototype B; requires rbox)."
+        ),
+        description=(
+            "Copy a Rekordbox-produced exportLibrary.db template to "
+            "--output and overlay zero or more new playlists + track "
+            "metadata updates via the rbox Rust crate. Dry-run by "
+            "default; pass --apply to invoke the writer."
+        ),
+    )
+    write.add_argument(
+        "--template",
+        required=True,
+        help="Path to an existing exportLibrary.db OneLibrary template.",
+    )
+    write.add_argument(
+        "--output",
+        required=True,
+        help="Destination path for the new OneLibrary (must differ from --template).",
+    )
+    write.add_argument(
+        "--playlist",
+        action="append",
+        default=[],
+        metavar="NAME:ID,ID,...",
+        help=(
+            "Playlist to create in the output DB. Format 'NAME:ID,ID,...' "
+            "where IDs are content row primary keys from the template. "
+            "Repeatable."
+        ),
+    )
+    write.add_argument(
+        "--track",
+        action="append",
+        default=[],
+        metavar="ID:FIELD=VALUE,...",
+        help=(
+            "Track metadata overlay for an existing content row. "
+            "Format 'ID:FIELD=VALUE,FIELD=VALUE'. Known fields: "
+            "title, rating, bpmx100, dj_comment, color_id. Repeatable."
+        ),
+    )
+    write.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually invoke the writer. Default is a dry-run plan to stdout.",
+    )
+    write.add_argument(
+        "--no-overwrite",
+        dest="overwrite",
+        action="store_false",
+        default=True,
+        help="Refuse to overwrite --output if it already exists (default: overwrite).",
+    )
+    write.set_defaults(func=_cmd_write)
 
     agent = sub.add_parser(
         "agent-export",
