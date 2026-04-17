@@ -1,0 +1,225 @@
+"""Rule-AST -> SQL compiler + evaluator (SMART-02).
+
+Compiles a validated smartlist rule into a parameterised SQL query over
+the Phase 5 shared-state schema:
+
+* ``tracks.stable_id`` is the primary identifier.
+* Analytical fields (bpm, key, energy, rating, genre, custom_tags,
+  color_tag, last_played) live in ``track_fields`` EAV keyed
+  ``(stable_id, field_name)`` with ``value_json`` holding the typed
+  value. The evaluator resolves them with a correlated subquery per
+  predicate.
+* ``added_date`` maps to ``tracks.created_at``.
+* ``paired_with`` translates to a ``stable_id IN (SELECT ... FROM
+  pairings ...)`` subquery (direction 'into' + 'either').
+
+All value bindings flow through ``?`` parameter placeholders;
+identifiers (field names, order-by columns) come from
+:mod:`apps.shared.smartlists` enums only.
+"""
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from apps.shared.smartlists import (
+    FIELD_TYPES,
+    LOGICAL_OPS,
+    SmartlistRuleError,
+    validate_rule,
+)
+
+
+class EvaluatorError(ValueError):
+    """Raised when a rule cannot be compiled (e.g. bad order_by)."""
+
+
+_TRACKS_NATIVE: dict[str, str] = {
+    "added_date": "tracks.created_at",
+}
+
+_ORDER_BY_COLUMNS: dict[str, str] = {
+    "added_date asc":  "tracks.created_at ASC",
+    "added_date desc": "tracks.created_at DESC",
+    "bpm asc":         "_bpm ASC",
+    "bpm desc":        "_bpm DESC",
+    "rating asc":      "_rating ASC",
+    "rating desc":     "_rating DESC",
+    "energy asc":      "_energy ASC",
+    "energy desc":     "_energy DESC",
+    "random":          "RANDOM()",
+}
+
+
+def _sql_literal(s: str) -> str:
+    if not s.replace("_", "").isalnum():
+        raise EvaluatorError(f"refusing unsafe identifier {s!r}")
+    return "'" + s + "'"
+
+
+def _eav_scalar(field: str) -> str:
+    return (
+        "(SELECT json_extract(tf.value_json, '$') FROM track_fields tf "
+        "WHERE tf.stable_id = tracks.stable_id AND tf.field_name = "
+        f"{_sql_literal(field)} LIMIT 1)"
+    )
+
+
+def _resolve_relative_date(expr: dict) -> str:
+    raw = expr["$relative"]
+    if not raw or not isinstance(raw, str):
+        raise SmartlistRuleError(f"invalid $relative value {raw!r}")
+    unit = raw[-1]
+    try:
+        n = int(raw[:-1])
+    except ValueError as exc:
+        raise SmartlistRuleError(f"invalid $relative value {raw!r}") from exc
+    delta_kwargs = {
+        "d": {"days": n},
+        "h": {"hours": n},
+        "m": {"minutes": n},
+        "w": {"weeks": n},
+    }.get(unit)
+    if delta_kwargs is None:
+        raise SmartlistRuleError(
+            f"$relative unit {unit!r} must be one of d/h/m/w"
+        )
+    return (datetime.now(timezone.utc) + timedelta(**delta_kwargs)).isoformat()
+
+
+def _prepare_date_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _resolve_relative_date(value)
+    if isinstance(value, list):
+        return [_prepare_date_value(v) for v in value]
+    return value
+
+
+def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
+    base = (
+        "tracks.stable_id IN (SELECT to_stable_id FROM pairings "
+        "WHERE direction IN ('into','either') AND from_stable_id"
+    )
+    if op == "=":
+        return base + " = ?)", [value]
+    if op == "!=":
+        return (
+            "tracks.stable_id NOT IN (SELECT to_stable_id FROM pairings "
+            "WHERE direction IN ('into','either') AND from_stable_id = ?)",
+            [value],
+        )
+    if op == "in":
+        if not value:
+            return "0", []
+        placeholders = ", ".join("?" for _ in value)
+        return base + f" IN ({placeholders}))", list(value)
+    raise SmartlistRuleError(
+        f"paired_with: only = / != / in supported; got {op!r}"
+    )
+
+
+def _compile_predicate(node: dict) -> tuple[str, list[Any]]:
+    field = node["field"]
+    op = node["op"]
+    value = node["value"]
+
+    if field == "paired_with":
+        return _compile_paired_with(op, value)
+
+    col = _TRACKS_NATIVE.get(field) or _eav_scalar(field)
+    ftype = FIELD_TYPES[field]
+
+    if ftype == "date":
+        value = _prepare_date_value(value)
+
+    if op in ("=", "!=", "<", "<=", ">", ">="):
+        return f"{col} {op} ?", [value]
+    if op == "between":
+        lo, hi = value
+        return f"{col} BETWEEN ? AND ?", [lo, hi]
+    if op == "in":
+        if not value:
+            return "0", []
+        placeholders = ", ".join("?" for _ in value)
+        return f"{col} IN ({placeholders})", list(value)
+    if op == "contains":
+        if ftype == "list":
+            sql = (
+                "EXISTS (SELECT 1 FROM track_fields tf2, "
+                "json_each(tf2.value_json) je "
+                "WHERE tf2.stable_id = tracks.stable_id "
+                f"AND tf2.field_name = {_sql_literal(field)} "
+                "AND je.value = ?)"
+            )
+            return sql, [value]
+        return f"{col} LIKE ?", [f"%{value}%"]
+    raise SmartlistRuleError(f"evaluator: unsupported op {op!r}")
+
+
+def compile_rule(rule: dict) -> tuple[str, list[Any]]:
+    """Compile a validated rule to ``(where_sql, params)``."""
+    if "op" in rule and rule["op"] in LOGICAL_OPS:
+        op = rule["op"]
+        if op == "not":
+            inner_sql, inner_params = compile_rule(rule["children"][0])
+            return f"NOT ({inner_sql})", inner_params
+        parts = [compile_rule(c) for c in rule["children"]]
+        sql = "(" + f" {op.upper()} ".join(p[0] for p in parts) + ")"
+        params = [p for part in parts for p in part[1]]
+        return sql, params
+    return _compile_predicate(rule)
+
+
+def _order_by_sql(order_by: str) -> str:
+    expr = _ORDER_BY_COLUMNS.get(order_by)
+    if expr is None:
+        raise EvaluatorError(
+            f"order_by {order_by!r} not in allowlist {sorted(_ORDER_BY_COLUMNS)}"
+        )
+    return expr
+
+
+def _order_by_needs_join(order_by: str) -> str | None:
+    mapping: dict[str, str] = {
+        "bpm asc": "bpm", "bpm desc": "bpm",
+        "rating asc": "rating", "rating desc": "rating",
+        "energy asc": "energy", "energy desc": "energy",
+    }
+    return mapping.get(order_by)
+
+
+def evaluate(
+    rule: dict,
+    conn: sqlite3.Connection,
+    *,
+    order_by: str = "added_date desc",
+    limit: int | None = None,
+    validate: bool = True,
+) -> list[str]:
+    """Evaluate ``rule`` against ``conn`` and return ordered stable_ids."""
+    if validate:
+        validate_rule(rule)
+    where_sql, params = compile_rule(rule)
+    order_sql = _order_by_sql(order_by)
+    eav_order_field = _order_by_needs_join(order_by)
+
+    if eav_order_field is not None:
+        select = (
+            "SELECT tracks.stable_id, "
+            f"(SELECT json_extract(tf_o.value_json, '$') FROM track_fields tf_o "
+            "WHERE tf_o.stable_id = tracks.stable_id AND tf_o.field_name = "
+            f"{_sql_literal(eav_order_field)} LIMIT 1) AS _{eav_order_field} "
+        )
+    else:
+        select = "SELECT tracks.stable_id "
+
+    sql = select + "FROM tracks WHERE " + where_sql + " ORDER BY " + order_sql
+    if limit is not None:
+        sql += f" LIMIT {int(limit)}"
+
+    rows = conn.execute(sql, params).fetchall()
+    return [r[0] for r in rows]
+
+
+__all__ = ["EvaluatorError", "compile_rule", "evaluate"]
