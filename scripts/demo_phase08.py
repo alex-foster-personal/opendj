@@ -8,9 +8,10 @@ Usage::
     python -m scripts.demo_phase08           # prints to stdout
     python -m scripts.demo_phase08 --out demo.log
 
-No RB / djay writes; Phase 3 writers aren't wired yet (see
-TODO(phase-3) in apps/smartlists/refresh.py). Once they land the demo
-script adds them to the Materializer constructor here.
+By default the demo uses :class:`FakeWriter` for both RB and djay so
+nothing touches a live DB. Pass ``--live`` to swap in the real Phase 3
+writers from :func:`apps.smartlists.refresh._build_writers`; unusable
+factories soft-fail to None and the materialiser simply skips them.
 """
 from __future__ import annotations
 
@@ -82,7 +83,7 @@ def _seed_library(conn: sqlite3.Connection) -> None:
             )
 
 
-def run(out=sys.stdout) -> None:
+def run(out=sys.stdout, *, live: bool = False) -> None:
     out.write("# Phase 08 demo\n\n")
 
     with tempfile.TemporaryDirectory() as td:
@@ -129,9 +130,27 @@ def run(out=sys.stdout) -> None:
             pair_repo.add("t03", "t04", direction="out_of")
 
             # --- materialise ---
-            rb = FakeWriter(vendor="rekordbox")
-            dj = FakeWriter(vendor="djay")
-            mat = Materializer(sm_repo, [rb, dj])
+            if live:
+                # Real Phase 3 writers; anything unreachable soft-fails to
+                # None and drops out of the writer list.
+                from apps.smartlists.refresh import _build_writers
+
+                real_writers = _build_writers()
+                if real_writers:
+                    mat = Materializer(sm_repo, real_writers)
+                    rb = dj = None  # rendered below if fakes were used
+                else:
+                    rb = FakeWriter(vendor="rekordbox")
+                    dj = FakeWriter(vendor="djay")
+                    mat = Materializer(sm_repo, [rb, dj])
+                    out.write(
+                        "(live requested but no real writers available; "
+                        "falling back to FakeWriter)\n\n"
+                    )
+            else:
+                rb = FakeWriter(vendor="rekordbox")
+                dj = FakeWriter(vendor="djay")
+                mat = Materializer(sm_repo, [rb, dj])
 
             out.write("## 1. Dry-run\n\n")
             for r in mat.materialize_all(dry_run=True):
@@ -148,8 +167,11 @@ def run(out=sys.stdout) -> None:
                 )
 
             out.write("\n## 3. RB playlists after run\n\n")
-            for name, ids in sorted(rb.playlists.items()):
-                out.write(f"- {name}: {ids}\n")
+            if rb is not None:
+                for name, ids in sorted(rb.playlists.items()):
+                    out.write(f"- {name}: {ids}\n")
+            else:
+                out.write("(live writers used; see vendor DB for details)\n")
 
             out.write("\n## 4. Simulate tag edit -> trigger\n\n")
             runner = TriggerRunner(
@@ -179,13 +201,18 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m scripts.demo_phase08")
     p.add_argument("--out", type=Path, default=None,
                    help="write transcript to this file instead of stdout")
+    p.add_argument(
+        "--live", action="store_true",
+        help="use real Phase 3 writers (RB + djay) instead of FakeWriter; "
+             "requires reachable vendor DBs, otherwise soft-falls back",
+    )
     args = p.parse_args(argv)
     if args.out is not None:
         with args.out.open("w") as fh:
-            run(out=fh)
+            run(out=fh, live=args.live)
         print(f"demo transcript written to {args.out}")
     else:
-        run(out=sys.stdout)
+        run(out=sys.stdout, live=args.live)
     return 0
 
 

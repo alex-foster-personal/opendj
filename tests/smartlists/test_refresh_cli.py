@@ -92,8 +92,14 @@ def test_refresh_live_requires_risk_flag(
 
 
 def test_refresh_live_with_flag_runs(
-    db_path: Path, capsys: pytest.CaptureFixture,
+    db_path: Path,
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Phase 3 writers are wired via refresh._build_writers. In this test
+    # we only verify the CLI path itself runs -- stub the writers list to
+    # stay away from live vendor DBs.
+    monkeypatch.setattr(cli_refresh, "_build_writers", lambda: [])
     _seed_smartlist(db_path, "x", "high_energy.json")
     rc = cli_refresh.main([
         "--db", str(db_path), "--live", "--i-understand-the-risks",

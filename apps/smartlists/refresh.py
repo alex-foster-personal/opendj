@@ -3,10 +3,10 @@
 Drives the Materializer via the same path the triggers use. Default is
 dry-run; ``--live --i-understand-the-risks`` is required to write.
 
-TODO(phase-3): once ``apps.sync.playlists.RBPlaylistWriter`` +
-``DjayPlaylistWriter`` land, wire them up in :func:`_build_writers`.
-Until then the CLI materialises against an empty writer list when
---live is provided, so the dry-run path stays fully testable.
+Phase 3 writers are wired via :func:`_build_writers` below. They are
+constructed lazily: if the RB or djay DB isn't reachable the factory
+returns None and the materialiser simply skips that vendor (soft-fail,
+matching the empty-writer-list dry-run behaviour).
 """
 from __future__ import annotations
 
@@ -35,11 +35,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _build_writers() -> list:
-    """Return production playlist writers.
+    """Return production playlist writers (Phase 3 integration).
 
-    Empty today; Phase 3 writers land here. See TODO in module docstring.
+    Constructs :class:`apps.smartlists.rb_writer.RBPlaylistWriter` and
+    :class:`apps.smartlists.djay_writer.DjayPlaylistWriter` via their
+    lazy factories. A factory that can't reach its vendor DB returns
+    ``None``; we filter those out so callers see only writers that are
+    actually usable.
     """
-    return []
+    from apps.smartlists.djay_writer import build_djay_writer
+    from apps.smartlists.rb_writer import build_rb_writer
+
+    writers: list = []
+    for factory in (build_rb_writer, build_djay_writer):
+        try:
+            w = factory()
+        except Exception:
+            w = None
+        if w is not None:
+            writers.append(w)
+    return writers
 
 
 def main(argv: list[str] | None = None, *, out=None) -> int:
