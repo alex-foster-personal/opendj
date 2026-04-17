@@ -429,6 +429,7 @@ def match_tracks(
     for dj in dj_list:
         # Find candidate RB via path, then ISRC, then normalised key.
         candidate: Any | None = None
+        precomputed: tuple[float, list[Signal]] | None = None
         dj_path_key = _nfc_abs(dj.file_path)
         if dj_path_key and dj_path_key in path_to_rb:
             candidate = path_to_rb[dj_path_key]
@@ -438,14 +439,42 @@ def match_tracks(
             mkey = _make_match_key(dj.title, dj.artist)
             rb_candidates = key_to_rb.get(mkey, [])
             if rb_candidates:
-                candidate = rb_candidates[0]
+                # Score ALL candidates sharing this normalised title+artist
+                # key and keep the highest-scoring one (tie-break on fired
+                # signal count). Previously only ``rb_candidates[0]`` was
+                # scored, which silently mis-routed a djay track to an
+                # inferior RB match when multiple RB rows collided on the
+                # same normalised key (e.g. duplicates, remasters, or
+                # near-duplicates with differing file paths / ISRCs /
+                # durations). Codex Phase 02 review finding.
+                best_rb: Any | None = None
+                best_score: tuple[float, int] = (-1.0, -1)
+                best_sigs: list[Signal] = []
+                best_conf: float = 0.0
+                for rb in rb_candidates:
+                    conf_i, sigs_i = score_pair(
+                        rb, dj, fingerprint_fn=fingerprint_fn
+                    )
+                    fired_i = sum(1 for s in sigs_i if s.fired)
+                    score_i = (conf_i, fired_i)
+                    if score_i > best_score:
+                        best_score = score_i
+                        best_rb = rb
+                        best_sigs = sigs_i
+                        best_conf = conf_i
+                if best_rb is not None:
+                    candidate = best_rb
+                    precomputed = (best_conf, best_sigs)
 
         if candidate is None:
             continue
 
-        confidence, signals = score_pair(
-            candidate, dj, fingerprint_fn=fingerprint_fn
-        )
+        if precomputed is not None:
+            confidence, signals = precomputed
+        else:
+            confidence, signals = score_pair(
+                candidate, dj, fingerprint_fn=fingerprint_fn
+            )
         fired = [s for s in signals if s.fired]
         fired_count = len(fired)
         fired_names = tuple(s.name for s in fired)
