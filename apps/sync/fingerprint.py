@@ -60,9 +60,20 @@ class FingerprintCache:
                 path TEXT PRIMARY KEY,
                 duration REAL,
                 fingerprint TEXT,
-                computed_at REAL
+                computed_at REAL,
+                mtime REAL,
+                size INTEGER
             )"""
         )
+        # Additive migration for pre-P02-F2 caches that lack mtime/size.
+        existing_cols = {
+            row[1]
+            for row in self._con.execute("PRAGMA table_info(fingerprints)").fetchall()
+        }
+        if "mtime" not in existing_cols:
+            self._con.execute("ALTER TABLE fingerprints ADD COLUMN mtime REAL")
+        if "size" not in existing_cols:
+            self._con.execute("ALTER TABLE fingerprints ADD COLUMN size INTEGER")
         self._con.commit()
 
     def close(self) -> None:
@@ -79,22 +90,56 @@ class FingerprintCache:
 
     # -- public API --------------------------------------------------------
 
+    @staticmethod
+    def _file_stat(path: str) -> tuple[float, int] | None:
+        """Return ``(mtime, size)`` for ``path`` or None if unavailable."""
+        try:
+            st = Path(path).stat()
+        except (OSError, ValueError):
+            return None
+        return float(st.st_mtime), int(st.st_size)
+
     def _lookup(self, path: str) -> tuple[float, str] | None:
         row = self._con.execute(
-            "SELECT duration, fingerprint FROM fingerprints WHERE path = ?",
+            "SELECT duration, fingerprint, mtime, size "
+            "FROM fingerprints WHERE path = ?",
             (path,),
         ).fetchone()
         if row is None:
             return None
-        return float(row[0] or 0.0), row[1] or ""
+        duration, fingerprint, cached_mtime, cached_size = row
+        current = self._file_stat(path)
+        # Invalidate cache entry if the underlying file has changed on disk.
+        # Missing file -> keep the cached "absent" row so we don't retry
+        # every run. Missing stat metadata on the row (older schema) -> no
+        # basis for invalidation, keep entry.
+        if current is not None and cached_mtime is not None and cached_size is not None:
+            if current[0] != float(cached_mtime) or current[1] != int(cached_size):
+                self._con.execute(
+                    "DELETE FROM fingerprints WHERE path = ?", (path,)
+                )
+                self._con.commit()
+                return None
+        return float(duration or 0.0), fingerprint or ""
 
     def _store(self, path: str, duration: float, fingerprint: str) -> None:
         import time
 
+        stat = self._file_stat(path)
+        mtime = stat[0] if stat is not None else None
+        size = stat[1] if stat is not None else None
         self._con.execute(
             "INSERT OR REPLACE INTO fingerprints "
-            "(path, duration, fingerprint, computed_at) VALUES (?, ?, ?, ?)",
-            (path, float(duration or 0.0), fingerprint or "", time.time()),
+            "(path, duration, fingerprint, computed_at, mtime, size) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                path,
+                float(duration or 0.0),
+                fingerprint or "",
+                time.time(),
+                mtime,
+                size,
+            ),
         )
         self._con.commit()
 

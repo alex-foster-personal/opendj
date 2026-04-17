@@ -30,6 +30,44 @@ class SafetyAbort(RuntimeError):
     """Raised when any of the seven rails refuses to proceed."""
 
 
+# ----- P04-03: staged rollout (dry-run -> cautious -> bulk) -------------
+
+_ROLLOUT_STAMP_DIR = Path("data/sync/rollout")
+
+
+def _rollout_stamp(writer: str) -> Path:
+    return _ROLLOUT_STAMP_DIR / f"{writer}.cautious-ok"
+
+
+def mark_cautious_success(writer: str) -> Path:
+    """Record that a cautious (``--tracks=...``) live run completed OK.
+
+    Bulk live runs check for this stamp via :func:`require_cautious_before_bulk`.
+    """
+    stamp = _rollout_stamp(writer)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(datetime.now(timezone.utc).isoformat() + "\n", encoding="utf-8")
+    return stamp
+
+
+def require_cautious_before_bulk(writer: str, override: bool = False) -> None:
+    """Abort bulk live runs that skip the cautious stage.
+
+    Raises :class:`SafetyAbort` unless a prior cautious live run of
+    ``writer`` deposited the stamp (or the caller explicitly passed
+    ``override=True``, e.g. ``--skip-cautious-check`` after documenting why).
+    """
+    if override:
+        return
+    stamp = _rollout_stamp(writer)
+    if not stamp.exists():
+        raise SafetyAbort(
+            f"P04-03: refusing --bulk --live for {writer!r}: no cautious "
+            f"success stamp at {stamp}. Run a small --tracks=... live pass "
+            f"first, or pass --skip-cautious-check with documented reason."
+        )
+
+
 @dataclass(slots=True)
 class WriteRecord:
     track_id: str

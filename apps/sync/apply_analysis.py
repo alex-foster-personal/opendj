@@ -338,6 +338,14 @@ def main(argv: list[str] | None = None) -> int:
         dest="i_understand_the_risks",
         action="store_true",
     )
+    parser.add_argument(
+        "--skip-cautious-check",
+        action="store_true",
+        help=(
+            "P04-03: skip the dry-run->cautious->bulk sequencing check. "
+            "Only use after documenting why the cautious stage was skipped."
+        ),
+    )
     args = parser.parse_args(argv)
 
     rows = _load_diff(args.diff_csv)
@@ -351,8 +359,22 @@ def main(argv: list[str] | None = None) -> int:
     only_tracks: set[str] | None = None
     if args.tracks:
         only_tracks = {t.strip() for t in args.tracks.split(",") if t.strip()}
+
+    from apps.sync.safety import (
+        mark_cautious_success,
+        require_cautious_before_bulk,
+    )
+    if args.bulk:
+        try:
+            require_cautious_before_bulk(
+                "apply_analysis", override=args.skip_cautious_check
+            )
+        except SafetyAbort as e:
+            print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
+            return 3
+
     try:
-        return live_run(
+        rc = live_run(
             rows,
             fields=fields,
             only_tracks=only_tracks,
@@ -363,6 +385,10 @@ def main(argv: list[str] | None = None) -> int:
     except SafetyAbort as e:
         print(f"[apply_analysis] SafetyAbort: {e}", file=sys.stderr)
         return 3
+
+    if rc == 0 and only_tracks and not args.bulk:
+        mark_cautious_success("apply_analysis")
+    return rc
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -267,6 +267,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     parser.add_argument("--prefer", choices=["rb", "djay", "newest"], default="newest")
+    parser.add_argument(
+        "--skip-cautious-check",
+        action="store_true",
+        help=(
+            "P04-03: skip the dry-run->cautious->bulk sequencing check. "
+            "Only use after documenting why the cautious stage was skipped."
+        ),
+    )
     args = parser.parse_args(argv)
 
     rows = _load_ratings_diff(args.diff_csv)
@@ -279,8 +287,25 @@ def main(argv: list[str] | None = None) -> int:
     only_tracks: set[str] | None = None
     if args.tracks:
         only_tracks = {t.strip() for t in args.tracks.split(",") if t.strip()}
+
+    # P04-03: enforce dry-run -> cautious -> bulk. Cautious runs are
+    # identified by --tracks=... (a non-empty filter); bulk runs require a
+    # prior cautious success stamp.
+    from apps.sync.safety import (
+        mark_cautious_success,
+        require_cautious_before_bulk,
+    )
+    if args.bulk:
+        try:
+            require_cautious_before_bulk(
+                "apply_ratings", override=args.skip_cautious_check
+            )
+        except SafetyAbort as e:
+            print(f"[apply_ratings] SafetyAbort: {e}", file=sys.stderr)
+            return 3
+
     try:
-        return live_run(
+        rc = live_run(
             rows,
             only_tracks=only_tracks,
             flag_ok=args.i_understand_the_risks,
@@ -291,6 +316,10 @@ def main(argv: list[str] | None = None) -> int:
     except SafetyAbort as e:
         print(f"[apply_ratings] SafetyAbort: {e}", file=sys.stderr)
         return 3
+
+    if rc == 0 and only_tracks and not args.bulk:
+        mark_cautious_success("apply_ratings")
+    return rc
 
 
 if __name__ == "__main__":  # pragma: no cover

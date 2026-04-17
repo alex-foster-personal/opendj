@@ -33,6 +33,10 @@ from apps.shared.rekordbox_db import RBPlaylist, is_streaming_path
 from apps.shared.djay_db import DjayPlaylist
 
 
+class PlaylistPlanError(ValueError):
+    """Raised when plan inputs violate invariants (e.g. collisions)."""
+
+
 # ----- Thresholds / constants -------------------------------------------
 
 #: Confidence floor for a confirmed Phase 2 match.
@@ -335,9 +339,28 @@ def build_plan(
     titles = rb_track_titles or {}
 
     # Index djay playlists by canonical name.
+    # P03-04: canonical-name collisions (e.g. NFC vs NFD duplicates, or two
+    # djay playlists that differ only in case) used to silently overwrite one
+    # another in this dict, collapsing two distinct djay playlists into one
+    # plan op. Detect collisions and surface them as a PlaylistPlanError so
+    # the operator can resolve the ambiguity in djay before planning.
     djay_by_canon: dict[str, DjayPlaylistRead] = {}
+    collisions: dict[str, list[str]] = {}
     for dp in djay_playlists:
-        djay_by_canon[_canonical_name(dp.name)] = dp
+        canon = _canonical_name(dp.name)
+        existing = djay_by_canon.get(canon)
+        if existing is not None and existing.uuid != dp.uuid:
+            collisions.setdefault(canon, [existing.name]).append(dp.name)
+            continue
+        djay_by_canon[canon] = dp
+    if collisions:
+        details = "; ".join(
+            f"{canon!r} <- {sorted(set(names))}"
+            for canon, names in sorted(collisions.items())
+        )
+        raise PlaylistPlanError(
+            "djay playlists collide on canonical name (P03-04): " + details
+        )
 
     seen_djay_uuids: set[str] = set()
     ops: list[PlaylistOp] = []
@@ -441,6 +464,7 @@ __all__ = [
     "PlaylistOp",
     "DjayOnlyPlaylist",
     "PlaylistPlan",
+    "PlaylistPlanError",
     "flatten_rb_playlists",
     "read_djay_playlists",
     "load_match_set",

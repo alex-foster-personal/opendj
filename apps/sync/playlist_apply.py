@@ -574,6 +574,12 @@ def main(argv: list[str] | None = None) -> int:
     backup_path, ts = _backup_djay_db(db_path, args.backup_dir)
     sys.stderr.write(f"[ok] backup -> {backup_path}\n")
 
+    # P03-03: write the reversal script BEFORE the first destructive write so
+    # operators always have a documented restore path even if apply_plan raises
+    # mid-way through the sequence.
+    rev = _write_reversal_script(backup_path, db_path, args.backup_dir, ts)
+    sys.stderr.write(f"[ok] reversal -> {rev}\n")
+
     effective_filter = None if args.bulk else filter_
 
     try:
@@ -587,13 +593,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"apply raised: {exc}\n")
         sys.stderr.write(f"restore with:  cp {backup_path} {db_path}\n")
+        sys.stderr.write(f"             (or run: bash {rev})\n")
         return 5
 
-    rev = _write_reversal_script(backup_path, db_path, args.backup_dir, ts)
     result.backup_path = backup_path
     result.reversal_script = rev
 
-    sys.stderr.write(f"[ok] reversal -> {rev}\n")
     sys.stderr.write(f"[warning] {CLOUDKIT_WARNING}\n")
     for r in result.per_playlist:
         sys.stderr.write(f"  {r.status:9s} {r.op:6s} {r.rb_name}  {r.message}\n")
