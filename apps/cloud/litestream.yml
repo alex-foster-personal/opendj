@@ -1,0 +1,21 @@
+# Litestream config for music-dj-tools cloud sync (Phase 11).
+#
+# Environment variables come from Doppler -- invoke via:
+#   doppler run -p music-dj-tools -c prod -- \
+#       litestream replicate -config apps/cloud/litestream.yml
+#
+# The DB path is the Phase 5 shared-state SQLite file (see
+# apps/shared/paths.py:STATE_DB). If Phase 5 is not yet merged, the file
+# may not exist -- Litestream is safe to run anyway; it will start
+# replicating as soon as the DB appears.
+dbs:
+  - path: data/state/state.db
+    replicas:
+      - type: s3
+        endpoint: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+        bucket: ${MUSIC_DJ_STATE_BUCKET}
+        path: wal
+        access-key-id: ${R2_ACCESS_KEY_ID}
+        secret-access-key: ${R2_SECRET_ACCESS_KEY}
+        # 90-day retention per CONTEXT §168 / plan 11-01 step 4.
+        retention: 2160h

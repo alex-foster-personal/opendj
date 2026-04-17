@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd user agent for music-dj-tools cloud sync (Phase 11).
+
+     Install:
+         cp apps/cloud/launchd/com.musicdj.litestream.plist \
+             ~/Library/LaunchAgents/
+         launchctl load ~/Library/LaunchAgents/com.musicdj.litestream.plist
+
+     Uninstall:
+         launchctl unload ~/Library/LaunchAgents/com.musicdj.litestream.plist
+         rm ~/Library/LaunchAgents/com.musicdj.litestream.plist
+
+     IMPORTANT: replace /Users/YOU with your actual home directory before
+     loading. launchd does not expand ~ in ProgramArguments.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.musicdj.litestream</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd /Users/YOU/Music/music-dj-tools &amp;&amp; doppler run -p music-dj-tools -c prod -- python -m apps.cloud.replicate</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/music-dj-litestream.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/music-dj-litestream.err</string>
+</dict>
+</plist>
