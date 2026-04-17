@@ -19,7 +19,7 @@ from apps.shared.state import db as state_db
 from apps.shared.play_orders.schema import apply_play_order_migrations
 
 from .play_it import InsufficientDataError, play_it
-from .session_context import PlayedTrack, SessionContext
+from .session_context import PlayedTrack, SessionContext, load_session_context
 from .set_goal import SetGoal
 from .suggester import suggest_next
 
@@ -151,27 +151,39 @@ def _cmd_suggest_next(args: argparse.Namespace) -> int:
         return 2
 
     context: SessionContext | None = None
+    manual_recent: list[PlayedTrack] | None = None
     if args.session_json is not None:
         raw = json.loads(args.session_json.read_text(encoding="utf-8"))
         now = datetime.now(timezone.utc)
-        context = SessionContext(
-            recent=[
-                PlayedTrack(
-                    stable_id=row["stable_id"],
-                    artist=row.get("artist"),
-                    bpm=row.get("bpm"),
-                    key_camelot=row.get("key_camelot") or row.get("key"),
-                    energy=row.get("energy"),
-                    played_at=now,
-                )
-                for row in raw
-            ],
-            source="manual",
-            captured_at=now,
-        )
+        manual_recent = [
+            PlayedTrack(
+                stable_id=row["stable_id"],
+                artist=row.get("artist"),
+                bpm=row.get("bpm"),
+                key_camelot=row.get("key_camelot") or row.get("key"),
+                energy=row.get("energy"),
+                played_at=now,
+            )
+            for row in raw
+        ]
+        if args.source == "manual":
+            context = SessionContext(
+                recent=manual_recent,
+                source="manual",
+                captured_at=now,
+            )
 
     conn = _open_conn(args.db)
     try:
+        if context is None:
+            # Honor --source: auto/phase12/rekordbox_history/djay_history
+            # use the loader (which can read from state DB); manual with
+            # no session-json yields an empty manual context.
+            context = load_session_context(
+                conn=conn,
+                source=args.source,
+                manual=manual_recent,
+            )
         suggestions = suggest_next(
             conn=conn,
             current_stable_id=args.current,

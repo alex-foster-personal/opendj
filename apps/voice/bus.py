@@ -181,14 +181,28 @@ class StateBackedBus:
                 )
         return new_id
 
-    def recent(self, kind: str, limit: int = 10) -> list[dict]:
+    def recent(
+        self, kind: str, limit: int = 10, *, actor: str | None = None
+    ) -> list[dict]:
+        # Phase 14 P14-F01: by default do NOT filter by actor so the voice
+        # daemon can SEE events emitted by Phase 5/12 producers (READ_BPM,
+        # RATE_TRACK, deck_state, etc.). Callers that explicitly want only
+        # voice-published events can pass actor="voice".
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT id, payload_json FROM events "
-                "WHERE kind = ? AND actor = 'voice' "
-                "ORDER BY id DESC LIMIT ?",
-                (kind, int(limit)),
-            ).fetchall()
+            if actor is None:
+                rows = self._conn.execute(
+                    "SELECT id, payload_json FROM events "
+                    "WHERE kind = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (kind, int(limit)),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT id, payload_json FROM events "
+                    "WHERE kind = ? AND actor = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (kind, actor, int(limit)),
+                ).fetchall()
         out: list[dict] = []
         for row in reversed(rows):
             try:

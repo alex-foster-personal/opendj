@@ -300,7 +300,11 @@ def test_suggest_next_happy_path(
         called.update(kwargs)
         assert kwargs["current_stable_id"] == "A"
         assert kwargs["top_n"] == 10
-        assert kwargs["context"] is None
+        # Default --source=manual with no --session-json yields an empty
+        # manual context (post-P13-F01); previously context was None.
+        assert kwargs["context"] is not None
+        assert kwargs["context"].source == "manual"
+        assert kwargs["context"].recent == []
         return [sug]
 
     monkeypatch.setattr(cli, "suggest_next", _fake_suggest_next)
@@ -407,3 +411,45 @@ def test_open_conn_applies_play_order_migrations(state_db: Path) -> None:
         conn.close()
     # Schema names are additive — at least the play_orders root table must exist.
     assert "play_orders" in names or any("play_order" in n for n in names)
+
+
+@pytest.mark.requirement("AI-01")
+def test_suggest_next_uses_source_arg(
+    tracks_json: Path,
+    state_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AI-01 / P13-F01: ``--source`` must be threaded into the context loader.
+
+    Before the fix, ``_cmd_suggest_next`` ignored ``args.source`` entirely
+    and always produced either a manual SessionContext (when --session-json
+    was given) or context=None (otherwise). The ranker therefore never saw
+    phase12 / auto context.
+    """
+    captured = {}
+
+    # Stub the loader so we can prove it was called with the user's
+    # ``--source`` value, without needing a real Phase 12 events table.
+    def _fake_loader(*, conn, source, manual=None):
+        captured["source"] = source
+        captured["manual_passed"] = manual
+        from apps.dj_copilot.session_context import SessionContext
+        from datetime import datetime, timezone
+        return SessionContext(
+            recent=[], source=source, captured_at=datetime.now(timezone.utc)
+        )
+
+    monkeypatch.setattr(cli, "load_session_context", _fake_loader)
+    monkeypatch.setattr(cli, "suggest_next", lambda **kwargs: [])
+
+    rc = cli.main([
+        "--db", str(state_db),
+        "suggest-next",
+        "--current", "A",
+        "--library-json", str(tracks_json),
+        "--source", "phase12",
+    ])
+    assert rc == 0
+    assert captured["source"] == "phase12", (
+        "args.source was not threaded into the context loader"
+    )

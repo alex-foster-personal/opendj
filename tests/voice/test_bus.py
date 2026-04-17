@@ -208,3 +208,53 @@ class TestStateBackedBus:
             assert reads[0]["kind"] == "READ_BPM"
         finally:
             b.close()
+
+
+class TestRecentSeesAllActors:
+    """VOICE-01 / P14-F01: ``recent()`` must NOT hard-filter actor='voice'.
+
+    Phase 5/12 producers (deck readers, rating sync) emit READ_BPM /
+    RATE_TRACK rows with actor != 'voice'. Before the fix, the voice
+    daemon could not see them, breaking grammar handlers that look up
+    the most-recent deck state.
+    """
+
+    def test_voice_recent_sees_non_voice_actors(self, tmp_path, monkeypatch):
+        from apps.shared.state import paths as state_paths
+        monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
+        b = bus.StateBackedBus()
+        try:
+            # Voice publishes one event (actor='voice' is forced by the
+            # bus implementation).
+            b.publish({"kind": "READ_BPM", "slots": {}, "bpm": 128})
+            # Simulate a Phase-5/12 producer inserting directly with a
+            # different actor. We use the same sqlite file the bus owns.
+            import sqlite3 as _sqlite3, json as _json, time as _time
+            with _sqlite3.connect(str(tmp_path / "state.db")) as conn:
+                conn.execute(
+                    "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        _time.time(),
+                        "READ_BPM",
+                        "phase12-row",
+                        _json.dumps({"kind": "READ_BPM", "bpm": 130}),
+                        "phase12",
+                    ),
+                )
+                conn.commit()
+
+            rows = b.recent("READ_BPM", limit=10)
+            actors_seen_kinds = [r.get("kind") for r in rows]
+            # Must include BOTH the voice row AND the phase12 row.
+            assert len(rows) == 2, f"expected 2 rows, got {rows}"
+            assert any(r.get("bpm") == 130 for r in rows), (
+                "phase12 actor row was hidden by recent() actor filter"
+            )
+
+            # And the explicit-actor opt-in still works.
+            voice_only = b.recent("READ_BPM", limit=10, actor="voice")
+            assert len(voice_only) == 1
+            assert voice_only[0].get("bpm") == 128
+        finally:
+            b.close()

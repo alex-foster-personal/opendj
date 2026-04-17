@@ -60,30 +60,82 @@ def _cmd_say(args: argparse.Namespace) -> int:
     return result.returncode
 
 
-def _cmd_run(args: argparse.Namespace) -> int:
-    """Start the voice daemon. Plan 2 wires grammar + dispatch."""
-    # Lazy import so `run` cost is not paid for `--help`.
-    from apps.voice import bus as bus_mod, context as ctx_mod
+def _capture_transcripts(args: argparse.Namespace):
+    """Yield transcripts from the mic -> wake -> STT pipeline.
 
-    print(
-        "[voice] Phase 14 Plan 1 skeleton: the full mic loop is wired in "
-        "Plan 2 + Plan 3. Use `python -m apps.voice probe` to exercise the "
-        "grammar + dispatch pipeline without a microphone."
-    )
-    if args.echo:
-        print("[voice] --echo mode requested; requires installed audio stack.")
-    # P14-F03: honour --dry-bus and --enable-destructive on the `run`
-    # subcommand. Previously both flags were silently ignored, so an
-    # operator asking for the JSONL stub bus or for destructive mode had
-    # no way to confirm their flag landed.
-    event_bus = bus_mod.make_bus(force_stub=bool(getattr(args, "dry_bus", False)))
+    Default implementation requires the audio stack (sounddevice + a wake
+    backend + an STT client). Tests monkeypatch this generator with a
+    finite iterable so `_cmd_run` exits after a deterministic number of
+    iterations without touching real hardware.
+    """
+    from apps.voice import audio, wake, stt
+
+    sd = audio._sounddevice()
+    backend = wake.make_backend()
+    client = stt.make_client()
+    sample_rate = 16_000
+    frame_ms = 30
+    frame_len = int(sample_rate * frame_ms / 1000)
+    ring = audio.RingBuffer(capacity_frames=int(2_000 / frame_ms))  # ~2s
+    with sd.RawInputStream(
+        samplerate=sample_rate, channels=1, dtype="int16", blocksize=frame_len
+    ) as stream:
+        while True:
+            frame, _ = stream.read(frame_len)
+            ring.push(bytes(frame))
+            frames = ring.pop_all()
+            if wake.triggered(backend, frames):
+                pcm = b"".join(frames)
+                t = client.transcribe(pcm, sample_rate_hz=sample_rate)
+                if t and getattr(t, "text", "").strip():
+                    yield t.text
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Start the voice daemon: wake-word -> STT -> grammar -> dispatch."""
+    from apps.voice import grammar, bus, actions, context as ctx_mod
+
+    # P14-F03 (retained from master #102): honour --dry-bus and
+    # --enable-destructive on the `run` subcommand. Previously both flags
+    # were silently ignored, so an operator asking for the JSONL stub bus
+    # or for destructive mode had no way to confirm their flag landed.
+    event_bus = bus.make_bus(force_stub=bool(getattr(args, "dry_bus", False)))
     ctx = ctx_mod.VoiceContext.from_env(event_bus=event_bus)
     if getattr(args, "enable_destructive", False):
         ctx.destructive = True
+    registry = actions.default_registry()
+
     print(
-        f"[voice] context resolved: mute_until={ctx.mute_until!r} "
-        f"destructive={ctx.destructive} dry_bus={bool(getattr(args, 'dry_bus', False))}"
+        f"[voice] daemon starting (mute_until={ctx.mute_until!r} "
+        f"destructive={ctx.destructive} dry_bus={bool(getattr(args, 'dry_bus', False))})"
     )
+    if args.echo:
+        print("[voice] --echo mode requested; transcripts will be echoed.")
+
+    max_iters = getattr(args, "max_iters", None)
+    iters = 0
+    try:
+        for transcript in _capture_transcripts(args):
+            iters += 1
+            if args.echo:
+                print(f"[voice] heard: {transcript!r}")
+            intent = grammar.parse(transcript)
+            if intent is None:
+                print(f"[voice] grammar miss: {transcript!r}")
+            else:
+                response = registry.dispatch(intent, ctx)
+                print(
+                    f"[voice] {intent.kind} -> {response.reply!r} "
+                    f"(published={response.published})"
+                )
+            if max_iters is not None and iters >= max_iters:
+                break
+    except KeyboardInterrupt:
+        print("[voice] interrupted; shutting down")
+    except RuntimeError as exc:
+        # Audio stack missing (sounddevice/whisper not installed).
+        print(f"[voice] daemon error: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -184,6 +236,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="allow SAVE_CUE / RATE_TRACK to publish non-dry-run events",
     )
     sp.add_argument("--dry-bus", action="store_true", help="force the JSONL stub bus")
+    sp.add_argument(
+        "--max-iters",
+        type=int,
+        default=None,
+        help="exit after N dispatched transcripts (smoke-test / launcher hook)",
+    )
     sp.add_argument(
         "--allow-low-memory",
         action="store_true",

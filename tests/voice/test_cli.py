@@ -83,8 +83,36 @@ class TestSay:
 
 
 class TestRun:
-    def test_run_skeleton_exits_zero(self, capsys):
-        rc = cli.main(["run"])
+    def test_run_starts_daemon(self, capsys, monkeypatch):
+        """VOICE-01 / P14-F02: ``python -m apps.voice run`` must actually
+        drive the wake -> grammar -> dispatch loop, not just print a banner.
+
+        We monkeypatch ``_capture_transcripts`` with a finite generator so
+        the daemon exits after one iteration without touching the mic.
+        """
+        seen: list[str] = []
+
+        def fake_capture(args):
+            yield "find daft punk"
+
+        monkeypatch.setattr(cli, "_capture_transcripts", fake_capture)
+        # Stub out dispatch so we don't depend on real action handlers.
+        from apps.voice import actions as actions_mod
+
+        class _RecResp:
+            reply = "ok"
+            published = False
+            meta: dict = {}
+            dry_run = False
+
+        def _fake_dispatch(self, intent, ctx):
+            seen.append(intent.kind)
+            return _RecResp()
+
+        monkeypatch.setattr(actions_mod.Registry, "dispatch", _fake_dispatch)
+
+        rc = cli.main(["run", "--dry-bus", "--max-iters", "1"])
         out = capsys.readouterr().out
-        assert rc == 0
-        assert "Plan 1 skeleton" in out or "context resolved" in out
+        assert rc == 0, out
+        assert "daemon starting" in out
+        assert seen == ["SEARCH"], seen
