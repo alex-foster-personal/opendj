@@ -190,3 +190,52 @@ def test_cli_live_requires_i_understand(
     rc = tags_apply.main([str(dst), "--live"])
     assert rc == 2
     assert "i-understand-the-risks" in capsys.readouterr().err
+
+
+@pytest.mark.requirement("META-03")
+def test_allow_app_running_keeps_backup_rail(tmp_path: Path) -> None:
+    """`allow_app_running` must only disable the process-check rail.
+
+    The backup rail (copy-before-write under ``backup_root``) must still
+    fire on every live write. Regression for codex finding P07-01.
+    """
+    src = FIXTURE_ROOT / "src-320.mp3"
+    dst = tmp_path / "Artist - Title.mp3"
+    shutil.copy2(src, dst)
+
+    backup_root = tmp_path / "backups"
+    res = tags_apply.apply_one(
+        dst,
+        backup_root=backup_root,
+        allow_app_running=True,
+        dry_run=False,
+        fetch_rb=lambda p: TagRead(title="Unified", artist="UArt"),
+    )
+    assert res.error is None, res.error
+    assert res.backup is not None
+    assert res.backup.exists()
+    assert list(backup_root.rglob("*.mp3"))
+
+
+@pytest.mark.requirement("META-03")
+def test_allow_app_running_rejected_outside_pytest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`allow_app_running=True` must raise when not running under pytest.
+
+    It is a test-only escape hatch; production callers must not bypass
+    the running-app safety check. Regression for codex finding P07-01.
+    """
+    src = FIXTURE_ROOT / "src-320.mp3"
+    dst = tmp_path / "x.mp3"
+    shutil.copy2(src, dst)
+
+    monkeypatch.setattr(tags_apply, "_in_pytest", lambda: False)
+
+    with pytest.raises(RuntimeError, match="test-only"):
+        tags_apply.apply_one(
+            dst,
+            backup_root=tmp_path / "backups",
+            allow_app_running=True,
+            dry_run=True,
+        )

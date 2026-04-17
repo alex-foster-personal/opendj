@@ -178,7 +178,7 @@ def _djay_build_index() -> Optional[dict[str, TagRead]]:
             title=track.title or None,
             artist=track.artist or None,
             isrc=track.isrc or None,
-            rating=track.rating if track.rating else None,
+            rating=track.rating if track.rating is not None else None,
         )
     return index
 

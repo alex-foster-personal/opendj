@@ -20,6 +20,7 @@ import argparse
 import datetime as _dt
 import hashlib
 import shutil
+import os
 import sqlite3
 import subprocess
 import sys
@@ -54,6 +55,11 @@ def _icloud_placeholder(path: Path) -> bool:
     """True if the file is an iCloud not-yet-downloaded placeholder."""
     sibling = path.with_name("." + path.name + ".icloud")
     return sibling.exists()
+
+
+def _in_pytest() -> bool:
+    """True when running under pytest (used to gate test-only flags)."""
+    return "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules
 
 
 def _is_app_running(name: str) -> bool:
@@ -125,6 +131,11 @@ def apply_one(
     if _icloud_placeholder(path):
         return ApplyResult(
             path=path, applied={}, backup=None, error="iCloud placeholder"
+        )
+    if allow_app_running and not _in_pytest():
+        raise RuntimeError(
+            "allow_app_running=True is a test-only escape hatch and must not be "
+            "used outside pytest; refusing to bypass the running-app safety check."
         )
     if not allow_app_running:
         if _is_app_running("rekordbox"):
