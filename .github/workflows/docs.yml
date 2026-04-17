@@ -35,7 +35,11 @@ jobs:
 
   deploy:
     needs: build
+    # Deploy is best-effort: GitHub Pages may not be enabled at the repo level
+    # yet (actions/deploy-pages returns 404 until Settings -> Pages is turned on).
+    # Strict mkdocs build above is the CI gate; deploy failing must not block master.
     if: github.ref == 'refs/heads/master'
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -43,4 +47,5 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
