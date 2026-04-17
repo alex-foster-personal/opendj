@@ -77,7 +77,13 @@ def _rb_rows(rb_db: Any) -> Iterator[dict[str, Any]]:
             ("spotify:", "tidal:", "http://", "https://")
         )
         bpm_raw = _safe_int(row.BPM)
-        bpm_value = bpm_raw / 100.0 if bpm_raw else None
+        # Rekordbox stores BPM as an int*100 (e.g. 12800 = 128.0 BPM). A raw
+        # value of 0 is ambiguous (unanalysed tracks and genuine 0.0 share
+        # the encoding) but we preserve it as 0.0 rather than dropping to
+        # None so downstream reporting can distinguish "known zero" from
+        # "missing". Only a None row value (column absent / non-numeric)
+        # maps back to None. See .planning/FAN-OUT-V2-TRIAGE-2026-04-17.md.
+        bpm_value = bpm_raw / 100.0 if bpm_raw is not None else None
         length_s = _safe_int(getattr(row, "Length", None))
         duration_ms = length_s * 1000 if length_s else None
 
