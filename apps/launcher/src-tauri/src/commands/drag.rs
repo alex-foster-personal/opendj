@@ -14,7 +14,8 @@
 use std::path::{Path, PathBuf};
 
 use launcher_drag_core::{
-    Dispatcher, DragError, DragEvent, DragOutcome, HostBridge, Track, Vendor,
+    DjayAdapter, Dispatcher, DragError, DragEvent, DragOutcome, HostBridge,
+    RekordboxAdapter, SeratoAdapter, Track, TraktorAdapter, Vendor,
 };
 
 use serde::Deserialize;
@@ -133,6 +134,55 @@ fn running_app_bundle_ids_impl() -> Vec<String> {
     Vec::new()
 }
 
+// ---------------------------------------------- launcher data-dir resolver
+
+/// Resolve the absolute launcher data directory under the repo root
+/// (`<repo>/data/launcher`). Mirrors `state::repo_root()` so backups,
+/// reversal scripts, and the audit log land in a fixed location regardless
+/// of the Tauri process's current working directory at drag time. This
+/// closes Phase 18 REVIEW [I2] (adapter defaults were CWD-relative).
+fn launcher_data_dir() -> PathBuf {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo = manifest
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    repo.join("data").join("launcher")
+}
+
+/// Build the `Dispatcher` used by `start_track_drag`, with the Rekordbox and
+/// Traktor adapters configured to write backups/reversals/audit under the
+/// absolute `<repo>/data/launcher/` tree instead of inheriting the drag-core
+/// CWD-relative defaults. `xml_path` / `nml_path` are intentionally left as
+/// `None` so fallback-1 no-ops until Phase 17 wiring populates them; the
+/// dispatcher will drop to clipboard in that case.
+fn build_dispatcher_with_absolute_paths() -> Dispatcher {
+    let data = launcher_data_dir();
+    let backup_dir = data.join("backups");
+    let reversal_dir = data.join("reversals");
+    let audit_log = Some(data.join("audit.jsonl"));
+
+    let rekordbox = RekordboxAdapter::default().with_sidecar_dirs(
+        backup_dir.clone(),
+        reversal_dir.clone(),
+        audit_log.clone(),
+    );
+    let traktor = TraktorAdapter::default().with_sidecar_dirs(
+        backup_dir,
+        reversal_dir,
+        audit_log,
+    );
+
+    Dispatcher::new(vec![
+        Box::new(DjayAdapter::new()),
+        Box::new(rekordbox),
+        Box::new(SeratoAdapter::new()),
+        Box::new(traktor),
+    ])
+}
+
 // -------------------------------------------------------- tauri command
 
 #[derive(Debug, Deserialize)]
@@ -178,7 +228,7 @@ pub async fn start_track_drag(
     let host = TauriHostBridge::new(window);
     let override_v: Option<Vendor> = override_vendor.map(Into::into);
 
-    match Dispatcher::default_set().dispatch(&host, &track, override_v) {
+    match build_dispatcher_with_absolute_paths().dispatch(&host, &track, override_v) {
         Ok(DragOutcome::Started) => Ok("started".into()),
         Ok(DragOutcome::Fallback1Taken { detail }) => Ok(format!("fallback1:{detail}")),
         Ok(DragOutcome::Fallback2Taken) => Ok("fallback2".into()),
@@ -236,5 +286,19 @@ mod tests {
     #[test]
     fn running_app_bundle_ids_is_empty_off_macos() {
         assert!(running_app_bundle_ids_impl().is_empty());
+    }
+
+    #[test]
+    fn launcher_data_dir_is_absolute_and_under_data() {
+        // Guard against regressing REVIEW [I2]: sidecar paths must resolve to
+        // an absolute path under `<repo>/data/launcher`, never a CWD-relative
+        // `data/launcher`.
+        let d = launcher_data_dir();
+        assert!(d.is_absolute(), "expected absolute path, got {d:?}");
+        let s = d.to_string_lossy();
+        assert!(
+            s.ends_with("data/launcher") || s.ends_with("data\\launcher"),
+            "unexpected data dir tail: {s}"
+        );
     }
 }

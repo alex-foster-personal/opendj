@@ -34,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _build_writers() -> list:
+def _build_writers(*, live: bool = False) -> list:
     """Return production playlist writers (Phase 3 integration).
 
     Constructs :class:`apps.smartlists.rb_writer.RBPlaylistWriter` and
@@ -42,12 +42,21 @@ def _build_writers() -> list:
     lazy factories. A factory that can't reach its vendor DB returns
     ``None``; we filter those out so callers see only writers that are
     actually usable.
+
+    ``live=True`` is forwarded to ``build_rb_writer`` so the RB writer
+    enforces the Phase 1 pgrep + backup safety rails before it mutates
+    ``master.db``. The djay writer relies on its own per-op transaction
+    rails and does not need an extra flag.
     """
     from apps.smartlists.djay_writer import build_djay_writer
     from apps.smartlists.rb_writer import build_rb_writer
 
     writers: list = []
-    for factory in (build_rb_writer, build_djay_writer):
+
+    def _rb_factory():
+        return build_rb_writer(live=live)
+
+    for factory in (_rb_factory, build_djay_writer):
         try:
             w = factory()
         except Exception:
@@ -72,7 +81,7 @@ def main(argv: list[str] | None = None, *, out=None) -> int:
 
     repo, conn = build_smartlists_repo(args.db)
     try:
-        materializer = Materializer(repo, _build_writers())
+        materializer = Materializer(repo, _build_writers(live=do_live))
         try:
             return _run(args, repo, materializer, stream, do_dry=do_dry,
                         do_live=do_live)
