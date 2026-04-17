@@ -46,9 +46,23 @@ def resolve_segment_path(
         raise PathTraversalError(f"disallowed chars in segment name {segment_name!r}")
     if not (segment_name.startswith("audio_") and segment_name.endswith(".mp3")):
         raise PathTraversalError(f"unexpected segment name {segment_name!r}")
+    # Also validate session_id against the same traversal primitives; sibling
+    # list_segments was hardened in commit cabebb9 but this function missed
+    # the fix. See .planning/SECURITY-RED-TEAM-2026-04-17.md finding 1.
+    if "/" in session_id or "\\" in session_id or ".." in session_id:
+        raise PathTraversalError(f"disallowed chars in session_id {session_id!r}")
 
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    root_resolved = root.resolve()
     session_dir = (root / session_id).resolve()
+    # Defensive: reject any session_id that escapes the sets root even if the
+    # substring filter above is bypassed (e.g. absolute path session_id).
+    try:
+        session_dir.relative_to(root_resolved)
+    except ValueError as exc:
+        raise PathTraversalError(
+            f"session_id {session_id!r} escapes {root_resolved}"
+        ) from exc
     candidate = (session_dir / segment_name).resolve()
     try:
         candidate.relative_to(session_dir)

@@ -139,3 +139,31 @@ def test_cache_freshness_honours_ttl(fake_cache_dir: Path) -> None:
     before = len(fake.call_log)
     client.fetch_playlist("37i9dQZF1DXcBWIGoYBM5M", use_cache=True)
     assert len(fake.call_log) > before
+
+
+@pytest.mark.requirement("CAT-01")
+def test_fetch_playlist_rejects_traversal_id(fake_cache_dir: Path) -> None:
+    """Regression for SECURITY-RED-TEAM finding 2 (MEDIUM).
+
+    A malicious playlist_id must never produce a cache path outside
+    the sandboxed cache dir. The fetch must raise ValueError before
+    any filesystem write happens.
+    """
+    fake = FakeSpotipy(meta=make_meta(), items_pages=[[make_track(spotify_id="t1")]])
+    client = SpotifyClient(fake, cache_dir=fake_cache_dir)
+    bad_ids = [
+        "../../evil",
+        "../../etc/passwd",
+        "/absolute/path",
+        "not\\windows",
+        "has space",
+        "has.dot",
+        "-leadingdash",
+        "has_underscore",
+        "",
+    ]
+    for bad in bad_ids:
+        with pytest.raises(ValueError):
+            client.fetch_playlist(bad, use_cache=False)
+    # And the sandbox dir contains no leaked files.
+    assert list(fake_cache_dir.iterdir()) == []

@@ -198,3 +198,27 @@ def test_api_audio_404_for_missing_segment(api_test_client):
     _seed_api_session(sets_root)
     resp = client.get("/api/sets/s1/audio/audio_missing.mp3")
     assert resp.status_code == 404
+
+
+@pytest.mark.requirement("SET-03")
+def test_api_audio_rejects_session_id_traversal(api_test_client):
+    """Regression for SECURITY-RED-TEAM finding 1 (HIGH).
+
+    A crafted session_id with encoded traversal sequences must never reach
+    a FileResponse, even when a manifest.json exists in the traversed dir.
+    """
+    client, sets_root = api_test_client
+    _seed_api_session(sets_root)
+    # Craft a sibling dir that contains both a manifest.json and a valid
+    # audio_*.mp3 outside SETS_DIR; this is what would let the bug turn into
+    # local file disclosure if resolve_segment_path were bypassed.
+    outside = sets_root.parent / "outside-sets"
+    outside.mkdir(parents=True, exist_ok=True)
+    (outside / "manifest.json").write_text("{}", encoding="utf-8")
+    (outside / "audio_2026-04-17T21-30-00.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 512)
+    # Percent-encoded ..%2F path still must not return a 200 FileResponse.
+    resp = client.get(
+        "/api/sets/..%2F..%2Fetc%2Fpasswd/audio/audio_2026-04-17T21-30-00.mp3"
+    )
+    assert resp.status_code != 200
+    assert resp.status_code in {400, 404}

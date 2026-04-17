@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,21 @@ __all__ = [
 ]
 
 _CACHE_TTL_SECONDS: int = 24 * 60 * 60
+
+# Spotify playlist IDs are base62; accept alphanumerics plus dash to stay
+# compatible with legacy/test fixtures while still blocking traversal
+# primitives (``/``, ``\``, ``..``, leading ``.``, absolute paths). See
+# .planning/SECURITY-RED-TEAM-2026-04-17.md finding 2.
+_SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-]{0,63}$")
+
+
+def _validate_playlist_id(playlist_id: str) -> str:
+    if not isinstance(playlist_id, str) or not _SPOTIFY_ID_RE.fullmatch(playlist_id):
+        raise ValueError(
+            f"invalid Spotify playlist_id {playlist_id!r}: "
+            "expected alphanumeric + dash, length 1..64"
+        )
+    return playlist_id
 
 TOKEN_CACHE_PATH: Path = Path("~/.music-dj-tools/spotify-token.json").expanduser()
 CACHE_DIR: Path = DATA_DIR / "spotify" / "cache"
@@ -107,6 +123,8 @@ class SpotifyClientProtocol(Protocol):
 # ---------------------------------------------------------------------------
 
 def _cache_path(playlist_id: str, cache_dir: Path) -> Path:
+    # Defense in depth: refuse to build a cache path for an unvalidated id.
+    _validate_playlist_id(playlist_id)
     return cache_dir / f"{playlist_id}.json"
 
 
@@ -233,6 +251,7 @@ class SpotifyClient:
         use_cache: bool = True,
     ) -> SpotifyPlaylist:
         """Fetch playlist metadata + every track; consult 24 h cache first."""
+        _validate_playlist_id(playlist_id)
         path = _cache_path(playlist_id, self._cache_dir)
         if use_cache and _cache_fresh(path, self._cache_ttl):
             return _parse_playlist_payload(_read_cache(path))

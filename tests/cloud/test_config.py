@@ -56,3 +56,28 @@ def test_from_env_raises_on_empty_value():
     env["R2_ACCOUNT_ID"] = ""
     with pytest.raises(MissingEnvError):
         CloudConfig.from_env(env)
+
+
+@pytest.mark.requirement("CAT-04")
+def test_repr_masks_secret_access_key():
+    """Regression for SECURITY-RED-TEAM finding 3 (MEDIUM).
+
+    The default dataclass repr would include the secret verbatim; any
+    logging or exception path that stringifies the config must not leak.
+    """
+    secret = "AKIA-super-secret-do-not-leak-this-value"
+    env = {
+        "R2_ACCOUNT_ID": "acct-xyz",
+        "R2_ACCESS_KEY_ID": "AKIATESTIDHERE",
+        "R2_SECRET_ACCESS_KEY": secret,
+    }
+    cfg = CloudConfig.from_env(env)
+    rendered = repr(cfg)
+    assert secret not in rendered
+    assert "AKIATESTIDHERE" not in rendered
+    assert "***" in rendered
+    # And str() goes through the same path.
+    assert secret not in str(cfg)
+    assert secret not in f"{cfg}"
+    # f-string with !r must also be masked.
+    assert secret not in f"{cfg!r}"

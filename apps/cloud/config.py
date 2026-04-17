@@ -33,12 +33,17 @@ class MissingEnvError(RuntimeError):
     """Raised when a required environment variable is missing."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class CloudConfig:
     """Runtime config for the cloud-sync daemon.
 
     Bind host defaults to ``127.0.0.1`` per D5 (CAT-05b). Any override is
     surfaced to the web UI via a warning banner.
+
+    The default dataclass ``__repr__`` would include every field, which
+    would leak ``R2_SECRET_ACCESS_KEY`` into any log or traceback that
+    stringifies the instance. We opt out and provide a masked repr; see
+    .planning/SECURITY-RED-TEAM-2026-04-17.md finding 3.
     """
 
     r2_account_id: str
@@ -53,6 +58,23 @@ class CloudConfig:
     def r2_endpoint(self) -> str:
         """S3-compatible endpoint URL used by aioboto3 / Litestream."""
         return f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
+
+    def __repr__(self) -> str:
+        # Mask secret + access key id so the value never shows up even in a
+        # partial leak. Show only that a non-empty secret was loaded.
+        masked = "***" if self.r2_secret_access_key else ""
+        akid = self.r2_access_key_id
+        akid_masked = f"{akid[:4]}***" if len(akid) > 4 else ("***" if akid else "")
+        return (
+            "CloudConfig("
+            f"r2_account_id={self.r2_account_id!r}, "
+            f"r2_access_key_id={akid_masked!r}, "
+            f"r2_secret_access_key={masked!r}, "
+            f"state_bucket={self.state_bucket!r}, "
+            f"audio_bucket={self.audio_bucket!r}, "
+            f"hostname={self.hostname!r}, "
+            f"bind_host={self.bind_host!r})"
+        )
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "CloudConfig":
