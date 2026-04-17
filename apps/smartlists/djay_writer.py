@@ -90,12 +90,47 @@ class DjayPlaylistWriter:
     state_conn: sqlite3.Connection
     vendor: str = "djay"
     leaf_type_byte: int | None = None
+    # P1-B self-guard: callers that have already opened a
+    # ``apps.sync.safety.LiveWriteSession`` (rails 1-3 run) may set this
+    # to the active session — or any truthy sentinel — to acknowledge the
+    # harness is wrapping this writer. If left None, ``_apply_op`` will
+    # inline-re-run the djay + Rekordbox pgrep gate before every write.
+    safety_session: "object | None" = None
 
     def _open_djay(self) -> sqlite3.Connection:
         return sqlite3.connect(
             f"file:{self.djay_db_path}?mode=rwc", uri=True,
             isolation_level=None,
         )
+
+    def _assert_safe_to_write(self) -> None:
+        """Defense-in-depth rail 2 re-check before opening rwc to djay.
+
+        Forensics audit PR #105 flagged that every ``_open_djay`` call
+        path relied solely on caller-side safety rails
+        (``apps.smartlists.writers.SafePlaylistWriter`` +
+        ``safe_writer_session``). A future direct caller of
+        :class:`DjayPlaylistWriter` could silently bypass the process
+        gate and write into ``MediaLibrary.db`` while djay Pro (or
+        Rekordbox for paranoia) is running, corrupting the DB on the
+        next CloudKit sync.
+        """
+        if self.safety_session is not None:
+            return  # caller has already run the full harness
+        from apps.sync.safety import SafetyAbort, assert_target_not_running
+
+        try:
+            assert_target_not_running("djay")
+            assert_target_not_running("rekordbox")
+        except SafetyAbort as exc:
+            from apps.sync.playlist_apply import PlaylistApplyError
+
+            raise PlaylistApplyError(
+                f"DjayPlaylistWriter self-guard refuses live write: {exc}. "
+                "Wrap this writer in apps.smartlists.writers.SafePlaylistWriter "
+                "+ safe_writer_session(), or set safety_session= to an "
+                "active LiveWriteSession to acknowledge the harness ran."
+            ) from exc
 
     def playlist_exists(self, name: str) -> bool:
         con = self._open_djay()
@@ -125,6 +160,7 @@ class DjayPlaylistWriter:
             _apply_single_op, PlaylistApplyError,
         )
 
+        self._assert_safe_to_write()
         con = self._open_djay()
         try:
             con.execute("BEGIN IMMEDIATE")
@@ -148,6 +184,9 @@ class DjayPlaylistWriter:
             con.close()
 
     def create_playlist(self, name: str, track_ids: list[str]) -> None:
+        # P1-B self-guard: refuse BEFORE any resolution work so a future
+        # direct caller cannot silently race a live djay / Rekordbox.
+        self._assert_safe_to_write()
         uuids = self._resolve_or_raise(list(track_ids))
         op = {
             "rb_id": "",
@@ -161,6 +200,8 @@ class DjayPlaylistWriter:
     def apply_diff(
         self, name: str, added: list[str], removed: list[str],
     ) -> None:
+        # P1-B self-guard: refuse BEFORE opening rwc / reading djay DB.
+        self._assert_safe_to_write()
         con = self._open_djay()
         try:
             found = _find_djay_playlist(con, name)
