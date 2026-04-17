@@ -198,18 +198,19 @@ def export_library(
     export to open-dj format."""
     from apps.shared import djay_db
 
-    con = djay_db.sqlite3.connect(str(source_path))
-    try:
-        tracks = [from_djaytrack(t) for t in djay_db.iter_tracks(con)]
-        playlists = [
-            DjayPlaylistInput(
-                uuid=p.uuid, name=p.name, parent_uuid=p.parent_uuid,
-                track_uuids=list(p.track_uuids),
-            )
-            for p in djay_db.iter_playlists(con)
-        ]
-    finally:
-        con.close()
+    # Delegate connection management to apps.shared.djay_db. The
+    # iter_tracks / iter_playlists helpers each open a read-only
+    # connection via ``_connect_ro`` (``mode=ro&immutable=1``) so the
+    # adapter preserves those PRAGMAs. Do not call ``sqlite3.connect``
+    # directly here or the RO guarantee is silently dropped.
+    tracks = [from_djaytrack(t) for t in djay_db.iter_tracks(source_path)]
+    playlists = [
+        DjayPlaylistInput(
+            uuid=p.uuid, name=p.name, parent_uuid=p.parent_uuid,
+            track_uuids=list(p.track_uuids),
+        )
+        for p in djay_db.iter_playlists(source_path)
+    ]
 
     result = build_library(tracks, playlists, include_cues=include_cues)
 

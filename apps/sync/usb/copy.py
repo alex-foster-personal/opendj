@@ -222,7 +222,11 @@ def delete_one(op: Op) -> CopyResult:
 
 
 def rename_one(op: Op, *, from_path: Path) -> CopyResult:
-    """Rename ``from_path -> op.dst`` in-place (remediate-drift)."""
+    """Rename ``from_path -> op.dst`` in-place (remediate-drift).
+
+    ``backup_path`` is set to ``from_path`` so the reversal script can emit
+    the inverse ``mv`` that restores the original location.
+    """
     try:
         op.dst.parent.mkdir(parents=True, exist_ok=True)
         os.replace(from_path, op.dst)
@@ -232,6 +236,7 @@ def rename_one(op: Op, *, from_path: Path) -> CopyResult:
             ok=True,
             actual_hash=op.expected_hash or "",
             dst_size=op.dst.stat().st_size,
+            backup_path=from_path,
         )
     except OSError as exc:
         return CopyResult(

@@ -55,6 +55,18 @@ def test_reversal_records_copy_delete_rename(tmp_path) -> None:
     log.append(
         CopyResult(op=_op("delete", dst), ok=True, actual_hash="", dst_size=0)
     )
+    # rename: must emit `mv dst -> backup_path` inverse. Regression for [C1].
+    rename_new = tmp_path / "new" / "a.mp3"
+    rename_old = tmp_path / "old" / "a.mp3"
+    log.append(
+        CopyResult(
+            op=_op("rename", rename_new, src=rename_old),
+            ok=True,
+            actual_hash="",
+            dst_size=1,
+            backup_path=rename_old,
+        )
+    )
     # failed op emits comment only
     log.append(
         CopyResult(
@@ -71,6 +83,9 @@ def test_reversal_records_copy_delete_rename(tmp_path) -> None:
     assert "set -euo pipefail" in text
     assert "profile:    p" in text
     assert "drive_uuid: UUID" in text
+    # Regression for [C1]: rename op must produce an inverse `mv` line.
+    # shlex.quote returns safe paths unquoted, so match bare path tokens.
+    assert f"mv -v -- {rename_new} {rename_old}" in text
     # bash -n validates the generated script.
     ok, err = verify_syntax(log.path)
     assert ok, err

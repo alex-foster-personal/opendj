@@ -157,3 +157,6 @@ def test_rename_one_moves_file(tmp_path) -> None:
     assert r.ok
     assert new_dst.exists()
     assert not src.exists()
+    # Regression for [C1]: rename_one must set backup_path so the reversal
+    # script can emit an inverse `mv` restoring the original location.
+    assert r.backup_path == src
