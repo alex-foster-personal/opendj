@@ -1,0 +1,37 @@
+# Phase 6 analysis config.  Tunable without code edits.
+# Provenance: 06-01-PLAN §Step 1 + 06-02-PLAN §Step 1.
+
+analyzer:
+  max_track_minutes: 30
+  sample_rate_hz: 44100
+  mono: true
+
+energy:
+  # RMS-dBFS upper bounds -> 1..10 energy bins.  Genre-sensitive.
+  rms_dbfs_bins:
+    - [-40.0, 1]
+    - [-35.0, 2]
+    - [-30.0, 3]
+    - [-26.0, 4]
+    - [-22.0, 5]
+    - [-18.0, 6]
+    - [-14.0, 7]
+    - [-10.0, 8]
+    - [-6.0, 9]
+    - [0.0, 10]
+
+beatgrid_detector:
+  max_downbeat_transient_gap_beats: 2.0
+  max_bpm_drift_pct: 0.3
+  cue_grid_tolerance_ms: 50
+
+auto_cues:
+  max_cues_per_track: 8
+  bin_count: 8
+  min_cue_gap_ms: 100
+  downbeat_snap_tolerance_ms: 60
+  label_set:
+    - intro
+    - drop
+    - break
+    - outro
