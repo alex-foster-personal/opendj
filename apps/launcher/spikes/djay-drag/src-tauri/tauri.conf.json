@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "djay-drag-spike",
+  "version": "0.0.1",
+  "identifier": "com.musicdjtools.launcher.spikes.djaydrag",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "djay drag spike",
+        "width": 420,
+        "height": 220,
+        "resizable": true,
+        "visible": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "app",
+    "icon": ["icons/128x128.png"]
+  }
+}
