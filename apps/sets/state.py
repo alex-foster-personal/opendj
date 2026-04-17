@@ -16,7 +16,7 @@ is created as ``set_events`` (instead of ``events``) to avoid
 colliding with Phase 5's own ``events`` table, and all reads/writes
 are routed through that aliased name.
 
-TODO(phase-5-full-migration): Option B would migrate the session + event
+NOTE(phase-5-full-migration): Option B would migrate the session + event
 timeline into Phase 5's shared schema (events via kind='set_event' on
 the main events table, sets via a new Phase 5 migration). That is the
 longer-term target; this Option A keeps Phase 12 shippable today while
