@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+Changes since `v1.0-rc1` tag. Covers Wave 5, Wave 6, and Wave 7 follow-up work on CLI surface, USB export diff tooling, docs site, CI, and governance.
+
+### Added
+- OPEN-01 + OPEN-03: `open-dj-tool` CLI gains `export`, `import`, and `conformance` subcommands (Phase 15).
+- OPEN-03b: MkDocs site scaffold plus `docs.yml` GitHub Actions workflow for Pages publishing (Phase 16).
+- USB / Pioneer sync: promoted the ad-hoc diff script to a typed `differ` module with a public API.
+- USB / Pioneer sync: `diff-matrix` CLI and parametrized pytest harness that runs the differ across N fixtures.
+- Appendix B conformance: authored the remaining 12 conformance fixtures (04-15).
+
+### Changed
+- Governance pass for the v1 release: audited and enhanced `SECURITY.md`, the Code of Conduct, `CONTRIBUTING.md`, and `NOTICE`.
+- Anti-slop audit: applied 7 targeted fixes plus a systemic sweep across generated docs.
+
+### Fixed
+- Phase 4 `apply_ratings --live` now routes to the LIVE database paths instead of the staging copy (resolves #1).
+- Phase 16 MkDocs strict link validation relaxed for cross-repo references so the docs build stays green (OPEN-03b).
+- CI: Pages deploy step is now best-effort until repository Pages is enabled, so the workflow no longer fails the pipeline.
+
+### Documentation
+- Phase 10.1 Plan 01 rewritten as a delivery plan now that the spike has landed.
+- Captured the SQLite WAL sidecar bug surfaced by the USB writer round-trip in `solutions/`.
+- Published diff-matrix results across all available USB export fixtures.
+- Forensics pass 2 on project health after Wave 5.
+- Anti-slop review of generated content and a re-audit of Wave 5 fix-code-review claims.
+- Closed the export / import / conformance CLI deferrals (Phases 15, 16) and the OPEN-03b MkDocs deferral in their SUMMARY docs.
+- Swept pending todos post Wave 5 fanout.
+
 ## [1.0.0-rc1] - 2026-04-17
 
 First release candidate of music-dj-tools v1. Tag target: `v1.0-rc1` on `master`. CI green with 1834 pytest tests passing.
