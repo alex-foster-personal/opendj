@@ -52,9 +52,13 @@ def open_rw(
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
     conn = sqlite3.connect(str(target), isolation_level=None)
-    _apply_rw_pragmas(conn)
-    if apply_schema:
-        _schema.apply_migrations(conn)
+    try:
+        _apply_rw_pragmas(conn)
+        if apply_schema:
+            _schema.apply_migrations(conn)
+    except Exception:
+        conn.close()
+        raise
     return conn
 
 
