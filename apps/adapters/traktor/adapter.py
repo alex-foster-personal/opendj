@@ -52,9 +52,18 @@ class TraktorAdapterOptions:
 
 
 def _stable_track_id(file_path: str) -> str:
-    """Phase 16 placeholder for ``apps.shared.stable_id.stable_id_for``.
+    """Per-adapter stable track ID (Phase 16, open-dj v0.1).
 
-    TODO(phase-5): swap to the real helper once Phase 5 ships.
+    Phase 5 ships ``apps.shared.state.ids.stable_id`` with a different
+    shape: it returns ``(sha1_hex, tier)`` keyed on ISRC / fingerprint /
+    path+mtime, which is the archival dedup key. This adapter instead
+    needs a short vendor-tagged ID that is stable across round-trips
+    through a single ``collection.nml`` (no mtime available at read
+    time, no ISRC on many Traktor entries). We therefore keep a local
+    SHA-1 over the file path with a ``traktor_`` prefix so IDs are
+    visually disambiguated from the Serato adapter and from the
+    archival stable_id. A cross-adapter helper is not planned; Phase 7
+    dedup re-keys to the archival ID when better signals exist.
     """
     return "traktor_" + hashlib.sha1(file_path.encode("utf-8")).hexdigest()[:16]
 
