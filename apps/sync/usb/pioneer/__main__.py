@@ -217,6 +217,46 @@ def _cmd_write(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_diff_matrix(args: argparse.Namespace) -> int:
+    """Run the structural diff matrix across all discoverable fixtures.
+
+    Writes a markdown matrix (to ``--markdown`` or stdout) and an
+    optional JSON file (``--json``). Exit code is ``0`` when every
+    available fixture's rows are OK or skipped, and ``2`` when any
+    fixture shows an unexpected divergence (so this can drop into CI
+    directly). ``error`` rows also map to exit code ``2`` because they
+    indicate a fixture the user expected to diff but couldn't.
+    """
+    from .differ import (
+        render_matrix_json,
+        render_matrix_markdown,
+        run_matrix,
+    )
+
+    rows = run_matrix(
+        fixture_glob=args.fixture_glob,
+        include_overlay=not args.no_overlay,
+    )
+    md = render_matrix_markdown(rows)
+    if args.markdown:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(md, encoding="utf-8")
+        print(f"[i] Wrote {args.markdown}", file=sys.stderr)
+    else:
+        sys.stdout.write(md)
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(render_matrix_json(rows), encoding="utf-8")
+        print(f"[i] Wrote {args.json}", file=sys.stderr)
+
+    bad = [
+        r for r in rows
+        if r.status not in ("ok", "skipped")
+        or r.verdict == "unexpected_divergence"
+    ]
+    return 2 if bad else 0
+
+
 def _cmd_agent_export(args: argparse.Namespace) -> int:
     # Lazy import: the agent module pulls in anthropic + Quartz which
     # are not needed for the read subcommand.
@@ -375,6 +415,47 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable INFO-level logging.",
     )
     agent.set_defaults(func=_cmd_agent_export)
+
+    diff = sub.add_parser(
+        "diff-matrix",
+        help=(
+            "Run the structural diff matrix across every discoverable "
+            "rb-usb-export* fixture (identity + overlay round-trip)."
+        ),
+        description=(
+            "For each fixture under tests/fixtures/ that matches the "
+            "--fixture-glob pattern (directory OR .extern marker), "
+            "pass the fixture's exportLibrary.db through the rbox-based "
+            "writer (identity passthrough + overlay with one test "
+            "playlist) and diff the snapshots. Emits a markdown matrix "
+            "and optionally a JSON side-channel. Fixtures whose "
+            "external host is unmounted are marked 'skipped' and do "
+            "not fail the run."
+        ),
+    )
+    diff.add_argument(
+        "--fixture-glob",
+        default="rb-usb-export*",
+        help="Glob against fixture names (default: %(default)s).",
+    )
+    diff.add_argument(
+        "--markdown",
+        type=Path,
+        default=None,
+        help="Write the markdown matrix here (default: stdout).",
+    )
+    diff.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="Also emit a JSON side-channel matrix at this path.",
+    )
+    diff.add_argument(
+        "--no-overlay",
+        action="store_true",
+        help="Skip the overlay round-trip; run identity only.",
+    )
+    diff.set_defaults(func=_cmd_diff_matrix)
 
     args = parser.parse_args(argv)
     return args.func(args)
