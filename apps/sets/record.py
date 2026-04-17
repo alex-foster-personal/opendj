@@ -481,6 +481,68 @@ def stop(
     return manifest
 
 
+def finalize(
+    session_id: str,
+    *,
+    sets_root: Path | None = None,
+    state: SetsState | None = None,
+    ended_at: datetime | None = None,
+) -> Manifest:
+    """Finalise a session without a live :class:`Recorder`.
+
+    This is the crash-recovery / CLI-``stop`` path: the recorder process
+    may have died or may live in another process. We rebuild just enough
+    state to emit ``session_end`` on the timeline, mark the sets row
+    ended, clear the pid, and write ``manifest.json``. No ffmpeg / no
+    source threads are touched — those belong to the owning process.
+
+    Codex Phase 12 review finding: the prior CLI-stop only marked the
+    DB row ended and unlinked the pid, leaving ``manifest.json`` absent
+    and the recording in a broken state for downstream tools.
+    """
+    root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
+    state_obj = state or SetsState()
+    row = state_obj.get_session(session_id)
+    if row is None:
+        raise KeyError(f"no set session {session_id!r}")
+    started = datetime.fromisoformat(row.started_at)
+    session_dir = root / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    timeline = TimelineJsonl(session_dir / "timeline.jsonl")
+    # Minimal recorder view so list_segments() / _emit_simple() work.
+    recorder = Recorder(
+        session_id=session_id,
+        session_dir=session_dir,
+        config=RecorderConfig(
+            capture_device_name=row.capture_device or DEFAULT_DEVICE_NAME
+        ),
+        state=state_obj,
+        timeline=timeline,
+        session_started_at=started,
+    )
+    end_at = ended_at or datetime.now(timezone.utc)
+    if row.ended_at is None:
+        recorder._emit_simple("session_end")
+    state_obj.end_session(
+        session_id,
+        ended_at=end_at.isoformat(timespec="milliseconds"),
+    )
+    _clear_pid(session_dir)
+    session_row = state_obj.get_session(session_id) or row
+    manifest = Manifest(
+        session_id=session_id,
+        started_at=session_row.started_at,
+        ended_at=session_row.ended_at or end_at.isoformat(timespec="milliseconds"),
+        capture_device=session_row.capture_device or DEFAULT_DEVICE_NAME,
+        share_state=getattr(session_row, "share_state", "private") or "private",
+        event_count=state_obj.count_events(session_id),
+        deck_sources=[],
+        mp3_segments=recorder.list_segments(),
+    )
+    write_manifest(session_dir, manifest)
+    return manifest
+
+
 def resume(
     session_id: str,
     *,
@@ -599,6 +661,7 @@ __all__ = [
     "Recorder",
     "start",
     "stop",
+    "finalize",
     "resume",
     "status",
 ]

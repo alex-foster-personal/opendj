@@ -42,21 +42,22 @@ def _dispatch_stop(args: argparse.Namespace) -> int:
     sessions = state.list_sessions()
     active = [s for s in sessions if s.ended_at is None]
     if args.session_id:
-        target = next((s for s in sessions if s.session_id == args.session_id), None)
+        target = next(
+            (s for s in sessions if s.session_id == args.session_id), None
+        )
     else:
         target = active[0] if active else None
     if target is None:
         print("no active session", file=sys.stderr)
         return 2
-    # Stop is two things: (1) rm pid so status is clean; (2) mark ended.
-    # Actually stopping a live ffmpeg subprocess belongs to the process
-    # that owns it; a crash-recovery CLI stop is a best-effort finaliser.
-    state.end_session(target.session_id)
-    sess_dir = sets_paths.session_dir(target.session_id)
-    pid_path = sess_dir / "recorder.pid"
-    if pid_path.exists():
-        pid_path.unlink()
-    print(f"ended session {target.session_id}")
+    # Codex Phase 12 review finding: previously this only marked the DB
+    # row ended and unlinked the pid, leaving ``manifest.json`` absent
+    # and the recording unfinalisable for downstream tooling. Delegate
+    # to :func:`record_mod.finalize` so the manifest is written, the
+    # ``session_end`` event is appended to the timeline, the sets row
+    # is marked ended, and the pid file is cleared.
+    manifest = record_mod.finalize(target.session_id, state=state)
+    print(f"ended session {manifest.session_id}")
     return 0
 
 
