@@ -208,6 +208,110 @@ def _read_id3(path: Path | None) -> tuple[str, str] | None:
         return None
 
 
+def _signal_isrc(rb: Any, dj: DjayTrack) -> Signal:
+    rb_isrc = (getattr(rb, "isrc", "") or "").strip().upper()
+    dj_isrc = (getattr(dj, "isrc", "") or "").strip().upper()
+    fired = bool(rb_isrc) and bool(dj_isrc) and rb_isrc == dj_isrc
+    return Signal(
+        name="isrc_exact",
+        weight=WEIGHTS["isrc_exact"],
+        fired=fired,
+        detail=rb_isrc if fired else "",
+    )
+
+
+def _signal_filename_exact(rb: Any, dj: DjayTrack) -> tuple[Signal, str | None, str | None]:
+    """Returns (signal, rb_base, dj_base) so fuzzy variant can reuse bases."""
+    rb_base = _basename_nfc(getattr(rb, "file_path", None))
+    dj_base = _basename_nfc(getattr(dj, "file_path", None))
+    fired = bool(rb_base) and bool(dj_base) and rb_base == dj_base
+    signal = Signal(
+        name="filename_exact",
+        weight=WEIGHTS["filename_exact"],
+        fired=fired,
+        detail=(rb_base or "") if fired else "",
+    )
+    return signal, rb_base, dj_base
+
+
+def _signal_filename_fuzzy(
+    rb_base: str | None, dj_base: str | None, exact_fired: bool
+) -> Signal:
+    ratio = 0.0
+    fired = False
+    if rb_base and dj_base and not exact_fired:
+        ratio = difflib.SequenceMatcher(None, rb_base, dj_base).ratio()
+        fired = ratio >= 0.85
+    return Signal(
+        name="filename_fuzzy",
+        weight=WEIGHTS["filename_fuzzy"],
+        fired=fired,
+        detail=f"{ratio:.2f}" if fired else "",
+    )
+
+
+def _signal_duration(rb: Any, dj: DjayTrack) -> Signal:
+    rb_dur = getattr(rb, "duration_s", None)
+    dj_dur = getattr(dj, "duration_s", None)
+    fired = (
+        rb_dur is not None
+        and dj_dur is not None
+        and abs(float(rb_dur) - float(dj_dur)) <= 0.5
+    )
+    return Signal(
+        name="duration",
+        weight=WEIGHTS["duration"],
+        fired=fired,
+        detail=f"{rb_dur}~{dj_dur}" if fired else "",
+    )
+
+
+def _signal_id3(rb: Any, dj: DjayTrack) -> Signal:
+    fired = False
+    detail = ""
+    rb_id3 = _read_id3(getattr(rb, "file_path", None))
+    dj_id3 = _read_id3(getattr(dj, "file_path", None))
+    if rb_id3 and dj_id3:
+        t_ratio = difflib.SequenceMatcher(
+            None, rb_id3[0].lower(), dj_id3[0].lower()
+        ).ratio()
+        a_ratio = difflib.SequenceMatcher(
+            None, rb_id3[1].lower(), dj_id3[1].lower()
+        ).ratio()
+        if t_ratio >= 0.9 and a_ratio >= 0.9:
+            fired = True
+            detail = f"t={t_ratio:.2f},a={a_ratio:.2f}"
+    return Signal(
+        name="id3", weight=WEIGHTS["id3"], fired=fired, detail=detail
+    )
+
+
+def _signal_chromaprint(
+    rb: Any,
+    dj: DjayTrack,
+    cheap_signals: list[Signal],
+    *,
+    fingerprint_fn: Callable[[Any, DjayTrack], Signal | None] | None,
+    skip: bool,
+) -> Signal:
+    fp_signal: Signal | None = None
+    fired_cheap = sum(1 for s in cheap_signals if s.fired)
+    if (
+        not skip
+        and fingerprint_fn is not None
+        and fired_cheap < MIN_SIGNALS_FOR_ACCEPT
+    ):
+        try:
+            fp_signal = fingerprint_fn(rb, dj)
+        except Exception:
+            fp_signal = None
+    if fp_signal is None:
+        fp_signal = Signal(
+            name="chromaprint", weight=WEIGHTS["chromaprint"], fired=False
+        )
+    return fp_signal
+
+
 def score_pair(
     rb: Any,
     dj: DjayTrack,
@@ -223,108 +327,16 @@ def score_pair(
     ``_skip_fingerprint`` is an internal knob used by ``match_tracks`` for
     the initial pass; when True we never call the fingerprint callback.
     """
-    signals: list[Signal] = []
-
-    # 1) ISRC exact ---------------------------------------------------------
-    rb_isrc = (getattr(rb, "isrc", "") or "").strip().upper()
-    dj_isrc = (getattr(dj, "isrc", "") or "").strip().upper()
-    isrc_fire = bool(rb_isrc) and bool(dj_isrc) and rb_isrc == dj_isrc
-    signals.append(
-        Signal(
-            name="isrc_exact",
-            weight=WEIGHTS["isrc_exact"],
-            fired=isrc_fire,
-            detail=rb_isrc if isrc_fire else "",
-        )
+    isrc_sig = _signal_isrc(rb, dj)
+    fn_exact_sig, rb_base, dj_base = _signal_filename_exact(rb, dj)
+    fn_fuzzy_sig = _signal_filename_fuzzy(rb_base, dj_base, fn_exact_sig.fired)
+    dur_sig = _signal_duration(rb, dj)
+    id3_sig = _signal_id3(rb, dj)
+    cheap = [isrc_sig, fn_exact_sig, fn_fuzzy_sig, dur_sig, id3_sig]
+    fp_sig = _signal_chromaprint(
+        rb, dj, cheap, fingerprint_fn=fingerprint_fn, skip=_skip_fingerprint
     )
-
-    # 2) Filename exact -----------------------------------------------------
-    rb_base = _basename_nfc(getattr(rb, "file_path", None))
-    dj_base = _basename_nfc(getattr(dj, "file_path", None))
-    fn_exact = bool(rb_base) and bool(dj_base) and rb_base == dj_base
-    signals.append(
-        Signal(
-            name="filename_exact",
-            weight=WEIGHTS["filename_exact"],
-            fired=fn_exact,
-            detail=(rb_base or "") if fn_exact else "",
-        )
-    )
-
-    # 3) Filename fuzzy (only meaningful if exact DIDN'T fire) --------------
-    fn_fuzzy_ratio = 0.0
-    fn_fuzzy = False
-    if rb_base and dj_base and not fn_exact:
-        fn_fuzzy_ratio = difflib.SequenceMatcher(None, rb_base, dj_base).ratio()
-        fn_fuzzy = fn_fuzzy_ratio >= 0.85
-    signals.append(
-        Signal(
-            name="filename_fuzzy",
-            weight=WEIGHTS["filename_fuzzy"],
-            fired=fn_fuzzy,
-            detail=f"{fn_fuzzy_ratio:.2f}" if fn_fuzzy else "",
-        )
-    )
-
-    # 4) Duration within 0.5s ----------------------------------------------
-    rb_dur = getattr(rb, "duration_s", None)
-    dj_dur = getattr(dj, "duration_s", None)
-    dur_fire = (
-        rb_dur is not None
-        and dj_dur is not None
-        and abs(float(rb_dur) - float(dj_dur)) <= 0.5
-    )
-    signals.append(
-        Signal(
-            name="duration",
-            weight=WEIGHTS["duration"],
-            fired=dur_fire,
-            detail=f"{rb_dur}~{dj_dur}" if dur_fire else "",
-        )
-    )
-
-    # 5) ID3 title/artist ---------------------------------------------------
-    id3_fire = False
-    id3_detail = ""
-    rb_id3 = _read_id3(getattr(rb, "file_path", None))
-    dj_id3 = _read_id3(getattr(dj, "file_path", None))
-    if rb_id3 and dj_id3:
-        t_ratio = difflib.SequenceMatcher(
-            None, rb_id3[0].lower(), dj_id3[0].lower()
-        ).ratio()
-        a_ratio = difflib.SequenceMatcher(
-            None, rb_id3[1].lower(), dj_id3[1].lower()
-        ).ratio()
-        if t_ratio >= 0.9 and a_ratio >= 0.9:
-            id3_fire = True
-            id3_detail = f"t={t_ratio:.2f},a={a_ratio:.2f}"
-    signals.append(
-        Signal(
-            name="id3",
-            weight=WEIGHTS["id3"],
-            fired=id3_fire,
-            detail=id3_detail,
-        )
-    )
-
-    # 6) Chromaprint (lazy) -------------------------------------------------
-    fp_signal: Signal | None = None
-    fired_cheap = sum(1 for s in signals if s.fired)
-    if (
-        not _skip_fingerprint
-        and fingerprint_fn is not None
-        and fired_cheap < MIN_SIGNALS_FOR_ACCEPT
-    ):
-        try:
-            fp_signal = fingerprint_fn(rb, dj)
-        except Exception:
-            fp_signal = None
-    if fp_signal is None:
-        fp_signal = Signal(
-            name="chromaprint", weight=WEIGHTS["chromaprint"], fired=False
-        )
-    signals.append(fp_signal)
-
+    signals = [*cheap, fp_sig]
     confidence = sum(s.weight for s in signals if s.fired)
     return confidence, signals
 
@@ -385,6 +397,161 @@ def _build_rationale(signals: list[Signal]) -> str:
     return "+".join(parts)
 
 
+def _build_rb_indices(
+    rb_list: list[Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, list[Any]]]:
+    """Build O(1) lookup indices for RB tracks: by path, ISRC, normalised key."""
+    path_to_rb: dict[str, Any] = {}
+    isrc_to_rb: dict[str, Any] = {}
+    key_to_rb: dict[str, list[Any]] = {}
+    for rb in rb_list:
+        path_key = _nfc_abs(getattr(rb, "file_path", None))
+        if path_key:
+            path_to_rb.setdefault(path_key, rb)
+        isrc = (getattr(rb, "isrc", "") or "").strip().upper()
+        if isrc:
+            isrc_to_rb.setdefault(isrc, rb)
+        mkey = _make_match_key(
+            getattr(rb, "title", "") or "", getattr(rb, "artist", "") or ""
+        )
+        key_to_rb.setdefault(mkey, []).append(rb)
+    return path_to_rb, isrc_to_rb, key_to_rb
+
+
+def _pick_best_by_key(
+    rb_candidates: list[Any],
+    dj: DjayTrack,
+    *,
+    fingerprint_fn: Callable[[Any, DjayTrack], Signal | None] | None,
+) -> tuple[Any | None, tuple[float, list[Signal]] | None]:
+    """Score all RB candidates sharing the normalised key; return the best.
+
+    Tie-break: confidence first, then fired-signal count. Preserves the
+    Codex P02-F1 fix (score ALL candidates, pick best; never just the first
+    one) -- do NOT collapse back to ``rb_candidates[0]``.
+    """
+    best_rb: Any | None = None
+    best_score: tuple[float, int] = (-1.0, -1)
+    best_sigs: list[Signal] = []
+    best_conf: float = 0.0
+    for rb in rb_candidates:
+        conf_i, sigs_i = score_pair(rb, dj, fingerprint_fn=fingerprint_fn)
+        fired_i = sum(1 for s in sigs_i if s.fired)
+        score_i = (conf_i, fired_i)
+        if score_i > best_score:
+            best_score = score_i
+            best_rb = rb
+            best_sigs = sigs_i
+            best_conf = conf_i
+    if best_rb is None:
+        return None, None
+    return best_rb, (best_conf, best_sigs)
+
+
+def _find_candidate(
+    dj: DjayTrack,
+    path_to_rb: dict[str, Any],
+    isrc_to_rb: dict[str, Any],
+    key_to_rb: dict[str, list[Any]],
+    *,
+    fingerprint_fn: Callable[[Any, DjayTrack], Signal | None] | None,
+) -> tuple[Any | None, tuple[float, list[Signal]] | None]:
+    """Find the best RB candidate for a djay track via path / ISRC / key."""
+    dj_path_key = _nfc_abs(dj.file_path)
+    if dj_path_key and dj_path_key in path_to_rb:
+        return path_to_rb[dj_path_key], None
+    if dj.isrc and dj.isrc.strip().upper() in isrc_to_rb:
+        return isrc_to_rb[dj.isrc.strip().upper()], None
+    mkey = _make_match_key(dj.title, dj.artist)
+    rb_candidates = key_to_rb.get(mkey, [])
+    if rb_candidates:
+        return _pick_best_by_key(
+            rb_candidates, dj, fingerprint_fn=fingerprint_fn
+        )
+    return None, None
+
+
+def _classify_status(fired_count: int, confidence: float) -> str:
+    if (
+        fired_count >= MIN_SIGNALS_FOR_ACCEPT
+        and confidence >= MIN_CONFIDENCE_FOR_ACCEPT
+    ):
+        return "matched"
+    if fired_count >= 2:
+        return "review"
+    return "drop"
+
+
+def _build_matched_pair(
+    candidate: Any,
+    dj: DjayTrack,
+    confidence: float,
+    signals: list[Signal],
+) -> MatchedPair:
+    fired = [s for s in signals if s.fired]
+    fired_count = len(fired)
+    fired_names = tuple(s.name for s in fired)
+    return MatchedPair(
+        rb_id=str(getattr(candidate, "id", "") or ""),
+        djay_uuid=dj.uuid,
+        rb_title=getattr(candidate, "title", "") or "",
+        rb_artist=getattr(candidate, "artist", "") or "",
+        djay_title=dj.title,
+        djay_artist=dj.artist,
+        confidence=round(confidence, 4),
+        signals=fired_names,
+        rationale=_build_rationale(signals),
+        status=_classify_status(fired_count, confidence),
+    )
+
+
+def _match_one_dj(
+    dj: DjayTrack,
+    path_to_rb: dict[str, Any],
+    isrc_to_rb: dict[str, Any],
+    key_to_rb: dict[str, list[Any]],
+    *,
+    fingerprint_fn: Callable[[Any, DjayTrack], Signal | None] | None,
+) -> MatchedPair | None:
+    """Locate the best RB candidate for one djay track and build its pair."""
+    candidate, precomputed = _find_candidate(
+        dj, path_to_rb, isrc_to_rb, key_to_rb, fingerprint_fn=fingerprint_fn
+    )
+    if candidate is None:
+        return None
+    if precomputed is not None:
+        confidence, signals = precomputed
+    else:
+        confidence, signals = score_pair(
+            candidate, dj, fingerprint_fn=fingerprint_fn
+        )
+    return _build_matched_pair(candidate, dj, confidence, signals)
+
+
+def _finalize_result(
+    result: MatchResult,
+    rb_list: list[Any],
+    dj_list: list[DjayTrack],
+    matched_rb_ids: set[str],
+    matched_dj_uuids: set[str],
+) -> None:
+    """Populate rb_only, djay_only, and stats on ``result`` in place."""
+    result.rb_only = [
+        rb
+        for rb in rb_list
+        if str(getattr(rb, "id", "") or "") not in matched_rb_ids
+    ]
+    result.djay_only = [dj for dj in dj_list if dj.uuid not in matched_dj_uuids]
+    result.stats = {
+        "rb_total": len(rb_list),
+        "dj_total": len(dj_list),
+        "matched": len(result.matched),
+        "review": len(result.review),
+        "rb_only": len(result.rb_only),
+        "djay_only": len(result.djay_only),
+    }
+
+
 def match_tracks(
     rb_tracks: Iterable[Any],
     dj_tracks: Iterable[DjayTrack],
@@ -406,97 +573,22 @@ def match_tracks(
     rb_list = list(rb_tracks)
     dj_list = list(dj_tracks)
 
-    # Build indices.
-    path_to_rb: dict[str, Any] = {}
-    isrc_to_rb: dict[str, Any] = {}
-    key_to_rb: dict[str, list[Any]] = {}
-    for rb in rb_list:
-        path_key = _nfc_abs(getattr(rb, "file_path", None))
-        if path_key:
-            path_to_rb.setdefault(path_key, rb)
-        isrc = (getattr(rb, "isrc", "") or "").strip().upper()
-        if isrc:
-            isrc_to_rb.setdefault(isrc, rb)
-        mkey = _make_match_key(
-            getattr(rb, "title", "") or "", getattr(rb, "artist", "") or ""
-        )
-        key_to_rb.setdefault(mkey, []).append(rb)
+    path_to_rb, isrc_to_rb, key_to_rb = _build_rb_indices(rb_list)
 
     matched_rb_ids: set[str] = set()
     matched_dj_uuids: set[str] = set()
     result = MatchResult()
 
     for dj in dj_list:
-        # Find candidate RB via path, then ISRC, then normalised key.
-        candidate: Any | None = None
-        precomputed: tuple[float, list[Signal]] | None = None
-        dj_path_key = _nfc_abs(dj.file_path)
-        if dj_path_key and dj_path_key in path_to_rb:
-            candidate = path_to_rb[dj_path_key]
-        elif dj.isrc and dj.isrc.strip().upper() in isrc_to_rb:
-            candidate = isrc_to_rb[dj.isrc.strip().upper()]
-        else:
-            mkey = _make_match_key(dj.title, dj.artist)
-            rb_candidates = key_to_rb.get(mkey, [])
-            if rb_candidates:
-                # Score ALL candidates sharing this normalised title+artist
-                # key and keep the highest-scoring one (tie-break on fired
-                # signal count). Previously only ``rb_candidates[0]`` was
-                # scored, which silently mis-routed a djay track to an
-                # inferior RB match when multiple RB rows collided on the
-                # same normalised key (e.g. duplicates, remasters, or
-                # near-duplicates with differing file paths / ISRCs /
-                # durations). Codex Phase 02 review finding.
-                best_rb: Any | None = None
-                best_score: tuple[float, int] = (-1.0, -1)
-                best_sigs: list[Signal] = []
-                best_conf: float = 0.0
-                for rb in rb_candidates:
-                    conf_i, sigs_i = score_pair(
-                        rb, dj, fingerprint_fn=fingerprint_fn
-                    )
-                    fired_i = sum(1 for s in sigs_i if s.fired)
-                    score_i = (conf_i, fired_i)
-                    if score_i > best_score:
-                        best_score = score_i
-                        best_rb = rb
-                        best_sigs = sigs_i
-                        best_conf = conf_i
-                if best_rb is not None:
-                    candidate = best_rb
-                    precomputed = (best_conf, best_sigs)
-
-        if candidate is None:
-            continue
-
-        if precomputed is not None:
-            confidence, signals = precomputed
-        else:
-            confidence, signals = score_pair(
-                candidate, dj, fingerprint_fn=fingerprint_fn
-            )
-        fired = [s for s in signals if s.fired]
-        fired_count = len(fired)
-        fired_names = tuple(s.name for s in fired)
-
-        pair = MatchedPair(
-            rb_id=str(getattr(candidate, "id", "") or ""),
-            djay_uuid=dj.uuid,
-            rb_title=getattr(candidate, "title", "") or "",
-            rb_artist=getattr(candidate, "artist", "") or "",
-            djay_title=dj.title,
-            djay_artist=dj.artist,
-            confidence=round(confidence, 4),
-            signals=fired_names,
-            rationale=_build_rationale(signals),
-            status="matched"
-            if fired_count >= MIN_SIGNALS_FOR_ACCEPT
-            and confidence >= MIN_CONFIDENCE_FOR_ACCEPT
-            else "review"
-            if fired_count >= 2
-            else "drop",
+        pair = _match_one_dj(
+            dj,
+            path_to_rb,
+            isrc_to_rb,
+            key_to_rb,
+            fingerprint_fn=fingerprint_fn,
         )
-
+        if pair is None:
+            continue
         if pair.status == "matched":
             result.matched.append(pair)
             matched_rb_ids.add(pair.rb_id)
@@ -507,22 +599,7 @@ def match_tracks(
             # decisions but we still reserve the dj uuid.
             matched_dj_uuids.add(pair.djay_uuid)
 
-    result.rb_only = [
-        rb
-        for rb in rb_list
-        if str(getattr(rb, "id", "") or "") not in matched_rb_ids
-    ]
-    result.djay_only = [dj for dj in dj_list if dj.uuid not in matched_dj_uuids]
-
-    result.stats = {
-        "rb_total": len(rb_list),
-        "dj_total": len(dj_list),
-        "matched": len(result.matched),
-        "review": len(result.review),
-        "rb_only": len(result.rb_only),
-        "djay_only": len(result.djay_only),
-    }
-
+    _finalize_result(result, rb_list, dj_list, matched_rb_ids, matched_dj_uuids)
     return result
 
 
