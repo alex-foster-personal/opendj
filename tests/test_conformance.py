@@ -191,13 +191,19 @@ def _mask(doc: dict[str, Any], fields: list[str]) -> dict[str, Any]:
 # ------------------------------------------------------- adapter registry
 
 
-def _load_adapter(name: str) -> Adapter | None:
+def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | None:
     """Best-effort adapter loader. Returns None if the adapter is not
-    implemented in the current tree (other phases may land them later)."""
+    implemented in the current tree (other phases may land them later).
+
+    ``audio_root`` -- when provided, Serato uses it to resolve per-track
+    ``file_path`` against staged audio stubs in tmp_path (so the GEOB write
+    path has a real .mp3 to mutate). Other adapters ignore the hint.
+    """
     try:
         if name == "serato":
-            from apps.adapters.serato import SeratoAdapter
-            return SeratoAdapter()
+            from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
+            opts = SeratoAdapterOptions(audio_root=audio_root)
+            return SeratoAdapter(options=opts)
         if name == "traktor":
             from apps.adapters.traktor import TraktorAdapter
             return TraktorAdapter()
@@ -210,6 +216,23 @@ def _load_adapter(name: str) -> Adapter | None:
     except Exception:
         return None
     return None
+
+
+def _stage_fixture_audio(fixture_root: Path, tmp_path: Path) -> Path | None:
+    """If ``fixture_root/audio`` exists, copy it into ``tmp_path/audio``.
+
+    Returns the staged audio root (so the Serato adapter can be pointed at
+    the mutable copy rather than the read-only fixture). ``None`` when the
+    fixture has no ``audio/`` dir (most fixtures don't need one).
+    """
+    import shutil
+
+    src = fixture_root / "audio"
+    if not src.is_dir():
+        return None
+    staged = tmp_path / "audio"
+    shutil.copytree(src, staged)
+    return tmp_path
 
 
 # --------------------------------------------------------------- fixtures
@@ -248,11 +271,12 @@ def test_fixture_has_required_files(fixture_id: str) -> None:
 @pytest.mark.parametrize("adapter_name", ALL_ADAPTERS)
 def test_round_trip(fixture_id: str, adapter_name: str, tmp_path) -> None:
     """Round-trip a fixture through an adapter and compare masked JCS bytes."""
-    adapter = _load_adapter(adapter_name)
+    root = FIXTURE_ROOT / fixture_id
+    audio_root = _stage_fixture_audio(root, tmp_path)
+    adapter = _load_adapter(adapter_name, audio_root=audio_root)
     if adapter is None:
         pytest.skip(f"adapter {adapter_name!r} not available in Phase 16 scope")
 
-    root = FIXTURE_ROOT / fixture_id
     expected_doc = json.loads((root / "expected.opendj.json").read_text(encoding="utf-8"))
     caps = _load_yaml(root / "capabilities.yaml")
 

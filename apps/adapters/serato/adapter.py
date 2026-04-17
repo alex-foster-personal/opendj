@@ -9,9 +9,13 @@ Phase 16 scope (OPEN-02c):
   * Compute a stable track_id from ``file_path`` + ``title`` (Phase 5 will
     replace with ``apps.shared.stable_id`` when shipped -- see TODO below).
 
-Per-file GEOB frame mutation (via mutagen) is implemented as ``write_geob``
-separately so the ``database V2`` -> open-dj read path works without having
-any real audio files around.
+Per-file GEOB frame mutation (via mutagen) is plumbed through
+``SeratoAdapter.write()`` via :func:`apps.adapters.serato.geob.write_geob_frames`
+(v1.0 P0 follow-up, GH #2). Hot cues, loops, and beatgrid round-trip on MP3
+via the ``Serato Markers2`` + ``Serato BeatGrid`` ID3 GEOB frames. Missing
+or non-MP3 audio files downgrade to a structured warning and skip the GEOB
+write, so the ``database V2`` -> open-dj read path still works when no real
+audio files are available (e.g. fixture-only conformance runs).
 """
 
 from __future__ import annotations
@@ -22,10 +26,22 @@ from pathlib import Path
 
 from apps.adapters.serato.capabilities import SERATO_CAPABILITIES
 from apps.adapters.serato.database_v2 import CrateTrack, DatabaseV2, Subcrate
+from apps.adapters.serato.geob import (
+    BeatGrid,
+    BeatGridMarker,
+    Markers2,
+    Markers2Cue,
+    Markers2Loop,
+    is_mp3_like_path,
+    read_geob_frames,
+    write_geob_frames,
+)
 from apps.adapters.serato.safety import guard_live_write
 from apps.open_dj import (
     AdapterReport,
+    BeatGridPoint,
     Capabilities,
+    CuePoint,
     OpenDjLibrary,
     Playlist,
     Track,
@@ -58,6 +74,13 @@ class SeratoAdapterOptions:
     memory_as_hot: bool = False
     live_write: bool = False
     backup_dir: Path | None = None
+    # Optional root prepended to relative track ``file_path`` values when we
+    # resolve per-track audio files for GEOB write/read. This is what the
+    # conformance harness uses to stage stub MP3s under ``tmp_path`` without
+    # rewriting every fixture's ``file_path`` field. When None, file_path is
+    # used verbatim; missing or non-MP3 files downgrade to a structured
+    # warning rather than raising.
+    audio_root: Path | None = None
 
 
 # --------------------------------------------------------------- helpers
@@ -80,6 +103,145 @@ def _parse_rating_from_extension(raw: bytes) -> int | None:
     except ValueError:
         return None
     return max(0, min(5, value))
+
+
+# ------------------------------------------------------ open-dj <-> GEOB ---
+
+
+_DEFAULT_CUE_COLOR_RGB: int = 0xCC0000
+
+
+def _opendj_cues_to_markers2(
+    cues: tuple[CuePoint, ...], *, memory_as_hot: bool
+) -> Markers2:
+    """Project open-dj :class:`CuePoint` tuples into a Serato Markers2 frame.
+
+    * ``hot`` cues map straight to ``Markers2Cue``.
+    * ``loop`` cues map to ``Markers2Loop`` using ``length_ms`` for the end.
+    * ``memory`` cues are dropped unless ``memory_as_hot`` is True, in which
+      case they are promoted to hot cues (index continues after the real hot
+      cue indices to avoid collisions).
+    * Other cue types (``load``, ``fade_in``, ``fade_out``, ``grid``) are
+      ignored here -- they are out of scope for Serato's Markers2 schema.
+    """
+    hots: list[Markers2Cue] = []
+    loops: list[Markers2Loop] = []
+    memories: list[CuePoint] = [c for c in cues if c.type == "memory"]
+    for cue in cues:
+        color = cue.color_rgb if cue.color_rgb is not None else _DEFAULT_CUE_COLOR_RGB
+        if cue.type == "hot":
+            hots.append(
+                Markers2Cue(
+                    index=cue.index,
+                    position_ms=cue.position_ms,
+                    color_rgb=color,
+                    name=cue.name,
+                )
+            )
+        elif cue.type == "loop":
+            end_ms = cue.position_ms + (cue.length_ms or 0)
+            loops.append(
+                Markers2Loop(
+                    index=cue.index,
+                    start_ms=cue.position_ms,
+                    end_ms=end_ms,
+                    color_rgb=color,
+                    name=cue.name,
+                )
+            )
+    if memory_as_hot and memories:
+        next_idx = (max((c.index for c in hots), default=-1)) + 1
+        for cue in memories:
+            color = cue.color_rgb if cue.color_rgb is not None else _DEFAULT_CUE_COLOR_RGB
+            hots.append(
+                Markers2Cue(
+                    index=next_idx,
+                    position_ms=cue.position_ms,
+                    color_rgb=color,
+                    name=cue.name,
+                )
+            )
+            next_idx += 1
+    return Markers2(cues=tuple(hots), loops=tuple(loops))
+
+
+def _markers2_to_opendj_cues(markers: Markers2) -> tuple[CuePoint, ...]:
+    """Inverse of :func:`_opendj_cues_to_markers2` (loops first? no -- stable).
+
+    Order: hot cues in their declared order, then loops. Both keyed by their
+    Markers2 index so adapter round-trips are stable.
+    """
+    out: list[CuePoint] = []
+    for c in markers.cues:
+        out.append(
+            CuePoint(
+                index=c.index,
+                position_ms=c.position_ms,
+                type="hot",
+                name=c.name,
+                color_rgb=c.color_rgb,
+            )
+        )
+    for lo in markers.loops:
+        out.append(
+            CuePoint(
+                index=lo.index,
+                position_ms=lo.start_ms,
+                type="loop",
+                name=lo.name,
+                color_rgb=lo.color_rgb,
+                length_ms=max(0, lo.end_ms - lo.start_ms),
+            )
+        )
+    return tuple(out)
+
+
+def _opendj_beats_to_beatgrid(beats: tuple[BeatGridPoint, ...]) -> BeatGrid:
+    """Project open-dj beat anchors into a Serato ``BeatGrid``.
+
+    The last anchor is treated as the terminal marker (carries the locked
+    BPM); preceding anchors are non-terminal (they do not carry a ``bpm`` in
+    the Serato layout -- Serato derives tempo from the delta to the next
+    anchor + a beats-till-next count). We set ``beats_till_next=4`` as a
+    reasonable default when we only have (position, bpm) pairs.
+    """
+    if not beats:
+        return BeatGrid(markers=())
+    markers: list[BeatGridMarker] = []
+    for i, b in enumerate(beats):
+        pos_s = b.position_ms / 1000.0
+        is_last = i == len(beats) - 1
+        if is_last:
+            markers.append(BeatGridMarker(position_seconds=pos_s, bpm=b.bpm))
+        else:
+            markers.append(
+                BeatGridMarker(position_seconds=pos_s, beats_till_next=4)
+            )
+    return BeatGrid(markers=tuple(markers))
+
+
+def _beatgrid_to_opendj_beats(grid: BeatGrid) -> tuple[BeatGridPoint, ...]:
+    """Inverse of :func:`_opendj_beats_to_beatgrid`.
+
+    The terminal marker's locked BPM is propagated back to earlier anchors
+    when none of them carries a BPM; this matches the typical open-dj
+    constant-tempo grid.
+    """
+    if not grid.markers:
+        return ()
+    terminal = grid.markers[-1]
+    terminal_bpm = float(terminal.bpm) if terminal.bpm is not None else 0.0
+    out: list[BeatGridPoint] = []
+    for i, m in enumerate(grid.markers):
+        bpm = m.bpm if m.bpm is not None else terminal_bpm
+        out.append(
+            BeatGridPoint(
+                position_ms=int(round(m.position_seconds * 1000.0)),
+                bpm=float(bpm),
+                terminal=(i == len(grid.markers) - 1),
+            )
+        )
+    return tuple(out)
 
 
 # ---------------------------------------------------------------- adapter
@@ -129,6 +291,7 @@ class SeratoAdapter:
                 extensions["x_serato_unknown_tags"] = tuple(
                     {"type": t.type, "payload_hex": t.payload.hex()} for t in row.extra_tags
                 )
+            cues, beats = self._read_geob_for_track(row.file_path, track_id, report)
             tracks.append(
                 Track(
                     track_id=track_id,
@@ -139,6 +302,8 @@ class SeratoAdapter:
                     bpm=bpm,
                     key_camelot=row.key or None,
                     rating=rating,
+                    cues=cues,
+                    beats=beats,
                     extensions=extensions,
                 )
             )
@@ -214,9 +379,100 @@ class SeratoAdapter:
                 Subcrate(name=pl.name, track_paths=paths).write(subdir / f"{pl.name}.crate")
                 report.bump("playlists_written")
 
+        # Per-audio-file GEOB frame upsert. This is the real Serato write
+        # path: cues + loops + beatgrid live in ID3 GEOB frames on each MP3,
+        # not in the ``database V2`` crate DB.
+        self._write_geob_for_library(library, report)
+
         return report
 
     # ----------------------------------------------------------- helpers
+
+    def _resolve_audio_path(self, file_path: str) -> Path:
+        """Resolve a track's ``file_path`` against the optional audio_root."""
+        raw = Path(file_path)
+        if self.options.audio_root is None:
+            return raw
+        root = Path(self.options.audio_root)
+        if raw.is_absolute():
+            # Still allow the root to override absolute paths: this is what
+            # the conformance harness wants (fixture paths look absolute but
+            # are actually logical). We treat any leading slash as meaning
+            # "relative to audio_root".
+            return root / raw.relative_to(raw.anchor)
+        return root / raw
+
+    def _write_geob_for_library(
+        self, library: OpenDjLibrary, report: AdapterReport
+    ) -> None:
+        """Upsert Serato Markers2 + BeatGrid GEOB frames onto each audio file."""
+        for track in library.tracks:
+            audio_path = self._resolve_audio_path(track.file_path)
+            has_content = bool(track.cues) or bool(track.beats)
+            if not has_content:
+                continue
+            if not is_mp3_like_path(audio_path):
+                report.warn(
+                    field="cue_points.hot",
+                    track_id=track.track_id,
+                    action="dropped",
+                    reason=(
+                        f"Serato v1 only writes GEOB frames to .mp3 files; "
+                        f"got {audio_path.suffix!r} at {track.file_path!r}"
+                    ),
+                )
+                continue
+            if not audio_path.exists():
+                report.warn(
+                    field="cue_points.hot",
+                    track_id=track.track_id,
+                    action="dropped",
+                    reason=(
+                        f"audio file missing at {audio_path}; skipped GEOB write "
+                        f"(database V2 row was still emitted)"
+                    ),
+                )
+                continue
+            markers = _opendj_cues_to_markers2(
+                track.cues, memory_as_hot=self.options.memory_as_hot
+            )
+            grid = _opendj_beats_to_beatgrid(track.beats)
+            try:
+                write_geob_frames(
+                    audio_path,
+                    markers2=markers if (markers.cues or markers.loops) else None,
+                    beatgrid=grid if grid.markers else None,
+                )
+            except Exception as exc:  # noqa: BLE001 -- downgrade to warning
+                report.warn(
+                    field="cue_points.hot",
+                    track_id=track.track_id,
+                    action="dropped",
+                    reason=f"GEOB write failed for {audio_path}: {exc!s}",
+                )
+                continue
+            report.bump("geob_frames_written")
+
+    def _read_geob_for_track(
+        self, file_path: str, track_id: str, report: AdapterReport
+    ) -> tuple[tuple[CuePoint, ...], tuple[BeatGridPoint, ...]]:
+        """Return (cues, beats) read from the track's GEOB frames.
+
+        Missing files or non-MP3 formats yield empty tuples without warning
+        (the write path already warns; read is symmetric and lenient).
+        """
+        audio_path = self._resolve_audio_path(file_path)
+        if not audio_path.exists() or not is_mp3_like_path(audio_path):
+            return (), ()
+        try:
+            bundle = read_geob_frames(audio_path)
+        except Exception:  # noqa: BLE001 -- silent on read, symmetric with write warning
+            return (), ()
+        cues = _markers2_to_opendj_cues(bundle.markers2)
+        beats = _beatgrid_to_opendj_beats(bundle.beatgrid)
+        if cues or beats:
+            report.bump("geob_frames_read")
+        return cues, beats
 
     def _read_rating(
         self, row: CrateTrack, track_id: str, report: AdapterReport

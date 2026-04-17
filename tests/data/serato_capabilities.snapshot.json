@@ -43,7 +43,7 @@
     },
     {
       "field": "cue_points.hot",
-      "rationale": "",
+      "rationale": "Written to the MP3 Serato Markers2 GEOB ID3 frame; FLAC/AIFF/WAV cue writing is v2 scope (different Serato tagging) -- non-MP3 drop-with-warning.",
       "supports": "lossless"
     },
     {
@@ -53,7 +53,7 @@
     },
     {
       "field": "cue_points.loop",
-      "rationale": "",
+      "rationale": "Written to the MP3 Serato Markers2 GEOB frame; FLAC/AIFF/WAV loop writing is v2 scope.",
       "supports": "lossless"
     },
     {

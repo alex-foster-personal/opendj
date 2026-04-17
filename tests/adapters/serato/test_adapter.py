@@ -6,17 +6,26 @@ reading it back, and asserting the open-dj JCS bytes are stable.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 import pytest
 
 from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
 from apps.open_dj import (
     Adapter,
     AdapterReport,
+    BeatGridPoint,
     CuePoint,
     OpenDjLibrary,
     Playlist,
     Track,
     serialize_jcs,
+)
+
+
+_STUB_MP3: Path = (
+    Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-128.mp3"
 )
 
 
@@ -141,3 +150,152 @@ def test_missing_database_raises(tmp_path) -> None:
 def test_adapter_report_type() -> None:
     """write() returns a concrete AdapterReport with sensible defaults."""
     assert isinstance(AdapterReport(), AdapterReport)
+
+
+# ====================================================================
+# GEOB cue + beatgrid write/read round-trip via mutagen (GH #2 / P0).
+# ====================================================================
+
+
+def _stage_mp3(tmp_path: Path, rel: str = "audio/track.mp3") -> tuple[Path, Path]:
+    """Copy the stub MP3 under ``tmp_path/<rel>``. Returns (audio_root, full_path).
+
+    ``audio_root`` is the directory passed to ``SeratoAdapterOptions.audio_root``;
+    the adapter resolves ``Track.file_path`` against it so tests don't have to
+    bake tmp paths into the library under test.
+    """
+    assert _STUB_MP3.exists(), f"missing stub MP3 fixture at {_STUB_MP3}"
+    audio_root = tmp_path / "audio_root"
+    full = audio_root / rel
+    full.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(_STUB_MP3, full)
+    return audio_root, full
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
+    """Library with hot cues + loop -> Serato write -> read back -> identical cues."""
+    audio_root, _ = _stage_mp3(tmp_path)
+    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=audio_root))
+    cues = (
+        CuePoint(index=0, position_ms=0, type="hot", name="Intro", color_rgb=0xCC0000),
+        CuePoint(index=1, position_ms=15_000, type="hot", name="Verse", color_rgb=0x00CC00),
+        CuePoint(index=2, position_ms=30_000, type="hot", name="Chorus", color_rgb=0x0000CC),
+        CuePoint(
+            index=3,
+            position_ms=45_000,
+            length_ms=4_000,
+            type="loop",
+            name="Break",
+            color_rgb=0xCCCC00,
+        ),
+    )
+    track = Track(
+        track_id="tr",
+        file_path="audio/track.mp3",
+        title="GEOB Round Trip",
+        artists=("Alice",),
+        bpm=128.0,
+        cues=cues,
+    )
+    lib = OpenDjLibrary(version="0.1", tracks=(track,))
+    target = tmp_path / "_Serato_"
+    write_report = adapter.write(lib, target)
+    assert write_report.counts.get("geob_frames_written") == 1
+
+    lib_back, read_report = adapter.read(target)
+    assert read_report.counts.get("geob_frames_read", 0) == 1
+    back_track = lib_back.tracks[0]
+    # Order in Markers2: hots first, then loops (stable per _markers2_to_opendj_cues).
+    back_hots = tuple(c for c in back_track.cues if c.type == "hot")
+    back_loops = tuple(c for c in back_track.cues if c.type == "loop")
+    assert len(back_hots) == 3
+    assert len(back_loops) == 1
+    # Hot cues: position + index + colour preserved.
+    assert [(c.index, c.position_ms, c.name, c.color_rgb) for c in back_hots] == [
+        (0, 0, "Intro", 0xCC0000),
+        (1, 15_000, "Verse", 0x00CC00),
+        (2, 30_000, "Chorus", 0x0000CC),
+    ]
+    # Loop: start + length round-trip.
+    lo = back_loops[0]
+    assert lo.index == 3
+    assert lo.position_ms == 45_000
+    assert lo.length_ms == 4_000
+    assert lo.color_rgb == 0xCCCC00
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_geob_beatgrid_roundtrip(tmp_path) -> None:
+    """Beatgrid written to GEOB frame round-trips back through the adapter."""
+    audio_root, _ = _stage_mp3(tmp_path)
+    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=audio_root))
+    beats = (
+        BeatGridPoint(position_ms=0, bpm=124.0),
+        BeatGridPoint(position_ms=120_000, bpm=124.0, terminal=True),
+    )
+    track = Track(
+        track_id="beatgrid",
+        file_path="audio/track.mp3",
+        title="Variable Grid",
+        artists=("BeatsAuthor",),
+        bpm=124.0,
+        beats=beats,
+    )
+    lib = OpenDjLibrary(version="0.1", tracks=(track,))
+    adapter.write(lib, tmp_path / "_Serato_")
+    lib_back, _ = adapter.read(tmp_path / "_Serato_")
+    back = lib_back.tracks[0]
+    assert len(back.beats) == 2
+    # Position round-trips to the ms (we stash seconds in the Serato frame).
+    assert back.beats[0].position_ms == 0
+    assert back.beats[-1].position_ms == 120_000
+    assert back.beats[-1].terminal is True
+    # Terminal BPM propagates back.
+    assert back.beats[-1].bpm == pytest.approx(124.0)
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_geob_write_skips_missing_audio_with_warning(tmp_path) -> None:
+    """Missing audio file -> structured warning, crate DB still written."""
+    adapter = SeratoAdapter(
+        options=SeratoAdapterOptions(audio_root=tmp_path / "does_not_exist")
+    )
+    track = Track(
+        track_id="missing",
+        file_path="nope.mp3",
+        title="Orphan",
+        artists=("X",),
+        cues=(CuePoint(index=0, position_ms=0, type="hot"),),
+    )
+    lib = OpenDjLibrary(version="0.1", tracks=(track,))
+    report = adapter.write(lib, tmp_path / "_Serato_")
+    # Database V2 still emitted.
+    assert (tmp_path / "_Serato_" / "database V2").exists()
+    # No GEOB frame written because the file didn't exist.
+    assert report.counts.get("geob_frames_written", 0) == 0
+    # Structured warning flagged.
+    assert any(
+        w.action == "dropped" and "missing" in w.reason for w in report.warnings
+    )
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_geob_write_skips_non_mp3_with_warning(tmp_path) -> None:
+    """Non-MP3 audio file -> structured warning, crate DB still written."""
+    audio_root = tmp_path / "audio_root"
+    (audio_root / "x.flac").parent.mkdir(parents=True, exist_ok=True)
+    (audio_root / "x.flac").write_bytes(b"fLaC" + b"\x00" * 32)
+    adapter = SeratoAdapter(options=SeratoAdapterOptions(audio_root=audio_root))
+    track = Track(
+        track_id="flac",
+        file_path="x.flac",
+        title="FLAC out of scope",
+        artists=("X",),
+        cues=(CuePoint(index=0, position_ms=500, type="hot"),),
+    )
+    lib = OpenDjLibrary(version="0.1", tracks=(track,))
+    report = adapter.write(lib, tmp_path / "_Serato_")
+    assert report.counts.get("geob_frames_written", 0) == 0
+    assert any(".flac" in w.reason or "mp3" in w.reason for w in report.warnings)
+
