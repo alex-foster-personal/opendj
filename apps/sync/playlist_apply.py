@@ -69,7 +69,14 @@ def _live_db_path(live: bool) -> Path:
 
 
 def _process_running(pattern: str) -> bool:
-    """True if ``pgrep -if <pattern>`` finds any match."""
+    """True if ``pgrep -if <pattern>`` finds any match.
+
+    Fail-safe (P03-02): if ``pgrep`` is missing or errors out, raise
+    :class:`PlaylistApplyError` so the caller refuses live writes rather
+    than silently disabling rail 2. Use ``--force-no-pgrep`` on the CLI
+    when running in a sandbox that genuinely lacks ``pgrep`` and you have
+    independently verified djay/Rekordbox are not running.
+    """
     try:
         r = subprocess.run(
             ["pgrep", "-if", pattern],
@@ -77,11 +84,19 @@ def _process_running(pattern: str) -> bool:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:
-        sys.stderr.write(
-            f"[warn] pgrep not available; cannot verify {pattern!r} is not running\n"
-        )
-        return False
+    except FileNotFoundError as exc:
+        raise PlaylistApplyError(
+            f"pgrep not available; cannot verify {pattern!r} is not running. "
+            "Refusing live write (rail 2 must not silently fail open). "
+            "Pass --force-no-pgrep to override after manually confirming "
+            "djay and Rekordbox are quit."
+        ) from exc
+    except OSError as exc:
+        raise PlaylistApplyError(
+            f"pgrep failed for {pattern!r} ({exc}); refusing live write. "
+            "Pass --force-no-pgrep to override after manually confirming "
+            "djay and Rekordbox are quit."
+        ) from exc
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
@@ -379,7 +394,26 @@ def apply_plan(
                     con.execute("ROLLBACK")
                     result.per_playlist.append(op_result)
                     continue
+
+                # P03-01: verify INSIDE the transaction so a readback
+                # mismatch ROLLBACKs the bad write instead of leaving it
+                # durably committed. Only COMMIT once verification passes.
+                ok, msg = _verify_playlist_members(
+                    con,
+                    op_result.djay_uuid or "",
+                    [m["djay_uuid"] for m in op.get("target_members", [])],
+                )
+                if not ok:
+                    con.execute("ROLLBACK")
+                    op_result.status = "failed"
+                    op_result.message = f"readback mismatch (rolled back): {msg}"
+                    result.per_playlist.append(op_result)
+                    continue
+
                 con.execute("COMMIT")
+                op_result.status = "verified"
+                op_result.message = msg
+                result.per_playlist.append(op_result)
             except Exception as exc:  # noqa: BLE001
                 try:
                     con.execute("ROLLBACK")
@@ -396,15 +430,6 @@ def apply_plan(
                     )
                 )
                 continue
-
-            ok, msg = _verify_playlist_members(
-                con,
-                op_result.djay_uuid or "",
-                [m["djay_uuid"] for m in op.get("target_members", [])],
-            )
-            op_result.status = "verified" if ok else "failed"
-            op_result.message = msg if ok else f"readback mismatch: {msg}"
-            result.per_playlist.append(op_result)
     finally:
         con.close()
 
@@ -464,6 +489,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--live", action="store_true", default=False)
     parser.add_argument("--i-understand-the-risks", action="store_true", default=False)
     parser.add_argument(
+        "--force-no-pgrep",
+        action="store_true",
+        default=False,
+        help=(
+            "explicitly bypass rail 2 (process check) when pgrep is "
+            "unavailable. Only use after manually verifying djay and "
+            "Rekordbox are quit. Without this flag, missing pgrep aborts "
+            "live writes (P03-02 fail-safe)."
+        ),
+    )
+    parser.add_argument(
         "--playlists",
         default=None,
         help="comma-separated canonical playlist names to apply (cautious mode)",
@@ -513,8 +549,18 @@ def main(argv: list[str] | None = None) -> int:
         _assert_djay_quit()
         _assert_rekordbox_quit()
     except PlaylistApplyError as exc:
-        sys.stderr.write(f"abort: {exc}\n")
-        return 3
+        # P03-02: missing/erroring pgrep now raises instead of silently
+        # returning False. Allow an explicit override via --force-no-pgrep
+        # for sandboxes that genuinely lack pgrep.
+        msg = str(exc)
+        if args.force_no_pgrep and "pgrep" in msg:
+            sys.stderr.write(
+                f"[warn] {msg}\n"
+                "[warn] --force-no-pgrep: bypassing rail 2 process check.\n"
+            )
+        else:
+            sys.stderr.write(f"abort: {exc}\n")
+            return 3
 
     if not _typed_confirm():
         sys.stderr.write("typed confirmation failed; aborting\n")
