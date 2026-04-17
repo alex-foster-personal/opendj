@@ -2,6 +2,15 @@
 
 *The minimum you need to install on your Mac before any feature works. Each section is independent - install only what you want.*
 
+## Environment variables
+
+The authoritative list of environment variables consumed by music-dj-tools
+lives in [`.env.sample`](../.env.sample) at the repo root. Each entry in that
+file has a comment explaining which subsystem reads it. Copy it to `.env` for
+local dev (gitignored) or - preferred for anything sensitive - store the
+values in Doppler under `construct` / `dev_af` and invoke commands via
+`doppler run --`.
+
 ## Baseline (every feature needs this)
 
 - macOS 13+ (arm64 or x86_64).

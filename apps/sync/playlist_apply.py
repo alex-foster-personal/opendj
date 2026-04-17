@@ -546,6 +546,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "have captured the byte from a live djay fixture."
         ),
     )
+    parser.add_argument(
+        "--skip-tsaf-validation",
+        action="store_true",
+        default=False,
+        help=(
+            "skip the startup assertion that validates "
+            "playlist_tsaf.PLAYLIST_TYPE_LEAF against a live DB. Use offline "
+            "or in dev when no live DB is reachable."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -557,6 +567,18 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.playlists and args.bulk:
         sys.stderr.write("--playlists and --bulk are mutually exclusive\n")
+        return 2
+
+    # Startup assertion: validate PLAYLIST_TYPE_LEAF against a live DB (F3-3).
+    # Best-effort: logs a warning when no DB is available, raises on mismatch.
+    try:
+        _rb_db = paths.REKORDBOX_LIVE_DB
+        ptsaf.validate_leaf_type_byte(
+            _rb_db if _rb_db.exists() else None,
+            skip=args.skip_tsaf_validation,
+        )
+    except ptsaf.TSAFLeafTypeMismatch as exc:
+        sys.stderr.write(f"TSAF validation failed: {exc}\n")
         return 2
 
     try:

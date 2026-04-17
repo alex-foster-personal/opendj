@@ -25,9 +25,15 @@ matching ``view_mediaItemPlaylistView_page.data`` row.
 """
 from __future__ import annotations
 
+import logging
+import os
+import sqlite3
 import struct
 import uuid as _uuid
+from pathlib import Path
 from typing import Literal
+
+_log = logging.getLogger(__name__)
 
 
 # ----- Page-data packer --------------------------------------------------
@@ -146,12 +152,125 @@ def parse_playlist_blob(blob: bytes) -> dict[str, object]:
     return out
 
 
+# ----- Startup validation ------------------------------------------------
+
+
+class TSAFLeafTypeMismatch(RuntimeError):
+    """Raised when ``PLAYLIST_TYPE_LEAF`` disagrees with a live djay fixture."""
+
+
+def _discover_leaf_type_from_db(db_path: Path) -> int | None:
+    """Scan ``djayMediaLibrary_playlist`` blobs for an observed leaf type byte.
+
+    Returns the most common ``0x2d <byte>`` enum found adjacent to the ``type``
+    key in non-root playlist blobs, or ``None`` if no candidate rows exist
+    (empty library, schema mismatch, etc.). Read-only; never mutates the DB.
+    """
+    if not db_path.exists():
+        return None
+    try:
+        uri = f"file:{db_path}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as conn:
+            cur = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name LIKE '%laylist%'"
+            )
+            tables = [r[0] for r in cur.fetchall()]
+            if not tables:
+                return None
+            needle = b"\x08type\x00"
+            counts: dict[int, int] = {}
+            for tbl in tables:
+                try:
+                    rows = conn.execute(
+                        f'SELECT data FROM "{tbl}" WHERE data IS NOT NULL LIMIT 500'
+                    ).fetchall()
+                except sqlite3.DatabaseError:
+                    continue
+                for (blob,) in rows:
+                    if not isinstance(blob, (bytes, bytearray)):
+                        continue
+                    p = bytes(blob).find(needle)
+                    if p >= 2 and blob[p - 2] == 0x2D:
+                        b = blob[p - 1]
+                        if b == PLAYLIST_TYPE_ROOT:
+                            continue
+                        counts[b] = counts.get(b, 0) + 1
+            if not counts:
+                return None
+            return max(counts.items(), key=lambda kv: kv[1])[0]
+    except sqlite3.DatabaseError as exc:
+        _log.warning("TSAF validation: could not open %s: %s", db_path, exc)
+        return None
+
+
+def validate_leaf_type_byte(
+    db_path: Path | str | None = None,
+    *,
+    skip: bool | None = None,
+) -> int | None:
+    """Assert ``PLAYLIST_TYPE_LEAF`` matches the observed value in a live DB.
+
+    Parameters
+    ----------
+    db_path:
+        Path to a live djay ``MediaLibrary.db`` / Rekordbox ``master.db``
+        (whichever exposes playlist TSAF blobs). When ``None``, no validation
+        is attempted and the function logs a warning.
+    skip:
+        When truthy, skip validation entirely. When ``None``, read the
+        ``MDJ_SKIP_TSAF_VALIDATION`` env var as a fallback for CLIs that pass
+        ``--skip-tsaf-validation``.
+
+    Returns
+    -------
+    The observed byte when validation ran and agreed, otherwise ``None``.
+
+    Raises
+    ------
+    TSAFLeafTypeMismatch
+        If a live DB was readable AND exposed at least one non-root playlist
+        blob AND that blob's type byte disagrees with ``PLAYLIST_TYPE_LEAF``.
+    """
+    if skip is None:
+        skip = bool(os.environ.get("MDJ_SKIP_TSAF_VALIDATION"))
+    if skip:
+        _log.info("TSAF validation: skipped via flag/env")
+        return None
+    if db_path is None:
+        _log.warning(
+            "TSAF validation: no db_path supplied; PLAYLIST_TYPE_LEAF=0x%02x "
+            "remains a best-guess until a live fixture is available",
+            PLAYLIST_TYPE_LEAF,
+        )
+        return None
+    observed = _discover_leaf_type_from_db(Path(db_path))
+    if observed is None:
+        _log.warning(
+            "TSAF validation: no non-root playlist blobs found in %s; "
+            "PLAYLIST_TYPE_LEAF=0x%02x unverified",
+            db_path,
+            PLAYLIST_TYPE_LEAF,
+        )
+        return None
+    if observed != PLAYLIST_TYPE_LEAF:
+        raise TSAFLeafTypeMismatch(
+            f"PLAYLIST_TYPE_LEAF constant (0x{PLAYLIST_TYPE_LEAF:02x}) "
+            f"disagrees with observed value 0x{observed:02x} in "
+            f"{db_path}. Update apps/sync/playlist_tsaf.py or pass "
+            f"--skip-tsaf-validation for offline/dev."
+        )
+    return observed
+
+
 __all__ = [
     "PLAYLIST_TYPE_ROOT",
     "PLAYLIST_TYPE_LEAF",
+    "TSAFLeafTypeMismatch",
     "build_page_data",
     "parse_page_data",
     "new_page_key",
     "build_playlist_blob",
     "parse_playlist_blob",
+    "validate_leaf_type_byte",
 ]
