@@ -62,12 +62,27 @@ FIXTURE_ONELIBRARY = (
 )
 
 
-@pytest.fixture(scope="module")
-def fixture_onelibrary() -> Path:
-    """Path to the real SQLCipher-encrypted OneLibrary fixture."""
+@pytest.fixture(scope="function")
+def fixture_onelibrary(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Path to a per-test COPY of the SQLCipher-encrypted OneLibrary
+    fixture.
+
+    rbox ``OneLibrary(path)`` opens in read/write mode and SQLite
+    materialises ``-shm``/``-wal`` sidecar files alongside the opened
+    DB. Pointing rbox at the committed fixture directly therefore
+    mutates files under ``tests/fixtures/`` on every test run. We dodge
+    that by copying the fixture to a fresh tmp dir per test and
+    returning THAT path — so writer tests can safely be passed the
+    returned path as either template OR direct-open target.
+    """
+    import shutil as _shutil
+
     if not FIXTURE_ONELIBRARY.is_file():
         pytest.skip(f"OneLibrary fixture missing: {FIXTURE_ONELIBRARY}")
-    return FIXTURE_ONELIBRARY
+    scratch_dir = tmp_path_factory.mktemp("rb-onelibrary-template")
+    dest = scratch_dir / "exportLibrary.db"
+    _shutil.copyfile(FIXTURE_ONELIBRARY, dest)
+    return dest
 
 
 @pytest.fixture
