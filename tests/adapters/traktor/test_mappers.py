@@ -17,6 +17,8 @@ from apps.adapters.traktor.mappers import (
 
 # ------------------------------------------------------------- key mapper
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02d")
 @pytest.mark.parametrize(

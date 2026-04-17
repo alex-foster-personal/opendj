@@ -45,6 +45,8 @@ def _sample_library() -> OpenDjLibrary:
         playlists=(Playlist(name="warmup", track_ids=()),),
     )
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02d")
 def test_protocol_runtime_check() -> None:

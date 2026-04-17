@@ -16,6 +16,8 @@ SNAPSHOT_PATH = (
     / "serato_capabilities.snapshot.json"
 )
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02c")
 def test_capabilities_snapshot_matches() -> None:

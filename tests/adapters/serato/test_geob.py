@@ -16,6 +16,8 @@ from apps.adapters.serato.geob import (
     parse_markers2,
 )
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02c")
 def test_markers2_empty_roundtrip() -> None:

@@ -15,6 +15,8 @@ from apps.adapters.serato.tagstream import (
     find_all,
 )
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02c")
 def test_empty_stream_roundtrip() -> None:

@@ -40,6 +40,8 @@ from apps.open_dj import (
     serialize_jcs,
 )
 
+pytestmark = pytest.mark.requirement("OPEN-03")
+
 FIXTURE_ROOT: Path = Path(__file__).parent / "fixtures" / "conformance"
 
 

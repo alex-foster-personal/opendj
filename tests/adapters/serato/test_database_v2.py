@@ -21,6 +21,8 @@ def _make_track(**overrides: str) -> CrateTrack:
     defaults.update(overrides)
     return CrateTrack(**defaults)
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02c")
 def test_empty_database_roundtrip(tmp_path) -> None:

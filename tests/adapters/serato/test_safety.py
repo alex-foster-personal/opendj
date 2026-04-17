@@ -11,6 +11,8 @@ import pytest
 
 from apps.adapters.serato import safety
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02c")
 def test_guard_is_noop_when_not_live_write() -> None:

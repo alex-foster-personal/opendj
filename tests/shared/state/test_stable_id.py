@@ -18,7 +18,10 @@ import pytest
 from apps.shared.state import ids
 
 
-pytestmark = pytest.mark.requirement("OPEN-01b")
+pytestmark = [
+    pytest.mark.requirement("OPEN-01b"),
+    pytest.mark.requirement("OPEN-01"),
+]
 
 
 CANONICAL_ISRC = "GBCEN0900132"

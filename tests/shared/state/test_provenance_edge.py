@@ -14,7 +14,10 @@ import pytest
 from apps.shared.state import provenance as prov
 
 
-pytestmark = pytest.mark.requirement("OPEN-01c")
+pytestmark = [
+    pytest.mark.requirement("OPEN-01c"),
+    pytest.mark.requirement("OPEN-01"),
+]
 
 
 TRACK_ID = "b" * 40

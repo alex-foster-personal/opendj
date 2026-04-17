@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.requirement("OPEN-03")
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "open-dj" / "schema" / "v0.2" / "open-dj.schema.json"
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "conformance"

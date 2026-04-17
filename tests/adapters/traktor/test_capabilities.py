@@ -16,6 +16,8 @@ SNAPSHOT_PATH = (
     / "traktor_capabilities.snapshot.json"
 )
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02d")
 def test_traktor_capabilities_snapshot_matches() -> None:

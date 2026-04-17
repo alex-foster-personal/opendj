@@ -22,6 +22,8 @@ SAMPLE_NML = b"""<?xml version='1.0' encoding='utf-8'?>
 </NML>
 """
 
+pytestmark = pytest.mark.requirement("OPEN-02")
+
 
 @pytest.mark.requirement("OPEN-02d")
 def test_empty_roundtrip(tmp_path) -> None:
