@@ -1,4 +1,7 @@
 pyrekordbox>=0.4.4
+# CAT-06 (Phase 10 Pioneer USB read path): kaitai runtime for the vendored
+# rekordbox_pdb parser at apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py.
+kaitaistruct>=0.11
 mutagen>=1.47
 rich>=13.0
 
