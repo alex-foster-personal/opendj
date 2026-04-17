@@ -93,6 +93,10 @@ def load_from_rekordbox(
 
     close_after = False
     if db is None:
+        # Phase 10 only reads from the working-copy DB (no .save() / .commit()
+        # calls anywhere in apps/sync/usb). open_db() copies from the live DB
+        # to the working copy if missing and returns a pyrekordbox handle we
+        # use strictly for `get_playlist()` / `get_content()` queries.
         db = rbdb.open_db()
         close_after = True
 

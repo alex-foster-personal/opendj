@@ -82,7 +82,13 @@ def _build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--cautious",
         action="store_true",
-        help="Restrict to --playlists or --files subset.",
+        help=(
+            "Restrict to --playlists or --files subset. Required even when "
+            "combined with --remediate-drift: the drift scope (e.g. "
+            "--only-corrupted) narrows *which* ops enter the plan, but "
+            "--cautious still requires an explicit playlist/file filter as "
+            "the typed subset gate."
+        ),
     )
     mode.add_argument(
         "--i-understand-the-risks",
@@ -270,7 +276,8 @@ def main(argv: list[str] | None = None) -> int:
             plan = filter_plan_by_files(plan, files)
         else:
             console.print(
-                "[red]--cautious requires --playlists or --files[/red]"
+                "[red]--cautious requires --playlists or --files[/red] "
+                "(still required with --remediate-drift; see --help)"
             )
             return 3
 
