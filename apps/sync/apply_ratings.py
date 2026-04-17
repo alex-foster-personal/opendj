@@ -141,12 +141,18 @@ def _verify_djay_rating(db_path: Path, uuid: str, expected: int) -> bool:
 def live_run(
     rows: list[dict],
     *,
+    rb_db_path: Path,
+    djay_db_path: Path,
     only_tracks: set[str] | None = None,
     flag_ok: bool = False,
     prefer: str = "newest",
-    rb_db_path: Path = paths.REKORDBOX_WORKING_DB,
-    djay_db_path: Path = paths.DJAY_WORKING_DB,
 ) -> int:
+    # Note: rb_db_path and djay_db_path are REQUIRED (no defaults). The
+    # previous signature defaulted to the WORKING-copy paths, which meant a
+    # caller that forgot to route --live through _live_rb_db_path /
+    # _live_djay_db_path would silently operate on the working copy even
+    # when the user asked for --live. That was issue #1 (Phase 2 [I1]).
+    # Keeping these required turns the footgun into an immediate TypeError.
     targets_rb: list[tuple[str, int]] = []
     targets_djay: list[tuple[str, int]] = []
 
