@@ -115,7 +115,20 @@ def create_app(
 def _build_default_app() -> FastAPI:
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
-    return create_app(bind_host=bind_host, hostname=hostname)
+    # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
+    # else fall back to the in-memory backend (keeps dev + tests fast).
+    backend: Optional[StateBackend] = None
+    try:
+        from .sqlite_backend import make_backend
+        backend = make_backend()
+    except Exception as exc:  # pragma: no cover - defensive
+        log.warning(
+            "failed to build SqliteBackend; using InMemoryBackend: %s", exc,
+        )
+        backend = None
+    return create_app(
+        backend=backend, bind_host=bind_host, hostname=hostname,
+    )
 
 
 app: FastAPI = _build_default_app()

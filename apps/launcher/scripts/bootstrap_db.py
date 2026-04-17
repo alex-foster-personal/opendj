@@ -2,8 +2,12 @@
 
 Preference order (matches ``apps/launcher/src-tauri/src/state.rs``):
 
-1. If ``data/state/state.db`` (Phase 5 shared-state) exists, do nothing and
-   print ``SHARED_STATE_READY``.
+1. If ``data/state/state.db`` (Phase 5 shared-state) exists:
+   a. Apply the launcher-scoped additive migration -- create
+      ``tracks_fts`` and ``tracks_frecency`` if the launcher's palette
+      needs them and Phase 5 hasn't shipped them (Phase 5 owns the core
+      schema; we only ever add, never rename/drop).
+   b. Print ``SHARED_STATE_READY`` + exit 0.
 2. Otherwise, build ``data/launcher-bootstrap.sqlite`` from:
    * ``apps.shared.rekordbox_db.iter_tracks(open_db())`` when Rekordbox is
      readable;
@@ -178,14 +182,108 @@ def build_db(dst: Path, rows: Iterable[dict]) -> int:
         conn.close()
 
 
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') "
+        "AND name = ?",
+        (name,),
+    ).fetchone()
+    return row is not None
+
+
+def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
+    """Launcher-scoped additive migration on Phase 5's ``state.db``.
+
+    Idempotent. Never modifies existing Phase 5 tables -- only creates
+    launcher-specific extensions (``tracks_fts`` + ``tracks_frecency``)
+    if they are missing. Returns a dict flagging what we actually added
+    this invocation so callers can log.
+    """
+    result = {"tracks_fts_created": False, "tracks_frecency_created": False}
+    if not db_path.exists():
+        return result
+    conn = sqlite3.connect(str(db_path))
+    try:
+        # tracks_fts: contentless FTS5 virtual table. Mirrors the schema
+        # used by BOOTSTRAP_DB above so the palette query path can treat
+        # either DB interchangeably.
+        had_fts = _table_exists(conn, "tracks_fts")
+        conn.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
+                title, artist, album, genre, key, tags,
+                tokenize='unicode61 remove_diacritics 2'
+            )
+            """
+        )
+        result["tracks_fts_created"] = not had_fts
+
+        # tracks_frecency: plain table keyed by stable_id (no FK -- Phase 5
+        # owns the tracks table and CREATE TABLE does not allow REFERENCES
+        # to an absent table in strict-FK mode without the parent existing
+        # at statement time; we soft-link via launcher code instead).
+        had_frec = _table_exists(conn, "tracks_frecency")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tracks_frecency (
+                stable_id        TEXT PRIMARY KEY,
+                plays            INTEGER DEFAULT 0,
+                drags            INTEGER DEFAULT 0,
+                last_played_at   INTEGER,
+                last_dragged_at  INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_frecency_drags
+                ON tracks_frecency(drags DESC, last_dragged_at DESC)
+            """
+        )
+        result["tracks_frecency_created"] = not had_frec
+        conn.commit()
+    finally:
+        conn.close()
+    return result
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phase 17 launcher DB bootstrap")
     ap.add_argument("--force", action="store_true", help="Rebuild even if shared-state exists")
     args = ap.parse_args()
 
     if SHARED_DB.exists() and not args.force:
-        print("SHARED_STATE_READY")
-        return 0
+        # Verify Phase 5 shipped the core tables the launcher expects. If
+        # ``tracks`` is missing we fall through to the bootstrap path --
+        # that way an unmigrated state.db doesn't silently break the
+        # palette.
+        conn = sqlite3.connect(f"file:{SHARED_DB}?mode=ro", uri=True)
+        try:
+            has_tracks = _table_exists(conn, "tracks")
+        finally:
+            conn.close()
+        if has_tracks:
+            added = apply_launcher_migration(SHARED_DB)
+            extras = [k for k, v in added.items() if v]
+            if extras:
+                print(
+                    "[bootstrap] using Phase 5 state.db; "
+                    f"added launcher extensions: {', '.join(extras)}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "[bootstrap] using Phase 5 state.db; launcher "
+                    "extensions already present",
+                    file=sys.stderr,
+                )
+            print("SHARED_STATE_READY")
+            return 0
+        print(
+            "[bootstrap] Phase 5 state.db exists but has no tracks table; "
+            "falling back to launcher bootstrap",
+            file=sys.stderr,
+        )
 
     rows: list[dict] = []
     rows.extend(_iter_rekordbox())

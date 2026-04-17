@@ -12,11 +12,15 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Resolve the SQLite path. Preference order:
+/// Resolve the SQLite path. Preference order (Phase 5 ready):
 ///
 /// 1. `$HYPERK_DB_PATH` env override (tests + ad-hoc).
 /// 2. Phase 5 shared-state DB (`<repo>/data/state/state.db`) if present.
-/// 3. Phase 17 bootstrap DB (`<repo>/data/launcher-bootstrap.sqlite`).
+///    This is the canonical source once Phase 5 has shipped; the launcher
+///    reads from it directly and relies on `bootstrap_db.py` to apply the
+///    launcher-scoped additive migration (tracks_fts / tracks_frecency).
+/// 3. Phase 17 bootstrap DB (`<repo>/data/launcher-bootstrap.sqlite`) --
+///    the legacy fallback when Phase 5 isn't available yet.
 ///
 /// Returns `Err` if NONE of the above exist, so callers can surface an
 /// actionable "run scripts/bootstrap_db.py" message to the palette.
@@ -25,6 +29,7 @@ pub fn get_db_path() -> Result<PathBuf, String> {
         return Ok(PathBuf::from(override_));
     }
     let repo = repo_root();
+    // Phase 5 shared-state DB wins whenever it's present.
     let shared = repo.join("data").join("state").join("state.db");
     if shared.exists() {
         return Ok(shared);
