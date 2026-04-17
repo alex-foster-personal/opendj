@@ -71,7 +71,10 @@ def test_p14_f03_run_honours_enable_destructive_and_dry_bus(
         ["run", "--enable-destructive", "--dry-bus"]
     )
     rc = _cmd_run(args)
-    assert rc == 0
+    # P14-F02 upgraded _cmd_run to a live daemon loop; on a CI runner
+    # without sounddevice the daemon bails with rc=2 after printing
+    # the resolved-context summary. Contract here is flag plumbing.
+    assert rc in (0, 2)
     out = capsys.readouterr().out
     assert "destructive=True" in out, (
         f"--enable-destructive must flip VoiceContext.destructive; stdout={out!r}"
