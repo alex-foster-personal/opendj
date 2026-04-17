@@ -119,12 +119,12 @@ def _cache_fresh(path: Path, ttl: int) -> bool:
 def _write_cache(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
 
 
 def _read_cache(path: Path) -> dict:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------

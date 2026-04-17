@@ -109,6 +109,25 @@ def test_fetch_retries_once_on_401(fake_cache_dir: Path) -> None:
     assert kinds.count("playlist") == 2
 
 
+
+@pytest.mark.requirement("CAT-01")
+def test_cache_write_uses_utf8_encoding(fake_cache_dir: Path) -> None:
+    """Regression: _write_cache must pass encoding=utf-8 so non-ASCII
+    track names survive on non-UTF-8 locales (e.g. Windows cp1252).
+    """
+    fake = FakeSpotipy(
+        meta=make_meta(name="Café del Mar"),
+        items_pages=[[make_track(spotify_id="t1", name="Nuit d'été")]],
+    )
+    client = SpotifyClient(fake, cache_dir=fake_cache_dir)
+    playlist = client.fetch_playlist("37i9dQZF1DXcBWIGoYBM5M", use_cache=False)
+    assert playlist.name == "Café del Mar"
+    cache_file = fake_cache_dir / "37i9dQZF1DXcBWIGoYBM5M.json"
+    raw = cache_file.read_text(encoding="utf-8")
+    assert "Café del Mar" in raw
+    assert "Nuit d'été" in raw
+
+
 @pytest.mark.requirement("CAT-01")
 def test_cache_freshness_honours_ttl(fake_cache_dir: Path) -> None:
     fake = FakeSpotipy(meta=make_meta(), items_pages=[[make_track(spotify_id="t1")]])
