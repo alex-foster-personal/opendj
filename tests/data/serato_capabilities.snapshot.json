@@ -1,0 +1,91 @@
+{
+  "adapter": "serato",
+  "fields": [
+    {
+      "field": "track_id",
+      "rationale": "computed from file path + tsng",
+      "supports": "lossless"
+    },
+    {
+      "field": "file_path",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "title",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "artists",
+      "rationale": "Serato stores a single artist string; artists joined on ' & '.",
+      "supports": "lossy"
+    },
+    {
+      "field": "album",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "bpm",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "key_camelot",
+      "rationale": "Serato key string round-trips through the Camelot map.",
+      "supports": "lossless"
+    },
+    {
+      "field": "rating",
+      "rationale": "Serato has no native rating field; drop-with-warning (D6).",
+      "supports": "unsupported"
+    },
+    {
+      "field": "cue_points.hot",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.memory",
+      "rationale": "Serato has no memory cues; drop-with-warning (D6).",
+      "supports": "unsupported"
+    },
+    {
+      "field": "cue_points.loop",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "cue_points.color",
+      "rationale": "24-bit RGB round-trips.",
+      "supports": "lossless"
+    },
+    {
+      "field": "beats",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "color_rgb",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "play_count",
+      "rationale": "",
+      "supports": "lossless"
+    },
+    {
+      "field": "isrc",
+      "rationale": "Stored in a custom Serato column; use x_serato_isrc extension.",
+      "supports": "lossy"
+    },
+    {
+      "field": "smart_crates",
+      "rationale": "Treated as opaque x_serato_smart_crate extension.",
+      "supports": "unsupported"
+    }
+  ],
+  "version": "0.1.0"
+}
