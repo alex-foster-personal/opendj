@@ -16,7 +16,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from PIL import Image
 
 pytestmark = [pytest.mark.requirement("CAT-06")]
 
@@ -24,6 +23,13 @@ pytestmark = [pytest.mark.requirement("CAT-06")]
 # --------------------------------------------------------------------------- #
 # Skip the whole module on non-Darwin: Quartz import would fail. The agent
 # is a macOS-only tool; there's nothing to validate on Linux CI.
+#
+# Note: the Darwin skip must happen BEFORE importing PIL / Pillow or the
+# apps.sync.usb.pioneer.agent_actuator module, because those imports are not
+# guaranteed to be installed on the Ubuntu CI runner (the agent is a macOS
+# prototype and its deps are not in the base requirements). Keeping platform
+# checks at the very top of the module lets pytest collection succeed on
+# Linux without pulling in macOS-only dependencies.
 # --------------------------------------------------------------------------- #
 
 _IS_DARWIN = sys.platform == "darwin"
@@ -34,6 +40,8 @@ if not _IS_DARWIN:  # pragma: no cover
         allow_module_level=True,
     )
 
+
+from PIL import Image  # noqa: E402
 
 from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     Actuator,
