@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools/schemas/session_summary.schema.json",
+  "title": "SessionSummary",
+  "type": "object",
+  "required": ["session_id", "started_at", "ended_at", "event_count", "transition_count", "share_state"],
+  "properties": {
+    "session_id":       {"type": "string"},
+    "started_at":       {"type": "string"},
+    "ended_at":         {"type": ["string", "null"]},
+    "duration_s":       {"type": ["number", "null"]},
+    "event_count":      {"type": "integer", "minimum": 0},
+    "transition_count": {"type": "integer", "minimum": 0},
+    "share_state":      {"type": "string", "enum": ["private", "shared_local", "shared_cloud"]}
+  }
+}

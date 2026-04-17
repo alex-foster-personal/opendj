@@ -1,0 +1,172 @@
+"""FastAPI router for recorded sets.
+
+Plan 12-03 Step 3. Mountable router (:data:`router`) that exposes the
+session + transition data model to Phase 11's SvelteKit app. Bind your
+uvicorn app to ``127.0.0.1`` (CAT-05b).
+
+Endpoints::
+
+    GET    /api/sets                                -> list of SessionSummary
+    GET    /api/sets/{session_id}                   -> Session JSON
+    GET    /api/sets/{session_id}/timeline          -> NDJSON stream of events
+    GET    /api/sets/{session_id}/transitions       -> transitions array
+    POST   /api/sets/{session_id}/transitions/{idx}/label
+        body {"class": "..."}                       -> appends to labels.jsonl
+    GET    /api/sets/{session_id}/audio/{segment}   -> MP3 stream (localhost-only
+                                                       when share_state='private')
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any, Iterable
+
+from fastapi import APIRouter, HTTPException, Path as FPath, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
+
+from . import paths as sets_paths
+from .audio import (
+    AudioSegmentView,
+    PathTraversalError,
+    list_segments,
+    resolve_segment_path,
+)
+from .classify import CLASS_LIST, read_transitions
+from .label import append_label
+from .sessions import get_session, list_sessions, summary_to_dict
+
+
+router = APIRouter(prefix="/api/sets", tags=["sets"])
+
+
+_LOCALHOST_HOSTS: frozenset[str] = frozenset(
+    {"127.0.0.1", "::1", "localhost", "testclient"}
+)
+"""Allowed client hosts for private-session audio.
+
+``testclient`` is FastAPI's TestClient default and is treated as
+localhost; in production uvicorn binds to 127.0.0.1 per CAT-05b so the
+real remote would never match anyway.
+"""
+
+
+def _is_localhost(request: Request) -> bool:
+    client_host = request.client.host if request.client else None
+    return client_host in _LOCALHOST_HOSTS
+
+
+# ---------------------------------------------------------------------------
+# request bodies
+# ---------------------------------------------------------------------------
+
+
+class LabelRequest(BaseModel):
+    """Body for the relabel endpoint."""
+
+    cls: str = Field(alias="class", min_length=1, max_length=32)
+    labeler: str = Field(default="web_ui", max_length=64)
+
+
+# ---------------------------------------------------------------------------
+# endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("")
+async def api_list_sessions() -> JSONResponse:
+    summaries = list_sessions()
+    return JSONResponse([summary_to_dict(s) for s in summaries])
+
+
+@router.get("/{session_id}")
+async def api_get_session(session_id: str) -> JSONResponse:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"session {session_id} not found")
+    payload: dict[str, Any] = {
+        "summary": summary_to_dict(session.summary),
+        "manifest": session.manifest,
+        "segments": [asdict(s) for s in list_segments(session_id)],
+    }
+    return JSONResponse(payload)
+
+
+@router.get("/{session_id}/timeline")
+async def api_timeline_stream(session_id: str) -> StreamingResponse:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    session_dir = sets_paths.session_dir(session_id)
+    jsonl = session_dir / "timeline.jsonl"
+    if not jsonl.exists():
+        # Empty timeline is valid; stream zero bytes.
+        async def _empty() -> Iterable[bytes]:
+            yield b""
+        return StreamingResponse(_empty(), media_type="application/x-ndjson")
+
+    def _stream() -> Iterable[bytes]:
+        with jsonl.open("rb") as fh:
+            for line in fh:
+                yield line
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+@router.get("/{session_id}/transitions")
+async def api_transitions(session_id: str) -> JSONResponse:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    rows = read_transitions(session_id)
+    return JSONResponse(rows)
+
+
+@router.post("/{session_id}/transitions/{idx}/label")
+async def api_relabel(
+    session_id: str,
+    idx: int,
+    body: LabelRequest,
+) -> JSONResponse:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if body.cls not in CLASS_LIST:
+        raise HTTPException(
+            status_code=400,
+            detail=f"class {body.cls!r} not in {list(CLASS_LIST)}",
+        )
+    try:
+        append_label(session_id, idx, body.cls, labeler=body.labeler)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"ok": True, "idx": idx, "class": body.cls})
+
+
+@router.get("/{session_id}/audio/{segment}")
+async def api_audio(
+    request: Request,
+    session_id: str,
+    segment: str = FPath(..., description="audio_<iso>.mp3"),
+) -> FileResponse:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    share_state = session.summary.share_state
+    if share_state == "private" and not _is_localhost(request):
+        raise HTTPException(
+            status_code=403,
+            detail="session is private; audio only available to localhost clients",
+        )
+    try:
+        path = resolve_segment_path(session_id, segment)
+    except PathTraversalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="segment not found")
+    return FileResponse(str(path), media_type="audio/mpeg", filename=segment)
+
+
+__all__ = ["router", "LabelRequest"]

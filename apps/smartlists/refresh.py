@@ -58,25 +58,34 @@ def main(argv: list[str] | None = None, *, out=None) -> int:
     repo, conn = build_smartlists_repo(args.db)
     try:
         materializer = Materializer(repo, _build_writers())
-        if args.name:
-            row = repo.get_by_name(args.name)
-            if row is None:
-                print(f"error: no smartlist named {args.name!r}",
-                      file=sys.stderr)
-                return 1
-            results = [
-                materializer.materialize(
-                    row.id, dry_run=do_dry, live=do_live,
-                    force_adopt=args.force_adopt,
-                )
-            ]
-        else:
-            results = materializer.materialize_all(
-                dry_run=do_dry, live=do_live,
-                force_adopt=args.force_adopt,
-            )
+        try:
+            return _run(args, repo, materializer, stream, do_dry=do_dry,
+                        do_live=do_live)
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
     finally:
         conn.close()
+
+
+def _run(args, repo, materializer, stream, *, do_dry, do_live) -> int:
+    if args.name:
+        row = repo.get_by_name(args.name)
+        if row is None:
+            print(f"error: no smartlist named {args.name!r}",
+                  file=sys.stderr)
+            return 1
+        results = [
+            materializer.materialize(
+                row.id, dry_run=do_dry, live=do_live,
+                force_adopt=args.force_adopt,
+            )
+        ]
+    else:
+        results = materializer.materialize_all(
+            dry_run=do_dry, live=do_live,
+            force_adopt=args.force_adopt,
+        )
 
     _render_summary(results, stream, dry_run=do_dry)
     return 0 if all(r.ok for r in results) else 1

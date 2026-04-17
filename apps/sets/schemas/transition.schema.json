@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools/schemas/transition.schema.json",
+  "title": "Transition",
+  "description": "One classified transition between tracks in a recorded set.",
+  "type": "object",
+  "required": ["idx", "t_start_s", "t_change_s", "t_end_s", "predicted_class", "confidence", "model_version", "features"],
+  "properties": {
+    "idx":            {"type": "integer", "minimum": 0},
+    "t_start_s":      {"type": "number", "minimum": 0},
+    "t_change_s":     {"type": "number", "minimum": 0},
+    "t_end_s":        {"type": "number", "minimum": 0},
+    "from_deck":      {"type": ["string", "null"]},
+    "to_deck":        {"type": ["string", "null"]},
+    "from_track":     {"type": ["string", "null"]},
+    "to_track":       {"type": ["string", "null"]},
+    "predicted_class": {"type": "string", "enum": ["cut", "blend", "filter_sweep", "fx", "quick_double", "unknown"]},
+    "confidence":     {"type": "number", "minimum": 0, "maximum": 1},
+    "model_version":  {"type": "string"},
+    "features": {
+      "type": "object",
+      "required": ["overlap_s", "fade_s", "incoming_preload_s", "outgoing_trail_s", "time_since_prev_transition_s", "is_same_deck_reload"],
+      "properties": {
+        "overlap_s":                    {"type": "number"},
+        "fade_s":                       {"type": "number"},
+        "incoming_preload_s":           {"type": "number"},
+        "outgoing_trail_s":             {"type": "number"},
+        "time_since_prev_transition_s": {"type": "number"},
+        "is_same_deck_reload":          {"type": "number", "enum": [0.0, 1.0]}
+      }
+    }
+  }
+}

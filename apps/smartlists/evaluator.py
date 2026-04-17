@@ -218,7 +218,15 @@ def evaluate(
     if limit is not None:
         sql += f" LIMIT {int(limit)}"
 
-    rows = conn.execute(sql, params).fetchall()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as exc:
+        # Phase 5 tables may not exist yet on an empty state DB; report
+        # rather than crash so the CLI surface stays helpful.
+        raise EvaluatorError(
+            f"evaluator could not query tracks: {exc}. "
+            "Run the Phase 5 ingest first to populate tracks + track_fields."
+        ) from exc
     return [r[0] for r in rows]
 
 

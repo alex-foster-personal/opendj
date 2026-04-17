@@ -20,6 +20,8 @@ from . import retention as retention_mod
 from .classify import classify_session
 from .classify import model as classify_model
 from .label import label_session
+from .replay import replay as replay_cmd
+from .sessions import list_sessions, summary_to_dict
 from .state import SetsState
 
 
@@ -196,7 +198,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sp_train.set_defaults(func=_dispatch_train)
 
+    sp_replay = sub.add_parser("replay", help="replay a recorded session")
+    sp_replay.add_argument("session_id")
+    sp_replay.add_argument("--format", choices=("rich", "jsonl"), default="rich")
+    sp_replay.add_argument("--since", default=None)
+    sp_replay.add_argument("--class", dest="class_filter", default=None)
+    sp_replay.set_defaults(func=_dispatch_replay)
+
     return p
+
+
+def _dispatch_replay(args: argparse.Namespace) -> int:
+    return replay_cmd(
+        args.session_id,
+        output_format=args.format,
+        since=args.since,
+        class_filter=args.class_filter,
+    )
 
 
 def _dispatch_classify(args: argparse.Namespace) -> int:

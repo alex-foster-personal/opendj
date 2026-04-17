@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools/schemas/timeline_event.schema.json",
+  "title": "TimelineEvent",
+  "description": "One event on a recorded DJ set's timeline. Mirrored between timeline.jsonl and the sets.db events table.",
+  "type": "object",
+  "required": ["session_id", "timestamp_s", "wall_clock", "action", "source"],
+  "properties": {
+    "session_id":      {"type": "string"},
+    "timestamp_s":     {"type": "number", "minimum": 0},
+    "wall_clock":      {"type": "string"},
+    "deck":            {"type": ["string", "null"]},
+    "track_stable_id": {"type": ["string", "null"]},
+    "action":          {"type": "string"},
+    "source":          {"type": "string"},
+    "value":           {"type": "object"}
+  },
+  "additionalProperties": false
+}

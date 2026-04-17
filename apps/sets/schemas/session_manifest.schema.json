@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools/schemas/session_manifest.schema.json",
+  "title": "SessionManifest",
+  "description": "Written at session stop; mirrors the sets table row plus MP3 segment metadata.",
+  "type": "object",
+  "required": ["session_id", "started_at", "capture_device", "share_state", "event_count", "deck_sources", "mp3_segments", "watermark", "schema_version"],
+  "properties": {
+    "session_id":       {"type": "string"},
+    "started_at":       {"type": "string"},
+    "ended_at":         {"type": ["string", "null"]},
+    "capture_device":   {"type": "string"},
+    "share_state":      {"type": "string", "enum": ["private", "shared_local", "shared_cloud"]},
+    "event_count":      {"type": "integer", "minimum": 0},
+    "deck_sources":     {"type": "array", "items": {"type": "string"}},
+    "watermark":        {"type": "string"},
+    "schema_version":   {"type": "integer", "minimum": 1},
+    "mp3_segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "start_t_s", "size_bytes"],
+        "properties": {
+          "name":       {"type": "string"},
+          "start_t_s":  {"type": "number", "minimum": 0},
+          "duration_s": {"type": ["number", "null"]},
+          "size_bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}
