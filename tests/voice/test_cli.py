@@ -1,0 +1,90 @@
+"""Unit tests for apps.voice.__main__ CLI (VOICE-01)."""
+from __future__ import annotations
+
+import io
+import json
+
+import pytest
+
+from apps.voice import __main__ as cli
+
+
+pytestmark = pytest.mark.requirement("VOICE-01")
+
+
+class TestBuildParser:
+    def test_subcommands_registered(self):
+        p = cli.build_parser()
+        args = p.parse_args(["probe", "--text", "find X"])
+        assert args.func == cli._cmd_probe
+        assert args.text == "find X"
+
+    def test_help_no_subcommand_returns_zero(self, capsys):
+        rc = cli.main([])
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "probe" in captured.out
+        assert "run" in captured.out
+
+
+class TestProbe:
+    def test_probe_with_text_emits_event_json(self, capsys, monkeypatch, tmp_path):
+        # Force JSONL stub bus to avoid touching the repo data/ dir.
+        monkeypatch.setenv("VOICE_INPUT_DEVICE", "0")  # harmless
+        rc = cli.main(["probe", "--text", "find daft punk", "--dry-bus"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        lines = [l for l in captured.out.splitlines() if l.strip().startswith("{")]
+        assert lines, f"expected JSON lines, got: {captured.out!r}"
+        payload = json.loads(lines[0])
+        assert payload["intent"] == "SEARCH"
+        assert payload["published"] is True
+        assert payload["slots"]["query"] == "daft punk"
+
+    def test_probe_grammar_miss(self, capsys, monkeypatch):
+        rc = cli.main(["probe", "--text", "gibberish", "--dry-bus"])
+        captured = capsys.readouterr()
+        assert rc == 0
+        lines = [l for l in captured.out.splitlines() if l.strip().startswith("{")]
+        payload = json.loads(lines[0])
+        assert payload["intent"] is None
+        assert payload["response"] == "grammar_miss"
+
+    def test_probe_reads_stdin(self, capsys, monkeypatch):
+        fake_stdin = io.StringIO("mute voice\nunmute voice\n")
+        monkeypatch.setattr("sys.stdin", fake_stdin)
+        rc = cli.main(["probe", "--dry-bus"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert '"intent": "MUTE_VOICE"' in out
+        assert '"intent": "UNMUTE_VOICE"' in out
+
+
+class TestBench:
+    def test_bench_prints_percentile_json(self, capsys):
+        rc = cli.main(["bench", "--iterations", "5", "--text", "find x"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        payload = json.loads(out.strip().splitlines()[-1])
+        assert payload["iterations"] == 5
+        assert "p50_ms" in payload
+        assert "p95_ms" in payload
+
+
+class TestSay:
+    def test_say_uses_make_tts(self, monkeypatch, capsys):
+        """Route `say` through the recording backend so we don't spawn anything."""
+        monkeypatch.setenv("TTS_BACKEND", "recording")
+        rc = cli.main(["say", "hello booth"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "spoke via recording" in out
+        assert "hello booth" in out
+
+
+class TestRun:
+    def test_run_skeleton_exits_zero(self, capsys):
+        rc = cli.main(["run"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "Plan 1 skeleton" in out or "context resolved" in out

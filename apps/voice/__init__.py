@@ -33,4 +33,6 @@ __all__ = [
     "bus",
     "actions",
     "context",
+    "confirm",
+    "settings",
 ]
