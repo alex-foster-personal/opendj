@@ -196,6 +196,26 @@ def _encode_loop(loop: Markers2Loop) -> bytes:
 
 def encode_markers2(markers: Markers2) -> bytes:
     """Re-encode a ``Markers2`` into a GEOB payload."""
+    # Special-case: Markers2 parsed from an unrecognised version is stored as
+    # a single ``__raw__`` unknown_tag carrying the entire original frame. If
+    # that is the ONLY content, round-trip verbatim to preserve the bytes
+    # Serato gave us. If the caller has ALSO supplied cues / loops / color /
+    # bpm_locked / other unknown tags, we cannot safely splice a full
+    # ``__raw__`` frame into a tag stream; fall through to normal encoding
+    # and silently drop the ``__raw__`` blob (it would otherwise corrupt the
+    # stream and, worse, overwrite the structured cues/loops the caller set).
+    has_structured_content = (
+        bool(markers.cues)
+        or bool(markers.loops)
+        or markers.track_color_rgb is not None
+        or markers.bpm_locked
+        or any(name != "__raw__" for name, _ in markers.unknown_tags)
+    )
+    if not has_structured_content:
+        for name, raw in markers.unknown_tags:
+            if name == "__raw__":
+                return raw
+
     body = bytearray()
 
     def _append(name: str, payload: bytes) -> None:
@@ -214,7 +234,10 @@ def encode_markers2(markers: Markers2) -> bytes:
         _append("BPMLOCK", b"\x01")
     for name, raw in markers.unknown_tags:
         if name == "__raw__":
-            return raw  # we preserved the whole frame verbatim on bad-version read
+            # Cannot embed a verbatim full-frame blob inside the tag stream
+            # without corrupting it; structured content wins. See the block
+            # above for the pure-passthrough case.
+            continue
         _append(name, raw)
 
     b64 = base64.b64encode(bytes(body))

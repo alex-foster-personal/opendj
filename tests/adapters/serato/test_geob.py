@@ -76,6 +76,51 @@ def test_markers2_bad_version_preserves_raw() -> None:
 
 
 @pytest.mark.requirement("OPEN-02c")
+def test_markers2_raw_plus_cue_and_loop_does_not_drop_structured() -> None:
+    """Regression: a ``__raw__`` unknown_tag must not short-circuit encoding
+    when the Markers2 also carries cues / loops. Before the fix, the early
+    ``return raw`` in encode_markers2 silently dropped every cue and loop
+    any time a __raw__ was present alongside structured content.
+    """
+    bogus_raw = b"\x02\x00passthrough"
+    original = Markers2(
+        cues=(
+            Markers2Cue(
+                index=0, position_ms=1000, color_rgb=0xCC0000, name="Drop"
+            ),
+        ),
+        loops=(
+            Markers2Loop(
+                index=1,
+                start_ms=2000,
+                end_ms=4000,
+                color_rgb=0x2222DD,
+                name="L1",
+                locked=False,
+            ),
+        ),
+        unknown_tags=(("__raw__", bogus_raw),),
+    )
+    encoded = encode_markers2(original)
+    # The encoded payload is a valid Markers2 frame (version 0x01 0x01 +
+    # base64), NOT the verbatim ``__raw__`` blob. The raw blob is dropped
+    # because it cannot be spliced into a tag stream.
+    assert encoded[:2] == b"\x01\x01"
+    assert encoded != bogus_raw
+    decoded = parse_markers2(encoded)
+    assert decoded.cues == original.cues
+    assert decoded.loops == original.loops
+
+
+@pytest.mark.requirement("OPEN-02c")
+def test_markers2_raw_alone_still_roundtrips_verbatim() -> None:
+    """Pure-passthrough case must still return the raw blob verbatim."""
+    bogus = b"\x02\x00verbatim-me"
+    original = Markers2(unknown_tags=(("__raw__", bogus),))
+    assert encode_markers2(original) == bogus
+
+
+@pytest.mark.requirement("OPEN-02c")
 def test_beatgrid_constant_tempo_roundtrip() -> None:
     grid = BeatGrid(markers=(BeatGridMarker(position_seconds=0.0, bpm=128.0),))
     encoded = encode_beatgrid(grid)
