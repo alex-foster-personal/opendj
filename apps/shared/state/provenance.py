@@ -210,7 +210,7 @@ def read_history(
         "SELECT value_json, source, confidence, modified_at "
         "FROM track_field_history "
         "WHERE stable_id = ? AND field_name = ? "
-        "ORDER BY superseded_at DESC",
+        "ORDER BY superseded_at DESC, id DESC",
         (stable_id, field_name),
     ).fetchall()
     return [

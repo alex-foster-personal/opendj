@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 2
 
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -118,9 +118,44 @@ _V1: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_events_stable_id ON events(stable_id) WHERE stable_id IS NOT NULL",
 ]
 
+# --- migration 1 -> 2: history append-only ---------------------------------
+# [I1] The v1 ``track_field_history`` PK ``(stable_id, field_name,
+# superseded_at)`` could silently overwrite a prior row if two rewrites
+# landed in the same clock tick (e.g. frozen test clock or tight ingest
+# loop). Replace the PK with a surrogate ``id INTEGER PRIMARY KEY
+# AUTOINCREMENT`` so history is truly append-only, and keep the old triple
+# as a non-unique index for lookup. Existing rows are preserved.
+_V2: list[str] = [
+    """
+    CREATE TABLE track_field_history_v2 (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        stable_id     TEXT NOT NULL,
+        field_name    TEXT NOT NULL,
+        value_json    TEXT NOT NULL,
+        source        TEXT NOT NULL,
+        confidence    REAL,
+        modified_at   TEXT NOT NULL,
+        superseded_at TEXT NOT NULL
+    )
+    """,
+    """
+    INSERT INTO track_field_history_v2(
+        stable_id, field_name, value_json, source,
+        confidence, modified_at, superseded_at
+    )
+    SELECT stable_id, field_name, value_json, source,
+           confidence, modified_at, superseded_at
+    FROM track_field_history
+    """,
+    "DROP TABLE track_field_history",
+    "ALTER TABLE track_field_history_v2 RENAME TO track_field_history",
+    "CREATE INDEX IF NOT EXISTS idx_track_field_history_lookup "
+    "ON track_field_history(stable_id, field_name, superseded_at)",
+]
+
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1]
+MIGRATIONS: list[list[str]] = [_V1, _V2]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
