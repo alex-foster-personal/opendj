@@ -1,15 +1,13 @@
-//! djay Pro drag adapter (LAUNCH-02a, Phase 17 reference).
+//! djay Pro drag adapter (LAUNCH-02a).
 //!
-//! This file is a SHIM. Phase 17 owns the authoritative djay adapter; once
-//! Phase 17 ships, this file becomes the thin `DragAdapter` wrapper around
-//! Phase 17's djay drag code. For now it implements the same trait shape so
-//! the dispatcher in Phase 18 can route to djay alongside the other three
-//! vendors without waiting on Phase 17's integration.
-//
-// TODO(phase-17): replace this minimal shim with the wired djay adapter once
-// the Phase 17 launcher shell lands. The public API (`DjayAdapter::new`,
-// bundle IDs, trait impl) should stay stable so Phase 18's dispatcher keeps
-// compiling unchanged.
+//! djay accepts standard Finder-style drags, so this adapter's primary path
+//! is the same `HostBridge::start_finder_drag` call that Serato uses, with
+//! the clipboard copy-path fallback inherited from `DragAdapter` for the
+//! edge case where startDrag fails. Phase 17 shipped the production
+//! `TauriHostBridge` (`apps/launcher/src-tauri/src/commands/drag.rs`) and
+//! Phase 18 wired this adapter into `Dispatcher::default_set()` and the
+//! `start_track_drag` Tauri command, so the dispatcher now routes djay
+//! drags end-to-end without any further shimming.
 
 use super::{DragAdapter, DragError, DragEvent, DragOutcome, HostBridge, Track, Vendor};
 

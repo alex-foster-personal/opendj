@@ -60,9 +60,11 @@ def handle_search(intent: Intent, ctx: VoiceContext) -> Response:
     if not query:
         _speak(ctx, "didn't catch the search query")
         return Response(reply="search_empty", published=False)
-    # Phase 6 (analysis) ships the search index via apps.shared.state.tracks.
-    # TODO(phase-6): when tracks.search exists, call it and include the top
-    # 5 stable_ids in the event + TTS.
+    # Pending apps.shared.state.tracks module (search index shipped under
+    # Phase 6 analysis but the public ``tracks.search`` helper is not yet
+    # exposed from apps/shared/state/). This handler soft-imports it so the
+    # wiring activates automatically once the module lands; until then the
+    # event is published with an empty results list.
     try:
         from apps.shared.state import tracks as _tracks  # type: ignore[attr-defined]
 

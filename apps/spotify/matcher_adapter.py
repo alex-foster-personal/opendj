@@ -1,7 +1,12 @@
 """Match Spotify tracks against local state-layer tracks.
 
-Self-contained matcher (no hard dep on apps/sync/matcher.py which is
-still in flight). Signal weights:
+This is the Spotify-catalog matcher; it is intentionally separate from
+``apps.sync.matcher`` (the local-file 6-signal stack). The two matchers
+have different input shapes and the Phase-2 6-signal weights
+(filename / id3 / chromaprint / acoustic fingerprint) do not apply to
+Spotify API payloads, which expose only tag-level metadata plus ISRC.
+
+Signal weights used here:
     ISRC exact (0.35)  -- one-signal auto-match; globally unique.
     Title (0.20)       -- normalised (casefold + strip version suffixes).
     Artist (0.15)      -- set overlap on normalised names.
@@ -13,7 +18,7 @@ Accept policy (CONTEXT D2):
     Conf >= 0.50 AND >= 2 signals -> review.
     Else -> unmatched (acquisition queue).
 
-TODO(phase-2): swap for apps/sync/matcher.py 6-signal stack when ready.
+See ``apps/sync/matcher.py`` for the local-files equivalent.
 """
 from __future__ import annotations
 
