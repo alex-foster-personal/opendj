@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 Follow-up release candidate on top of `v1.0-rc1`. Fixes the wheel / sdist build, finishes Phase 16 (Serato GEOB cue write), lands the Phase 15 / 16 CLI surface, the docs site, and a governance + anti-slop sweep. Covers Wave 5 through Wave 7 follow-up work and the Wave 8 release-asset fixes.
 
+Metrics (authoritative; measured on `master` at commit `ddc5ebc` via `pytest --collect-only -q`):
+
+- Tests: 2238 collected.
+- Requirements: 53 v1 requirements, 50 shipped, 3 pending (CAT-06, SMART-04, LAUNCH-03). Source: [`reqs.json`](reqs.json).
+
 ### Added
 - OPEN-01 + OPEN-03: `open-dj-tool` CLI gains `export`, `import`, and `conformance` subcommands (Phase 15).
 - OPEN-03b: MkDocs site scaffold plus `docs.yml` GitHub Actions workflow for Pages publishing (Phase 16).
@@ -43,7 +48,7 @@ Follow-up release candidate on top of `v1.0-rc1`. Fixes the wheel / sdist build,
 
 ## [1.0.0-rc1] - 2026-04-17
 
-First release candidate of music-dj-tools v1. Tag target: `v1.0-rc1` on `master`. CI green with 1834 pytest tests passing.
+First release candidate of music-dj-tools v1. Tag target: `v1.0-rc1` on `master`. CI green at the rc1 tag. The authoritative, live pytest count is published in the rc2 entry below and in `README.md`; earlier historical counts for rc1 (1834) are superseded by the rc2 measurement to avoid drift between docs.
 
 ### Milestone 1 - Reconciliation baseline
 

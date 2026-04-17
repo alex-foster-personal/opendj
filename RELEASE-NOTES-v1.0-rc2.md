@@ -6,6 +6,13 @@ Follow-up release candidate on top of [`v1.0-rc1`](RELEASE-NOTES-v1.0-rc1.md). S
 
 See the [`v1.0-rc1` notes](RELEASE-NOTES-v1.0-rc1.md) for the full feature catalogue; this document covers what changed between rc1 and rc2 only.
 
+## Metrics
+
+Authoritative counts, measured on `master` at commit `ddc5ebc`:
+
+- **Tests:** 2238 collected (`pytest --collect-only -q`).
+- **Requirements:** 53 v1 requirements total, 50 shipped, 3 pending (CAT-06 Pioneer/CDJ USB export, SMART-04 web rule editor, LAUNCH-03 deck driver installer). Source of truth: [`reqs.json`](reqs.json).
+
 ## Why rc2 exists
 
 The Wave 8 release-asset agent found that `v1.0-rc1` could not produce a wheel or sdist: `pyproject.toml` shipped without a `[build-system]` table and without package discovery config, so `python -m build` failed with `Multiple top-level packages discovered in a flat-layout: ['data', 'apps']`. rc2 fixes the build config so the GitHub release can attach real artefacts. We did not retag rc1; we cut a fresh rc2.
