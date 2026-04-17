@@ -73,6 +73,30 @@ def _write_rb_field(db, content_id: str, field: str, value) -> bool:
     return True
 
 
+def _verify_rb_field(db, content_id: str, field: str, value) -> bool:
+    """Rail 4 (post-write verify) for the RB side.
+
+    Reads the row back and checks the just-written column matches the
+    integer representation we just stored. ``True`` means the write
+    persisted exactly as intended; ``False`` trips the session's
+    verify-failure branch (abort/skip/continue).
+    """
+    try:
+        content = db.get_content(ID=str(content_id)).one()
+    except Exception:
+        return False
+    try:
+        if field == "bpm":
+            return int(getattr(content, "BPM", -1)) == int(
+                round(float(value) * 100)
+            )
+        if field == "energy":
+            return int(getattr(content, "ColorID", -1)) == int(value)
+    except (TypeError, ValueError):
+        return False
+    return False
+
+
 def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
     import sqlite3
 
@@ -116,6 +140,52 @@ def _write_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
     return True
 
 
+def _verify_djay_field(db_path: Path, uuid: str, field: str, value) -> bool:
+    """Rail 4 (post-write verify) for the djay side.
+
+    Re-reads the TSAF blob and checks that:
+
+    * the row still exists in the expected collection, and
+    * the stored blob differs structurally from an empty/absent payload
+      (the per-field patch helpers in :mod:`apps.sync.djay_writer`
+      mutate known byte offsets, so a non-empty blob after write is the
+      strongest invariant we can cheaply assert without re-implementing
+      the TSAF parser here).
+
+    The more expensive per-field byte-level verification happens inside
+    :func:`_write_djay_field` itself via the patch helpers; this verify
+    step catches the "row vanished after write" and "blob was emptied
+    after write" failure modes.
+    """
+    import sqlite3
+
+    collection = (
+        "mediaItemAnalyzedData"
+        if field in ("manual_bpm", "key_camelot", "bpm")
+        else "mediaItemUserData"
+    )
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
+            row = con.execute(
+                "SELECT data FROM database2 "
+                "WHERE collection = ? AND key = ?",
+                (collection, uuid),
+            ).fetchone()
+    except Exception:
+        return False
+    if not row:
+        return False
+    blob = row[0] or b""
+    # Key-by-key structural checks.
+    if field == "key_camelot":
+        return _camelot_to_djay_key_idx(str(value)) is not None \
+            and len(blob) > 0
+    # All other fields: we require a non-empty blob (writes that left
+    # the row truncated would fail here) and rely on the writer's own
+    # return value for byte-exact validation.
+    return len(blob) > 0
+
+
 def live_run(
     rows: list[dict],
     *,
@@ -147,17 +217,31 @@ def live_run(
     if rb_plan:
         db = open_db(rb_db_path)
         try:
+            # Rail 4: per-track verifier keyed by the "content_id:field"
+            # tag so the session can read back the RB column after each
+            # write. Populated before opening the session so the closure
+            # has a stable mapping.
+            rb_expected: dict[str, tuple[str, object]] = {
+                f"{cid}:{fld}": (fld, val) for cid, fld, val in rb_plan
+            }
+
+            def rb_verifier(tag: str, _unused: object = None) -> bool:
+                fld, val = rb_expected[tag]
+                cid = tag.split(":", 1)[0]
+                return _verify_rb_field(db, cid, fld, val)
+
             with LiveWriteSession(
                 target="rekordbox",
                 reason="SYNC-05 analysis sync (RB side)",
                 flag_ok=flag_ok,
                 db_path=rb_db_path,
+                verifier=rb_verifier,
             ) as sess:
                 for content_id, field, value in rb_plan:
                     with sess.per_track(f"{content_id}:{field}") as w:
                         ok = _write_rb_field(db, content_id, field, value)
                         w.write((field, value))
-                        if ok:
+                        if ok and w.verify_readback():
                             w.append_reverse(
                                 f"# revert RB {field} for ContentID={content_id}"
                             )
@@ -169,17 +253,27 @@ def live_run(
                 pass
 
     if djay_plan:
+        djay_expected: dict[str, tuple[str, object]] = {
+            f"{uuid}:{fld}": (fld, val) for uuid, fld, val in djay_plan
+        }
+
+        def djay_verifier(tag: str, _unused: object = None) -> bool:
+            fld, val = djay_expected[tag]
+            uuid = tag.split(":", 1)[0]
+            return _verify_djay_field(djay_db_path, uuid, fld, val)
+
         with LiveWriteSession(
             target="djay",
             reason="SYNC-05 analysis sync (djay side)",
             flag_ok=flag_ok,
             db_path=djay_db_path,
+            verifier=djay_verifier,
         ) as sess:
             for uuid, field, value in djay_plan:
                 with sess.per_track(f"{uuid}:{field}") as w:
                     ok = _write_djay_field(djay_db_path, uuid, field, value)
                     w.write((field, value))
-                    if ok:
+                    if ok and w.verify_readback():
                         w.append_reverse(f"# revert djay {field} for uuid={uuid}")
                         written += 1
 

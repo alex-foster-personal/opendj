@@ -1,12 +1,28 @@
-"""Phase 4 SYNC-05: apply_analysis CLI unit tests (dry-run + planning)."""
+"""Phase 4 SYNC-05: apply_analysis CLI unit tests (dry-run + planning + rails).
+
+Covers:
+  * dry-run and key-index helpers (existing tests)
+  * six-rail safety harness on the live path:
+      - rail 1 (pgrep gate)
+      - rail 2 (timestamped backup)
+      - rail 4 (post-write verify via ``_verify_rb_field``)
+"""
 from __future__ import annotations
 
 import csv
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from apps.sync.apply_analysis import _camelot_to_djay_key_idx, dry_run, main
+from apps.sync.apply_analysis import (
+    _camelot_to_djay_key_idx,
+    _verify_rb_field,
+    dry_run,
+    live_run,
+    main,
+)
+from apps.sync.safety import SafetyAbort
 
 pytestmark = pytest.mark.requirement("SYNC-05")
 
@@ -103,3 +119,158 @@ def test_camelot_round_trip_for_all_keys():
 
 def test_main_missing_csv_is_dry_run(tmp_path: Path, capsys):
     assert main(["--diff-csv", str(tmp_path / "nope.csv")]) == 0
+
+
+# ---------------------------------------------------- six-rail live tests
+
+
+class _FakeContent:
+    def __init__(self, id_: str, bpm: int = 0, color_id: int = 0) -> None:
+        self.ID = id_
+        self.BPM = bpm
+        self.ColorID = color_id
+
+
+class _OneShot:
+    def __init__(self, value: _FakeContent | None) -> None:
+        self._v = value
+
+    def one(self) -> _FakeContent:
+        if self._v is None:
+            raise LookupError("no row")
+        return self._v
+
+
+class _FakeRBDB:
+    def __init__(self, rows: dict[str, _FakeContent]) -> None:
+        self._rows = rows
+        self.commits = 0
+
+    def get_content(self, *, ID: str) -> _OneShot:
+        return _OneShot(self._rows.get(str(ID)))
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def close(self) -> None:  # pragma: no cover - trivial
+        pass
+
+
+class TestVerifyRBField:
+    def test_bpm_match(self) -> None:
+        row = _FakeContent("5", bpm=12800)  # 128.00 BPM * 100
+        assert _verify_rb_field(_FakeRBDB({"5": row}), "5", "bpm", 128.0)
+
+    def test_bpm_mismatch(self) -> None:
+        row = _FakeContent("5", bpm=12000)
+        assert not _verify_rb_field(
+            _FakeRBDB({"5": row}), "5", "bpm", 128.0,
+        )
+
+    def test_energy_match(self) -> None:
+        row = _FakeContent("5", color_id=3)
+        assert _verify_rb_field(
+            _FakeRBDB({"5": row}), "5", "energy", 3,
+        )
+
+    def test_unknown_field_returns_false(self) -> None:
+        row = _FakeContent("5")
+        assert not _verify_rb_field(
+            _FakeRBDB({"5": row}), "5", "tags", "x",
+        )
+
+    def test_missing_row_returns_false(self) -> None:
+        assert not _verify_rb_field(_FakeRBDB({}), "missing", "bpm", 128.0)
+
+
+class TestAnalysisLiveRBRails:
+    """Rails 1 (pgrep) + 2 (backup) + 4 (verify) for live_run RB path."""
+
+    def _rows(self) -> list[dict]:
+        # accept_djay means write the djay value (130.0) into RB.
+        return [
+            {
+                "rb_content_id": "5",
+                "djay_uuid": "d-5",
+                "field": "bpm",
+                "rb_value": "128.0",
+                "djay_value": "130.0",
+                "resolution": "accept_djay",
+                "action_hint": "",
+            }
+        ]
+
+    def test_pgrep_aborts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb")
+        djay_db = tmp_path / "ml.db"
+        djay_db.write_bytes(b"dj")
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running",
+            lambda name: name == "Rekordbox",
+        )
+        monkeypatch.setattr(
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: _FakeRBDB({"5": _FakeContent("5")}),
+        )
+        with pytest.raises(SafetyAbort, match="Rekordbox is running"):
+            live_run(
+                self._rows(),
+                flag_ok=True,
+                rb_db_path=rb_db,
+                djay_db_path=djay_db,
+            )
+
+    def test_backup_created(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb-original")
+        djay_db = tmp_path / "ml.db"
+        djay_db.write_bytes(b"dj")
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running", lambda _n: False,
+        )
+        monkeypatch.setattr(
+            "apps.shared.rekordbox_db.open_db",
+            lambda _p: _FakeRBDB({"5": _FakeContent("5")}),
+        )
+        rc = live_run(
+            self._rows(),
+            flag_ok=True,
+            rb_db_path=rb_db,
+            djay_db_path=djay_db,
+        )
+        assert rc == 0
+        assert list(rb_db.parent.glob("master.db.bak.*"))
+
+    def test_verify_fail_aborts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rb_db = tmp_path / "master.db"
+        rb_db.write_bytes(b"rb")
+        djay_db = tmp_path / "ml.db"
+        djay_db.write_bytes(b"dj")
+        monkeypatch.setattr(
+            "apps.sync.safety._is_running", lambda _n: False,
+        )
+        row = _FakeContent("5", bpm=0)
+        db = _FakeRBDB({"5": row})
+        monkeypatch.setattr(
+            "apps.shared.rekordbox_db.open_db", lambda _p: db,
+        )
+        # Force the writer to report success while the row stays unchanged.
+        monkeypatch.setattr(
+            "apps.sync.apply_analysis._write_rb_field",
+            lambda _db, _cid, _fld, _val: True,
+        )
+        with pytest.raises(SafetyAbort, match="verify_readback failed"):
+            live_run(
+                self._rows(),
+                flag_ok=True,
+                rb_db_path=rb_db,
+                djay_db_path=djay_db,
+            )
+
