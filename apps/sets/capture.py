@@ -44,12 +44,14 @@ class CaptureHandle:
     """Live handle returned by :func:`start_capture`.
 
     Stores the ``Popen`` plus the ffmpeg argv (so tests can assert on
-    it) and the resolved stderr log path.
+    it), the resolved stderr log path, and the open log file handle so
+    it can be closed in :func:`stop_capture`.
     """
 
     proc: subprocess.Popen
     argv: list[str]
     stderr_log: Path
+    log_fh: "IO[bytes]"
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +210,7 @@ def start_capture(
         stdout=subprocess.DEVNULL,
         stderr=log_fh,
     )
-    return CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log)
+    return CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh)
 
 
 def stop_capture(handle: CaptureHandle, *, timeout: float = 10.0) -> int:
@@ -219,18 +221,22 @@ def stop_capture(handle: CaptureHandle, *, timeout: float = 10.0) -> int:
     file is not corrupt.
     """
     proc = handle.proc
-    if proc.poll() is not None:
-        return int(proc.returncode)
     try:
-        proc.send_signal(signal.SIGTERM)
-    except ProcessLookupError:
+        if proc.poll() is not None:
+            return int(proc.returncode)
+        try:
+            proc.send_signal(signal.SIGTERM)
+        except ProcessLookupError:
+            return int(proc.returncode or 0)
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=2.0)
         return int(proc.returncode or 0)
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=2.0)
-    return int(proc.returncode or 0)
+    finally:
+        if handle.log_fh and not handle.log_fh.closed:
+            handle.log_fh.close()
 
 
 # ---------------------------------------------------------------------------

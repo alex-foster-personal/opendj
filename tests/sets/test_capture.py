@@ -147,6 +147,36 @@ def test_stop_capture_kills_on_timeout(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.requirement("SET-01")
+def test_start_stop_closes_log_file_handle(tmp_path: Path):
+    """If stop_capture does not close log_fh, repeated cycles leak fds."""
+    _FakePopen.instances.clear()
+    handle = capture.start_capture(tmp_path, 1, popen=_FakePopen)
+    assert hasattr(handle, "log_fh"), "CaptureHandle must store log_fh"
+    assert not handle.log_fh.closed, "log_fh should be open while capturing"
+    capture.stop_capture(handle)
+    assert handle.log_fh.closed, "stop_capture must close log_fh"
+
+
+@pytest.mark.requirement("SET-01")
+def test_stop_capture_closes_log_fh_even_on_kill_path(tmp_path: Path):
+    """log_fh must close even when the process requires SIGKILL."""
+    _FakePopen.instances.clear()
+
+    class _StubbornPopen2(_FakePopen):
+        def send_signal(self, sig):
+            self.signals.append(sig)
+
+        def wait(self, timeout=None):
+            if self.returncode is None:
+                raise subprocess.TimeoutExpired(cmd="ffmpeg", timeout=timeout)
+            return self.returncode
+
+    handle = capture.start_capture(tmp_path, 1, popen=_StubbornPopen2)
+    capture.stop_capture(handle, timeout=0.01)
+    assert handle.log_fh.closed, "log_fh must close even after SIGKILL path"
+
+
+@pytest.mark.requirement("SET-01")
 def test_check_silence_returns_neg_inf_for_empty_file(tmp_path: Path):
     mp3 = tmp_path / "empty.mp3"
     mp3.touch()
