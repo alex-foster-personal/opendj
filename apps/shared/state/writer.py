@@ -8,10 +8,12 @@ that guarantees the durable log + in-process fanout stay in sync.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 from . import provenance as _prov
 from .events import EventBus, FakeEventBus
@@ -59,6 +61,27 @@ class StateWriter:
         self.bus: EventBus | FakeEventBus = bus if bus is not None else EventBus()
         self._clock = clock or _default_clock
         self._actor = actor
+        self._sp_counter = itertools.count()
+
+    @contextmanager
+    def _tx(self) -> Iterator[sqlite3.Connection]:
+        """Run the enclosed block in a SAVEPOINT.
+
+        SAVEPOINTs are nestable, implicitly open a transaction when none is
+        active, and play well with an outer ``SAVEPOINT`` (used by the
+        ingest adapter for dry-run rollback). Each call gets a unique name
+        so re-entrant calls on the same writer are safe.
+        """
+        name = f"sw_{next(self._sp_counter)}"
+        self._conn.execute(f"SAVEPOINT {name}")
+        try:
+            yield self._conn
+        except Exception:
+            self._conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+            self._conn.execute(f"RELEASE SAVEPOINT {name}")
+            raise
+        else:
+            self._conn.execute(f"RELEASE SAVEPOINT {name}")
 
     # --- lifecycle --------------------------------------------------
 
@@ -125,9 +148,8 @@ class StateWriter:
             list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
         )
         now = self._now_iso()
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            existing = self._conn.execute(
+        with self._tx() as conn:
+            existing = conn.execute(
                 "SELECT stable_id_tier, title, artists_json, album, isrc, "
                 "duration_ms, file_path, content_hash FROM tracks "
                 "WHERE stable_id = ?",
@@ -144,10 +166,9 @@ class StateWriter:
                 content_hash,
             )
             if existing is not None and tuple(existing) == new_row:
-                self._conn.execute("COMMIT")
                 return False
             if existing is None:
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO tracks(stable_id, stable_id_tier, title, "
                     "artists_json, album, isrc, duration_ms, file_path, "
                     "content_hash, created_at, updated_at) "
@@ -168,7 +189,7 @@ class StateWriter:
                 )
                 kind = "track.insert"
             else:
-                self._conn.execute(
+                conn.execute(
                     "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
                     "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, "
                     "updated_at=? WHERE stable_id=?",
@@ -181,10 +202,6 @@ class StateWriter:
                 payload={"tier": stable_id_tier, "had_isrc": bool(isrc)},
                 ts=now,
             )
-            self._conn.execute("COMMIT")
-        except Exception:
-            self._conn.execute("ROLLBACK")
-            raise
         self.bus.publish(ev)
         return True
 
@@ -194,9 +211,8 @@ class StateWriter:
         self, stable_id: str, vendor: str, vendor_id: str
     ) -> None:
         now = self._now_iso()
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            self._conn.execute(
+        with self._tx() as conn:
+            conn.execute(
                 "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
                 "VALUES (?, ?, ?)",
                 (stable_id, vendor, vendor_id),
@@ -207,10 +223,6 @@ class StateWriter:
                 payload={"vendor": vendor, "vendor_id": vendor_id},
                 ts=now,
             )
-            self._conn.execute("COMMIT")
-        except Exception:
-            self._conn.execute("ROLLBACK")
-            raise
         self.bus.publish(ev)
 
     # --- wrapped fields --------------------------------------------
@@ -268,27 +280,25 @@ class StateWriter:
         vendor_pl_id: str,
     ) -> bool:
         now = self._now_iso()
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            existing = self._conn.execute(
+        with self._tx() as conn:
+            existing = conn.execute(
                 "SELECT name FROM playlists WHERE playlist_id = ?",
                 (playlist_id,),
             ).fetchone()
             if existing is None:
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "
                     "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                     (playlist_id, name, vendor, vendor_pl_id, now, now),
                 )
                 kind = "playlist.insert"
             elif existing[0] != name:
-                self._conn.execute(
+                conn.execute(
                     "UPDATE playlists SET name=?, updated_at=? WHERE playlist_id=?",
                     (name, now, playlist_id),
                 )
                 kind = "playlist.update"
             else:
-                self._conn.execute("COMMIT")
                 return False
             ev = self._append_event(
                 kind=kind,
@@ -301,10 +311,6 @@ class StateWriter:
                 },
                 ts=now,
             )
-            self._conn.execute("COMMIT")
-        except Exception:
-            self._conn.execute("ROLLBACK")
-            raise
         self.bus.publish(ev)
         return True
 
@@ -313,14 +319,13 @@ class StateWriter:
     ) -> None:
         """Full-replace playlist memberships. Positions become 0..N-1."""
         now = self._now_iso()
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            self._conn.execute(
+        with self._tx() as conn:
+            conn.execute(
                 "DELETE FROM playlist_memberships WHERE playlist_id = ?",
                 (playlist_id,),
             )
             for position, sid in enumerate(stable_ids):
-                self._conn.execute(
+                conn.execute(
                     "INSERT INTO playlist_memberships(playlist_id, stable_id, position) "
                     "VALUES (?, ?, ?)",
                     (playlist_id, sid, position),
@@ -334,10 +339,6 @@ class StateWriter:
                 },
                 ts=now,
             )
-            self._conn.execute("COMMIT")
-        except Exception:
-            self._conn.execute("ROLLBACK")
-            raise
         self.bus.publish(ev)
 
     # --- adapters ---------------------------------------------------
@@ -351,9 +352,8 @@ class StateWriter:
         notes: str | None = None,
     ) -> None:
         now = self._now_iso()
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            self._conn.execute(
+        with self._tx() as conn:
+            conn.execute(
                 "INSERT INTO adapters(adapter_id, last_run_at, last_ok, notes) "
                 "VALUES (?, ?, ?, ?) "
                 "ON CONFLICT(adapter_id) DO UPDATE SET "
@@ -372,10 +372,6 @@ class StateWriter:
                 },
                 ts=now,
             )
-            self._conn.execute("COMMIT")
-        except Exception:
-            self._conn.execute("ROLLBACK")
-            raise
         self.bus.publish(ev)
 
 

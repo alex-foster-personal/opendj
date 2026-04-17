@@ -118,7 +118,11 @@ def write_field(
     value_json = _canonical_json(value)
     stamp = now or _utcnow_rfc3339()
 
-    conn.execute("BEGIN IMMEDIATE")
+    # Per-call SAVEPOINT so nested transactions (e.g. a dry-run ingest
+    # adapter wrapping the writer in its own SAVEPOINT) compose cleanly.
+    # SQLite identifier rules: keep the name alphanumeric + underscore.
+    sp_name = f"prov_{id(conn)}_{abs(hash((stable_id, field_name, stamp)))}"
+    conn.execute(f"SAVEPOINT {sp_name}")
     try:
         existing = conn.execute(
             "SELECT value_json, source, confidence, modified_at "
@@ -132,7 +136,7 @@ def write_field(
                 and existing[2] == confidence
                 and existing[3] == modified_at
             ):
-                conn.execute("COMMIT")
+                conn.execute(f"RELEASE SAVEPOINT {sp_name}")
                 return False
             conn.execute(
                 "INSERT INTO track_field_history(stable_id, field_name, "
@@ -173,9 +177,10 @@ def write_field(
                 actor,
             ),
         )
-        conn.execute("COMMIT")
+        conn.execute(f"RELEASE SAVEPOINT {sp_name}")
     except Exception:
-        conn.execute("ROLLBACK")
+        conn.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+        conn.execute(f"RELEASE SAVEPOINT {sp_name}")
         raise
     return True
 
