@@ -5,9 +5,15 @@ with ``.subscribe / .unsubscribe``) and re-materialises only the
 smartlists whose referenced fields overlap the event's
 ``changed_fields``. Per-smartlist 5s debounce coalesces bursts.
 
-TODO(phase-5): import ``StateEvent`` from ``apps.shared.state.events``
-once that module is stable; the ``changed_fields`` + ``kind`` fields
-must match the shape below.
+Phase 5 note: ``apps.shared.state.events`` shipped with ``EventBus``
+and a ``types.Event`` dataclass (``ts``, ``kind``, ``stable_id``,
+``payload``, ``actor``) whose ``subscribe(kind, callback)`` surface
+does not carry ``changed_fields``. The local :class:`StateEvent` below
+stays the smartlists-facing DTO; a thin adapter can project the Phase
+5 ``Event.payload["changed_fields"]`` into this shape when the writer
+starts emitting field-scoped events. Until then, runners pass either a
+``FakeEventBus``-style bus in tests or a shim that constructs
+:class:`StateEvent` values directly.
 """
 from __future__ import annotations
 
