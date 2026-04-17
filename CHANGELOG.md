@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
-Changes since `v1.0-rc1` tag. Covers Wave 5, Wave 6, and Wave 7 follow-up work on CLI surface, USB export diff tooling, docs site, CI, and governance.
+## [1.0.0-rc2] - 2026-04-17
+
+Follow-up release candidate on top of `v1.0-rc1`. Fixes the wheel / sdist build, finishes Phase 16 (Serato GEOB cue write), lands the Phase 15 / 16 CLI surface, the docs site, and a governance + anti-slop sweep. Covers Wave 5 through Wave 7 follow-up work and the Wave 8 release-asset fixes.
 
 ### Added
 - OPEN-01 + OPEN-03: `open-dj-tool` CLI gains `export`, `import`, and `conformance` subcommands (Phase 15).
@@ -14,24 +16,30 @@ Changes since `v1.0-rc1` tag. Covers Wave 5, Wave 6, and Wave 7 follow-up work o
 - USB / Pioneer sync: promoted the ad-hoc diff script to a typed `differ` module with a public API.
 - USB / Pioneer sync: `diff-matrix` CLI and parametrized pytest harness that runs the differ across N fixtures.
 - Appendix B conformance: authored the remaining 12 conformance fixtures (04-15).
+- Phase 16 Serato: GEOB cue write plumbed through `SeratoAdapter.write()` via mutagen (P0).
 
 ### Changed
+- `pyproject.toml`: added `[build-system]` + `[tool.setuptools.packages.find]` so `python -m build` succeeds. Wheel ships `apps/` only; `data/`, `tests/`, `scripts/`, `docs/`, `open-dj/`, `.planning/`, `usb-profiles/`, and `htmlcov/` are excluded. License migrated to the SPDX expression form (`license = "Apache-2.0"` + `license-files = ["LICENSE"]`); the redundant `License :: OSI Approved :: Apache Software License` classifier was dropped. rc1 could not produce a wheel or sdist because the `[build-system]` table was missing and flat-layout discovery collided with the top-level `data/` directory.
 - Governance pass for the v1 release: audited and enhanced `SECURITY.md`, the Code of Conduct, `CONTRIBUTING.md`, and `NOTICE`.
 - Anti-slop audit: applied 7 targeted fixes plus a systemic sweep across generated docs.
 
 ### Fixed
 - Phase 4 `apply_ratings --live` now routes to the LIVE database paths instead of the staging copy (resolves #1).
 - Phase 16 MkDocs strict link validation relaxed for cross-repo references so the docs build stays green (OPEN-03b).
+- Phase 16 Serato: removed the cues-drop mask from the `03-8-hot-cues` fixture now that GEOB write works.
 - CI: Pages deploy step is now best-effort until repository Pages is enabled, so the workflow no longer fails the pipeline.
+- Tests: USB diff-matrix tests now skip cleanly when the `rbox` package is unavailable.
 
 ### Documentation
 - Phase 10.1 Plan 01 rewritten as a delivery plan now that the spike has landed.
+- Phase 10.1 CAT-06 closeout: VERIFICATION, UAT, and VALIDATION docs.
 - Captured the SQLite WAL sidecar bug surfaced by the USB writer round-trip in `solutions/`.
 - Published diff-matrix results across all available USB export fixtures.
 - Forensics pass 2 on project health after Wave 5.
 - Anti-slop review of generated content and a re-audit of Wave 5 fix-code-review claims.
 - Closed the export / import / conformance CLI deferrals (Phases 15, 16) and the OPEN-03b MkDocs deferral in their SUMMARY docs.
 - Swept pending todos post Wave 5 fanout.
+- Stash audit + prune post Wave 6.
 
 ## [1.0.0-rc1] - 2026-04-17
 
