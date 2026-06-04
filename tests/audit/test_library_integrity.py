@@ -150,6 +150,22 @@ def test_assert_healthy_raises_over_threshold_with_actionable_message():
     assert "100/100" in msg
 
 
+@pytest.mark.parametrize("bad", [-0.1, 1.5, 10.0])
+def test_assert_healthy_rejects_out_of_range_threshold(bad):
+    rep = check_integrity(
+        [FakeTrack("/Users/dev/Music/a.mp3")],
+        exists=_exists_from({"/Users/dev/Music/a.mp3"}),
+        home="/Users/dev",
+    )
+    with pytest.raises(ValueError, match="threshold"):
+        assert_healthy(rep, threshold=bad)
+
+
+@pytest.mark.parametrize("ok", [0.0, 0.02, 1.0])
+def test_assert_healthy_accepts_boundary_thresholds(ok):
+    assert_healthy(IntegrityReport(), threshold=ok)  # empty report: no raise
+
+
 # ----- live regression guard (gated) -------------------------------------
 
 

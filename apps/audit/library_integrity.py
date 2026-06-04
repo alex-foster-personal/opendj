@@ -145,7 +145,17 @@ def check_integrity(
 def assert_healthy(
     report: IntegrityReport, *, threshold: float = DEFAULT_THRESHOLD
 ) -> None:
-    """Raise :class:`LibraryIntegrityError` if too many tracks fail to resolve."""
+    """Raise :class:`LibraryIntegrityError` if too many tracks fail to resolve.
+
+    ``threshold`` is the maximum allowed fraction of broken tracks and must be
+    in the range [0.0, 1.0]. We validate explicitly (rather than clamp) so a
+    fat-fingered CLI value like ``--threshold=10`` fails loudly instead of
+    silently disabling the guard.
+    """
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError(
+            f"Invalid threshold {threshold!r}; expected a fraction in [0.0, 1.0]."
+        )
     if report.with_path == 0:
         return
     if report.broken_ratio > threshold:
@@ -177,8 +187,11 @@ def _live_report() -> IntegrityReport:
     finally:
         try:
             db.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Don't mask a real DB/FS problem behind a silent pass — surface
+            # it. We warn rather than raise so a close hiccup can't suppress a
+            # successfully-built report on the happy path.
+            print(f"warning: failed to close Rekordbox DB cleanly: {exc!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
