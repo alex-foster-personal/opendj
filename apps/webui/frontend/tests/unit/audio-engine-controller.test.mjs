@@ -83,6 +83,304 @@ test('future-scheduled transport projection starts from the scheduled epoch', ()
 	);
 });
 
+test('presented timeline supersedes an unpresented schedule at the same boundary', () => {
+	const timeline = audio.createPresentedTransportTimeline(2);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 4,
+		tempoRatio: 1
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 8,
+		tempoRatio: 1
+	});
+
+	assert.equal(timeline.schedules.length, 2, 'every acknowledged schedule remains mirrored');
+	const before = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 9, performanceTime: 9000 },
+		20
+	);
+	assert.deepEqual(
+		{
+			position_sec: before.position_sec,
+			audible: before.audible,
+			transport_pending: before.transport_pending,
+			presented_revision: before.presented_revision,
+			desired_revision: before.desired_revision
+		},
+		{
+			position_sec: 2,
+			audible: false,
+			transport_pending: true,
+			presented_revision: 0,
+			desired_revision: 2
+		}
+	);
+
+	const presented = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 10.25, performanceTime: 10250 },
+		20
+	);
+	assert.equal(presented.position_sec, 8.25);
+	assert.equal(presented.audible, true);
+	assert.equal(presented.transport_pending, false);
+	assert.equal(presented.presented_revision, 2);
+});
+
+test('presented timeline retains intermediate boundaries and clears pending only at latest revision', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 1,
+		startPositionSec: 1,
+		tempoRatio: 1
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: false,
+		loop: null,
+		startContextTime: 2,
+		startPositionSec: 2,
+		tempoRatio: 1
+	});
+
+	const between = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 1.5, performanceTime: 1500 },
+		10
+	);
+	assert.equal(between.audible, true);
+	assert.equal(between.position_sec, 1.5);
+	assert.equal(between.presented_revision, 1);
+	assert.equal(between.transport_pending, true);
+
+	const latest = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 2.1, performanceTime: 2100 },
+		10
+	);
+	assert.equal(latest.audible, false);
+	assert.equal(latest.position_sec, 2);
+	assert.equal(latest.presented_revision, 2);
+	assert.equal(latest.transport_pending, false);
+});
+
+test('presented timeline evaluates tempo and engaged loops at the output clock', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: { in_ms: 1000, out_ms: 3000, engaged: true, beat_length: 4 },
+		startContextTime: 5,
+		startPositionSec: 1,
+		tempoRatio: 2
+	});
+
+	const beforeWrap = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 5.75, performanceTime: 5750 },
+		20
+	);
+	assert.equal(beforeWrap.position_sec, 2.5);
+	const afterWrap = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 6.25, performanceTime: 6250 },
+		20
+	);
+	assert.equal(afterWrap.position_sec, 1.5);
+});
+
+test('revisioned natural-end stop retires the active schedule before replay cursor movement', () => {
+	const timeline = audio.createPresentedTransportTimeline(9);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 1,
+		startPositionSec: 9,
+		tempoRatio: 1
+	});
+	const ended = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 2.1, performanceTime: 2100 },
+		10
+	);
+	assert.equal(ended.audible, false);
+	assert.equal(ended.position_sec, 10);
+	assert.equal(
+		audio.naturalEndNeedsRevisionedStop(true, ended, 10, 0),
+		true,
+		'an active revision first presented at duration still requires cleanup'
+	);
+	assert.equal(
+		audio.naturalEndNeedsRevisionedStop(false, ended, 10, 0),
+		false,
+		'an explicitly inactive pause at duration must not add another stop'
+	);
+
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: false,
+		loop: null,
+		startContextTime: 3,
+		startPositionSec: 10,
+		tempoRatio: 1
+	});
+	const pendingStop = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 2.1, performanceTime: 2100 },
+		10
+	);
+	assert.equal(pendingStop.accepted, true);
+	assert.equal(pendingStop.transport_pending, true);
+	const stopped = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 3, performanceTime: 3000 },
+		10
+	);
+	assert.equal(stopped.presented_revision, 2);
+	assert.equal(stopped.transport_pending, false);
+
+	audio.setPausedTransportTimelineCursor(timeline, 0, 10);
+	const replayCursor = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 3.1, performanceTime: 3100 },
+		10
+	);
+	assert.equal(replayCursor.position_sec, 0);
+	assert.equal(replayCursor.audible, false);
+});
+
+test('zero output timestamp preserves the frozen cursor and pending start', () => {
+	const timeline = audio.createPresentedTransportTimeline(0.5);
+	audio.setPausedTransportTimelineCursor(timeline, 0.75, 10);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 1,
+		startPositionSec: 0.75,
+		tempoRatio: 1
+	});
+
+	const observation = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 0, performanceTime: 0 },
+		10
+	);
+	assert.equal(observation.accepted, false);
+	assert.equal(observation.output_started, false);
+	assert.equal(observation.presentation_context_time_s, null);
+	assert.equal(observation.position_sec, 0.75);
+	assert.equal(observation.audible, false);
+	assert.equal(observation.transport_pending, true);
+	assert.equal(timeline.presented_revision, 0);
+});
+
+test('stale output observations and late old revisions never rewind presented state', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 2,
+		startPositionSec: 2,
+		tempoRatio: 1
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 1,
+		startPositionSec: 9,
+		tempoRatio: 1
+	});
+
+	const current = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 3, performanceTime: 3000 },
+		20
+	);
+	assert.equal(current.position_sec, 3);
+	assert.equal(current.presented_revision, 2);
+	const repeated = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 3, performanceTime: 3000 },
+		20
+	);
+	assert.equal(repeated.accepted, true);
+	assert.equal(repeated.position_sec, 3);
+	assert.equal(repeated.presented_revision, 2);
+	const regressingContext = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 2.5, performanceTime: 3500 },
+		20
+	);
+	assert.equal(regressingContext.accepted, false);
+	assert.equal(regressingContext.position_sec, 3);
+	assert.equal(regressingContext.presented_revision, 2);
+	const regressingPerformance = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 4, performanceTime: 2500 },
+		20
+	);
+	assert.equal(regressingPerformance.accepted, false);
+	assert.equal(regressingPerformance.position_sec, 3);
+	assert.throws(
+		() =>
+			audio.observePresentedTransportTimeline(
+				timeline,
+				{ contextTime: Number.NaN, performanceTime: 4000 },
+				20
+			),
+		/output timestamp/i
+	);
+	assert.throws(
+		() =>
+			audio.observePresentedTransportTimeline(
+				timeline,
+				{ contextTime: 0, performanceTime: 4000 },
+				20
+			),
+		/zero timestamp/i
+	);
+});
+
+test('transport scheduling horizon is strictly future and latency-aware', () => {
+	assert.ok(Math.abs(audio.safeTransportScheduleTime(10, 0.2, 0.1) - 10.3) < 1e-12);
+	assert.throws(() => audio.safeTransportScheduleTime(10, -0.1), /latency/i);
+	assert.equal(
+		audio.supersedingScheduleTime(10.5, 10.2, 10.3),
+		10.5,
+		'an unsafe pending boundary must not backdate a replacement schedule'
+	);
+	assert.equal(
+		audio.supersedingScheduleTime(10.5, 10.4, 10.3),
+		10.4,
+		'a still-safe pending boundary may be superseded in place'
+	);
+});
+
+test('deck transport clock exposes the paused cursor and revision diagnostics', () => {
+	assert.deepEqual(audio.deckTransportClock(1), {
+		source: 'paused_cursor',
+		presentation_context_time_s: null,
+		desired_revision: 0,
+		presented_revision: 0
+	});
+});
+
 test('existing pending follower work waits before recomputing a fresh safe sync horizon', () => {
 	const waitTarget = audio.pendingSyncWaitTarget(10.5, [10.2, 10.6]);
 	assert.equal(waitTarget, 10.2);

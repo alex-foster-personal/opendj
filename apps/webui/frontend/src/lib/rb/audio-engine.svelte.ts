@@ -34,6 +34,14 @@
  *     [if] setPitch(1.2) while range is 16 [then ⛔️] RangeError
  *   ✔︎ Mixer: TRIM / 3-band EQ / channel fader / crossfader (A-B assign
  *     matrix with THRU bypass) / master all drive real AudioNodes.
+ *   ✔︎ ✅ 🎯 Presented transport: active position/audible state comes from an
+ *     acknowledged schedule mirror evaluated at getOutputTimestamp().
+ *     [if] render time leads output time [then] UI stays on presented audio
+ *     [if] an old schedule/timestamp arrives [then] it cannot rewind state
+ *     [if] output reports {0,0} or repeats a timestamp [then] pending state
+ *       remains intact and the repeated timestamp is accepted
+ *     [if] an existing boundary enters the unsafe horizon [then] a newer
+ *       command queues at a fresh safe boundary without losing the old one
  *
  * Rune module: this file MUST stay .svelte.ts (rune_outside_svelte
  * otherwise - RECON-FRONTEND 10.1, same bug class as stores.svelte.ts fix).
@@ -213,11 +221,43 @@ interface _ClockSegment {
 	tempoRatio: number;
 }
 
+export interface PresentedTransportSchedule extends _ClockSegment {
+	revision: number;
+	supersededByRevision: number | null;
+}
+
+export interface PresentedTransportTimeline {
+	paused_position_sec: number;
+	presented_position_sec: number;
+	presented_active: boolean;
+	desired_revision: number;
+	presented_revision: number;
+	last_presentation_context_time_s: number | null;
+	last_presentation_performance_time_ms: number | null;
+	schedules: PresentedTransportSchedule[];
+}
+
+export interface PresentedTransportObservation {
+	accepted: boolean;
+	output_started: boolean;
+	presentation_context_time_s: number | null;
+	position_sec: number;
+	audible: boolean;
+	transport_pending: boolean;
+	desired_revision: number;
+	presented_revision: number;
+}
+
+export interface DeckTransportClock {
+	source: 'paused_cursor' | 'audio_output';
+	presentation_context_time_s: number | null;
+	desired_revision: number;
+	presented_revision: number;
+}
+
 interface _PendingSegment {
 	active: boolean;
 	loop: LoopState | null;
-	masterTempoEnabled: boolean;
-	previous: _ClockSegment;
 	startContextTime: number;
 	startPositionSec: number;
 	tempoRatio: number;
@@ -227,7 +267,9 @@ interface _DeckRuntime {
 	processor: StretchDeckProcessor | null;
 	durationSec: number;
 	latencySec: number;
-	reportedInputSec: number;
+	controlActive: boolean;
+	controlLoop: LoopState | null;
+	controlTempoRatio: number;
 	/** ctx.currentTime at the moment the current processor segment starts. */
 	startCtxTime: number;
 	/** Track offset (seconds) at the moment the segment started. */
@@ -235,7 +277,11 @@ interface _DeckRuntime {
 	/** Monotonic token guarding against stale load() results. */
 	loadToken: number;
 	nodes: _ChannelNodes | null;
-	pending: _PendingSegment | null;
+	pending: _PendingSegment[];
+	presentation: PresentedTransportTimeline;
+	nextScheduleRevision: number;
+	scheduleIntentCount: number;
+	scheduleTail: Promise<void>;
 	swapTail: Promise<void>;
 }
 
@@ -244,12 +290,18 @@ function _emptyRuntime(): _DeckRuntime {
 		processor: null,
 		durationSec: 0,
 		latencySec: 0,
-		reportedInputSec: 0,
+		controlActive: false,
+		controlLoop: null,
+		controlTempoRatio: 1,
 		startCtxTime: 0,
 		startOffsetSec: 0,
 		loadToken: 0,
 		nodes: null,
-		pending: null,
+		pending: [],
+		presentation: createPresentedTransportTimeline(0),
+		nextScheduleRevision: 0,
+		scheduleIntentCount: 0,
+		scheduleTail: Promise.resolve(),
 		swapTail: Promise.resolve()
 	};
 }
@@ -264,6 +316,16 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 	3: _emptyRuntime(),
 	4: _emptyRuntime()
 };
+
+export function deckTransportClock(deck: DeckId): DeckTransportClock {
+	const presentation = _rt[deck].presentation;
+	return {
+		source: presentation.presented_active ? 'audio_output' : 'paused_cursor',
+		presentation_context_time_s: presentation.last_presentation_context_time_s,
+		desired_revision: presentation.desired_revision,
+		presented_revision: presentation.presented_revision
+	};
+}
 
 // ---------------------------------------------------------------- _helpers
 
@@ -379,6 +441,185 @@ export function pausedSeekClock(
 	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
 }
 
+export function createPresentedTransportTimeline(
+	pausedPositionSec: number
+): PresentedTransportTimeline {
+	if (!Number.isFinite(pausedPositionSec) || pausedPositionSec < 0) {
+		throw new RangeError(
+			`pausedPositionSec must be finite and non-negative, got ${pausedPositionSec}`
+		);
+	}
+	return {
+		paused_position_sec: pausedPositionSec,
+		presented_position_sec: pausedPositionSec,
+		presented_active: false,
+		desired_revision: 0,
+		presented_revision: 0,
+		last_presentation_context_time_s: null,
+		last_presentation_performance_time_ms: null,
+		schedules: []
+	};
+}
+
+export function setPausedTransportTimelineCursor(
+	timeline: PresentedTransportTimeline,
+	positionSec: number,
+	durationSec: number
+): void {
+	const clock = pausedSeekClock(positionSec * 1000, durationSec * 1000);
+	if (timeline.presented_active || timeline.desired_revision !== timeline.presented_revision) {
+		throw new Error('paused transport cursor cannot move while audio is active or pending');
+	}
+	timeline.paused_position_sec = clock.start_offset_sec;
+	timeline.presented_position_sec = clock.start_offset_sec;
+}
+
+export function acknowledgePresentedTransportSchedule(
+	timeline: PresentedTransportTimeline,
+	schedule: Omit<PresentedTransportSchedule, 'supersededByRevision'>
+): void {
+	if (!Number.isInteger(schedule.revision) || schedule.revision <= 0) {
+		throw new RangeError(`schedule revision must be a positive integer, got ${schedule.revision}`);
+	}
+	if (!Number.isFinite(schedule.startContextTime) || schedule.startContextTime < 0) {
+		throw new RangeError(
+			`schedule startContextTime must be finite and non-negative, got ${schedule.startContextTime}`
+		);
+	}
+	if (!Number.isFinite(schedule.startPositionSec) || schedule.startPositionSec < 0) {
+		throw new RangeError(
+			`schedule startPositionSec must be finite and non-negative, got ${schedule.startPositionSec}`
+		);
+	}
+	if (!Number.isFinite(schedule.tempoRatio) || schedule.tempoRatio <= 0) {
+		throw new RangeError(
+			`schedule tempoRatio must be finite and positive, got ${schedule.tempoRatio}`
+		);
+	}
+
+	let supersededByRevision: number | null = null;
+	if (schedule.revision <= timeline.desired_revision) {
+		supersededByRevision = timeline.desired_revision;
+	} else {
+		for (const existing of timeline.schedules) {
+			if (
+				existing.supersededByRevision === null &&
+				existing.revision > timeline.presented_revision &&
+				existing.startContextTime >= schedule.startContextTime
+			) {
+				existing.supersededByRevision = schedule.revision;
+			}
+		}
+		timeline.desired_revision = schedule.revision;
+	}
+	timeline.schedules.push({
+		...schedule,
+		loop: schedule.loop === null ? null : { ...schedule.loop },
+		supersededByRevision
+	});
+}
+
+function _presentedObservation(
+	timeline: PresentedTransportTimeline,
+	accepted: boolean,
+	outputStarted: boolean
+): PresentedTransportObservation {
+	return {
+		accepted,
+		output_started: outputStarted,
+		presentation_context_time_s: timeline.last_presentation_context_time_s,
+		position_sec: timeline.presented_position_sec,
+		audible: timeline.presented_active,
+		transport_pending: timeline.presented_revision !== timeline.desired_revision,
+		desired_revision: timeline.desired_revision,
+		presented_revision: timeline.presented_revision
+	};
+}
+
+export function observePresentedTransportTimeline(
+	timeline: PresentedTransportTimeline,
+	outputTimestamp: { contextTime: number; performanceTime: number },
+	durationSec: number
+): PresentedTransportObservation {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
+	}
+	const { contextTime, performanceTime } = outputTimestamp;
+	if (
+		!Number.isFinite(contextTime) ||
+		!Number.isFinite(performanceTime) ||
+		contextTime < 0 ||
+		performanceTime < 0
+	) {
+		throw new RangeError(
+			`output timestamp must contain finite non-negative values, got ` +
+				`contextTime=${contextTime}, performanceTime=${performanceTime}`
+		);
+	}
+	if (contextTime === 0 && performanceTime === 0) {
+		return _presentedObservation(
+			timeline,
+			false,
+			timeline.last_presentation_context_time_s !== null
+		);
+	}
+	if (contextTime === 0 || performanceTime === 0) {
+		throw new RangeError(
+			`zero timestamp must be exactly {contextTime: 0, performanceTime: 0}, got ` +
+				`contextTime=${contextTime}, performanceTime=${performanceTime}`
+		);
+	}
+	const previousContextTime = timeline.last_presentation_context_time_s;
+	const previousPerformanceTime = timeline.last_presentation_performance_time_ms;
+	if (
+		(previousContextTime !== null && contextTime < previousContextTime) ||
+		(previousPerformanceTime !== null && performanceTime < previousPerformanceTime)
+	) {
+		return _presentedObservation(timeline, false, true);
+	}
+
+	let selected: PresentedTransportSchedule | null = null;
+	for (const candidate of timeline.schedules) {
+		if (candidate.supersededByRevision !== null || candidate.startContextTime > contextTime) {
+			continue;
+		}
+		if (
+			selected === null ||
+			candidate.startContextTime > selected.startContextTime ||
+			(candidate.startContextTime === selected.startContextTime &&
+				candidate.revision > selected.revision)
+		) {
+			selected = candidate;
+		}
+	}
+	if (selected !== null && selected.revision < timeline.presented_revision) {
+		throw new Error(
+			`presented schedule revision regressed from ${timeline.presented_revision} to ` +
+				`${selected.revision} at contextTime=${contextTime}`
+		);
+	}
+
+	if (selected === null) {
+		timeline.presented_position_sec = timeline.paused_position_sec;
+		timeline.presented_active = false;
+	} else {
+		const crossesNewRevision = selected.revision > timeline.presented_revision;
+		const positionSec = selected.active
+			? _positionForSegment(selected, contextTime, durationSec)
+			: crossesNewRevision
+				? selected.startPositionSec
+				: timeline.paused_position_sec;
+		const audible = selected.active && !deckReachedEnd(positionSec, durationSec, selected.loop);
+		timeline.presented_position_sec = positionSec;
+		timeline.presented_active = audible;
+		timeline.presented_revision = Math.max(timeline.presented_revision, selected.revision);
+		if (!audible) timeline.paused_position_sec = positionSec;
+	}
+	timeline.last_presentation_context_time_s = contextTime;
+	timeline.last_presentation_performance_time_ms = performanceTime;
+	return _presentedObservation(timeline, true, true);
+}
+
 export function seekSyncMaster(
 	deck: DeckId,
 	playing: boolean,
@@ -440,11 +681,23 @@ export function exactBeatLoopRangeMs(
 
 export function supersedingScheduleTime(
 	requestedContextTime: number,
-	pendingContextTime: number | null
+	pendingContextTime: number | null,
+	minimumContextTime = 0
 ): number {
 	if (!Number.isFinite(requestedContextTime) || requestedContextTime < 0) {
 		throw new RangeError(
 			`requestedContextTime must be finite and non-negative, got ${requestedContextTime}`
+		);
+	}
+	if (!Number.isFinite(minimumContextTime) || minimumContextTime < 0) {
+		throw new RangeError(
+			`minimumContextTime must be finite and non-negative, got ${minimumContextTime}`
+		);
+	}
+	if (requestedContextTime < minimumContextTime) {
+		throw new RangeError(
+			`requestedContextTime ${requestedContextTime} precedes minimumContextTime ` +
+				`${minimumContextTime}`
 		);
 	}
 	if (pendingContextTime === null) return requestedContextTime;
@@ -453,6 +706,7 @@ export function supersedingScheduleTime(
 			`pendingContextTime must be finite and non-negative, got ${pendingContextTime}`
 		);
 	}
+	if (pendingContextTime < minimumContextTime) return requestedContextTime;
 	return Math.min(requestedContextTime, pendingContextTime);
 }
 
@@ -511,6 +765,20 @@ export function safeSyncScheduleTime(
 		nowContextTime + maxLatencySec + safetySec,
 		masterReadyContextTime + safetySec
 	);
+}
+
+export function safeTransportScheduleTime(
+	nowContextTime: number,
+	latencySec: number,
+	safetySec = SYNC_SCHEDULE_SAFETY_S
+): number {
+	for (const [name, value] of Object.entries({ nowContextTime, latencySec, safetySec })) {
+		if (!Number.isFinite(value) || value < 0) {
+			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
+		}
+	}
+	if (safetySec === 0) throw new RangeError('safetySec must be greater than zero');
+	return nowContextTime + latencySec + safetySec;
 }
 
 export function projectedTransportPosition(input: {
@@ -613,6 +881,46 @@ export function deckReachedEnd(
 	return !loop?.engaged && positionSec >= durationSec;
 }
 
+export function naturalEndNeedsRevisionedStop(
+	playing: boolean,
+	observation: Pick<
+		PresentedTransportObservation,
+		'audible' | 'transport_pending' | 'position_sec'
+	>,
+	durationSec: number,
+	scheduleIntentCount: number
+): boolean {
+	if (typeof playing !== 'boolean') {
+		throw new TypeError(`playing must be boolean, got ${String(playing)}`);
+	}
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
+	}
+	if (
+		typeof observation.audible !== 'boolean' ||
+		typeof observation.transport_pending !== 'boolean'
+	) {
+		throw new TypeError('natural-end observation flags must be boolean');
+	}
+	if (!Number.isFinite(observation.position_sec) || observation.position_sec < 0) {
+		throw new RangeError(
+			`natural-end position must be finite and non-negative, got ${observation.position_sec}`
+		);
+	}
+	if (!Number.isInteger(scheduleIntentCount) || scheduleIntentCount < 0) {
+		throw new RangeError(
+			`scheduleIntentCount must be a non-negative integer, got ${scheduleIntentCount}`
+		);
+	}
+	return (
+		playing &&
+		!observation.audible &&
+		!observation.transport_pending &&
+		scheduleIntentCount === 0 &&
+		observation.position_sec >= durationSec
+	);
+}
+
 export function nextPlayingMaster(playingDecks: readonly DeckId[]): DeckId | null {
 	return DECK_IDS.find((deck) => playingDecks.includes(deck)) ?? null;
 }
@@ -694,14 +1002,14 @@ function _durationSec(deck: DeckId): number {
 
 function _setPausedPosition(deck: DeckId, positionMs: number): void {
 	const { st, rt } = _requireLoaded(deck, '_setPausedPosition');
-	if (st.playing || st.audible || rt.pending !== null) {
+	if (st.playing || st.audible || rt.controlActive || rt.pending.length > 0) {
 		throw new Error(`_setPausedPosition: deck ${deck} transport is not paused`);
 	}
 	const clock = pausedSeekClock(positionMs, rt.durationSec * 1000);
+	setPausedTransportTimelineCursor(rt.presentation, clock.start_offset_sec, rt.durationSec);
 	st.position_ms = clock.position_ms;
 	rt.startOffsetSec = clock.start_offset_sec;
 	rt.startCtxTime = _ctx?.currentTime ?? 0;
-	rt.reportedInputSec = clock.start_offset_sec;
 }
 
 function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
@@ -752,7 +1060,12 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.processor = null;
 	rt.durationSec = 0;
 	rt.latencySec = 0;
-	rt.pending = null;
+	rt.pending = [];
+	rt.controlActive = false;
+	rt.controlLoop = null;
+	rt.controlTempoRatio = 1;
+	rt.presentation = createPresentedTransportTimeline(0);
+	rt.nextScheduleRevision = 0;
 	_clearLoadedTrackState(st);
 	st.processor_error = message;
 	st.sync_error = message;
@@ -780,85 +1093,118 @@ function _stretchChange(
 async function _scheduleDeck(
 	deck: DeckId,
 	when: number,
-	inputSec: number,
+	inputSec: number | ((effectiveWhen: number) => number),
 	active: boolean,
-	tempoRatio = deckStates[deck].pitch,
-	masterTempoEnabled = deckStates[deck].master_tempo_enabled,
-	loop = deckStates[deck].loop
-): Promise<void> {
+	tempoRatio?: number,
+	masterTempoEnabled?: boolean,
+	loop?: LoopState | null
+): Promise<number> {
+	const rt = _rt[deck];
+	const expectedLoadToken = rt.loadToken;
+	const expectedProcessor = rt.processor;
+	const predecessor = rt.scheduleTail;
+	let release!: () => void;
+	rt.scheduleIntentCount += 1;
+	rt.scheduleTail = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await predecessor;
+	try {
+		if (rt.loadToken !== expectedLoadToken || rt.processor !== expectedProcessor) {
+			throw new Error(`_scheduleDeck: deck ${deck} changed while the command was queued`);
+		}
+		return await _scheduleDeckSerial(
+			deck,
+			when,
+			inputSec,
+			active,
+			tempoRatio,
+			masterTempoEnabled,
+			loop
+		);
+	} finally {
+		rt.scheduleIntentCount -= 1;
+		release();
+	}
+}
+
+async function _scheduleDeckSerial(
+	deck: DeckId,
+	when: number,
+	inputSec: number | ((effectiveWhen: number) => number),
+	active: boolean,
+	tempoRatio: number | undefined,
+	masterTempoEnabled: boolean | undefined,
+	loop: LoopState | null | undefined
+): Promise<number> {
 	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
 	_commitPendingIfDue(deck);
 	const processor = rt.processor;
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
+	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
+	const minimumSafeWhen = safeTransportScheduleTime(_ctx.currentTime, rt.latencySec);
+	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
+	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
+	const effectiveWhen = supersedingScheduleTime(
+		safeRequestedWhen,
+		latestPending?.startContextTime ?? null,
+		minimumSafeWhen
+	);
+	const scheduledTempoRatio = tempoRatio ?? st.pitch;
+	const scheduledMasterTempoEnabled = masterTempoEnabled ?? st.master_tempo_enabled;
+	const scheduledLoop = loop === undefined ? st.loop : loop;
+	const requestedInputSec =
+		typeof inputSec === 'function' ? inputSec(effectiveWhen) : inputSec;
 	const scheduledInputSec = normalizeScheduledTransportEntrySec(
-		inputSec,
+		requestedInputSec,
 		rt.durationSec,
-		loop,
+		scheduledLoop,
 		active
 	);
-	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
-	const existingPending = rt.pending;
-	const effectiveWhen = supersedingScheduleTime(
-		when,
-		existingPending?.startContextTime ?? null
-	);
-	const previous: _ClockSegment =
-		existingPending?.previous ?? {
-			active: st.audible,
-			loop: st.loop === null ? null : { ...st.loop },
-			startContextTime: rt.startCtxTime,
-			startPositionSec: rt.startOffsetSec,
-			tempoRatio: st.pitch
-		};
+	const revision = ++rt.nextScheduleRevision;
 	try {
 		await processor.schedule(
 			effectiveWhen,
-			_stretchChange(scheduledInputSec, active, tempoRatio, masterTempoEnabled, loop)
+			_stretchChange(
+				scheduledInputSec,
+				active,
+				scheduledTempoRatio,
+				scheduledMasterTempoEnabled,
+				scheduledLoop
+			)
 		);
 	} catch (error) {
-		_recordProcessorFailure(deck, error);
+		if (rt.processor === processor) _recordProcessorFailure(deck, error);
 		throw error;
 	}
-	rt.reportedInputSec = scheduledInputSec;
-	st.pitch = tempoRatio;
-	st.master_tempo_enabled = masterTempoEnabled;
-	st.loop = loop === null ? null : { ...loop };
-	st.playing = active;
-	if (effectiveWhen > _ctx.currentTime) {
-		rt.pending = {
-			active,
-			loop: loop === null ? null : { ...loop },
-			masterTempoEnabled,
-			previous,
-			startContextTime: effectiveWhen,
-			startPositionSec: scheduledInputSec,
-			tempoRatio
-		};
-		st.audible = previous.active;
-		st.transport_pending = true;
-		st.position_ms = _positionForSegment(previous, _ctx.currentTime, rt.durationSec) * 1000;
-	} else {
-		rt.pending = null;
-		rt.startCtxTime = effectiveWhen;
-		rt.startOffsetSec = scheduledInputSec;
-		const wasAudible = st.audible;
-		st.audible = active;
-		st.transport_pending = false;
-		st.position_ms =
-			_positionForSegment(
-				{
-					active,
-					loop,
-					startContextTime: effectiveWhen,
-					startPositionSec: scheduledInputSec,
-					tempoRatio
-				},
-				_ctx.currentTime,
-				rt.durationSec
-			) * 1000;
-		_handleAudibleTransition(deck, wasAudible, active);
+	if (rt.processor !== processor) {
+		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
-	if (active || previous.active) _ensureRaf();
+	acknowledgePresentedTransportSchedule(rt.presentation, {
+		revision,
+		active,
+		loop: scheduledLoop,
+		startContextTime: effectiveWhen,
+		startPositionSec: scheduledInputSec,
+		tempoRatio: scheduledTempoRatio
+	});
+	st.pitch = scheduledTempoRatio;
+	st.master_tempo_enabled = scheduledMasterTempoEnabled;
+	st.loop = scheduledLoop === null ? null : { ...scheduledLoop };
+	st.playing = active;
+	rt.pending = rt.pending.filter((pending) => pending.startContextTime < effectiveWhen);
+	rt.pending.push({
+		active,
+		loop: scheduledLoop === null ? null : { ...scheduledLoop },
+		startContextTime: effectiveWhen,
+		startPositionSec: scheduledInputSec,
+		tempoRatio: scheduledTempoRatio
+	});
+	st.transport_pending =
+		rt.presentation.presented_revision !== rt.presentation.desired_revision;
+	_commitPendingIfDue(deck);
+	_ensureRaf();
+	return scheduledInputSec;
 }
 
 function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
@@ -874,134 +1220,148 @@ function _positionForSegment(segment: _ClockSegment, at: number, durationSec: nu
 	return Math.min(linear, durationSec);
 }
 
+function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
+	return {
+		active: pending.active,
+		loop: pending.loop,
+		startContextTime: pending.startContextTime,
+		startPositionSec: pending.startPositionSec,
+		tempoRatio: pending.tempoRatio
+	};
+}
+
+function _controlSegmentAt(rt: _DeckRuntime, contextTime: number): _ClockSegment {
+	let selected: _ClockSegment = {
+		active: rt.controlActive,
+		loop: rt.controlLoop,
+		startContextTime: rt.startCtxTime,
+		startPositionSec: rt.startOffsetSec,
+		tempoRatio: rt.controlTempoRatio
+	};
+	for (const pending of rt.pending) {
+		if (pending.startContextTime > contextTime) break;
+		selected = _pendingClockSegment(pending);
+	}
+	return selected;
+}
+
 function _commitPendingIfDue(deck: DeckId): void {
 	if (_ctx === null) return;
 	const rt = _rt[deck];
-	const pending = rt.pending;
-	if (pending === null || _ctx.currentTime < pending.startContextTime) return;
-	rt.pending = null;
-	rt.startCtxTime = pending.startContextTime;
-	rt.startOffsetSec = pending.startPositionSec;
-	const st = deckStates[deck];
-	const wasAudible = st.audible;
-	st.playing = pending.active;
-	st.audible = pending.active;
-	st.transport_pending = false;
-	st.pitch = pending.tempoRatio;
-	st.master_tempo_enabled = pending.masterTempoEnabled;
-	st.loop = pending.loop === null ? null : { ...pending.loop };
-	st.position_ms = _positionForSegment(
-		{
-			active: pending.active,
-			loop: pending.loop,
-			startContextTime: pending.startContextTime,
-			startPositionSec: pending.startPositionSec,
-			tempoRatio: pending.tempoRatio
-		},
-		_ctx.currentTime,
-		rt.durationSec
-	) * 1000;
-	_handleAudibleTransition(deck, wasAudible, pending.active);
+	while (
+		rt.pending.length > 0 &&
+		_ctx.currentTime >= rt.pending[0].startContextTime
+	) {
+		const pending = rt.pending.shift();
+		if (pending === undefined) throw new Error(`deck ${deck} pending schedule queue underflow`);
+		rt.startCtxTime = pending.startContextTime;
+		rt.startOffsetSec = pending.startPositionSec;
+		rt.controlActive = pending.active;
+		rt.controlLoop = pending.loop === null ? null : { ...pending.loop };
+		rt.controlTempoRatio = pending.tempoRatio;
+	}
 }
 
 function _projectPositionAt(deck: DeckId, when: number): number {
 	if (_ctx === null) throw new Error('_projectPositionAt: audio graph not initialised');
 	const rt = _rt[deck];
 	_commitPendingIfDue(deck);
-	const pending = rt.pending;
-	if (pending !== null) {
-		const segment =
-			when < pending.startContextTime
-				? pending.previous
-				: {
-						active: pending.active,
-						loop: pending.loop,
-						startContextTime: pending.startContextTime,
-						startPositionSec: pending.startPositionSec,
-						tempoRatio: pending.tempoRatio
-					};
-		return _positionForSegment(segment, when, rt.durationSec);
-	}
-	return _positionForSegment(
-		{
-			active: deckStates[deck].audible,
-			loop: deckStates[deck].loop,
-			startContextTime: rt.startCtxTime,
-			startPositionSec: rt.startOffsetSec,
-			tempoRatio: deckStates[deck].pitch
-		},
-		when,
-		rt.durationSec
-	);
+	return _positionForSegment(_controlSegmentAt(rt, when), when, rt.durationSec);
 }
 
 function _futureScheduleTime(deck: DeckId): number {
 	if (_ctx === null) throw new Error('_futureScheduleTime: audio graph not initialised');
-	const requested = _ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
-	const pending = _rt[deck].pending;
-	return supersedingScheduleTime(requested, pending?.startContextTime ?? null);
+	const rt = _rt[deck];
+	const minimumSafeWhen = safeTransportScheduleTime(_ctx.currentTime, rt.latencySec);
+	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
+	return supersedingScheduleTime(
+		minimumSafeWhen,
+		latestPending?.startContextTime ?? null,
+		minimumSafeWhen
+	);
 }
 
 function _tempoAt(deck: DeckId, contextTime: number): number {
-	const pending = _rt[deck].pending;
-	if (pending === null) return deckStates[deck].pitch;
-	return contextTime < pending.startContextTime
-		? pending.previous.tempoRatio
-		: pending.tempoRatio;
+	return _controlSegmentAt(_rt[deck], contextTime).tempoRatio;
 }
 
-/** Engine-clock position in seconds, with manual wrap while a loop is
- * engaged (mirrors the worklet schedule's loopStart/loopEnd jump). */
+/** Render/control-clock position in seconds, with manual loop wrap. This is
+ * never published directly to DeckState while audio is active. */
 function _currentPosSec(deck: DeckId): number {
 	const st = deckStates[deck];
 	const rt = _rt[deck];
 	if (_ctx === null) return st.position_ms / 1000;
 	_commitPendingIfDue(deck);
-	if (rt.pending !== null) {
-		return _positionForSegment(rt.pending.previous, _ctx.currentTime, rt.durationSec);
-	}
 	return _positionForSegment(
-		{
-			active: st.audible,
-			loop: st.loop,
-			startContextTime: rt.startCtxTime,
-			startPositionSec: rt.startOffsetSec,
-			tempoRatio: st.pitch
-		},
+		_controlSegmentAt(rt, _ctx.currentTime),
 		_ctx.currentTime,
 		rt.durationSec
 	);
 }
 
+function _readOutputTimestamp(context: AudioContext): {
+	contextTime: number;
+	performanceTime: number;
+} {
+	if (typeof context.getOutputTimestamp !== 'function') {
+		throw new Error('AudioContext.getOutputTimestamp is required for presented transport');
+	}
+	const { contextTime, performanceTime } = context.getOutputTimestamp();
+	if (contextTime === undefined || performanceTime === undefined) {
+		throw new Error('AudioContext.getOutputTimestamp returned an incomplete timestamp');
+	}
+	return { contextTime, performanceTime };
+}
+
+function _publishPresentedTransport(
+	deck: DeckId,
+	outputTimestamp: { contextTime: number; performanceTime: number }
+): PresentedTransportObservation | null {
+	const rt = _rt[deck];
+	if (rt.processor === null || rt.durationSec <= 0) return null;
+	const observation = observePresentedTransportTimeline(
+		rt.presentation,
+		outputTimestamp,
+		rt.durationSec
+	);
+	if (!observation.accepted) return observation;
+	const st = deckStates[deck];
+	const wasAudible = st.audible;
+	st.position_ms = observation.position_sec * 1000;
+	st.audible = observation.audible;
+	st.transport_pending = observation.transport_pending;
+	if (wasAudible !== observation.audible) {
+		_handleAudibleTransition(deck, wasAudible, observation.audible);
+	}
+	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
+		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
+		void _scheduleDeck(
+			deck,
+			safeTransportScheduleTime(_ctx.currentTime, rt.latencySec),
+			rt.durationSec,
+			false
+		)
+			.then(() => {
+				if (_masterDeck === deck && !st.audible) _electPlayingMaster();
+			})
+			.catch((error: unknown) => {
+				if (rt.processor !== null) _recordProcessorFailure(deck, error);
+			});
+	}
+	return observation;
+}
+
 function _tick(): void {
+	_rafId = null;
+	if (_ctx === null) return;
+	const outputTimestamp = _readOutputTimestamp(_ctx);
 	let anyTransport = false;
 	for (const deck of DECK_IDS) {
-		const st = deckStates[deck];
 		_commitPendingIfDue(deck);
-		const pending = _rt[deck].pending;
-		if (!st.audible) {
-			if (pending !== null) anyTransport = true;
-			continue;
-		}
-		const positionSec = _currentPosSec(deck);
-		st.position_ms = positionSec * 1000;
-		if (deckReachedEnd(positionSec, _durationSec(deck), st.loop)) {
-			st.playing = false;
-			st.audible = false;
-			st.transport_pending = false;
-			_rt[deck].pending = null;
-			const processor = _rt[deck].processor;
-			if (processor !== null && _ctx !== null) {
-				void processor.stop(_ctx.currentTime).catch((error: unknown) => {
-					_recordProcessorFailure(deck, error);
-				});
-			}
-			if (_masterDeck === deck) _electPlayingMaster();
-			continue;
-		}
-		anyTransport = true;
+		const observation = _publishPresentedTransport(deck, outputTimestamp);
+		if (observation?.audible || observation?.transport_pending) anyTransport = true;
 	}
-	_rafId = anyTransport ? requestAnimationFrame(_tick) : null;
+	if (anyTransport) _rafId = requestAnimationFrame(_tick);
 }
 
 function _ensureRaf(): void {
@@ -1108,7 +1468,8 @@ async function _synchronizeFollowers(
 		);
 		const projectionContextTime = Math.max(
 			now,
-			masterRuntime.pending?.startContextTime ?? masterRuntime.startCtxTime
+			masterRuntime.pending[masterRuntime.pending.length - 1]?.startContextTime ??
+				masterRuntime.startCtxTime
 		);
 		const requestedSyncAt = safeSyncScheduleTime(
 			now,
@@ -1119,10 +1480,9 @@ async function _synchronizeFollowers(
 			options.masterSchedule === undefined ? followers : [master, ...followers];
 		const pendingWaitTarget = pendingSyncWaitTarget(
 			requestedSyncAt,
-			supersededDecks.flatMap((deck) => {
-				const pending = _rt[deck].pending;
-				return pending === null ? [] : [pending.startContextTime];
-			})
+			supersededDecks.flatMap((deck) =>
+				_rt[deck].pending.map((pending) => pending.startContextTime)
+			)
 		);
 		if (pendingWaitTarget !== null) {
 			await _waitForContextTime(ctx, pendingWaitTarget);
@@ -1140,7 +1500,7 @@ async function _synchronizeFollowers(
 			const requestedAnchorSec = options.followerAnchorSec?.[deck];
 			const followerPositionSec =
 				requestedAnchorSec ??
-				(st.audible
+				(_rt[deck].controlActive
 					? _projectPositionAt(deck, syncAt)
 					: quantizeToNearestBeat(followerGrid, rawFollowerPositionSec));
 			const plan = computeFollowerSyncPlan({
@@ -1255,9 +1615,6 @@ class RbAudioEngine implements AudioEngine {
 			track = trackRes.track;
 			buffer = await ctx.decodeAudioData(audioBytes);
 			processor = await StretchDeckProcessor.create(ctx, {
-				onInputTime: (inputTimeSec) => {
-					if (_rt[deck].processor === processor) _rt[deck].reportedInputSec = inputTimeSec;
-				},
 				onProcessorError: (error) => {
 					if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
 				}
@@ -1318,10 +1675,14 @@ class RbAudioEngine implements AudioEngine {
 			rt.processor = candidateProcessor;
 			rt.durationSec = candidateBuffer.duration;
 			rt.latencySec = latencySec;
-			rt.reportedInputSec = 0;
+			rt.controlActive = false;
+			rt.controlLoop = null;
+			rt.controlTempoRatio = 1;
 			rt.startCtxTime = 0;
 			rt.startOffsetSec = 0;
-			rt.pending = null;
+			rt.pending = [];
+			rt.presentation = createPresentedTransportTimeline(0);
+			rt.nextScheduleRevision = 0;
 			st.stable_id = stable_id;
 			st.title = candidateTrack.title;
 			st.artist = candidateTrack.artist;
@@ -1382,7 +1743,6 @@ class RbAudioEngine implements AudioEngine {
 			await _scheduleDeck(deck, when, startSec, true);
 			st.sync_error = null;
 		} else {
-			st.position_ms = startSec * 1000;
 			await _synchronizeFollowers(activeMaster, [deck]);
 		}
 	}
@@ -1391,13 +1751,18 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'pause');
 		if (!st.playing) return; // already paused is a valid state
 		if (_ctx === null) throw new Error('pause: audio graph not initialised');
-		const positionSec = _currentPosSec(deck);
-		const cueMs = st.quantize_enabled
-			? quantizedPositionMs(_requireBeatGrid(st, 'pause cue'), positionSec * 1000, true)
+		const pauseBeats = st.quantize_enabled ? _requireBeatGrid(st, 'pause cue') : null;
+		const when = _futureScheduleTime(deck);
+		const positionSec = await _scheduleDeck(
+			deck,
+			when,
+			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+			false
+		);
+		const cueMs = pauseBeats !== null
+			? quantizedPositionMs(pauseBeats, positionSec * 1000, true)
 			: positionSec * 1000;
-		await _scheduleDeck(deck, _ctx.currentTime, positionSec, false);
 		st.cue_ms = cueMs;
-		if (_masterDeck === deck) _electPlayingMaster();
 	}
 
 	async cueJump(deck: DeckId, ms: number): Promise<void> {
@@ -1439,8 +1804,7 @@ class RbAudioEngine implements AudioEngine {
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
 			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
-			await _scheduleDeck(deck, _ctx.currentTime, target / 1000, false);
-			if (_masterDeck === deck) _electPlayingMaster();
+			await _scheduleDeck(deck, _futureScheduleTime(deck), target / 1000, false);
 			return;
 		}
 		if (st.cue_ms === null) {
@@ -1491,8 +1855,13 @@ class RbAudioEngine implements AudioEngine {
 				});
 			} else {
 				const when = _futureScheduleTime(deck);
-				const positionSec = _projectPositionAt(deck, when);
-				await _scheduleDeck(deck, when, positionSec, true, ratio);
+				await _scheduleDeck(
+					deck,
+					when,
+					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+					true,
+					ratio
+				);
 			}
 		} else {
 			st.pitch = ratio;
@@ -1518,17 +1887,16 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'setLoop');
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
-		const positionSec = wasPlaying ? _projectPositionAt(deck, scheduleAt) : st.position_ms / 1000;
 		if (loop === null) {
 			if (wasPlaying) {
 				if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 				await _scheduleDeck(
 					deck,
 					scheduleAt,
-					positionSec,
+					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
 					true,
-					st.pitch,
-					st.master_tempo_enabled,
+					undefined,
+					undefined,
 					null
 				);
 			} else {
@@ -1551,10 +1919,10 @@ class RbAudioEngine implements AudioEngine {
 			await _scheduleDeck(
 				deck,
 				scheduleAt,
-				positionSec,
+				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
 				true,
-				st.pitch,
-				st.master_tempo_enabled,
+				undefined,
+				undefined,
 				nextLoop
 			);
 		} else {
@@ -1566,11 +1934,12 @@ class RbAudioEngine implements AudioEngine {
 	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
 		const grid = _requireBeatGrid(st, 'engageBeatLoop');
-		const currentMs = st.audible ? _currentPosSec(deck) * 1000 : st.position_ms;
+		const currentMs = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
 		const range = exactBeatLoopRangeMs(grid, currentMs, beats, startMs);
 		await this.setLoop(deck, range);
 		if (st.loop !== null) st.loop.beat_length = beats;
-		const pendingLoop = _rt[deck].pending?.loop;
+		const pending = _rt[deck].pending;
+		const pendingLoop = pending[pending.length - 1]?.loop;
 		if (pendingLoop !== null && pendingLoop !== undefined) {
 			pendingLoop.beat_length = beats;
 		}
@@ -1598,16 +1967,23 @@ class RbAudioEngine implements AudioEngine {
 		return master === deck ? Promise.resolve() : _synchronizeFollowers(master, [deck]);
 	}
 
-	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void> {
+	async setMasterTempo(deck: DeckId, enabled: boolean): Promise<void> {
 		if (typeof enabled !== 'boolean') throw new TypeError('setMasterTempo: enabled must be boolean');
 		const st = deckStates[deck];
 		if (!st.playing) {
 			st.master_tempo_enabled = enabled;
-			return Promise.resolve();
+			return;
 		}
 		if (_ctx === null) throw new Error('setMasterTempo: audio graph not initialised');
 		const when = _futureScheduleTime(deck);
-		return _scheduleDeck(deck, when, _projectPositionAt(deck, when), true, st.pitch, enabled);
+		await _scheduleDeck(
+			deck,
+			when,
+			(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+			true,
+			undefined,
+			enabled
+		);
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {
@@ -1646,8 +2022,13 @@ class RbAudioEngine implements AudioEngine {
 		if (_ctx === null || rt.nodes === null) {
 			throw new Error('captureDeckAudio: audio graph not initialised');
 		}
+		_publishPresentedTransport(deck, _readOutputTimestamp(_ctx));
 		if (_ctx.state !== 'running' || !st.audible) {
 			throw new Error('captureDeckAudio: deck must be audible and AudioContext must be running');
+		}
+		const presentationContextTime = rt.presentation.last_presentation_context_time_s;
+		if (presentationContextTime === null) {
+			throw new Error('captureDeckAudio: audio output presentation clock has not started');
 		}
 		const analyser = rt.nodes.analyser;
 		const frequencyDb = new Float32Array(analyser.frequencyBinCount);
@@ -1662,7 +2043,7 @@ class RbAudioEngine implements AudioEngine {
 			throw new Error('captureDeckAudio: analyser returned non-finite time-domain samples');
 		}
 		const snapshot: DeckAudioSnapshot = {
-			context_time_s: _ctx.currentTime,
+			context_time_s: presentationContextTime,
 			sample_rate_hz: _ctx.sampleRate,
 			fft_size: analyser.fftSize,
 			frequency_db: finiteFrequencyDb,
