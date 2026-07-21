@@ -18,6 +18,10 @@
 	 */
 	import { engine } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/types';
+	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
+	import { midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
+	import { midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -42,6 +46,20 @@
 	let master = $state(1);
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
+
+	/** MIDI label status (build unit: midi panel): grey = unsupported /
+	 * denied / idle, amber pulse = permission prompt pending, green = at
+	 * least one mapped device connected. Logic lives in midi-format.ts
+	 * (pure, unit-tested); this is just the reactive plumbing. */
+	const midiMappedCount = $derived(
+		midiState.devices.filter((d) => d.mapVendor !== null).length
+	);
+	const midiStatus = $derived(
+		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
+	);
+	const midiTitle = $derived(
+		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+	);
 
 	$effect(() => {
 		const id = setInterval(() => {
@@ -180,7 +198,19 @@
 
 	<!-- right cluster -->
 	<span class="dim-label" title={INERT_TITLE}>PAD</span>
-	<span class="dim-label" title={INERT_TITLE}>MIDI</span>
+	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
+	<button
+		class="midi-label"
+		class:st-grey={midiStatus === 'grey'}
+		class:st-green={midiStatus === 'green'}
+		class:st-amber={midiStatus === 'amber'}
+		title={midiTitle}
+		aria-label="MIDI panel"
+		aria-expanded={midiUi.panelOpen}
+		onclick={toggleMidiPanel}
+	>
+		MIDI
+	</button>
 
 	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="information">
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
@@ -238,6 +268,9 @@
 	<!-- clock: REAL, local time HH:MM -->
 	<span class="clock">{clock}</span>
 </header>
+
+<!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
+<MidiPanel />
 
 <style>
 	.rb-topbar {
@@ -314,6 +347,44 @@
 		letter-spacing: 0.08em;
 		color: var(--rb-text-dim);
 		opacity: 0.6;
+	}
+
+	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
+	 * amber pulse = permission prompt pending, green = mapped device up. */
+	.midi-label {
+		background: transparent;
+		border: none;
+		padding: 0;
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		letter-spacing: 0.08em;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.midi-label.st-grey {
+		color: var(--rb-text-dim);
+		opacity: 0.6;
+	}
+	.midi-label.st-grey:hover {
+		opacity: 1;
+	}
+	.midi-label.st-green {
+		color: var(--rb-green);
+		opacity: 1;
+	}
+	.midi-label.st-amber {
+		color: var(--rb-orange);
+		opacity: 1;
+		animation: midi-pulse 1s ease-in-out infinite;
+	}
+	@keyframes midi-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
 	}
 
 	.free-badge {
