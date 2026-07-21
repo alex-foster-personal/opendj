@@ -10,10 +10,12 @@ import { pushToast } from '$lib/stores.svelte';
 import {
 	DECK_IDS,
 	deckEffectiveBpm,
+	deckTransportClock,
 	engine,
 	getDeckState,
 	mixerState,
 	pitchRanges,
+	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
 import type {
@@ -58,6 +60,7 @@ export interface PerformanceDeckSnapshot {
 	playing: boolean;
 	audible: boolean;
 	transport_pending: boolean;
+	transport_clock: DeckTransportClock;
 	cue_ms: number | null;
 	pitch: number;
 	pitch_range: PitchRange;
@@ -259,6 +262,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		playing: deck.playing,
 		audible: deck.audible,
 		transport_pending: deck.transport_pending,
+		transport_clock: deckTransportClock(deckId),
 		cue_ms: deck.cue_ms,
 		pitch: deck.pitch,
 		pitch_range: pitchRanges[deckId],
