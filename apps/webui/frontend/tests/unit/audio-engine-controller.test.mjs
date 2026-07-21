@@ -25,7 +25,7 @@ test('controller defaults enable quantize, Beat Sync, and Master Tempo with no s
 		assert.equal(state.master_tempo_enabled, true);
 		assert.equal(state.audible, false);
 		assert.equal(state.transport_pending, false);
-		assert.equal(state.sync_mode, 'beat');
+		assert.equal(state.sync_mode, 'bar');
 		assert.equal(state.sync_error, null);
 		assert.equal(state.processor_error, null);
 		assert.equal(state.is_master, false);
@@ -170,7 +170,8 @@ test('synced follower region and phase are chosen before final loop-entry normal
 		currentContextTimeSec: 30,
 		syncAtContextTimeSec: 30.2,
 		minFollowerTempoRatio: 0.9,
-		maxFollowerTempoRatio: 1.1
+		maxFollowerTempoRatio: 1.1,
+		mode: 'beat'
 	});
 	const scheduledPositionSec = audio.normalizeScheduledTransportEntrySec(
 		plan.followerPositionSec,

@@ -110,7 +110,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		quantize_enabled: true,
 		beat_sync_enabled: true,
 		master_tempo_enabled: true,
-		sync_mode: 'beat',
+		sync_mode: 'bar',
 		sync_error: null,
 		processor_error: null,
 		loop: null,

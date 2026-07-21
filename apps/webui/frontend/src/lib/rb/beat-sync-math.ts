@@ -8,6 +8,8 @@
  *     [if] a position is equidistant between beats [then] return the earlier t
  *   ✔︎ ✅ 🎯 Plan follower phase and local tempo at one future context time.
  *     [if] no raw, half-time, or double-time ratio fits [then ⛔️]
+ *   ✔︎ ✅ 🎯 Require an explicit sync mode and preserve raw cadence in BAR mode.
+ *     [if] BAR needs half/double normalization [then ⛔️] select BEAT instead
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
  */
@@ -33,7 +35,7 @@ export interface FollowerSyncRequest {
 	minFollowerTempoRatio: number;
 	maxFollowerTempoRatio: number;
 	/** Beat matches the nearest beat; bar also requires the same PQTZ n. */
-	mode?: SyncMode;
+	mode: SyncMode;
 }
 
 export interface FollowerSyncPlan {
@@ -161,12 +163,17 @@ function _bestFollowerAnchor(
 ): _FollowerAnchorPlan {
 	let best: _FollowerAnchorPlan | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
+	const rejectedBarNormalizations = new Set<TempoNormalization>();
 	for (let index = 0; index < beats.length - 1; index++) {
 		const beat = beats[index];
 		if (mode === 'bar' && beat.n !== masterBeatNumber) continue;
 		const rawRatio = (masterBpm * masterTempoRatio) / beat.bpm;
 		const tempo = _tempoRatioWithinRangeOrNull(rawRatio, minRatio, maxRatio);
 		if (tempo === null) continue;
+		if (mode === 'bar' && tempo.normalization !== 1) {
+			rejectedBarNormalizations.add(tempo.normalization);
+			continue;
+		}
 		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex % 2 : 0;
 		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
 		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
@@ -189,6 +196,17 @@ function _bestFollowerAnchor(
 		}
 	}
 	if (best === null) {
+		if (mode === 'bar' && rejectedBarNormalizations.size > 0) {
+			const requiredNormalizations = [...rejectedBarNormalizations]
+				.sort((left, right) => left - right)
+				.map((normalization) => `tempoNormalization=${normalization}`)
+				.join(' or ');
+			throw new RangeError(
+				`strict BAR sync requires tempoNormalization=1 to preserve raw PQTZ cadence; ` +
+				`the available anchor requires ${requiredNormalizations}. ` +
+				`Select BEAT mode for half/double tempo matching or widen the follower tempo range.`
+			);
+		}
 		throw new RangeError(
 			`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
 				`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
@@ -253,10 +271,10 @@ export function quantizeToNearestBeat(
 /**
  * Plan one scheduled follower seek and playback-rate change.
  *
-	 * The caller projects the master through its transport and loop map to the
-	 * requested future context time. Both decks then use local PQTZ BPM at their anchor,
- * and the follower receives the master's fractional beat phase. Bar mode
- * additionally requires equal PQTZ beat numbers.
+ * The caller projects the master through its transport and loop map to the
+ * requested future context time. Both decks then use local PQTZ BPM at their
+ * anchor, and the follower receives the master's fractional beat phase. Bar
+ * mode additionally requires equal PQTZ beat numbers and raw cadence.
  */
 export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerSyncPlan {
 	validateBeatGrid(request.masterGrid);
@@ -280,7 +298,7 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 				`${request.minFollowerTempoRatio} > ${request.maxFollowerTempoRatio}`
 		);
 	}
-	const mode = request.mode === undefined ? 'beat' : request.mode;
+	const mode = request.mode;
 	if (mode !== 'beat' && mode !== 'bar') {
 		throw new TypeError(`mode must be "beat" or "bar", got ${String(mode)}`);
 	}
