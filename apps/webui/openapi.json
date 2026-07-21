@@ -475,6 +475,103 @@
         "title": "QueueOut",
         "type": "object"
       },
+      "RbMetaOut": {
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).",
+        "properties": {
+          "analysis_available": {
+            "title": "Analysis Available",
+            "type": "boolean"
+          },
+          "artwork_available": {
+            "title": "Artwork Available",
+            "type": "boolean"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "cue_count": {
+            "title": "Cue Count",
+            "type": "integer"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "folder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Path"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_id": {
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "vendor",
+          "vendor_id",
+          "folder_path",
+          "file_exists",
+          "is_streaming",
+          "genre",
+          "comment",
+          "duration_s",
+          "artwork_available",
+          "analysis_available",
+          "cue_count"
+        ],
+        "title": "RbMetaOut",
+        "type": "object"
+      },
       "TrackOut": {
         "properties": {
           "album": {
@@ -1325,6 +1422,193 @@
         "summary": "Patch Track",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/anlz": {
+      "get": {
+        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.",
+        "operationId": "get_track_anlz_api_v1_tracks__stable_id__anlz_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max length of each waveform band array after downsampling",
+            "in": "query",
+            "name": "points",
+            "required": false,
+            "schema": {
+              "default": 2400,
+              "description": "Max length of each waveform band array after downsampling",
+              "maximum": 2400,
+              "minimum": 100,
+              "title": "Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Anlz",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/artwork": {
+      "get": {
+        "description": "Serve the rekordbox artwork jpg at the requested size variant.",
+        "operationId": "get_track_artwork_api_v1_tracks__stable_id__artwork_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "s=80x80 browser rows, m=240x240 deck thumbs, orig",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "s",
+              "description": "s=80x80 browser rows, m=240x240 deck thumbs, orig",
+              "enum": [
+                "s",
+                "m",
+                "orig"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Artwork",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/audio": {
+      "get": {
+        "description": "Stream the local audio file. FileResponse handles Range/206 natively.",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Audio",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/rb-meta": {
+      "get": {
+        "description": "Rekordbox vendor fields + file-existence flags for browser rows.",
+        "operationId": "get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RbMetaOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Rb Meta",
+        "tags": [
+          "rb-assets"
         ]
       }
     }

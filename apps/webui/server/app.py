@@ -23,6 +23,7 @@ from .routes import health as health_routes
 from .routes import pairings as pairings_routes
 from .routes import playlists as playlists_routes
 from .routes import queues as queues_routes
+from .routes import rb_assets as rb_assets_routes
 from .routes import tracks as tracks_routes
 
 log = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ def create_app(
     app.include_router(playlists_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
+    app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):
