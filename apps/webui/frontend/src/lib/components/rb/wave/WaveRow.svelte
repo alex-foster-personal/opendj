@@ -4,8 +4,12 @@
 	// the deck number + bars-to-next-cue counter. Empty deck = flat dark row.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
 	import { vocalsOf } from '$lib/rb/api-rb';
+	import {
+		performanceCommandStatus,
+		runPerformanceCommandFromUi
+	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/types';
-	import { engine, getDeckState } from './engine-accessor';
+	import { getDeckState } from './engine-accessor';
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
 	import { barsToNextCueLabel } from './wave-math';
 	import { drawWaveRow, readPalette, WAVE_WINDOW_S, type WavePalette } from './render';
@@ -13,6 +17,9 @@
 	const { deckId }: { deckId: DeckId } = $props();
 
 	const deck = $derived(getDeckState(deckId));
+	const commandPending = $derived(
+		performanceCommandStatus.active || performanceCommandStatus.queued > 0
+	);
 
 	// ---- anlz source: prefer the engine-populated payload; else our own
 	// cached /anlz fetch keyed by the deck's stable_id (deck-load event).
@@ -124,32 +131,35 @@
 
 	// ---- click-drag seek: x maps to the time shown at that pixel, with the
 	// window frozen at pointerdown so the mapping is stable for the drag.
-	function _seekToX(x: number): void {
+	async function _seekToX(x: number): Promise<void> {
 		if (deck.duration_ms === null) return;
 		const pxPerS = cssW / WAVE_WINDOW_S;
 		const ms = Math.min(deck.duration_ms, Math.max(0, (dragTLeftS + x / pxPerS) * 1000));
-		engine.cueJump(deckId, ms);
+		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: ms });
 	}
-	function onPointerDown(event: PointerEvent): void {
+	async function onPointerDown(event: PointerEvent): Promise<void> {
 		// Empty deck rows are inert - a real state, nothing to seek.
-		if (deck.stable_id === null || deck.duration_ms === null) return;
+		if (deck.stable_id === null || deck.duration_ms === null || commandPending) return;
 		(event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
 		dragTLeftS = deck.position_ms / 1000 - WAVE_WINDOW_S / 2;
 		seeking = true;
 		lastSeekTs = performance.now();
-		_seekToX(event.offsetX);
+		await _seekToX(event.offsetX);
 	}
-	function onPointerMove(event: PointerEvent): void {
-		if (!seeking) return;
+	async function onPointerMove(event: PointerEvent): Promise<void> {
+		if (!seeking || commandPending) return;
 		const now = performance.now();
 		if (now - lastSeekTs < 90) return; // throttle buffer-source restarts
 		lastSeekTs = now;
-		_seekToX(event.offsetX);
+		await _seekToX(event.offsetX);
 	}
-	function onPointerUp(event: PointerEvent): void {
+	async function onPointerUp(event: PointerEvent): Promise<void> {
 		if (!seeking) return;
-		_seekToX(event.offsetX);
-		seeking = false;
+		try {
+			if (!commandPending) await _seekToX(event.offsetX);
+		} finally {
+			seeking = false;
+		}
 	}
 </script>
 
@@ -166,6 +176,7 @@
 			aria-valuemin={0}
 			aria-valuemax={deck.duration_ms ?? 0}
 			aria-valuenow={Math.round(deck.position_ms)}
+			aria-disabled={deck.stable_id === null || commandPending}
 			tabindex="-1"
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}

@@ -2,15 +2,25 @@
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
 	// KEY SYNC (inert), key badge + nudge arrows (value real, nudges inert),
-	// BEAT SYNC (inert) stacked over MASTER (inert, lit from deck state).
+	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import type { DeckId, DeckState } from '$lib/rb/types';
 
 	let {
 		deck,
 		deckId,
+		pending,
+		onBeatSync,
+		onMaster,
 		inertTip
-	}: { deck: DeckState; deckId: DeckId; inertTip: string } = $props();
+	}: {
+		deck: DeckState;
+		deckId: DeckId;
+		pending: boolean;
+		onBeatSync: () => Promise<void>;
+		onMaster: () => Promise<void>;
+		inertTip: string;
+	} = $props();
 
 	let artworkFailed: boolean = $state(false);
 	const artSrc: string | null = $derived(
@@ -87,8 +97,28 @@
 	</div>
 
 	<div class="sync-col">
-		<button class="rb-lit-button rb-inert" disabled title={inertTip}>BEAT SYNC</button>
-		<button class="rb-lit-button rb-inert" class:lit={deck.is_master} disabled title={inertTip}>
+		<button
+			class="rb-lit-button"
+			class:lit={deck.beat_sync_enabled}
+			disabled={pending}
+			aria-pressed={deck.beat_sync_enabled}
+			data-performance-control="beat-sync"
+			data-state={deck.beat_sync_enabled ? 'on' : 'off'}
+			title="toggle beat sync"
+			onclick={async () => await onBeatSync()}
+		>
+			BEAT SYNC
+		</button>
+		<button
+			class="rb-lit-button"
+			class:lit={deck.is_master}
+			disabled={pending || deck.stable_id === null}
+			aria-pressed={deck.is_master}
+			data-performance-control="master"
+			data-state={deck.is_master ? 'on' : 'off'}
+			title={deck.stable_id === null ? 'no track loaded' : 'select tempo master'}
+			onclick={async () => await onMaster()}
+		>
 			MASTER
 		</button>
 	</div>

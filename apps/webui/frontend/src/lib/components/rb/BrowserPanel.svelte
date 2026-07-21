@@ -29,11 +29,10 @@
 		Vocals
 	} from '$lib/rb/api-rb';
 	import type { DeckId, PlaylistNode } from '$lib/rb/types';
-	// Engine contract (build unit audio-engine): $lib/rb/audio-engine.svelte.ts
-	// exports `engine` (AudioEngine impl) and `deckStates` (Record<DeckId,
-	// DeckState> rune state, aliased to `decks` here). If the engine unit ever
-	// moves, this import is the single line to fix.
-	import { deckStates as decks, engine } from '$lib/rb/audio-engine.svelte';
+	// Deck state remains engine-owned; real load interactions route through
+	// the same validated dispatcher exposed to browser agents.
+	import { deckStates as decks } from '$lib/rb/audio-engine.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { setHideBrokenLinks, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './browser/IconRail.svelte';
@@ -364,13 +363,9 @@
 			pushToast('no free deck: all 4 decks are loaded', 'error');
 			return;
 		}
-		try {
-			await engine.load(target, row.stable_id);
-		} catch (exc) {
-			// Backend refusals (AUDIO_FILE_MISSING / AUDIO_IS_STREAMING_URI /
-			// TRACK_NOT_FOUND) surface here - loud, never silent.
-			pushToast(`deck ${target} load failed: ${String(exc)}`, 'error');
-		}
+		// Backend refusals are persisted in the deck alert and surfaced as a
+		// toast by the same dispatcher used by agent IPC.
+		await runPerformanceCommandFromUi({ type: 'load', deck: target, stable_id: row.stable_id });
 	}
 
 	function _lowestFreeDeck(): DeckId | null {

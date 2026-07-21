@@ -9,9 +9,15 @@
 
 	let {
 		deck,
+		pending,
 		onJump,
 		inertTip
-	}: { deck: DeckState; onJump: (ms: number) => void; inertTip: string } = $props();
+	}: {
+		deck: DeckState;
+		pending: boolean;
+		onJump: (ms: number) => Promise<void>;
+		inertTip: string;
+	} = $props();
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
@@ -37,12 +43,12 @@
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
-				disabled={entry.cue === null}
+				disabled={entry.cue === null || pending}
 				title={entry.cue === null
 					? 'empty hot cue slot'
 					: (entry.cue.comment ?? `hot cue ${entry.slot}`)}
-				onclick={() => {
-					if (entry.cue !== null) onJump(entry.cue.in_ms);
+				onclick={async () => {
+					if (entry.cue !== null) await onJump(entry.cue.in_ms);
 				}}
 			>
 				<span class="letter">{entry.slot}</span>

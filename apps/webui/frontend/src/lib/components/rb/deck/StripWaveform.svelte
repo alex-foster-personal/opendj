@@ -11,7 +11,11 @@
 	import type { AnlzWaveformBands, DeckState, HotCueSlot } from '$lib/rb/types';
 	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
-	let { deck, onSeek }: { deck: DeckState; onSeek: (ms: number) => void } = $props();
+	let {
+		deck,
+		pending,
+		onSeek
+	}: { deck: DeckState; pending: boolean; onSeek: (ms: number) => Promise<void> } = $props();
 
 	// Canvas backing resolution (CSS scales to 100% x var(--rb-strip-h)).
 	const W = 400;
@@ -121,19 +125,19 @@
 		if (vocals !== null) _drawVocalBars(ctx, vocals);
 	});
 
-	function handleClick(e: MouseEvent): void {
+	async function handleClick(e: MouseEvent): Promise<void> {
 		if (deck.duration_ms === null) return;
 		const el = e.currentTarget as HTMLElement;
 		const rect = el.getBoundingClientRect();
 		const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-		onSeek(ratio * deck.duration_ms);
+		await onSeek(ratio * deck.duration_ms);
 	}
 </script>
 
 <button
 	class="strip"
 	onclick={handleClick}
-	disabled={deck.stable_id === null}
+	disabled={deck.stable_id === null || pending}
 	aria-label="track overview waveform - click to seek"
 	title={vocalsTitle ?? undefined}
 >

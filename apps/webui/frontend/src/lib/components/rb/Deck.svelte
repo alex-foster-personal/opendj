@@ -1,16 +1,20 @@
 <script lang="ts">
 	// Build unit: deck (COMPONENT-MAP 1.3, SCREENSHOT-SPEC 3).
 	// REAL: header meta + artwork, strip overview waveform click-to-seek,
-	// hot-cue bank jumps, INT beat-loop cluster (engine.setLoop), CUE +
-	// play/pause transport, jog dial readouts + position tick.
+	// hot-cue bank jumps, INT beat-loop cluster, CUE + play/pause transport,
+	// Q, BEAT SYNC, MASTER, MT, jog readouts + position tick.
 	// INERT (tooltip 'not implemented - see PARITY-TODO'): KEY SYNC, key
-	// nudge arrows, BEAT SYNC, MASTER, HOT CUE dropdown, grid-adjust stacks,
-	// Q, SLIP, MT, AU, MA, stems, pitch range.
+	// nudge arrows, HOT CUE dropdown, grid-adjust stacks, SLIP, AU, MA,
+	// stems, pitch range.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
-	import { engine, getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import { getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
+	import {
+		performanceCommandStatus,
+		runPerformanceCommandFromUi
+	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId, DeckState } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
@@ -24,6 +28,12 @@
 
 	const deck: DeckState = $derived(getDeckState(deckId));
 	const pitchRange: PitchRange = $derived(pitchRanges[deckId]);
+	const pending: boolean = $derived(
+		performanceCommandStatus.active || performanceCommandStatus.queued > 0
+	);
+	const controlError: string | null = $derived(
+		performanceCommandStatus.deck_errors[deckId] ?? deck.sync_error ?? deck.processor_error
+	);
 
 	const INERT_TIP = 'not implemented - see PARITY-TODO';
 	const PAD_LETTERS: string[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -32,35 +42,60 @@
 	// Engine methods throw loudly on empty decks (fail-fast contract);
 	// callers below are gated by disabled states, never by silent catches.
 
-	function seekTo(ms: number): void {
-		engine.cueJump(deckId, ms);
+	async function seekTo(ms: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: ms });
 	}
 
-	function playPause(): void {
-		if (deck.playing) {
-			engine.pause(deckId);
-		} else {
-			engine.play(deckId);
-		}
+	async function playPause(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'play', deck: deckId, playing: !deck.playing });
 	}
 
-	function returnToCue(): void {
-		// Return-to-cue semantics (types.ts DeckState.cue_ms): stop transport
-		// and jump to the cue point, track start when none is set.
-		if (deck.playing) engine.pause(deckId);
-		engine.cueJump(deckId, deck.cue_ms ?? 0);
+	async function returnToCue(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'cue', deck: deckId });
 	}
 
-	function engageLoop(in_ms: number, out_ms: number): void {
-		engine.setLoop(deckId, { in_ms, out_ms });
+	async function engageBeatLoop(beats: number, startMs?: number): Promise<void> {
+		await runPerformanceCommandFromUi(
+			startMs === undefined
+				? { type: 'beat_loop', deck: deckId, beats }
+				: { type: 'beat_loop', deck: deckId, beats, start_ms: startMs }
+		);
 	}
 
-	function disengageLoop(): void {
-		engine.setLoop(deckId, null);
+	async function disengageLoop(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop: null });
+	}
+
+	async function toggleQuantize(): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'quantize',
+			deck: deckId,
+			enabled: !deck.quantize_enabled
+		});
+	}
+
+	async function toggleBeatSync(): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'beat_sync',
+			deck: deckId,
+			enabled: !deck.beat_sync_enabled
+		});
+	}
+
+	async function selectMaster(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'master', deck: deckId });
+	}
+
+	async function toggleMasterTempo(): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'master_tempo',
+			deck: deckId,
+			enabled: !deck.master_tempo_enabled
+		});
 	}
 </script>
 
-<section class="rb-deck rb-panel" data-deck={deckId}>
+<section class="rb-deck rb-panel" data-deck={deckId} data-command-pending={pending}>
 	<!-- Performance pad letter strip along the panel top edge (static echo
 	     of the hot-cue bank, SCREENSHOT-SPEC 3). -->
 	<div class="pad-strip" aria-hidden="true">
@@ -72,9 +107,16 @@
 		{/each}
 	</div>
 
-	<DeckHeader {deck} {deckId} inertTip={INERT_TIP} />
+	<DeckHeader
+		{deck}
+		{deckId}
+		{pending}
+		onBeatSync={toggleBeatSync}
+		onMaster={selectMaster}
+		inertTip={INERT_TIP}
+	/>
 
-	<StripWaveform {deck} onSeek={seekTo} />
+	<StripWaveform {deck} {pending} onSeek={seekTo} />
 
 	<div class="main-row">
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
@@ -90,21 +132,41 @@
 		<!-- The cue bank is the deck panel's flexible middle (wide slot rows,
 		     SCREENSHOT-SPEC 3 wide layout) - it absorbs all spare width. -->
 		<div class="cue-flex">
-			<HotCueBank {deck} onJump={seekTo} inertTip={INERT_TIP} />
+			<HotCueBank {deck} {pending} onJump={seekTo} inertTip={INERT_TIP} />
 		</div>
 
-		<LoopCluster {deck} onEngage={engageLoop} onDisengage={disengageLoop} inertTip={INERT_TIP} />
+		<LoopCluster
+			{deck}
+			{pending}
+			onEngage={engageBeatLoop}
+			onDisengage={disengageLoop}
+			inertTip={INERT_TIP}
+		/>
 
-		<TransportCluster {deck} onCue={returnToCue} onPlayPause={playPause} />
+		<TransportCluster {deck} {pending} onCue={returnToCue} onPlayPause={playPause} />
 
-		<JogDial {deck} {pitchRange} inertTip={INERT_TIP} />
+		<JogDial
+			{deck}
+			{pitchRange}
+			{pending}
+			onQuantize={toggleQuantize}
+			onMasterTempo={toggleMasterTempo}
+			inertTip={INERT_TIP}
+		/>
 	</div>
 
 	<StemRow inertTip={INERT_TIP} />
+
+	{#if controlError !== null}
+		<div class="deck-error" role="alert" data-performance-error={deckId} title={controlError}>
+			{controlError}
+		</div>
+	{/if}
 </section>
 
 <style>
 	.rb-deck {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
@@ -152,5 +214,20 @@
 		min-width: 0;
 		align-self: stretch;
 		display: flex;
+	}
+	.deck-error {
+		position: absolute;
+		z-index: 4;
+		left: 8px;
+		right: 8px;
+		bottom: 3px;
+		padding: 2px 5px;
+		border: 1px solid var(--rb-red);
+		background: rgba(30, 5, 5, 0.94);
+		color: #ff8e87;
+		font-size: var(--rb-fs-label);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 </style>
