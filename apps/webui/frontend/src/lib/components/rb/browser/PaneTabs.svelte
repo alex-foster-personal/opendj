@@ -36,12 +36,37 @@
 		{#if i === active}
 			<div class="tab active" role="tab" aria-selected="true">
 				<span class="title">{_label(tab)}</span>
+				<!-- up/down stepper: crisp SVG chevrons (SCREENSHOT-SPEC 5c) -->
 				<span class="stepper">
-					<button class="rb-inert" disabled title="not implemented - see PARITY-TODO">
-						&#9652;
+					<button
+						class="rb-inert"
+						disabled
+						title="not implemented - see PARITY-TODO"
+						aria-label="previous track in pane"
+					>
+						<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
+							<path
+								d="M1 4 L4 1 L7 4"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.3"
+							/>
+						</svg>
 					</button>
-					<button class="rb-inert" disabled title="not implemented - see PARITY-TODO">
-						&#9662;
+					<button
+						class="rb-inert"
+						disabled
+						title="not implemented - see PARITY-TODO"
+						aria-label="next track in pane"
+					>
+						<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
+							<path
+								d="M1 1 L4 4 L7 1"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.3"
+							/>
+						</svg>
 					</button>
 				</span>
 			</div>
@@ -95,12 +120,13 @@
 		margin-left: 4px;
 	}
 	.stepper button {
-		height: 9px;
+		display: flex;
+		align-items: center;
+		height: 8px;
 		padding: 0 2px;
 		background: transparent;
 		border: none;
-		color: var(--rb-text-dim);
-		font-size: 7px;
-		line-height: 8px;
+		color: var(--rb-text);
+		line-height: 1;
 	}
 </style>

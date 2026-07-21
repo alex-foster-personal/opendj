@@ -25,6 +25,20 @@
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
+	/** 4-waveform view icon geometry: 4 rows of mini waveform bars (x,
+	 * half-height) so the glyph reads as stacked waveforms, not a list. */
+	const WAVE_ICON_ROWS_CY: number[] = [1.5, 4.3, 7.1, 9.9];
+	const WAVE_ICON_BARS: { x: number; half: number }[] = [
+		{ x: 1, half: 0.5 },
+		{ x: 2.6, half: 1 },
+		{ x: 4.2, half: 0.65 },
+		{ x: 5.8, half: 1.15 },
+		{ x: 7.4, half: 0.5 },
+		{ x: 9, half: 0.9 },
+		{ x: 10.6, half: 1.15 },
+		{ x: 12.2, half: 0.65 }
+	];
+
 	let master = $state(1);
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
@@ -126,13 +140,22 @@
 				<rect x="6.6" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
 			</svg>
 		</button>
-		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically -->
+		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically. Four
+		     rows of varying-height mini waveform bars - must NOT read as a
+		     plain list glyph (SCREENSHOT-SPEC 1). -->
 		<button class="tb-icon active rb-inert" disabled title={INERT_TITLE} aria-label="4 waveform view">
 			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
-				<rect x="1" y="1" width="12" height="1.6" fill="currentColor" />
-				<rect x="1" y="3.8" width="12" height="1.6" fill="currentColor" />
-				<rect x="1" y="6.6" width="12" height="1.6" fill="currentColor" />
-				<rect x="1" y="9.4" width="12" height="1.6" fill="currentColor" />
+				{#each WAVE_ICON_ROWS_CY as cy (cy)}
+					{#each WAVE_ICON_BARS as bar (bar.x)}
+						<rect
+							x={bar.x}
+							y={cy - bar.half}
+							width="0.9"
+							height={2 * bar.half}
+							fill="currentColor"
+						/>
+					{/each}
+				{/each}
 			</svg>
 		</button>
 		<!-- 2 circular scope icons -->

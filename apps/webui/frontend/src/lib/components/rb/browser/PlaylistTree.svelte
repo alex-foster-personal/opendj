@@ -2,7 +2,8 @@
 	// Playlist tree panel (SCREENSHOT-SPEC 5b). Tree View tab active; Column
 	// View locked/dim (inert). 'All Tracks' shows OUR live total (never the
 	// screenshot's 9862); 'Playlists' folder lists real playlists with
-	// right-aligned counts, client-sorted by name (COMPONENT-MAP 1.5).
+	// right-aligned counts in rekordbox custom tree order (djmdPlaylist Seq,
+	// sorted upstream in BrowserPanel - COMPONENT-MAP 1.5).
 	import type { PlaylistNode } from '$lib/rb/types';
 
 	let {

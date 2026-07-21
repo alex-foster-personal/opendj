@@ -35,9 +35,12 @@ export interface PlaylistSummary {
 	vendor: string;
 	track_count: number;
 	updated_at: string;
+	/** Rekordbox custom tree position (flattened ParentID/Seq walk);
+	 * null for non-rekordbox playlists - never invent an order for those. */
+	seq: number | null;
 }
 
-export interface PlaylistDetail extends Omit<PlaylistSummary, 'track_count'> {
+export interface PlaylistDetail extends Omit<PlaylistSummary, 'track_count' | 'seq'> {
 	items: string[];
 	diff: {
 		rb_only: string[];

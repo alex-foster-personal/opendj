@@ -30,6 +30,54 @@ const PLAYHEAD_COLOR = '#ffffff';
 const HIGH_BAND_SCALE = 0.6;
 const MID_BAND_SCALE = 0.85;
 
+/** Perceptual amplitude shaping (rendering only, the band DATA is never
+ * modified). Raw PWV6/PWV7 bytes sit mostly in the 0.3-0.7 range after
+ * /127 scaling, which painted linearly reads as a thin ribbon in a 40px
+ * row; rekordbox draws visibly denser. Two standard display steps:
+ *   1. per-track per-band normalization to the band's own 99th percentile
+ *      (loud parts of THIS track reach full height; relative dynamics -
+ *      quiet intros vs drops - are preserved);
+ *   2. gamma lift v^0.45 to widen the mid range.
+ * Zero stays zero; nothing is drawn where the analysis is silent. */
+const AMP_GAMMA = 0.45;
+/** Floor for the p99 divisor so near-silent bands cannot blow up noise. */
+const NORM_FLOOR = 0.1;
+
+interface BandNorms {
+	low: number;
+	mid: number;
+	high: number;
+}
+
+/** Per-waveform normalization cache - computed once per anlz payload. */
+const _normCache = new WeakMap<AnlzWaveform, BandNorms>();
+
+function _p99(values: number[]): number {
+	const nonZero = values.filter((v) => v > 0);
+	if (nonZero.length === 0) return 1;
+	const sorted = nonZero.slice().sort((a, b) => a - b);
+	const p99 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))];
+	return Math.min(1, Math.max(NORM_FLOOR, p99));
+}
+
+function _normsFor(waveform: AnlzWaveform): BandNorms {
+	const cached = _normCache.get(waveform);
+	if (cached !== undefined) return cached;
+	const bands = waveform.detail;
+	const norms: BandNorms = {
+		low: _p99(bands.low),
+		mid: _p99(bands.mid),
+		high: _p99(bands.high)
+	};
+	_normCache.set(waveform, norms);
+	return norms;
+}
+
+function _amp(v: number, norm: number): number {
+	if (v <= 0) return 0;
+	return Math.pow(Math.min(1, v / norm), AMP_GAMMA);
+}
+
 export interface WavePalette {
 	/** Row background (--rb-bg). */
 	bg: string;
@@ -136,6 +184,10 @@ function _drawBands(
 	const centerY = MARKER_BAND_PX + (h - MARKER_BAND_PX) / 2;
 	const halfH = (h - MARKER_BAND_PX) / 2 - 1;
 	const mono = waveform.kind === 'mono';
+	const norms = _normsFor(waveform);
+	// Mono payloads mix all three arrays into one height, so normalize by
+	// the loudest band's p99 rather than any single band's.
+	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
 
 	const lowPath = new Path2D();
 	const midPath = new Path2D();
@@ -150,17 +202,20 @@ function _drawBands(
 		if (mono) {
 			// Heights only (PWAV/PWV3): the contract does not pin which band
 			// array carries them, so take the per-point max across all three.
-			const v = Math.max(
-				_bucketMax(bands.low, p0, p1),
-				_bucketMax(bands.mid, p0, p1),
-				_bucketMax(bands.high, p0, p1)
+			const v = _amp(
+				Math.max(
+					_bucketMax(bands.low, p0, p1),
+					_bucketMax(bands.mid, p0, p1),
+					_bucketMax(bands.high, p0, p1)
+				),
+				monoNorm
 			);
 			if (v > 0) _mirrorRect(lowPath, x, centerY, v * halfH);
 			continue;
 		}
-		const lo = _bucketMax(bands.low, p0, p1);
-		const mi = _bucketMax(bands.mid, p0, p1);
-		const hi = _bucketMax(bands.high, p0, p1);
+		const lo = _amp(_bucketMax(bands.low, p0, p1), norms.low);
+		const mi = _amp(_bucketMax(bands.mid, p0, p1), norms.mid);
+		const hi = _amp(_bucketMax(bands.high, p0, p1), norms.high);
 		if (lo > 0) _mirrorRect(lowPath, x, centerY, lo * halfH);
 		if (mi > 0) _mirrorRect(midPath, x, centerY, mi * halfH * MID_BAND_SCALE);
 		if (hi > 0) _mirrorRect(highPath, x, centerY, hi * halfH * HIGH_BAND_SCALE);

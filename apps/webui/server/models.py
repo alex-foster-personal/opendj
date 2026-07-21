@@ -56,6 +56,10 @@ class PlaylistSummary(BaseModel):
     vendor: str
     track_count: int
     updated_at: str
+    # Rekordbox tree position (flattened djmdPlaylist ParentID/Seq walk).
+    # None when the playlist is not a rekordbox one or has no live
+    # djmdPlaylist row - clients must not invent an order for those.
+    seq: int | None = None
 
 
 class PlaylistDiff(BaseModel):

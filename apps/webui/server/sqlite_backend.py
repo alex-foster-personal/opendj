@@ -318,7 +318,8 @@ class SqliteBackend:
                 return self._fallback.list_playlists()
             rows = list(
                 conn.execute(
-                    "SELECT playlist_id, name, vendor, created_at, updated_at "
+                    "SELECT playlist_id, name, vendor, vendor_pl_id, "
+                    "       created_at, updated_at "
                     "FROM playlists ORDER BY playlist_id"
                 )
             )
@@ -334,7 +335,8 @@ class SqliteBackend:
         return [
             Playlist(
                 playlist_id=r["playlist_id"], name=r["name"],
-                vendor=r["vendor"], items=members.get(r["playlist_id"], []),
+                vendor=r["vendor"], vendor_pl_id=r["vendor_pl_id"],
+                items=members.get(r["playlist_id"], []),
                 created_at=r["created_at"], updated_at=r["updated_at"],
             )
             for r in rows
@@ -346,7 +348,8 @@ class SqliteBackend:
                 _warn_fallback_once("get_playlist", "no playlists table")
                 return self._fallback.get_playlist(playlist_id)
             row = conn.execute(
-                "SELECT playlist_id, name, vendor, created_at, updated_at "
+                "SELECT playlist_id, name, vendor, vendor_pl_id, "
+                "       created_at, updated_at "
                 "FROM playlists WHERE playlist_id = ?",
                 (playlist_id,),
             ).fetchone()
@@ -363,7 +366,7 @@ class SqliteBackend:
                 ]
         return Playlist(
             playlist_id=row["playlist_id"], name=row["name"],
-            vendor=row["vendor"], items=items,
+            vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 

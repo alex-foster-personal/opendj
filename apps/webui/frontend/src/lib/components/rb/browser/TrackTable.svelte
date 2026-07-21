@@ -187,6 +187,11 @@
 						ondblclick={() => onloadrow(row, null)}
 					>
 						<td class="c-funnel"></td>
+						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
+						     reflect Cloud Library Sync state we do not have locally, so a
+						     cloud renders ONLY for real streaming rows and '!' for missing
+						     files - an empty cell is the honest state for local tracks
+						     (verified against rb-meta; see PARITY-TODO in RECON-FEATURES). -->
 						<td class="c-cloud">
 							{#if row.rb_meta !== null && row.rb_meta.is_streaming}
 								<span
@@ -286,7 +291,8 @@
 	.w-cloud { width: 24px; }
 	.w-order { width: 34px; }
 	.w-preview { width: 122px; }
-	.w-art { width: 30px; }
+	/* wide enough that the 'Artwork' header never truncates to 'Artw' */
+	.w-art { width: 54px; }
 	.w-title { width: auto; }
 	.w-artist { width: 16%; }
 	.w-key { width: 34px; }

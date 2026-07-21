@@ -247,6 +247,44 @@ def anlz_dir(content: RbContent) -> Path:
     return dat.parent
 
 
+# ----- playlist ordering (djmdPlaylist Seq) -----------------------------------
+
+def playlist_order_index() -> dict[str, int]:
+    """djmdPlaylist ID -> flattened rekordbox tree position (0-based).
+
+    Rekordbox orders the playlist tree by (ParentID, Seq) - a user-managed
+    custom order, NOT alphabetical (SCREENSHOT-SPEC 5b). The flat /performance
+    tree needs one comparable number per playlist, so the tree is walked
+    depth-first from 'root' with siblings ordered by Seq; the visit order is
+    the index. Folders are included (they carry Seq too and may map to
+    playlists elsewhere); unknown parents simply never get visited and their
+    subtrees stay absent from the map - a real data state the caller must
+    treat as 'no rekordbox order known'.
+    """
+    master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
+    try:
+        rows = master.execute(
+            "SELECT ID, ParentID, Seq FROM djmdPlaylist WHERE rb_local_deleted = 0"
+        ).fetchall()
+    finally:
+        master.close()
+
+    children: dict[str, list[tuple[int, str]]] = {}
+    for pl_id, parent_id, seq in rows:
+        children.setdefault(str(parent_id), []).append(
+            (int(seq) if seq is not None else 0, str(pl_id))
+        )
+    order: dict[str, int] = {}
+    stack: list[str] = [
+        pl_id for _, pl_id in sorted(children.get("root", []), reverse=True)
+    ]
+    while stack:
+        pl_id = stack.pop()
+        order[pl_id] = len(order)
+        stack.extend(c for _, c in sorted(children.get(pl_id, []), reverse=True))
+    return order
+
+
 # ----- cues (djmdCue, NOT ANLZ) ----------------------------------------------
 
 def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:

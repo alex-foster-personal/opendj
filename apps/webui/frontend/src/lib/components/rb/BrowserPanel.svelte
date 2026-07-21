@@ -93,7 +93,15 @@
 	const treeNodes = $derived(
 		playlists
 			.slice()
-			.sort((a, b) => a.name.localeCompare(b.name))
+			// Rekordbox custom tree order (djmdPlaylist Seq walk, SCREENSHOT-SPEC
+			// 5b) - NOT alphabetical. Playlists without a rekordbox order (seq
+			// null) sink below the ordered ones, name-sorted among themselves.
+			.sort((a, b) => {
+				if (a.seq !== null && b.seq !== null) return a.seq - b.seq;
+				else if (a.seq !== null) return -1;
+				else if (b.seq !== null) return 1;
+				else return a.name.localeCompare(b.name);
+			})
 			.map(
 				(p): PlaylistNode => ({
 					playlist_id: p.playlist_id,

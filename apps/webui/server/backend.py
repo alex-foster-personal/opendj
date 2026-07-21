@@ -87,6 +87,9 @@ class Playlist:
     playlist_id: str
     name: str
     vendor: str = "unknown"
+    # Vendor-side playlist id (e.g. rekordbox djmdPlaylist.ID); None when the
+    # backing store predates the column or the vendor has no such id.
+    vendor_pl_id: str | None = None
     items: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)

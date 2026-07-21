@@ -23,7 +23,13 @@
 		{ tip: TIP, color: '#3d7dd9', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
 		{ tip: TIP, color: '#8e5bd6', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
 		{ tip: TIP, color: 'currentColor', d: 'M2 3h12v8H2zM6 12h4v2H6z', mode: 'fill' },
-		{ tip: TIP, color: 'currentColor', d: 'M6 2h6v12H4V4z', mode: 'fill' },
+		{
+			// save/SD card: notched-corner card with contact pins (SCREENSHOT-SPEC 5a)
+			tip: TIP,
+			color: 'currentColor',
+			d: 'M5 2h6.5L13 3.5V14H5zM6.2 3.2v2.6M8 3.2v2.6M9.8 3.2v2.6M11.6 3.7v2.1',
+			mode: 'stroke'
+		},
 		{
 			tip: TIP,
 			color: 'currentColor',
@@ -31,9 +37,10 @@
 			mode: 'stroke'
 		},
 		{
+			// timer/stopwatch: crown button + dial hand (SCREENSHOT-SPEC 5a)
 			tip: TIP,
 			color: 'currentColor',
-			d: 'M8 3.5a5 5 0 1 1 0 10a5 5 0 1 1 0-10M8 6v3.5',
+			d: 'M6.5 1.5h3M8 1.5v2M8 3.5a5 5 0 1 1 0 10a5 5 0 1 1 0-10M8 8.5V5.5M8 8.5l2 1.5',
 			mode: 'stroke'
 		},
 		{
@@ -87,11 +94,17 @@
 		border: none;
 		color: var(--rb-text-dim);
 	}
+	/* Horizontal section labels below the rail groups (SCREENSHOT-SPEC 5a) -
+	 * NOT rotated; the rail is narrow so the type is tiny like rekordbox's. */
 	.rail-label {
-		writing-mode: vertical-rl;
-		font-size: 9px;
+		width: 100%;
+		font-size: 6px;
+		line-height: 1.2;
+		text-align: center;
 		color: var(--rb-text-dim);
 		margin-top: 10px;
-		letter-spacing: 0.5px;
+		letter-spacing: -0.3px;
+		white-space: nowrap;
+		overflow: hidden;
 	}
 </style>

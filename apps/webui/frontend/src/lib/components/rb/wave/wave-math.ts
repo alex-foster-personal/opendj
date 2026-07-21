@@ -21,20 +21,35 @@ export function firstBeatAtOrAfter(beats: AnlzBeat[], tSec: number): number {
 }
 
 /** Gutter label like '1.1Bars' / '86.3Bars' - whole bars + leftover beats
- * until the next upcoming cue (memory, hot cue or loop-in).
- * Returns null when the track has no beatgrid or no upcoming cue - the
- * label is hidden in that case (COMPONENT-MAP 1.2), never invented. */
+ * until the next countdown target (SCREENSHOT-SPEC 2: bars until next
+ * cue/phrase). Target picking, in priority order over REAL data only:
+ *   1. earliest upcoming cue (memory / hot cue / loop-in), else
+ *   2. earliest upcoming phrase boundary, else
+ *   3. the end of the beatgrid (last analysed beat).
+ * Most library tracks carry zero djmdCue rows, so without the phrase and
+ * end-of-grid fallbacks the counter would almost never render - rekordbox
+ * shows it whenever a beatgrid exists. Returns null only when the track
+ * has no beatgrid or the playhead is past every target - never invented. */
 export function barsToNextCueLabel(anlz: AnlzData, positionMs: number): string | null {
 	const beats = anlz.beatgrid.beats;
 	if (beats.length === 0) return null;
 	const posS = positionMs / 1000;
-	let nextCueS = Infinity;
+	let targetS = Infinity;
 	for (const cue of anlz.cues) {
 		const cueS = cue.in_ms / 1000;
-		if (cueS > posS && cueS < nextCueS) nextCueS = cueS;
+		if (cueS > posS && cueS < targetS) targetS = cueS;
 	}
-	if (!Number.isFinite(nextCueS)) return null;
-	const beatsRemaining = firstBeatAtOrAfter(beats, nextCueS) - firstBeatAtOrAfter(beats, posS);
+	if (!Number.isFinite(targetS)) {
+		for (const phrase of anlz.phrases) {
+			if (phrase.start_s > posS && phrase.start_s < targetS) targetS = phrase.start_s;
+		}
+	}
+	if (!Number.isFinite(targetS)) {
+		const gridEndS = beats[beats.length - 1].t;
+		if (gridEndS > posS) targetS = gridEndS;
+	}
+	if (!Number.isFinite(targetS)) return null;
+	const beatsRemaining = firstBeatAtOrAfter(beats, targetS) - firstBeatAtOrAfter(beats, posS);
 	const bars = Math.floor(beatsRemaining / 4);
 	const rem = beatsRemaining % 4;
 	return `${bars}.${rem}Bars`;
