@@ -1,0 +1,120 @@
+<script lang="ts">
+	/**
+	 * Horizontal crossfader (SCREENSHOT-SPEC 4, bottom center of the mixer).
+	 * Real control: 0 = full A (left bus), 1 = full B (right bus).
+	 */
+	interface Props {
+		/** 0..1; 0 = full A, 1 = full B. */
+		value: number;
+		/** Called with the new 0..1 value while dragging. */
+		onchange: (value: number) => void;
+	}
+
+	let { value, onchange }: Props = $props();
+
+	const THUMB_W = 12;
+
+	let dragging = false;
+	let trackWidth = $state(0);
+
+	const thumbLeftPx = $derived(value * Math.max(0, trackWidth - THUMB_W));
+
+	function _clamp01(v: number): number {
+		return Math.min(1, Math.max(0, v));
+	}
+
+	function _valueFromEvent(e: PointerEvent): number {
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = e.clientX - rect.left - THUMB_W / 2;
+		return _clamp01(x / (rect.width - THUMB_W));
+	}
+
+	function handlePointerDown(e: PointerEvent): void {
+		dragging = true;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		onchange(_valueFromEvent(e));
+	}
+
+	function handlePointerMove(e: PointerEvent): void {
+		if (!dragging) return;
+		onchange(_valueFromEvent(e));
+	}
+
+	function handlePointerUp(e: PointerEvent): void {
+		if (!dragging) return;
+		dragging = false;
+		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+	}
+
+	function handleKeyDown(e: KeyboardEvent): void {
+		if (e.key === 'ArrowRight') {
+			e.preventDefault();
+			onchange(_clamp01(value + 0.02));
+		} else if (e.key === 'ArrowLeft') {
+			e.preventDefault();
+			onchange(_clamp01(value - 0.02));
+		}
+	}
+</script>
+
+<div
+	class="xfader"
+	role="slider"
+	aria-label="crossfader"
+	aria-orientation="horizontal"
+	aria-valuemin={0}
+	aria-valuemax={1}
+	aria-valuenow={value}
+	tabindex="0"
+	bind:clientWidth={trackWidth}
+	onpointerdown={handlePointerDown}
+	onpointermove={handlePointerMove}
+	onpointerup={handlePointerUp}
+	onkeydown={handleKeyDown}
+>
+	<div class="track"></div>
+	<div class="thumb" style={`left: ${thumbLeftPx}px;`}></div>
+</div>
+
+<style>
+	.xfader {
+		position: relative;
+		flex: 1;
+		height: 22px;
+		cursor: ew-resize;
+		touch-action: none;
+		outline: none;
+	}
+	.track {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 50%;
+		height: 3px;
+		margin-top: -1.5px;
+		background: #060809;
+		border: 1px solid var(--rb-border);
+	}
+	.thumb {
+		position: absolute;
+		top: 2px;
+		bottom: 2px;
+		width: 12px;
+		background: #2a2f37;
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+	}
+	.thumb::after {
+		content: '';
+		position: absolute;
+		top: 2px;
+		bottom: 2px;
+		left: 50%;
+		width: 2px;
+		margin-left: -1px;
+		background: var(--rb-accent);
+	}
+	.xfader:focus-visible .thumb {
+		box-shadow: 0 0 4px var(--rb-accent-glow);
+	}
+</style>
