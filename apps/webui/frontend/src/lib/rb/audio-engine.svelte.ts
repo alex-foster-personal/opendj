@@ -578,6 +578,28 @@ export function normalizeEngagedLoopPositionSec(
 	return loopStartSec + wrappedOffsetSec;
 }
 
+export function normalizeScheduledTransportEntrySec(
+	positionSec: number,
+	durationSec: number,
+	loop: LoopState | null
+): number {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
+	}
+	if (!Number.isFinite(positionSec) || positionSec < 0 || positionSec > durationSec) {
+		throw new RangeError(
+			`positionSec must be within 0..${durationSec}, got ${positionSec}`
+		);
+	}
+	const normalizedPositionSec = normalizeEngagedLoopPositionSec(positionSec, loop);
+	if (normalizedPositionSec > durationSec) {
+		throw new RangeError(
+			`normalized loop position ${normalizedPositionSec} exceeds duration ${durationSec}`
+		);
+	}
+	return normalizedPositionSec;
+}
+
 export function deckReachedEnd(
 	positionSec: number,
 	durationSec: number,
@@ -617,12 +639,34 @@ export function loadCandidateCanPublish(candidateToken: number, currentToken: nu
 export function assertPausedMasterSelectionAllowed(
 	deck: DeckId,
 	audible: boolean,
-	otherPlayingDecks: readonly DeckId[]
+	otherActiveDecks: readonly DeckId[]
 ): void {
-	if (audible || otherPlayingDecks.length === 0) return;
+	if (audible || otherActiveDecks.length === 0) return;
 	throw new Error(
 		`setDeckMaster: cannot select paused deck ${deck} while decks ` +
-			`[${otherPlayingDecks.join(',')}] are audible or scheduled to play`
+			`[${otherActiveDecks.join(',')}] are audible or scheduled to play`
+	);
+}
+
+export function pausedMasterSelectionBlockers(
+	deck: DeckId,
+	activity: Readonly<Record<DeckId, Pick<DeckState, 'audible' | 'playing'>>>
+): DeckId[] {
+	return DECK_IDS.filter(
+		(candidate) =>
+			candidate !== deck && (activity[candidate].audible || activity[candidate].playing)
+	);
+}
+
+export function masterSwitchFollowers(
+	deck: DeckId,
+	activity: Readonly<Record<DeckId, Pick<DeckState, 'playing' | 'beat_sync_enabled'>>>
+): DeckId[] {
+	return DECK_IDS.filter(
+		(candidate) =>
+			candidate !== deck &&
+			activity[candidate].playing &&
+			activity[candidate].beat_sync_enabled
 	);
 }
 
@@ -741,11 +785,11 @@ async function _scheduleDeck(
 	_commitPendingIfDue(deck);
 	const processor = rt.processor;
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
-	if (!Number.isFinite(inputSec) || inputSec < 0 || inputSec > rt.durationSec) {
-		throw new RangeError(
-			`_scheduleDeck: input ${inputSec}s outside deck ${deck} duration ${rt.durationSec}s`
-		);
-	}
+	const scheduledInputSec = normalizeScheduledTransportEntrySec(
+		inputSec,
+		rt.durationSec,
+		loop
+	);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
 	const existingPending = rt.pending;
 	const effectiveWhen = supersedingScheduleTime(
@@ -763,13 +807,13 @@ async function _scheduleDeck(
 	try {
 		await processor.schedule(
 			effectiveWhen,
-			_stretchChange(inputSec, active, tempoRatio, masterTempoEnabled, loop)
+			_stretchChange(scheduledInputSec, active, tempoRatio, masterTempoEnabled, loop)
 		);
 	} catch (error) {
 		_recordProcessorFailure(deck, error);
 		throw error;
 	}
-	rt.reportedInputSec = inputSec;
+	rt.reportedInputSec = scheduledInputSec;
 	st.pitch = tempoRatio;
 	st.master_tempo_enabled = masterTempoEnabled;
 	st.loop = loop === null ? null : { ...loop };
@@ -781,7 +825,7 @@ async function _scheduleDeck(
 			masterTempoEnabled,
 			previous,
 			startContextTime: effectiveWhen,
-			startPositionSec: inputSec,
+			startPositionSec: scheduledInputSec,
 			tempoRatio
 		};
 		st.audible = previous.active;
@@ -790,7 +834,7 @@ async function _scheduleDeck(
 	} else {
 		rt.pending = null;
 		rt.startCtxTime = effectiveWhen;
-		rt.startOffsetSec = inputSec;
+		rt.startOffsetSec = scheduledInputSec;
 		const wasAudible = st.audible;
 		st.audible = active;
 		st.transport_pending = false;
@@ -800,7 +844,7 @@ async function _scheduleDeck(
 					active,
 					loop,
 					startContextTime: effectiveWhen,
-					startPositionSec: inputSec,
+					startPositionSec: scheduledInputSec,
 					tempoRatio
 				},
 				_ctx.currentTime,
@@ -1313,13 +1357,9 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'play');
 		if (st.playing) return; // transport already running is a valid state
 		if (st.beat_sync_enabled) _requireBeatGrid(st, 'play Beat Sync');
-		const normalizedStartSec = normalizeEngagedLoopPositionSec(
-			st.position_ms / 1000,
-			st.loop
-		);
-		_setPausedPosition(deck, normalizedStartSec * 1000);
+		_setPausedPosition(deck, st.position_ms);
 		const ctx = await _resumeContext();
-		const startSec = normalizedStartSec;
+		const startSec = st.position_ms / 1000;
 		const activeMaster = _syncMaster();
 		if (activeMaster === null) {
 			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
@@ -1502,12 +1542,10 @@ class RbAudioEngine implements AudioEngine {
 		const nextLoop: LoopState = { ...snapped, engaged: true, beat_length: null };
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
-			const scheduledInputSec =
-				positionSec >= snapped.out_ms / 1000 ? snapped.in_ms / 1000 : positionSec;
 			await _scheduleDeck(
 				deck,
 				scheduleAt,
-				scheduledInputSec,
+				positionSec,
 				true,
 				st.pitch,
 				st.master_tempo_enabled,
@@ -1583,19 +1621,12 @@ class RbAudioEngine implements AudioEngine {
 	async setDeckMaster(deck: DeckId): Promise<void> {
 		const { st } = _requireLoaded(deck, 'setDeckMaster');
 		if (!st.audible) {
-			const otherPlayingDecks = DECK_IDS.filter(
-				(candidate) => candidate !== deck && deckStates[candidate].playing
-			);
-			assertPausedMasterSelectionAllowed(deck, st.audible, otherPlayingDecks);
+			const blockers = pausedMasterSelectionBlockers(deck, deckStates);
+			assertPausedMasterSelectionAllowed(deck, st.audible, blockers);
 			_assignMaster(deck);
 			return;
 		}
-		const followers = DECK_IDS.filter(
-			(candidate) =>
-				candidate !== deck &&
-				deckStates[candidate].audible &&
-				deckStates[candidate].beat_sync_enabled
-		);
+		const followers = masterSwitchFollowers(deck, deckStates);
 		await _synchronizeFollowers(deck, followers);
 		_assignMaster(deck);
 	}

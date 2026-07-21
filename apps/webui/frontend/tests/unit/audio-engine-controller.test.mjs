@@ -10,9 +10,11 @@ const REAL_PQTZ_BEATS = [
 	{ n: 4, bpm: 127, t: 1.553 }
 ];
 let audio;
+let computeFollowerSyncPlan;
 
 before(async () => {
 	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts');
+	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
 });
 
 test('controller defaults enable quantize, Beat Sync, and Master Tempo with no static master', () => {
@@ -118,6 +120,50 @@ test('paused play normalizes positions on either side of an engaged loop with fu
 	assert.equal(audio.normalizeEngagedLoopPositionSec(4.2, { ...loop, engaged: false }), 4.2);
 });
 
+test('live loop and seek scheduling normalize below and above loop positions with exact modulo', () => {
+	const loop = { in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 };
+	const liveLoopProjectedPositionSec = 0.5;
+	const liveSeekPositionSec = 4.2;
+
+	assert.ok(
+		Math.abs(
+			audio.normalizeScheduledTransportEntrySec(liveLoopProjectedPositionSec, 10, loop) - 1.5
+		) < 1e-12
+	);
+	assert.ok(
+		Math.abs(audio.normalizeScheduledTransportEntrySec(liveSeekPositionSec, 10, loop) - 1.2) <
+			1e-12
+	);
+});
+
+test('synced follower region and phase are chosen before final loop-entry normalization', () => {
+	const regularGrid = Array.from({ length: 12 }, (_, index) => ({
+		n: (index % 4) + 1,
+		bpm: 120,
+		t: index * 0.5
+	}));
+	const plan = computeFollowerSyncPlan({
+		masterGrid: regularGrid,
+		followerGrid: regularGrid,
+		masterPositionAtSyncSec: 0.3,
+		masterTempoRatio: 1,
+		followerPositionSec: 5,
+		currentContextTimeSec: 30,
+		syncAtContextTimeSec: 30.2,
+		minFollowerTempoRatio: 0.9,
+		maxFollowerTempoRatio: 1.1
+	});
+	const scheduledPositionSec = audio.normalizeScheduledTransportEntrySec(
+		plan.followerPositionSec,
+		10,
+		{ in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 }
+	);
+
+	assert.ok(plan.followerPositionSec > 4.5);
+	assert.ok(Math.abs(plan.beatPhase - 0.6) < 1e-12);
+	assert.ok(Math.abs(scheduledPositionSec - 1.8) < 1e-12);
+});
+
 test('exact beat-loop resize preserves the supplied real PQTZ loop-in anchor', () => {
 	assert.deepEqual(audio.exactBeatLoopRangeMs(REAL_PQTZ_BEATS, 1080, 2, 608), {
 		in_ms: 608,
@@ -156,6 +202,39 @@ test('a paused MASTER selection rejects while another deck is live or scheduled'
 		() => audio.assertPausedMasterSelectionAllowed(2, false, [1]),
 		/cannot select paused deck 2/i
 	);
+});
+
+test('an audible pending stop remains a paused MASTER selection blocker', () => {
+	const activity = {
+		1: { audible: true, playing: false },
+		2: { audible: false, playing: false },
+		3: { audible: false, playing: false },
+		4: { audible: false, playing: false }
+	};
+
+	assert.deepEqual(audio.pausedMasterSelectionBlockers(2, activity), [1]);
+	assert.throws(
+		() =>
+			audio.assertPausedMasterSelectionAllowed(
+				2,
+				activity[2].audible,
+				audio.pausedMasterSelectionBlockers(2, activity)
+			),
+		/cannot select paused deck 2/i
+	);
+});
+
+test('MASTER switching includes Beat-Synced pending starts at the next common horizon', () => {
+	const activity = {
+		1: { audible: true, playing: true, beat_sync_enabled: true },
+		2: { audible: false, playing: true, beat_sync_enabled: true },
+		3: { audible: true, playing: false, beat_sync_enabled: true },
+		4: { audible: true, playing: true, beat_sync_enabled: false }
+	};
+
+	assert.deepEqual(audio.masterSwitchFollowers(1, activity), [2]);
+	assert.deepEqual(audio.commonSyncScheduleTimes(12.4, 2), [12.4, 12.4]);
+	assert.equal(audio.supersedingScheduleTime(12.4, 12.6), 12.4);
 });
 
 test('public controller exposes semantic tempo, sync, master, quantize, and analysis APIs', async () => {
