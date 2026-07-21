@@ -13,6 +13,11 @@
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
 	import { barsToNextCueLabel } from './wave-math';
 	import { drawWaveRow, readPalette, WAVE_WINDOW_S, type WavePalette } from './render';
+	import {
+		createLatestSeekDispatcher,
+		waveClickTargetMs,
+		waveDragTargetMs
+	} from './wave-scrub';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
@@ -62,8 +67,18 @@
 	let cssH = $state(0);
 	let palette: WavePalette | null = null;
 	let seeking = $state(false);
-	let dragTLeftS = 0; // window-left second frozen at pointerdown
+	let scrubPointerId: number | null = null;
+	let scrubOriginClientX = 0;
+	let scrubOriginPositionMs = 0;
+	let scrubDurationMs = 0;
+	let scrubLeftPx = 0;
+	let scrubWidthPx = 0;
+	let scrubMoved = false;
 	let lastSeekTs = 0;
+	const DRAG_THRESHOLD_PX = 3;
+	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
+		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
+	});
 
 	$effect(() => {
 		const el = canvasEl;
@@ -129,37 +144,94 @@
 		draw();
 	});
 
-	// ---- click-drag seek: x maps to the time shown at that pixel, with the
-	// window frozen at pointerdown so the mapping is stable for the drag.
-	async function _seekToX(x: number): Promise<void> {
-		if (deck.duration_ms === null) return;
-		const pxPerS = cssW / WAVE_WINDOW_S;
-		const ms = Math.min(deck.duration_ms, Math.max(0, (dragTLeftS + x / pxPerS) * 1000));
-		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: ms });
+	// ---- click-drag seek: the engine position at pointerdown is frozen as
+	// the gesture origin. Dragging grabs the waveform under the fixed playhead;
+	// click-without-drag still seeks to the time visibly beneath the pointer.
+	function _dragTarget(clientX: number): number {
+		return waveDragTargetMs({
+			originPositionMs: scrubOriginPositionMs,
+			originClientX: scrubOriginClientX,
+			clientX,
+			widthPx: scrubWidthPx,
+			durationMs: scrubDurationMs,
+			windowSeconds: WAVE_WINDOW_S
+		});
 	}
+
+	function _clickTarget(clientX: number): number {
+		return waveClickTargetMs({
+			centerPositionMs: scrubOriginPositionMs,
+			pointerX: clientX - scrubLeftPx,
+			widthPx: scrubWidthPx,
+			durationMs: scrubDurationMs,
+			windowSeconds: WAVE_WINDOW_S
+		});
+	}
+
+	function _clearGesture(): void {
+		scrubPointerId = null;
+		scrubMoved = false;
+		seeking = false;
+	}
+
 	async function onPointerDown(event: PointerEvent): Promise<void> {
 		// Empty deck rows are inert - a real state, nothing to seek.
-		if (deck.stable_id === null || deck.duration_ms === null || commandPending) return;
-		(event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
-		dragTLeftS = deck.position_ms / 1000 - WAVE_WINDOW_S / 2;
+		if (
+			!event.isPrimary ||
+			event.button !== 0 ||
+			deck.stable_id === null ||
+			deck.duration_ms === null ||
+			commandPending
+		) {
+			return;
+		}
+		event.preventDefault();
+		const canvas = event.currentTarget as HTMLCanvasElement;
+		const rect = canvas.getBoundingClientRect();
+		canvas.setPointerCapture(event.pointerId);
+		scrubPointerId = event.pointerId;
+		scrubOriginClientX = event.clientX;
+		scrubOriginPositionMs = deck.position_ms;
+		scrubDurationMs = deck.duration_ms;
+		scrubLeftPx = rect.left;
+		scrubWidthPx = rect.width;
+		scrubMoved = false;
 		seeking = true;
 		lastSeekTs = performance.now();
-		await _seekToX(event.offsetX);
 	}
+
 	async function onPointerMove(event: PointerEvent): Promise<void> {
-		if (!seeking || commandPending) return;
+		if (!seeking || event.pointerId !== scrubPointerId) return;
+		const deltaPx = event.clientX - scrubOriginClientX;
+		if (!scrubMoved && Math.abs(deltaPx) < DRAG_THRESHOLD_PX) return;
+		scrubMoved = true;
 		const now = performance.now();
 		if (now - lastSeekTs < 90) return; // throttle buffer-source restarts
 		lastSeekTs = now;
-		await _seekToX(event.offsetX);
+		await seekDispatcher.request(_dragTarget(event.clientX));
 	}
+
 	async function onPointerUp(event: PointerEvent): Promise<void> {
-		if (!seeking) return;
+		if (!seeking || event.pointerId !== scrubPointerId) return;
+		const canvas = event.currentTarget as HTMLCanvasElement;
 		try {
-			if (!commandPending) await _seekToX(event.offsetX);
+			const targetMs = scrubMoved ? _dragTarget(event.clientX) : _clickTarget(event.clientX);
+			await seekDispatcher.request(targetMs);
 		} finally {
-			seeking = false;
+			_clearGesture();
+			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
 		}
+	}
+
+	function onPointerCancel(event: PointerEvent): void {
+		if (!seeking || event.pointerId !== scrubPointerId) return;
+		const canvas = event.currentTarget as HTMLCanvasElement;
+		_clearGesture();
+		if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+	}
+
+	function onLostPointerCapture(event: PointerEvent): void {
+		if (seeking && event.pointerId === scrubPointerId) _clearGesture();
 	}
 </script>
 
@@ -176,12 +248,13 @@
 			aria-valuemin={0}
 			aria-valuemax={deck.duration_ms ?? 0}
 			aria-valuenow={Math.round(deck.position_ms)}
-			aria-disabled={deck.stable_id === null || commandPending}
+			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
 			tabindex="-1"
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
-			onpointercancel={onPointerUp}
+			onpointercancel={onPointerCancel}
+			onlostpointercapture={onLostPointerCapture}
 		></canvas>
 		{#if deck.stable_id !== null && anlzErrorCode !== null}
 			<span class="anlz-state" title={anlzErrorCode}>
@@ -232,6 +305,7 @@
 		display: block;
 		cursor: ew-resize;
 		outline: none;
+		touch-action: none;
 	}
 	.anlz-state {
 		position: absolute;
