@@ -42,6 +42,21 @@ test('central seek quantization snaps to real PQTZ and missing grids fail explic
 	assert.throws(() => audio.quantizedPositionMs([], 590, true), /beat grid/i);
 });
 
+test('paused seek produces one frozen UI and runtime clock position', () => {
+	assert.deepEqual(audio.pausedSeekClock(608, 4000), {
+		position_ms: 608,
+		start_offset_sec: 0.608
+	});
+	assert.throws(() => audio.pausedSeekClock(4001, 4000), /duration/i);
+});
+
+test('audible Beat-Synced follower seeks route back through the selected master', () => {
+	assert.equal(audio.seekSyncMaster(2, true, true, 1), 1);
+	assert.equal(audio.seekSyncMaster(1, true, true, 1), null);
+	assert.equal(audio.seekSyncMaster(2, false, true, 1), null);
+	assert.equal(audio.seekSyncMaster(2, true, false, 1), null);
+});
+
 test('central loop quantization snaps both endpoints and rejects collapsed loops', () => {
 	assert.deepEqual(
 		audio.quantizedLoopEndpointsMs(REAL_PQTZ_BEATS, { in_ms: 590, out_ms: 1090 }, true),
@@ -77,6 +92,11 @@ test('existing pending follower work waits before recomputing a fresh safe sync 
 	assert.throws(() => audio.pendingSyncWaitTarget(10.5, [Number.NaN]), /pending sync/);
 });
 
+test('master tempo and every follower receive exactly one common schedule horizon', () => {
+	assert.deepEqual(audio.commonSyncScheduleTimes(12.4, 3), [12.4, 12.4, 12.4]);
+	assert.throws(() => audio.commonSyncScheduleTimes(12.4, 0), /participant/i);
+});
+
 test('loop-aware projection wraps once across a future synchronization lead', () => {
 	const position = audio.projectedLoopAwareTransportPosition({
 		active: true,
@@ -88,6 +108,14 @@ test('loop-aware projection wraps once across a future synchronization lead', ()
 		durationSec: 10
 	});
 	assert.ok(Math.abs(position - 1.1) < 1e-12);
+});
+
+test('paused play normalizes positions on either side of an engaged loop with full modulo', () => {
+	const loop = { in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 };
+	assert.ok(Math.abs(audio.normalizeEngagedLoopPositionSec(0.5, loop) - 1.5) < 1e-12);
+	assert.ok(Math.abs(audio.normalizeEngagedLoopPositionSec(4.2, loop) - 1.2) < 1e-12);
+	assert.equal(audio.normalizeEngagedLoopPositionSec(1.4, loop), 1.4);
+	assert.equal(audio.normalizeEngagedLoopPositionSec(4.2, { ...loop, engaged: false }), 4.2);
 });
 
 test('exact beat-loop resize preserves the supplied real PQTZ loop-in anchor', () => {
@@ -112,6 +140,21 @@ test('load-state invariant rejects playable-looking ghost decks', () => {
 	assert.throws(
 		() => audio.assertDeckLoadConsistency('ghost', 0, false),
 		/inconsistent deck load state/
+	);
+});
+
+test('only the latest prepared load candidate may publish and replace the incumbent', () => {
+	assert.equal(audio.loadCandidateCanPublish(7, 7), true);
+	assert.equal(audio.loadCandidateCanPublish(6, 7), false);
+	assert.throws(() => audio.loadCandidateCanPublish(0, 1), /positive integer/i);
+});
+
+test('a paused MASTER selection rejects while another deck is live or scheduled', () => {
+	assert.doesNotThrow(() => audio.assertPausedMasterSelectionAllowed(2, false, []));
+	assert.doesNotThrow(() => audio.assertPausedMasterSelectionAllowed(2, true, [1]));
+	assert.throws(
+		() => audio.assertPausedMasterSelectionAllowed(2, false, [1]),
+		/cannot select paused deck 2/i
 	);
 });
 
