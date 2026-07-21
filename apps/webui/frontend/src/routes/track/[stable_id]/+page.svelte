@@ -15,6 +15,7 @@
 
 	async function load(): Promise<void> {
 		const stable = $page.params.stable_id;
+		if (stable === undefined) throw new Error('track route param "stable_id" missing');
 		const res = await getTrack(stable);
 		track = res.track;
 		etag = res.etag;

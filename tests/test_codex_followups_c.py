@@ -137,7 +137,7 @@ def test_p11_f03_toast_captures_own_id() -> None:
     """
     repo = Path(__file__).resolve().parents[1]
     text = (
-        repo / "apps/webui/frontend/src/lib/stores.ts"
+        repo / "apps/webui/frontend/src/lib/stores.svelte.ts"
     ).read_text(encoding="utf-8")
     # The bug was `t.id === _toastSeq` inside the setTimeout callback.
     assert "t.id === _toastSeq" not in text, (
