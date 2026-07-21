@@ -22,8 +22,8 @@ export type TempoNormalization = 0.5 | 1 | 2;
 export interface FollowerSyncRequest {
 	masterGrid: readonly AnlzBeat[];
 	followerGrid: readonly AnlzBeat[];
-	/** Master track position measured at currentContextTimeSec. */
-	masterPositionSec: number;
+	/** Loop-aware master track position already projected to syncAtContextTimeSec. */
+	masterPositionAtSyncSec: number;
 	/** Current master AudioBufferSourceNode playbackRate. */
 	masterTempoRatio: number;
 	/** Follower track position used to select the least-distant anchor. */
@@ -39,7 +39,7 @@ export interface FollowerSyncRequest {
 export interface FollowerSyncPlan {
 	mode: SyncMode;
 	syncAtContextTimeSec: number;
-	/** Master position after projection to syncAtContextTimeSec. */
+	/** Loop-aware master position supplied at syncAtContextTimeSec. */
 	masterPositionSec: number;
 	masterBeatIndex: number;
 	followerBeatIndex: number;
@@ -110,46 +110,91 @@ function _enclosingBeatIndex(
 	return atOrAfterIndex - 1;
 }
 
-function _nearestFollowerAnchorIndex(
-	beats: readonly AnlzBeat[],
-	positionSec: number,
-	mode: SyncMode,
-	masterBeatNumber: BeatNumber
-): number {
-	let nearestIndex = -1;
-	let nearestDistance = Number.POSITIVE_INFINITY;
-	// The final beat cannot anchor a fractional phase because it has no
-	// following interval. Earlier-index ties remain stable by using <.
-	for (let index = 0; index < beats.length - 1; index++) {
-		if (mode === 'bar' && beats[index].n !== masterBeatNumber) continue;
-		const distance = Math.abs(beats[index].t - positionSec);
-		if (distance < nearestDistance) {
-			nearestDistance = distance;
-			nearestIndex = index;
-		}
-	}
-	if (nearestIndex < 0) {
-		throw new RangeError(
-			`follower grid has no phase-capable ${mode} anchor for beat n=${masterBeatNumber}`
-		);
-	}
-	return nearestIndex;
-}
-
-function _tempoRatioWithinRange(
+function _tempoRatioWithinRangeOrNull(
 	rawRatio: number,
 	minRatio: number,
 	maxRatio: number
-): { ratio: number; normalization: TempoNormalization } {
+): { ratio: number; normalization: TempoNormalization } | null {
 	const candidates: readonly TempoNormalization[] = [1, 0.5, 2];
 	for (const normalization of candidates) {
 		const ratio = rawRatio * normalization;
 		if (ratio >= minRatio && ratio <= maxRatio) return { ratio, normalization };
 	}
-	throw new RangeError(
-		`no follower tempo ratio fits [${minRatio}, ${maxRatio}]: ` +
-			`raw=${rawRatio}, half=${rawRatio * 0.5}, double=${rawRatio * 2}`
+	return null;
+}
+
+function _positionAtIntervalOffset(
+	beats: readonly AnlzBeat[],
+	anchorIndex: number,
+	intervalOffset: number
+): number | null {
+	const wholeIntervals = Math.floor(intervalOffset);
+	const fraction = intervalOffset - wholeIntervals;
+	const intervalIndex = anchorIndex + wholeIntervals;
+	if (intervalIndex >= beats.length) return null;
+	if (fraction === 0) return beats[intervalIndex].t;
+	if (intervalIndex + 1 >= beats.length) return null;
+	return (
+		beats[intervalIndex].t +
+		fraction * (beats[intervalIndex + 1].t - beats[intervalIndex].t)
 	);
+}
+
+interface _FollowerAnchorPlan {
+	index: number;
+	positionSec: number;
+	tempoRatio: number;
+	normalization: TempoNormalization;
+}
+
+function _bestFollowerAnchor(
+	beats: readonly AnlzBeat[],
+	positionSec: number,
+	mode: SyncMode,
+	masterBeatIndex: number,
+	masterBeatNumber: BeatNumber,
+	beatPhase: number,
+	masterBpm: number,
+	masterTempoRatio: number,
+	minRatio: number,
+	maxRatio: number
+): _FollowerAnchorPlan {
+	let best: _FollowerAnchorPlan | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (let index = 0; index < beats.length - 1; index++) {
+		const beat = beats[index];
+		if (mode === 'bar' && beat.n !== masterBeatNumber) continue;
+		const rawRatio = (masterBpm * masterTempoRatio) / beat.bpm;
+		const tempo = _tempoRatioWithinRangeOrNull(rawRatio, minRatio, maxRatio);
+		if (tempo === null) continue;
+		const subBeatIndex = tempo.normalization === 0.5 ? masterBeatIndex % 2 : 0;
+		const phaseOffsetIntervals = (subBeatIndex + beatPhase) * tempo.normalization;
+		const nextBoundaryOffsetIntervals = (subBeatIndex + 1) * tempo.normalization;
+		const targetPositionSec = _positionAtIntervalOffset(beats, index, phaseOffsetIntervals);
+		const nextBoundarySec = _positionAtIntervalOffset(
+			beats,
+			index,
+			nextBoundaryOffsetIntervals
+		);
+		if (targetPositionSec === null || nextBoundarySec === null) continue;
+		const distance = Math.abs(targetPositionSec - positionSec);
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = {
+				index,
+				positionSec: targetPositionSec,
+				tempoRatio: tempo.ratio,
+				normalization: tempo.normalization
+			};
+		}
+	}
+	if (best === null) {
+		throw new RangeError(
+			`follower grid has no phase-capable ${mode} anchor with tempo ratio within ` +
+				`[${minRatio}, ${maxRatio}] for beat n=${masterBeatNumber}`
+		);
+	}
+	return best;
 }
 
 // --------------------------------------------------------------- public API
@@ -181,6 +226,16 @@ export function validateBeatGrid(beats: readonly AnlzBeat[]): void {
 					`${previousTimeSec}, beat[${index}].t=${beat.t}`
 			);
 		}
+		if (index > 0) {
+			const previousBeatNumber = beats[index - 1].n;
+			const expectedBeatNumber = previousBeatNumber === 4 ? 1 : previousBeatNumber + 1;
+			if (beat.n !== expectedBeatNumber) {
+				throw new RangeError(
+					`beat grid n cadence must cycle 1,2,3,4: beat[${index}].n=${beat.n}, ` +
+						`expected ${expectedBeatNumber}`
+				);
+			}
+		}
 		previousTimeSec = beat.t;
 	}
 }
@@ -198,15 +253,15 @@ export function quantizeToNearestBeat(
 /**
  * Plan one scheduled follower seek and playback-rate change.
  *
- * The master is projected from the shared input clock to the requested
- * future context time. Both decks then use local PQTZ BPM at their anchor,
+	 * The caller projects the master through its transport and loop map to the
+	 * requested future context time. Both decks then use local PQTZ BPM at their anchor,
  * and the follower receives the master's fractional beat phase. Bar mode
  * additionally requires equal PQTZ beat numbers.
  */
 export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerSyncPlan {
 	validateBeatGrid(request.masterGrid);
 	validateBeatGrid(request.followerGrid);
-	_assertFiniteNonNegative('masterPositionSec', request.masterPositionSec);
+	_assertFiniteNonNegative('masterPositionAtSyncSec', request.masterPositionAtSyncSec);
 	_assertFinitePositive('masterTempoRatio', request.masterTempoRatio);
 	_assertFiniteNonNegative('followerPositionSec', request.followerPositionSec);
 	_assertFiniteNonNegative('currentContextTimeSec', request.currentContextTimeSec);
@@ -230,9 +285,7 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		throw new TypeError(`mode must be "beat" or "bar", got ${String(mode)}`);
 	}
 
-	const contextLeadSec = request.syncAtContextTimeSec - request.currentContextTimeSec;
-	const projectedMasterPositionSec =
-		request.masterPositionSec + contextLeadSec * request.masterTempoRatio;
+	const projectedMasterPositionSec = request.masterPositionAtSyncSec;
 	if (!Number.isFinite(projectedMasterPositionSec)) {
 		throw new RangeError(`projected master position is not finite: ${projectedMasterPositionSec}`);
 	}
@@ -247,24 +300,15 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 	const masterBeatNumber = masterBeat.n as BeatNumber;
 	const masterBeatIntervalSec = request.masterGrid[masterBeatIndex + 1].t - masterBeat.t;
 	const beatPhase = (projectedMasterPositionSec - masterBeat.t) / masterBeatIntervalSec;
-	const followerBeatIndex = _nearestFollowerAnchorIndex(
+	const followerAnchor = _bestFollowerAnchor(
 		request.followerGrid,
 		request.followerPositionSec,
 		mode,
-		masterBeatNumber
-	);
-	const followerBeat = request.followerGrid[followerBeatIndex];
-	const followerBeatIntervalSec =
-		request.followerGrid[followerBeatIndex + 1].t - followerBeat.t;
-	const followerPositionSec = followerBeat.t + beatPhase * followerBeatIntervalSec;
-
-	const rawFollowerTempoRatio =
-		(masterBeat.bpm * request.masterTempoRatio) / followerBeat.bpm;
-	if (!Number.isFinite(rawFollowerTempoRatio) || rawFollowerTempoRatio <= 0) {
-		throw new RangeError(`local PQTZ BPM produced invalid tempo ratio ${rawFollowerTempoRatio}`);
-	}
-	const tempo = _tempoRatioWithinRange(
-		rawFollowerTempoRatio,
+		masterBeatIndex,
+		masterBeatNumber,
+		beatPhase,
+		masterBeat.bpm,
+		request.masterTempoRatio,
 		request.minFollowerTempoRatio,
 		request.maxFollowerTempoRatio
 	);
@@ -274,11 +318,11 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		syncAtContextTimeSec: request.syncAtContextTimeSec,
 		masterPositionSec: projectedMasterPositionSec,
 		masterBeatIndex,
-		followerBeatIndex,
+		followerBeatIndex: followerAnchor.index,
 		masterBeatNumber,
 		beatPhase,
-		followerPositionSec,
-		followerTempoRatio: tempo.ratio,
-		tempoNormalization: tempo.normalization
+		followerPositionSec: followerAnchor.positionSec,
+		followerTempoRatio: followerAnchor.tempoRatio,
+		tempoNormalization: followerAnchor.normalization
 	};
 }

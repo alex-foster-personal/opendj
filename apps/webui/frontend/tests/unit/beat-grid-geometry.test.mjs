@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { before, test } from 'node:test';
 
-import { createServer } from 'vite';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 // Real PQTZ entries captured from the cached ANLZ payload for stable id
 // e3f272a118f7c8f610c2d28d2881719d442b0de8. Geometry tests consume the
@@ -17,26 +16,12 @@ const REAL_PQTZ_BEATS = [
 	{ n: 3, bpm: 127, t: 2.97 },
 	{ n: 4, bpm: 127, t: 3.442 }
 ];
-const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-
-let vite;
 let visibleBeatLines;
 
 before(async () => {
-	vite = await createServer({
-		root: FRONTEND_ROOT,
-		configFile: false,
-		appType: 'custom',
-		logLevel: 'silent',
-		server: { middlewareMode: true }
-	});
-	({ visibleBeatLines } = await vite.ssrLoadModule(
-		'/src/lib/components/rb/wave/wave-math.ts'
+	({ visibleBeatLines } = await loadTypeScriptModule(
+		'src/lib/components/rb/wave/wave-math.ts'
 	));
-});
-
-after(async () => {
-	await vite.close();
 });
 
 test('visible beat lines span the full row and retain stronger downbeat caps', () => {

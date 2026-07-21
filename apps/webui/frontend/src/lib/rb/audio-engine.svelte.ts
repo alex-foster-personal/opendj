@@ -42,17 +42,29 @@
 import { pushToast } from '$lib/stores.svelte';
 import { fetchAnlz, fetchAudioArrayBuffer, getTrack, RbApiError } from '$lib/rb/api-rb';
 import type { Track } from '$lib/rb/api-rb';
+import {
+	computeFollowerSyncPlan,
+	quantizeToNearestBeat,
+	validateBeatGrid
+} from '$lib/rb/beat-sync-math';
+import {
+	StretchDeckProcessor,
+	type StretchScheduleChange
+} from '$lib/rb/stretch-adapter';
 import type {
+	AnlzBeat,
 	AnlzCue,
 	AudioEngine,
 	CrossfaderAssign,
+	DeckAudioSnapshot,
 	DeckId,
 	DeckState,
 	EqBand,
 	HotCue,
 	LoopState,
 	MixerChannelState,
-	MixerState
+	MixerState,
+	SyncMode
 } from '$lib/rb/types';
 
 // -------------------------------------------------------------- constants
@@ -74,6 +86,9 @@ const EQ_MAX_DB = 6;
 const TRIM_MAX_GAIN = 2;
 /** Smoothing time-constant for AudioParam changes (anti-zipper). */
 const PARAM_SMOOTH_S = 0.01;
+/** Future schedule margin after the slower deck processor's reported latency. */
+const SYNC_SCHEDULE_SAFETY_S = 0.1;
+const ANALYSER_FFT_SIZE = 4096;
 
 // ------------------------------------------------------------ rune stores
 
@@ -88,14 +103,21 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		duration_ms: null,
 		position_ms: 0,
 		playing: false,
+		audible: false,
+		transport_pending: false,
 		cue_ms: null,
 		pitch: 1,
+		quantize_enabled: true,
+		beat_sync_enabled: true,
+		master_tempo_enabled: true,
+		sync_mode: 'beat',
+		sync_error: null,
+		processor_error: null,
 		loop: null,
 		hot_cues: [],
 		anlz: null,
 		anlz_error: null,
-		// MASTER lit on decks 1 + 2 per SCREENSHOT-SPEC 3 (static v1).
-		is_master: deck_id === 1 || deck_id === 2
+		is_master: false
 	};
 }
 
@@ -174,6 +196,7 @@ export function deckRemainingMs(deck: DeckId): number | null {
 // native audio objects breaks identity checks and buys nothing reactive.
 
 interface _ChannelNodes {
+	analyser: AnalyserNode;
 	trim: GainNode;
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
@@ -182,25 +205,59 @@ interface _ChannelNodes {
 	xf: GainNode;
 }
 
+interface _ClockSegment {
+	active: boolean;
+	loop: LoopState | null;
+	startContextTime: number;
+	startPositionSec: number;
+	tempoRatio: number;
+}
+
+interface _PendingSegment {
+	active: boolean;
+	loop: LoopState | null;
+	masterTempoEnabled: boolean;
+	previous: _ClockSegment;
+	startContextTime: number;
+	startPositionSec: number;
+	tempoRatio: number;
+}
+
 interface _DeckRuntime {
-	buffer: AudioBuffer | null;
-	source: AudioBufferSourceNode | null;
-	/** ctx.currentTime at the moment the current source segment started. */
+	processor: StretchDeckProcessor | null;
+	durationSec: number;
+	latencySec: number;
+	reportedInputSec: number;
+	/** ctx.currentTime at the moment the current processor segment starts. */
 	startCtxTime: number;
 	/** Track offset (seconds) at the moment the segment started. */
 	startOffsetSec: number;
 	/** Monotonic token guarding against stale load() results. */
 	loadToken: number;
 	nodes: _ChannelNodes | null;
+	pending: _PendingSegment | null;
+	swapTail: Promise<void>;
 }
 
 function _emptyRuntime(): _DeckRuntime {
-	return { buffer: null, source: null, startCtxTime: 0, startOffsetSec: 0, loadToken: 0, nodes: null };
+	return {
+		processor: null,
+		durationSec: 0,
+		latencySec: 0,
+		reportedInputSec: 0,
+		startCtxTime: 0,
+		startOffsetSec: 0,
+		loadToken: 0,
+		nodes: null,
+		pending: null,
+		swapTail: Promise.resolve()
+	};
 }
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
 let _rafId: number | null = null;
+let _masterDeck: DeckId | null = null;
 const _rt: Record<DeckId, _DeckRuntime> = {
 	1: _emptyRuntime(),
 	2: _emptyRuntime(),
@@ -238,6 +295,11 @@ function _ensureGraph(): AudioContext {
 	_masterGain.connect(_ctx.destination);
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
+		const analyser = _ctx.createAnalyser();
+		analyser.fftSize = ANALYSER_FFT_SIZE;
+		analyser.minDecibels = -120;
+		analyser.maxDecibels = 0;
+		analyser.smoothingTimeConstant = 0;
 		const trim = _ctx.createGain();
 		trim.gain.value = ch.trim * TRIM_MAX_GAIN;
 		const low = _ctx.createBiquadFilter();
@@ -257,13 +319,14 @@ function _ensureGraph(): AudioContext {
 		fader.gain.value = ch.fader;
 		const xf = _ctx.createGain();
 		xf.gain.value = _xfGainFor(ch.assign, mixerState.crossfader);
+		analyser.connect(trim);
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
 		high.connect(fader);
 		fader.connect(xf);
 		xf.connect(_masterGain);
-		_rt[deck].nodes = { trim, low, mid, high, fader, xf };
+		_rt[deck].nodes = { analyser, trim, low, mid, high, fader, xf };
 	}
 	return _ctx;
 }
@@ -284,10 +347,211 @@ function _applyCrossfader(): void {
 	}
 }
 
+export function masterTempoSemitones(tempoRatio: number, enabled: boolean): number {
+	if (!Number.isFinite(tempoRatio) || tempoRatio <= 0) {
+		throw new RangeError(`tempo ratio must be a finite positive number, got ${tempoRatio}`);
+	}
+	return enabled ? 0 : 12 * Math.log2(tempoRatio);
+}
+
+export function quantizedPositionMs(
+	beats: readonly AnlzBeat[],
+	positionMs: number,
+	quantizeEnabled: boolean
+): number {
+	if (!Number.isFinite(positionMs) || positionMs < 0) {
+		throw new RangeError(`positionMs must be a finite non-negative number, got ${positionMs}`);
+	}
+	if (!quantizeEnabled) return positionMs;
+	return quantizeToNearestBeat(beats, positionMs / 1000) * 1000;
+}
+
+export function quantizedLoopEndpointsMs(
+	beats: readonly AnlzBeat[],
+	loop: { in_ms: number; out_ms: number },
+	quantizeEnabled: boolean
+): { in_ms: number; out_ms: number } {
+	if (
+		!Number.isFinite(loop.in_ms) ||
+		!Number.isFinite(loop.out_ms) ||
+		loop.in_ms < 0 ||
+		loop.out_ms <= loop.in_ms
+	) {
+		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
+	}
+	if (!quantizeEnabled) return { ...loop };
+	const snapped = {
+		in_ms: quantizeToNearestBeat(beats, loop.in_ms / 1000) * 1000,
+		out_ms: quantizeToNearestBeat(beats, loop.out_ms / 1000) * 1000
+	};
+	if (snapped.out_ms <= snapped.in_ms) {
+		throw new RangeError(
+			`quantized loop collapsed at ${snapped.in_ms}ms; choose endpoints spanning distinct PQTZ beats`
+		);
+	}
+	return snapped;
+}
+
+export function exactBeatLoopRangeMs(
+	beats: readonly AnlzBeat[],
+	positionMs: number,
+	beatCount: number,
+	startMs?: number
+): { in_ms: number; out_ms: number } {
+	if (!Number.isInteger(beatCount) || beatCount <= 0) {
+		throw new RangeError(`beatCount must be a positive integer, got ${beatCount}`);
+	}
+	const anchorMs = startMs ?? positionMs;
+	if (!Number.isFinite(anchorMs) || anchorMs < 0) {
+		throw new RangeError(`loop anchor must be a finite non-negative number, got ${anchorMs}`);
+	}
+	const startSec = quantizeToNearestBeat(beats, anchorMs / 1000);
+	const startIndex = beats.findIndex((beat) => beat.t === startSec);
+	const endIndex = startIndex + beatCount;
+	if (startIndex < 0 || endIndex >= beats.length) {
+		throw new RangeError(
+			`${beatCount} PQTZ beats do not fit from loop anchor ${anchorMs}ms`
+		);
+	}
+	return { in_ms: startSec * 1000, out_ms: beats[endIndex].t * 1000 };
+}
+
+export function supersedingScheduleTime(
+	requestedContextTime: number,
+	pendingContextTime: number | null
+): number {
+	if (!Number.isFinite(requestedContextTime) || requestedContextTime < 0) {
+		throw new RangeError(
+			`requestedContextTime must be finite and non-negative, got ${requestedContextTime}`
+		);
+	}
+	if (pendingContextTime === null) return requestedContextTime;
+	if (!Number.isFinite(pendingContextTime) || pendingContextTime < 0) {
+		throw new RangeError(
+			`pendingContextTime must be finite and non-negative, got ${pendingContextTime}`
+		);
+	}
+	return Math.min(requestedContextTime, pendingContextTime);
+}
+
+export function pendingSyncWaitTarget(
+	requestedSafeContextTime: number,
+	pendingContextTimes: readonly number[]
+): number | null {
+	if (!Number.isFinite(requestedSafeContextTime) || requestedSafeContextTime < 0) {
+		throw new RangeError(
+			`requestedSafeContextTime must be finite and non-negative, got ${requestedSafeContextTime}`
+		);
+	}
+	const unsafePendingTimes = pendingContextTimes.filter((contextTime) => {
+		if (!Number.isFinite(contextTime) || contextTime < 0) {
+			throw new RangeError(
+				`pending sync context time must be finite and non-negative, got ${contextTime}`
+			);
+		}
+		return contextTime < requestedSafeContextTime;
+	});
+	return unsafePendingTimes.length === 0 ? null : Math.max(...unsafePendingTimes);
+}
+
+export function safeSyncScheduleTime(
+	nowContextTime: number,
+	maxLatencySec: number,
+	masterReadyContextTime: number,
+	safetySec = SYNC_SCHEDULE_SAFETY_S
+): number {
+	for (const [name, value] of Object.entries({
+		nowContextTime,
+		maxLatencySec,
+		masterReadyContextTime,
+		safetySec
+	})) {
+		if (!Number.isFinite(value) || value < 0) {
+			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
+		}
+	}
+	return Math.max(
+		nowContextTime + maxLatencySec + safetySec,
+		masterReadyContextTime + safetySec
+	);
+}
+
+export function projectedTransportPosition(input: {
+	now: number;
+	startContextTime: number;
+	startPositionSec: number;
+	tempoRatio: number;
+	projectAt: number;
+}): number {
+	for (const [name, value] of Object.entries(input)) {
+		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
+	}
+	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
+	if (input.projectAt < input.now) throw new RangeError('projectAt must not precede now');
+	const projectionEpoch = Math.max(input.now, input.startContextTime);
+	return input.startPositionSec + Math.max(0, input.projectAt - projectionEpoch) * input.tempoRatio;
+}
+
+export function projectedLoopAwareTransportPosition(input: {
+	active: boolean;
+	loop: LoopState | null;
+	startContextTime: number;
+	startPositionSec: number;
+	tempoRatio: number;
+	projectAt: number;
+	durationSec: number;
+}): number {
+	for (const [name, value] of Object.entries(input)) {
+		if (name !== 'loop' && name !== 'active' && !Number.isFinite(value)) {
+			throw new RangeError(`${name} must be finite, got ${String(value)}`);
+		}
+	}
+	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
+	if (input.durationSec <= 0) throw new RangeError('durationSec must be positive');
+	return _positionForSegment(
+		{
+			active: input.active,
+			loop: input.loop,
+			startContextTime: input.startContextTime,
+			startPositionSec: input.startPositionSec,
+			tempoRatio: input.tempoRatio
+		},
+		input.projectAt,
+		input.durationSec
+	);
+}
+
+export function deckReachedEnd(
+	positionSec: number,
+	durationSec: number,
+	loop: LoopState | null
+): boolean {
+	return !loop?.engaged && positionSec >= durationSec;
+}
+
+export function nextPlayingMaster(playingDecks: readonly DeckId[]): DeckId | null {
+	return DECK_IDS.find((deck) => playingDecks.includes(deck)) ?? null;
+}
+
+export function assertDeckLoadConsistency(
+	stableId: string | null,
+	durationSec: number,
+	hasProcessor: boolean
+): void {
+	const stateLoaded = stableId !== null;
+	const runtimeLoaded = hasProcessor && durationSec > 0;
+	if (stateLoaded !== runtimeLoaded) {
+		throw new Error(
+			`inconsistent deck load state: stable_id=${String(stableId)}, ` +
+				`duration=${durationSec}, processor=${hasProcessor}`
+		);
+	}
+}
+
 function _requireLoaded(deck: DeckId, op: string): { st: DeckState; rt: _DeckRuntime } {
 	const rt = _rt[deck];
 	const st = deckStates[deck];
-	if (rt.buffer === null || st.stable_id === null) {
+	if (rt.processor === null || rt.durationSec <= 0 || st.stable_id === null) {
 		throw new Error(`${op}: no track loaded on deck ${deck}`);
 	}
 	return { st, rt };
@@ -295,93 +559,333 @@ function _requireLoaded(deck: DeckId, op: string): { st: DeckState; rt: _DeckRun
 
 function _durationSec(deck: DeckId): number {
 	const rt = _rt[deck];
-	if (rt.buffer === null) throw new Error(`deck ${deck} has no decoded buffer`);
-	return rt.buffer.duration;
+	if (rt.processor === null || rt.durationSec <= 0) {
+		throw new Error(`deck ${deck} has no decoded processor buffers`);
+	}
+	return rt.durationSec;
+}
+
+function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
+	const beats = st.anlz?.beatgrid.beats;
+	try {
+		validateBeatGrid(beats ?? []);
+	} catch (error) {
+		throw new Error(
+			`${operation}: deck ${st.deck_id} requires a valid real PQTZ beat grid: ${String(error)}`,
+			{ cause: error }
+		);
+	}
+	return beats ?? [];
+}
+
+function _assignMaster(deck: DeckId | null): void {
+	_masterDeck = deck;
+	for (const candidate of DECK_IDS) deckStates[candidate].is_master = candidate === deck;
+}
+
+function _playingMaster(): DeckId | null {
+	return _masterDeck !== null && deckStates[_masterDeck].audible ? _masterDeck : null;
+}
+
+function _syncMaster(): DeckId | null {
+	return _masterDeck !== null && deckStates[_masterDeck].playing ? _masterDeck : null;
+}
+
+function _electPlayingMaster(): DeckId | null {
+	const next = nextPlayingMaster(DECK_IDS.filter((deck) => deckStates[deck].audible));
+	_assignMaster(next);
+	return next;
+}
+
+function _handleAudibleTransition(deck: DeckId, wasAudible: boolean, audible: boolean): void {
+	if (audible && !wasAudible && _playingMaster() === null) {
+		_assignMaster(deck);
+	} else if (!audible && wasAudible && _masterDeck === deck) {
+		_electPlayingMaster();
+	}
+}
+
+function _recordProcessorFailure(deck: DeckId, error: unknown): void {
+	const st = deckStates[deck];
+	const rt = _rt[deck];
+	const message = error instanceof Error ? error.message : String(error);
+	if (rt.processor !== null) rt.processor.disconnect();
+	rt.processor = null;
+	rt.durationSec = 0;
+	rt.latencySec = 0;
+	rt.pending = null;
+	_clearLoadedTrackState(st);
+	st.processor_error = message;
+	st.sync_error = message;
+	pushToast(`Deck ${deck} processor failed - ${message}`, 'error');
+	if (_masterDeck === deck) _electPlayingMaster();
+}
+
+function _stretchChange(
+	inputSec: number,
+	active: boolean,
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	loop: LoopState | null
+): StretchScheduleChange {
+	return {
+		active,
+		input: inputSec,
+		rate: tempoRatio,
+		semitones: masterTempoSemitones(tempoRatio, masterTempoEnabled),
+		loopStart: loop !== null && loop.engaged ? loop.in_ms / 1000 : 0,
+		loopEnd: loop !== null && loop.engaged ? loop.out_ms / 1000 : 0
+	};
+}
+
+async function _scheduleDeck(
+	deck: DeckId,
+	when: number,
+	inputSec: number,
+	active: boolean,
+	tempoRatio = deckStates[deck].pitch,
+	masterTempoEnabled = deckStates[deck].master_tempo_enabled,
+	loop = deckStates[deck].loop
+): Promise<void> {
+	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
+	_commitPendingIfDue(deck);
+	const processor = rt.processor;
+	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
+	if (!Number.isFinite(inputSec) || inputSec < 0 || inputSec > rt.durationSec) {
+		throw new RangeError(
+			`_scheduleDeck: input ${inputSec}s outside deck ${deck} duration ${rt.durationSec}s`
+		);
+	}
+	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
+	const existingPending = rt.pending;
+	const effectiveWhen = supersedingScheduleTime(
+		when,
+		existingPending?.startContextTime ?? null
+	);
+	const previous: _ClockSegment =
+		existingPending?.previous ?? {
+			active: st.audible,
+			loop: st.loop === null ? null : { ...st.loop },
+			startContextTime: rt.startCtxTime,
+			startPositionSec: rt.startOffsetSec,
+			tempoRatio: st.pitch
+		};
+	try {
+		await processor.schedule(
+			effectiveWhen,
+			_stretchChange(inputSec, active, tempoRatio, masterTempoEnabled, loop)
+		);
+	} catch (error) {
+		_recordProcessorFailure(deck, error);
+		throw error;
+	}
+	rt.reportedInputSec = inputSec;
+	st.pitch = tempoRatio;
+	st.master_tempo_enabled = masterTempoEnabled;
+	st.loop = loop === null ? null : { ...loop };
+	st.playing = active;
+	if (effectiveWhen > _ctx.currentTime) {
+		rt.pending = {
+			active,
+			loop: loop === null ? null : { ...loop },
+			masterTempoEnabled,
+			previous,
+			startContextTime: effectiveWhen,
+			startPositionSec: inputSec,
+			tempoRatio
+		};
+		st.audible = previous.active;
+		st.transport_pending = true;
+		st.position_ms = _positionForSegment(previous, _ctx.currentTime, rt.durationSec) * 1000;
+	} else {
+		rt.pending = null;
+		rt.startCtxTime = effectiveWhen;
+		rt.startOffsetSec = inputSec;
+		const wasAudible = st.audible;
+		st.audible = active;
+		st.transport_pending = false;
+		st.position_ms =
+			_positionForSegment(
+				{
+					active,
+					loop,
+					startContextTime: effectiveWhen,
+					startPositionSec: inputSec,
+					tempoRatio
+				},
+				_ctx.currentTime,
+				rt.durationSec
+			) * 1000;
+		_handleAudibleTransition(deck, wasAudible, active);
+	}
+	if (active || previous.active) _ensureRaf();
+}
+
+function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
+	if (!segment.active) return segment.startPositionSec;
+	const elapsed = Math.max(0, at - segment.startContextTime);
+	const linear = segment.startPositionSec + elapsed * segment.tempoRatio;
+	const loop = segment.loop;
+	if (loop !== null && loop.engaged) {
+		const loopStart = loop.in_ms / 1000;
+		const loopEnd = loop.out_ms / 1000;
+		if (linear >= loopEnd) return loopStart + ((linear - loopStart) % (loopEnd - loopStart));
+	}
+	return Math.min(linear, durationSec);
+}
+
+function _commitPendingIfDue(deck: DeckId): void {
+	if (_ctx === null) return;
+	const rt = _rt[deck];
+	const pending = rt.pending;
+	if (pending === null || _ctx.currentTime < pending.startContextTime) return;
+	rt.pending = null;
+	rt.startCtxTime = pending.startContextTime;
+	rt.startOffsetSec = pending.startPositionSec;
+	const st = deckStates[deck];
+	const wasAudible = st.audible;
+	st.playing = pending.active;
+	st.audible = pending.active;
+	st.transport_pending = false;
+	st.pitch = pending.tempoRatio;
+	st.master_tempo_enabled = pending.masterTempoEnabled;
+	st.loop = pending.loop === null ? null : { ...pending.loop };
+	st.position_ms = _positionForSegment(
+		{
+			active: pending.active,
+			loop: pending.loop,
+			startContextTime: pending.startContextTime,
+			startPositionSec: pending.startPositionSec,
+			tempoRatio: pending.tempoRatio
+		},
+		_ctx.currentTime,
+		rt.durationSec
+	) * 1000;
+	_handleAudibleTransition(deck, wasAudible, pending.active);
+}
+
+function _projectPositionAt(deck: DeckId, when: number): number {
+	if (_ctx === null) throw new Error('_projectPositionAt: audio graph not initialised');
+	const rt = _rt[deck];
+	_commitPendingIfDue(deck);
+	const pending = rt.pending;
+	if (pending !== null) {
+		const segment =
+			when < pending.startContextTime
+				? pending.previous
+				: {
+						active: pending.active,
+						loop: pending.loop,
+						startContextTime: pending.startContextTime,
+						startPositionSec: pending.startPositionSec,
+						tempoRatio: pending.tempoRatio
+					};
+		return _positionForSegment(segment, when, rt.durationSec);
+	}
+	return _positionForSegment(
+		{
+			active: deckStates[deck].audible,
+			loop: deckStates[deck].loop,
+			startContextTime: rt.startCtxTime,
+			startPositionSec: rt.startOffsetSec,
+			tempoRatio: deckStates[deck].pitch
+		},
+		when,
+		rt.durationSec
+	);
+}
+
+function _futureScheduleTime(deck: DeckId): number {
+	if (_ctx === null) throw new Error('_futureScheduleTime: audio graph not initialised');
+	const requested = _ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
+	const pending = _rt[deck].pending;
+	return supersedingScheduleTime(requested, pending?.startContextTime ?? null);
+}
+
+function _tempoAt(deck: DeckId, contextTime: number): number {
+	const pending = _rt[deck].pending;
+	if (pending === null) return deckStates[deck].pitch;
+	return contextTime < pending.startContextTime
+		? pending.previous.tempoRatio
+		: pending.tempoRatio;
+}
+
+async function _retireProcessor(deck: DeckId): Promise<void> {
+	const rt = _rt[deck];
+	const st = deckStates[deck];
+	const processor = rt.processor;
+	if (processor === null) return;
+	if (_ctx === null) throw new Error('_retireProcessor: audio graph not initialised');
+	const frozenPositionSec = st.audible ? _currentPosSec(deck) : st.position_ms / 1000;
+	try {
+		if (st.processor_error === null) await processor.stop(_ctx.currentTime);
+	} catch (error) {
+		_recordProcessorFailure(deck, error);
+		throw error;
+	}
+	processor.disconnect();
+	st.playing = false;
+	st.audible = false;
+	st.transport_pending = false;
+	st.position_ms = frozenPositionSec * 1000;
+	rt.processor = null;
+	rt.durationSec = 0;
+	rt.latencySec = 0;
+	rt.pending = null;
 }
 
 /** Engine-clock position in seconds, with manual wrap while a loop is
- * engaged (mirrors the source node's native loopStart/loopEnd jump). */
+ * engaged (mirrors the worklet schedule's loopStart/loopEnd jump). */
 function _currentPosSec(deck: DeckId): number {
 	const st = deckStates[deck];
 	const rt = _rt[deck];
-	if (!st.playing || _ctx === null) return st.position_ms / 1000;
-	const linear = rt.startOffsetSec + (_ctx.currentTime - rt.startCtxTime) * st.pitch;
-	const loop = st.loop;
-	if (loop !== null && loop.engaged) {
-		const inS = loop.in_ms / 1000;
-		const outS = loop.out_ms / 1000;
-		if (linear > outS) return inS + ((linear - outS) % (outS - inS));
-		return linear;
+	if (_ctx === null) return st.position_ms / 1000;
+	_commitPendingIfDue(deck);
+	if (rt.pending !== null) {
+		return _positionForSegment(rt.pending.previous, _ctx.currentTime, rt.durationSec);
 	}
-	return Math.min(linear, _durationSec(deck));
-}
-
-function _stopSource(deck: DeckId): void {
-	const rt = _rt[deck];
-	if (rt.source === null) return;
-	rt.source.onended = null;
-	rt.source.stop();
-	rt.source.disconnect();
-	rt.source = null;
-}
-
-function _startSource(deck: DeckId, offsetSec: number): void {
-	const ctx = _ensureGraph();
-	const st = deckStates[deck];
-	const rt = _rt[deck];
-	if (rt.buffer === null || rt.nodes === null) {
-		throw new Error(`_startSource: deck ${deck} has no buffer/graph`);
-	}
-	_stopSource(deck);
-	if (ctx.state === 'suspended') void ctx.resume();
-	const source = ctx.createBufferSource();
-	source.buffer = rt.buffer;
-	source.playbackRate.value = st.pitch;
-	const loop = st.loop;
-	if (loop !== null && loop.engaged) {
-		source.loop = true;
-		source.loopStart = loop.in_ms / 1000;
-		source.loopEnd = loop.out_ms / 1000;
-	}
-	source.connect(rt.nodes.trim);
-	source.onended = () => {
-		// Natural end-of-track only; manual stops null the handler first.
-		if (_rt[deck].source !== source) return;
-		_rt[deck].source = null;
-		const endedSt = deckStates[deck];
-		endedSt.playing = false;
-		endedSt.position_ms = _durationSec(deck) * 1000;
-	};
-	source.start(0, offsetSec);
-	rt.source = source;
-	rt.startCtxTime = ctx.currentTime;
-	rt.startOffsetSec = offsetSec;
-	st.playing = true;
-	st.position_ms = offsetSec * 1000;
-	_ensureRaf();
-}
-
-/** Freeze the reactive clock at "now" and rebase the runtime segment so a
- * pitch/loop change keeps position continuous. Playing decks only. */
-function _rebaseClock(deck: DeckId): number {
-	const rt = _rt[deck];
-	if (_ctx === null) throw new Error('audio graph not initialised');
-	const pos = _currentPosSec(deck);
-	rt.startOffsetSec = pos;
-	rt.startCtxTime = _ctx.currentTime;
-	deckStates[deck].position_ms = pos * 1000;
-	return pos;
+	return _positionForSegment(
+		{
+			active: st.audible,
+			loop: st.loop,
+			startContextTime: rt.startCtxTime,
+			startPositionSec: rt.startOffsetSec,
+			tempoRatio: st.pitch
+		},
+		_ctx.currentTime,
+		rt.durationSec
+	);
 }
 
 function _tick(): void {
-	let anyPlaying = false;
+	let anyTransport = false;
 	for (const deck of DECK_IDS) {
 		const st = deckStates[deck];
-		if (!st.playing) continue;
-		anyPlaying = true;
-		st.position_ms = _currentPosSec(deck) * 1000;
+		_commitPendingIfDue(deck);
+		const pending = _rt[deck].pending;
+		if (!st.audible) {
+			if (pending !== null) anyTransport = true;
+			continue;
+		}
+		const positionSec = _currentPosSec(deck);
+		st.position_ms = positionSec * 1000;
+		if (deckReachedEnd(positionSec, _durationSec(deck), st.loop)) {
+			st.playing = false;
+			st.audible = false;
+			st.transport_pending = false;
+			_rt[deck].pending = null;
+			const processor = _rt[deck].processor;
+			if (processor !== null && _ctx !== null) {
+				void processor.stop(_ctx.currentTime).catch((error: unknown) => {
+					_recordProcessorFailure(deck, error);
+				});
+			}
+			if (_masterDeck === deck) _electPlayingMaster();
+			continue;
+		}
+		anyTransport = true;
 	}
-	_rafId = anyPlaying ? requestAnimationFrame(_tick) : null;
+	_rafId = anyTransport ? requestAnimationFrame(_tick) : null;
 }
 
 function _ensureRaf(): void {
@@ -415,6 +919,156 @@ function _displayLoopFrom(cues: AnlzCue[]): LoopState | null {
 	};
 }
 
+function _clearLoadedTrackState(st: DeckState): void {
+	st.stable_id = null;
+	st.title = null;
+	st.artist = null;
+	st.bpm = null;
+	st.key = null;
+	st.duration_ms = null;
+	st.position_ms = 0;
+	st.playing = false;
+	st.audible = false;
+	st.transport_pending = false;
+	st.cue_ms = null;
+	st.pitch = 1;
+	st.loop = null;
+	st.hot_cues = [];
+	st.anlz = null;
+	st.anlz_error = null;
+}
+
+function _tempoBounds(deck: DeckId): { min: number; max: number } {
+	const range = pitchRanges[deck] / 100;
+	return { min: Math.max(0.01, 1 - range), max: 1 + range };
+}
+
+async function _resumeContext(): Promise<AudioContext> {
+	const ctx = _ensureGraph();
+	if (ctx.state === 'suspended') await ctx.resume();
+	if (ctx.state !== 'running') {
+		throw new Error(`AudioContext did not enter running state; current state is ${ctx.state}`);
+	}
+	return ctx;
+}
+
+async function _waitForContextTime(ctx: AudioContext, targetContextTime: number): Promise<void> {
+	while (ctx.currentTime < targetContextTime) {
+		const remainingMs = (targetContextTime - ctx.currentTime) * 1000;
+		await new Promise<void>((resolve) => setTimeout(resolve, Math.max(1, Math.ceil(remainingMs))));
+	}
+}
+
+async function _synchronizeFollowers(master: DeckId, followers: readonly DeckId[]): Promise<void> {
+	if (followers.length === 0) return;
+	try {
+		const ctx = await _resumeContext();
+		_commitPendingIfDue(master);
+		for (const deck of followers) _commitPendingIfDue(deck);
+		const masterState = deckStates[master];
+		const masterRuntime = _requireLoaded(master, 'Beat Sync master').rt;
+		if (!masterState.playing) {
+			throw new Error(`Beat Sync master deck ${master} is neither audible nor scheduled to play`);
+		}
+		const masterGrid = _requireBeatGrid(masterState, 'Beat Sync');
+		const now = ctx.currentTime;
+		const maxLatency = Math.max(
+			masterRuntime.latencySec,
+			...followers.map((deck) => _requireLoaded(deck, 'Beat Sync follower').rt.latencySec)
+		);
+		const projectionContextTime = Math.max(
+			now,
+			masterRuntime.pending?.startContextTime ?? masterRuntime.startCtxTime
+		);
+		const requestedSyncAt = safeSyncScheduleTime(
+			now,
+			maxLatency,
+			projectionContextTime
+		);
+		const pendingWaitTarget = pendingSyncWaitTarget(
+			requestedSyncAt,
+			followers.flatMap((deck) => {
+				const pending = _rt[deck].pending;
+				return pending === null ? [] : [pending.startContextTime];
+			})
+		);
+		if (pendingWaitTarget !== null) {
+			await _waitForContextTime(ctx, pendingWaitTarget);
+			for (const deck of followers) _commitPendingIfDue(deck);
+			return _synchronizeFollowers(master, followers);
+		}
+		const syncAt = requestedSyncAt;
+		const masterPositionSec = _projectPositionAt(master, syncAt);
+		const masterTempoRatio = _tempoAt(master, syncAt);
+		const planned = followers.map((deck) => {
+			const { st } = _requireLoaded(deck, 'Beat Sync follower');
+			const followerGrid = _requireBeatGrid(st, 'Beat Sync');
+			const bounds = _tempoBounds(deck);
+			const rawFollowerPositionSec = _currentPosSec(deck);
+			const followerPositionSec = st.audible
+				? _projectPositionAt(deck, syncAt)
+				: quantizeToNearestBeat(followerGrid, rawFollowerPositionSec);
+			const plan = computeFollowerSyncPlan({
+				masterGrid,
+				followerGrid,
+				masterPositionAtSyncSec: masterPositionSec,
+				masterTempoRatio,
+				followerPositionSec,
+				currentContextTimeSec: now,
+				syncAtContextTimeSec: syncAt,
+				minFollowerTempoRatio: bounds.min,
+				maxFollowerTempoRatio: bounds.max,
+				mode: st.sync_mode
+			});
+			return { deck, st, plan };
+		});
+		const outcomes = await Promise.allSettled(
+			planned.map((item) =>
+				_scheduleDeck(
+					item.deck,
+					syncAt,
+					item.plan.followerPositionSec,
+					true,
+					item.plan.followerTempoRatio
+				)
+			)
+		);
+		const failedDecks = outcomes.flatMap((outcome, index) =>
+			outcome.status === 'rejected' ? [planned[index].deck] : []
+		);
+		if (failedDecks.length > 0) {
+			const succeededDecks = planned
+				.map((item) => item.deck)
+				.filter((deck) => !failedDecks.includes(deck));
+			const message =
+				`Beat Sync partial failure: succeeded [${succeededDecks.join(',')}], ` +
+				`failed [${failedDecks.join(',')}]`;
+			for (const item of planned) item.st.sync_error = message;
+			throw new Error(message, {
+				cause: outcomes.find((outcome) => outcome.status === 'rejected')
+			});
+		}
+		for (const item of planned) item.st.sync_error = null;
+	} catch (error) {
+		for (const deck of followers) deckStates[deck].sync_error = String(error);
+		throw error;
+	}
+}
+
+async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promise<T> {
+	const predecessor = rt.swapTail;
+	let release!: () => void;
+	rt.swapTail = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await predecessor;
+	try {
+		return await swap();
+	} finally {
+		release();
+	}
+}
+
 // ------------------------------------------------------------- the engine
 
 /** Singleton Web Audio engine implementing the AudioEngine contract, plus
@@ -427,11 +1081,13 @@ class RbAudioEngine implements AudioEngine {
 		const st = deckStates[deck];
 		const rt = _rt[deck];
 		const token = ++rt.loadToken;
-		_stopSource(deck);
-		st.playing = false;
 		deckLoadErrors[deck] = null;
-		let track: Track;
-		let buffer: AudioBuffer;
+		let track: Track | null = null;
+		let buffer: AudioBuffer | null = null;
+		let anlz: DeckState['anlz'] = null;
+		let anlzError: string | null = null;
+		let latencySec = 0;
+		let processor: StretchDeckProcessor | null = null;
 		try {
 			const ctx = _ensureGraph();
 			const [trackRes, audioBytes] = await Promise.all([
@@ -440,119 +1096,228 @@ class RbAudioEngine implements AudioEngine {
 			]);
 			track = trackRes.track;
 			buffer = await ctx.decodeAudioData(audioBytes);
+			processor = await StretchDeckProcessor.create(ctx, {
+				onInputTime: (inputTimeSec) => {
+					if (_rt[deck].processor === processor) _rt[deck].reportedInputSec = inputTimeSec;
+				},
+				onProcessorError: (error) => {
+					if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
+				}
+			});
+			await processor.load(buffer);
+			latencySec = await processor.latencySec();
+			try {
+				anlz = await fetchAnlz(stable_id);
+			} catch (error) {
+				if (error instanceof RbApiError) {
+					anlzError = error.code;
+				} else {
+					throw error;
+				}
+			}
 		} catch (exc) {
-			if (token !== rt.loadToken) throw exc; // superseded; still reject
+			if (processor !== null) processor.disconnect();
+			if (token !== rt.loadToken) throw exc;
+			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			const msg =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
 			pushToast(`Deck ${deck} load failed - ${msg}`, 'error');
 			throw exc;
 		}
-		if (token !== rt.loadToken) return; // a newer load() won the race
-		rt.buffer = buffer;
-		st.stable_id = stable_id;
-		st.title = track.title;
-		st.artist = track.artist;
-		st.bpm = track.bpm;
-		st.key = track.key;
-		// TrackOut carries duration_ms (server models.py); the hand-written
-		// Track interface omits it, so read it via a typed extension. When
-		// absent, the decoded buffer length is the ground truth.
-		const trackDurationMs = (track as Track & { duration_ms?: number | null }).duration_ms;
-		st.duration_ms =
-			typeof trackDurationMs === 'number' ? trackDurationMs : Math.round(buffer.duration * 1000);
-		st.position_ms = 0;
-		st.cue_ms = null;
-		st.pitch = 1;
-		st.loop = null;
-		st.hot_cues = [];
-		st.anlz = null;
-		st.anlz_error = null;
-		// Analysis payload: a 404 here (ANALYSIS_NOT_FOUND) is a REAL library
-		// state, surfaced as anlz_error - it must not fail the audio load.
-		// Any other failure (network, bad payload) still throws.
-		try {
-			const anlz = await fetchAnlz(stable_id);
-			if (token !== rt.loadToken) return;
-			st.anlz = anlz;
-			st.hot_cues = _hotCuesFrom(anlz.cues);
-			st.loop = _displayLoopFrom(anlz.cues);
-		} catch (exc) {
-			if (token !== rt.loadToken) return;
-			if (exc instanceof RbApiError) {
-				st.anlz_error = exc.code;
-			} else {
-				throw exc;
+		if (processor === null || track === null || buffer === null) {
+			throw new Error('load: candidate deck transaction is incomplete');
+		}
+		const candidateProcessor = processor;
+		const candidateTrack = track;
+		const candidateBuffer = buffer;
+		await _withDeckSwap(rt, async () => {
+			if (token !== rt.loadToken) {
+				candidateProcessor.disconnect();
+				return;
 			}
+			if (rt.nodes === null) throw new Error(`load: deck ${deck} audio graph is missing`);
+			const replacingMaster = _masterDeck === deck;
+			try {
+				candidateProcessor.connect(rt.nodes.analyser);
+				await _retireProcessor(deck);
+				if (token !== rt.loadToken) {
+					candidateProcessor.disconnect();
+					_clearLoadedTrackState(st);
+					rt.processor = null;
+					rt.durationSec = 0;
+					rt.latencySec = 0;
+					rt.pending = null;
+					if (replacingMaster) _electPlayingMaster();
+					assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
+					return;
+				}
+			} catch (error) {
+				candidateProcessor.disconnect();
+				if (token === rt.loadToken) {
+					const message = String(error);
+					deckLoadErrors[deck] = message;
+					pushToast(`Deck ${deck} load failed - ${message}`, 'error');
+				}
+				throw error;
+			}
+			_clearLoadedTrackState(st);
+			rt.processor = candidateProcessor;
+			rt.durationSec = candidateBuffer.duration;
+			rt.latencySec = latencySec;
+			rt.reportedInputSec = 0;
+			rt.startCtxTime = 0;
+			rt.startOffsetSec = 0;
+			rt.pending = null;
+			st.stable_id = stable_id;
+			st.title = candidateTrack.title;
+			st.artist = candidateTrack.artist;
+			st.bpm = candidateTrack.bpm;
+			st.key = candidateTrack.key;
+			// TrackOut carries duration_ms (server models.py); the hand-written
+			// Track interface omits it, so read it via a typed extension. When
+			// absent, the decoded buffer length is the ground truth.
+			const trackDurationMs = (
+				candidateTrack as Track & { duration_ms?: number | null }
+			).duration_ms;
+			st.duration_ms =
+				typeof trackDurationMs === 'number'
+					? trackDurationMs
+					: Math.round(candidateBuffer.duration * 1000);
+			st.anlz = anlz;
+			st.anlz_error = anlzError;
+			st.processor_error = null;
+			st.sync_error = null;
+			if (anlz !== null) {
+				st.hot_cues = _hotCuesFrom(anlz.cues);
+				st.loop = _displayLoopFrom(anlz.cues);
+			}
+			if (replacingMaster) _electPlayingMaster();
+			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
+		});
+	}
+
+	async play(deck: DeckId): Promise<void> {
+		const { st } = _requireLoaded(deck, 'play');
+		if (st.playing) return; // transport already running is a valid state
+		const ctx = await _resumeContext();
+		const startSec = st.position_ms / 1000;
+		if (st.beat_sync_enabled) _requireBeatGrid(st, 'play Beat Sync');
+		const activeMaster = _syncMaster();
+		if (activeMaster === null) {
+			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
+			try {
+				await _scheduleDeck(deck, when, startSec, true);
+				_assignMaster(deck);
+				st.sync_error = null;
+			} catch (error) {
+				st.sync_error = String(error);
+				throw error;
+			}
+		} else if (activeMaster === deck || !st.beat_sync_enabled) {
+			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
+			await _scheduleDeck(deck, when, startSec, true);
+			st.sync_error = null;
+		} else {
+			st.position_ms = startSec * 1000;
+			await _synchronizeFollowers(activeMaster, [deck]);
 		}
 	}
 
-	play(deck: DeckId): void {
-		const { st } = _requireLoaded(deck, 'play');
-		if (st.playing) return; // transport already running is a valid state
-		_startSource(deck, st.position_ms / 1000);
-	}
-
-	pause(deck: DeckId): void {
+	async pause(deck: DeckId): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pause');
 		if (!st.playing) return; // already paused is a valid state
-		const pos = _currentPosSec(deck);
-		_stopSource(deck);
-		st.playing = false;
-		st.position_ms = pos * 1000;
-		// CUE semantics (SCREENSHOT-SPEC 7): the cue point sits at the
-		// position playback was paused at.
-		st.cue_ms = st.position_ms;
+		if (_ctx === null) throw new Error('pause: audio graph not initialised');
+		const positionSec = _currentPosSec(deck);
+		const cueMs = st.quantize_enabled
+			? quantizedPositionMs(_requireBeatGrid(st, 'pause cue'), positionSec * 1000, true)
+			: positionSec * 1000;
+		await _scheduleDeck(deck, _ctx.currentTime, positionSec, false);
+		st.cue_ms = cueMs;
+		if (_masterDeck === deck) _electPlayingMaster();
 	}
 
-	cueJump(deck: DeckId, ms: number): void {
+	async cueJump(deck: DeckId, ms: number): Promise<void> {
+		await this.quantizedSeek(deck, ms);
+	}
+
+	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
 			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
 		}
+		const targetMs = st.quantize_enabled
+			? quantizedPositionMs(_requireBeatGrid(st, 'cueJump quantize'), ms, true)
+			: ms;
+		if (targetMs > durMs) {
+			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
+		}
 		if (st.playing) {
-			_startSource(deck, ms / 1000);
+			if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
+			await _scheduleDeck(deck, _futureScheduleTime(deck), targetMs / 1000, true);
 		} else {
-			st.position_ms = ms;
+			st.position_ms = targetMs;
 		}
 	}
 
 	/** The physical CUE button. Playing: return to the cue point and pause.
 	 * Paused with a cue set: jump the playhead to it. Paused with no cue:
 	 * set the cue at the current position. */
-	pressCue(deck: DeckId): void {
+	async pressCue(deck: DeckId): Promise<void> {
 		const { st } = _requireLoaded(deck, 'pressCue');
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
-			_stopSource(deck);
-			st.playing = false;
-			st.position_ms = target;
+			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
+			await _scheduleDeck(deck, _ctx.currentTime, target / 1000, false);
+			if (_masterDeck === deck) _electPlayingMaster();
 			return;
 		}
 		if (st.cue_ms === null) {
-			st.cue_ms = st.position_ms;
+			st.cue_ms = st.quantize_enabled
+				? quantizedPositionMs(_requireBeatGrid(st, 'pressCue quantize'), st.position_ms, true)
+				: st.position_ms;
 		} else {
-			st.position_ms = st.cue_ms;
+			await this.quantizedSeek(deck, st.cue_ms);
 		}
 	}
 
-	setPitch(deck: DeckId, ratio: number): void {
-		const { st, rt } = _requireLoaded(deck, 'setPitch');
+	async setPitch(deck: DeckId, ratio: number): Promise<void> {
+		await this.setTempoRatio(deck, ratio);
+	}
+
+	async setTempoRatio(deck: DeckId, ratio: number): Promise<void> {
+		const { st } = _requireLoaded(deck, 'setTempoRatio');
 		if (!Number.isFinite(ratio) || ratio <= 0) {
-			throw new RangeError(`setPitch: ratio must be > 0, got ${ratio}`);
+			throw new RangeError(`setTempoRatio: ratio must be > 0, got ${ratio}`);
 		}
 		const rangePct = pitchRanges[deck];
 		if (Math.abs(ratio - 1) * 100 > rangePct + 1e-9) {
 			throw new RangeError(
-				`setPitch: ratio ${ratio} outside the selected +-${rangePct}% range on deck ${deck}`
+				`setTempoRatio: ratio ${ratio} outside the selected +-${rangePct}% range on deck ${deck}`
 			);
 		}
-		if (st.playing && rt.source !== null) {
-			_rebaseClock(deck);
-			rt.source.playbackRate.value = ratio;
+		const activeMaster = _syncMaster();
+		if (st.playing && st.beat_sync_enabled && activeMaster !== null && activeMaster !== deck) {
+			throw new Error(`setTempoRatio: disable Beat Sync before changing follower deck ${deck}`);
 		}
-		st.pitch = ratio;
+		if (st.playing) {
+			if (_ctx === null) throw new Error('setTempoRatio: audio graph not initialised');
+			const when = _futureScheduleTime(deck);
+			const positionSec = _projectPositionAt(deck, when);
+			await _scheduleDeck(deck, when, positionSec, true, ratio);
+			if (_masterDeck === deck) {
+				const followers = DECK_IDS.filter(
+					(candidate) =>
+						candidate !== deck &&
+						deckStates[candidate].playing &&
+						deckStates[candidate].beat_sync_enabled
+				);
+				await _synchronizeFollowers(deck, followers);
+			}
+		} else {
+			st.pitch = ratio;
+		}
 	}
 
 	/** Select the pitch fader range. Throws when the current pitch no longer
@@ -570,63 +1335,174 @@ class RbAudioEngine implements AudioEngine {
 		pitchRanges[deck] = range;
 	}
 
-	setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): void {
-		const { st, rt } = _requireLoaded(deck, 'setLoop');
+	async setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void> {
+		const { st } = _requireLoaded(deck, 'setLoop');
+		const wasPlaying = st.playing;
+		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
+		const positionSec = wasPlaying ? _projectPositionAt(deck, scheduleAt) : st.position_ms / 1000;
 		if (loop === null) {
-			if (st.playing && rt.source !== null && st.loop !== null && st.loop.engaged) {
-				// Rebase to the wrapped position, then let the source run on.
-				_rebaseClock(deck);
-				rt.source.loop = false;
+			if (wasPlaying) {
+				if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
+				await _scheduleDeck(
+					deck,
+					scheduleAt,
+					positionSec,
+					true,
+					st.pitch,
+					st.master_tempo_enabled,
+					null
+				);
+			} else {
+				st.loop = null;
 			}
-			st.loop = null;
 			return;
 		}
 		const durMs = _durationSec(deck) * 1000;
-		if (
-			!Number.isFinite(loop.in_ms) ||
-			!Number.isFinite(loop.out_ms) ||
-			loop.in_ms < 0 ||
-			loop.out_ms <= loop.in_ms ||
-			loop.out_ms > durMs
-		) {
+		const snapped = st.quantize_enabled
+			? quantizedLoopEndpointsMs(_requireBeatGrid(st, 'setLoop quantize'), loop, true)
+			: quantizedLoopEndpointsMs([], loop, false);
+		if (snapped.out_ms > durMs) {
 			throw new RangeError(
-				`setLoop: need 0 <= in_ms < out_ms <= ${Math.round(durMs)}, got ${loop.in_ms}..${loop.out_ms}`
+				`setLoop: out_ms must be <= ${Math.round(durMs)}, got ${snapped.out_ms}`
 			);
 		}
-		st.loop = { in_ms: loop.in_ms, out_ms: loop.out_ms, engaged: true, beat_length: null };
-		if (st.playing) {
-			const posMs = _currentPosSec(deck) * 1000;
-			if (posMs > loop.out_ms) {
-				// Past the loop already: restart inside it.
-				_startSource(deck, loop.in_ms / 1000);
-			} else if (rt.source !== null) {
-				_rebaseClock(deck);
-				rt.source.loopStart = loop.in_ms / 1000;
-				rt.source.loopEnd = loop.out_ms / 1000;
-				rt.source.loop = true;
-			}
+		const nextLoop: LoopState = { ...snapped, engaged: true, beat_length: null };
+		if (wasPlaying) {
+			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
+			const scheduledInputSec =
+				positionSec >= snapped.out_ms / 1000 ? snapped.in_ms / 1000 : positionSec;
+			await _scheduleDeck(
+				deck,
+				scheduleAt,
+				scheduledInputSec,
+				true,
+				st.pitch,
+				st.master_tempo_enabled,
+				nextLoop
+			);
+		} else {
+			st.loop = nextLoop;
 		}
 	}
 
-	/** Engage a beat loop from the current position. Beats -> seconds via the
-	 * track bpm (playbackRate scales audio and loop identically, so the
-	 * native bpm is the correct base). */
-	engageBeatLoop(deck: DeckId, beats: number): void {
+	/** Engage a beat loop using exact consecutive PQTZ timestamps. */
+	async engageBeatLoop(deck: DeckId, beats: number, startMs?: number): Promise<void> {
 		const { st } = _requireLoaded(deck, 'engageBeatLoop');
-		if (!Number.isFinite(beats) || beats <= 0) {
-			throw new RangeError(`engageBeatLoop: beats must be > 0, got ${beats}`);
-		}
-		if (st.bpm === null || st.bpm <= 0) {
-			throw new Error(`engageBeatLoop: deck ${deck} track has no BPM - cannot size a beat loop`);
-		}
-		const in_ms = st.playing ? _currentPosSec(deck) * 1000 : st.position_ms;
-		const lenMs = (beats * 60000) / st.bpm;
-		const out_ms = Math.min(in_ms + lenMs, _durationSec(deck) * 1000);
-		if (out_ms <= in_ms) {
-			throw new RangeError(`engageBeatLoop: loop would be empty at position ${in_ms}ms`);
-		}
-		this.setLoop(deck, { in_ms, out_ms });
+		const grid = _requireBeatGrid(st, 'engageBeatLoop');
+		const currentMs = st.audible ? _currentPosSec(deck) * 1000 : st.position_ms;
+		const range = exactBeatLoopRangeMs(grid, currentMs, beats, startMs);
+		await this.setLoop(deck, range);
 		if (st.loop !== null) st.loop.beat_length = beats;
+		const pendingLoop = _rt[deck].pending?.loop;
+		if (pendingLoop !== null && pendingLoop !== undefined) {
+			pendingLoop.beat_length = beats;
+		}
+	}
+
+	setQuantize(deck: DeckId, enabled: boolean): void {
+		if (typeof enabled !== 'boolean') throw new TypeError('setQuantize: enabled must be boolean');
+		deckStates[deck].quantize_enabled = enabled;
+	}
+
+	setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {
+		if (typeof enabled !== 'boolean') throw new TypeError('setBeatSync: enabled must be boolean');
+		const st = deckStates[deck];
+		st.beat_sync_enabled = enabled;
+		if (!enabled) {
+			st.sync_error = null;
+			return Promise.resolve();
+		}
+		if (!st.audible) return Promise.resolve();
+		const master = _syncMaster();
+		if (master === null) {
+			_assignMaster(deck);
+			return Promise.resolve();
+		}
+		return master === deck ? Promise.resolve() : _synchronizeFollowers(master, [deck]);
+	}
+
+	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void> {
+		if (typeof enabled !== 'boolean') throw new TypeError('setMasterTempo: enabled must be boolean');
+		const st = deckStates[deck];
+		if (!st.playing) {
+			st.master_tempo_enabled = enabled;
+			return Promise.resolve();
+		}
+		if (_ctx === null) throw new Error('setMasterTempo: audio graph not initialised');
+		const when = _futureScheduleTime(deck);
+		return _scheduleDeck(deck, when, _projectPositionAt(deck, when), true, st.pitch, enabled);
+	}
+
+	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {
+		if (mode !== 'beat' && mode !== 'bar') {
+			const _exhaustive: never = mode;
+			throw new TypeError(`setSyncMode: invalid sync mode ${String(_exhaustive)}`);
+		}
+		const st = deckStates[deck];
+		st.sync_mode = mode;
+		const master = _syncMaster();
+		if (!st.audible || !st.beat_sync_enabled || master === null || master === deck) {
+			return Promise.resolve();
+		}
+		return _synchronizeFollowers(master, [deck]);
+	}
+
+	async setDeckMaster(deck: DeckId): Promise<void> {
+		const { st } = _requireLoaded(deck, 'setDeckMaster');
+		if (!st.audible) {
+			_assignMaster(deck);
+			return;
+		}
+		const followers = DECK_IDS.filter(
+			(candidate) =>
+				candidate !== deck &&
+				deckStates[candidate].audible &&
+				deckStates[candidate].beat_sync_enabled
+		);
+		await _synchronizeFollowers(deck, followers);
+		_assignMaster(deck);
+	}
+
+	captureDeckAudio(deck: DeckId): DeckAudioSnapshot {
+		const st = deckStates[deck];
+		if (st.processor_error !== null) {
+			throw new Error(`captureDeckAudio: processor failed: ${st.processor_error}`);
+		}
+		const { rt } = _requireLoaded(deck, 'captureDeckAudio');
+		if (_ctx === null || rt.nodes === null) {
+			throw new Error('captureDeckAudio: audio graph not initialised');
+		}
+		if (_ctx.state !== 'running' || !st.audible) {
+			throw new Error('captureDeckAudio: deck must be audible and AudioContext must be running');
+		}
+		const analyser = rt.nodes.analyser;
+		const frequencyDb = new Float32Array(analyser.frequencyBinCount);
+		const timeDomain = new Float32Array(analyser.fftSize);
+		analyser.getFloatFrequencyData(frequencyDb);
+		analyser.getFloatTimeDomainData(timeDomain);
+		const finiteFrequencyDb = Array.from(frequencyDb, (value) =>
+			Number.isFinite(value) ? value : analyser.minDecibels
+		);
+		const finiteTimeDomain = Array.from(timeDomain);
+		if (finiteTimeDomain.some((value) => !Number.isFinite(value))) {
+			throw new Error('captureDeckAudio: analyser returned non-finite time-domain samples');
+		}
+		const snapshot: DeckAudioSnapshot = {
+			context_time_s: _ctx.currentTime,
+			sample_rate_hz: _ctx.sampleRate,
+			fft_size: analyser.fftSize,
+			frequency_db: finiteFrequencyDb,
+			time_domain: finiteTimeDomain
+		};
+		const scalarValues = [
+			snapshot.context_time_s,
+			snapshot.sample_rate_hz,
+			snapshot.fft_size
+		];
+		if (scalarValues.some((value) => !Number.isFinite(value))) {
+			throw new Error('captureDeckAudio: analyser metadata contains non-finite numbers');
+		}
+		return snapshot;
 	}
 
 	setTrim(deck: DeckId, value: number): void {

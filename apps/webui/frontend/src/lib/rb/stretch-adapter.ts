@@ -45,6 +45,15 @@ export interface StretchScheduleChange {
 	loopEnd?: number;
 }
 
+export const STRETCH_RESET_CHANGE: Readonly<Required<StretchScheduleChange>> = Object.freeze({
+	active: false,
+	input: 0,
+	rate: 1,
+	semitones: 0,
+	loopStart: 0,
+	loopEnd: 0
+});
+
 export type StrictStretchSchedule = SignalsmithStretchSchedule & { outputTime: number };
 
 export class StretchCommandTimeoutError extends Error {
@@ -61,6 +70,31 @@ export class StretchProcessorError extends Error {
 	}
 }
 
+/** Command gate shared by every worklet call. A failed or timed-out command
+ * poisons the processor, and the poison check runs before the next callback
+ * can post another MessagePort request. */
+export class StretchCommandGate {
+	#terminalError: Error | null = null;
+
+	poison(error: Error): void {
+		this.#terminalError = error;
+	}
+
+	assertOperational(): void {
+		if (this.#terminalError !== null) throw this.#terminalError;
+	}
+
+	async run<T>(operation: string, command: () => Promise<T>, timeoutMs?: number): Promise<T> {
+		this.assertOperational();
+		try {
+			return await withStretchCommandTimeout(command(), operation, timeoutMs);
+		} catch (error) {
+			this.poison(error instanceof Error ? error : new Error(String(error)));
+			throw error;
+		}
+	}
+}
+
 function _assertFiniteNonNegative(name: string, value: number): void {
 	if (!Number.isFinite(value) || value < 0) {
 		throw new RangeError(`${name} must be a finite non-negative number, got ${value}`);
@@ -71,6 +105,10 @@ export function buildStretchSchedule(
 	outputTime: number,
 	change: StretchScheduleChange
 ): StrictStretchSchedule {
+	const allowedKeys = new Set(['active', 'input', 'rate', 'semitones', 'loopStart', 'loopEnd']);
+	for (const key of Object.keys(change)) {
+		if (!allowedKeys.has(key)) throw new TypeError(`unknown Signalsmith schedule field: ${key}`);
+	}
 	_assertFiniteNonNegative('output time', outputTime);
 	if (change.input !== undefined) _assertFiniteNonNegative('input time', change.input);
 	if (change.rate !== undefined && (!Number.isFinite(change.rate) || change.rate <= 0)) {
@@ -84,13 +122,77 @@ export function buildStretchSchedule(
 	if (
 		change.loopStart !== undefined &&
 		change.loopEnd !== undefined &&
-		change.loopStart >= change.loopEnd
+		change.loopStart > change.loopEnd
 	) {
 		throw new RangeError(
-			`loopStart must be less than loopEnd, got ${change.loopStart}..${change.loopEnd}`
+			`loopStart must not exceed loopEnd, got ${change.loopStart}..${change.loopEnd}`
 		);
 	}
-	return { output: outputTime, outputTime, ...change };
+	return {
+		output: outputTime,
+		outputTime,
+		...(change.active === undefined ? {} : { active: change.active }),
+		...(change.input === undefined ? {} : { input: change.input }),
+		...(change.rate === undefined ? {} : { rate: change.rate }),
+		...(change.semitones === undefined ? {} : { semitones: change.semitones }),
+		...(change.loopStart === undefined ? {} : { loopStart: change.loopStart }),
+		...(change.loopEnd === undefined ? {} : { loopEnd: change.loopEnd })
+	};
+}
+
+export function assertStretchLoadIsFresh(loadedDurationSec: number): void {
+	if (loadedDurationSec > 0) {
+		throw new StretchProcessorError(
+			'Signalsmith deck processors are one-shot; create a new processor to replace audio'
+		);
+	}
+}
+
+export function validateStretchBufferMetadata(
+	buffer: Pick<AudioBuffer, 'duration' | 'numberOfChannels' | 'sampleRate'>,
+	contextSampleRateHz: number
+): void {
+	if (buffer.sampleRate !== contextSampleRateHz) {
+		throw new RangeError(
+			`decoded sample rate ${buffer.sampleRate}Hz does not match AudioContext ` +
+				`${contextSampleRateHz}Hz`
+		);
+	}
+	if (!Number.isFinite(buffer.duration) || buffer.duration <= 0) {
+		throw new RangeError(`decoded buffer duration must be positive, got ${buffer.duration}`);
+	}
+	if (buffer.numberOfChannels < 1 || buffer.numberOfChannels > 2) {
+		throw new RangeError(
+			`Signalsmith decks require mono or stereo audio, got ${buffer.numberOfChannels} channels`
+		);
+	}
+}
+
+export function validateStretchScheduleBounds(
+	change: StretchScheduleChange,
+	loadedDurationSec: number,
+	loadedSampleRateHz: number,
+	contextSampleRateHz: number
+): void {
+	if (change.active === true && loadedDurationSec <= 0) {
+		throw new StretchProcessorError('Signalsmith cannot start before audio buffers are loaded');
+	}
+	if (change.active === true && loadedSampleRateHz !== contextSampleRateHz) {
+		throw new StretchProcessorError(
+			`loaded sample rate ${loadedSampleRateHz}Hz no longer matches AudioContext ` +
+				`${contextSampleRateHz}Hz`
+		);
+	}
+	if (change.input !== undefined && (change.input < 0 || change.input > loadedDurationSec)) {
+		throw new RangeError(
+			`input ${change.input}s is outside loaded audio 0..${loadedDurationSec}s`
+		);
+	}
+	if (change.loopEnd !== undefined && change.loopEnd > loadedDurationSec) {
+		throw new RangeError(
+			`loopEnd ${change.loopEnd}s exceeds loaded audio ${loadedDurationSec}s`
+		);
+	}
 }
 
 export async function withStretchCommandTimeout<T>(
@@ -135,14 +237,22 @@ export interface StretchAdapterOptions {
 
 /** One terminal-failure-aware worklet instance for one deck. */
 export class StretchDeckProcessor {
+	readonly #context: AudioContext;
+	readonly #gate = new StretchCommandGate();
 	readonly #node: SignalsmithStretchNode;
-	#terminalError: StretchProcessorError | null = null;
+	#loadedDurationSec = 0;
+	#loadedSampleRateHz = 0;
 
-	private constructor(node: SignalsmithStretchNode, options: StretchAdapterOptions) {
+	private constructor(
+		context: AudioContext,
+		node: SignalsmithStretchNode,
+		options: StretchAdapterOptions
+	) {
+		this.#context = context;
 		this.#node = node;
 		this.#node.addEventListener('processorerror', (event) => {
 			const error = stretchProcessorError(event);
-			this.#terminalError = error;
+			this.#gate.poison(error);
 			options.onProcessorError(error);
 		});
 	}
@@ -159,10 +269,11 @@ export class StretchDeckProcessor {
 			'processor creation',
 			STRETCH_CREATE_TIMEOUT_MS
 		);
-		const processor = new StretchDeckProcessor(node, options);
-		if (options.onInputTime !== undefined) {
+		const processor = new StretchDeckProcessor(context, node, options);
+		const onInputTime = options.onInputTime;
+		if (onInputTime !== undefined) {
 			await processor.#command(
-				node.setUpdateInterval(1 / 30, options.onInputTime),
+				() => node.setUpdateInterval(1 / 30, onInputTime),
 				'position update configuration'
 			);
 		}
@@ -180,30 +291,45 @@ export class StretchDeckProcessor {
 
 	async load(buffer: AudioBuffer): Promise<void> {
 		this.#assertOperational();
-		if (buffer.numberOfChannels < 1 || buffer.numberOfChannels > 2) {
-			throw new RangeError(
-				`Signalsmith decks require mono or stereo audio, got ${buffer.numberOfChannels} channels`
-			);
-		}
+		assertStretchLoadIsFresh(this.#loadedDurationSec);
+		validateStretchBufferMetadata(buffer, this.#context.sampleRate);
 		const channels = Array.from({ length: buffer.numberOfChannels }, (_unused, channel) => {
 			const samples = new Float32Array(buffer.length);
 			buffer.copyFromChannel(samples, channel);
 			return samples;
 		});
-		await this.#command(this.#node.dropBuffers(), 'drop buffers');
+		await this.schedule(this.#context.currentTime, STRETCH_RESET_CHANGE);
+		await this.#command(() => this.#node.dropBuffers(), 'drop buffers');
 		const transfer = channels.map((channel) => channel.buffer);
-		await this.#command(this.#node.addBuffers(channels, transfer), 'add buffers');
+		const loadedEndSec = await this.#command(
+			() => this.#node.addBuffers(channels, transfer),
+			'add buffers'
+		);
+		if (!Number.isFinite(loadedEndSec) || loadedEndSec <= 0) {
+			throw new StretchProcessorError(
+				`Signalsmith reported invalid loaded duration ${loadedEndSec}`
+			);
+		}
+		this.#loadedDurationSec = loadedEndSec;
+		this.#loadedSampleRateHz = buffer.sampleRate;
 	}
 
 	async latencySec(): Promise<number> {
-		const latency = await this.#command(this.#node.latency(), 'latency query');
+		const latency = await this.#command(() => this.#node.latency(), 'latency query');
 		_assertFiniteNonNegative('Signalsmith latency', latency);
 		return latency;
 	}
 
 	async schedule(outputTime: number, change: StretchScheduleChange): Promise<void> {
+		this.#assertOperational();
+		validateStretchScheduleBounds(
+			change,
+			this.#loadedDurationSec,
+			this.#loadedSampleRateHz,
+			this.#context.sampleRate
+		);
 		await this.#command(
-			this.#node.schedule(buildStretchSchedule(outputTime, change)),
+			() => this.#node.schedule(buildStretchSchedule(outputTime, change)),
 			'schedule'
 		);
 	}
@@ -213,16 +339,10 @@ export class StretchDeckProcessor {
 	}
 
 	#assertOperational(): void {
-		if (this.#terminalError !== null) throw this.#terminalError;
+		this.#gate.assertOperational();
 	}
 
-	async #command<T>(command: Promise<T>, operation: string): Promise<T> {
-		this.#assertOperational();
-		try {
-			return await withStretchCommandTimeout(command, operation);
-		} catch (error) {
-			if (error instanceof StretchProcessorError) this.#terminalError = error;
-			throw error;
-		}
+	async #command<T>(command: () => Promise<T>, operation: string): Promise<T> {
+		return this.#gate.run(operation, command);
 	}
 }
