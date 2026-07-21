@@ -441,6 +441,15 @@ export function pausedSeekClock(
 	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
 }
 
+export function decodedTransportDurationMs(decodedDurationSec: number): number {
+	if (!Number.isFinite(decodedDurationSec) || decodedDurationSec <= 0) {
+		throw new RangeError(
+			`decoded audio duration must be finite and positive, got ${decodedDurationSec}`
+		);
+	}
+	return decodedDurationSec * 1000;
+}
+
 export function createPresentedTransportTimeline(
 	pausedPositionSec: number
 ): PresentedTransportTimeline {
@@ -940,6 +949,47 @@ export function assertDeckLoadConsistency(
 	}
 }
 
+export interface DeckReplacementActivity {
+	playing: boolean;
+	audible: boolean;
+	transportPending: boolean;
+	controlActive: boolean;
+	pendingScheduleCount: number;
+	scheduleIntentCount: number;
+}
+
+export function assertDeckReplacementAllowed(
+	deck: DeckId,
+	activity: DeckReplacementActivity
+): void {
+	for (const [name, value] of Object.entries({
+		playing: activity.playing,
+		audible: activity.audible,
+		transportPending: activity.transportPending,
+		controlActive: activity.controlActive
+	})) {
+		if (typeof value !== 'boolean') {
+			throw new TypeError(`${name} must be boolean, got ${String(value)}`);
+		}
+	}
+	for (const [name, value] of Object.entries({
+		pendingScheduleCount: activity.pendingScheduleCount,
+		scheduleIntentCount: activity.scheduleIntentCount
+	})) {
+		if (!Number.isInteger(value) || value < 0) {
+			throw new RangeError(`${name} must be a non-negative integer, got ${value}`);
+		}
+	}
+	const activeReasons = Object.entries(activity)
+		.filter(([, value]) => value === true || (typeof value === 'number' && value > 0))
+		.map(([name]) => name);
+	if (activeReasons.length === 0) return;
+	throw new Error(
+		`load: deck ${deck} must be fully stopped before replacement; active state: ` +
+			activeReasons.join(', ')
+	);
+}
+
 export function loadCandidateCanPublish(candidateToken: number, currentToken: number): boolean {
 	for (const [name, value] of Object.entries({ candidateToken, currentToken })) {
 		if (!Number.isInteger(value) || value <= 0) {
@@ -981,6 +1031,19 @@ export function masterSwitchFollowers(
 			activity[candidate].playing &&
 			activity[candidate].beat_sync_enabled
 	);
+}
+
+function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
+	const st = deckStates[deck];
+	const rt = _rt[deck];
+	assertDeckReplacementAllowed(deck, {
+		playing: st.playing,
+		audible: st.audible,
+		transportPending: st.transport_pending,
+		controlActive: rt.controlActive,
+		pendingScheduleCount: rt.pending.length,
+		scheduleIntentCount: rt.scheduleIntentCount
+	});
 }
 
 function _requireLoaded(deck: DeckId, op: string): { st: DeckState; rt: _DeckRuntime } {
@@ -1598,6 +1661,7 @@ class RbAudioEngine implements AudioEngine {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
 		const st = deckStates[deck];
 		const rt = _rt[deck];
+		_assertCurrentDeckReplacementAllowed(deck);
 		const token = ++rt.loadToken;
 		deckLoadErrors[deck] = null;
 		let track: Track | null = null;
@@ -1653,6 +1717,12 @@ class RbAudioEngine implements AudioEngine {
 				candidateProcessor.disconnect();
 				return;
 			}
+			try {
+				_assertCurrentDeckReplacementAllowed(deck);
+			} catch (error) {
+				candidateProcessor.disconnect();
+				throw error;
+			}
 			if (rt.nodes === null || _ctx === null) {
 				candidateProcessor.disconnect();
 				throw new Error(`load: deck ${deck} audio graph is missing`);
@@ -1688,16 +1758,9 @@ class RbAudioEngine implements AudioEngine {
 			st.artist = candidateTrack.artist;
 			st.bpm = candidateTrack.bpm;
 			st.key = candidateTrack.key;
-			// TrackOut carries duration_ms (server models.py); the hand-written
-			// Track interface omits it, so read it via a typed extension. When
-			// absent, the decoded buffer length is the ground truth.
-			const trackDurationMs = (
-				candidateTrack as Track & { duration_ms?: number | null }
-			).duration_ms;
-			st.duration_ms =
-				typeof trackDurationMs === 'number'
-					? trackDurationMs
-					: Math.round(candidateBuffer.duration * 1000);
+			// The decoded buffer is the audio actually scheduled. Metadata can
+			// differ, so it must not define waveform bounds or transport truth.
+			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
 			st.anlz = anlz;
 			st.anlz_error = anlzError;
 			st.processor_error = null;

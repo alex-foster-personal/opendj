@@ -52,6 +52,12 @@ test('paused seek produces one frozen UI and runtime clock position', () => {
 	assert.throws(() => audio.pausedSeekClock(4001, 4000), /duration/i);
 });
 
+test('decoded audio duration is the canonical waveform and transport duration', () => {
+	assert.equal(audio.decodedTransportDurationMs(123.4567), 123456.7);
+	assert.throws(() => audio.decodedTransportDurationMs(0), /positive/i);
+	assert.throws(() => audio.decodedTransportDurationMs(Number.NaN), /finite/i);
+});
+
 test('audible Beat-Synced follower seeks route back through the selected master', () => {
 	assert.equal(audio.seekSyncMaster(2, true, true, 1), 1);
 	assert.equal(audio.seekSyncMaster(1, true, true, 1), null);
@@ -506,6 +512,32 @@ test('load-state invariant rejects playable-looking ghost decks', () => {
 		() => audio.assertDeckLoadConsistency('ghost', 0, false),
 		/inconsistent deck load state/
 	);
+});
+
+test('deck replacement requires a fully presented stop before candidate preparation', () => {
+	const stopped = {
+		playing: false,
+		audible: false,
+		transportPending: false,
+		controlActive: false,
+		pendingScheduleCount: 0,
+		scheduleIntentCount: 0
+	};
+	assert.doesNotThrow(() => audio.assertDeckReplacementAllowed(1, stopped));
+
+	for (const active of [
+		{ playing: true },
+		{ audible: true },
+		{ transportPending: true },
+		{ controlActive: true },
+		{ pendingScheduleCount: 1 },
+		{ scheduleIntentCount: 1 }
+	]) {
+		assert.throws(
+			() => audio.assertDeckReplacementAllowed(1, { ...stopped, ...active }),
+			/fully stopped/i
+		);
+	}
 });
 
 test('only the latest prepared load candidate may publish and replace the incumbent', () => {
