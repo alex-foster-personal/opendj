@@ -87,14 +87,15 @@
 			</button>
 		</div>
 
-		<HotCueBank {deck} onJump={seekTo} inertTip={INERT_TIP} />
+		<!-- The cue bank is the deck panel's flexible middle (wide slot rows,
+		     SCREENSHOT-SPEC 3 wide layout) - it absorbs all spare width. -->
+		<div class="cue-flex">
+			<HotCueBank {deck} onJump={seekTo} inertTip={INERT_TIP} />
+		</div>
 
 		<LoopCluster {deck} onEngage={engageLoop} onDisengage={disengageLoop} inertTip={INERT_TIP} />
 
 		<TransportCluster {deck} onCue={returnToCue} onPlayPause={playPause} />
-
-		<!-- Spacer pushes the jog cluster to the panel's right edge. -->
-		<div class="spacer"></div>
 
 		<JogDial {deck} {pitchRange} inertTip={INERT_TIP} />
 	</div>
@@ -146,8 +147,10 @@
 		font-size: 8px;
 		letter-spacing: 1px;
 	}
-	.spacer {
+	.cue-flex {
 		flex: 1 1 0;
 		min-width: 0;
+		align-self: stretch;
+		display: flex;
 	}
 </style>
