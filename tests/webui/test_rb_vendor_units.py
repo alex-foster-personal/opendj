@@ -1,0 +1,157 @@
+"""Pure-unit tests for rb_vendor parsing helpers (no local rekordbox data).
+
+Covers the SPIKE-A1/B1 decode logic with synthetic inputs so CI exercises it
+even without data/master.plain.db.
+
+Regression one-liners:
+  - if _vocal_regions doesn't merge runs separated by < 1.5 s then broken
+  - if _vocal_regions keeps regions shorter than 1.0 s then broken
+  - if region intensity isn't the max PVDI value in the merged run then broken
+  - if read_pvdi accepts a mutated fixed header instead of raising then broken
+  - if vocals_payload doesn't return exactly the three contract states then broken
+  - if _peak_downsample_cols isn't a per-bucket max (transient-preserving) then broken
+  - if keep_by_availability doesn't map all/true/false explicitly then broken
+"""
+from __future__ import annotations
+
+import struct
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from apps.webui.server import rb_vendor
+from apps.webui.server.routes.tracks import keep_by_availability
+
+pytestmark = pytest.mark.requirement("CAT-05")
+
+FPS = 22050 / 1024  # 21.53 -- the only rate PVDI has ever been observed at
+
+
+def _frames(seconds: float) -> int:
+    return round(seconds * FPS)
+
+
+# ----- _vocal_regions ----------------------------------------------------------
+
+def test_vocal_regions_merges_sub_gap_runs() -> None:
+    envelope = bytes(
+        [2] * _frames(1.4) + [0] * _frames(0.5) + [4] * _frames(2.0)
+    )
+    regions = rb_vendor._vocal_regions(envelope, FPS)
+    assert len(regions) == 1, "0.5 s gap < 1.5 s merge window must fuse runs"
+    assert regions[0]["intensity"] == 4, "intensity = max across the merged run"
+    assert regions[0]["start_s"] == 0.0
+    assert regions[0]["end_s"] == pytest.approx(3.9, abs=0.15)
+
+
+def test_vocal_regions_keeps_super_gap_runs_apart_and_drops_short() -> None:
+    envelope = bytes(
+        [2] * _frames(1.4) + [0] * _frames(2.0) + [3] * _frames(0.7)
+    )
+    regions = rb_vendor._vocal_regions(envelope, FPS)
+    assert len(regions) == 1, (
+        "2.0 s gap must split; the trailing 0.7 s run is < 1.0 s min region"
+    )
+    assert regions[0]["intensity"] == 2
+
+
+def test_vocal_regions_threshold_is_intensity_min() -> None:
+    below = bytes([rb_vendor.VOCAL_INTENSITY_MIN - 1] * _frames(5.0))
+    assert rb_vendor._vocal_regions(below, FPS) == []
+    at = bytes([rb_vendor.VOCAL_INTENSITY_MIN] * _frames(5.0))
+    assert len(rb_vendor._vocal_regions(at, FPS)) == 1
+
+
+# ----- read_pvdi / vocals_payload on synthetic .2EX files ------------------------
+
+def _synthetic_2ex(envelope: bytes, fixed_header: bytes | None = None) -> bytes:
+    """Minimal PMAI container with a single PVDI section (B1 section 3 layout)."""
+    fixed = fixed_header if fixed_header is not None else rb_vendor._PVDI_FIXED_HEADER
+    section = (
+        b"PVDI"
+        + struct.pack(">II", 24, 24 + len(envelope))
+        + fixed
+        + struct.pack(">I", len(envelope))
+        + envelope
+    )
+    head_len = 28
+    file_len = head_len + len(section)
+    header = b"PMAI" + struct.pack(">II", head_len, file_len)
+    return header + b"\x00" * (head_len - len(header)) + section
+
+
+def test_read_pvdi_roundtrip(tmp_path: Path) -> None:
+    envelope = bytes([0, 1, 2, 3, 4] * 100)
+    twoex = tmp_path / "ANLZ0000.2EX"
+    twoex.write_bytes(_synthetic_2ex(envelope))
+    result = rb_vendor.read_pvdi(twoex)
+    assert result is not None
+    fps, decoded = result
+    assert round(fps, 2) == 21.53
+    assert decoded == envelope
+
+
+def test_read_pvdi_rejects_changed_fixed_header(tmp_path: Path) -> None:
+    twoex = tmp_path / "ANLZ0000.2EX"
+    mutated = bytes.fromhex("0000040056220002")  # version bumped
+    twoex.write_bytes(_synthetic_2ex(bytes(50), fixed_header=mutated))
+    with pytest.raises(ValueError, match="fixed header changed"):
+        rb_vendor.read_pvdi(twoex)
+
+
+def test_vocals_payload_three_states(tmp_path: Path) -> None:
+    missing = tmp_path / "nowhere" / "ANLZ0000.2EX"
+    assert rb_vendor.vocals_payload(missing) == {"status": "not_analyzed"}
+
+    no_pvdi = tmp_path / "no_pvdi.2EX"
+    head = b"PMAI" + struct.pack(">II", 28, 28)
+    no_pvdi.write_bytes(head + b"\x00" * (28 - len(head)))
+    assert rb_vendor.vocals_payload(no_pvdi) == {"status": "not_analyzed"}
+
+    silent = tmp_path / "silent.2EX"
+    silent.write_bytes(_synthetic_2ex(bytes(_frames(30.0))))
+    assert rb_vendor.vocals_payload(silent) == {
+        "status": "no_vocals", "fps": 21.53, "regions": [],
+    }
+
+    vocal = tmp_path / "vocal.2EX"
+    vocal.write_bytes(_synthetic_2ex(bytes([3] * _frames(10.0))))
+    payload = rb_vendor.vocals_payload(vocal)
+    assert payload["status"] == "rekordbox"
+    assert payload["fps"] == 21.53
+    assert payload["regions"] == [
+        {"start_s": 0.0, "end_s": pytest.approx(10.0, abs=0.1), "intensity": 3}
+    ]
+
+
+# ----- _peak_downsample_cols -----------------------------------------------------
+
+def test_peak_downsample_is_per_bucket_max() -> None:
+    cols = np.zeros((1200, 3), dtype=np.uint8)
+    cols[5, 0] = 87   # transient inside bucket 0 must survive (A1: max, not mean)
+    cols[1199, 2] = 41
+    strip = rb_vendor._peak_downsample_cols(cols, 120)
+    assert strip.shape == (120, 3)
+    assert strip[0, 0] == 87
+    assert strip[119, 2] == 41
+    assert strip.sum() == 87 + 41
+
+
+def test_peak_downsample_rejects_too_few_columns() -> None:
+    with pytest.raises(ValueError, match="cannot downsample"):
+        rb_vendor._peak_downsample_cols(np.zeros((60, 3), dtype=np.uint8), 120)
+
+
+# ----- keep_by_availability ------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("available", "file_exists", "expected"),
+    [
+        ("all", True, True), ("all", False, True),
+        ("true", True, True), ("true", False, False),
+        ("false", True, False), ("false", False, True),
+    ],
+)
+def test_keep_by_availability(available, file_exists, expected) -> None:
+    assert keep_by_availability(available, file_exists) is expected
