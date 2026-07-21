@@ -12,7 +12,7 @@
  * band arrays the server filled - bands are NEVER synthesised.
  */
 import type { AnlzBeat, AnlzCue, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/types';
-import { firstBeatAtOrAfter } from './wave-math';
+import { visibleBeatLines } from './wave-math';
 
 /** Seconds of track visible across one row (window is centered on the
  * fixed playhead). 24s keeps the <=2400-point detail waveform dense. */
@@ -146,7 +146,7 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 
 	if (frame.anlz !== null && durS > 0) {
 		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
-		_drawBeatTicks(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, palette);
+		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		_drawCues(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 	}
@@ -237,29 +237,23 @@ function _drawBands(
 	ctx.globalAlpha = 1;
 }
 
-function _drawBeatTicks(
+function _drawBeatGrid(
 	ctx: CanvasRenderingContext2D,
 	beats: AnlzBeat[],
 	tLeft: number,
 	pxPerS: number,
 	w: number,
+	h: number,
 	palette: WavePalette
 ): void {
-	if (beats.length === 0) return;
-	const tRight = tLeft + w / pxPerS;
 	ctx.fillStyle = palette.tick;
-	for (let i = firstBeatAtOrAfter(beats, tLeft); i < beats.length; i++) {
-		const beat = beats[i];
-		if (beat.t > tRight) break;
-		const x = Math.round((beat.t - tLeft) * pxPerS);
-		if (beat.n === 1) {
-			// Bar tick: taller + brighter (SCREENSHOT-SPEC 2, COMPONENT-MAP 1.2).
-			ctx.globalAlpha = 1;
-			ctx.fillRect(x, 0, 2, 8);
-		} else {
-			ctx.globalAlpha = 0.55;
-			ctx.fillRect(x, 0, 1, 4);
-		}
+	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h)) {
+		// The low-alpha grid remains visible through the waveform. The original
+		// 8px/4px beat caps are then repainted at their stronger alpha.
+		ctx.globalAlpha = line.alpha;
+		ctx.fillRect(line.x, line.y, line.width, line.height);
+		ctx.globalAlpha = line.capAlpha;
+		ctx.fillRect(line.x, line.y, line.width, line.capHeight);
 	}
 	ctx.globalAlpha = 1;
 }
