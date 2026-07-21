@@ -1,4 +1,7 @@
 <script module lang="ts">
+	import type { PreviewStripData } from '$lib/rb/api-rb';
+	import type { RbMeta } from '$lib/rb/types';
+
 	/** Sortable column keys (client-side sort - ordering is not server-provided). */
 	export type SortKey =
 		| 'order'
@@ -10,17 +13,57 @@
 		| 'comments'
 		| 'time'
 		| 'genre';
+
+	/** One browser table row, hydrated INLINE from the listing payloads
+	 * (shared contract points 1 + 4) - replaces the old types.ts TrackRow
+	 * whose preview/meta arrived via per-row fetch fan-out. Owned by the
+	 * browser unit; lives here (not types.ts, which is a frozen contract
+	 * between the original build units). */
+	export interface BrowserRow {
+		stable_id: string;
+		/** 1-based membership position within the pane playlist (# column). */
+		order: number;
+		title: string | null;
+		artist: string | null;
+		key: string | null;
+		bpm: number | null;
+		rating: number | null;
+		/** '' for All Tracks rows (listing carries no ETag) - rating edits
+		 * lazily fetch one. Playlist rows carry it inline (contract 4). */
+		etag: string;
+		comments: string | null;
+		duration_ms: number | null;
+		/** Inline genre (playlist rows only, contract 4); null = not
+		 * provided inline -> fall back to lazily fetched rb_meta. */
+		genre: string | null;
+		/** Disk truth from the bulk server-side stat pass (contract 1/4). */
+		file_exists: boolean;
+		/** Inline streaming flag (playlist rows only, contract 4); null =
+		 * not provided inline -> fall back to rb_meta. */
+		is_streaming: boolean | null;
+		/** Decoded 120-col preview strip; null = no ANLZ preview (real
+		 * state, renders the explicit dash). */
+		strip: PreviewStripData | null;
+		/** Lazy rb-meta (artwork_available + genre/streaming fallback);
+		 * null until the row first scrolls into view. */
+		rb_meta: RbMeta | null;
+		/** Flipped true by the IntersectionObserver on first visibility -
+		 * gates the one-time canvas draw (SPIKE-A2). */
+		revealed: boolean;
+	}
 </script>
 
 <script lang="ts">
 	// Browser track table (SCREENSHOT-SPEC 5c). Columns in screenshot order:
 	// funnel | cloud | # | Preview | Artwork | Track Title | Artist | K | B |
-	// Rating | Comments | Time | Genre. Rows lazily hydrate rb-meta + preview
-	// waveform via IntersectionObserver (only visible rows fetch). Row states:
-	// green title+artist = loaded on a deck; blue full row = selected.
+	// Rating | Comments | Time | Genre. Preview strips + file_exists arrive
+	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
+	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
+	// Row states: green title+artist = loaded on a deck; blue full row =
+	// selected; grayed row = audio file missing on disk (FR-1).
 	// No virtualization at v1: parent caps rows at 500 (see PARITY-TODO).
-	import { artworkUrl } from '$lib/rb/api-rb';
-	import type { DeckId, TrackRow } from '$lib/rb/types';
+	import { artworkUrl, type Vocals } from '$lib/rb/api-rb';
+	import type { DeckId } from '$lib/rb/types';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import RatingStars from './RatingStars.svelte';
 
@@ -30,7 +73,7 @@
 		rows,
 		selectedId,
 		loadedIds,
-		kinds,
+		vocalsById,
 		sortKey,
 		sortDir,
 		truncated,
@@ -41,27 +84,29 @@
 		onrate,
 		onrowvisible
 	}: {
-		rows: TrackRow[];
+		rows: BrowserRow[];
 		selectedId: string | null;
 		loadedIds: Set<string>;
-		kinds: Record<string, 'tri' | 'mono'>;
+		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
+		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
+		vocalsById: Record<string, Vocals>;
 		sortKey: SortKey | null;
 		sortDir: 1 | -1;
 		truncated: boolean;
 		emptyMessage: string | null;
 		onsort: (key: SortKey) => void;
-		onselectrow: (row: TrackRow) => void;
+		onselectrow: (row: BrowserRow) => void;
 		/** deck null = load onto lowest free deck (double-click). */
-		onloadrow: (row: TrackRow, deck: DeckId | null) => void;
-		onrate: (row: TrackRow, next: number) => void;
-		onrowvisible: (row: TrackRow) => void;
+		onloadrow: (row: BrowserRow, deck: DeckId | null) => void;
+		onrate: (row: BrowserRow, next: number) => void;
+		onrowvisible: (row: BrowserRow) => void;
 	} = $props();
 
 	// ------------------------------------------- lazy-hydration observer
 	// One-shot per row element: fetch fires the first time a row scrolls into
 	// view (ancestor overflow clipping is honoured by IntersectionObserver, so
 	// root null is correct for the scrolling table wrap).
-	const _rowByEl = new WeakMap<Element, TrackRow>();
+	const _rowByEl = new WeakMap<Element, BrowserRow>();
 	let _observer: IntersectionObserver | null = null;
 
 	function _ensureObserver(): IntersectionObserver | null {
@@ -82,7 +127,7 @@
 		return _observer;
 	}
 
-	function observeRow(node: HTMLElement, row: TrackRow): { destroy(): void } {
+	function observeRow(node: HTMLElement, row: BrowserRow): { destroy(): void } {
 		_rowByEl.set(node, row);
 		_ensureObserver()?.observe(node);
 		return {
@@ -183,6 +228,7 @@
 						use:observeRow={row}
 						class:rb-row-selected={row.stable_id === selectedId}
 						class:loaded={loadedIds.has(row.stable_id)}
+						class:broken={!row.file_exists}
 						onclick={() => onselectrow(row)}
 						ondblclick={() => onloadrow(row, null)}
 					>
@@ -190,10 +236,11 @@
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a
 						     cloud renders ONLY for real streaming rows and '!' for missing
-						     files - an empty cell is the honest state for local tracks
-						     (verified against rb-meta; see PARITY-TODO in RECON-FEATURES). -->
+						     files - an empty cell is the honest state for local tracks.
+						     is_streaming is inline for playlist rows (contract 4); All
+						     Tracks rows fall back to the lazily fetched rb-meta. -->
 						<td class="c-cloud">
-							{#if row.rb_meta !== null && row.rb_meta.is_streaming}
+							{#if row.is_streaming ?? row.rb_meta?.is_streaming}
 								<span
 									class="cloud"
 									title="streaming track (tidal/soundcloud/spotify) - deck load not implemented, see PARITY-TODO"
@@ -205,13 +252,18 @@
 										/>
 									</svg>
 								</span>
-							{:else if row.rb_meta !== null && !row.rb_meta.file_exists}
-								<span class="missing" title="audio file missing on disk">!</span>
+							{:else if !row.file_exists}
+								<span class="missing" title="audio file missing on disk (broken link)">!</span>
 							{/if}
 						</td>
 						<td class="c-order">{row.order}</td>
 						<td class="c-preview">
-							<PreviewStrip preview={row.preview} kind={kinds[row.stable_id] ?? null} />
+							<PreviewStrip
+								strip={row.strip}
+								vocals={vocalsById[row.stable_id] ?? null}
+								duration_ms={row.duration_ms}
+								revealed={row.revealed}
+							/>
 							<span class="deck-btns">
 								{#each DECKS as d (d)}
 									<button
@@ -251,7 +303,7 @@
 						</td>
 						<td class="c-comments" title={row.comments ?? ''}>{row.comments ?? ''}</td>
 						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
-						<td class="c-genre">{row.rb_meta?.genre ?? ''}</td>
+						<td class="c-genre">{row.genre ?? row.rb_meta?.genre ?? ''}</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -369,6 +421,23 @@
 	.missing {
 		color: var(--rb-red);
 		font-weight: 600;
+	}
+
+	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay
+	 * selectable; deck load is blocked upstream with an explicit toast. */
+	tbody tr.broken td {
+		color: var(--rb-text-dim);
+	}
+	tbody tr.broken .c-art img,
+	tbody tr.broken .art-slate {
+		opacity: 0.35;
+	}
+	tbody tr.broken :global(canvas) {
+		opacity: 0.45;
+	}
+	/* the '!' badge keeps its red even on grayed rows */
+	tbody tr.broken .missing {
+		color: var(--rb-red);
 	}
 	.c-comments,
 	.c-genre {

@@ -3,6 +3,7 @@
 	// Canvas window scrolls under a fixed center playhead; left gutter shows
 	// the deck number + bars-to-next-cue counter. Empty deck = flat dark row.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
+	import { vocalsOf } from '$lib/rb/api-rb';
 	import type { DeckId } from '$lib/rb/types';
 	import { engine, getDeckState } from './engine-accessor';
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
@@ -36,6 +37,17 @@
 	const barsLabel = $derived(
 		anlzData !== null ? barsToNextCueLabel(anlzData, deck.position_ms) : null
 	);
+
+	// Vocal state tooltip (SPIKE-B1 three mandatory states): bars are
+	// painted by render.ts only for status 'rekordbox'; the two barless
+	// states get an explicit tooltip so absence is never ambiguous.
+	const vocalsTitle = $derived.by((): string | null => {
+		if (anlzData === null) return null;
+		const v = vocalsOf(anlzData);
+		if (v.status === 'no_vocals') return 'no vocals detected';
+		else if (v.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
+		else return null; // rekordbox: the blue bars speak for themselves
+	});
 
 	// ---- canvas plumbing
 	let canvasEl: HTMLCanvasElement | undefined = $state();
@@ -146,7 +158,7 @@
 		<span class="deck-num">{deckId}</span>
 		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
 	</div>
-	<div class="canvas-wrap">
+	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
 		<canvas
 			bind:this={canvasEl}
 			role="slider"

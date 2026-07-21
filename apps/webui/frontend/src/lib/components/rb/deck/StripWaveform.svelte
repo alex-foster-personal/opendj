@@ -4,7 +4,12 @@
 	// cue letters + memory markers, loop in/out time chips, click-to-seek.
 	// No analysis -> explicit 'NO ANALYSIS' state; empty deck -> blank strip.
 	// Never synthesised waveforms (COMPONENT-MAP 1.3).
+	// Vocal blue bars (SPIKE-B1): 2px-ish top layer, drawn ONLY for real
+	// PVDI regions (status 'rekordbox'); the two barless states surface as
+	// explicit tooltips - three mandatory states, nothing invented.
+	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
 	import type { AnlzWaveformBands, DeckState, HotCueSlot } from '$lib/rb/types';
+	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
 	let { deck, onSeek }: { deck: DeckState; onSeek: (ms: number) => void } = $props();
 
@@ -19,6 +24,16 @@
 			? 0
 			: (deck.position_ms / deck.duration_ms) * 100
 	);
+
+	// Validated vocals of the loaded analysis; null while no anlz payload.
+	const vocals: Vocals | null = $derived(deck.anlz === null ? null : vocalsOf(deck.anlz));
+
+	const vocalsTitle: string | null = $derived.by(() => {
+		if (vocals === null) return null;
+		if (vocals.status === 'no_vocals') return 'no vocals detected';
+		else if (vocals.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
+		else return null; // rekordbox: the bars themselves are the signal
+	});
 
 	const memoryCuesMs: number[] = $derived(
 		deck.anlz === null
@@ -77,6 +92,22 @@
 		}
 	}
 
+	function _drawVocalBars(ctx: CanvasRenderingContext2D, v: Vocals): void {
+		if (v.status !== 'rekordbox') return; // barless states draw nothing
+		const dur = deck.duration_ms;
+		if (dur === null || dur === 0) return; // cannot place bars without a duration
+		ctx.fillStyle = VOCAL_BLUE;
+		for (const region of v.regions) {
+			const x0 = Math.max(0, ((region.start_s * 1000) / dur) * W);
+			const x1 = Math.min(W, ((region.end_s * 1000) / dur) * W);
+			if (x1 <= x0) continue;
+			ctx.globalAlpha = vocalAlpha(region.intensity);
+			// 4 canvas px on the 40px backing = ~2 CSS px at --rb-strip-h 20px.
+			ctx.fillRect(x0, 0, x1 - x0, 4);
+		}
+		ctx.globalAlpha = 1;
+	}
+
 	$effect(() => {
 		const c = canvas;
 		if (c === undefined) return;
@@ -87,6 +118,7 @@
 			return;
 		}
 		_drawPreview(ctx, deck.anlz.waveform.preview, deck.anlz.waveform.kind);
+		if (vocals !== null) _drawVocalBars(ctx, vocals);
 	});
 
 	function handleClick(e: MouseEvent): void {
@@ -103,6 +135,7 @@
 	onclick={handleClick}
 	disabled={deck.stable_id === null}
 	aria-label="track overview waveform - click to seek"
+	title={vocalsTitle ?? undefined}
 >
 	<canvas bind:this={canvas} width={W} height={H}></canvas>
 
