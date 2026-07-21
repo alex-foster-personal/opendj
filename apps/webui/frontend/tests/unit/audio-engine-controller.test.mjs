@@ -127,13 +127,32 @@ test('live loop and seek scheduling normalize below and above loop positions wit
 
 	assert.ok(
 		Math.abs(
-			audio.normalizeScheduledTransportEntrySec(liveLoopProjectedPositionSec, 10, loop) - 1.5
+			audio.normalizeScheduledTransportEntrySec(liveLoopProjectedPositionSec, 10, loop, true) -
+				1.5
 		) < 1e-12
 	);
 	assert.ok(
-		Math.abs(audio.normalizeScheduledTransportEntrySec(liveSeekPositionSec, 10, loop) - 1.2) <
-			1e-12
+		Math.abs(
+			audio.normalizeScheduledTransportEntrySec(liveSeekPositionSec, 10, loop, true) - 1.2
+		) < 1e-12
 	);
+});
+
+test('inactive CUE return preserves its requested frozen position outside an engaged loop', () => {
+	const loop = { in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 };
+
+	assert.equal(audio.normalizeScheduledTransportEntrySec(4.2, 10, loop, false), 4.2);
+	assert.throws(
+		() => audio.normalizeScheduledTransportEntrySec(10.1, 10, loop, false),
+		/within 0\.\.10/i
+	);
+});
+
+test('canceling a pending looped start preserves the requested paused position', () => {
+	const pendingLoop = { in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 };
+
+	assert.equal(audio.normalizeScheduledTransportEntrySec(0.5, 10, pendingLoop, false), 0.5);
+	assert.equal(audio.normalizeScheduledTransportEntrySec(4.2, 10, pendingLoop, false), 4.2);
 });
 
 test('synced follower region and phase are chosen before final loop-entry normalization', () => {
@@ -156,7 +175,8 @@ test('synced follower region and phase are chosen before final loop-entry normal
 	const scheduledPositionSec = audio.normalizeScheduledTransportEntrySec(
 		plan.followerPositionSec,
 		10,
-		{ in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 }
+		{ in_ms: 1000, out_ms: 2000, engaged: true, beat_length: 2 },
+		true
 	);
 
 	assert.ok(plan.followerPositionSec > 4.5);

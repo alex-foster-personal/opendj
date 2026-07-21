@@ -581,7 +581,8 @@ export function normalizeEngagedLoopPositionSec(
 export function normalizeScheduledTransportEntrySec(
 	positionSec: number,
 	durationSec: number,
-	loop: LoopState | null
+	loop: LoopState | null,
+	active: boolean
 ): number {
 	if (!Number.isFinite(durationSec) || durationSec <= 0) {
 		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
@@ -591,6 +592,10 @@ export function normalizeScheduledTransportEntrySec(
 			`positionSec must be within 0..${durationSec}, got ${positionSec}`
 		);
 	}
+	if (typeof active !== 'boolean') {
+		throw new TypeError(`active must be boolean, got ${String(active)}`);
+	}
+	if (!active) return positionSec;
 	const normalizedPositionSec = normalizeEngagedLoopPositionSec(positionSec, loop);
 	if (normalizedPositionSec > durationSec) {
 		throw new RangeError(
@@ -788,7 +793,8 @@ async function _scheduleDeck(
 	const scheduledInputSec = normalizeScheduledTransportEntrySec(
 		inputSec,
 		rt.durationSec,
-		loop
+		loop,
+		active
 	);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
 	const existingPending = rt.pending;
