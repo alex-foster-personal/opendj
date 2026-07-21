@@ -5,7 +5,7 @@
 	import StarRating from '$lib/components/StarRating.svelte';
 	import ConflictDialog from '$lib/components/ConflictDialog.svelte';
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
-	import { pushToast } from '$lib/stores';
+	import { pushToast } from '$lib/stores.svelte';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');
