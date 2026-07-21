@@ -78,7 +78,14 @@ def create_app(
         # See apps/webui/README.md -> "CORS policy" for rationale.
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            allow_origins=[
+                "http://localhost:5173", "http://127.0.0.1:5173",
+                # Isolated e2e verify stacks (loopback-only, see
+                # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
+                # talks to daemons :8686/:8688 via VITE_API_BASE.
+                "http://localhost:5273", "http://127.0.0.1:5273",
+                "http://localhost:5275", "http://127.0.0.1:5275",
+            ],
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
