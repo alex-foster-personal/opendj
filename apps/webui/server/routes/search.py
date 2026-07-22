@@ -49,7 +49,7 @@ def search_collection(
     q: str = Query(
         "",
         description=(
-            "Search text, matched against title, artist, genre, comments "
+            "Search text, matched against title, artist, genre, comments, notes "
             "and custom tags across the whole collection (not just the "
             "active pane)."
         ),
