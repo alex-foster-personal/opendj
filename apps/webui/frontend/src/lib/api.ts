@@ -105,6 +105,68 @@ export class ConflictError extends Error {
 	}
 }
 
+export interface PlayItGoal {
+	duration_min: number;
+	peak_at_min?: number | null;
+	floor_energy?: number;
+	ceiling_energy?: number;
+}
+
+export interface PlayItStep {
+	position: number;
+	stable_id: string;
+	title: string | null;
+	artist: string | null;
+	bpm: number | null;
+	key_camelot: string | null;
+	energy: number | null;
+	transition_hint: string;
+	camelot_distance: number | null;
+	bpm_delta_pct: number | null;
+	target_energy: number;
+	actual_energy: number;
+}
+
+export interface PlayItUnmetConstraint {
+	kind: string;
+	position: number;
+	detail: Record<string, number | string>;
+}
+
+export interface PlayItSolveOut {
+	playlist_id: string;
+	etag: string;
+	previous_order: string[];
+	proposed_order: string[];
+	unchanged: boolean;
+	steps: PlayItStep[];
+	constraints_unmet: PlayItUnmetConstraint[];
+	solve_ms: number;
+}
+
+export class PlayItError extends Error {
+	constructor(public code: string, message: string, public details: unknown = null) {
+		super(message);
+	}
+}
+
+export interface PlaylistWriteOut {
+	playlist_id: string;
+	name: string;
+	vendor: string;
+	vendor_pl_id: string;
+	items: string[];
+	track_count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export class PlaylistConflictError extends Error {
+	constructor(public current: PlaylistWriteOut, public etag: string) {
+		super('If-Match mismatch');
+	}
+}
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
 	return fetch(`${API_BASE}${path}`, {
 		...init,
@@ -156,6 +218,47 @@ export async function listPlaylists(): Promise<PlaylistSummary[]> {
 export async function getPlaylist(id: string): Promise<PlaylistDetail> {
 	const r = await request(`/api/v1/playlists/${encodeURIComponent(id)}`);
 	return r.json();
+}
+
+/**
+ * Solve a PLAY IT ordering for a playlist (pure preview, no writes).
+ * `etag` in the result is the playlist's current If-Match value, valid to
+ * pass straight to `replacePlaylistTracks` -- no extra fetch needed.
+ */
+export async function solvePlayIt(playlistId: string, goal: PlayItGoal): Promise<PlayItSolveOut> {
+	const r = await request(`/api/v1/play-it/${encodeURIComponent(playlistId)}/solve`, {
+		method: 'POST',
+		body: JSON.stringify(goal)
+	});
+	if (!r.ok) {
+		const body = await r.json().catch(() => ({}));
+		throw new PlayItError(body.error ?? 'unknown', body.message ?? `solve failed: ${r.status}`, body.details);
+	}
+	return r.json();
+}
+
+/**
+ * Apply (or undo, by passing the pre-apply order back) a PLAY IT result:
+ * the single membership-replace primitive from the playlists-write
+ * contract (LANE playlists-router). Throws `PlaylistConflictError` on a
+ * stale etag (409) so the caller can prompt a re-solve.
+ */
+export async function replacePlaylistTracks(
+	playlistId: string,
+	stableIds: string[],
+	etag: string
+): Promise<{ playlist: PlaylistWriteOut; etag: string }> {
+	const r = await request(`/api/v1/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+		method: 'PUT',
+		headers: { 'If-Match': etag },
+		body: JSON.stringify({ stable_ids: stableIds })
+	});
+	if (r.status === 409) {
+		const body = await r.json();
+		throw new PlaylistConflictError(body.current as PlaylistWriteOut, body.etag as string);
+	}
+	if (!r.ok) throw new Error(`apply reorder failed: ${r.status}`);
+	return { playlist: await r.json(), etag: r.headers.get('etag') ?? '' };
 }
 
 export async function listPairings(source?: string): Promise<Pairing[]> {
