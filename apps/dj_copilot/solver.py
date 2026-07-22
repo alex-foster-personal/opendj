@@ -89,7 +89,7 @@ def _infer_hint(prev: TrackFeature, cand: TrackFeature, bpm_relaxed: bool) -> st
 
 @dataclass(slots=True)
 class _BeamState:
-    order: tuple[str, ...]
+    occurrence_order: tuple[int, ...]
     score_sum: float
     traces: tuple[StepTrace, ...]
     unmet: tuple[UnmetConstraint, ...]
@@ -143,29 +143,30 @@ def _score_candidate_inline(
     return composite, bpm_relaxed
 
 
-def _best_start(tracks: list[TrackFeature], goal: SetGoal) -> TrackFeature:
+def _best_start_occurrence(tracks: list[TrackFeature], goal: SetGoal) -> int:
     target_energy = float(goal.floor_energy)
     open_key = goal.open_on_key
 
-    def key(t: TrackFeature) -> tuple[float, int, str]:
+    def key(occurrence: tuple[int, TrackFeature]) -> tuple[float, int, str, int]:
+        position, track = occurrence
         e_dist = (
-            abs(float(t.energy) - target_energy)
-            if t.energy is not None
+            abs(float(track.energy) - target_energy)
+            if track.energy is not None
             else 10.0
         )
         key_mismatch = 1
-        if open_key is not None and t.key_camelot is not None:
+        if open_key is not None and track.key_camelot is not None:
             try:
                 key_mismatch = int(
                     _camelot_distance(
-                        key_to_camelot(open_key), key_to_camelot(t.key_camelot)
+                        key_to_camelot(open_key), key_to_camelot(track.key_camelot)
                     )
                 )
             except ValueError:
                 key_mismatch = 12
-        return (e_dist, key_mismatch, t.stable_id)
+        return (e_dist, key_mismatch, track.stable_id, position)
 
-    return min(tracks, key=key)
+    return min(enumerate(tracks), key=key)[0]
 
 
 def suggest_order(
@@ -182,9 +183,8 @@ def suggest_order(
     if not tracks:
         return SolveResult([], [], [], [], 0.0)
 
-    index: dict[str, TrackFeature] = {t.stable_id: t for t in tracks}
-
-    start = _best_start(tracks, goal)
+    start_occurrence = _best_start_occurrence(tracks, goal)
+    start = tracks[start_occurrence]
     start_trace = StepTrace(
         position=0,
         stable_id=start.stable_id,
@@ -196,7 +196,7 @@ def suggest_order(
         transition_hint="start",
     )
     init_beam = _BeamState(
-        order=(start.stable_id,),
+        occurrence_order=(start_occurrence,),
         score_sum=1.0,
         traces=(start_trace,),
         unmet=(),
@@ -210,12 +210,12 @@ def suggest_order(
         target_energy_slot = target_energy_at(goal, slot_idx * AVG_TRACK_MINUTES)
         next_beams: list[_BeamState] = []
         for state in beams:
-            chosen = set(state.order)
-            prev = index[state.order[-1]]
+            chosen = set(state.occurrence_order)
+            prev = tracks[state.occurrence_order[-1]]
             recent_set = set(state.recent_artists[-ARTIST_REPEAT_COOLDOWN:])
-            scored: list[tuple[float, str, TrackFeature, bool]] = []
-            for cand in tracks:
-                if cand.stable_id in chosen:
+            scored: list[tuple[float, str, int, TrackFeature, bool]] = []
+            for occurrence, cand in enumerate(tracks):
+                if occurrence in chosen:
                     continue
                 score, relaxed = _score_candidate_inline(
                     prev=prev,
@@ -223,12 +223,12 @@ def suggest_order(
                     target_energy_slot=target_energy_slot,
                     recent_artists_set=recent_set,
                 )
-                scored.append((score, cand.stable_id, cand, relaxed))
+                scored.append((score, cand.stable_id, occurrence, cand, relaxed))
             if not scored:
                 next_beams.append(state)
                 continue
             scored.sort(key=lambda x: (-x[0], x[1]))
-            for score, _sid, cand, relaxed in scored[:beam_width]:
+            for score, _sid, occurrence, cand, relaxed in scored[:beam_width]:
                 dist = _camelot_dist_or_none(prev.key_camelot, cand.key_camelot)
                 delta = _bpm_delta_pct(prev.bpm, cand.bpm)
                 hint = _infer_hint(prev, cand, relaxed)
@@ -269,14 +269,14 @@ def suggest_order(
                     )
                 next_beams.append(
                     _BeamState(
-                        order=state.order + (cand.stable_id,),
+                        occurrence_order=state.occurrence_order + (occurrence,),
                         score_sum=state.score_sum + score,
                         traces=state.traces + (trace,),
                         unmet=tuple(unmet),
                         recent_artists=state.recent_artists + (cand.artist,),
                     )
                 )
-        next_beams.sort(key=lambda s: (-s.score_sum, s.order))
+        next_beams.sort(key=lambda s: (-s.score_sum, s.occurrence_order))
         beams = next_beams[:beam_width]
         if not beams:
             break
@@ -284,12 +284,12 @@ def suggest_order(
     top_score = max(x.score_sum for x in beams)
     best = min(
         [b for b in beams if b.score_sum == top_score],
-        key=lambda s: s.order,
+        key=lambda s: s.occurrence_order,
     )
 
     solve_ms = (time.perf_counter() - t0) * 1000.0
     return SolveResult(
-        order=list(best.order),
+        order=[tracks[occurrence].stable_id for occurrence in best.occurrence_order],
         per_step_scores=[t.score for t in best.traces],
         per_step_trace=list(best.traces),
         constraints_unmet=list(best.unmet),

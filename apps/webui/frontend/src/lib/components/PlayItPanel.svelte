@@ -112,7 +112,7 @@
 		{:else}
 			<p>{summary?.movedCount} of {result.steps.length} tracks would move.</p>
 			<ol class="preview">
-				{#each result.steps as step (step.stable_id)}
+				{#each result.steps as step (step.position)}
 					<li>
 						<span class="title">{step.title ?? step.stable_id}</span>
 						{#if step.artist}<span class="artist"> -- {step.artist}</span>{/if}
