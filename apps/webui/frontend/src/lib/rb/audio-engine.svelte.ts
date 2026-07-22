@@ -2863,6 +2863,21 @@ class RbAudioEngine implements AudioEngine {
 		});
 	}
 
+	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR
+	 * (rb_vendor.fetch_cues is always live-queried, never cached - see
+	 * build_anlz_payload's docstring) without touching the audio graph,
+	 * buffer, or transport state that a full load() would disturb. */
+	async refreshHotCues(deck: DeckId): Promise<void> {
+		const { st } = _requireLoaded(deck, 'refreshHotCues');
+		const stableId = st.stable_id;
+		if (stableId === null) throw new Error('refreshHotCues: deck has no stable_id');
+		const fresh = await fetchAnlz(stableId);
+		if (st.stable_id !== stableId) return; // deck was swapped mid-request
+		st.anlz = fresh;
+		st.hot_cues = _hotCuesFrom(fresh.cues);
+		st.loop = _displayLoopFrom(fresh.cues);
+	}
+
 	async play(deck: DeckId): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state

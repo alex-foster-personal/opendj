@@ -15,7 +15,7 @@
 
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
-import type { AnlzData, ArtworkSize, RbMeta } from './types';
+import type { AnlzCue, AnlzData, ArtworkSize, HotCueSlot, RbMeta } from './types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -68,6 +68,21 @@ async function _fetchJson<T>(path: string): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, { headers: { Accept: 'application/json' } });
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
+}
+
+async function _putJson<T>(path: string, body: unknown): Promise<T> {
+	const r = await fetch(`${RB_API_BASE}${path}`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify(body)
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return (await r.json()) as T;
+}
+
+async function _deleteRequest(path: string): Promise<void> {
+	const r = await fetch(`${RB_API_BASE}${path}`, { method: 'DELETE' });
+	if (!r.ok) await _throwRbApiError(r);
 }
 
 // --------------------------------------------- /anlz vocals (SPIKE-B1)
@@ -346,6 +361,32 @@ export async function fetchAnlz(stable_id: string, points = 2400): Promise<AnlzW
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);
+}
+
+// ------------------------------------------ hot-cue SAVE (djmdCue Kind 1-8)
+// Write surface: apps/webui/server/rb_vendor.py save_hot_cue/clear_hot_cue.
+// Slots beyond H (Kind 9-11) are unverified and never exposed here - the
+// backend route param type rejects them with 422 before this client is
+// even asked to serialize one.
+
+/** PUT /tracks/{sid}/hot-cues/{slot} - upsert (SAVE always overwrites the
+ * slot). ``in_ms`` is sent verbatim; callers quantize to the beatgrid
+ * themselves (beat-sync-math.quantizeToNearestBeat) before calling this. */
+export async function saveHotCue(
+	stable_id: string,
+	slot: HotCueSlot,
+	in_ms: number,
+	comment?: string | null
+): Promise<AnlzCue> {
+	return _putJson<AnlzCue>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
+		{ in_ms, comment: comment ?? null }
+	);
+}
+
+/** DELETE /tracks/{sid}/hot-cues/{slot} - clear a slot (idempotent). */
+export async function clearHotCue(stable_id: string, slot: HotCueSlot): Promise<void> {
+	await _deleteRequest(`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`);
 }
 
 /** URL for GET /tracks/{sid}/artwork - use directly as <img src>. The

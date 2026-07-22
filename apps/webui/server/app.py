@@ -42,6 +42,7 @@ from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
+from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
@@ -168,6 +169,7 @@ def create_app(
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)
+    app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)
     app.include_router(smartlists_routes.router, prefix=api_prefix)
     app.include_router(stems_routes.router, prefix=api_prefix)
