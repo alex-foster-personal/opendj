@@ -484,7 +484,20 @@ def patch_progress_node(
                     "codex_not_safe",
                     f"node {node_id!r} is not marked codex safe",
                 )
-            node["codex"]["claim"] = patch.codex_claim.model_dump()
+            current_claim = node["codex"]["claim"]
+            requested_claim = patch.codex_claim.model_dump()
+            if (
+                current_claim["state"] == "claimed"
+                and requested_claim != current_claim
+            ):
+                raise _http_error(
+                    status.HTTP_409_CONFLICT,
+                    "claim_conflict",
+                    f"node {node_id!r} is already claimed by "
+                    f"{current_claim['owner']!r}; coordinator reassignment "
+                    "must update the ledger explicitly",
+                )
+            node["codex"]["claim"] = requested_claim
 
         tree["meta"]["updated"] = _now_iso()
         _dump_tree_atomic(tree)
