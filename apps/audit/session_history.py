@@ -228,11 +228,22 @@ def _print_table(name: str, tracks: list[PlayedTrack]) -> None:
     console.print(table)
 
 
+def _history_slug(name: str) -> str:
+    """Return a deterministic, path-safe filename stem for a History name."""
+    basename = name.replace("\\", "/").rsplit("/", maxsplit=1)[-1]
+    slug = "".join(
+        char if char.isascii() and (char.isalnum() or char in {"_", "-"}) else "_"
+        for char in basename
+    ).strip("_")
+    return slug or "history"
+
+
 def _save(name: str, tracks: list[PlayedTrack]) -> Path:
-    out_dir = paths.PROJECT_ROOT / "maintainer" / "sessions"
+    out_dir = (paths.PROJECT_ROOT / "maintainer" / "sessions").resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    slug = name.replace(" ", "_")
-    csv_path = out_dir / f"{slug}.csv"
+    csv_path = (out_dir / f"{_history_slug(name)}.csv").resolve()
+    if not csv_path.is_relative_to(out_dir):
+        raise RuntimeError(f"Refusing to write session export outside {out_dir}: {csv_path}")
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["order", "played_at", "rode_for", "title", "artist",
