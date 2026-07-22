@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from apps.shared import platform_paths
 from apps.vocals import cache as vcache
 from apps.webui.server import rb_vendor
 from apps.webui.server.rb_vendor import RbContent
@@ -147,6 +148,6 @@ def test_pioneer_path_cannot_escape_share_root(
 ) -> None:
     root = tmp_path / "share"
     root.mkdir()
-    monkeypatch.setattr(rb_vendor, "SHARE_ROOT", root)
-    with pytest.raises(ValueError, match="escapes"):
+    monkeypatch.setattr(platform_paths, "SHARE_ROOT", root)
+    with pytest.raises(ValueError, match="unsafe rekordbox asset path"):
         rb_vendor.resolve_share_path("/PIONEER/../../outside.mp3")

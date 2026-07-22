@@ -58,7 +58,8 @@ import numpy as np
 from fastapi import HTTPException
 
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
-from apps.shared.platform_paths import MappedPath, SHARE_ROOT, resolve_library_path
+from apps.shared import platform_paths
+from apps.shared.platform_paths import MappedPath, resolve_library_path
 from apps.vocals import cache as vocal_cache
 
 log = logging.getLogger(__name__)
@@ -261,7 +262,7 @@ def resolve_share_path(path: str) -> Path:
     mapped: MappedPath = resolve_library_path(path)
     if mapped.resolved is not None:
         if mapped.reason == "share":
-            root = SHARE_ROOT.resolve()
+            root = platform_paths.SHARE_ROOT.resolve()
             resolved = mapped.resolved.resolve()
             if not resolved.is_relative_to(root):
                 raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
