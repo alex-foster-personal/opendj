@@ -1,56 +1,7 @@
 <script module lang="ts">
-	import type { PreviewStripData } from '$lib/rb/api-rb';
-	import type { RbMeta } from '$lib/rb/types';
-
-	/** Sortable column keys (client-side sort - ordering is not server-provided). */
-	export type SortKey =
-		| 'order'
-		| 'title'
-		| 'artist'
-		| 'key'
-		| 'bpm'
-		| 'rating'
-		| 'comments'
-		| 'time'
-		| 'genre';
-
-	/** One browser table row, hydrated INLINE from the listing payloads
-	 * (shared contract points 1 + 4) - replaces the old types.ts TrackRow
-	 * whose preview/meta arrived via per-row fetch fan-out. Owned by the
-	 * browser unit; lives here (not types.ts, which is a frozen contract
-	 * between the original build units). */
-	export interface BrowserRow {
-		stable_id: string;
-		/** 1-based membership position within the pane playlist (# column). */
-		order: number;
-		title: string | null;
-		artist: string | null;
-		key: string | null;
-		bpm: number | null;
-		rating: number | null;
-		/** '' for All Tracks rows (listing carries no ETag) - rating edits
-		 * lazily fetch one. Playlist rows carry it inline (contract 4). */
-		etag: string;
-		comments: string | null;
-		duration_ms: number | null;
-		/** Inline genre (playlist rows only, contract 4); null = not
-		 * provided inline -> fall back to lazily fetched rb_meta. */
-		genre: string | null;
-		/** Disk truth from the bulk server-side stat pass (contract 1/4). */
-		file_exists: boolean;
-		/** Inline streaming flag (playlist rows only, contract 4); null =
-		 * not provided inline -> fall back to rb_meta. */
-		is_streaming: boolean | null;
-		/** Decoded 120-col preview strip; null = no ANLZ preview (real
-		 * state, renders the explicit dash). */
-		strip: PreviewStripData | null;
-		/** Lazy rb-meta (artwork_available + genre/streaming fallback);
-		 * null until the row first scrolls into view. */
-		rb_meta: RbMeta | null;
-		/** Flipped true by the IntersectionObserver on first visibility -
-		 * gates the one-time canvas draw (SPIKE-A2). */
-		revealed: boolean;
-	}
+	// Row + sort vocabulary now lives in the pane contract (browser-surface
+	// unit); re-exported here so existing importers keep working.
+	export type { BrowserRow, SortKey } from './pane-contract.svelte';
 </script>
 
 <script lang="ts">
@@ -61,39 +12,54 @@
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
 	// Row states: green title+artist = loaded on a deck; blue full row =
 	// selected; grayed row = audio file missing on disk (FR-1).
-	// No virtualization at v1: parent caps rows at 500 (see PARITY-TODO).
+	// Rows arrive via the RowProvider contract (pane-contract.svelte.ts).
+	// No virtualization at v1: the client provider materializes everything
+	// (parent caps fetches at 500 rows, see PARITY-TODO); the virtualization
+	// lane swaps in a windowed provider behind the same interface.
+	import { untrack } from 'svelte';
 	import { artworkUrl, type Vocals } from '$lib/rb/api-rb';
 	import type { DeckId } from '$lib/rb/types';
+	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import RatingStars from './RatingStars.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 
 	let {
-		rows,
+		provider,
 		selectedId,
 		loadedIds,
 		vocalsById,
 		sortKey,
 		sortDir,
-		truncated,
 		emptyMessage,
+		restoreKey,
+		scrollTop,
+		onscrollcursor,
 		onsort,
 		onselectrow,
 		onloadrow,
 		onrate,
 		onrowvisible
 	}: {
-		rows: BrowserRow[];
+		/** Read contract: { rows, total, truncated, fetchWindow } - see
+		 * pane-contract.svelte.ts. */
+		provider: RowProvider;
 		selectedId: string | null;
 		loadedIds: Set<string>;
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
 		vocalsById: Record<string, Vocals>;
 		sortKey: SortKey | null;
-		sortDir: 1 | -1;
-		truncated: boolean;
+		sortDir: SortDir;
 		emptyMessage: string | null;
+		/** Identity of the pane being rendered (e.g. pane index) - the
+		 * scroll cursor restores when this changes, NOT on row updates. */
+		restoreKey: string | number;
+		/** Pane's persisted scroll cursor (PaneStore.scroll_top). */
+		scrollTop: number;
+		/** Reports the live table-wrap scrollTop back to the pane store. */
+		onscrollcursor: (top: number) => void;
 		onsort: (key: SortKey) => void;
 		onselectrow: (row: BrowserRow) => void;
 		/** deck null = load onto lowest free deck (double-click). */
@@ -101,6 +67,19 @@
 		onrate: (row: BrowserRow, next: number) => void;
 		onrowvisible: (row: BrowserRow) => void;
 	} = $props();
+
+	const rows = $derived(provider.rows);
+
+	// ------------------------------------------- per-pane scroll cursor
+	// Restore ONLY when the rendered pane changes (restoreKey): reading
+	// scrollTop through untrack keeps live scrolling from re-triggering.
+	let wrapEl = $state<HTMLDivElement | null>(null);
+
+	$effect(() => {
+		void restoreKey; // the one tracked dependency
+		const el = wrapEl;
+		if (el !== null) el.scrollTop = untrack(() => scrollTop);
+	});
 
 	// ------------------------------------------- lazy-hydration observer
 	// One-shot per row element: fetch fires the first time a row scrolls into
@@ -174,7 +153,11 @@
 {/snippet}
 
 <div class="tt-root">
-	<div class="table-wrap">
+	<div
+		class="table-wrap"
+		bind:this={wrapEl}
+		onscroll={(e) => onscrollcursor(e.currentTarget.scrollTop)}
+	>
 		<table>
 			<colgroup>
 				<col class="w-funnel" />
@@ -312,7 +295,7 @@
 			<div class="empty">{emptyMessage}</div>
 		{/if}
 	</div>
-	{#if truncated}
+	{#if provider.truncated}
 		<div class="truncated-note">
 			showing first 500 rows - list truncated (no virtualization at v1, see PARITY-TODO)
 		</div>
