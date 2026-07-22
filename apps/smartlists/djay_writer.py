@@ -33,6 +33,18 @@ def _resolve_djay_uuid(
     return row[0] if row else None
 
 
+def _resolve_stable_id_for_djay(
+    state_conn: sqlite3.Connection, djay_uuid: str
+) -> str | None:
+    """Reverse of :func:`_resolve_djay_uuid`: djay UUID -> stable_id."""
+    row = state_conn.execute(
+        "SELECT stable_id FROM track_vendor_ids "
+        "WHERE vendor = 'djay' AND vendor_id = ? LIMIT 1",
+        (djay_uuid,),
+    ).fetchone()
+    return row[0] if row else None
+
+
 def _find_djay_playlist(
     djay_conn: sqlite3.Connection, name: str
 ) -> tuple[str, list[int]] | None:
@@ -245,6 +257,39 @@ class DjayPlaylistWriter:
         }
         self._apply_op(op)
 
+    def read_members(self, name: str) -> list[str]:
+        """Current membership as stable_ids, in page order.
+
+        A row whose djay UUID has no reverse mapping in
+        ``track_vendor_ids`` (a djay-side track the state layer has
+        never ingested) is skipped rather than raised, mirroring
+        :meth:`apps.smartlists.rb_writer.RBPlaylistWriter.read_members`.
+        """
+        con = self._open_djay()
+        try:
+            found = _find_djay_playlist(con, name)
+            if found is None:
+                raise RuntimeError(f"djay: playlist {name!r} not found")
+            _uuid, rowids = found
+            row_to_uuid = {
+                int(rowid): key
+                for rowid, key in con.execute(
+                    "SELECT rowid, key FROM database2 "
+                    "WHERE collection = 'mediaItemUserData'"
+                )
+            }
+        finally:
+            con.close()
+        members: list[str] = []
+        for rowid in rowids:
+            djay_uuid = row_to_uuid.get(rowid)
+            if djay_uuid is None:
+                continue
+            sid = _resolve_stable_id_for_djay(self.state_conn, djay_uuid)
+            if sid is not None:
+                members.append(sid)
+        return members
+
 
 def build_djay_writer(
     djay_db_path: Path | None = None,
@@ -276,5 +321,6 @@ __all__ = [
     "DjayPlaylistWriter",
     "build_djay_writer",
     "_resolve_djay_uuid",
+    "_resolve_stable_id_for_djay",
     "_find_djay_playlist",
 ]

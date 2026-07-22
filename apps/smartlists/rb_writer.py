@@ -62,6 +62,18 @@ def _resolve_rb_id(state_conn: sqlite3.Connection, stable_id: str) -> str | None
     return row[0] if row else None
 
 
+def _resolve_stable_id_for_rb(
+    state_conn: sqlite3.Connection, content_id: str,
+) -> str | None:
+    """Reverse of :func:`_resolve_rb_id`: ``ContentID`` -> stable_id."""
+    row = state_conn.execute(
+        "SELECT stable_id FROM track_vendor_ids "
+        "WHERE vendor = 'rekordbox' AND vendor_id = ? LIMIT 1",
+        (content_id,),
+    ).fetchone()
+    return row[0] if row else None
+
+
 def _rekordbox_running() -> bool:
     """True if any process matches ``rekordbox`` via ``pgrep -if``.
 
@@ -213,6 +225,31 @@ class RBPlaylistWriter:
             self.db.add_to_playlist(pl, rb_id)
         self.db.commit()
 
+    def read_members(self, name: str) -> list[str]:
+        """Current membership as stable_ids, in native ``TrackNo`` order.
+
+        A song whose ``ContentID`` has no reverse mapping in
+        ``track_vendor_ids`` (an RB-side track the state layer has never
+        ingested) is skipped rather than raised -- it is not this
+        writer's place to fail a read over a track it cannot name; the
+        caller sees a shorter list and the untracked id is simply not
+        part of the diff.
+        """
+        pl = self._find_playlist(name)
+        if pl is None:
+            raise RuntimeError(f"rekordbox: playlist {name!r} not found")
+        songs = list(getattr(pl, "Songs", []) or [])
+        songs.sort(key=lambda s: (getattr(s, "TrackNo", 0) or 0))
+        members: list[str] = []
+        for s in songs:
+            content_id = getattr(s, "ContentID", None)
+            if content_id is None:
+                continue
+            sid = _resolve_stable_id_for_rb(self.state_conn, str(content_id))
+            if sid is not None:
+                members.append(sid)
+        return members
+
 
 def build_rb_writer(
     db_factory: Callable[[], Any] | None = None,
@@ -253,5 +290,6 @@ __all__ = [
     "_backup_rb_db",
     "_rekordbox_running",
     "_resolve_rb_id",
+    "_resolve_stable_id_for_rb",
     "build_rb_writer",
 ]

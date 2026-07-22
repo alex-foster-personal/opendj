@@ -19,6 +19,7 @@
 	<a href="/">&larr; back</a>
 	<h2>{detail.name}</h2>
 	<p style="color: var(--muted);">Review the current playlist and preview a PLAY IT reorder before applying it.</p>
+	<p><a href={`/playlist/${detail.playlist_id}/writeback`}>Write back to rekordbox / djay &rarr;</a></p>
 	{#if playlistId}
 		<PlayItPanel playlistId={playlistId} />
 	{/if}
