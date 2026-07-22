@@ -82,6 +82,8 @@ export interface BrowserRow {
 	/** Flipped true by the IntersectionObserver on first visibility -
 	 * gates the one-time canvas draw (SPIKE-A2). */
 	revealed: boolean;
+	/** FTS match excerpt, populated only by whole-collection search. */
+	match_context: string | null;
 }
 
 // ---------------------------------------------------------- row provider
@@ -163,6 +165,11 @@ export class PaneStore {
 	truncated = $state(false);
 	/** Scroll cursor: table-wrap scrollTop, restored on pane activation. */
 	scroll_top = $state(0);
+	/** Whole-collection FTS5 search state, independent for every pane. */
+	whole_collection = $state(false);
+	search_results = $state<BrowserRow[]>([]);
+	searching = $state(false);
+	search_total = $state(0);
 
 	/** Monotonic load token - deliberately NOT reactive. */
 	#load_seq = 0;
@@ -221,6 +228,15 @@ export class PaneStore {
 
 	setSearch(next: string): void {
 		this.search = next;
+	}
+
+	setWholeCollection(next: boolean): void {
+		this.whole_collection = next;
+		if (!next) {
+			this.search_results = [];
+			this.search_total = 0;
+			this.searching = false;
+		}
 	}
 
 	rememberScroll(top: number): void {

@@ -20,11 +20,13 @@
 		listPlaylistsHydrated,
 		listTracksHydrated,
 		patchTrack,
+		searchCollection,
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import type {
 		PlaylistSummaryHydrated,
 		PlaylistTrackRowWire,
+		SearchHitWire,
 		TrackListItemWire,
 		Vocals
 	} from '$lib/rb/api-rb';
@@ -43,6 +45,7 @@
 	import {
 		createPaneStore,
 		makeClientRowProvider,
+		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
 	import type { BrowserRow, PaneStore, SortKey } from './browser/pane-contract.svelte';
@@ -57,6 +60,7 @@
 	// specific (hardcoded columns + route navigation), so panes cap at 500
 	// rows with an explicit truncation note (PARITY-TODO).
 	const MAX_ROWS = 500;
+	const MAX_SEARCH_ROWS = 200;
 	const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 
 	// Pane state lives in the typed contract (pane-contract.svelte.ts):
@@ -143,16 +147,25 @@
 			})
 		)
 	);
-	const visibleRows = $derived(visibleRowsOf(pane, uiPrefs.hide_broken_links));
+	const wholeCollectionActive = $derived(pane.whole_collection && pane.search.trim() !== '');
+	const visibleRows = $derived(
+		wholeCollectionActive
+			? sortRows(pane.search_results, pane.sort_key, pane.sort_dir)
+			: visibleRowsOf(pane, uiPrefs.hide_broken_links)
+	);
 	// Read contract handed to TrackTable (getters stay reactive through
 	// visibleRows/pane). The virtualization lane replaces THIS provider,
 	// not TrackTable's props.
 	const provider = makeClientRowProvider(
 		() => visibleRows,
-		() => pane.truncated
+		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
 	);
 	const emptyMessage = $derived.by((): string | null => {
-		if (pane.loading) return 'loading...';
+		if (wholeCollectionActive) {
+			if (pane.searching) return 'searching whole collection...';
+			else if (visibleRows.length === 0) return 'no tracks match the search';
+			else return null;
+		} else if (pane.loading) return 'loading...';
 		else if (pane.error !== null) return `load failed: ${pane.error}`;
 		else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
@@ -308,8 +321,13 @@
 			is_streaming: wire.is_streaming,
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
 			rb_meta: null,
-			revealed: false
+			revealed: false,
+			match_context: null
 		};
+	}
+
+	function _rowFromSearchHit(wire: SearchHitWire, order: number): BrowserRow {
+		return { ..._rowFromPlaylistWire(wire, order), match_context: wire.match_context };
 	}
 
 	function _rowFromListWire(track: TrackListItemWire, order: number): BrowserRow {
@@ -335,7 +353,8 @@
 			is_streaming: null,
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
 			rb_meta: null,
-			revealed: false
+			revealed: false,
+			match_context: null
 		};
 	}
 
@@ -465,6 +484,47 @@
 
 	function setSearch(next: string): void {
 		panes[activePane].setSearch(next);
+		if (!panes[activePane].whole_collection) return;
+		const paneIndex = activePane;
+		clearTimeout(_searchDebounce[paneIndex]);
+		_searchDebounce[paneIndex] = setTimeout(
+			() => void _searchWholeCollection(panes[paneIndex], next),
+			SEARCH_DEBOUNCE_MS
+		);
+	}
+
+	const _searchDebounce: Record<number, ReturnType<typeof setTimeout>> = {};
+	const SEARCH_DEBOUNCE_MS = 250;
+
+	function setWholeCollection(next: boolean): void {
+		const active = panes[activePane];
+		active.setWholeCollection(next);
+		if (next) void _searchWholeCollection(active, active.search);
+	}
+
+	async function _searchWholeCollection(active: PaneStore, query: string): Promise<void> {
+		const trimmed = query.trim();
+		if (trimmed === '') {
+			active.search_results = [];
+			active.search_total = 0;
+			active.searching = false;
+			return;
+		}
+		active.searching = true;
+		try {
+			const results = await searchCollection({ q: trimmed, limit: MAX_SEARCH_ROWS });
+			if (!active.whole_collection || active.search.trim() !== trimmed) return;
+			active.search_results = results.items.map((hit, index) => _rowFromSearchHit(hit, index + 1));
+			active.search_total = results.total;
+		} catch (exc) {
+			if (active.whole_collection && active.search.trim() === trimmed) {
+				active.search_results = [];
+				active.search_total = 0;
+				pushToast(`search failed: ${String(exc)}`, 'error');
+			}
+		} finally {
+			if (active.search.trim() === trimmed) active.searching = false;
+		}
 	}
 </script>
 
@@ -558,6 +618,17 @@
 						onchange={(e) => setHideBrokenLinks(e.currentTarget.checked)}
 					/>
 					<span>Hide broken links</span>
+				</label>
+				<label
+					class="whole-collection"
+					title="Search the whole collection with server-side FTS5 instead of only this pane"
+				>
+					<input
+						type="checkbox"
+						checked={pane.whole_collection}
+						onchange={(event) => setWholeCollection(event.currentTarget.checked)}
+					/>
+					<span>Whole collection</span>
 				</label>
 				<SearchBox value={pane.search} oninput={setSearch} />
 			</div>
@@ -664,6 +735,25 @@
 		color: var(--rb-text);
 	}
 	.hide-broken input {
+		width: 10px;
+		height: 10px;
+		margin: 0;
+		accent-color: var(--rb-accent);
+		cursor: pointer;
+	}
+	.whole-collection {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.whole-collection:hover {
+		color: var(--rb-text);
+	}
+	.whole-collection input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
