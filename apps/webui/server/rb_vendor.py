@@ -42,8 +42,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import sqlite3
 import struct
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -925,6 +927,38 @@ def _load_cached_payload(
     return None
 
 
+def _store_cached_payload(
+    stable_id: str, anlz_mtime: float, points: int, payload: dict[str, Any]
+) -> None:
+    """Persist a cache entry atomically through a unique sibling tempfile.
+
+    A crash mid-write must never leave a truncated {stable_id}.json behind:
+    the entry lands in a unique sibling tempfile first and only ``os.replace``
+    publishes it, so concurrent readers and writers see a complete entry.
+    """
+    ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _cache_path(stable_id)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        tmp.write_text(
+            json.dumps({
+                "schema": ANLZ_CACHE_SCHEMA,
+                "anlz_mtime": anlz_mtime,
+                "points": points,
+                "payload": payload,
+            }),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     """Parse ANLZ + djmdCue into the COMPONENT-MAP 2.3 JSON, with file cache.
 
@@ -972,16 +1006,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         "vocals": vocals_payload(twoex_path),
     }
 
-    ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    _cache_path(content.stable_id).write_text(
-        json.dumps({
-            "schema": ANLZ_CACHE_SCHEMA,
-            "anlz_mtime": anlz_mtime,
-            "points": points,
-            "payload": payload,
-        }),
-        encoding="utf-8",
-    )
+    _store_cached_payload(content.stable_id, anlz_mtime, points, payload)
     payload["cues"] = fetch_cues(content.vendor_id)
     return payload
 
