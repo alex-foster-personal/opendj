@@ -24,18 +24,22 @@
 			editing. Choose how to resolve:
 		</p>
 		<table>
-			<tr>
-				<th></th>
-				<th>Yours</th>
-				<th>Server</th>
-			</tr>
-			{#each Object.keys(mine) as key}
+			<thead>
 				<tr>
-					<td>{key}</td>
-					<td>{JSON.stringify(mine[key as keyof Track])}</td>
-					<td>{JSON.stringify(current[key as keyof Track])}</td>
+					<th></th>
+					<th>Yours</th>
+					<th>Server</th>
 				</tr>
-			{/each}
+			</thead>
+			<tbody>
+				{#each Object.keys(mine) as key}
+					<tr>
+						<td>{key}</td>
+						<td>{JSON.stringify(mine[key as keyof Track])}</td>
+						<td>{JSON.stringify(current[key as keyof Track])}</td>
+					</tr>
+				{/each}
+			</tbody>
 		</table>
 		<div class="actions">
 			<button onclick={ontake_theirs}>Take theirs</button>

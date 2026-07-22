@@ -6,7 +6,9 @@
  * `src/lib/api-types.ts` for strict usage.
  */
 
-const BASE = typeof window === 'undefined' ? 'http://127.0.0.1:8585' : '';
+const DEFAULT_BASE = typeof window === 'undefined' ? 'http://127.0.0.1:8585' : '';
+const ENV_BASE = import.meta.env.VITE_API_BASE as string | undefined;
+export const API_BASE = ENV_BASE ?? DEFAULT_BASE;
 
 export interface Track {
 	stable_id: string;
@@ -35,9 +37,12 @@ export interface PlaylistSummary {
 	vendor: string;
 	track_count: number;
 	updated_at: string;
+	/** Rekordbox custom tree position (flattened ParentID/Seq walk);
+	 * null for non-rekordbox playlists - never invent an order for those. */
+	seq: number | null;
 }
 
-export interface PlaylistDetail extends Omit<PlaylistSummary, 'track_count'> {
+export interface PlaylistDetail extends Omit<PlaylistSummary, 'track_count' | 'seq'> {
 	items: string[];
 	diff: {
 		rb_only: string[];
@@ -85,7 +90,7 @@ export class ConflictError extends Error {
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
-	return fetch(`${BASE}${path}`, {
+	return fetch(`${API_BASE}${path}`, {
 		...init,
 		headers: {
 			Accept: 'application/json',

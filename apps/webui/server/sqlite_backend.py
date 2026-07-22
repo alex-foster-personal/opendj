@@ -30,12 +30,12 @@ import threading
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, Sequence
 
 from apps.shared.state import db as _state_db
 
 from .backend import (
-    BackendError, ConflictError, InMemoryBackend, MAX_LIMIT, NotFoundError,
+    InMemoryBackend, MAX_LIMIT, NotFoundError,
     Page, Pairing, Playlist, Provenance, QueueItem, QueueKind, Source,
     StateBackend, Track, TrackFilter,
 )
@@ -311,6 +311,39 @@ class SqliteBackend:
             fields_map = _fetch_fields(conn, [stable_id])
         return _row_to_track(row, fields_map.get(stable_id, {}))
 
+    def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]:
+        """Chunked bulk fetch; missing ids are absent from the result.
+
+        One IN(...) pass over ``tracks`` plus the shared ``_fetch_fields``
+        EAV pass -- powers playlist-row hydration without a per-member
+        query fan-out.
+        """
+        ids = list(dict.fromkeys(stable_ids))
+        if not ids:
+            return {}
+        with self._ro() as conn:
+            if not self._table_exists(conn, "tracks"):
+                _warn_fallback_once("get_tracks_bulk", "no tracks table")
+                return self._fallback.get_tracks_bulk(ids)
+            rows: list[sqlite3.Row] = []
+            chunk = 500
+            for i in range(0, len(ids), chunk):
+                sub = ids[i : i + chunk]
+                placeholders = ",".join("?" * len(sub))
+                rows.extend(
+                    conn.execute(
+                        "SELECT stable_id, title, artists_json, album, "
+                        "       duration_ms, file_path, created_at, updated_at "
+                        f"FROM tracks WHERE stable_id IN ({placeholders})",
+                        tuple(sub),
+                    )
+                )
+            fields_map = _fetch_fields(conn, [r["stable_id"] for r in rows])
+        return {
+            r["stable_id"]: _row_to_track(r, fields_map.get(r["stable_id"], {}))
+            for r in rows
+        }
+
     def list_playlists(self) -> list[Playlist]:
         with self._ro() as conn:
             if not self._table_exists(conn, "playlists"):
@@ -318,7 +351,8 @@ class SqliteBackend:
                 return self._fallback.list_playlists()
             rows = list(
                 conn.execute(
-                    "SELECT playlist_id, name, vendor, created_at, updated_at "
+                    "SELECT playlist_id, name, vendor, vendor_pl_id, "
+                    "       created_at, updated_at "
                     "FROM playlists ORDER BY playlist_id"
                 )
             )
@@ -334,7 +368,8 @@ class SqliteBackend:
         return [
             Playlist(
                 playlist_id=r["playlist_id"], name=r["name"],
-                vendor=r["vendor"], items=members.get(r["playlist_id"], []),
+                vendor=r["vendor"], vendor_pl_id=r["vendor_pl_id"],
+                items=members.get(r["playlist_id"], []),
                 created_at=r["created_at"], updated_at=r["updated_at"],
             )
             for r in rows
@@ -346,7 +381,8 @@ class SqliteBackend:
                 _warn_fallback_once("get_playlist", "no playlists table")
                 return self._fallback.get_playlist(playlist_id)
             row = conn.execute(
-                "SELECT playlist_id, name, vendor, created_at, updated_at "
+                "SELECT playlist_id, name, vendor, vendor_pl_id, "
+                "       created_at, updated_at "
                 "FROM playlists WHERE playlist_id = ?",
                 (playlist_id,),
             ).fetchone()
@@ -363,7 +399,7 @@ class SqliteBackend:
                 ]
         return Playlist(
             playlist_id=row["playlist_id"], name=row["name"],
-            vendor=row["vendor"], items=items,
+            vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 

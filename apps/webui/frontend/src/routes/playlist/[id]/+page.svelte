@@ -6,7 +6,9 @@
 	let detail = $state<PlaylistDetail | null>(null);
 
 	onMount(async () => {
-		detail = await getPlaylist($page.params.id);
+		const id = $page.params.id;
+		if (id === undefined) throw new Error('playlist route param "id" missing');
+		detail = await getPlaylist(id);
 	});
 </script>
 

@@ -27,7 +27,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field, asdict, replace
 from datetime import datetime, timezone
-from typing import Any, Iterable, Literal, Protocol
+from typing import Any, Literal, Protocol, Sequence
 
 # --- data models (dict-shaped; pydantic is a view layer) -----------------
 
@@ -87,6 +87,9 @@ class Playlist:
     playlist_id: str
     name: str
     vendor: str = "unknown"
+    # Vendor-side playlist id (e.g. rekordbox djmdPlaylist.ID); None when the
+    # backing store predates the column or the vendor has no such id.
+    vendor_pl_id: str | None = None
     items: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
@@ -151,6 +154,7 @@ class StateBackend(Protocol):
     """Narrow surface the web UI needs from the state layer."""
     def list_tracks(self, flt: TrackFilter) -> Page: ...
     def get_track(self, stable_id: str) -> Track: ...
+    def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
@@ -240,6 +244,16 @@ class InMemoryBackend:
         if track is None:
             raise NotFoundError(f"track not found: {stable_id}")
         return track
+
+    def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]:
+        """Found tracks keyed by stable_id; missing ids are simply absent
+        (callers decide whether absence is an error -- playlist hydration
+        treats a dangling membership as a loud failure)."""
+        with self._mutex:
+            return {
+                sid: self._tracks[sid]
+                for sid in stable_ids if sid in self._tracks
+            }
 
     def list_playlists(self) -> list[Playlist]:
         with self._mutex:

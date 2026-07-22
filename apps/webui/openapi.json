@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "CommitIn": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "sha": {
+            "title": "Sha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha",
+          "note"
+        ],
+        "title": "CommitIn",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -172,6 +191,100 @@
         "title": "HealthSyncthing",
         "type": "object"
       },
+      "NodePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "commits_append": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CommitIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commits Append"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "missing",
+                  "spiked",
+                  "building",
+                  "partial",
+                  "working",
+                  "verified"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tests_append": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tests Append"
+          },
+          "verified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerifiedIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "NodePatch",
+        "type": "object"
+      },
+      "NodePatchOut": {
+        "properties": {
+          "meta_updated": {
+            "title": "Meta Updated",
+            "type": "string"
+          },
+          "node": {
+            "additionalProperties": true,
+            "title": "Node",
+            "type": "object"
+          }
+        },
+        "required": [
+          "node",
+          "meta_updated"
+        ],
+        "title": "NodePatchOut",
+        "type": "object"
+      },
       "PairingCreate": {
         "properties": {
           "direction": {
@@ -304,6 +417,13 @@
             "title": "Playlist Id",
             "type": "string"
           },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRowOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
           "vendor": {
             "title": "Vendor",
             "type": "string"
@@ -314,6 +434,7 @@
           "name",
           "vendor",
           "items",
+          "tracks",
           "diff"
         ],
         "title": "PlaylistDetail",
@@ -360,6 +481,10 @@
       },
       "PlaylistSummary": {
         "properties": {
+          "available_count": {
+            "title": "Available Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -367,6 +492,17 @@
           "playlist_id": {
             "title": "Playlist Id",
             "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seq"
           },
           "track_count": {
             "title": "Track Count",
@@ -386,6 +522,7 @@
           "name",
           "vendor",
           "track_count",
+          "available_count",
           "updated_at"
         ],
         "title": "PlaylistSummary",
@@ -473,6 +610,282 @@
           "items"
         ],
         "title": "QueueOut",
+        "type": "object"
+      },
+      "RbMetaOut": {
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).",
+        "properties": {
+          "analysis_available": {
+            "title": "Analysis Available",
+            "type": "boolean"
+          },
+          "artwork_available": {
+            "title": "Artwork Available",
+            "type": "boolean"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "cue_count": {
+            "title": "Cue Count",
+            "type": "integer"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "folder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Path"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_id": {
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "vendor",
+          "vendor_id",
+          "folder_path",
+          "file_exists",
+          "is_streaming",
+          "genre",
+          "comment",
+          "duration_s",
+          "artwork_available",
+          "analysis_available",
+          "cue_count"
+        ],
+        "title": "RbMetaOut",
+        "type": "object"
+      },
+      "TrackListItemOut": {
+        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "preview_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview B64"
+          },
+          "preview_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Max"
+          },
+          "provenance": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProvenanceOut"
+            },
+            "default": {},
+            "title": "Provenance",
+            "type": "object"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "created_at",
+          "updated_at",
+          "preview_b64",
+          "preview_max",
+          "file_exists"
+        ],
+        "title": "TrackListItemOut",
         "type": "object"
       },
       "TrackOut": {
@@ -680,11 +1093,160 @@
         "title": "TrackPatch",
         "type": "object"
       },
+      "TrackRowOut": {
+        "description": "Hydrated playlist track row (shared API contract item 4).\n\nReturned by playlist detail in membership order so the browser table\nrenders without the old 29x per-row GET fan-out. ``etag`` is the same\nquoted sha1 the single-track endpoints emit (etag.py conventions), so\na row can be PATCHed directly with If-Match.",
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "preview_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview B64"
+          },
+          "preview_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Max"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "key",
+          "bpm",
+          "rating",
+          "duration_ms",
+          "genre",
+          "comments",
+          "etag",
+          "preview_b64",
+          "preview_max",
+          "file_exists",
+          "is_streaming"
+        ],
+        "title": "TrackRowOut",
+        "type": "object"
+      },
       "TracksPage": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/TrackOut"
+              "$ref": "#/components/schemas/TrackListItemOut"
             },
             "title": "Items",
             "type": "array"
@@ -745,6 +1307,25 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VerifiedIn": {
+        "additionalProperties": false,
+        "properties": {
+          "by": {
+            "title": "By",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "by",
+          "method"
+        ],
+        "title": "VerifiedIn",
         "type": "object"
       }
     }
@@ -989,6 +1570,23 @@
               "title": "Playlist Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Filter the hydrated `tracks` rows on file_exists disk truth (FR-1 agent parity). `items` always stays the full membership.",
+            "in": "query",
+            "name": "available",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Filter the hydrated `tracks` rows on file_exists disk truth (FR-1 agent parity). `items` always stays the full membership.",
+              "enum": [
+                "all",
+                "true",
+                "false"
+              ],
+              "title": "Available",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1016,6 +1614,156 @@
         "summary": "Get Playlist",
         "tags": [
           "playlists"
+        ]
+      }
+    },
+    "/api/v1/progress": {
+      "get": {
+        "description": "Full parsed tree + ledger-file git provenance + per-area rollups.",
+        "operationId": "get_progress_api_v1_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Progress Api V1 Progress Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Progress",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/v1/progress/nodes/{node_id}": {
+      "patch": {
+        "description": "Guarded partial update of one node; atomic YAML rewrite, no git commit.",
+        "operationId": "patch_progress_node_api_v1_progress_nodes__node_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodePatchOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "If-Match is stale; refresh the ledger before retrying",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match header is required for every progress write"
+          },
+          "503": {
+            "description": "Writes are disabled because the cloud lock is unavailable or held by a peer"
+          }
+        },
+        "summary": "Patch Progress Node",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/api/v1/progress/schema": {
+      "get": {
+        "description": "Agent-discoverable node schema, allowed statuses, and PATCH rules.",
+        "operationId": "get_progress_schema_api_v1_progress_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Progress Schema Api V1 Progress Schema Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Progress Schema",
+        "tags": [
+          "progress"
         ]
       }
     },
@@ -1161,6 +1909,23 @@
                 }
               ],
               "title": "Tag"
+            }
+          },
+          {
+            "description": "Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set.",
+            "in": "query",
+            "name": "available",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set.",
+              "enum": [
+                "all",
+                "true",
+                "false"
+              ],
+              "title": "Available",
+              "type": "string"
             }
           },
           {
@@ -1325,6 +2090,193 @@
         "summary": "Patch Track",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/anlz": {
+      "get": {
+        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.",
+        "operationId": "get_track_anlz_api_v1_tracks__stable_id__anlz_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max length of each waveform band array after downsampling",
+            "in": "query",
+            "name": "points",
+            "required": false,
+            "schema": {
+              "default": 2400,
+              "description": "Max length of each waveform band array after downsampling",
+              "maximum": 2400,
+              "minimum": 100,
+              "title": "Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Anlz",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/artwork": {
+      "get": {
+        "description": "Serve the rekordbox artwork jpg at the requested size variant.",
+        "operationId": "get_track_artwork_api_v1_tracks__stable_id__artwork_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "s=80x80 browser rows, m=240x240 deck thumbs, orig",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "s",
+              "description": "s=80x80 browser rows, m=240x240 deck thumbs, orig",
+              "enum": [
+                "s",
+                "m",
+                "orig"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Artwork",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/audio": {
+      "get": {
+        "description": "Stream the local audio file. FileResponse handles Range/206 natively.",
+        "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Audio",
+        "tags": [
+          "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/rb-meta": {
+      "get": {
+        "description": "Rekordbox vendor fields + file-existence flags for browser rows.",
+        "operationId": "get_track_rb_meta_api_v1_tracks__stable_id__rb_meta_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RbMetaOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Rb Meta",
+        "tags": [
+          "rb-assets"
         ]
       }
     }

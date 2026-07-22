@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { createPairing, deletePairing, listPairings, type Pairing } from '$lib/api';
-	import { pushToast } from '$lib/stores';
+	import { pushToast } from '$lib/stores.svelte';
 
 	let pairings = $state<Pairing[]>([]);
 	let source = $state('');

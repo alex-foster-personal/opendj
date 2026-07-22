@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { listTracks, type Track } from '$lib/api';
 	import VirtualTable from '$lib/components/VirtualTable.svelte';
-	import { pushToast } from '$lib/stores';
+	import { pushToast } from '$lib/stores.svelte';
 
 	let tracks = $state<Track[]>([]);
 	let nextCursor = $state<string | null>(null);

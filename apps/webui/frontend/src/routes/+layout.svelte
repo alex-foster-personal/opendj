@@ -1,10 +1,17 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { health, refreshHealth, toasts } from '$lib/stores';
+	import { page } from '$app/stores';
+	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
+	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 
 	let { children } = $props();
+
+	// /performance is a pixel-faithful full-window rekordbox clone; it must
+	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
+	// option (a). Toasts stay global as the app-wide error surface.
+	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	onMount(() => {
 		refreshHealth();
@@ -17,6 +24,9 @@
 	<BannerWarning message={health.bindWarning} />
 {/if}
 
+{#if isPerformance}
+	{@render children()}
+{:else}
 <div class="app-shell">
 	<aside class="sidebar">
 		<h1>music-dj-tools</h1>
@@ -24,6 +34,8 @@
 			<a href="/">Library</a>
 			<a href="/pairings">Pairings</a>
 			<a href="/queues">Queues</a>
+			<a href="/performance">Performance</a>
+			<a href="/progress-tree">Progress</a>
 		</nav>
 	</aside>
 	<main>
@@ -45,6 +57,7 @@
 		</div>
 	</main>
 </div>
+{/if}
 
 <div class="toast-stack">
 	{#each toasts as toast (toast.id)}

@@ -15,6 +15,9 @@ from typing import Any, Callable, Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
@@ -22,7 +25,9 @@ from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import health as health_routes
 from .routes import pairings as pairings_routes
 from .routes import playlists as playlists_routes
+from .routes import progress as progress_routes
 from .routes import queues as queues_routes
+from .routes import rb_assets as rb_assets_routes
 from .routes import tracks as tracks_routes
 
 log = logging.getLogger(__name__)
@@ -30,6 +35,24 @@ log = logging.getLogger(__name__)
 FRONTEND_BUILD_DIR: Path = (
     Path(__file__).resolve().parent.parent / "frontend" / "build"
 )
+
+
+class _SpaStaticFiles(StaticFiles):
+    """Serve the SPA shell for extensionless client-side routes."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or not self._is_client_route(path):
+                raise
+            return await super().get_response("index.html", scope)
+
+    @staticmethod
+    def _is_client_route(path: str) -> bool:
+        normalized_path = path.lstrip("/")
+        is_api_path = normalized_path == "api" or normalized_path.startswith("api/")
+        return not is_api_path and not Path(normalized_path).suffix
 
 
 def create_app(
@@ -76,7 +99,14 @@ def create_app(
         # See apps/webui/README.md -> "CORS policy" for rationale.
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            allow_origins=[
+                "http://localhost:5173", "http://127.0.0.1:5173",
+                # Isolated e2e verify stacks (loopback-only, see
+                # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
+                # talks to daemons :8686/:8688 via VITE_API_BASE.
+                "http://localhost:5273", "http://127.0.0.1:5273",
+                "http://localhost:5275", "http://127.0.0.1:5275",
+            ],
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -98,10 +128,12 @@ def create_app(
     app.include_router(playlists_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
+    app.include_router(rb_assets_routes.router, prefix=api_prefix)
+    app.include_router(progress_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):
-        app.mount("/", StaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True),
+        app.mount("/", _SpaStaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True),
                   name="spa")
     else:
         @app.get("/", include_in_schema=False)
