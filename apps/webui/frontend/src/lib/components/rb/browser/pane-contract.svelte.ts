@@ -265,6 +265,19 @@ export function createPaneStore(): PaneStore {
 	return new PaneStore();
 }
 
+/** A membership replacement must be built from the complete playlist. The
+ * browser deliberately caps rendered rows at 500, so a truncated pane must
+ * remain read-only until a full-membership write path exists. */
+export function canMutatePlaylist(
+	pane: Pick<PaneStore, 'playlist_id' | 'etag' | 'truncated' | 'whole_collection'>
+): boolean {
+	return pane.playlist_id !== null
+		&& pane.playlist_id !== 'all'
+		&& pane.etag !== ''
+		&& !pane.truncated
+		&& !pane.whole_collection;
+}
+
 // -------------------------------------------- client search + sort pipeline
 
 /** FR-1 hide-broken filter THEN case-insensitive substring search over

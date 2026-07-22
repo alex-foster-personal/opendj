@@ -15,6 +15,8 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if completeLoad doesn't persist the playlist etag, or beginLoad doesn't
 //   reset it, then the add-remove-reorder-tracks write path CASes against
 //   a stale/wrong playlist -- broken
+// - if a truncated playlist is write-enabled then a full-list replace can
+//   discard unrendered members beyond the browser's fetch cap -- broken
 
 let contract;
 
@@ -79,6 +81,15 @@ test('completeLoad persists the playlist etag; beginLoad resets it for the next 
 	const allTracksSeq = p.beginLoad('all', 'All Tracks');
 	assert.equal(p.completeLoad(allTracksSeq, [_row()], false), true);
 	assert.equal(p.etag, '');
+});
+
+test('canMutatePlaylist rejects blank, all-tracks, unloaded, truncated, and global-search panes', () => {
+	assert.equal(contract.canMutatePlaylist({ playlist_id: null, etag: '"v1"', truncated: false, whole_collection: false }), false);
+	assert.equal(contract.canMutatePlaylist({ playlist_id: 'all', etag: '"v1"', truncated: false, whole_collection: false }), false);
+	assert.equal(contract.canMutatePlaylist({ playlist_id: 'pl-1', etag: '', truncated: false, whole_collection: false }), false);
+	assert.equal(contract.canMutatePlaylist({ playlist_id: 'pl-1', etag: '"v1"', truncated: true, whole_collection: false }), false);
+	assert.equal(contract.canMutatePlaylist({ playlist_id: 'pl-1', etag: '"v1"', truncated: false, whole_collection: true }), false);
+	assert.equal(contract.canMutatePlaylist({ playlist_id: 'pl-1', etag: '"v1"', truncated: false, whole_collection: false }), true);
 });
 
 test('beginLoad resets the pane and completeLoad publishes rows for the current token', () => {

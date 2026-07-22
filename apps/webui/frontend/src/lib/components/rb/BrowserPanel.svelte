@@ -51,6 +51,7 @@
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
 	import {
+		canMutatePlaylist,
 		createPaneStore,
 		makeClientRowProvider,
 		sortRows,
@@ -580,11 +581,13 @@
 	}
 
 	// ------------------------------------- add / remove / reorder (write path)
-	// editable: a real playlist is selected (not All Tracks / blank).
+	// editable: a fully loaded real playlist is selected. Mutating a
+	// truncated pane would replace the server membership with only its first
+	// MAX_ROWS entries, silently dropping the rest.
 	// reorderable narrows further to the pane's natural membership order -
 	// drag-and-drop moves row.order positions, which only lines up with the
 	// visible row order when there is no client sort/search in effect.
-	const editablePane = $derived(pane.playlist_id !== null && pane.playlist_id !== 'all');
+	const editablePane = $derived(source === 'collection' && canMutatePlaylist(pane));
 	const reorderablePane = $derived(
 		editablePane && pane.sort_key === null && pane.search.trim() === ''
 	);
@@ -593,6 +596,14 @@
 		const p = pane;
 		const id = p.playlist_id;
 		if (id === null || id === 'all') return;
+		if (source !== 'collection' || p.whole_collection) {
+			pushToast('membership editing is disabled outside the complete playlist view', 'error');
+			return;
+		}
+		if (p.truncated) {
+			pushToast('playlist is truncated - membership editing is disabled to preserve unrendered tracks', 'error');
+			return;
+		}
 		if (p.etag === '') {
 			pushToast('playlist still loading - try again in a moment', 'error');
 			return;
