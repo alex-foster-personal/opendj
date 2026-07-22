@@ -75,13 +75,23 @@ export interface CursorPage<T> {
 /** Walk a cursor-paginated endpoint to exhaustion, concatenating every
  * page's items in order. maxPages is a runaway-loop safety ceiling (a
  * backend that never returns next_cursor: null is a real bug to surface
- * loudly, not silently truncate) - default generous enough for any real
- * library (500/page * 200 = 100000 rows). */
+ * loudly, not silently truncate) - NOT a library-size cap, and must not
+ * become one: the backend's cursor is a "maybe more" heuristic (it hands
+ * back a non-null cursor whenever a page comes back full, whether or not
+ * a next page actually has rows - apps/webui/server/backend.py's
+ * `next_cursor = page[-1].stable_id if len(page) == limit else None`), so
+ * ANY library whose size is an exact multiple of the page size needs one
+ * extra confirming empty-page fetch before next_cursor goes null. A low
+ * ceiling turns that ordinary case into a false "pagination bug" failure
+ * for a real, if large, library - default is generous enough that no
+ * plausible real library reaches it (500/page * 20000 = 10,000,000 rows)
+ * while still being finite so a truly broken backend (cursor never
+ * advancing) fails loudly instead of looping forever. */
 export async function fetchAllPages<T>(
 	fetchPage: (cursor: string | undefined) => Promise<CursorPage<T>>,
 	opts: { maxPages?: number } = {}
 ): Promise<T[]> {
-	const maxPages = opts.maxPages ?? 200;
+	const maxPages = opts.maxPages ?? 20000;
 	const out: T[] = [];
 	let cursor: string | undefined;
 	let pages = 0;

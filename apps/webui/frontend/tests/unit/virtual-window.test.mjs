@@ -174,3 +174,27 @@ test('fetchAllPages: exceeding the safety ceiling fails loudly instead of trunca
 		/exceeded 3 pages/
 	);
 });
+
+test('fetchAllPages: a real library exactly N * pageSize long does not falsely trip the ceiling', async () => {
+	// Regression: the backend hands back a non-null next_cursor whenever a
+	// page comes back FULL (a 'maybe more' heuristic, not proof more rows
+	// exist - see apps/webui/server/backend.py). A library whose size is an
+	// exact multiple of the page size therefore needs one extra confirming
+	// empty page before next_cursor goes null - the default ceiling must
+	// tolerate that for any plausible real library, using the DEFAULT
+	// maxPages (no override), at a page count well past the old 200-page
+	// ceiling this regresses against.
+	const PAGE_SIZE = 500;
+	const FULL_PAGES = 250; // 125,000 rows - past the old 100k-row ceiling
+	let pagesServed = 0;
+	const rows = await mod.fetchAllPages(async () => {
+		pagesServed += 1;
+		if (pagesServed <= FULL_PAGES) {
+			const items = new Array(PAGE_SIZE).fill(0).map((_, i) => pagesServed * 1000 + i);
+			return _page(items, `cursor-${pagesServed}`); // full page - cursor non-null
+		}
+		return _page([], null); // confirming empty page - exhausted
+	});
+	assert.equal(rows.length, FULL_PAGES * PAGE_SIZE);
+	assert.equal(pagesServed, FULL_PAGES + 1);
+});
