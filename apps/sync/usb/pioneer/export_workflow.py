@@ -542,25 +542,22 @@ def _verify_database(
 
 def _rename_exclusive(source: Path, destination: Path) -> None:
     """Rename without replacing an existing destination."""
-    if sys.platform == "darwin":
-        renamex_np = ctypes.CDLL(None, use_errno=True).renamex_np
-        renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        renamex_np.restype = ctypes.c_int
-        result = renamex_np(
-            os.fsencode(source),
-            os.fsencode(destination),
-            0x00000004,  # RENAME_EXCL from macOS sys/stdio.h.
-        )
-        if result != 0:
-            error_number = ctypes.get_errno()
-            raise OSError(error_number, os.strerror(error_number), str(destination))
-    elif os.name == "nt":
-        os.rename(source, destination)
-    else:
+    if sys.platform != "darwin":
         raise UsbExportError(
             "platform_unsupported",
             "exclusive USB promotion is implemented for macOS only",
         )
+    renamex_np = ctypes.CDLL(None, use_errno=True).renamex_np
+    renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    renamex_np.restype = ctypes.c_int
+    result = renamex_np(
+        os.fsencode(source),
+        os.fsencode(destination),
+        0x00000004,  # RENAME_EXCL from macOS sys/stdio.h.
+    )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number), str(destination))
 
 
 def _cleanup_empty_export_dirs(output_path: Path, target_root: Path) -> None:
