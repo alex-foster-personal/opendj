@@ -11,6 +11,8 @@
 	import type { DeckId } from '$lib/rb/types';
 	import { getDeckState } from './engine-accessor';
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
+	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
+	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
 	import { barsToNextCueLabel } from './wave-math';
 	import { drawWaveRow, readPalette, WAVE_WINDOW_S, type WavePalette } from './render';
 	import {
@@ -43,9 +45,27 @@
 		return entry !== undefined && entry.status === 'error' ? entry.code : null;
 	});
 
+	// ---- beatgrid fallback: only reached once /anlz has confirmed no
+	// rekordbox ANLZ exists (anlz-fallback-beatgrid, LANE analysis-router).
+	// ANLZ always preferred - this never races or overrides a real payload.
+	$effect(() => {
+		const sid = deck.stable_id;
+		if (sid !== null && shouldUseBeatgridFallback(anlzErrorCode)) ensureBeatgridFallback(sid);
+	});
+	const beatgridFallback = $derived.by(() => {
+		if (deck.stable_id === null || !shouldUseBeatgridFallback(anlzErrorCode)) return null;
+		const entry = getBeatgridFallbackEntry(deck.stable_id);
+		return entry !== undefined && entry.status === 'ready' ? entry.data : null;
+	});
+	// What the painter/bars-label actually consume: the real ANLZ payload
+	// when present, else a synthesized beatgrid-only payload, else null.
+	const paintAnlz = $derived(
+		anlzData ?? (beatgridFallback !== null ? toSyntheticAnlzData(beatgridFallback) : null)
+	);
+
 	// Bars until next cue; null (hidden) without a beatgrid or upcoming cue.
 	const barsLabel = $derived(
-		anlzData !== null ? barsToNextCueLabel(anlzData, deck.position_ms) : null
+		paintAnlz !== null ? barsToNextCueLabel(paintAnlz, deck.position_ms) : null
 	);
 
 	// Vocal state tooltip (SPIKE-B1 three mandatory states): bars are
@@ -113,7 +133,7 @@
 			heightCss: cssH,
 			positionMs: deck.position_ms,
 			durationMs: deck.duration_ms,
-			anlz: anlzData,
+			anlz: paintAnlz,
 			palette
 		});
 	}
@@ -135,7 +155,7 @@
 		if (deck.playing || seeking) return;
 		void deck.stable_id;
 		void deck.position_ms;
-		void anlzData;
+		void paintAnlz;
 		void anlzErrorCode;
 		void cssW;
 		void cssH;
@@ -254,9 +274,16 @@
 			onpointercancel={onPointerCancel}
 			onlostpointercapture={onLostPointerCapture}
 		></canvas>
-		{#if deck.stable_id !== null && anlzErrorCode !== null}
+		{#if deck.stable_id !== null && anlzErrorCode !== null && beatgridFallback === null}
 			<span class="anlz-state" title={anlzErrorCode}>
 				{anlzErrorCode === 'ANALYSIS_NOT_FOUND' ? 'NO ANALYSIS' : `ANLZ ERROR ${anlzErrorCode}`}
+			</span>
+		{:else if beatgridFallback !== null}
+			<span
+				class="anlz-state"
+				title="no rekordbox ANLZ - beatgrid from apps.analysis (fallback, never invented)"
+			>
+				BPM {beatgridFallback.bpm.toFixed(1)} (fallback)
 			</span>
 		{/if}
 	</div>
