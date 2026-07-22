@@ -30,6 +30,8 @@ Regression one-liners:
     mapped local path then broken
   - if resolve_share_path (the legacy back-compat alias) raises instead of
     returning a bare Path for an unmapped path then broken
+  - if a /PIONEER audio, artwork, or ANLZ path follows a symlink outside the
+    platform SHARE_ROOT then broken
 """
 from __future__ import annotations
 
@@ -45,13 +47,18 @@ from apps.shared import platform_paths as pp
 from apps.webui.server import rb_vendor
 
 
-def _content(folder_path: str) -> rb_vendor.RbContent:
+def _content(
+    folder_path: str | None = None,
+    *,
+    image_path: str | None = None,
+    analysis_data_path: str | None = None,
+) -> rb_vendor.RbContent:
     return rb_vendor.RbContent(
         stable_id="sid-1",
         vendor_id="vid-1",
         folder_path=folder_path,
-        image_path=None,
-        analysis_data_path=None,
+        image_path=image_path,
+        analysis_data_path=analysis_data_path,
         length_s=None,
         comment=None,
         genre=None,
@@ -176,6 +183,76 @@ def test_audio_file_resolves_pioneer_path_under_platform_share_root(
 
     assert path == audio
     assert media_type == "audio/wav"
+
+
+def test_audio_file_rejects_share_root_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_share_root = tmp_path / "share"
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"not a library asset")
+    audio = fake_share_root / "PIONEER" / "USB" / "track.wav"
+    audio.parent.mkdir(parents=True)
+    try:
+        audio.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this test environment: {exc}")
+    monkeypatch.setattr(pp, "SHARE_ROOT", fake_share_root)
+
+    with pytest.raises(HTTPException) as exc_info:
+        rb_vendor.audio_file(_content("/PIONEER/USB/track.wav"))
+
+    assert exc_info.value.status_code == 404
+    assert "unsafe:share-symlink" in exc_info.value.detail["message"]
+
+
+def test_artwork_file_rejects_derived_share_root_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_share_root = tmp_path / "share"
+    artwork = fake_share_root / "PIONEER" / "USB" / "artwork.jpg"
+    artwork.parent.mkdir(parents=True)
+    artwork.write_bytes(b"safe source image")
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"not artwork")
+    thumbnail = artwork.with_name("artwork_s.jpg")
+    try:
+        thumbnail.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this test environment: {exc}")
+    monkeypatch.setattr(pp, "SHARE_ROOT", fake_share_root)
+
+    with pytest.raises(HTTPException) as exc_info:
+        rb_vendor.artwork_file(
+            _content(image_path="/PIONEER/USB/artwork.jpg"), "s"
+        )
+
+    assert exc_info.value.status_code == 404
+    assert "unsafe:share-symlink" in exc_info.value.detail["message"]
+
+
+def test_analysis_paths_reject_share_root_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_share_root = tmp_path / "share"
+    outside = tmp_path / "outside.DAT"
+    outside.write_bytes(b"not an ANLZ file")
+    analysis = fake_share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
+    analysis.parent.mkdir(parents=True)
+    try:
+        analysis.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this test environment: {exc}")
+    monkeypatch.setattr(pp, "SHARE_ROOT", fake_share_root)
+    analysis_path = "/PIONEER/USB/ANLZ0000.DAT"
+
+    with pytest.raises(HTTPException) as exc_info:
+        rb_vendor.anlz_dir(_content(analysis_data_path=analysis_path))
+
+    assert exc_info.value.status_code == 404
+    assert "unsafe:share-symlink" in exc_info.value.detail["message"]
+    assert rb_vendor.preview_strip(analysis_path) == (None, None)
+    assert rb_vendor.bulk_file_exists([analysis_path]) == {analysis_path: False}
 
 
 def test_audio_file_resolves_via_path_map_entry(
