@@ -46,6 +46,7 @@ __all__ = [
     "fetch_pending_tracks",
     "mark_pending_abandoned",
     "open_state_rw_with_aux",
+    "SUGGESTED_SOURCE_KEYS",
     "VENDOR",
 ]
 
@@ -238,6 +239,10 @@ _SUGGESTED_SOURCES_TEMPLATE: tuple[tuple[str, str], ...] = (
     ("qobuz", "https://www.qobuz.com/us-en/search?q={q}"),
     ("apple_music", "https://music.apple.com/us/search?term={q}"),
     ("discogs", "https://www.discogs.com/search?q={q}&type=release"),
+)
+
+SUGGESTED_SOURCE_KEYS: tuple[str, ...] = tuple(
+    source_name for source_name, _ in _SUGGESTED_SOURCES_TEMPLATE
 )
 
 
