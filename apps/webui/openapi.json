@@ -2500,6 +2500,18 @@
             "title": "Blocked",
             "type": "boolean"
           },
+          "client_action": {
+            "anyOf": [
+              {
+                "const": "browser_search",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Action"
+          },
           "intent": {
             "anyOf": [
               {
@@ -2510,6 +2522,11 @@
               }
             ],
             "title": "Intent"
+          },
+          "probe_only": {
+            "default": true,
+            "title": "Probe Only",
+            "type": "boolean"
           },
           "reason": {
             "anyOf": [
