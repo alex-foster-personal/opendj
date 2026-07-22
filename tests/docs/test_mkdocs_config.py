@@ -108,20 +108,20 @@ def test_docs_workflow_present():
     assert "actions/deploy-pages" in text
 
 
-def test_ci_and_docs_workflows_target_integration_branch():
-    """CI must run for commits and PRs targeting the live integration branch."""
+def test_ci_and_docs_workflows_target_release_and_integration_branches():
+    """CI must cover both release and live integration branch activity."""
     for workflow_name in ("ci.yml", "docs.yml"):
         workflow = REPO_ROOT / ".github" / "workflows" / workflow_name
         text = workflow.read_text(encoding="utf-8")
-        assert text.count("branches: [af--rekordbox-parity-ui]") == 2
+        assert text.count("branches: [master, af--rekordbox-parity-ui]") == 2
 
 
-def test_docs_publish_guards_target_integration_branch():
+def test_docs_publish_guards_target_release_branch_only():
     workflow = REPO_ROOT / ".github" / "workflows" / "docs.yml"
     text = workflow.read_text(encoding="utf-8")
 
-    assert text.count("github.ref == 'refs/heads/af--rekordbox-parity-ui'") == 2
-    assert "github.ref == 'refs/heads/master'" not in text
+    assert text.count("github.ref == 'refs/heads/master'") == 2
+    assert "github.ref == 'refs/heads/af--rekordbox-parity-ui'" not in text
 
 
 @pytest.mark.parametrize(
