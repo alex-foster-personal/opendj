@@ -10,6 +10,18 @@ manual: unmatched tracks land in an "acquisition queue" review sheet
 with deep-link search URLs for Beatport, Bandcamp, Qobuz, Apple Music,
 and Discogs.
 
+## Owned-copy invariant
+
+One Spotify entry may correspond to multiple physical copies in the local
+Music library. Matching chooses the lexicographically smallest stable ID so
+the result is independent of database row order. The imported playlist gets at
+most one hydrated membership, no pending purchase row, and an unchanged
+Spotify snapshot is idempotent on re-import. `Um Um Um Um` is the canonical
+real-library acceptance case for this invariant. Normal Rekordbox ingest
+collapses copies with the same valid ISRC into one state identity; the matcher
+regression also covers schema-permitted duplicate candidates defensively and
+does not model those rows as observed production metadata.
+
 ## One-time setup
 
 1. Create a Spotify developer app: <https://developer.spotify.com/dashboard>.

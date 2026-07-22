@@ -75,6 +75,18 @@ class TestMatchSpotifyTracks:
         res = match_spotify_tracks([src], [tgt])
         assert len(res.matched) == 1
 
+    def test_duplicate_isrc_targets_choose_same_stable_id_in_any_order(self) -> None:
+        src = _sp("um-um-um-um", isrc="GBUMU2600001", name="Um Um Um Um")
+        copy_a = self._local(stable_id="copy-a", isrc="GBUMU2600001")
+        copy_b = self._local(stable_id="copy-b", isrc="GBUMU2600001")
+
+        forward = match_spotify_tracks([src], [copy_a, copy_b])
+        reverse = match_spotify_tracks([src], [copy_b, copy_a])
+
+        assert forward.matched[0].target is copy_a
+        assert reverse.matched[0].target is copy_a
+        assert len(forward.pairs) == len(reverse.pairs) == 1
+
     def test_fuzzy_three_signals_lands_in_review(self) -> None:
         # No ISRC; title + artist + duration fire (0.55) but < 0.70 -> review.
         src = _sp("t1", isrc=None, name="Hello", artists=["Artist X"], duration_ms=180000)
