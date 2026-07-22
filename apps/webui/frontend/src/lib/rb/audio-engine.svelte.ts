@@ -149,6 +149,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		artist: null,
 		bpm: null,
 		key: null,
+		key_shift_semitones: 0,
 		duration_ms: null,
 		position_ms: 0,
 		playing: false,
@@ -527,6 +528,100 @@ export function masterTempoSemitones(tempoRatio: number, enabled: boolean): numb
 		throw new RangeError(`tempo ratio must be a finite positive number, got ${tempoRatio}`);
 	}
 	return enabled ? 0 : 12 * Math.log2(tempoRatio);
+}
+
+/** Parsed, canonical Camelot key. `root` is a chromatic pitch class where C
+ * is 0. Only numbered Camelot notation is accepted, never a guessed musical
+ * key label. */
+export interface CamelotKey {
+	number: number;
+	mode: 'A' | 'B';
+	root: number;
+}
+
+const CAMELOT_ROOTS: Record<CamelotKey['mode'], readonly number[]> = {
+	// 1A = Ab minor through 12A = C# minor.
+	A: [8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1],
+	// 1B = B major through 12B = E major.
+	B: [11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4]
+};
+
+function _pitchClass(semitones: number): number {
+	return ((semitones % 12) + 12) % 12;
+}
+
+/** Return null for non-Camelot metadata so callers can fail explicitly at
+ * their operation boundary rather than inventing a harmonic relationship. */
+export function parseCamelotKey(value: string | null): CamelotKey | null {
+	if (typeof value !== 'string') return null;
+	const match = /^(1[0-2]|[1-9])([ab])$/i.exec(value.trim());
+	if (match === null) return null;
+	const number = Number(match[1]);
+	const mode = match[2].toUpperCase() as CamelotKey['mode'];
+	return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
+}
+
+function _assertKeyShift(semitones: number): asserts semitones is number {
+	if (!Number.isInteger(semitones)) {
+		throw new TypeError(`key shift must be an integer number of semitones, got ${semitones}`);
+	}
+	if (semitones < -12 || semitones > 12) {
+		throw new RangeError(`key shift must be within -12..12 semitones, got ${semitones}`);
+	}
+}
+
+function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
+	_assertKeyShift(semitones);
+	const root = _pitchClass(key.root + semitones);
+	const number = CAMELOT_ROOTS[key.mode].indexOf(root) + 1;
+	if (number === 0) throw new Error(`Camelot ${key.mode} root ${root} cannot be represented`);
+	return { number, mode: key.mode, root };
+}
+
+/** Harmonic policy: keys are compatible when they are identical, immediate
+ * neighbours on the same Camelot wheel, or matching-number relative A/B
+ * major/minor. Key Sync enumerates -12..+12 by absolute magnitude and chooses
+ * the negative member first on a tie, making its shortest result deterministic. */
+function _camelotKeysAreCompatible(deck: CamelotKey, master: CamelotKey): boolean {
+	if (deck.mode !== master.mode) return deck.number === master.number;
+	const distance = Math.abs(deck.number - master.number);
+	return distance === 0 || distance === 1 || distance === 11;
+}
+
+/** Calculate the deterministic transposition that makes a deck harmonically
+ * compatible with its master. The master shift is included because listeners
+ * hear the master after its existing DSP shift, not its source metadata. */
+export function deriveKeySyncSemitones(
+	deckKey: string | null,
+	masterKey: string | null,
+	masterKeyShiftSemitones = 0
+): number {
+	const deck = parseCamelotKey(deckKey);
+	const master = parseCamelotKey(masterKey);
+	if (deck === null) throw new Error('KEY SYNC requires a parseable Camelot key on the deck');
+	if (master === null) throw new Error('KEY SYNC requires a parseable Camelot key on the master');
+	_assertKeyShift(masterKeyShiftSemitones);
+	const shiftedMaster = _shiftCamelotKey(master, masterKeyShiftSemitones);
+	for (let magnitude = 0; magnitude <= 12; magnitude += 1) {
+		const candidates = magnitude === 0 ? [0] : [-magnitude, magnitude];
+		for (const candidate of candidates) {
+			if (_camelotKeysAreCompatible(_shiftCamelotKey(deck, candidate), shiftedMaster)) {
+				return candidate;
+			}
+		}
+	}
+	throw new Error('KEY SYNC could not derive a harmonic Camelot transposition');
+}
+
+/** Signalsmith receives one native semitone field. Key shift composes additively
+ * with the existing Master Tempo compensation, never by changing transport rate. */
+export function composeStretchSemitones(
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	keyShiftSemitones: number
+): number {
+	_assertKeyShift(keyShiftSemitones);
+	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
 }
 
 export function quantizedPositionMs(
@@ -1351,18 +1446,19 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	if (_masterDeck === deck) _electPlayingMaster();
 }
 
-function _stretchChange(
+export function stretchScheduleChange(
 	inputSec: number,
 	active: boolean,
 	tempoRatio: number,
 	masterTempoEnabled: boolean,
+	keyShiftSemitones: number,
 	loop: LoopState | null
 ): StretchScheduleChange {
 	return {
 		active,
 		input: inputSec,
 		rate: tempoRatio,
-		semitones: masterTempoSemitones(tempoRatio, masterTempoEnabled),
+		semitones: composeStretchSemitones(tempoRatio, masterTempoEnabled, keyShiftSemitones),
 		loopStart: loop !== null && loop.engaged ? loop.in_ms / 1000 : 0,
 		loopEnd: loop !== null && loop.engaged ? loop.out_ms / 1000 : 0
 	};
@@ -1375,7 +1471,8 @@ async function _scheduleDeck(
 	active: boolean,
 	tempoRatio?: number,
 	masterTempoEnabled?: boolean,
-	loop?: LoopState | null
+	loop?: LoopState | null,
+	keyShiftSemitones?: number
 ): Promise<number> {
 	const rt = _rt[deck];
 	const expectedLoadToken = rt.loadToken;
@@ -1399,7 +1496,8 @@ async function _scheduleDeck(
 			active,
 			tempoRatio,
 			masterTempoEnabled,
-			loop
+			loop,
+			keyShiftSemitones
 		);
 	} finally {
 		rt.scheduleIntentCount -= 1;
@@ -1414,7 +1512,8 @@ async function _scheduleDeckSerial(
 	active: boolean,
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined
+	loop: LoopState | null | undefined,
+	keyShiftSemitones: number | undefined
 ): Promise<number> {
 	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
 	_commitPendingIfDue(deck);
@@ -1431,6 +1530,8 @@ async function _scheduleDeckSerial(
 	);
 	const scheduledTempoRatio = tempoRatio ?? st.pitch;
 	const scheduledMasterTempoEnabled = masterTempoEnabled ?? st.master_tempo_enabled;
+	const scheduledKeyShiftSemitones = keyShiftSemitones ?? st.key_shift_semitones;
+	_assertKeyShift(scheduledKeyShiftSemitones);
 	const scheduledLoop = loop === undefined ? st.loop : loop;
 	const requestedInputSec =
 		typeof inputSec === 'function' ? inputSec(effectiveWhen) : inputSec;
@@ -1444,11 +1545,12 @@ async function _scheduleDeckSerial(
 	try {
 		await processor.schedule(
 			effectiveWhen,
-			_stretchChange(
+			stretchScheduleChange(
 				scheduledInputSec,
 				active,
 				scheduledTempoRatio,
 				scheduledMasterTempoEnabled,
+				scheduledKeyShiftSemitones,
 				scheduledLoop
 			)
 		);
@@ -1469,6 +1571,7 @@ async function _scheduleDeckSerial(
 	});
 	st.pitch = scheduledTempoRatio;
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
+	st.key_shift_semitones = scheduledKeyShiftSemitones;
 	st.loop = scheduledLoop === null ? null : { ...scheduledLoop };
 	st.playing = rt.desiredActive;
 	rt.pending = rt.pending.filter((pending) => pending.startContextTime < effectiveWhen);
@@ -1484,6 +1587,29 @@ async function _scheduleDeckSerial(
 	_commitPendingIfDue(deck);
 	_ensureRaf();
 	return scheduledInputSec;
+}
+
+/** Apply a validated key transposition through the same revisioned Signalsmith
+ * schedule path as tempo and Master Tempo. A paused deck stores the next DSP
+ * value; a live deck preserves its presented transport projection. */
+async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promise<void> {
+	const { st } = _requireLoaded(deck, 'set key shift');
+	_assertKeyShift(keyShiftSemitones);
+	if (!st.playing) {
+		st.key_shift_semitones = keyShiftSemitones;
+		return;
+	}
+	if (_ctx === null) throw new Error('set key shift: audio graph not initialised');
+	await _scheduleDeck(
+		deck,
+		_futureScheduleTime(deck),
+		(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+		true,
+		undefined,
+		undefined,
+		undefined,
+		keyShiftSemitones
+	);
 }
 
 function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
@@ -1680,6 +1806,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.artist = null;
 	st.bpm = null;
 	st.key = null;
+	st.key_shift_semitones = 0;
 	st.duration_ms = null;
 	st.position_ms = 0;
 	st.playing = false;
@@ -2422,6 +2549,27 @@ class RbAudioEngine implements AudioEngine {
 			undefined,
 			enabled
 		);
+	}
+
+	async nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void> {
+		if (semitones !== -1 && semitones !== 1) {
+			throw new RangeError(`nudgeKey: semitones must be -1 or 1, got ${semitones}`);
+		}
+		const { st } = _requireLoaded(deck, 'nudgeKey');
+		await _setDeckKeyShift(deck, st.key_shift_semitones + semitones);
+	}
+
+	async syncKey(deck: DeckId): Promise<void> {
+		const { st } = _requireLoaded(deck, 'syncKey');
+		const masterDeck = _masterDeck;
+		if (masterDeck === null) throw new Error('KEY SYNC requires an elected loaded master deck');
+		const { st: master } = _requireLoaded(masterDeck, 'KEY SYNC master');
+		const keyShiftSemitones = deriveKeySyncSemitones(
+			st.key,
+			master.key,
+			master.key_shift_semitones
+		);
+		await _setDeckKeyShift(deck, keyShiftSemitones);
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {

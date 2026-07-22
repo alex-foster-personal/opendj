@@ -67,6 +67,8 @@ export type PerformanceCommand =
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'key_sync'; deck: DeckId }
+	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
@@ -80,6 +82,8 @@ export interface PerformanceDeckSnapshot {
 	title: string | null;
 	artist: string | null;
 	bpm: number | null;
+	key: string | null;
+	key_shift_semitones: number;
 	effective_bpm: number | null;
 	duration_ms: number | null;
 	position_ms: number;
@@ -254,7 +258,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'play') {
 		_exactKeys(record, ['type', 'deck', 'playing']);
 		return { type, deck, playing: _boolean('playing', record.playing) };
-	} else if (type === 'cue' || type === 'master') {
+	} else if (type === 'cue' || type === 'master' || type === 'key_sync') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
 	} else if (type === 'seek') {
@@ -300,6 +304,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'stem_solo') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
 		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+	} else if (type === 'key_nudge') {
+		_exactKeys(record, ['type', 'deck', 'semitones']);
+		if (record.semitones !== -1 && record.semitones !== 1) {
+			throw new RangeError(`semitones must be -1 or 1, got ${String(record.semitones)}`);
+		}
+		return { type, deck, semitones: record.semitones };
 	} else if (type === 'sync_mode') {
 		_exactKeys(record, ['type', 'deck', 'mode']);
 		if (record.mode !== 'beat' && record.mode !== 'bar') {
@@ -335,6 +345,8 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		title: deck.title,
 		artist: deck.artist,
 		bpm: deck.bpm,
+		key: deck.key,
+		key_shift_semitones: deck.key_shift_semitones,
 		effective_bpm: deckEffectiveBpm(deckId),
 		duration_ms: deck.duration_ms,
 		position_ms: deck.position_ms,
@@ -434,7 +446,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'beat_sync' ||
 		command.type === 'sync_mode' ||
 		command.type === 'master' ||
-		command.type === 'master_tempo'
+		command.type === 'master_tempo' ||
+		command.type === 'key_sync'
 	) {
 		return [deck, 'sync'];
 	}
@@ -477,6 +490,10 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		engine.setStemMute(command.deck, command.stem, command.muted);
 	} else if (command.type === 'stem_solo') {
 		engine.setStemSolo(command.deck, command.stem, command.solo);
+	} else if (command.type === 'key_sync') {
+		await engine.syncKey(command.deck);
+	} else if (command.type === 'key_nudge') {
+		await engine.nudgeKey(command.deck, command.semitones);
 	} else if (command.type === 'trim') {
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {

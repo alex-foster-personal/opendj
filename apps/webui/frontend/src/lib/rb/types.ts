@@ -229,6 +229,9 @@ export interface DeckState {
 	bpm: number | null;
 	/** Camelot key text from TrackOut (e.g. '7A'); null unknown. */
 	key: string | null;
+	/** Musical pitch transposition applied by the real deck DSP, in integer
+	 * semitones from -12 through +12. The source key remains immutable. */
+	key_shift_semitones: number;
 	/** Track length ms from TrackOut.duration_ms; null until loaded. */
 	duration_ms: number | null;
 	/** Playhead position ms - UI mirror of the engine clock, updated via rAF. */
@@ -407,6 +410,11 @@ export interface AudioEngine {
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Enable/disable pitch preservation in the Signalsmith processor. */
 	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Shift the loaded deck by exactly one semitone. */
+	nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void>;
+	/** Align the loaded deck to the elected loaded master using the documented
+	 * deterministic Camelot harmonic policy. */
+	syncKey(deck: DeckId): Promise<void>;
 	/** Select beat or bar phase alignment for Beat Sync. */
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void>;
 	/** Elect one loaded deck as the globally exclusive master. */

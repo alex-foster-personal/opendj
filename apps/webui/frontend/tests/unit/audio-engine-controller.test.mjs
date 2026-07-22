@@ -156,6 +156,35 @@ test('Master Tempo preserves pitch while the disabled mode follows playback rate
 	assert.throws(() => audio.masterTempoSemitones(0, true), /tempo ratio/i);
 });
 
+test('Camelot Key Sync chooses the shortest deterministic harmonic shift', () => {
+	assert.deepEqual(audio.parseCamelotKey('8A'), { number: 8, mode: 'A', root: 9 });
+	assert.equal(audio.parseCamelotKey('13A'), null);
+	assert.equal(audio.parseCamelotKey('8C'), null);
+
+	// Policy: same key, adjacent wheel keys, and the matching-number
+	// relative major/minor are harmonic. Relative A/B is already compatible.
+	assert.equal(audio.deriveKeySyncSemitones('8A', '8B'), 0);
+	assert.equal(audio.deriveKeySyncSemitones('8A', '9A'), 0);
+	assert.equal(audio.deriveKeySyncSemitones('8A', '10A'), 2);
+	assert.throws(() => audio.deriveKeySyncSemitones('not-a-key', '8B'), /Camelot/i);
+});
+
+test('key shift composes with Master Tempo compensation in the native Signalsmith semitones field', () => {
+	assert.equal(
+		audio.stretchScheduleChange(4, true, 1.1, true, 3, null).semitones,
+		3
+	);
+	assert.ok(
+		Math.abs(
+			audio.stretchScheduleChange(4, true, 1.1, false, -2, null).semitones -
+				(12 * Math.log2(1.1) - 2)
+		) <
+			1e-12
+	);
+	assert.throws(() => audio.composeStretchSemitones(1, true, 1.5), /integer/i);
+	assert.throws(() => audio.composeStretchSemitones(1, true, 13), /-12\.\.12/i);
+});
+
 test('central seek quantization snaps to real PQTZ and missing grids fail explicitly', () => {
 	assert.equal(audio.quantizedPositionMs(REAL_PQTZ_BEATS, 590, true), 608);
 	assert.equal(audio.quantizedPositionMs(REAL_PQTZ_BEATS, 590, false), 590);

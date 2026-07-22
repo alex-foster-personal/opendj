@@ -40,8 +40,40 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		[3, 'sync']
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_sync', deck: 4 }), [4, 'sync']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
+});
+
+test('key controls validate through IPC and round-trip serializable shift state', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const initial = ipc.queryPerformanceState().decks[1];
+		assert.equal(initial.key, null);
+		assert.equal(initial.key_shift_semitones, 0);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'key_nudge', deck: 1, semitones: 2 }),
+			/semitones must be -1 or 1/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1, extra: true }),
+			/unexpected fields/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('deck header key controls dispatch only through the typed performance dispatcher', async () => {
+	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
+	const headerSource = await readFile('src/lib/components/rb/deck/DeckHeader.svelte', 'utf8');
+	assert.match(deckSource, /runPerformanceCommandFromUi\(\{ type: 'key_sync', deck: deckId \}\)/);
+	assert.match(deckSource, /type: 'key_nudge', deck: deckId, semitones/);
+	assert.match(headerSource, /onKeySync/);
+	assert.match(headerSource, /onKeyNudge/);
 });
 
 test('stem commands are strict typed IPC and default state never claims artifacts exist', async () => {

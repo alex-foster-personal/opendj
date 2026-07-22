@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Deck header row (SCREENSHOT-SPEC 3, COMPONENT-MAP 1.3): artwork thumb,
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
-	// KEY SYNC (inert), key badge + nudge arrows (value real, nudges inert),
+	// KEY SYNC, key badge + semitone nudge arrows,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import type { DeckId, DeckState } from '$lib/rb/types';
@@ -12,14 +12,18 @@
 		pending,
 		onBeatSync,
 		onMaster,
-		inertTip
+		onKeySync,
+		onKeyNudge,
+		keySyncAvailable
 	}: {
 		deck: DeckState;
 		deckId: DeckId;
 		pending: boolean;
 		onBeatSync: () => Promise<void>;
 		onMaster: () => Promise<void>;
-		inertTip: string;
+		onKeySync: () => Promise<void>;
+		onKeyNudge: (semitones: -1 | 1) => Promise<void>;
+		keySyncAvailable: boolean;
 	} = $props();
 
 	let artworkFailed: boolean = $state(false);
@@ -34,6 +38,11 @@
 
 	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
 	const keyText: string = $derived(deck.key ?? '--');
+	const keyShiftText: string = $derived(
+		deck.key_shift_semitones >= 0
+			? `+${deck.key_shift_semitones}`
+			: String(deck.key_shift_semitones)
+	);
 
 	// ----------------------------------------------------------- _helpers
 
@@ -87,13 +96,37 @@
 		<span class="elapsed">{elapsedText}</span>
 	</div>
 
-	<button class="rb-lit-button rb-inert keysync" disabled title={inertTip}>KEY SYNC</button>
+	<button
+		class="rb-lit-button keysync"
+		disabled={pending || !keySyncAvailable}
+		data-performance-control="key-sync"
+		title={keySyncAvailable ? 'align key to selected master' : 'requires a loaded Camelot-key master'}
+		onclick={async () => await onKeySync()}
+	>
+		KEY SYNC
+	</button>
 
 	<div class="key-badge">
-		<button class="nudge rb-inert" disabled title={inertTip}>&lt;</button>
+		<button
+			class="nudge"
+			disabled={pending || deck.stable_id === null || deck.key_shift_semitones === -12}
+			data-performance-control="key-nudge-down"
+			title="lower key by one semitone"
+			onclick={async () => await onKeyNudge(-1)}
+		>
+			&lt;
+		</button>
 		<span class="key-val">{keyText}</span>
-		<span class="key-off">+-0</span>
-		<button class="nudge rb-inert" disabled title={inertTip}>&gt;</button>
+		<span class="key-off">{keyShiftText}</span>
+		<button
+			class="nudge"
+			disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
+			data-performance-control="key-nudge-up"
+			title="raise key by one semitone"
+			onclick={async () => await onKeyNudge(1)}
+		>
+			&gt;
+		</button>
 	</div>
 
 	<div class="sync-col">
