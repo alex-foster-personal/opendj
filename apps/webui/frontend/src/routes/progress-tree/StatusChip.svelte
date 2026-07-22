@@ -1,12 +1,18 @@
 <script lang="ts">
-	/** Colour-coded status chip. verified gets a check glyph; building pulses. */
+	/**
+	 * Colour-coded status chip. verified/merged/user-finalized get a check
+	 * glyph (user-finalized gets a double check to mark the lifecycle top);
+	 * building pulses.
+	 */
 	import { STATUS_CLASS, type NodeStatus } from './types';
 
 	let { status }: { status: NodeStatus } = $props();
 </script>
 
 <span class="status-chip {STATUS_CLASS[status]}">
-	{status}{#if status === 'verified'}<span class="check">&#10003;</span>{/if}
+	{status}{#if status === 'verified' || status === 'merged'}<span class="check"
+			>&#10003;</span
+		>{:else if status === 'user-finalized'}<span class="check">&#10003;&#10003;</span>{/if}
 </span>
 
 <style>
@@ -19,6 +25,7 @@
 		font-size: 0.72rem;
 		font-weight: 600;
 		border: 1px solid transparent;
+		white-space: nowrap;
 	}
 	.check {
 		margin-left: 0.25rem;
@@ -44,7 +51,7 @@
 		border-color: #2c5d8f;
 		background: #12233a;
 	}
-	.st-working {
+	.st-built {
 		color: #4ade80;
 		border-color: #1f6b3d;
 		background: #0f2a1a;
@@ -53,6 +60,16 @@
 		color: #4ade80;
 		border-color: #4ade80;
 		background: #0f2a1a;
+	}
+	.st-merged {
+		color: #c4a4fb;
+		border-color: #7c3aed;
+		background: #241a3d;
+	}
+	.st-user-finalized {
+		color: #fef08a;
+		border-color: #eab308;
+		background: #2b2410;
 	}
 	@keyframes pulse {
 		0%,
