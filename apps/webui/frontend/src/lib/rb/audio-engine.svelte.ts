@@ -51,6 +51,10 @@
  *       desired playing deck is rescheduled before it becomes audible
  *     [if] AudioContext time stalls or sync state changes while waiting
  *       [then] the wait rejects within a bounded interval ⛔️
+ *   ✔︎ Route teardown owns the complete audio lifetime: cancel the clock,
+ *     disconnect processors/nodes, close AudioContext, and reset state.
+ *     [if] /performance unmounts while audio is live [then] no sound remains
+ *     [if] one disconnect fails [then] every later resource is still silenced ⛔️
  *
  * Rune module: this file MUST stay .svelte.ts (rune_outside_svelte
  * otherwise - RECON-FRONTEND 10.1, same bug class as stores.svelte.ts fix).
@@ -338,6 +342,65 @@ export function deckTransportClock(deck: DeckId): DeckTransportClock {
 		desired_revision: presentation.desired_revision,
 		presented_revision: presentation.presented_revision
 	};
+}
+
+interface AudioDisconnectable {
+	disconnect(): void;
+}
+
+interface AudioContextDisposable {
+	readonly state: AudioContextState;
+	close(): Promise<void>;
+}
+
+interface AudioResources {
+	rafId: number | null;
+	processors: readonly AudioDisconnectable[];
+	nodes: readonly AudioDisconnectable[];
+	masterGain: AudioDisconnectable | null;
+	context: AudioContextDisposable | null;
+}
+
+/**
+ * Synchronously silence an owned audio graph, then await context shutdown.
+ * Disconnection happens before the first await so route teardown can never
+ * leave playback running invisibly while AudioContext.close() settles.
+ */
+export async function disposeAudioResources(
+	resources: AudioResources,
+	cancelFrame?: (rafId: number) => void
+): Promise<void> {
+	const failures: unknown[] = [];
+	const attempt = (operation: () => void): void => {
+		try {
+			operation();
+		} catch (error) {
+			failures.push(error);
+		}
+	};
+	const rafId = resources.rafId;
+	if (rafId !== null) {
+		attempt(() => {
+			const cancel = cancelFrame ?? globalThis.cancelAnimationFrame;
+			if (cancel === undefined) {
+				throw new Error('cannot dispose active audio clock: cancelAnimationFrame is unavailable');
+			}
+			cancel(rafId);
+		});
+	}
+	for (const processor of resources.processors) attempt(() => processor.disconnect());
+	for (const node of resources.nodes) attempt(() => node.disconnect());
+	const masterGain = resources.masterGain;
+	if (masterGain !== null) attempt(() => masterGain.disconnect());
+	if (resources.context !== null && resources.context.state !== 'closed') {
+		try {
+			await resources.context.close();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
+	if (failures.length === 1) throw failures[0];
+	if (failures.length > 1) throw new AggregateError(failures, 'multiple audio teardown operations failed');
 }
 
 // ---------------------------------------------------------------- _helpers
@@ -1820,6 +1883,44 @@ async function _withDeckSwap<T>(rt: _DeckRuntime, swap: () => Promise<T>): Promi
  * pitch ranges). All methods fail fast: invalid input or a missing backing
  * track throws; backend 404s reject with their explicit code. */
 class RbAudioEngine implements AudioEngine {
+	/**
+	 * Tear down every resource owned by the /performance route. In-flight
+	 * loads are invalidated before state is reset, so a stale candidate cannot
+	 * publish after navigation.
+	 */
+	async dispose(): Promise<void> {
+		const processors: StretchDeckProcessor[] = [];
+		const nodes: AudioNode[] = [];
+		for (const deck of DECK_IDS) {
+			const rt = _rt[deck];
+			rt.loadToken += 1;
+			if (rt.processor !== null) processors.push(rt.processor);
+			if (rt.nodes !== null) nodes.push(...Object.values(rt.nodes));
+		}
+		const closing = disposeAudioResources({
+			rafId: _rafId,
+			processors,
+			nodes,
+			masterGain: _masterGain,
+			context: _ctx
+		});
+
+		_rafId = null;
+		_masterGain = null;
+		_ctx = null;
+		_masterDeck = null;
+		for (const deck of DECK_IDS) {
+			_rt[deck] = _emptyRuntime();
+			deckStates[deck] = _emptyDeckState(deck);
+			deckLoadErrors[deck] = null;
+			pitchRanges[deck] = 16;
+			mixerState.channels[deck] = _defaultChannel(deck);
+		}
+		mixerState.crossfader = 0.5;
+		mixerState.master = 1;
+		await closing;
+	}
+
 	async load(deck: DeckId, stable_id: string): Promise<void> {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
 		const st = deckStates[deck];

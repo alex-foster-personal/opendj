@@ -1632,7 +1632,15 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "summary": "Get Progress",
@@ -1653,6 +1661,22 @@
             "schema": {
               "title": "Node Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -1675,7 +1699,26 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "If-Match is stale; refresh the ledger before retrying",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact progress ledger bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -1686,6 +1729,12 @@
               }
             },
             "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match header is required for every progress write"
+          },
+          "503": {
+            "description": "Writes are disabled because the cloud lock is unavailable or held by a peer"
           }
         },
         "summary": "Patch Progress Node",

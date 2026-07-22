@@ -32,6 +32,116 @@ test('controller defaults enable quantize, Beat Sync, and Master Tempo with no s
 	}
 });
 
+test('route teardown cancels animation, disconnects every graph resource, and closes context', async () => {
+	const calls = [];
+	const disconnectable = (name) => ({ disconnect: () => calls.push(`disconnect:${name}`) });
+	const context = {
+		state: 'running',
+		close: async () => {
+			calls.push('close:context');
+		}
+	};
+
+	await audio.disposeAudioResources(
+		{
+			rafId: 17,
+			processors: [disconnectable('processor-1'), disconnectable('processor-2')],
+			nodes: [disconnectable('deck-nodes')],
+			masterGain: disconnectable('master'),
+			context
+		},
+		(rafId) => calls.push(`cancel:${rafId}`)
+	);
+
+	assert.deepEqual(calls, [
+		'cancel:17',
+		'disconnect:processor-1',
+		'disconnect:processor-2',
+		'disconnect:deck-nodes',
+		'disconnect:master',
+		'close:context'
+	]);
+});
+
+test('route teardown propagates AudioContext close failures after audio is disconnected', async () => {
+	const calls = [];
+	const failure = new Error('close failed');
+	const context = {
+		state: 'running',
+		close: async () => {
+			calls.push('close');
+			throw failure;
+		}
+	};
+
+	await assert.rejects(
+		audio.disposeAudioResources(
+			{
+				rafId: null,
+				processors: [{ disconnect: () => calls.push('disconnect') }],
+				nodes: [],
+				masterGain: null,
+				context
+			},
+			() => calls.push('unexpected cancel')
+		),
+		failure
+	);
+	assert.deepEqual(calls, ['disconnect', 'close']);
+});
+
+test('one teardown failure cannot prevent later audio resources from being silenced', async () => {
+	const calls = [];
+	const failure = new Error('processor disconnect failed');
+
+	await assert.rejects(
+		audio.disposeAudioResources(
+			{
+				rafId: null,
+				processors: [
+					{
+						disconnect: () => {
+							calls.push('disconnect:failed');
+							throw failure;
+						}
+					},
+					{ disconnect: () => calls.push('disconnect:later') }
+				],
+				nodes: [{ disconnect: () => calls.push('disconnect:node') }],
+				masterGain: { disconnect: () => calls.push('disconnect:master') },
+				context: {
+					state: 'running',
+					close: async () => calls.push('close')
+				}
+			},
+			() => calls.push('unexpected cancel')
+		),
+		failure
+	);
+	assert.deepEqual(calls, [
+		'disconnect:failed',
+		'disconnect:later',
+		'disconnect:node',
+		'disconnect:master',
+		'close'
+	]);
+});
+
+test('engine disposal resets all route-owned reactive state and is safe without a graph', async () => {
+	audio.engine.setQuantize(1, false);
+	audio.engine.setTrim(1, 0.7);
+	audio.engine.setCrossfader(0.2);
+	audio.engine.setMaster(0.4);
+
+	await audio.engine.dispose();
+
+	assert.equal(audio.getDeckState(1).quantize_enabled, true);
+	assert.equal(audio.getDeckState(1).stable_id, null);
+	assert.equal(audio.mixerState.channels[1].trim, 0.5);
+	assert.equal(audio.mixerState.crossfader, 0.5);
+	assert.equal(audio.mixerState.master, 1);
+});
+
 test('Master Tempo preserves pitch while the disabled mode follows playback rate', () => {
 	assert.equal(audio.masterTempoSemitones(1.1, true), 0);
 	assert.ok(Math.abs(audio.masterTempoSemitones(1.1, false) - 12 * Math.log2(1.1)) < 1e-12);
@@ -705,6 +815,7 @@ test('MASTER switching includes Beat-Synced pending starts at the next common ho
 
 test('public controller exposes semantic tempo, sync, master, quantize, and analysis APIs', async () => {
 	for (const method of [
+		'dispose',
 		'setTempoRatio',
 		'setQuantize',
 		'setBeatSync',

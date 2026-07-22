@@ -8,20 +8,11 @@
 	 * active/blue statically), LINK, PAD/MIDI dim labels, info icon,
 	 * gear, refresh arrow. The yellow Free badge is static chrome.
 	 *
-	 * CONTRACT GAP (escalate): the AudioEngine interface in types.ts has
-	 * no master-gain setter even though MixerState.master and
-	 * COMPONENT-MAP 1.1 route this slider to the engine's master
-	 * GainNode. This file assumes the engine implementation exposes
-	 * `setMaster(value: number): void` beyond the interface; the cast
-	 * below fails loudly at runtime if it does not (fail-fast, no
-	 * silent fallback).
+	 * The live slider dispatches through the same browser IPC command used by
+	 * automation and reads the engine-owned mixer state back.
 	 */
-	import { engine } from '$lib/rb/audio-engine.svelte';
-	import type { AudioEngine } from '$lib/rb/types';
-
-	interface MasterCapableEngine extends AudioEngine {
-		setMaster(value: number): void;
-	}
+	import { mixerState } from '$lib/rb/audio-engine.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
@@ -39,7 +30,7 @@
 		{ x: 12.2, half: 0.65 }
 	];
 
-	let master = $state(1);
+	const master = $derived(mixerState.master);
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
@@ -59,8 +50,7 @@
 	}
 
 	function _setMaster(value: number): void {
-		master = value;
-		(engine as MasterCapableEngine).setMaster(value);
+		void runPerformanceCommandFromUi({ type: 'master_volume', value });
 	}
 
 	function _masterFromEvent(e: PointerEvent): number {
