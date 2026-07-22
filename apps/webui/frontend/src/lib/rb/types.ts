@@ -16,6 +16,10 @@
 /** Physical deck slot 1-4. Layout: 1 top-left, 2 top-right, 3 bottom-left, 4 bottom-right. */
 export type DeckId = 1 | 2 | 3 | 4;
 
+/** Beat Sync phase target. Beat mode matches the closest beat; bar mode also
+ * requires the follower PQTZ beat number (1..4) to match the master. */
+export type SyncMode = 'beat' | 'bar';
+
 /** Hot-cue bank slot letter. djmdCue Kind 1..8 maps to A..H (COMPONENT-MAP 2.3). */
 export type HotCueSlot = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
 
@@ -200,12 +204,28 @@ export interface DeckState {
 	duration_ms: number | null;
 	/** Playhead position ms - UI mirror of the engine clock, updated via rAF. */
 	position_ms: number;
-	/** True while the engine transport is running. */
+	/** Desired transport state. Future worklet schedules update this immediately. */
 	playing: boolean;
+	/** True only while the currently committed worklet segment is audible. */
+	audible: boolean;
+	/** True while desired transport/DSP state is scheduled but not yet audible. */
+	transport_pending: boolean;
 	/** CUE point ms for return-to-cue transport semantics; null = track start. */
 	cue_ms: number | null;
 	/** Playback rate ratio. v1 fixed at 1.0; pitch UI renders 0.0% static. */
 	pitch: number;
+	/** Quantize transport seeks, cue placement, and loop endpoints to PQTZ. */
+	quantize_enabled: boolean;
+	/** Follow the elected master deck's local PQTZ tempo and phase. */
+	beat_sync_enabled: boolean;
+	/** Preserve source pitch while tempo changes through Signalsmith Stretch. */
+	master_tempo_enabled: boolean;
+	/** Beat-only or beat-number-within-bar phase alignment. */
+	sync_mode: SyncMode;
+	/** Explicit grid/rate/scheduling failure. null means no sync failure. */
+	sync_error: string | null;
+	/** Terminal AudioWorklet failure. null means the processor is healthy. */
+	processor_error: string | null;
 	/** Active loop or null. */
 	loop: LoopState | null;
 	/** Hot-cue bank content (empty slots = letters absent from this array). */
@@ -216,8 +236,17 @@ export interface DeckState {
 	 * when /anlz 404s. Renders the 'no analysis' treatment - never invented
 	 * waveforms. null = not attempted or succeeded. */
 	anlz_error: string | null;
-	/** MASTER button lit state (static per screenshot at v1, button inert). */
+	/** Globally exclusive MASTER deck state. */
 	is_master: boolean;
+}
+
+/** Serializable real post-deck-DSP, pre-mixer/master analyser snapshot. */
+export interface DeckAudioSnapshot {
+	context_time_s: number;
+	sample_rate_hz: number;
+	fft_size: number;
+	frequency_db: number[];
+	time_domain: number[];
 }
 
 // ------------------------------------------------------------- mixer state
@@ -319,23 +348,42 @@ export interface PlaylistNode {
  * input or missing backing data - no silent no-ops, no fabricated audio.
  */
 export interface AudioEngine {
+	/** Stop and release all route-owned processors, nodes, clocks, and context. */
+	dispose(): Promise<void>;
 	/** Fetch /tracks/{sid}/audio, decodeAudioData, build the deck chain and
 	 * populate DeckState. Rejects with the backend error code on 404
 	 * (AUDIO_FILE_MISSING / AUDIO_IS_STREAMING_URI / TRACK_NOT_FOUND). */
 	load(deck: DeckId, stable_id: string): Promise<void>;
 	/** Start/resume transport from the current position. Throws if no track
 	 * is loaded on the deck. */
-	play(deck: DeckId): void;
+	play(deck: DeckId): Promise<void>;
 	/** Pause transport, keeping position. Throws if no track loaded. */
-	pause(deck: DeckId): void;
+	pause(deck: DeckId): Promise<void>;
 	/** Seek to a position in ms (hot-cue click / CUE return). Implemented as
 	 * buffer-source restart at offset. Throws if no track loaded. */
-	cueJump(deck: DeckId, ms: number): void;
+	cueJump(deck: DeckId, ms: number): Promise<void>;
 	/** Set playback-rate ratio. v1 the UI keeps this at 1.0 (pitch slider
 	 * inert); the engine still validates 0 < ratio. */
-	setPitch(deck: DeckId, ratio: number): void;
+	setPitch(deck: DeckId, ratio: number): Promise<void>;
+	/** Semantic alias for setPitch: ratio controls tempo, while Master Tempo
+	 * independently controls whether pitch is preserved. */
+	setTempoRatio(deck: DeckId, ratio: number): Promise<void>;
 	/** Engage a loop range (ms) or disengage with null. */
-	setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): void;
+	setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void>;
+	/** Enable/disable PQTZ snapping. Defaults true per deck. */
+	setQuantize(deck: DeckId, enabled: boolean): void;
+	/** Enable/disable master tempo/phase following. Defaults true per deck. */
+	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Enable/disable pitch preservation in the Signalsmith processor. */
+	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Select beat or bar phase alignment for Beat Sync. */
+	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void>;
+	/** Elect one loaded deck as the globally exclusive master. */
+	setDeckMaster(deck: DeckId): Promise<void>;
+	/** Explicit seek entry point. cueJump delegates here so quantize is central. */
+	quantizedSeek(deck: DeckId, ms: number): Promise<void>;
+	/** Capture real post-Signalsmith analyser data; never synthesised. */
+	captureDeckAudio(deck: DeckId): DeckAudioSnapshot;
 	/** TRIM knob 0..1 (0.5 = unity) -> per-channel input GainNode. */
 	setTrim(deck: DeckId, value: number): void;
 	/** One EQ band knob 0..1 (0.5 = flat) -> Biquad gain in dB. */

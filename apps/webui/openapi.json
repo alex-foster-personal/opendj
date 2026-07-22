@@ -417,6 +417,13 @@
             "title": "Playlist Id",
             "type": "string"
           },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRowOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
           "vendor": {
             "title": "Vendor",
             "type": "string"
@@ -427,6 +434,7 @@
           "name",
           "vendor",
           "items",
+          "tracks",
           "diff"
         ],
         "title": "PlaylistDetail",
@@ -473,6 +481,10 @@
       },
       "PlaylistSummary": {
         "properties": {
+          "available_count": {
+            "title": "Available Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -510,6 +522,7 @@
           "name",
           "vendor",
           "track_count",
+          "available_count",
           "updated_at"
         ],
         "title": "PlaylistSummary",
@@ -694,6 +707,185 @@
           "cue_count"
         ],
         "title": "RbMetaOut",
+        "type": "object"
+      },
+      "TrackListItemOut": {
+        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Played At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "preview_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview B64"
+          },
+          "preview_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Max"
+          },
+          "provenance": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProvenanceOut"
+            },
+            "default": {},
+            "title": "Provenance",
+            "type": "object"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "created_at",
+          "updated_at",
+          "preview_b64",
+          "preview_max",
+          "file_exists"
+        ],
+        "title": "TrackListItemOut",
         "type": "object"
       },
       "TrackOut": {
@@ -901,11 +1093,160 @@
         "title": "TrackPatch",
         "type": "object"
       },
+      "TrackRowOut": {
+        "description": "Hydrated playlist track row (shared API contract item 4).\n\nReturned by playlist detail in membership order so the browser table\nrenders without the old 29x per-row GET fan-out. ``etag`` is the same\nquoted sha1 the single-track endpoints emit (etag.py conventions), so\na row can be PATCHed directly with If-Match.",
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "preview_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview B64"
+          },
+          "preview_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Max"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "key",
+          "bpm",
+          "rating",
+          "duration_ms",
+          "genre",
+          "comments",
+          "etag",
+          "preview_b64",
+          "preview_max",
+          "file_exists",
+          "is_streaming"
+        ],
+        "title": "TrackRowOut",
+        "type": "object"
+      },
       "TracksPage": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/TrackOut"
+              "$ref": "#/components/schemas/TrackListItemOut"
             },
             "title": "Items",
             "type": "array"
@@ -1227,6 +1568,23 @@
             "required": true,
             "schema": {
               "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter the hydrated `tracks` rows on file_exists disk truth (FR-1 agent parity). `items` always stays the full membership.",
+            "in": "query",
+            "name": "available",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Filter the hydrated `tracks` rows on file_exists disk truth (FR-1 agent parity). `items` always stays the full membership.",
+              "enum": [
+                "all",
+                "true",
+                "false"
+              ],
+              "title": "Available",
               "type": "string"
             }
           }
@@ -1551,6 +1909,23 @@
                 }
               ],
               "title": "Tag"
+            }
+          },
+          {
+            "description": "Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set.",
+            "in": "query",
+            "name": "available",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Filter rows on file_exists disk truth (FR-1 agent parity). Applied to the page AFTER cursor pagination, so a page may return fewer than `limit` rows while next_cursor still advances over the full track set.",
+              "enum": [
+                "all",
+                "true",
+                "false"
+              ],
+              "title": "Available",
+              "type": "string"
             }
           },
           {

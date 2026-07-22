@@ -31,8 +31,22 @@ class TrackOut(BaseModel):
     provenance: dict[str, ProvenanceOut] = {}
 
 
+class TrackListItemOut(TrackOut):
+    """TrackOut + parity row fields (shared API contract item 1).
+
+    preview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per
+    column (null = no ANLZ analysis). preview_max: per-track max band value
+    for client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).
+    file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
+    """
+
+    preview_b64: str | None
+    preview_max: int | None
+    file_exists: bool
+
+
 class TracksPage(BaseModel):
-    items: list[TrackOut]
+    items: list[TrackListItemOut]
     next_cursor: str | None = None
 
 
@@ -55,6 +69,9 @@ class PlaylistSummary(BaseModel):
     name: str
     vendor: str
     track_count: int
+    # Members whose audio file exists on disk (FR-1 item 4): lets the tree
+    # hide all-broken playlists and render "29 (3 broken)" style counts.
+    available_count: int
     updated_at: str
     # Rekordbox tree position (flattened djmdPlaylist ParentID/Seq walk).
     # None when the playlist is not a rekordbox one or has no live
@@ -69,11 +86,41 @@ class PlaylistDiff(BaseModel):
     conflicts: list[dict[str, Any]] = []
 
 
+class TrackRowOut(BaseModel):
+    """Hydrated playlist track row (shared API contract item 4).
+
+    Returned by playlist detail in membership order so the browser table
+    renders without the old 29x per-row GET fan-out. ``etag`` is the same
+    quoted sha1 the single-track endpoints emit (etag.py conventions), so
+    a row can be PATCHed directly with If-Match.
+    """
+
+    stable_id: str
+    title: str | None
+    artist: str | None
+    key: str | None
+    bpm: float | None
+    rating: int | None
+    duration_ms: int | None
+    genre: str | None
+    comments: str | None
+    etag: str
+    preview_b64: str | None
+    preview_max: int | None
+    file_exists: bool
+    is_streaming: bool
+
+
 class PlaylistDetail(BaseModel):
     playlist_id: str
     name: str
     vendor: str
+    # Full membership as stable_ids (always unfiltered -- the diff viewer
+    # and reorder flows key off this).
     items: list[str]
+    # Hydrated rows in membership order; ?available=true|false filters
+    # THIS list only, never `items`.
+    tracks: list[TrackRowOut]
     diff: PlaylistDiff
 
 
@@ -141,5 +188,6 @@ __all__ = [
     "HealthCloud", "HealthOut", "HealthStateDb", "HealthSyncthing",
     "PairingCreate", "PairingOut", "PlaylistDetail", "PlaylistDiff",
     "PlaylistSummary", "ProvenanceOut", "QueueItemOut", "QueueOut",
-    "TrackOut", "TrackPatch", "TracksPage",
+    "TrackListItemOut", "TrackOut", "TrackPatch", "TrackRowOut",
+    "TracksPage",
 ]

@@ -1,11 +1,34 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint build-dist release-check
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint build-dist release-check rb-parity-check rb-parity-final
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
+FRONTEND_NODE ?= node
+RB_PARITY_PYTEST_PATHS := \
+	tests/reconcile/test_prefix_dead_playlists.py \
+	tests/shared/test_rekordbox_db.py \
+	tests/test_codex_followups_c.py \
+	tests/test_progress.py \
+	tests/test_rb_assets.py \
+	tests/webui
 
 test:
 	$(PYTEST) -q
+
+# Fast iteration gates for the Rekordbox parity stack. These deliberately omit
+# untouched analysis backends and Pioneer actuator suites, which require
+# optional madmom, Quartz, or cliclick dependencies. Keep `release-check` as
+# the repository-wide release gate and run the dedicated performance
+# Playwright suite once real DB fixtures are available (tracked in #155).
+rb-parity-check:
+	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
+	$(PYTEST) -q $(RB_PARITY_PYTEST_PATHS)
+	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-concurrency=1 tests/unit/*.test.mjs
+	cd apps/webui/frontend && pnpm check
+
+rb-parity-final: rb-parity-check
+	@echo "[rb-parity-final] production frontend build"
+	cd apps/webui/frontend && pnpm build
 
 cov:
 	$(PYTEST) --cov=apps --cov-report=term-missing --cov-report=html

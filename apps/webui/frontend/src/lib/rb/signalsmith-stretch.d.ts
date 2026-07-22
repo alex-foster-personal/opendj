@@ -25,12 +25,12 @@ declare module 'signalsmith-stretch' {
 		inputTime: number;
 		addBuffers(buffers: Float32Array[], transfer?: Transferable[]): Promise<number>;
 		configure(configuration: SignalsmithStretchConfiguration): Promise<void>;
-		dropBuffers(toSeconds?: number): Promise<{ start: number; end: number } | undefined>;
+		dropBuffers(toSeconds?: number): Promise<{ start: number; end: number }>;
 		latency(): Promise<number>;
-		schedule(schedule: SignalsmithStretchSchedule): Promise<void>;
+		schedule(schedule: SignalsmithStretchSchedule): Promise<SignalsmithStretchSchedule>;
 		setUpdateInterval(seconds: number, callback: (inputTime: number) => void): Promise<void>;
-		start(when?: number, offset?: number): Promise<void>;
-		stop(when?: number): Promise<void>;
+		start(when?: number, offset?: number): Promise<SignalsmithStretchSchedule>;
+		stop(when?: number): Promise<SignalsmithStretchSchedule>;
 	}
 
 	export default function createSignalsmithStretch(

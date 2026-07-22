@@ -8,9 +8,15 @@
 
 	let {
 		deck,
+		pending,
 		onCue,
 		onPlayPause
-	}: { deck: DeckState; onCue: () => void; onPlayPause: () => void } = $props();
+	}: {
+		deck: DeckState;
+		pending: boolean;
+		onCue: () => Promise<void>;
+		onPlayPause: () => Promise<void>;
+	} = $props();
 
 	const hasTrack: boolean = $derived(deck.stable_id !== null);
 </script>
@@ -18,19 +24,23 @@
 <div class="transport">
 	<button
 		class="round cue"
-		disabled={!hasTrack}
+		disabled={!hasTrack || pending}
 		title={hasTrack ? 'return to cue' : 'no track loaded'}
-		onclick={onCue}
+		data-performance-control="cue"
+		onclick={async () => await onCue()}
 	>
 		CUE
 	</button>
 	<button
 		class="round play"
 		class:playing={deck.playing}
-		disabled={!hasTrack}
+		disabled={!hasTrack || pending}
 		title={hasTrack ? (deck.playing ? 'pause' : 'play') : 'no track loaded'}
 		aria-label={deck.playing ? 'pause' : 'play'}
-		onclick={onPlayPause}
+		aria-pressed={deck.playing}
+		data-performance-control="play"
+		data-state={deck.playing ? 'on' : 'off'}
+		onclick={async () => await onPlayPause()}
 	>
 		{#if deck.playing}
 			<svg viewBox="0 0 16 16" class="glyph" aria-hidden="true">
