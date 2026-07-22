@@ -14,6 +14,7 @@ Regression one-liners:
 from __future__ import annotations
 
 import os
+import signal
 import sqlite3
 import struct
 import subprocess
@@ -344,6 +345,101 @@ def test_track_claim_lease_and_old_owner_cannot_release_successor(
     vcli._release_track_claim(successor)
 
 
+def test_normal_managed_claim_releases_and_allows_successor(tmp_path: Path) -> None:
+    from apps.vocals import cli as vcli
+
+    cache_file = vcache.cache_path(tmp_path, "normal-release")
+    claim = vcli._claim_track(cache_file)
+    assert claim is not None
+    with vcli._managed_track_claim(claim):
+        vcli._assert_track_claim(claim)
+    record = vcli._read_claim_record(claim.path)
+    assert record is not None
+    assert record["released"] is True
+    successor = vcli._claim_track(cache_file)
+    assert successor is not None
+    vcli._release_track_claim(successor)
+
+
+@pytest.mark.parametrize("taskkill_unavailable", [False, True])
+def test_windows_taskkill_failure_retains_nonexpiring_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    taskkill_unavailable: bool,
+) -> None:
+    """A dead leader does not prove its Windows descendant tree is gone."""
+    from apps.vocals import cli as vcli
+
+    class ExitedProcess:
+        pid = 4242
+        returncode = 0
+
+    def _taskkill(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if taskkill_unavailable:
+            raise FileNotFoundError("taskkill unavailable")
+        return subprocess.CompletedProcess(
+            args=["taskkill"], returncode=1, stdout="", stderr="access denied",
+        )
+
+    monkeypatch.setattr(vcli, "_WINDOWS", True)
+    monkeypatch.setattr(vcli.subprocess, "run", _taskkill)
+    cache_file = vcache.cache_path(tmp_path, "windows-cleanup")
+    claim = vcli._claim_track(cache_file)
+    assert claim is not None
+    with pytest.raises(vcli.WorkerCleanupError):
+        with vcli._managed_track_claim(claim):
+            vcli._terminate_worker_tree(ExitedProcess())  # type: ignore[arg-type]
+    record = vcli._read_claim_record(claim.path)
+    assert record is not None
+    assert record["released"] is False
+    assert record["manual_recovery_required"] is True
+    assert not claim.heartbeat_thread.is_alive()
+    monkeypatch.setattr(
+        vcli.time,
+        "time",
+        lambda: record["heartbeat_at"] + record["lease_s"] + 10_000,
+    )
+    assert vcli._claim_track(cache_file) is None
+
+
+def test_posix_escalation_failure_retains_nonexpiring_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.vocals import cli as vcli
+
+    class RunningProcess:
+        pid = 4343
+
+        def wait(self, timeout: Optional[float] = None) -> int:
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("worker", timeout)
+            return 0
+
+    def _kill_group(_pid: int, requested_signal: int) -> None:
+        if requested_signal == signal.SIGKILL:
+            raise PermissionError("forced escalation denial")
+
+    monkeypatch.setattr(vcli, "_WINDOWS", False)
+    monkeypatch.setattr(vcli.os, "killpg", _kill_group)
+    cache_file = vcache.cache_path(tmp_path, "posix-cleanup")
+    claim = vcli._claim_track(cache_file)
+    assert claim is not None
+    with pytest.raises(vcli.WorkerCleanupError):
+        with vcli._managed_track_claim(claim):
+            vcli._terminate_worker_tree(RunningProcess())  # type: ignore[arg-type]
+    record = vcli._read_claim_record(claim.path)
+    assert record is not None
+    assert record["released"] is False
+    assert record["manual_recovery_required"] is True
+    assert not claim.heartbeat_thread.is_alive()
+    monkeypatch.setattr(
+        vcli.time,
+        "time",
+        lambda: record["heartbeat_at"] + record["lease_s"] + 10_000,
+    )
+    assert vcli._claim_track(cache_file) is None
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group regression")
 def test_worker_timeout_reaps_descendant_before_claim_release(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -370,15 +466,16 @@ def test_worker_timeout_reaps_descendant_before_claim_release(
     cache_file = vcache.cache_path(tmp_path, "process-tree")
     claim = vcli._claim_track(cache_file)
     assert claim is not None
-    try:
+    with vcli._managed_track_claim(claim):
         with pytest.raises(RuntimeError, match="timed out"):
             vcli.run_worker(child_pid_file, timeout_s=0.5)
         child_pid = int(child_pid_file.read_text(encoding="utf-8"))
         with pytest.raises(ProcessLookupError):
             os.kill(child_pid, 0)
         vcli._assert_track_claim(claim)
-    finally:
-        vcli._release_track_claim(claim)
+    record = vcli._read_claim_record(claim.path)
+    assert record is not None
+    assert record["released"] is True
 
 
 def test_pioneer_path_cannot_escape_share_root(

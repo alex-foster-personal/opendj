@@ -68,6 +68,7 @@ WORKER_TIMEOUT_S: float = 30 * 60
 LOCK_LEASE_S: float = 30
 LOCK_HEARTBEAT_S: float = 5
 WORKER_TERMINATE_GRACE_S: float = 2
+_WINDOWS: bool = os.name == "nt"
 SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
 WORKER_SCRIPT: Path = Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
@@ -77,6 +78,10 @@ CATEGORY_PVDI = "pvdi"
 CATEGORY_CACHED = "cached_demucs"
 CATEGORY_MISSING = "missing_file"
 CATEGORY_TODO = "todo"
+
+
+class WorkerCleanupError(RuntimeError):
+    """The worker tree may still exist, so its claim must remain held."""
 
 
 @dataclass(frozen=True)
@@ -346,19 +351,29 @@ def _posix_process_group_exists(process_group_id: int) -> bool:
 
 def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
     """Terminate and reap the complete worker process group before returning."""
-    if os.name == "nt":
-        taskkill = subprocess.run(
-            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
+    if _WINDOWS:
+        try:
+            taskkill = subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            raise WorkerCleanupError(
+                f"taskkill unavailable; vocal worker tree {proc.pid} is unverified"
+            ) from exc
+        if taskkill.returncode != 0:
+            raise WorkerCleanupError(
+                f"taskkill failed for vocal worker tree {proc.pid} "
+                f"(exit {taskkill.returncode}): {taskkill.stderr.strip()}"
+            )
         try:
             proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
+            raise WorkerCleanupError(
                 f"taskkill did not reap vocal worker tree {proc.pid}: "
                 f"{taskkill.stderr.strip()}"
             ) from exc
@@ -366,24 +381,34 @@ def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
 
     process_group_id = proc.pid
     try:
-        os.killpg(process_group_id, signal.SIGTERM)
-    except ProcessLookupError:
+        try:
+            os.killpg(process_group_id, signal.SIGTERM)
+        except ProcessLookupError:
+            proc.wait()
+            return
+        try:
+            proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
+        except subprocess.TimeoutExpired:
+            pass
+        if _posix_process_group_exists(process_group_id):
+            try:
+                os.killpg(process_group_id, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         proc.wait()
-        return
-    try:
-        proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
-    except subprocess.TimeoutExpired:
-        pass
-    if _posix_process_group_exists(process_group_id):
-        os.killpg(process_group_id, signal.SIGKILL)
-    proc.wait()
-    deadline = time.monotonic() + WORKER_TERMINATE_GRACE_S
-    while _posix_process_group_exists(process_group_id):
-        if time.monotonic() >= deadline:
-            raise RuntimeError(
-                f"vocal worker process group {process_group_id} survived SIGKILL"
-            )
-        time.sleep(0.01)
+        deadline = time.monotonic() + WORKER_TERMINATE_GRACE_S
+        while _posix_process_group_exists(process_group_id):
+            if time.monotonic() >= deadline:
+                raise WorkerCleanupError(
+                    f"vocal worker process group {process_group_id} survived SIGKILL"
+                )
+            time.sleep(0.01)
+    except WorkerCleanupError:
+        raise
+    except BaseException as exc:
+        raise WorkerCleanupError(
+            f"vocal worker process group {process_group_id} cleanup is unverified"
+        ) from exc
 
 
 def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
@@ -392,7 +417,7 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
     if timeout_s <= 0:
         raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
     process_kwargs: dict[str, Any] = {}
-    if os.name == "nt":
+    if _WINDOWS:
         process_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         process_kwargs["start_new_session"] = True
@@ -472,6 +497,7 @@ def _read_claim_record(lock: Path) -> Optional[dict[str, Any]]:
         or not math.isfinite(record["lease_s"])
         or record["lease_s"] <= 0
         or not isinstance(record.get("released"), bool)
+        or not isinstance(record.get("manual_recovery_required", False), bool)
     ):
         raise RuntimeError(f"invalid vocals claim record: {lock}")
     return record
@@ -493,7 +519,10 @@ def _write_claim_record(lock: Path, record: dict[str, Any]) -> None:
 
 
 def _claim_is_active(record: dict[str, Any], now: float) -> bool:
-    return not record["released"] and now - record["heartbeat_at"] <= record["lease_s"]
+    return not record["released"] and (
+        record.get("manual_recovery_required", False)
+        or now - record["heartbeat_at"] <= record["lease_s"]
+    )
 
 
 def _heartbeat_claim(
@@ -543,6 +572,7 @@ def _claim_track(
             "heartbeat_at": now,
             "lease_s": lease_s,
             "released": False,
+            "manual_recovery_required": False,
         })
     stop = threading.Event()
     heartbeat_errors: list[BaseException] = []
@@ -592,9 +622,55 @@ def _release_track_claim(claim: TrackClaim) -> None:
         record = _read_claim_record(claim.path)
         if record is None or record["owner_token"] != claim.owner_token:
             return
+        if record.get("manual_recovery_required", False):
+            raise RuntimeError(
+                f"vocals claim requires manual recovery and cannot be released: "
+                f"{claim.path}"
+            )
         record["released"] = True
         record["heartbeat_at"] = time.time()
         _write_claim_record(claim.path, record)
+
+
+def _retain_track_claim_for_manual_recovery(
+    claim: TrackClaim, cleanup_error: WorkerCleanupError,
+) -> None:
+    """Make an unverified-cleanup claim non-expiring, then stop its heartbeat."""
+    with _claim_record_guard(claim.path):
+        record = _read_claim_record(claim.path)
+        if record is None or record["owner_token"] != claim.owner_token:
+            raise RuntimeError(
+                "cannot retain unverified worker claim because ownership changed"
+            ) from cleanup_error
+        record["manual_recovery_required"] = True
+        record["cleanup_error"] = str(cleanup_error)
+        record["heartbeat_at"] = time.time()
+        _write_claim_record(claim.path, record)
+    print(
+        f"[ERROR] worker cleanup unverified; claim retained at {claim.path}; "
+        "verify the worker tree before manual recovery",
+        file=sys.stderr,
+    )
+    claim.stop_heartbeat.set()
+    claim.heartbeat_thread.join(timeout=WORKER_TERMINATE_GRACE_S)
+    if claim.heartbeat_thread.is_alive():
+        raise RuntimeError(
+            "vocals claim heartbeat thread did not stop for manual recovery"
+        ) from cleanup_error
+
+
+@contextmanager
+def _managed_track_claim(claim: TrackClaim) -> Iterator[None]:
+    release_claim = True
+    try:
+        yield
+    except WorkerCleanupError as exc:
+        release_claim = False
+        _retain_track_claim_for_manual_recovery(claim, exc)
+        raise
+    finally:
+        if release_claim:
+            _release_track_claim(claim)
 
 
 # ----- output helpers ------------------------------------------------------------------
@@ -764,7 +840,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
         if claim is None:
             print(f"[SKIP in-progress] {tr.stable_id} {tr.title!r}: another CLI owns it")
             continue
-        try:
+        with _managed_track_claim(claim):
             if vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
                 print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
                 continue
@@ -772,8 +848,6 @@ def cmd_trickle(args: argparse.Namespace) -> int:
             wall_s, _entry = _process_one(
                 ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s, claim,
             )
-        finally:
-            _release_track_claim(claim)
         completed += 1
         done_audio_s += tr.length_s
         done_wall_s += wall_s
@@ -816,15 +890,13 @@ def cmd_one(args: argparse.Namespace) -> int:
         raise SystemExit(
             f"error: {tr.stable_id} is already being analysed by another vocals CLI process"
         )
-    try:
+    with _managed_track_claim(claim):
         if not args.force and vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
             print(f"[cached] {tr.stable_id} {tr.title!r}: valid entry at {cache_file}")
             return 0
         print(f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
               f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}")
         _process_one(ctx, tr, "[one]", args.worker_timeout_s, claim)
-    finally:
-        _release_track_claim(claim)
     return 0
 
 
