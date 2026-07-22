@@ -92,12 +92,16 @@ export async function getRelocateCandidates(
 export async function applyRelocate(
 	stableId: string,
 	newPath: string,
-	opts: { ifMatch?: string } = {}
+	opts: { ifMatch: string; expectedOriginalPath: string }
 ): Promise<RelocateApplyResult> {
 	const r = await request(`/api/v1/relocate/${encodeURIComponent(stableId)}/apply`, {
 		method: 'POST',
-		headers: opts.ifMatch ? { 'If-Match': opts.ifMatch } : {},
-		body: JSON.stringify({ new_path: newPath, confirm: true })
+		headers: { 'If-Match': opts.ifMatch },
+		body: JSON.stringify({
+			new_path: newPath,
+			expected_original_path: opts.expectedOriginalPath,
+			confirm: true
+		})
 	});
 	if (!r.ok) {
 		let code = 'UNKNOWN';

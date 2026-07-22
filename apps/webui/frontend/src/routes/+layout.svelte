@@ -35,6 +35,7 @@
 			<a href="/pairings">Pairings</a>
 			<a href="/smartlists">Smartlists</a>
 			<a href="/queues">Queues</a>
+			<a href="/reconcile">Missing tracks</a>
 			<a href="/dedup">Dedup Review</a>
 			<a href="/performance">Performance</a>
 			<a href="/play-analytics">Play analytics</a>

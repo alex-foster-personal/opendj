@@ -35,7 +35,6 @@ from apps.shared import paths as shared_paths
 from apps.webui.server import rb_vendor
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Track
-from apps.webui.server.routes import relocate as relocate_routes
 
 
 @pytest.fixture
@@ -70,8 +69,6 @@ def client(backend: InMemoryBackend) -> Iterator[TestClient]:
     app = create_app(backend=backend, bind_host="127.0.0.1",
                      hostname="test-host", lock_status_fn=lambda: None,
                      mount_frontend=False)
-    # Integrator wiring under test -- same one-liner app.py gets.
-    app.include_router(relocate_routes.router, prefix="/api/v1")
     with TestClient(app) as c:
         yield c
 
@@ -80,6 +77,14 @@ def _current_etag(backend: InMemoryBackend, stable_id: str) -> str:
     from apps.webui.server.etag import compute_etag
     track = backend.get_track(stable_id)
     return compute_etag(track.stable_id, track.updated_at)
+
+
+def _apply_body(library: dict[str, Path], *, confirm: bool = True) -> dict[str, object]:
+    return {
+        "new_path": str(library["candidate"]),
+        "expected_original_path": str(library["gone"]),
+        "confirm": confirm,
+    }
 
 
 # ------------------------------------------------------------------ candidates
@@ -151,7 +156,6 @@ def test_candidates_uses_rekordbox_vendor_mapping(
     app = create_app(backend=backend, bind_host="127.0.0.1",
                      hostname="test-host", lock_status_fn=lambda: None,
                      mount_frontend=False)
-    app.include_router(relocate_routes.router, prefix="/api/v1")
     with TestClient(app) as c:
         body = c.get("/api/v1/relocate/candidates/t-gone").json()
     assert body["original_path"] == dead_rb_path
@@ -164,24 +168,28 @@ def test_candidates_uses_rekordbox_vendor_mapping(
 @pytest.mark.requirement("RECON-04")
 def test_apply_requires_confirm(client: TestClient, library: dict[str, Path]) -> None:
     r = client.post("/api/v1/relocate/t-gone/apply",
-                    json={"new_path": str(library["candidate"]), "confirm": False})
+                    json=_apply_body(library, confirm=False))
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "CONFIRM_REQUIRED"
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_nonexistent_candidate_path(
-    client: TestClient, tmp_path: Path,
+    client: TestClient, library: dict[str, Path], tmp_path: Path,
 ) -> None:
     r = client.post("/api/v1/relocate/t-gone/apply",
-                    json={"new_path": str(tmp_path / "nope.mp3"), "confirm": True})
+                    json={
+                        "new_path": str(tmp_path / "nope.mp3"),
+                        "expected_original_path": str(library["gone"]),
+                        "confirm": True,
+                    }, headers={"If-Match": _current_etag(client.app.state.backend, "t-gone")})
     assert r.status_code == 422
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_unknown_track_404(client: TestClient, library: dict[str, Path]) -> None:
     r = client.post("/api/v1/relocate/nope/apply",
-                    json={"new_path": str(library["candidate"]), "confirm": True},
+                    json=_apply_body(library),
                     headers={"If-Match": '"anything"'})
     assert r.status_code == 404
 
@@ -191,7 +199,7 @@ def test_apply_state_layer_requires_if_match(
     client: TestClient, library: dict[str, Path],
 ) -> None:
     r = client.post("/api/v1/relocate/t-gone/apply",
-                    json={"new_path": str(library["candidate"]), "confirm": True})
+                    json=_apply_body(library))
     assert r.status_code == 428
 
 
@@ -201,7 +209,7 @@ def test_apply_state_layer_patches_file_path(
 ) -> None:
     etag = _current_etag(backend, "t-gone")
     r = client.post("/api/v1/relocate/t-gone/apply",
-                    json={"new_path": str(library["candidate"]), "confirm": True},
+                    json=_apply_body(library),
                     headers={"If-Match": etag})
     assert r.status_code == 200
     body = r.json()
@@ -215,9 +223,58 @@ def test_apply_state_layer_stale_etag_conflicts(
     client: TestClient, library: dict[str, Path],
 ) -> None:
     r = client.post("/api/v1/relocate/t-gone/apply",
-                    json={"new_path": str(library["candidate"]), "confirm": True},
+                    json=_apply_body(library),
                     headers={"If-Match": '"stale-etag"'})
     assert r.status_code == 409
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rejects_path_outside_music_roots(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"x")
+    body = _apply_body(library)
+    body["new_path"] = str(outside)
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply", json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "CANDIDATE_PATH_OUTSIDE_MUSIC_ROOTS"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rejects_final_component_symlink(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+) -> None:
+    symlink = library["candidate"].with_name("linked-track.mp3")
+    symlink.symlink_to(library["candidate"])
+    body = _apply_body(library)
+    body["new_path"] = str(symlink)
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply", json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "CANDIDATE_PATH_UNSAFE"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rejects_stale_recorded_path(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+) -> None:
+    body = _apply_body(library)
+    body["expected_original_path"] = "/stale/path.mp3"
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply", json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RELOCATE_TARGET_CHANGED"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
 
 
 @pytest.mark.requirement("RECON-04")
@@ -237,9 +294,9 @@ def test_apply_rekordbox_branch_503s_without_live_db(
     app = create_app(backend=backend, bind_host="127.0.0.1",
                      hostname="test-host", lock_status_fn=lambda: None,
                      mount_frontend=False)
-    app.include_router(relocate_routes.router, prefix="/api/v1")
     with TestClient(app) as c:
         r = c.post("/api/v1/relocate/t-gone/apply",
-                   json={"new_path": str(library["candidate"]), "confirm": True})
+                   json=_apply_body(library),
+                   headers={"If-Match": _current_etag(backend, "t-gone")})
     assert r.status_code == 503
     assert r.json()["detail"]["code"] == "REKORDBOX_DB_UNAVAILABLE"

@@ -15,6 +15,7 @@
 	let loading = $state(true);
 	let expanded = $state<string | null>(null);
 	let candidates = $state<RelocateCandidate[]>([]);
+	let candidateOriginalPath = $state<string | null>(null);
 	let candidatesLoading = $state(false);
 	let applying = $state<string | null>(null);
 
@@ -34,6 +35,7 @@
 		if (expanded === track.stable_id) {
 			expanded = null;
 			candidates = [];
+			candidateOriginalPath = null;
 			return;
 		}
 		expanded = track.stable_id;
@@ -42,6 +44,7 @@
 		try {
 			const found = await getRelocateCandidates(track.stable_id);
 			candidates = found.candidates;
+			candidateOriginalPath = found.original_path;
 		} catch (exc) {
 			pushToast(`Failed to find candidates: ${exc}`, 'error');
 		} finally {
@@ -52,17 +55,18 @@
 	async function relocate(track: BrokenTrack, candidate: RelocateCandidate): Promise<void> {
 		applying = track.stable_id;
 		try {
-			let ifMatch: string | undefined;
-			if (!track.vendor_id) {
-				// State-layer write needs the current track etag (rekordbox
-				// writes go straight to the live rekordbox db instead).
-				const { etag } = await getTrack(track.stable_id);
-				ifMatch = etag;
+			if (!candidateOriginalPath) {
+				throw new Error('candidate selection is missing its recorded path');
 			}
-			await applyRelocate(track.stable_id, candidate.path, { ifMatch });
+			const { etag } = await getTrack(track.stable_id);
+			await applyRelocate(track.stable_id, candidate.path, {
+				ifMatch: etag,
+				expectedOriginalPath: candidateOriginalPath
+			});
 			pushToast(`Relocated "${track.title ?? track.stable_id}"`, 'info');
 			expanded = null;
 			candidates = [];
+			candidateOriginalPath = null;
 			await load();
 		} catch (exc) {
 			if (exc instanceof RelocateApplyError) {

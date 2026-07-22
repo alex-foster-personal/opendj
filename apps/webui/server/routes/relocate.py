@@ -46,8 +46,11 @@ Endpoints
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
@@ -62,9 +65,10 @@ from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
 from .. import rb_vendor
 from ..backend import StateBackend, Track
 from ..deps import get_read_state, get_write_state
-from ..errors import precondition_required
+from ..etag import compute_etag, strip_quotes
 
 router = APIRouter(prefix="/relocate", tags=["relocate"])
+_REKORDBOX_WRITE_LOCK = threading.Lock()
 
 
 # ----- response/request models (route-local: models.py is a hotspot file) --
@@ -86,6 +90,10 @@ class RelocateCandidateList(BaseModel):
 
 class RelocateApplyIn(BaseModel):
     new_path: str = Field(min_length=1, description="Candidate path to adopt; must exist on disk.")
+    expected_original_path: str = Field(
+        min_length=1,
+        description="Recorded path returned with the selected candidate; prevents stale targeting.",
+    )
     confirm: bool = Field(
         description="Must be true. Explicit safety gate -- this writes to "
                     "the live rekordbox database or the state layer."
@@ -124,6 +132,75 @@ def _resolve_original_path(stable_id: str, track: Track) -> tuple[Optional[str],
     if not _is_local(folder):
         return None, vendor_id
     return folder, vendor_id
+
+
+def _require_current_etag(track: Track, if_match: str | None) -> None:
+    """Reject a relocate based on a stale track view before selecting a target."""
+    if not if_match:
+        raise HTTPException(status_code=428, detail={
+            "code": "PRECONDITION_REQUIRED",
+            "message": "POST /relocate/{stable_id}/apply requires If-Match",
+        })
+    current = compute_etag(track.stable_id, track.updated_at)
+    if strip_quotes(current) != strip_quotes(if_match):
+        raise HTTPException(status_code=409, detail={
+            "code": "RELOCATE_ETAG_CONFLICT",
+            "message": "track changed since candidates were selected; refresh and choose again",
+        })
+
+
+def _validated_candidate_path(new_path: str) -> str:
+    """Return a canonical regular audio path contained in a configured root.
+
+    ``resolve`` prevents a symlink from escaping a music root and the
+    descriptor check rejects a final-component symlink swap between stat and
+    use. We persist the canonical path, never the caller's spelling.
+    """
+    requested = Path(new_path)
+    if not requested.is_absolute():
+        raise HTTPException(status_code=422, detail={
+            "code": "CANDIDATE_PATH_NOT_ABSOLUTE",
+            "message": "candidate path must be absolute",
+        })
+    try:
+        before = requested.lstat()
+        resolved = requested.resolve(strict=True)
+        no_follow = getattr(os, "O_NOFOLLOW", None)
+        if no_follow is None:
+            raise HTTPException(status_code=503, detail={
+                "code": "CANDIDATE_PATH_GUARD_UNAVAILABLE",
+                "message": "this platform cannot safely verify a symlink-free candidate path",
+            })
+        descriptor = os.open(str(resolved), os.O_RDONLY | no_follow)
+        try:
+            after = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "CANDIDATE_PATH_NOT_FOUND",
+            "message": f"candidate path does not exist on disk: {requested}",
+        }) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "CANDIDATE_PATH_UNSAFE",
+            "message": f"candidate path must be a non-symlink readable file: {requested}",
+        }) from exc
+    if requested.is_symlink() or before.st_ino != after.st_ino or not resolved.is_file():
+        raise HTTPException(status_code=422, detail={
+            "code": "CANDIDATE_PATH_UNSAFE",
+            "message": f"candidate path must be a stable regular file: {requested}",
+        })
+    for root in paths.MUSIC_ROOTS:
+        try:
+            resolved.relative_to(root.resolve(strict=True))
+            return str(resolved)
+        except (FileNotFoundError, ValueError):
+            continue
+    raise HTTPException(status_code=422, detail={
+        "code": "CANDIDATE_PATH_OUTSIDE_MUSIC_ROOTS",
+        "message": "candidate path must be contained in a configured music root",
+    })
 
 
 # ----- candidates ------------------------------------------------------------
@@ -166,19 +243,58 @@ def get_candidates(
 
 # ----- apply -------------------------------------------------------------
 
-def _rekordbox_running() -> bool:
-    """True if any process matches ``rekordbox`` via ``pgrep -if``."""
+def _assert_rekordbox_not_running() -> None:
+    """Fail closed unless the Rekordbox process guard is available and clear."""
     try:
         r = subprocess.run(
             ["pgrep", "-if", "rekordbox"], check=False,
             capture_output=True, text=True,
         )
     except FileNotFoundError:
-        return False
-    return r.returncode == 0 and bool(r.stdout.strip())
+        raise HTTPException(status_code=503, detail={
+            "code": "REKORDBOX_PROCESS_CHECK_UNAVAILABLE",
+            "message": "cannot verify that Rekordbox is stopped",
+        })
+    if r.returncode not in (0, 1):
+        raise HTTPException(status_code=503, detail={
+            "code": "REKORDBOX_PROCESS_CHECK_FAILED",
+            "message": "cannot verify that Rekordbox is stopped",
+        })
+    if r.returncode == 0 and r.stdout.strip():
+        raise HTTPException(status_code=409, detail={
+            "code": "REKORDBOX_RUNNING",
+            "message": "Rekordbox is currently running; quit it before relocating files",
+        })
 
 
-def _write_rekordbox_folder_path(vendor_id: str, new_path: str) -> str:
+def _backup_live_database() -> Path:
+    backup_dir = paths.DATA_DIR / "reconcile" / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+    backup = backup_dir / f"master.{stamp}.{uuid.uuid4().hex}.db"
+    shutil.copy2(paths.REKORDBOX_LIVE_DB, backup)
+    if backup.stat().st_size != paths.REKORDBOX_LIVE_DB.stat().st_size:
+        raise HTTPException(status_code=500, detail={
+            "code": "REKORDBOX_BACKUP_FAILED",
+            "message": f"backup size verification failed: {backup}",
+        })
+    return backup
+
+
+def _restore_live_database(backup: Path) -> None:
+    """Restore a verified backup only while the Rekordbox process guard is clear."""
+    _assert_rekordbox_not_running()
+    shutil.copy2(backup, paths.REKORDBOX_LIVE_DB)
+    if backup.stat().st_size != paths.REKORDBOX_LIVE_DB.stat().st_size:
+        raise HTTPException(status_code=500, detail={
+            "code": "REKORDBOX_ROLLBACK_FAILED",
+            "message": f"backup restore size verification failed: {backup}",
+        })
+
+
+def _write_rekordbox_folder_path(
+    vendor_id: str, expected_original_path: str, new_path: str,
+) -> str:
     """Patch ``djmdContent.FolderPath`` on the LIVE rekordbox db.
 
     Returns the backup path on success. Raises a clean ``HTTPException``
@@ -203,46 +319,58 @@ def _write_rekordbox_folder_path(vendor_id: str, new_path: str) -> str:
             "message": "pyrekordbox is not installed in this environment",
         }) from exc
 
-    if _rekordbox_running():
-        raise HTTPException(status_code=409, detail={
-            "code": "REKORDBOX_RUNNING",
-            "message": "Rekordbox is currently running; quit it before relocating files",
-        })
+    with _REKORDBOX_WRITE_LOCK:
+        _assert_rekordbox_not_running()
+        db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
+        backup: Path | None = None
+        write_started = False
+        write_error: Exception | None = None
+        try:
+            content = db.get_content(ID=vendor_id)
+            if content is None:
+                raise HTTPException(status_code=422, detail={
+                    "code": "VENDOR_ID_NOT_FOUND",
+                    "message": f"rekordbox djmdContent ID {vendor_id} not found in the live db",
+                })
+            if content.FolderPath != expected_original_path:
+                raise HTTPException(status_code=409, detail={
+                    "code": "RELOCATE_TARGET_CHANGED",
+                    "message": "live rekordbox FolderPath changed; refresh candidates before applying",
+                })
+            backup = _backup_live_database()
+            _assert_rekordbox_not_running()
+            write_started = True
+            content.FolderPath = new_path
+            db.commit()
+        except Exception as exc:
+            write_error = exc
+        finally:
+            db.close()
 
-    backup_dir = paths.DATA_DIR / "reconcile" / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%dT%H%M%S")
-    backup = backup_dir / f"master.{ts}.db"
-    shutil.copy2(paths.REKORDBOX_LIVE_DB, backup)
-
-    db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
-    try:
-        content = db.get_content(ID=vendor_id)
-        if content is None:
-            raise HTTPException(status_code=422, detail={
-                "code": "VENDOR_ID_NOT_FOUND",
-                "message": f"rekordbox djmdContent ID {vendor_id} not found in the live db",
-            })
-        content.FolderPath = new_path
-        db.commit()
-    finally:
-        db.close()
-
-    verify_db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
-    try:
-        readback = verify_db.get_content(ID=vendor_id)
-        if readback is None or readback.FolderPath != new_path:
+        if write_error is not None:
+            if backup is None or not write_started:
+                raise write_error
+            _restore_live_database(backup)
             raise HTTPException(status_code=500, detail={
-                "code": "RELOCATE_VERIFY_FAILED",
-                "message": (
-                    f"FolderPath did not read back as {new_path!r} after write; "
-                    f"restore from backup if needed: {backup}"
-                ),
-            })
-    finally:
-        verify_db.close()
+                "code": "RELOCATE_WRITE_ROLLED_BACK",
+                "message": f"live write failed and backup was restored: {backup}",
+            }) from write_error
 
-    return str(backup)
+        assert backup is not None
+        verify_db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
+        verify_failed = False
+        try:
+            readback = verify_db.get_content(ID=vendor_id)
+            verify_failed = readback is None or readback.FolderPath != new_path
+        finally:
+            verify_db.close()
+        if verify_failed:
+            _restore_live_database(backup)
+            raise HTTPException(status_code=500, detail={
+                "code": "RELOCATE_WRITE_ROLLED_BACK",
+                "message": f"FolderPath verification failed and backup was restored: {backup}",
+            })
+        return str(backup)
 
 
 @router.post("/{stable_id}/apply", response_model=RelocateApplyOut)
@@ -258,34 +386,50 @@ def apply_relocate(
             "message": "confirm must be true to apply a relocate",
         })
 
-    new_path = Path(body.new_path)
-    if not new_path.exists():
-        raise HTTPException(status_code=422, detail={
-            "code": "CANDIDATE_PATH_NOT_FOUND",
-            "message": f"candidate path does not exist on disk: {new_path}",
+    track = backend.get_track(stable_id)  # NotFoundError -> 404
+    _require_current_etag(track, if_match)
+    original_path, vendor_id = _resolve_original_path(stable_id, track)
+    if original_path is None or original_path != body.expected_original_path:
+        raise HTTPException(status_code=409, detail={
+            "code": "RELOCATE_TARGET_CHANGED",
+            "message": "recorded path changed; refresh candidates before applying",
+        })
+    new_path = _validated_candidate_path(body.new_path)
+    index = locate.FsIndex.build(audio_files.scan_music_files())
+    row = {
+        "original_path": original_path,
+        "basename": Path(original_path).name,
+        "title": track.title or "",
+        "artist": track.artist or "",
+        "duration_s": str(track.duration_ms / 1000) if track.duration_ms else "",
+        "file_size": "",
+    }
+    current_candidates = locate.find_candidates(row, index, {}, limit=20)
+    if new_path not in {str(candidate.path.resolve()) for candidate in current_candidates}:
+        raise HTTPException(status_code=409, detail={
+            "code": "RELOCATE_CANDIDATE_STALE",
+            "message": "candidate no longer matches this track; refresh candidates before applying",
         })
 
-    backend.get_track(stable_id)  # NotFoundError -> 404
-    meta = rb_vendor.bulk_rb_meta([stable_id]).get(stable_id)
-    vendor_id = meta.vendor_id if meta is not None else None
-
     if vendor_id is not None:
-        backup_path = _write_rekordbox_folder_path(vendor_id, str(new_path))
+        backup_path = _write_rekordbox_folder_path(
+            vendor_id, original_path, new_path,
+        )
         return RelocateApplyOut(
             stable_id=stable_id, new_path=str(new_path), target="rekordbox",
             vendor_id=vendor_id, backup_path=backup_path,
         )
 
-    if not if_match:
-        return precondition_required(
-            "POST /relocate/{stable_id}/apply requires If-Match when the "
-            "track has no rekordbox vendor mapping (state-layer file_path write)"
-        )
-    backend.update_track(
-        stable_id, {"file_path": str(new_path)}, expected_etag=if_match, source="webui",
+    updated = backend.update_track(
+        stable_id, {"file_path": new_path}, expected_etag=if_match, source="webui",
     )
+    if updated.file_path != new_path or backend.get_track(stable_id).file_path != new_path:
+        raise HTTPException(status_code=500, detail={
+            "code": "RELOCATE_STATE_READBACK_FAILED",
+            "message": "state-layer file_path did not read back after update",
+        })
     return RelocateApplyOut(
-        stable_id=stable_id, new_path=str(new_path), target="state",
+        stable_id=stable_id, new_path=new_path, target="state",
         vendor_id=None, backup_path=None,
     )
 
