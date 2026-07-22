@@ -8,10 +8,11 @@
 	// States (never invented):
 	//   strip null  -> explicit dash: no ANLZ preview after the full
 	//                  PWV6 -> PWV4 -> PWAV fallback chain
-	//   vocals      -> SPIKE-B1 three mandatory states: 'rekordbox' draws
-	//                  blue top bars; 'no_vocals' / 'not_analyzed' draw
-	//                  nothing and tooltip the reason; null = unknown
-	//                  client-side, so NO bars and NO claim either way
+	//   vocals      -> SPIKE-B1/B2 four mandatory states: 'rekordbox' and
+	//                  'demucs' (local detection) draw blue top bars;
+	//                  'no_vocals' / 'not_analyzed' draw nothing and
+	//                  tooltip the reason; null = unknown client-side,
+	//                  so NO bars and NO claim either way
 	import type { PreviewStripData, Vocals } from '$lib/rb/api-rb';
 	import { VOCAL_BAR_PX, VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
@@ -43,6 +44,7 @@
 		if (vocals === null) return null; // unknown client-side: say nothing
 		if (vocals.status === 'no_vocals') return 'no vocals detected';
 		else if (vocals.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
+		else if (vocals.status === 'demucs') return 'vocals: local detection';
 		else return null;
 	});
 
@@ -102,7 +104,12 @@
 				_bar(ctx, x, _bandMax(data.bands, 2, c0, c1) / data.max, COL_HIGH);
 			}
 		}
-		if (voc !== null && voc.status === 'rekordbox' && durMs !== null && durMs > 0) {
+		if (
+			voc !== null &&
+			(voc.status === 'rekordbox' || voc.status === 'demucs') &&
+			durMs !== null &&
+			durMs > 0
+		) {
 			ctx.fillStyle = VOCAL_BLUE;
 			for (const region of voc.regions) {
 				const x0 = Math.max(0, ((region.start_s * 1000) / durMs) * W);

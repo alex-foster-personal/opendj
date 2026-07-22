@@ -93,14 +93,17 @@ async function _deleteRequest<T>(path: string, ifMatch?: string): Promise<T> {
 	return (await r.json()) as T;
 }
 
-// --------------------------------------------- /anlz vocals (SPIKE-B1)
+// --------------------------------------------- /anlz vocals (SPIKE-B1/B2)
 // Shared contract point 5: GET /tracks/{sid}/anlz gains field "vocals",
-// exactly one of the three states below. The three UI states are
-// MANDATORY (bars / analyzed-no-vocals / not-analyzed) - bars are never
-// rendered from anything but real PVDI-derived regions.
+// exactly one of the four states below. The UI states are MANDATORY
+// (bars / analyzed-no-vocals / not-analyzed) - bars are never rendered
+// from anything but real regions. 'demucs' is the SPIKE-B2 local
+// detection fallback (data/state/vocal-cache) merged server-side when
+// PVDI is absent; 'not_analyzed' now means NEITHER source exists.
 
-/** One vocal region: a run of PVDI intensity >= VOCAL_INTENSITY_MIN.
- * intensity is the max PVDI value (1..4) within the run. */
+/** One vocal region. For 'rekordbox' intensity is the max PVDI value
+ * (1..4) within the run; for 'demucs' it is the worker confidence
+ * mapped onto the same 1..4 ramp, so both render identically. */
 export interface VocalRegion {
 	start_s: number;
 	end_s: number;
@@ -110,6 +113,7 @@ export interface VocalRegion {
 export type Vocals =
 	| { status: 'rekordbox'; fps: number; regions: VocalRegion[] }
 	| { status: 'no_vocals'; fps: number; regions: VocalRegion[] } // regions always []
+	| { status: 'demucs'; fps: number; regions: VocalRegion[] } // local detection; [] = none found
 	| { status: 'not_analyzed' };
 
 /** AnlzData plus the contract's vocals field. types.ts is the frozen
@@ -126,7 +130,7 @@ function _validateVocals(raw: unknown): Vocals {
 	}
 	const v = raw as { status?: unknown; fps?: unknown; regions?: unknown };
 	if (v.status === 'not_analyzed') return { status: 'not_analyzed' };
-	if (v.status !== 'rekordbox' && v.status !== 'no_vocals') {
+	if (v.status !== 'rekordbox' && v.status !== 'no_vocals' && v.status !== 'demucs') {
 		throw new Error(`anlz vocals: unknown status ${JSON.stringify(v.status)}`);
 	}
 	if (typeof v.fps !== 'number') throw new Error('anlz vocals: fps missing or not a number');

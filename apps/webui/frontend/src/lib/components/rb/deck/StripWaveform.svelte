@@ -36,6 +36,7 @@
 		if (vocals === null) return null;
 		if (vocals.status === 'no_vocals') return 'no vocals detected';
 		else if (vocals.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
+		else if (vocals.status === 'demucs') return 'vocals: local detection';
 		else return null; // rekordbox: the bars themselves are the signal
 	});
 
@@ -97,7 +98,8 @@
 	}
 
 	function _drawVocalBars(ctx: CanvasRenderingContext2D, v: Vocals): void {
-		if (v.status !== 'rekordbox') return; // barless states draw nothing
+		// rekordbox + demucs render identically; barless states draw nothing
+		if (v.status !== 'rekordbox' && v.status !== 'demucs') return;
 		const dur = deck.duration_ms;
 		if (dur === null || dur === 0) return; // cannot place bars without a duration
 		ctx.fillStyle = VOCAL_BLUE;

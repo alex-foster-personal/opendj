@@ -58,12 +58,15 @@ import numpy as np
 from fastapi import HTTPException
 
 from apps.shared.paths import DATA_DIR, STATE_DB
+from apps.vocals import cache as vocal_cache
 
 log = logging.getLogger(__name__)
 
 MASTER_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
 SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 ANLZ_CACHE_DIR: Path = DATA_DIR / "state" / "anlz-cache"
+# demucs gap-fill cache written by ``python -m apps.vocals`` (SPIKE-B2).
+VOCAL_CACHE_DIR: Path = vocal_cache.cache_dir(DATA_DIR)
 
 AUDIO_MEDIA_TYPES: dict[str, str] = {
     ".mp3": "audio/mpeg",
@@ -531,8 +534,10 @@ def _vocal_regions(envelope: bytes, fps: float) -> list[dict[str, Any]]:
 
 
 def vocals_payload(path_2ex: Path) -> dict[str, Any]:
-    """The ``vocals`` field for /anlz -- exactly one of the three mandatory
-    states (SPIKE-SUMMARY section 3): rekordbox / no_vocals / not_analyzed."""
+    """The PVDI-derived ``vocals`` field for /anlz -- exactly one of the
+    three PVDI states (SPIKE-SUMMARY section 3): rekordbox / no_vocals /
+    not_analyzed. The demucs fallback (fourth status) is merged at serve
+    time by :func:`merge_demucs_vocals`, never cached here."""
     if not path_2ex.is_file():
         return {"status": "not_analyzed"}
     pvdi = read_pvdi(path_2ex)
@@ -543,6 +548,42 @@ def vocals_payload(path_2ex: Path) -> dict[str, Any]:
     if not regions:
         return {"status": "no_vocals", "fps": round(fps, 2), "regions": []}
     return {"status": "rekordbox", "fps": round(fps, 2), "regions": regions}
+
+
+def demucs_vocals_payload(content: RbContent) -> Optional[dict[str, Any]]:
+    """``{"status": "demucs", ...}`` from the vocal-cache, or None.
+
+    None covers every real absence: no cache entry, schema-bumped entry,
+    streaming/pathless track, audio gone from disk, or audio_mtime changed
+    since analysis (regions computed for a different file must never be
+    served - SPIKE-SUMMARY section 3 cache contract). Corrupt entries
+    raise inside apps.vocals.cache - fail fast, no invented regions.
+    """
+    if content.folder_path is None or is_streaming_path(content.folder_path):
+        return None
+    entry = vocal_cache.load_valid_entry(
+        VOCAL_CACHE_DIR / f"{content.stable_id}.json",
+        resolve_share_path(content.folder_path),
+    )
+    if entry is None:
+        return None
+    return vocal_cache.anlz_vocals_of(entry)
+
+
+def merge_demucs_vocals(
+    payload: dict[str, Any], content: RbContent
+) -> dict[str, Any]:
+    """Serve-time merge: when PVDI said not_analyzed, consult the demucs
+    vocal-cache. Applied AFTER the anlz file cache on purpose -- the cached
+    payload stays PVDI-only, so a vocal-cache entry landing (or being
+    invalidated) later is reflected without an anlz-cache schema bump.
+    After this merge, ``not_analyzed`` means NEITHER source exists."""
+    if payload["vocals"]["status"] != "not_analyzed":
+        return payload
+    demucs = demucs_vocals_payload(content)
+    if demucs is None:
+        return payload
+    return {**payload, "vocals": demucs}
 
 
 # ----- playlist ordering (djmdPlaylist Seq) -----------------------------------
@@ -1005,7 +1046,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     if cached is not None:
         payload = dict(cached)
         payload["cues"] = fetch_cues(content.vendor_id)
-        return payload
+        return merge_demucs_vocals(payload, content)
 
     tags = _first_tags(directory)
     if "PWV6" in tags and "PWV7" in tags:
@@ -1036,7 +1077,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
 
     _store_cached_payload(content.stable_id, anlz_mtime, points, payload)
     payload["cues"] = fetch_cues(content.vendor_id)
-    return payload
+    return merge_demucs_vocals(payload, content)
 
 
 # ----- hot-cue SAVE (djmdCue Kind 1-8 write surface, edit-write-path lane) --
@@ -1591,6 +1632,7 @@ __all__ = [
     "RbRowMeta",
     "SHARE_ROOT",
     "STREAMING_PREFIXES",
+    "VOCAL_CACHE_DIR",
     "VOCAL_INTENSITY_MIN",
     "VOCAL_MERGE_GAP_S",
     "VOCAL_MIN_REGION_S",
@@ -1604,9 +1646,11 @@ __all__ = [
     "bulk_rb_meta",
     "clear_hot_cue",
     "count_cues",
+    "demucs_vocals_payload",
     "fetch_cues",
     "fetch_hot_cue_slots",
     "is_streaming_path",
+    "merge_demucs_vocals",
     "not_found",
     "preview_strip",
     "read_pvdi",
