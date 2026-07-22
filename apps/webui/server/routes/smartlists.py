@@ -41,7 +41,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
-from apps.shared.state import db as state_db
 from apps.smartlists.evaluator import EvaluatorError, evaluate
 
 from .. import rb_vendor
@@ -170,17 +169,30 @@ def get_smartlists_conn(request: Request) -> Iterator[sqlite3.Connection]:
 
     503s explicitly when state.db is absent -- an InMemoryBackend deploy
     has no smartlists store and we never mock one.
+
+    check_same_thread=False (unlike state_db.open_ro): FastAPI runs sync
+    dependencies and sync endpoints on DIFFERENT threadpool threads, so a
+    conn created here with the sqlite default raises ProgrammingError in
+    the endpoint under load. Read-only + query_only + per-request scope
+    makes cross-thread use safe (found live in the e2e-gating round).
     """
     db_path = Path(
         getattr(request.app.state, "state_db_path", "data/state/state.db")
     )
-    try:
-        conn = state_db.open_ro(db_path)
-    except FileNotFoundError as exc:
+    if not db_path.exists():
         raise HTTPException(status_code=503, detail={
             "code": "SMARTLISTS_DB_UNAVAILABLE",
-            "message": str(exc),
-        }) from exc
+            "message": (
+                f"state DB not found at {db_path}; run "
+                "`python -m apps.shared.state.cli init` first."
+            ),
+        })
+    conn = sqlite3.connect(
+        f"file:{db_path}?mode=ro", uri=True, isolation_level=None,
+        check_same_thread=False,
+    )
+    conn.execute("PRAGMA query_only = ON")
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
     finally:
