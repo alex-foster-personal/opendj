@@ -80,6 +80,22 @@ PATCH_RULES: list[str] = [
     "commits",
 ]
 
+_ETAG_RESPONSE_HEADER: dict[str, dict[str, Any]] = {
+    "ETag": {
+        "description": "Strong validator for the exact progress ledger bytes",
+        "schema": {"type": "string"},
+    },
+}
+_PATCH_RESPONSES: dict[int, dict[str, Any]] = {
+    200: {"headers": _ETAG_RESPONSE_HEADER},
+    409: {
+        "description": "If-Match is stale; refresh the ledger before retrying",
+        "headers": _ETAG_RESPONSE_HEADER,
+    },
+    428: {"description": "If-Match header is required for every progress write"},
+    503: {"description": "Writes are disabled because the cloud lock is unavailable or held by a peer"},
+}
+
 
 # ----- pydantic models (inline per router convention) -------------------------
 
@@ -257,7 +273,7 @@ def _now_iso() -> str:
 
 # ----- routes -----------------------------------------------------------------
 
-@router.get("")
+@router.get("", responses={200: {"headers": _ETAG_RESPONSE_HEADER}})
 def get_progress(response: Response) -> dict[str, Any]:
     """Full parsed tree + ledger-file git provenance + per-area rollups."""
     tree = _load_tree()
@@ -286,7 +302,11 @@ def get_progress_schema() -> dict[str, Any]:
     }
 
 
-@router.patch("/nodes/{node_id}", response_model=NodePatchOut)
+@router.patch(
+    "/nodes/{node_id}",
+    response_model=NodePatchOut,
+    responses=_PATCH_RESPONSES,
+)
 def patch_progress_node(
     node_id: str,
     patch: NodePatch,
