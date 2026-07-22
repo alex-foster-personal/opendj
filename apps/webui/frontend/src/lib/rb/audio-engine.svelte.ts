@@ -565,25 +565,17 @@ export function observePresentedTransportTimeline(
 				`contextTime=${contextTime}, performanceTime=${performanceTime}`
 		);
 	}
-	if (contextTime === 0 && performanceTime === 0) {
+	// Chromium may expose the current performance clock while the output frame
+	// remains at zero during device warmup. Context time is presentation truth.
+	if (contextTime === 0) {
 		return _presentedObservation(
 			timeline,
 			false,
 			timeline.last_presentation_context_time_s !== null
 		);
 	}
-	if (contextTime === 0 || performanceTime === 0) {
-		throw new RangeError(
-			`zero timestamp must be exactly {contextTime: 0, performanceTime: 0}, got ` +
-				`contextTime=${contextTime}, performanceTime=${performanceTime}`
-		);
-	}
 	const previousContextTime = timeline.last_presentation_context_time_s;
-	const previousPerformanceTime = timeline.last_presentation_performance_time_ms;
-	if (
-		(previousContextTime !== null && contextTime < previousContextTime) ||
-		(previousPerformanceTime !== null && performanceTime < previousPerformanceTime)
-	) {
+	if (previousContextTime !== null && contextTime < previousContextTime) {
 		return _presentedObservation(timeline, false, true);
 	}
 
@@ -625,6 +617,7 @@ export function observePresentedTransportTimeline(
 		if (!audible) timeline.paused_position_sec = positionSec;
 	}
 	timeline.last_presentation_context_time_s = contextTime;
+	// Performance time is correlation/diagnostic data, never transport authority.
 	timeline.last_presentation_performance_time_ms = performanceTime;
 	return _presentedObservation(timeline, true, true);
 }
