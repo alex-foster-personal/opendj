@@ -244,7 +244,8 @@ export interface DeckState {
 	transport_pending: boolean;
 	/** CUE point ms for return-to-cue transport semantics; null = track start. */
 	cue_ms: number | null;
-	/** Playback rate ratio. v1 fixed at 1.0; pitch UI renders 0.0% static. */
+	/** Playback rate ratio; 1.0 = 0% pitch. Driven live by the deck pitch
+	 * fader (setTempoRatio), constrained to the deck's selected pitch range. */
 	pitch: number;
 	/** Quantize transport seeks, cue placement, and loop endpoints to PQTZ. */
 	quantize_enabled: boolean;
@@ -424,8 +425,8 @@ export interface AudioEngine {
 	/** Seek to a position in ms (hot-cue click / CUE return). Implemented as
 	 * buffer-source restart at offset. Throws if no track loaded. */
 	cueJump(deck: DeckId, ms: number): Promise<void>;
-	/** Set playback-rate ratio. v1 the UI keeps this at 1.0 (pitch slider
-	 * inert); the engine still validates 0 < ratio. */
+	/** Set playback-rate ratio from the pitch fader. Validates 0 < ratio and
+	 * that it fits the deck's selected pitch range. */
 	setPitch(deck: DeckId, ratio: number): Promise<void>;
 	/** Semantic alias for setPitch: ratio controls tempo, while Master Tempo
 	 * independently controls whether pitch is preserved. */

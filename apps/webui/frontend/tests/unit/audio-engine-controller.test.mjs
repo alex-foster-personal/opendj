@@ -1429,3 +1429,21 @@ test('public controller exposes semantic tempo, sync, master, quantize, and anal
 	await assert.rejects(audio.engine.setDeckMaster(1), /no track loaded/i);
 	assert.throws(() => audio.engine.captureDeckAudio(1), /no track loaded/i);
 });
+
+test('setPitchRange (pitch-slider range switcher) rejects a range the current pitch no longer fits', () => {
+	const deck = 4;
+	assert.equal(audio.pitchRanges[deck], 16);
+
+	audio.engine.setPitchRange(deck, 8);
+	assert.equal(audio.pitchRanges[deck], 8);
+
+	audio.deckStates[deck].pitch = 1.1;
+	assert.throws(() => audio.engine.setPitchRange(deck, 8), /exceeds/);
+	assert.equal(audio.pitchRanges[deck], 8, 'a rejected range switch must not mutate state');
+
+	audio.deckStates[deck].pitch = 1;
+	audio.engine.setPitchRange(deck, 100);
+	assert.equal(audio.pitchRanges[deck], 100);
+
+	assert.throws(() => audio.engine.setPitchRange(deck, 12), /invalid range/i);
+});

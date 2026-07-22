@@ -24,7 +24,7 @@
 		inertTip: string;
 	} = $props();
 
-	// Live BPM = track BPM x playback ratio (ratio fixed 1.0 at v1).
+	// Live BPM = track BPM x playback ratio (ratio driven by the pitch fader).
 	const liveBpm: number | null = $derived(deck.bpm === null ? null : deck.bpm * deck.pitch);
 	const bpmText: string = $derived(liveBpm === null ? '--.--' : liveBpm.toFixed(2));
 	const pitchText: string = $derived(`${((deck.pitch - 1) * 100).toFixed(1)}%`);
