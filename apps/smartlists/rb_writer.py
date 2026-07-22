@@ -288,7 +288,7 @@ class RBPlaylistWriter:
         return members
 
     def apply_with_backup_by_id(
-        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str,
+        self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
         expected_mapping_revision: str, assert_source_current: Callable[[], None],
     ):
         """CAS, WAL-safe backup, and mutation in one Rekordbox transaction."""
@@ -316,6 +316,11 @@ class RBPlaylistWriter:
                 mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if mapping_revision != expected_mapping_revision:
                     raise WritebackConflict("rekordbox: mapping changed inside vendor transaction")
+                native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
+                missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
+                if missing:
+                    raise WritebackConflict(f"rekordbox: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
+                native_members = [native_mapping[stable_id] for stable_id in stable_members]
                 assert_source_current()
                 with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
                     backup = WritebackBackup(online_backup(snapshot, "rekordbox"))

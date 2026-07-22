@@ -39,7 +39,7 @@ class VendorPlaylistWriter(Protocol):
     def list_playlists(self) -> list[VendorPlaylist]: ...
     def read_members_by_id(self, playlist_id: str) -> list[str]: ...
     def apply_with_backup_by_id(
-        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str,
+        self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
         expected_mapping_revision: str, assert_source_current: Callable[[], None],
     ) -> tuple[WritebackBackup, str]: ...
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str: ...
@@ -211,22 +211,6 @@ class WritebackService:
         ).fetchall()
         return _revision(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows))
 
-    @staticmethod
-    def _native_payload(writer: VendorPlaylistWriter, desired_ids: list[str]) -> list[str]:
-        if not desired_ids:
-            return []
-        unique = list(dict.fromkeys(desired_ids))
-        placeholders = ",".join("?" * len(unique))
-        rows = writer.state_conn.execute(  # type: ignore[attr-defined]
-            "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? "
-            f"AND stable_id IN ({placeholders})", (writer.vendor, *unique),
-        ).fetchall()
-        mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in rows}
-        missing = [stable_id for stable_id in desired_ids if stable_id not in mapping]
-        if missing:
-            raise WritebackConflict(f"{writer.vendor}: desired mapping changed before write: {missing[:5]}")
-        return [mapping[stable_id] for stable_id in desired_ids]
-
     def _assert_source_snapshot(self, source_playlist_id: str, expected_source_revision: str) -> None:
         """Reject a source edit at the vendor mutation boundary when available."""
         if self._source_members_reader is None:
@@ -289,11 +273,8 @@ class WritebackService:
         if not confirmed:
             raise WritebackConflict("live writeback requires confirmed=true")
         writer = self._writer(vendor, target_mode, target_path)
-        native_payload = self._native_payload(writer, desired_ids)
-        if self._mapping_revision(writer, desired_ids) != plan.mapping_revision:
-            raise WritebackConflict("writeback mapping changed before immutable vendor payload was captured")
         backup, target_revision = writer.apply_with_backup_by_id(
-            target_id, native_payload, desired_ids, plan.target_revision, plan.mapping_revision,
+            target_id, desired_ids, plan.target_revision, plan.mapping_revision,
             lambda: self._assert_source_snapshot(source_playlist_id, plan.source_revision),
         )
         return WritebackApplyResult(vendor, target_id, plan.target_name, True, False,

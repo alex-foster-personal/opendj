@@ -29,14 +29,14 @@ class _Writer:
     def read_members_by_id(self, playlist_id):
         assert playlist_id == "native-1"
         return list(self.members)
-    def apply_with_backup_by_id(self, playlist_id, desired_members, _stable_members, expected, _mapping_revision, assert_source_current):
+    def apply_with_backup_by_id(self, playlist_id, stable_members, expected, _mapping_revision, assert_source_current):
         current = self.read_members_by_id(playlist_id)
         revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if revision != expected:
             raise WritebackConflict("stale")
         assert_source_current()
         self.backup = current
-        self.members = [self.state_conn.execute("SELECT stable_id FROM track_vendor_ids WHERE vendor = ? AND vendor_id = ?", (self.vendor, member)).fetchone()[0] for member in desired_members]
+        self.members = list(stable_members)
         after = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return WritebackBackup("b1"), after
     def restore_backup(self, backup_id, target_id, expected):

@@ -32,7 +32,7 @@ class _FakeVendorWriter:
         return [VendorPlaylist(playlist_id=playlist_id, name=name) for playlist_id, (name, _members) in self.playlists.items()]
     def read_members_by_id(self, playlist_id: str) -> list[str]:
         return list(self.playlists[playlist_id][1])
-    def apply_with_backup_by_id(self, playlist_id: str, desired_members: list[str], stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str, assert_source_current) -> tuple[WritebackBackup, str]:
+    def apply_with_backup_by_id(self, playlist_id: str, stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str, assert_source_current) -> tuple[WritebackBackup, str]:
         if _revision(playlist_id, self.read_members_by_id(playlist_id)) != expected_target_revision:
             raise WritebackConflict("target revision changed before transaction")
         if self.before_boundary_check is not None:
@@ -46,10 +46,13 @@ class _FakeVendorWriter:
         mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if mapping_revision != expected_mapping_revision:
             raise WritebackConflict("mapping changed inside vendor transaction")
+        native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in rows}
+        native_members = [native_mapping[stable_id] for stable_id in stable_members]
         backup_id = f"backup-{len(self.reversals) + 1}"
         preimage = self.read_members_by_id(playlist_id)
         backup = WritebackBackup(backup_id)
         self.calls.append(("backup", self.target_path))
+        self.calls.append(("native", playlist_id, native_members))
         self.calls.append(("replace", playlist_id, list(stable_members)))
         name, members = self.playlists[playlist_id]
         self.playlists[playlist_id] = (name, stable_members)
@@ -138,7 +141,7 @@ def test_vendor_boundary_rejects_source_edit_interleaved_after_plan(writer) -> N
     assert not writer.reversals
 
 
-def test_vendor_boundary_rejects_mapping_remap_after_native_payload_capture(service, writer) -> None:
+def test_vendor_boundary_rejects_mapping_remap_inside_vendor_transaction(service, writer) -> None:
     plan = _plan(service)
     writer.before_boundary_check = lambda: writer.state_conn.execute(
         "UPDATE track_vendor_ids SET vendor_id = 'rb-remapped-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"
@@ -147,6 +150,16 @@ def test_vendor_boundary_rejects_mapping_remap_after_native_payload_capture(serv
         service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target_mode="live", target_path="/fixture/live.db", target_id="one", plan_token=plan.plan_token, dry_run=False, confirmed=True)
     assert writer.playlists["one"][1] == ["a", "c"]
     assert not writer.reversals
+
+
+def test_vendor_boundary_derives_native_occurrences_from_the_checked_mapping_rows(service, writer) -> None:
+    plan = _plan(service)
+    writer.before_boundary_check = lambda: (
+        writer.state_conn.execute("UPDATE track_vendor_ids SET vendor_id = 'rb-remapped-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"),
+        writer.state_conn.execute("UPDATE track_vendor_ids SET vendor_id = 'rb-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"),
+    )
+    service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target_mode="live", target_path="/fixture/live.db", target_id="one", plan_token=plan.plan_token, dry_run=False, confirmed=True)
+    assert ("native", "one", ["rb-a", "rb-b"]) in writer.calls
 
 
 def test_dry_run_is_non_mutating_and_confirmation_is_required(service, writer) -> None:
