@@ -38,4 +38,3 @@ export interface PlayAnalyticsResponse {
 	sessions: AnalyticsSession[];
 	top_tracks: AnalyticsTrack[];
 }
-

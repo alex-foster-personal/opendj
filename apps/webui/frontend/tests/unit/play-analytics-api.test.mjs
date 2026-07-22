@@ -75,7 +75,6 @@ test('validatePlayAnalyticsResponse rejects malformed summary values', () => {
 		/play-analytics: summary.plays is not a finite number/
 	);
 });
-
 test('fetchPlayAnalytics fails loudly on a non-OK response', async () => {
 	globalThis.fetch = async () => new Response('schema missing', { status: 503 });
 
@@ -84,4 +83,3 @@ test('fetchPlayAnalytics fails loudly on a non-OK response', async () => {
 		/GET \/api\/play-analytics failed: 503 schema missing/
 	);
 });
-
