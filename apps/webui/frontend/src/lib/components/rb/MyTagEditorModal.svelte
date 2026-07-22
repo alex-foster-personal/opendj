@@ -13,6 +13,7 @@
 		renameMyTag,
 		type MyTagSummary
 	} from '$lib/rb/api-edit-suite';
+	import { runConfirmedMyTagSweep } from '$lib/rb/mytag-sweep-confirmation';
 	import { pushToast } from '$lib/stores.svelte';
 	import EditSuiteModal from './EditSuiteModal.svelte';
 
@@ -29,6 +30,7 @@
 	} = $props();
 
 	let tags = $state<MyTagSummary[]>([]);
+	let catalogRevision = $state('');
 	let loading = $state(true);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
@@ -43,7 +45,9 @@
 		loading = true;
 		error = null;
 		try {
-			tags = await listMyTags();
+			const catalog = await listMyTags();
+			tags = catalog.tags;
+			catalogRevision = catalog.catalog_revision;
 		} catch (exc) {
 			error = String(exc);
 		} finally {
@@ -61,10 +65,36 @@
 			renameTarget = null;
 			return;
 		}
+		const sourceName = renameTarget;
+		const sourceTag = tags.find((tag) => tag.name === sourceName);
+		if (sourceTag === undefined || catalogRevision === '') {
+			error = 'catalog scope is unavailable - refresh before renaming';
+			return;
+		}
+		const destinationName = renameValue.trim();
+		const destinationExists = tags.some((tag) => tag.name === destinationName);
 		busy = true;
 		try {
-			const res = await renameMyTag(renameTarget, renameValue.trim());
-			pushToast(`renamed "${renameTarget}" -> "${renameValue.trim()}" on ${res.tracks_updated} track(s)`, 'info');
+			const result = await runConfirmedMyTagSweep(
+				{
+					action: 'rename',
+					tagName: sourceName,
+					affectedTrackCount: sourceTag.track_count,
+					destinationName,
+					requiresMergeConsent: destinationExists
+				},
+				window.confirm,
+				async () =>
+					renameMyTag({
+						old_name: sourceName,
+						new_name: destinationName,
+						expected_catalog_revision: catalogRevision,
+						expected_track_count: sourceTag.track_count,
+						confirm_merge: destinationExists
+					})
+			);
+			if (result === null) return;
+			pushToast(`renamed "${sourceName}" -> "${destinationName}" on ${result.tracks_updated} track(s)`, 'info');
 			renameTarget = null;
 			await _refresh();
 		} catch (exc) {
@@ -75,10 +105,25 @@
 	}
 
 	async function removeTagEverywhere(name: string): Promise<void> {
+		const sourceTag = tags.find((tag) => tag.name === name);
+		if (sourceTag === undefined || catalogRevision === '') {
+			error = 'catalog scope is unavailable - refresh before deleting';
+			return;
+		}
 		busy = true;
 		try {
-			const res = await deleteMyTag(name);
-			pushToast(`removed "${name}" from ${res.tracks_updated} track(s)`, 'info');
+			const result = await runConfirmedMyTagSweep(
+				{ action: 'delete', tagName: name, affectedTrackCount: sourceTag.track_count },
+				window.confirm,
+				async () =>
+					deleteMyTag({
+						name,
+						expected_catalog_revision: catalogRevision,
+						expected_track_count: sourceTag.track_count
+					})
+			);
+			if (result === null) return;
+			pushToast(`removed "${name}" from ${result.tracks_updated} track(s)`, 'info');
 			await _refresh();
 		} catch (exc) {
 			pushToast(`delete failed: ${String(exc)}`, 'error');

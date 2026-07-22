@@ -110,11 +110,15 @@ export interface MyTagSummary {
 	track_count: number;
 }
 
-export async function listMyTags(): Promise<MyTagSummary[]> {
+export interface MyTagCatalog {
+	tags: MyTagSummary[];
+	catalog_revision: string;
+}
+
+export async function listMyTags(): Promise<MyTagCatalog> {
 	const r = await fetch(`${RB_API_BASE}/api/v1/mytags`, { headers: { Accept: 'application/json' } });
 	if (!r.ok) await _throwEditSuiteError(r);
-	const body = (await r.json()) as { tags: MyTagSummary[] };
-	return body.tags;
+	return (await r.json()) as MyTagCatalog;
 }
 
 export interface MyTagAssignResult {
@@ -131,10 +135,23 @@ export async function assignMyTags(body: {
 	return _postJson('/api/v1/mytags/assign', body);
 }
 
-export async function renameMyTag(old_name: string, new_name: string): Promise<{ tracks_updated: number }> {
-	return _postJson('/api/v1/mytags/rename', { old_name, new_name });
+export interface MyTagSweepPrecondition {
+	expected_catalog_revision: string;
+	expected_track_count: number;
 }
 
-export async function deleteMyTag(name: string): Promise<{ tracks_updated: number }> {
-	return _postJson('/api/v1/mytags/delete', { name });
+export async function renameMyTag(
+	body: MyTagSweepPrecondition & {
+		old_name: string;
+		new_name: string;
+		confirm_merge: boolean;
+	}
+): Promise<{ tracks_updated: number }> {
+	return _postJson('/api/v1/mytags/rename', body);
+}
+
+export async function deleteMyTag(
+	body: MyTagSweepPrecondition & { name: string }
+): Promise<{ tracks_updated: number }> {
+	return _postJson('/api/v1/mytags/delete', body);
 }

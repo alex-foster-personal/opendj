@@ -54,6 +54,8 @@ from .backend import (
     MAX_LIMIT, NotFoundError, Page, Pairing, Playlist, Provenance,
     QueueItem, QueueKind, Source, StateBackend, Track, TrackFilter,
     TrackUpdate,
+    MyTagMergeConfirmationRequiredError, MyTagScopeConflictError,
+    compute_mytag_catalog_revision,
 )
 from .etag import compute_etag, strip_quotes
 
@@ -614,7 +616,9 @@ class SqliteBackend:
             return [self.get_track(update.stable_id) for update in updates]
 
     def update_tag_members(
-        self, old_name: str, new_name: str | None, *, source: Source = "webui",
+        self, old_name: str, new_name: str | None, *,
+        expected_catalog_revision: str, expected_track_count: int,
+        confirm_merge: bool = False, source: Source = "webui",
     ) -> int:
         """Atomically rename or delete every current member of a tag.
 
@@ -633,11 +637,19 @@ class SqliteBackend:
                     "file_path, created_at, updated_at FROM tracks ORDER BY stable_id",
                 ))
                 fields_by_id = _fetch_fields(conn, [row["stable_id"] for row in rows])
-                members = [
+                tracks = [
                     _row_to_track(row, fields_by_id.get(row["stable_id"], {}))
                     for row in rows
                 ]
-                members = [track for track in members if old_name in track.tags]
+                catalog_revision = compute_mytag_catalog_revision(tracks)
+                members = [track for track in tracks if old_name in track.tags]
+                if (catalog_revision != expected_catalog_revision
+                        or len(members) != expected_track_count):
+                    raise MyTagScopeConflictError(catalog_revision, len(members))
+                if (new_name is not None
+                        and any(new_name in track.tags for track in tracks)
+                        and not confirm_merge):
+                    raise MyTagMergeConfirmationRequiredError(new_name)
                 updates = [
                     TrackUpdate(
                         track.stable_id,
