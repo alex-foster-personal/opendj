@@ -15,7 +15,6 @@
 		decodePreviewStrip,
 		fetchRbMeta,
 		getHealth,
-		getPlaylistHydrated,
 		getTrack,
 		listPlaylistsHydrated,
 		listTracksHydrated,
@@ -37,11 +36,17 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { setHideBrokenLinks, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import {
+		getPlaylistTracksEtag,
+		PlaylistConflictError,
+		replacePlaylistTracks
+	} from '$lib/rb/playlist-write';
 	import { pushToast } from '$lib/stores.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
+	import AddTrackSearch from './browser/AddTrackSearch.svelte';
 	import IconRail from './browser/IconRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
@@ -297,11 +302,24 @@
 				node.kind === 'all_tracks'
 					? await _fetchAllRows()
 					: await _fetchPlaylistRows(node.playlist_id);
-			p.completeLoad(seq, result.rows, result.truncated);
+			p.completeLoad(seq, result.rows, result.truncated, result.etag);
 		} catch (exc) {
 			p.failLoad(seq, String(exc));
 			pushToast(`playlist load failed: ${String(exc)}`, 'error');
 		}
+	}
+
+	/** Reconstructs the minimal PlaylistNode _loadPane needs to refresh the
+	 * currently-selected pane after a mutation (add-remove-reorder-tracks). */
+	function _currentNode(p: PaneStore): PlaylistNode | null {
+		if (p.playlist_id === null || p.playlist_id === 'all') return null;
+		return {
+			playlist_id: p.playlist_id,
+			name: p.title,
+			track_count: p.rows.length,
+			kind: 'playlist',
+			children: []
+		};
 	}
 
 	function _rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
@@ -363,7 +381,7 @@
 		};
 	}
 
-	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean }> {
+	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		// All Tracks: one page of MAX_ROWS with inline preview/file_exists
 		// (contract 1). ?available stays server-default 'all': FR-1 hiding
 		// is client-side so the toggle flips instantly on loaded panes; the
@@ -371,20 +389,23 @@
 		const page = await listTracksHydrated({ limit: MAX_ROWS });
 		return {
 			rows: page.items.map((t, i) => _rowFromListWire(t, i + 1)),
-			truncated: page.next_cursor !== null
+			truncated: page.next_cursor !== null,
+			// All Tracks is not a single playlist row - no membership etag.
+			etag: ''
 		};
 	}
 
 	async function _fetchPlaylistRows(
 		id: string
-	): Promise<{ rows: BrowserRow[]; truncated: boolean }> {
-		// Hydrated detail (contract 4): full rows in membership order, one
-		// request - the 29x per-row GET fan-out is gone.
-		const detail = await getPlaylistHydrated(id);
+	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
+		// Hydrated detail (contract 4) + the playlist's membership ETag
+		// (add-remove-reorder-tracks: required If-Match for the write side's
+		// PUT .../tracks) in one request - the 29x per-row GET fan-out stays gone.
+		const { detail, etag } = await getPlaylistTracksEtag(id);
 		const rows = detail.tracks
 			.slice(0, MAX_ROWS)
 			.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
-		return { rows, truncated: detail.tracks.length > MAX_ROWS };
+		return { rows, truncated: detail.tracks.length > MAX_ROWS, etag };
 	}
 
 	// -------------------------------------------- lazy per-row hydration
@@ -557,6 +578,62 @@
 			if (active.search.trim() === trimmed) active.searching = false;
 		}
 	}
+
+	// ------------------------------------- add / remove / reorder (write path)
+	// editable: a real playlist is selected (not All Tracks / blank).
+	// reorderable narrows further to the pane's natural membership order -
+	// drag-and-drop moves row.order positions, which only lines up with the
+	// visible row order when there is no client sort/search in effect.
+	const editablePane = $derived(pane.playlist_id !== null && pane.playlist_id !== 'all');
+	const reorderablePane = $derived(
+		editablePane && pane.sort_key === null && pane.search.trim() === ''
+	);
+
+	async function _mutateActivePane(computeNext: (items: string[]) => string[]): Promise<void> {
+		const p = pane;
+		const id = p.playlist_id;
+		if (id === null || id === 'all') return;
+		if (p.etag === '') {
+			pushToast('playlist still loading - try again in a moment', 'error');
+			return;
+		}
+		const nextItems = computeNext(p.rows.map((r) => r.stable_id));
+		try {
+			await replacePlaylistTracks(id, p.etag, nextItems);
+		} catch (exc) {
+			if (exc instanceof PlaylistConflictError) {
+				pushToast('playlist changed elsewhere - reloaded with the latest version', 'error');
+			} else {
+				pushToast(`playlist update failed: ${String(exc)}`, 'error');
+				return;
+			}
+		}
+		// Reload from the server rather than trust the optimistic local
+		// splice: keeps hydrated fields (title/artist/etag/etc) and the
+		// fresh membership etag authoritative in one place.
+		const node = _currentNode(p);
+		if (node !== null) await _loadPane(p, node);
+	}
+
+	function addTrack(stableId: string): void {
+		void _mutateActivePane((items) => [...items, stableId]);
+	}
+
+	function removeRow(row: BrowserRow): void {
+		// Positional removal: duplicate stable_ids are allowed in a
+		// playlist, so this must drop the SLOT the row represents, not
+		// every occurrence of that stable_id.
+		void _mutateActivePane((items) => items.filter((_, i) => i !== row.order - 1));
+	}
+
+	function reorderRows(fromOrder: number, toOrder: number): void {
+		void _mutateActivePane((items) => {
+			const next = items.slice();
+			const [moved] = next.splice(fromOrder - 1, 1);
+			next.splice(toOrder - 1, 0, moved);
+			return next;
+		});
+	}
 </script>
 
 <section class="rb-browser">
@@ -661,6 +738,9 @@
 					/>
 					<span>Whole collection</span>
 				</label>
+				{#if editablePane}
+					<AddTrackSearch onadd={addTrack} />
+				{/if}
 				<SearchBox value={pane.search} oninput={setSearch} />
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
@@ -677,12 +757,16 @@
 			{emptyMessage}
 			restoreKey={activePane}
 			scrollTop={pane.scroll_top}
+			removable={editablePane}
+			reorderable={reorderablePane}
 			onscrollcursor={(top) => panes[activePane].rememberScroll(top)}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
 			onrate={rateRow}
 			onrowvisible={rowVisible}
+			onremoverow={removeRow}
+			onreorder={reorderRows}
 		/>
 		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track
 		     (recommended mount point, see SuggestNextStrip.svelte). -->

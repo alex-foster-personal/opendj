@@ -12,6 +12,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if sortRows doesn't keep nulls last in BOTH directions then broken
 // - if provider rows/total/truncated don't live-track sources then broken
 // - if fetchWindow doesn't slice [start, start+count) or accepts negative args then broken
+// - if completeLoad doesn't persist the playlist etag, or beginLoad doesn't
+//   reset it, then the add-remove-reorder-tracks write path CASes against
+//   a stale/wrong playlist -- broken
 
 let contract;
 
@@ -58,6 +61,24 @@ test('createPaneStore defaults match the blank pane', () => {
 	assert.equal(p.sort_dir, 1);
 	assert.equal(p.truncated, false);
 	assert.equal(p.scroll_top, 0);
+	assert.equal(p.etag, '');
+});
+
+test('completeLoad persists the playlist etag; beginLoad resets it for the next load', () => {
+	const p = contract.createPaneStore();
+	const seq = p.beginLoad('pl-1', 'Warmup');
+	assert.equal(p.etag, '');
+	assert.equal(p.completeLoad(seq, [_row()], false, '"abc123"'), true);
+	assert.equal(p.etag, '"abc123"');
+
+	// A fresh load (e.g. switching playlists) must not leak the old etag.
+	p.beginLoad('pl-2', 'Peak Hour');
+	assert.equal(p.etag, '');
+
+	// Omitting etag (the All Tracks / blank-pane load path) defaults to ''.
+	const allTracksSeq = p.beginLoad('all', 'All Tracks');
+	assert.equal(p.completeLoad(allTracksSeq, [_row()], false), true);
+	assert.equal(p.etag, '');
 });
 
 test('beginLoad resets the pane and completeLoad publishes rows for the current token', () => {

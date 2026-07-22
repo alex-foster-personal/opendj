@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
+from ..etag import compute_etag
 from ..models import PlaylistDetail, PlaylistDiff, PlaylistSummary, TrackRowOut
 from .tracks import AvailableFilter, keep_by_availability
 
@@ -75,6 +76,7 @@ def list_playlists(
 @router.get("/{playlist_id}", response_model=PlaylistDetail)
 def get_playlist(
     playlist_id: str,
+    response: Response,
     available: AvailableFilter = Query(
         "all",
         description=(
@@ -85,6 +87,11 @@ def get_playlist(
     backend: StateBackend = Depends(get_read_state),
 ) -> PlaylistDetail:
     pl = backend.get_playlist(playlist_id)
+    # add-remove-reorder-tracks: the write side's PUT .../tracks requires
+    # If-Match (etag.py's compute_etag(playlist_id, updated_at), identical
+    # to playlist_store.PlaylistRow.etag) -- expose it here so a client that
+    # only ever reads through this route can still mutate membership.
+    response.headers["ETag"] = compute_etag(pl.playlist_id, pl.updated_at)
     # Hydrated rows in membership order (parity contract item 4) -- kills
     # the 29x per-row GET fan-out the old client-side join needed.
     tracks_map = backend.get_tracks_bulk(pl.items)
