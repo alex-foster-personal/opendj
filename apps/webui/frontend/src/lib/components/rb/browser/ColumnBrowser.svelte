@@ -44,9 +44,17 @@
 	const ROW_HEIGHT = 18;
 
 	let {
+		selectedId,
 		onselecttrack,
 		onloadtrack
 	}: {
+		/** The ACTIVE pane's selection (PaneStore.selected_id) - Column View
+		 * is one shared left-panel component across all 4 panes (it does not
+		 * remount on pane-tab switches), so it must reflect whichever pane is
+		 * current rather than keep its own selection state; otherwise
+		 * highlighting desyncs the moment the user switches panes or selects
+		 * a row in TrackTable instead. */
+		selectedId: string | null;
 		onselecttrack?: (row: ColumnTrackRow) => void;
 		/** deck null = load onto lowest free deck (double-click), matching
 		 * TrackTable's convention. */
@@ -57,7 +65,6 @@
 	let loadError = $state<string | null>(null);
 	let artist = $state<ColumnSelector>(undefined);
 	let album = $state<ColumnSelector>(undefined);
-	let selectedId = $state<string | null>(null);
 
 	onMount(() => {
 		void _load();
@@ -94,7 +101,6 @@
 	}
 
 	function _selectTrack(row: ColumnTrackRow): void {
-		selectedId = row.stable_id;
 		onselecttrack?.(row);
 	}
 

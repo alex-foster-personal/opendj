@@ -686,6 +686,7 @@
 				nodes={treeNodes}
 				{allTracksCount}
 				selectedId={pane.playlist_id}
+				trackSelectedId={pane.selected_id}
 				onselect={selectPlaylist}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}

@@ -15,6 +15,7 @@
 		nodes,
 		allTracksCount,
 		selectedId,
+		trackSelectedId,
 		onselect,
 		onselectsmartlist,
 		onselecttrack,
@@ -23,6 +24,11 @@
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
 		selectedId: string | null;
+		/** The active pane's PaneStore.selected_id, forwarded to ColumnBrowser
+		 * so its track highlight reflects the current pane rather than an
+		 * independent selection that would desync on pane switches. Distinct
+		 * from `selectedId` above, which is the selected PLAYLIST id. */
+		trackSelectedId: string | null;
 		onselect: (node: PlaylistNode) => void;
 		/** Optional until the browser integrator wires smartlist selection
 		 * into BrowserPanel; absent = smartlist rows render inert. */
@@ -88,7 +94,7 @@
 	</div>
 	{#if mode === 'column'}
 		<div class="tree-scroll column-mode">
-			<ColumnBrowser {onselecttrack} {onloadtrack} />
+			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
 		</div>
 	{:else}
 	<div class="tree-scroll">
