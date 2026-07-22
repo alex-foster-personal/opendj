@@ -45,7 +45,7 @@ from typing import Any, Literal, Optional
 
 import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict
 
 from ..backend import StateBackend
 from ..deps import get_write_state
@@ -235,8 +235,6 @@ def _load_tree() -> dict[str, Any]:
             "progress-tree.yaml must have top-level meta + areas",
         )
     seen: set[str] = set()
-    codex_ranks: dict[int, str] = {}
-    codex_owned_paths: list[tuple[str, bool, str]] = []
     for area in tree["areas"]:
         for node in area["nodes"]:
             if node["id"] in seen:
