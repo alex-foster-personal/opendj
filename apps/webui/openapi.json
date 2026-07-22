@@ -1,6 +1,99 @@
 {
   "components": {
     "schemas": {
+      "AnlzCueOut": {
+        "description": "Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).",
+        "properties": {
+          "active_loop": {
+            "title": "Active Loop",
+            "type": "boolean"
+          },
+          "beat_loop_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beat Loop Size"
+          },
+          "color_table_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Table Index"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "in_ms": {
+            "title": "In Ms",
+            "type": "integer"
+          },
+          "is_loop": {
+            "title": "Is Loop",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "hot_cue",
+            "title": "Kind",
+            "type": "string"
+          },
+          "out_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Ms"
+          },
+          "slot": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G",
+              "H"
+            ],
+            "title": "Slot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "slot",
+          "in_ms",
+          "out_ms",
+          "is_loop",
+          "active_loop",
+          "beat_loop_size",
+          "color_table_index",
+          "comment"
+        ],
+        "title": "AnlzCueOut",
+        "type": "object"
+      },
       "ApplyRequest": {
         "properties": {
           "confirmation": {
@@ -924,6 +1017,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -1032,6 +1126,7 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
             "minItems": 1,
             "title": "Stable Ids",
             "type": "array"
@@ -1281,6 +1376,44 @@
           }
         },
         "title": "HealthSyncthing",
+        "type": "object"
+      },
+      "HotCueSaveIn": {
+        "properties": {
+          "color_table_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Table Index"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "in_ms": {
+            "description": "Cue position in ms. Already quantized to the beatgrid by the caller when quantize is enabled -- this endpoint never guesses at beat alignment.",
+            "minimum": 0.0,
+            "title": "In Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "in_ms"
+        ],
+        "title": "HotCueSaveIn",
         "type": "object"
       },
       "LabelRequest": {
@@ -7527,6 +7660,129 @@
         "summary": "Get Beatgrid Fallback",
         "tags": [
           "analysis"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/hot-cues/{slot}": {
+      "delete": {
+        "operationId": "clear_hot_cue_api_v1_tracks__stable_id__hot_cues__slot__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H"
+              ],
+              "title": "Slot",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Hot Cue",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      },
+      "put": {
+        "operationId": "save_hot_cue_api_v1_tracks__stable_id__hot_cues__slot__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H"
+              ],
+              "title": "Slot",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HotCueSaveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnlzCueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Hot Cue",
+        "tags": [
+          "rb-hot-cues"
         ]
       }
     },
