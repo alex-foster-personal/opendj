@@ -48,12 +48,25 @@ def test_api_routes_take_precedence_over_spa(production_client: TestClient) -> N
     assert response.json()["status"] == "ok"
 
 
-def test_unknown_api_route_remains_json_404(production_client: TestClient) -> None:
-    response = production_client.get("/api/v1/not-real")
+@pytest.mark.parametrize("path", ["/api/not-real", "/api/v1/not-real"])
+def test_unknown_api_route_remains_json_404(
+    production_client: TestClient, path: str,
+) -> None:
+    response = production_client.get(path)
 
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/json")
     assert response.json() == {"detail": "Not Found"}
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [(r"api\v1\not-real", False), (r"performance\preload1", True)],
+)
+def test_windows_mounted_paths_are_classified_correctly(
+    path: str, expected: bool,
+) -> None:
+    assert app_module._SpaStaticFiles._is_client_route(path) is expected
 
 
 def test_missing_asset_remains_404(production_client: TestClient) -> None:

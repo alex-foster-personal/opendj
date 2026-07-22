@@ -50,7 +50,7 @@ class _SpaStaticFiles(StaticFiles):
 
     @staticmethod
     def _is_client_route(path: str) -> bool:
-        normalized_path = path.lstrip("/")
+        normalized_path = path.replace("\\", "/").lstrip("/")
         is_api_path = normalized_path == "api" or normalized_path.startswith("api/")
         return not is_api_path and not Path(normalized_path).suffix
 
