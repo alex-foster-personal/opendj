@@ -26,6 +26,8 @@ set MKL_NUM_THREADS=3
 set OPENBLAS_NUM_THREADS=3
 set RESOURCE_PERCENT_FILE=%WORK_ROOT%\RESOURCE_PERCENT
 
+cd /d "%REPO_ROOT%" || exit /b 1
+
 REM run_worker's own interpreter override (apps.vocals.cli.run_worker):
 REM use the proven bench env (torch+cuda, demucs, htdemucs weights cached)
 REM instead of a plain `uv run`, which would resolve CPU-only wheels here
@@ -33,7 +35,7 @@ REM (HANDOFF.md section 4.1).
 set MDT_VOCAL_WORKER_PYTHON=%BENCH_PYTHON%
 
 REM BelowNormal priority and affinity 0x07 are inherited by the worker children.
-start "demucs-farm" /wait /belownormal /affinity 07 "%BENCH_PYTHON%" "%REPO_ROOT%\scripts\vocal_worker_runner.py" ^
+start "demucs-farm" /wait /belownormal /affinity 07 "%BENCH_PYTHON%" -m scripts.vocal_worker_runner ^
     --inbox "%WORK_ROOT%\inbox" ^
     --outbox "%WORK_ROOT%\outbox" ^
     --logs "%WORK_ROOT%\logs" ^

@@ -467,6 +467,8 @@ def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
     assert "set OMP_NUM_THREADS=3" in wrapper
     assert "set MKL_NUM_THREADS=3" in wrapper
     assert "set OPENBLAS_NUM_THREADS=3" in wrapper
+    assert 'cd /d "%REPO_ROOT%" || exit /b 1' in wrapper
+    assert '"%BENCH_PYTHON%" -m scripts.vocal_worker_runner' in wrapper
     assert "/belownormal /affinity 07" in wrapper
     assert "--gpu-utilization-threshold 50" in wrapper
     assert "--gpu-memory-threshold-mb 2048" in wrapper
