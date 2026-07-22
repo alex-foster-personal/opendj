@@ -7,6 +7,14 @@ commit SHAs that resolve in this repo, verified via ``git cat-file -e``.
 The API never git-commits the file -- agents own their commits. Writes are
 atomic (tmp + rename) and bump ``meta.updated``.
 
+Status lifecycle (ordered): missing -> spiked -> building -> partial ->
+built -> verified -> merged -> user-finalized. 'working' is a DEPRECATED
+alias for 'built', coerced server-side with a logged deprecation note (grace
+period for in-flight agent fleets; sunset tracked in
+.planning/FANOUT-CONVENTIONS.md). 'user-finalized' additionally requires a
+verified {by, method} block in the same PATCH -- it is the maintainer's personal QA
+blessing, the top of the lifecycle.
+
 Requirements (mini-PRD):
   ✔︎ ✅ GET /progress: parsed tree + file git provenance + per-area rollups
   ✔︎ ✅ PATCH /progress/nodes/{node_id}: guarded partial update, atomic write
@@ -15,6 +23,7 @@ Acceptance:
   [if] GET with seed file [then] areas + rollups + meta round-trip intact
   [if] PATCH status change without commits_append (new status not
        missing/spiked) [then ⛔️] 422
+  [if] PATCH status change to user-finalized without verified [then ⛔️] 422
   [if] PATCH sha malformed or unresolvable in repo [then ⛔️] 422
   [if] PATCH unknown node id [then ⛔️] 404
   [if] PATCH omits If-Match [then ⛔️] 428 without writing
@@ -24,6 +33,7 @@ Acceptance:
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import subprocess
@@ -41,25 +51,43 @@ from ..backend import StateBackend
 from ..deps import get_write_state
 
 router = APIRouter(prefix="/progress", tags=["progress"])
+logger = logging.getLogger(__name__)
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
 # Module-level so tests can monkeypatch to a tmp copy of the seed file.
 PROGRESS_FILE: Path = REPO_ROOT / "data" / "progress-tree.yaml"
 
 STATUSES: tuple[str, ...] = (
-    "missing", "spiked", "building", "partial", "working", "verified",
+    "missing", "spiked", "building", "partial", "built", "verified",
+    "merged", "user-finalized",
 )
 StatusLiteral = Literal[
-    "missing", "spiked", "building", "partial", "working", "verified",
+    "missing", "spiked", "building", "partial", "built", "verified",
+    "merged", "user-finalized",
+    "working",  # deprecated alias for 'built'; coerced server-side
 ]
 # missing/spiked are exempt from the commits_append rule: they represent
 # absence or investigation-only outcomes, so there is no code commit to cite.
 _STATUSES_WITHOUT_COMMITS: frozenset[str] = frozenset({"missing", "spiked"})
+# Backward-compat: PATCH status='working' coerces to 'built' (grace period
+# for fleets mid-flight on the old lifecycle name); see FANOUT-CONVENTIONS.md.
+_DEPRECATED_STATUS_ALIASES: dict[str, str] = {"working": "built"}
 
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _WRITE_LOCK = threading.Lock()
 
-NODE_SCHEMA: dict[str, Any] = {
+BuildState = Literal["active", "idle", "blocked", "hanging"]
+
+# WHERE a node can be iteratively built: cloud (Claude Code cloud / any remote
+# sandbox) vs this Mac. cloud = the build+test loop never needs local-only
+# resources; hybrid = cloud-able against fixtures with a final local verify;
+# local = iteration itself needs hardware / the real library / a remote host.
+# Full rationale + per-node reasons in
+# .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+BUILDABLE_TIERS: tuple[str, ...] = ("cloud", "hybrid", "local")
+TierLiteral = Literal["cloud", "hybrid", "local"]
+
+NODE_SCHEMA: dict[str, str] = {
     "id": "kebab-case string, globally unique across all areas",
     "title": "string",
     "status": "one of: " + "|".join(STATUSES),
@@ -70,20 +98,30 @@ NODE_SCHEMA: dict[str, Any] = {
     "tests": "list of strings (test files/ids covering this node)",
     "verified": "{by, date, method} or null; agents identify themselves in by",
     "notes": "string or null",
-    "codex": {
-        "safe": "true only after Windows/headless execution and path ownership are bounded",
-        "rank": "positive integer; lower is more gating",
-        "windows_ready": "boolean",
-        "rationale": "non-empty string explaining why Codex should own the node",
-        "owned_paths": "non-empty list of exclusive path globs",
-        "avoid_paths": "non-empty list of shared or Mac-owned path globs",
-        "claim": "{state: available|claimed, owner: string|null}",
-    },
+    "build": "optional {branch?, pr?, worktree?, stage?, state?, updated?}; "
+    "state one of active|idle|blocked|hanging; updated is server-stamped",
+    "links": "optional {issues?: [str], specs?: [str], refs?: [str]}",
+    "buildable": "optional {tier, reason}; tier one of cloud|hybrid|local -- "
+    "where the node's iterative build loop can run (see "
+    ".planning/rekordbox-parity/CLOUD-BUILDABILITY.md)",
 }
 PATCH_RULES: list[str] = [
     "PATCH requires If-Match with the current ETag returned by GET /progress",
     "status changes MUST include commits_append unless the new status is "
     "missing or spiked",
+    "status 'user-finalized' additionally requires verified {by, method} in "
+    "the same PATCH (422 without) -- the maintainer's personal QA blessing",
+    "status 'working' is a deprecated alias for 'built': accepted, coerced "
+    "server-side, and logged with a deprecation note (see "
+    "FANOUT-CONVENTIONS.md for sunset)",
+    "PATCHing status to 'building' without branch/pr in build (existing or "
+    "supplied) appends a 'building without branch/pr recorded' note, not "
+    "a 422 -- friction nag, not a block",
+    "'build' partial merges into the existing build object; server stamps "
+    "build.updated on any build PATCH",
+    "'links' partial merges into the existing links object, per key",
+    "'buildable' {tier, reason} replaces the node's buildable classification "
+    "wholesale; tier is one of cloud|hybrid|local",
     "every sha must match ^[0-9a-f]{7,40}$ and resolve via git cat-file -e",
     "the API bumps meta.updated but never git-commits; agents own their "
     "commits",
@@ -120,20 +158,38 @@ class VerifiedIn(BaseModel):
     method: str
 
 
-class CodexClaimIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    state: Literal["available", "claimed"]
-    owner: Optional[str] = None
+class BuildPatchIn(BaseModel):
+    """Partial 'build' object; only supplied fields are merged (see PATCH_RULES).
 
-    @model_validator(mode="after")
-    def _state_matches_owner(self) -> "CodexClaimIn":
-        owner = self.owner.strip() if self.owner is not None else None
-        if self.state == "claimed" and not owner:
-            raise ValueError("claimed Codex work requires a non-empty owner")
-        if self.state == "available" and owner is not None:
-            raise ValueError("available Codex work cannot have an owner")
-        self.owner = owner
-        return self
+    'updated' is never accepted from the client -- the server always stamps
+    it on any build PATCH, so there is no ambiguity about who wrote it.
+    """
+    model_config = ConfigDict(extra="forbid")
+    branch: Optional[str] = None
+    pr: Optional[str] = None
+    worktree: Optional[str] = None
+    stage: Optional[str] = None
+    state: Optional[BuildState] = None
+
+
+class LinksPatchIn(BaseModel):
+    """Partial 'links' object; each supplied key REPLACES that key's list."""
+    model_config = ConfigDict(extra="forbid")
+    issues: Optional[list[str]] = None
+    specs: Optional[list[str]] = None
+    refs: Optional[list[str]] = None
+
+
+class BuildableIn(BaseModel):
+    """Buildability classification; both fields required, replaces wholesale.
+
+    tier says WHERE the node's iterative build loop can run (cloud/hybrid/
+    local); reason is a one-line justification grounded in what the node
+    touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+    """
+    model_config = ConfigDict(extra="forbid")
+    tier: TierLiteral
+    reason: str
 
 
 class NodePatch(BaseModel):
@@ -143,7 +199,9 @@ class NodePatch(BaseModel):
     commits_append: Optional[list[CommitIn]] = None
     tests_append: Optional[list[str]] = None
     verified: Optional[VerifiedIn] = None
-    codex_claim: Optional[CodexClaimIn] = None
+    build: Optional[BuildPatchIn] = None
+    links: Optional[LinksPatchIn] = None
+    buildable: Optional[BuildableIn] = None
 
 
 class NodePatchOut(BaseModel):
@@ -156,6 +214,12 @@ class NodePatchOut(BaseModel):
 def _http_error(code: int, error: str, message: str) -> HTTPException:
     """Match the repo-wide {detail: {error, message}} error body shape."""
     return HTTPException(code, detail={"error": error, "message": message})
+
+
+def _append_note(node: dict[str, Any], segment: str) -> None:
+    """Append a ' | '-joined note segment, never clobbering existing notes."""
+    existing = node.get("notes")
+    node["notes"] = f"{existing} | {segment}" if existing else segment
 
 
 def _load_tree() -> dict[str, Any]:
@@ -188,79 +252,15 @@ def _load_tree() -> dict[str, Any]:
                     "progress_file_invalid",
                     f"node {node['id']} has unknown status {node['status']!r}",
                 )
-            codex = node.get("codex")
-            if codex is not None:
-                required = {
-                    "safe", "rank", "windows_ready", "rationale",
-                    "owned_paths", "avoid_paths", "claim",
-                }
-                if not isinstance(codex, dict) or set(codex) != required:
-                    raise _http_error(
-                        status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        "progress_file_invalid",
-                        f"node {node['id']} has invalid codex assignment keys",
-                    )
-                if (
-                    codex["safe"] is not True
-                    or not isinstance(codex["rank"], int)
-                    or isinstance(codex["rank"], bool)
-                    or codex["rank"] < 1
-                    or codex["windows_ready"] is not True
-                    or not isinstance(codex["rationale"], str)
-                    or not codex["rationale"].strip()
-                    or not isinstance(codex["owned_paths"], list)
-                    or not codex["owned_paths"]
-                    or not all(isinstance(path, str) and path for path in codex["owned_paths"])
-                    or not isinstance(codex["avoid_paths"], list)
-                    or not codex["avoid_paths"]
-                    or not all(isinstance(path, str) and path for path in codex["avoid_paths"])
-                    or not isinstance(codex["claim"], dict)
-                    or set(codex["claim"]) != {"state", "owner"}
-                    or codex["claim"]["state"] not in {"available", "claimed"}
-                    or (
-                        codex["claim"]["state"] == "available"
-                        and codex["claim"]["owner"] is not None
-                    )
-                    or (
-                        codex["claim"]["state"] == "claimed"
-                        and (
-                            not isinstance(codex["claim"]["owner"], str)
-                            or not codex["claim"]["owner"].strip()
-                        )
-                    )
-                ):
-                    raise _http_error(
-                        status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        "progress_file_invalid",
-                        f"node {node['id']} has an unsafe codex assignment",
-                    )
-                previous_node_id = codex_ranks.get(codex["rank"])
-                if previous_node_id is not None:
-                    raise _http_error(
-                        status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        "progress_file_invalid",
-                        f"Codex rank {codex['rank']} is shared by "
-                        f"{previous_node_id} and {node['id']}",
-                    )
-                codex_ranks[codex["rank"]] = node["id"]
-                for owned_path in codex["owned_paths"]:
-                    normalized = owned_path.replace("\\", "/").strip("/")
-                    recursive = normalized.endswith("/**") or owned_path.endswith("/")
-                    scope = normalized.removesuffix("/**").rstrip("/")
-                    for other_scope, other_recursive, other_node_id in codex_owned_paths:
-                        overlaps = scope == other_scope or (
-                            recursive and other_scope.startswith(scope + "/")
-                        ) or (
-                            other_recursive and scope.startswith(other_scope + "/")
-                        )
-                        if overlaps:
-                            raise _http_error(
-                                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                "progress_file_invalid",
-                                f"Codex owned path {owned_path!r} overlaps "
-                                f"{other_node_id} and {node['id']}",
-                            )
-                    codex_owned_paths.append((scope, recursive, node["id"]))
+            buildable = node.get("buildable")
+            if buildable is not None and buildable.get("tier") not in BUILDABLE_TIERS:
+                raise _http_error(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "progress_file_invalid",
+                    f"node {node['id']} has unknown buildable tier "
+                    f"{buildable.get('tier')!r} (expected "
+                    f"{'|'.join(BUILDABLE_TIERS)})",
+                )
     return tree
 
 
@@ -394,13 +394,22 @@ def get_progress_schema() -> dict[str, Any]:
         "node": NODE_SCHEMA,
         "patch_rules": PATCH_RULES,
         "patch_body": {
-            "status": "optional, one of statuses",
+            "status": "optional, one of statuses (plus deprecated alias "
+            "'working' -> coerced to 'built')",
             "note": "optional string, replaces node.notes",
             "commits_append": "optional list of {sha, note}",
             "tests_append": "optional list of strings",
-            "verified": "optional {by, method}; date is stamped server-side",
-            "codex_claim": "optional {state: available|claimed, owner: string|null}",
+            "verified": "optional {by, method}; date is stamped server-side; "
+            "required in the same PATCH when status becomes user-finalized",
+            "build": "optional partial {branch?, pr?, worktree?, stage?, "
+            "state?}; merges into the existing build object, server stamps "
+            "updated",
+            "links": "optional partial {issues?, specs?, refs?}; each "
+            "supplied key replaces that key's list in the existing object",
+            "buildable": "optional {tier, reason}; tier one of "
+            "cloud|hybrid|local; replaces the node's classification wholesale",
         },
+        "tiers": list(BUILDABLE_TIERS),
     }
 
 
@@ -428,8 +437,11 @@ def patch_progress_node(
         raise _http_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "empty_patch",
             "provide at least one of status/note/commits_append/"
-            "tests_append/verified/codex_claim",
+            "tests_append/verified/build/links/buildable",
         )
+    alias_used = patch.status in _DEPRECATED_STATUS_ALIASES
+    effective_status = _DEPRECATED_STATUS_ALIASES.get(patch.status, patch.status)
+
     with _WRITE_LOCK:
         current_etag = _file_etag()
         if if_match != current_etag:
@@ -448,19 +460,31 @@ def patch_progress_node(
         tree = _load_tree()
         node = _find_node(tree, node_id)
 
-        if patch.status is not None and patch.status != node["status"]:
+        status_changing = (
+            effective_status is not None and effective_status != node["status"]
+        )
+        if status_changing:
             if (
-                patch.status not in _STATUSES_WITHOUT_COMMITS
+                effective_status not in _STATUSES_WITHOUT_COMMITS
                 and not patch.commits_append
             ):
                 raise _http_error(
                     status.HTTP_422_UNPROCESSABLE_ENTITY,
                     "status_change_needs_commits",
-                    f"changing status {node['status']!r} -> {patch.status!r} "
-                    "requires commits_append (only missing/spiked are exempt: "
-                    "they carry no code to cite)",
+                    f"changing status {node['status']!r} -> "
+                    f"{effective_status!r} requires commits_append (only "
+                    "missing/spiked are exempt: they carry no code to cite)",
                 )
-            node["status"] = patch.status
+            if effective_status == "user-finalized" and patch.verified is None:
+                raise _http_error(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "user_finalized_needs_verified",
+                    "changing status to user-finalized requires a verified "
+                    "{by, method} block in the same PATCH -- it marks the maintainer's "
+                    "personal QA blessing, the top of the status lifecycle",
+                )
+            node["status"] = effective_status
+
         if patch.note is not None:
             node["notes"] = patch.note
         if patch.commits_append:
@@ -477,27 +501,35 @@ def patch_progress_node(
                 "date": _now_iso(),
                 "method": patch.verified.method,
             }
-        if patch.codex_claim is not None:
-            if "codex" not in node:
-                raise _http_error(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    "codex_not_safe",
-                    f"node {node_id!r} is not marked codex safe",
-                )
-            current_claim = node["codex"]["claim"]
-            requested_claim = patch.codex_claim.model_dump()
-            if (
-                current_claim["state"] == "claimed"
-                and requested_claim != current_claim
-            ):
-                raise _http_error(
-                    status.HTTP_409_CONFLICT,
-                    "claim_conflict",
-                    f"node {node_id!r} is already claimed by "
-                    f"{current_claim['owner']!r}; coordinator reassignment "
-                    "must update the ledger explicitly",
-                )
-            node["codex"]["claim"] = requested_claim
+        if patch.build is not None:
+            node.setdefault("build", {})
+            node["build"].update(patch.build.model_dump(exclude_none=True))
+            node["build"]["updated"] = _now_iso()
+        if patch.links is not None:
+            node.setdefault("links", {})
+            node["links"].update(patch.links.model_dump(exclude_none=True))
+        if patch.buildable is not None:
+            node["buildable"] = patch.buildable.model_dump()
+
+        # Deprecation note appended AFTER note/build handling so it survives
+        # (and is never clobbered by) an explicit patch.note in the same call.
+        if alias_used:
+            _append_note(
+                node,
+                "DEPRECATED: PATCH sent status 'working', coerced to 'built' "
+                "(alias sunset tracked in .planning/FANOUT-CONVENTIONS.md)",
+            )
+            logger.warning(
+                "progress PATCH %s: deprecated status alias 'working' "
+                "coerced to 'built'", node_id,
+            )
+
+        # Friction nag, not a block: building without a branch/pr recorded
+        # is common early, but should stay visible in the ledger.
+        if status_changing and effective_status == "building":
+            build = node.get("build") or {}
+            if not build.get("branch") and not build.get("pr"):
+                _append_note(node, "building without branch/pr recorded")
 
         tree["meta"]["updated"] = _now_iso()
         _dump_tree_atomic(tree)

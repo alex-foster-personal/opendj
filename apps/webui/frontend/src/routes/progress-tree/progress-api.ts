@@ -11,11 +11,18 @@
 
 import { API_BASE } from '$lib/api';
 import {
+	BUILD_STATES,
 	EFFORTS,
 	STATUSES,
+	TIERS,
+	type Build,
+	type Buildable,
+	type BuildableTier,
+	type BuildState,
 	type Commit,
 	type Effort,
 	type FileGit,
+	type Links,
 	type NodeStatus,
 	type ProgressArea,
 	type ProgressMeta,
@@ -52,8 +59,11 @@ function asArray(v: unknown, ctx: string): unknown[] {
 
 //----- schema validators ---------------------------------------------------
 
+/** 'working' is a deprecated alias for 'built' (see FANOUT-CONVENTIONS.md);
+ * tolerated in transit in case a not-yet-restarted daemon still emits it. */
 function parseStatus(v: unknown, ctx: string): NodeStatus {
 	const s = asString(v, ctx);
+	if (s === 'working') return 'built';
 	if (!(STATUSES as readonly string[]).includes(s)) {
 		throw new Error(`progress: ${ctx} has unknown status '${s}' (expected ${STATUSES.join('|')})`);
 	}
@@ -84,6 +94,63 @@ function parseVerified(v: unknown, ctx: string): Verified | null {
 	};
 }
 
+/** Sub-field of an optional object (build): absent key and explicit null
+ * both mean "not set" -- unlike top-level notes/reuse, the backend may omit
+ * the key entirely rather than emit null. */
+function asOptionalString(v: unknown, ctx: string): string | null {
+	if (v === undefined || v === null) return null;
+	return asString(v, ctx);
+}
+
+/** build/links are OPTIONAL objects: entirely absent from the node dict
+ * unless the node is under active work / carries cross-references. */
+function parseBuild(v: unknown, ctx: string): Build | null {
+	if (v === undefined || v === null) return null;
+	const o = asObject(v, ctx);
+	const state = o.state;
+	if (state !== undefined && state !== null && !(BUILD_STATES as readonly string[]).includes(state as string)) {
+		throw new Error(
+			`progress: ${ctx}.state has unknown value '${String(state)}' (expected ${BUILD_STATES.join('|')})`
+		);
+	}
+	return {
+		branch: asOptionalString(o.branch, `${ctx}.branch`),
+		pr: asOptionalString(o.pr, `${ctx}.pr`),
+		worktree: asOptionalString(o.worktree, `${ctx}.worktree`),
+		stage: asOptionalString(o.stage, `${ctx}.stage`),
+		state: state === undefined || state === null ? null : (state as BuildState),
+		updated: asOptionalString(o.updated, `${ctx}.updated`)
+	};
+}
+
+function asStringArrayOrEmpty(v: unknown, ctx: string): string[] {
+	if (v === undefined || v === null) return [];
+	return asArray(v, ctx).map((s, i) => asString(s, `${ctx}[${i}]`));
+}
+
+function parseLinks(v: unknown, ctx: string): Links | null {
+	if (v === undefined || v === null) return null;
+	const o = asObject(v, ctx);
+	return {
+		issues: asStringArrayOrEmpty(o.issues, `${ctx}.issues`),
+		specs: asStringArrayOrEmpty(o.specs, `${ctx}.specs`),
+		refs: asStringArrayOrEmpty(o.refs, `${ctx}.refs`)
+	};
+}
+
+/** buildable is an OPTIONAL object: absent (or null) means the node has not
+ * been classified yet -- tolerate it rather than throw, so a mid-seed ledger
+ * still renders. When present, tier must be a known value and reason a string. */
+function parseBuildable(v: unknown, ctx: string): Buildable | null {
+	if (v === undefined || v === null) return null;
+	const o = asObject(v, ctx);
+	const tier = asString(o.tier, `${ctx}.tier`);
+	if (!(TIERS as readonly string[]).includes(tier)) {
+		throw new Error(`progress: ${ctx}.tier has unknown value '${tier}' (expected ${TIERS.join('|')})`);
+	}
+	return { tier: tier as BuildableTier, reason: asString(o.reason, `${ctx}.reason`) };
+}
+
 function parseNode(v: unknown, ctx: string): ProgressNode {
 	const o = asObject(v, ctx);
 	const id = asString(o.id, `${ctx}.id`);
@@ -102,7 +169,10 @@ function parseNode(v: unknown, ctx: string): ProgressNode {
 			asString(t, `${nodeCtx}.tests[${i}]`)
 		),
 		verified: parseVerified(o.verified, `${nodeCtx}.verified`),
-		notes: asStringOrNull(o.notes, `${nodeCtx}.notes`)
+		notes: asStringOrNull(o.notes, `${nodeCtx}.notes`),
+		build: parseBuild(o.build, `${nodeCtx}.build`),
+		links: parseLinks(o.links, `${nodeCtx}.links`),
+		buildable: parseBuildable(o.buildable, `${nodeCtx}.buildable`)
 	};
 }
 

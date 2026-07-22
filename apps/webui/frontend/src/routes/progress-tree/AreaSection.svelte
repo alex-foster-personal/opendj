@@ -11,14 +11,20 @@
 		visibleNodes,
 		collapsed,
 		convention,
+		expandedNodes,
+		reverseDeps,
 		onToggle,
+		onToggleExpand,
 		onJump
 	}: {
 		area: ProgressArea;
 		visibleNodes: ProgressNode[];
 		collapsed: boolean;
 		convention: string;
+		expandedNodes: ReadonlySet<string>;
+		reverseDeps: ReadonlyMap<string, string[]>;
 		onToggle: (areaId: string) => void;
+		onToggleExpand: (id: string) => void;
 		onJump: (id: string) => void;
 	} = $props();
 </script>
@@ -34,7 +40,14 @@
 			<p class="empty-area">No nodes in this area match the current filters.</p>
 		{:else}
 			{#each visibleNodes as node (node.id)}
-				<NodeRow {node} {convention} {onJump} />
+				<NodeRow
+					{node}
+					{convention}
+					expanded={expandedNodes.has(node.id)}
+					blocks={reverseDeps.get(node.id) ?? []}
+					{onToggleExpand}
+					{onJump}
+				/>
 			{/each}
 		{/if}
 	{/if}
