@@ -210,16 +210,22 @@ def ensure_index(state_db_path: Path, index_db_path: Path | None = None) -> Path
     Raises :class:`SearchIndexUnavailable` if ``state_db_path`` does not
     exist -- there is nothing to derive an index from.
     """
-    if not state_db_path.exists():
-        raise SearchIndexUnavailable(f"state.db not found at {state_db_path}")
-    target = index_db_path or index_path_for(state_db_path)
-    source_fingerprint = _source_fingerprint(state_db_path)
-    conn = _open_index(target)
+    conn: sqlite3.Connection | None = None
     try:
+        if not state_db_path.exists():
+            raise SearchIndexUnavailable(f"state.db not found at {state_db_path}")
+        target = index_db_path or index_path_for(state_db_path)
+        source_fingerprint = _source_fingerprint(state_db_path)
+        conn = _open_index(target)
         if _current_meta(conn) != (_SCHEMA_VERSION, source_fingerprint):
             _rebuild(conn, state_db_path)
+    except (OSError, sqlite3.Error) as exc:
+        raise SearchIndexUnavailable(
+            f"search index unavailable for {state_db_path}: {exc}"
+        ) from exc
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
     return target
 
 
