@@ -930,7 +930,8 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
 
     Cache: data/state/anlz-cache/{stable_id}.json keyed on (schema version,
     anlz file mtime, points); any mismatch recomputes and rewrites, so old
-    unversioned or stale-schema entries self-heal.
+    unversioned or stale-schema entries self-heal. Cues are always overlaid from
+    the live ``djmdCue`` rows because they can change without touching ANLZ files.
     """
     directory = anlz_dir(content)
     # anlz_dir() enforced a non-None AnalysisDataPath pointing at the .DAT;
@@ -940,7 +941,9 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     anlz_mtime = _anlz_mtime(directory)
     cached = _load_cached_payload(content.stable_id, anlz_mtime, points)
     if cached is not None:
-        return cached
+        payload = dict(cached)
+        payload["cues"] = fetch_cues(content.vendor_id)
+        return payload
 
     tags = _first_tags(directory)
     if "PWV6" in tags and "PWV7" in tags:
@@ -964,7 +967,6 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
             if detail_bands else dict(empty_bands),
         },
         "beatgrid": beatgrid,
-        "cues": fetch_cues(content.vendor_id),
         "phrases": _phrases_payload(tags, times),
         # contract item 5: PVDI-derived vocal regions, three explicit states.
         "vocals": vocals_payload(twoex_path),
@@ -980,6 +982,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         }),
         encoding="utf-8",
     )
+    payload["cues"] = fetch_cues(content.vendor_id)
     return payload
 
 
