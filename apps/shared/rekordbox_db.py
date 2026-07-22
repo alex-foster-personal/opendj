@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterator
 
 from pyrekordbox import Rekordbox6Database
 
@@ -128,7 +128,7 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
         # silently killing the matcher/relocator ``duration_match`` signal.
         # Fall back to None when missing.
         length_s = _coerce_int(getattr(t, "Length", None))
-        duration_s = float(length_s) if length_s else None
+        duration_s = float(length_s) if length_s is not None else None
 
         isrc_raw = getattr(t, "ISRC", None)
         isrc = isrc_raw.strip() if isinstance(isrc_raw, str) and isrc_raw.strip() else None
