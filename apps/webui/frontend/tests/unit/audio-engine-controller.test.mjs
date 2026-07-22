@@ -171,17 +171,82 @@ test('arming SLIP alone does not alter the paused transport read model', async (
 	await audio.engine.setSlip(1, false);
 });
 
-test('Camelot Key Sync chooses the shortest deterministic harmonic shift', () => {
+test('Camelot Key Sync models all AlphaTheta least-change compatibility families', () => {
 	assert.deepEqual(audio.parseCamelotKey('8A'), { number: 8, mode: 'A', root: 9 });
 	assert.equal(audio.parseCamelotKey('13A'), null);
 	assert.equal(audio.parseCamelotKey('8C'), null);
 
-	// Policy: same key, adjacent wheel keys, and the matching-number
-	// relative major/minor are harmonic. Relative A/B is already compatible.
+	// Same-mode: same, clockwise, anti-clockwise. Cross-mode: same, clockwise,
+	// anti-clockwise. Numbering is circular at the 1/12 boundary.
+	for (const [deck, master] of [
+		['8A', '8A'],
+		['8A', '9A'],
+		['8A', '7A'],
+		['8A', '8B'],
+		['8A', '9B'],
+		['8A', '7B'],
+		['1A', '12B']
+	]) {
+		assert.equal(audio.camelotKeysAreCompatible(deck, master), true, `${deck}/${master}`);
+		assert.equal(audio.deriveKeySyncNudge(deck, master, 0, 0, 0), 0, `${deck}/${master}`);
+	}
+	assert.equal(audio.camelotKeysAreCompatible('8A', '10B'), false);
+
+	// A deck two wheel numbers away requires the least transposition.
+	assert.equal(audio.deriveKeySyncNudge('8A', '10A', 0, 0, 0), 2);
+	assert.throws(() => audio.deriveKeySyncNudge('not-a-key', '8B', 0, 0, 0), /Camelot/i);
+});
+
+test('KEY SYNC compares effective audible Signalsmith offsets when Master Tempo is off', () => {
+	const deckEffective = audio.composeStretchSemitones(1.1, false, 0);
+	const masterEffective = audio.composeStretchSemitones(0.9, false, 2);
+	const nudge = audio.deriveKeySyncNudge('8A', '10A', deckEffective, masterEffective, 0);
+	assert.equal(Number.isInteger(nudge), true);
+	assert.ok(nudge >= -12 && nudge <= 12);
+	assert.equal(
+		audio.deriveKeySyncNudge('8A', '8A', 0, 0, 12),
+		0,
+		'already-compatible manual shift remains untouched'
+	);
+	assert.throws(
+		() => audio.deriveKeySyncNudge('8A', '8A', Number.NaN, 0, 0),
+		/effective audible semitones/i
+	);
+});
+
+test('key shift state remains on its presented revision until output crosses its schedule', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 0,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 0
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 20,
+		startPositionSec: 10,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 3
+	});
+	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 15), 0);
+	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 20), 3);
+
+	// Existing output-clock evaluation still owns publication, not command time.
+	audio.observePresentedTransportTimeline(timeline, { contextTime: 15, performanceTime: 15_000 }, 60);
+	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 15), 0);
+});
+
+test('legacy Key Sync helper remains a zero-offset convenience wrapper', () => {
 	assert.equal(audio.deriveKeySyncSemitones('8A', '8B'), 0);
-	assert.equal(audio.deriveKeySyncSemitones('8A', '9A'), 0);
 	assert.equal(audio.deriveKeySyncSemitones('8A', '10A'), 2);
-	assert.throws(() => audio.deriveKeySyncSemitones('not-a-key', '8B'), /Camelot/i);
 });
 
 test('key shift composes with Master Tempo compensation in the native Signalsmith semitones field', () => {

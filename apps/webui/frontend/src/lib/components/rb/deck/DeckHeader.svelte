@@ -111,6 +111,7 @@
 			class="nudge"
 			disabled={pending || deck.stable_id === null || deck.key_shift_semitones === -12}
 			data-performance-control="key-nudge-down"
+			aria-label="lower key by one semitone"
 			title="lower key by one semitone"
 			onclick={async () => await onKeyNudge(-1)}
 		>
@@ -122,6 +123,7 @@
 			class="nudge"
 			disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
 			data-performance-control="key-nudge-up"
+			aria-label="raise key by one semitone"
 			title="raise key by one semitone"
 			onclick={async () => await onKeyNudge(1)}
 		>

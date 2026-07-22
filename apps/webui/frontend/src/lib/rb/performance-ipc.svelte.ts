@@ -454,7 +454,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'sync_mode' ||
 		command.type === 'master' ||
 		command.type === 'master_tempo' ||
-		command.type === 'key_sync'
+		command.type === 'key_sync' ||
+		command.type === 'key_nudge'
 	) {
 		return [deck, 'sync'];
 	}

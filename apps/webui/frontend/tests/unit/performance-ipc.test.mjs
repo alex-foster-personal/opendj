@@ -41,7 +41,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_sync', deck: 4 }), [4, 'sync']);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4]);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
@@ -93,6 +93,9 @@ test('deck header key controls dispatch only through the typed performance dispa
 	assert.match(deckSource, /type: 'key_nudge', deck: deckId, semitones/);
 	assert.match(headerSource, /onKeySync/);
 	assert.match(headerSource, /onKeyNudge/);
+	assert.match(headerSource, /aria-label="lower key by one semitone"/);
+	assert.match(headerSource, /aria-label="raise key by one semitone"/);
+	assert.match(deckSource, /candidate !== deckId/);
 });
 
 test('stem commands are strict typed IPC and default state never claims artifacts exist', async () => {

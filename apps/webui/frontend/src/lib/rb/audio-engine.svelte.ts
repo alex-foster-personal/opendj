@@ -265,6 +265,8 @@ interface _ClockSegment {
 	startContextTime: number;
 	startPositionSec: number;
 	tempoRatio: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
 }
 
 export interface PresentedTransportSchedule extends _ClockSegment {
@@ -307,6 +309,8 @@ interface _PendingSegment {
 	startContextTime: number;
 	startPositionSec: number;
 	tempoRatio: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
 }
 
 type _DeckProcessor = StretchDeckProcessor | AlignedStemDeckProcessor;
@@ -326,6 +330,8 @@ interface _DeckRuntime {
 	controlActive: boolean;
 	controlLoop: LoopState | null;
 	controlTempoRatio: number;
+	controlMasterTempoEnabled: boolean;
+	controlKeyShiftSemitones: number;
 	/** ctx.currentTime at the moment the current processor segment starts. */
 	startCtxTime: number;
 	/** Track offset (seconds) at the moment the segment started. */
@@ -351,6 +357,8 @@ function _emptyRuntime(): _DeckRuntime {
 		controlActive: false,
 		controlLoop: null,
 		controlTempoRatio: 1,
+		controlMasterTempoEnabled: true,
+		controlKeyShiftSemitones: 0,
 		startCtxTime: 0,
 		startOffsetSec: 0,
 		loadToken: 0,
@@ -591,39 +599,94 @@ function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
 	return { number, mode: key.mode, root };
 }
 
-/** Harmonic policy: keys are compatible when they are identical, immediate
- * neighbours on the same Camelot wheel, or matching-number relative A/B
- * major/minor. Key Sync enumerates -12..+12 by absolute magnitude and chooses
- * the negative member first on a tie, making its shortest result deterministic. */
-function _camelotKeysAreCompatible(deck: CamelotKey, master: CamelotKey): boolean {
-	if (deck.mode !== master.mode) return deck.number === master.number;
-	const distance = Math.abs(deck.number - master.number);
-	return distance === 0 || distance === 1 || distance === 11;
+function _camelotCircularDistance(left: number, right: number): number {
+	const raw = Math.abs(left - right);
+	return Math.min(raw, 12 - raw);
 }
 
-/** Calculate the deterministic transposition that makes a deck harmonically
- * compatible with its master. The master shift is included because listeners
- * hear the master after its existing DSP shift, not its source metadata. */
-export function deriveKeySyncSemitones(
+/** AlphaTheta/Pioneer least-change families: same-wheel and cross-wheel keys
+ * are compatible at the same Camelot number and one step either direction.
+ * That makes the six named relationships (A/A and A/B, each same/+1/-1)
+ * symmetric and preserves 1 <-> 12 wraparound. */
+export function camelotKeysAreCompatible(
+	deckKey: string | null,
+	masterKey: string | null
+): boolean {
+	const deck = parseCamelotKey(deckKey);
+	const master = parseCamelotKey(masterKey);
+	if (deck === null || master === null) return false;
+	return _camelotCircularDistance(deck.number, master.number) <= 1;
+}
+
+function _assertEffectiveAudibleSemitones(name: string, value: number): void {
+	if (!Number.isFinite(value)) {
+		throw new RangeError(`${name} effective audible semitones must be finite, got ${value}`);
+	}
+}
+
+function _circularPitchDistance(left: number, right: number): number {
+	const distance = Math.abs(_pitchClass(left - right));
+	return Math.min(distance, 12 - distance);
+}
+
+function _keySyncNudgeCandidates(): number[] {
+	const candidates: number[] = [];
+	for (let magnitude = 0; magnitude <= 12; magnitude += 1) {
+		if (magnitude === 0) candidates.push(0);
+		else candidates.push(-magnitude, magnitude);
+	}
+	return candidates;
+}
+
+/** Pick the smallest integer manual nudge whose audible pitch is closest to
+ * one of the six Pioneer-compatible Camelot family roots. The source deck
+ * mode is retained, while each deck and master may already have a fractional
+ * Signalsmith offset from Master Tempo-off tempo compensation. */
+export function deriveKeySyncNudge(
 	deckKey: string | null,
 	masterKey: string | null,
-	masterKeyShiftSemitones = 0
+	deckEffectiveAudibleSemitones: number,
+	masterEffectiveAudibleSemitones: number,
+	deckManualShiftSemitones: number
 ): number {
 	const deck = parseCamelotKey(deckKey);
 	const master = parseCamelotKey(masterKey);
 	if (deck === null) throw new Error('KEY SYNC requires a parseable Camelot key on the deck');
 	if (master === null) throw new Error('KEY SYNC requires a parseable Camelot key on the master');
-	_assertKeyShift(masterKeyShiftSemitones);
-	const shiftedMaster = _shiftCamelotKey(master, masterKeyShiftSemitones);
-	for (let magnitude = 0; magnitude <= 12; magnitude += 1) {
-		const candidates = magnitude === 0 ? [0] : [-magnitude, magnitude];
-		for (const candidate of candidates) {
-			if (_camelotKeysAreCompatible(_shiftCamelotKey(deck, candidate), shiftedMaster)) {
-				return candidate;
+	_assertEffectiveAudibleSemitones('deck', deckEffectiveAudibleSemitones);
+	_assertEffectiveAudibleSemitones('master', masterEffectiveAudibleSemitones);
+	_assertKeyShift(deckManualShiftSemitones);
+
+	let bestNudge: number | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const nudge of _keySyncNudgeCandidates()) {
+		const nextManualShift = deckManualShiftSemitones + nudge;
+		if (nextManualShift < -12 || nextManualShift > 12) continue;
+		const deckAudibleRoot = deck.root + deckEffectiveAudibleSemitones + nudge;
+		for (let number = 1; number <= 12; number += 1) {
+			if (_camelotCircularDistance(number, master.number) > 1) continue;
+			const familyRoot = CAMELOT_ROOTS[deck.mode][number - 1] + masterEffectiveAudibleSemitones;
+			const distance = _circularPitchDistance(deckAudibleRoot, familyRoot);
+			if (distance < bestDistance - 1e-12) {
+				bestDistance = distance;
+				bestNudge = nudge;
 			}
 		}
 	}
-	throw new Error('KEY SYNC could not derive a harmonic Camelot transposition');
+	if (bestNudge === null) {
+		throw new RangeError('KEY SYNC cannot apply a compatible nudge within -12..12 manual semitones');
+	}
+	return bestNudge;
+}
+
+/** Legacy zero-offset convenience wrapper, returning the final manual shift. */
+export function deriveKeySyncSemitones(
+	deckKey: string | null,
+	masterKey: string | null,
+	masterKeyShiftSemitones = 0
+): number {
+	_assertKeyShift(masterKeyShiftSemitones);
+	return deriveKeySyncNudge(deckKey, masterKey, 0, masterKeyShiftSemitones, 0);
 }
 
 /** Signalsmith receives one native semitone field. Key shift composes additively
@@ -742,9 +805,14 @@ export function acknowledgePresentedTransportSchedule(
 		}
 		timeline.desired_revision = schedule.revision;
 	}
+	const masterTempoEnabled = schedule.masterTempoEnabled ?? true;
+	const keyShiftSemitones = schedule.keyShiftSemitones ?? 0;
+	_assertKeyShift(keyShiftSemitones);
 	timeline.schedules.push({
 		...schedule,
 		loop: schedule.loop === null ? null : { ...schedule.loop },
+		masterTempoEnabled,
+		keyShiftSemitones,
 		supersededByRevision
 	});
 	_prunePresentedTransportSchedules(timeline);
@@ -1089,6 +1157,19 @@ export function projectedTransportPosition(input: {
 	if (input.projectAt < input.now) throw new RangeError('projectAt must not precede now');
 	const projectionEpoch = Math.max(input.now, input.startContextTime);
 	return input.startPositionSec + Math.max(0, input.projectAt - projectionEpoch) * input.tempoRatio;
+}
+
+/** The key UI must not lead the listener. This accessor resolves only the
+ * schedule revision which has crossed the output presentation clock. */
+export function presentedKeyShiftSemitonesAt(
+	timeline: PresentedTransportTimeline,
+	contextTime: number
+): number | null {
+	if (!Number.isFinite(contextTime) || contextTime < 0) {
+		throw new RangeError(`presentation context time must be finite and non-negative, got ${contextTime}`);
+	}
+	const schedule = _effectivePresentedScheduleAt(timeline, contextTime);
+	return schedule?.keyShiftSemitones ?? null;
 }
 
 export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
@@ -1481,6 +1562,8 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.controlActive = false;
 	rt.controlLoop = null;
 	rt.controlTempoRatio = 1;
+	rt.controlMasterTempoEnabled = true;
+	rt.controlKeyShiftSemitones = 0;
 	rt.presentation = createPresentedTransportTimeline(0);
 	rt.nextScheduleRevision = 0;
 	rt.desiredActive = false;
@@ -1573,9 +1656,11 @@ async function _scheduleDeckSerial(
 		latestPending?.startContextTime ?? null,
 		minimumSafeWhen
 	);
-	const scheduledTempoRatio = tempoRatio ?? st.pitch;
-	const scheduledMasterTempoEnabled = masterTempoEnabled ?? st.master_tempo_enabled;
-	const scheduledKeyShiftSemitones = keyShiftSemitones ?? st.key_shift_semitones;
+	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
+	const scheduledMasterTempoEnabled =
+		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;
+	const scheduledKeyShiftSemitones =
+		keyShiftSemitones ?? latestPending?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
 	_assertKeyShift(scheduledKeyShiftSemitones);
 	const scheduledLoop = loop === undefined ? st.loop : loop;
 	const requestedInputSec =
@@ -1612,11 +1697,12 @@ async function _scheduleDeckSerial(
 		loop: scheduledLoop,
 		startContextTime: effectiveWhen,
 		startPositionSec: scheduledInputSec,
-		tempoRatio: scheduledTempoRatio
+		tempoRatio: scheduledTempoRatio,
+		masterTempoEnabled: scheduledMasterTempoEnabled,
+		keyShiftSemitones: scheduledKeyShiftSemitones
 	});
 	st.pitch = scheduledTempoRatio;
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
-	st.key_shift_semitones = scheduledKeyShiftSemitones;
 	st.loop = scheduledLoop === null ? null : { ...scheduledLoop };
 	st.playing = rt.desiredActive;
 	rt.pending = rt.pending.filter((pending) => pending.startContextTime < effectiveWhen);
@@ -1625,7 +1711,9 @@ async function _scheduleDeckSerial(
 		loop: scheduledLoop === null ? null : { ...scheduledLoop },
 		startContextTime: effectiveWhen,
 		startPositionSec: scheduledInputSec,
-		tempoRatio: scheduledTempoRatio
+		tempoRatio: scheduledTempoRatio,
+		masterTempoEnabled: scheduledMasterTempoEnabled,
+		keyShiftSemitones: scheduledKeyShiftSemitones
 	});
 	st.transport_pending =
 		rt.presentation.presented_revision !== rt.presentation.desired_revision;
@@ -1638,10 +1726,11 @@ async function _scheduleDeckSerial(
  * schedule path as tempo and Master Tempo. A paused deck stores the next DSP
  * value; a live deck preserves its presented transport projection. */
 async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promise<void> {
-	const { st } = _requireLoaded(deck, 'set key shift');
+	const { st, rt } = _requireLoaded(deck, 'set key shift');
 	_assertKeyShift(keyShiftSemitones);
 	if (!st.playing) {
 		st.key_shift_semitones = keyShiftSemitones;
+		rt.controlKeyShiftSemitones = keyShiftSemitones;
 		return;
 	}
 	if (_ctx === null) throw new Error('set key shift: audio graph not initialised');
@@ -1654,6 +1743,21 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 		undefined,
 		undefined,
 		keyShiftSemitones
+	);
+}
+
+function _desiredKeyShiftSemitones(deck: DeckId): number {
+	const rt = _rt[deck];
+	return rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
+}
+
+function _effectiveAudibleSemitones(deck: DeckId): number {
+	if (_ctx === null) throw new Error('KEY SYNC requires an AudioContext for an active deck');
+	const segment = _controlSegmentAt(_rt[deck], _ctx.currentTime);
+	return composeStretchSemitones(
+		segment.tempoRatio,
+		segment.masterTempoEnabled ?? true,
+		segment.keyShiftSemitones ?? 0
 	);
 }
 
@@ -1725,7 +1829,9 @@ function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
 		loop: pending.loop,
 		startContextTime: pending.startContextTime,
 		startPositionSec: pending.startPositionSec,
-		tempoRatio: pending.tempoRatio
+		tempoRatio: pending.tempoRatio,
+		masterTempoEnabled: pending.masterTempoEnabled ?? true,
+		keyShiftSemitones: pending.keyShiftSemitones ?? 0
 	};
 }
 
@@ -1735,7 +1841,9 @@ function _controlSegmentAt(rt: _DeckRuntime, contextTime: number): _ClockSegment
 		loop: rt.controlLoop,
 		startContextTime: rt.startCtxTime,
 		startPositionSec: rt.startOffsetSec,
-		tempoRatio: rt.controlTempoRatio
+		tempoRatio: rt.controlTempoRatio,
+		masterTempoEnabled: rt.controlMasterTempoEnabled,
+		keyShiftSemitones: rt.controlKeyShiftSemitones
 	};
 	for (const pending of rt.pending) {
 		if (pending.startContextTime > contextTime) break;
@@ -1758,6 +1866,8 @@ function _commitPendingIfDue(deck: DeckId): void {
 		rt.controlActive = pending.active;
 		rt.controlLoop = pending.loop === null ? null : { ...pending.loop };
 		rt.controlTempoRatio = pending.tempoRatio;
+		rt.controlMasterTempoEnabled = pending.masterTempoEnabled ?? true;
+		rt.controlKeyShiftSemitones = pending.keyShiftSemitones ?? 0;
 	}
 }
 
@@ -1829,6 +1939,11 @@ function _publishPresentedTransport(
 	st.position_ms = observation.position_sec * 1000;
 	st.audible = observation.audible;
 	st.transport_pending = observation.transport_pending;
+	const presentedKeyShift = presentedKeyShiftSemitonesAt(
+		rt.presentation,
+		outputTimestamp.contextTime
+	);
+	if (presentedKeyShift !== null) st.key_shift_semitones = presentedKeyShift;
 	if (wasAudible !== observation.audible) {
 		_handleAudibleTransition(deck, wasAudible, observation.audible);
 	}
@@ -2325,6 +2440,8 @@ class RbAudioEngine implements AudioEngine {
 			rt.controlActive = false;
 			rt.controlLoop = null;
 			rt.controlTempoRatio = 1;
+			rt.controlMasterTempoEnabled = true;
+			rt.controlKeyShiftSemitones = 0;
 			rt.startCtxTime = 0;
 			rt.startOffsetSec = 0;
 			rt.pending = [];
@@ -2688,21 +2805,25 @@ class RbAudioEngine implements AudioEngine {
 		if (semitones !== -1 && semitones !== 1) {
 			throw new RangeError(`nudgeKey: semitones must be -1 or 1, got ${semitones}`);
 		}
-		const { st } = _requireLoaded(deck, 'nudgeKey');
-		await _setDeckKeyShift(deck, st.key_shift_semitones + semitones);
+		_requireLoaded(deck, 'nudgeKey');
+		await _setDeckKeyShift(deck, _desiredKeyShiftSemitones(deck) + semitones);
 	}
 
 	async syncKey(deck: DeckId): Promise<void> {
 		const { st } = _requireLoaded(deck, 'syncKey');
 		const masterDeck = _masterDeck;
 		if (masterDeck === null) throw new Error('KEY SYNC requires an elected loaded master deck');
+		if (masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
 		const { st: master } = _requireLoaded(masterDeck, 'KEY SYNC master');
-		const keyShiftSemitones = deriveKeySyncSemitones(
+		const deckManualShiftSemitones = _desiredKeyShiftSemitones(deck);
+		const nudge = deriveKeySyncNudge(
 			st.key,
 			master.key,
-			master.key_shift_semitones
+			_effectiveAudibleSemitones(deck),
+			_effectiveAudibleSemitones(masterDeck),
+			deckManualShiftSemitones
 		);
-		await _setDeckKeyShift(deck, keyShiftSemitones);
+		await _setDeckKeyShift(deck, deckManualShiftSemitones + nudge);
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {
