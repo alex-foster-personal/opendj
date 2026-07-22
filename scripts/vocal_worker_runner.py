@@ -43,6 +43,7 @@ Run standalone:
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -65,6 +66,7 @@ GPU_MEM_BUSY_THRESHOLD_MB: int = 500    # MB (HANDOFF 4.2.b)
 DEFAULT_POLL_SECONDS: float = 60.0
 STOP_SENTINEL_NAME: str = "STOP"
 FAILED_SUBDIR_NAME: str = "failed"
+BELOW_NORMAL_PRIORITY_CLASS: int = 0x00004000
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,38 @@ def _sleep_duty_cycle(
         sleep_fn(chunk)
         remaining -= chunk
     return not stop_path.exists()
+
+
+def _positive_integer(value: str) -> int:
+    try:
+        parsed = int(value, 0)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a positive integer: {value}") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive integer: {value}")
+    return parsed
+
+
+def _apply_windows_resource_controls(
+    *,
+    below_normal: bool,
+    cpu_affinity_mask: int | None,
+) -> None:
+    """Apply process-wide controls inherited by worker subprocesses on Windows."""
+    if not below_normal and cpu_affinity_mask is None:
+        return
+    if os.name != "nt":
+        raise RuntimeError("Windows process resource controls require Windows")
+    kernel32 = ctypes.windll.kernel32
+    process_handle = kernel32.GetCurrentProcess()
+    if below_normal and not kernel32.SetPriorityClass(
+        process_handle, BELOW_NORMAL_PRIORITY_CLASS,
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if cpu_affinity_mask is not None and not kernel32.SetProcessAffinityMask(
+        process_handle, ctypes.c_size_t(cpu_affinity_mask),
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
 
 
 def _failed_destination(audio_path: Path) -> Path:
@@ -360,7 +394,9 @@ def run_loop(
             resource_percent_file=resource_percent_file,
             gpu_reader=gpu_reader, run_worker_fn=run_worker_fn,
         )
-        sleep_fn(poll_seconds)
+        if not _sleep_duty_cycle(stop_path, poll_seconds, sleep_fn):
+            _log(logs_dir, "stop: STOP sentinel present during poll sleep")
+            return
 
 
 # ----- CLI -----------------------------------------------------------------------
@@ -391,6 +427,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"GPU gate memory threshold MB (default {GPU_MEM_BUSY_THRESHOLD_MB})")
     parser.add_argument("--resource-percent-file", type=Path,
                         help="required 1..100 duty-cycle limit file, reread between tracks")
+    parser.add_argument("--windows-below-normal", action="store_true",
+                        help="set this runner and its children to BelowNormal priority")
+    parser.add_argument("--cpu-affinity-mask", type=_positive_integer,
+                        help="positive Windows CPU affinity bitmask, for example 0x07")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true",
                       help="process the current inbox contents once and "
@@ -405,7 +445,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    _apply_windows_resource_controls(
+        below_normal=args.windows_below_normal,
+        cpu_affinity_mask=args.cpu_affinity_mask,
+    )
     args.inbox.mkdir(parents=True, exist_ok=True)
+    if args.resource_percent_file is not None:
+        _read_resource_percent(args.resource_percent_file)
     if args.loop:
         run_loop(
             args.inbox, args.outbox, args.logs, args.device,

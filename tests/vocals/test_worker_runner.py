@@ -419,6 +419,23 @@ def test_run_once_stop_sentinel_interrupts_duty_sleep(tmp_path: Path) -> None:
     assert sleeps == [1.0]
 
 
+def test_run_loop_stop_sentinel_interrupts_empty_poll_sleep(tmp_path: Path) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    sleeps: list[float] = []
+
+    def _sleep(duration: float) -> None:
+        sleeps.append(duration)
+        (tmp_path / "STOP").write_text("", encoding="utf-8")
+
+    runner.run_loop(
+        inbox, tmp_path / "outbox", tmp_path / "logs", "cpu",
+        gpu_gate=False, poll_seconds=60, sleep_fn=_sleep,
+    )
+
+    assert sleeps == [1.0]
+
+
 # ----- CLI parser --------------------------------------------------------------------
 
 def test_build_parser_rejects_once_and_loop_together(tmp_path: Path) -> None:
@@ -456,6 +473,17 @@ def test_build_parser_accepts_resource_and_gpu_gate_thresholds(tmp_path: Path) -
     assert args.resource_percent_file == tmp_path / "RESOURCE_PERCENT"
 
 
+def test_main_rejects_missing_resource_percent_file_before_empty_inbox_loop(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="resource percent"):
+        runner.main([
+            "--inbox", str(tmp_path / "inbox"), "--outbox", str(tmp_path / "outbox"),
+            "--logs", str(tmp_path / "logs"), "--resource-percent-file",
+            str(tmp_path / "missing-resource-percent"), "--loop",
+        ])
+
+
 def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
     wrapper = (Path(__file__).parents[2] / "scripts" / "run_worker.cmd").read_text(
         encoding="utf-8",
@@ -469,7 +497,20 @@ def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
     assert "set OPENBLAS_NUM_THREADS=3" in wrapper
     assert 'cd /d "%REPO_ROOT%" || exit /b 1' in wrapper
     assert '"%BENCH_PYTHON%" -m scripts.vocal_worker_runner' in wrapper
-    assert "/belownormal /affinity 07" in wrapper
+    assert "--windows-below-normal" in wrapper
+    assert "--cpu-affinity-mask 0x07" in wrapper
+    assert "start " not in wrapper.lower()
+    assert "exit /b %ERRORLEVEL%" in wrapper
     assert "--gpu-utilization-threshold 50" in wrapper
     assert "--gpu-memory-threshold-mb 2048" in wrapper
     assert "--resource-percent-file \"%RESOURCE_PERCENT_FILE%\"" in wrapper
+
+
+def test_build_parser_accepts_windows_process_resource_controls(tmp_path: Path) -> None:
+    args = runner.build_parser().parse_args([
+        "--inbox", str(tmp_path / "in"), "--outbox", str(tmp_path / "out"),
+        "--logs", str(tmp_path / "logs"), "--windows-below-normal",
+        "--cpu-affinity-mask", "0x07",
+    ])
+    assert args.windows_below_normal is True
+    assert args.cpu_affinity_mask == 7

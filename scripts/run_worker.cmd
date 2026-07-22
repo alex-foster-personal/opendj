@@ -34,8 +34,8 @@ REM instead of a plain `uv run`, which would resolve CPU-only wheels here
 REM (HANDOFF.md section 4.1).
 set MDT_VOCAL_WORKER_PYTHON=%BENCH_PYTHON%
 
-REM BelowNormal priority and affinity 0x07 are inherited by the worker children.
-start "demucs-farm" /wait /belownormal /affinity 07 "%BENCH_PYTHON%" -m scripts.vocal_worker_runner ^
+REM The runner applies BelowNormal priority and affinity 0x07 before creating children.
+"%BENCH_PYTHON%" -m scripts.vocal_worker_runner ^
     --inbox "%WORK_ROOT%\inbox" ^
     --outbox "%WORK_ROOT%\outbox" ^
     --logs "%WORK_ROOT%\logs" ^
@@ -44,7 +44,10 @@ start "demucs-farm" /wait /belownormal /affinity 07 "%BENCH_PYTHON%" -m scripts.
     --gpu-utilization-threshold 50 ^
     --gpu-memory-threshold-mb 2048 ^
     --resource-percent-file "%RESOURCE_PERCENT_FILE%" ^
+    --windows-below-normal ^
+    --cpu-affinity-mask 0x07 ^
     --loop ^
     --poll-seconds 60
+exit /b %ERRORLEVEL%
 
 endlocal
