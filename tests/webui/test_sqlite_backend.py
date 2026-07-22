@@ -388,6 +388,36 @@ class TestFallbackPaths:
         assert final.notes == winner_note
         assert final.provenance["notes"].source == "webui"
 
+    def test_update_tracks_rolls_back_every_row_when_a_later_write_fails(
+        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If one StateWriter call fails, an earlier row must not persist."""
+        from apps.webui.server.backend import TrackUpdate
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        first = backend.get_track("sid-001")
+        second = backend.get_track("sid-002")
+        original_set_field = sb_mod.StateWriter.set_field
+        calls = 0
+
+        def fail_second_write(self, *args, **kwargs):  # noqa: ANN001
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected second write failure")
+            return original_set_field(self, *args, **kwargs)
+
+        monkeypatch.setattr(sb_mod.StateWriter, "set_field", fail_second_write)
+        with pytest.raises(RuntimeError, match="injected second write failure"):
+            backend.update_tracks([
+                TrackUpdate("sid-001", {"notes": "first changed"}, compute_etag(first.stable_id, first.updated_at)),
+                TrackUpdate("sid-002", {"notes": "second changed"}, compute_etag(second.stable_id, second.updated_at)),
+            ])
+
+        assert backend.get_track("sid-001").notes == first.notes
+        assert backend.get_track("sid-002").notes == second.notes
+
     def test_create_and_delete_pairing_via_fallback(
         self, fresh_state_db: Path,
     ) -> None:

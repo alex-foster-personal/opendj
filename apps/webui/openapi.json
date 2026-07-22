@@ -399,6 +399,120 @@
         "title": "BuildableIn",
         "type": "object"
       },
+      "BulkEditIn": {
+        "properties": {
+          "expected_etags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Expected Etags",
+            "type": "object"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          },
+          "tags_add": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags Add"
+          },
+          "tags_remove": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags Remove"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "expected_etags"
+        ],
+        "title": "BulkEditIn",
+        "type": "object"
+      },
+      "BulkEditOut": {
+        "properties": {
+          "applied_count": {
+            "title": "Applied Count",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BulkEditRowOut"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "applied_count",
+          "results"
+        ],
+        "title": "BulkEditOut",
+        "type": "object"
+      },
+      "BulkEditRowOut": {
+        "properties": {
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "etag"
+        ],
+        "title": "BulkEditRowOut",
+        "type": "object"
+      },
       "CommitIn": {
         "additionalProperties": false,
         "properties": {
@@ -565,6 +679,237 @@
           "beats"
         ],
         "title": "FallbackBeatgridOut",
+        "type": "object"
+      },
+      "FindReplaceApplyIn": {
+        "properties": {
+          "case_sensitive": {
+            "default": false,
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "expected_etags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Expected Etags",
+            "type": "object"
+          },
+          "field": {
+            "const": "notes",
+            "default": "notes",
+            "title": "Field",
+            "type": "string"
+          },
+          "find": {
+            "minLength": 1,
+            "title": "Find",
+            "type": "string"
+          },
+          "mode": {
+            "default": "literal",
+            "enum": [
+              "literal",
+              "regex"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "replace": {
+            "default": "",
+            "title": "Replace",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "find",
+          "expected_etags"
+        ],
+        "title": "FindReplaceApplyIn",
+        "type": "object"
+      },
+      "FindReplaceApplyOut": {
+        "properties": {
+          "applied_count": {
+            "title": "Applied Count",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/FindReplaceApplyRowOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "skipped_noop": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Noop",
+            "type": "array"
+          }
+        },
+        "required": [
+          "applied_count",
+          "skipped_noop",
+          "results"
+        ],
+        "title": "FindReplaceApplyOut",
+        "type": "object"
+      },
+      "FindReplaceApplyRowOut": {
+        "properties": {
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "new_value",
+          "etag"
+        ],
+        "title": "FindReplaceApplyRowOut",
+        "type": "object"
+      },
+      "FindReplacePreviewIn": {
+        "properties": {
+          "case_sensitive": {
+            "default": false,
+            "title": "Case Sensitive",
+            "type": "boolean"
+          },
+          "field": {
+            "const": "notes",
+            "default": "notes",
+            "title": "Field",
+            "type": "string"
+          },
+          "find": {
+            "minLength": 1,
+            "title": "Find",
+            "type": "string"
+          },
+          "mode": {
+            "default": "literal",
+            "enum": [
+              "literal",
+              "regex"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "replace": {
+            "default": "",
+            "title": "Replace",
+            "type": "string"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "find"
+        ],
+        "title": "FindReplacePreviewIn",
+        "type": "object"
+      },
+      "FindReplacePreviewOut": {
+        "properties": {
+          "match_count": {
+            "title": "Match Count",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/FindReplaceRowOut"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results",
+          "match_count"
+        ],
+        "title": "FindReplacePreviewOut",
+        "type": "object"
+      },
+      "FindReplaceRowOut": {
+        "properties": {
+          "current_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "would_change": {
+            "title": "Would Change",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stable_id",
+          "current_value",
+          "new_value",
+          "would_change",
+          "etag"
+        ],
+        "title": "FindReplaceRowOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -825,6 +1170,175 @@
           "stable_ids"
         ],
         "title": "MembershipReplaceIn",
+        "type": "object"
+      },
+      "MyTagAssignIn": {
+        "properties": {
+          "add": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Add",
+            "type": "array"
+          },
+          "expected_etags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Expected Etags",
+            "type": "object"
+          },
+          "remove": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Remove",
+            "type": "array"
+          },
+          "stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids",
+          "expected_etags"
+        ],
+        "title": "MyTagAssignIn",
+        "type": "object"
+      },
+      "MyTagAssignOut": {
+        "properties": {
+          "applied_count": {
+            "title": "Applied Count",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MyTagAssignRowOut"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "applied_count",
+          "results"
+        ],
+        "title": "MyTagAssignOut",
+        "type": "object"
+      },
+      "MyTagAssignRowOut": {
+        "properties": {
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_id",
+          "tags",
+          "etag"
+        ],
+        "title": "MyTagAssignRowOut",
+        "type": "object"
+      },
+      "MyTagDeleteIn": {
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MyTagDeleteIn",
+        "type": "object"
+      },
+      "MyTagListOut": {
+        "properties": {
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/MyTagSummary"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "title": "MyTagListOut",
+        "type": "object"
+      },
+      "MyTagRenameIn": {
+        "properties": {
+          "new_name": {
+            "minLength": 1,
+            "title": "New Name",
+            "type": "string"
+          },
+          "old_name": {
+            "minLength": 1,
+            "title": "Old Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_name",
+          "new_name"
+        ],
+        "title": "MyTagRenameIn",
+        "type": "object"
+      },
+      "MyTagSummary": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "track_count"
+        ],
+        "title": "MyTagSummary",
+        "type": "object"
+      },
+      "MyTagSweepOut": {
+        "properties": {
+          "tracks_updated": {
+            "title": "Tracks Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tracks_updated"
+        ],
+        "title": "MyTagSweepOut",
         "type": "object"
       },
       "NodePatch": {
@@ -4132,6 +4646,47 @@
         ]
       }
     },
+    "/api/v1/bulk-edit": {
+      "patch": {
+        "operationId": "bulk_edit_api_v1_bulk_edit_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkEditIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkEditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bulk Edit",
+        "tags": [
+          "bulk-edit"
+        ]
+      }
+    },
     "/api/v1/copilot/suggest-next": {
       "post": {
         "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",
@@ -4183,6 +4738,88 @@
         ]
       }
     },
+    "/api/v1/find-replace/apply": {
+      "post": {
+        "operationId": "apply_api_v1_find_replace_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindReplaceApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindReplaceApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply",
+        "tags": [
+          "find-replace"
+        ]
+      }
+    },
+    "/api/v1/find-replace/preview": {
+      "post": {
+        "operationId": "preview_api_v1_find_replace_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindReplacePreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindReplacePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview",
+        "tags": [
+          "find-replace"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -4201,6 +4838,150 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/mytags": {
+      "get": {
+        "operationId": "list_mytags_api_v1_mytags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTagListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Mytags",
+        "tags": [
+          "mytags"
+        ]
+      }
+    },
+    "/api/v1/mytags/assign": {
+      "post": {
+        "operationId": "assign_mytags_api_v1_mytags_assign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyTagAssignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTagAssignOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Mytags",
+        "tags": [
+          "mytags"
+        ]
+      }
+    },
+    "/api/v1/mytags/delete": {
+      "post": {
+        "operationId": "delete_mytag_api_v1_mytags_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyTagDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTagSweepOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Mytag",
+        "tags": [
+          "mytags"
+        ]
+      }
+    },
+    "/api/v1/mytags/rename": {
+      "post": {
+        "operationId": "rename_mytag_api_v1_mytags_rename_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyTagRenameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTagSweepOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Mytag",
+        "tags": [
+          "mytags"
         ]
       }
     },

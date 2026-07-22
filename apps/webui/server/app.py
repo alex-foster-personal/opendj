@@ -28,8 +28,11 @@ from .backend import (BackendError, ConflictError, InMemoryBackend,
 from .cloud_sync import probe_syncthing_status
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import analysis as analysis_routes
+from .routes import bulk_edit as bulk_edit_routes
 from .routes import copilot as copilot_routes
 from .routes import health as health_routes
+from .routes import find_replace as find_replace_routes
+from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
 from .routes import playlist_write as playlist_write_routes
 from .routes import play_it as play_it_routes
@@ -151,6 +154,9 @@ def create_app(
 
     api_prefix = "/api/v1"
     app.include_router(tracks_routes.router, prefix=api_prefix)
+    app.include_router(bulk_edit_routes.router, prefix=api_prefix)
+    app.include_router(find_replace_routes.router, prefix=api_prefix)
+    app.include_router(mytag_routes.router, prefix=api_prefix)
     app.include_router(playlists_routes.router, prefix=api_prefix)
     app.include_router(playlist_write_routes.router, prefix=api_prefix)
     app.include_router(play_it_routes.router, prefix=api_prefix)
