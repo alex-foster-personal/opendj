@@ -11,7 +11,7 @@ from this endpoint - they are reported blocked instead, matching the
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -34,6 +34,8 @@ class VoiceProbeResponse(BaseModel):
     blocked: bool = False
     reason: str | None = None
     reply: str | None = None
+    client_action: Literal["browser_search"] | None = None
+    probe_only: bool = True
 
 
 def _import_voice_stack():
@@ -86,14 +88,15 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
                 "destructive intents are not executed via the text probe "
                 "endpoint; use the voice daemon with --enable-destructive"
             ),
+            probe_only=True,
         )
 
-    # The event bus and TTS remain side-effect-free probe adapters, while the
-    # existing settings store carries mute/debounce safety state across typed
-    # and mic requests. Serialize the load-dispatch-save transaction so two
-    # local requests cannot both bypass the same debounce window.
+    # Command payloads stay disposable: InMemoryBus never writes transcripts
+    # or action events. The settings store persists only mute/debounce safety
+    # state shared by typed and mic requests. Serialize load-dispatch-save so
+    # two local requests cannot both bypass the same debounce window.
     with _VOICE_STATE_LOCK:
-        event_bus = bus.make_bus(force_stub=True)
+        event_bus = bus.InMemoryBus()
         ctx = ctx_mod.VoiceContext.from_env(
             event_bus=event_bus,
             tts_engine=tts.RecordingTts(),
@@ -108,4 +111,6 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
         slots=intent.slots,
         blocked=False,
         reply=response.reply,
+        client_action="browser_search" if intent.kind == "SEARCH" else None,
+        probe_only=intent.kind != "SEARCH",
     )

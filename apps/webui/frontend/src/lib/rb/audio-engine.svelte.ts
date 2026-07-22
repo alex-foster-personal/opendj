@@ -70,8 +70,15 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
-import { fetchAnlz, fetchAudioArrayBuffer, getTrack, RbApiError } from '$lib/rb/api-rb';
-import type { Track } from '$lib/rb/api-rb';
+import {
+	fetchAnlz,
+	fetchAudioArrayBuffer,
+	fetchStemAudioArrayBuffers,
+	getTrack,
+	probeStemArtifact,
+	RbApiError
+} from '$lib/rb/api-rb';
+import type { DemucsStemPart, Track } from '$lib/rb/api-rb';
 import {
 	computeFollowerSyncPlan,
 	quantizeToNearestBeat,
@@ -81,6 +88,14 @@ import {
 	StretchDeckProcessor,
 	type StretchScheduleChange
 } from '$lib/rb/stretch-adapter';
+import {
+	AlignedStemDeckProcessor,
+	DEMUCS_PARTS,
+	readyStemDeckState,
+	STEM_CONTROLS,
+	unavailableStemDeckState,
+	type StemBuffers
+} from '$lib/rb/stem-graph';
 import type {
 	AnlzBeat,
 	AnlzCue,
@@ -94,6 +109,8 @@ import type {
 	LoopState,
 	MixerChannelState,
 	MixerState,
+	StemControl,
+	StemDeckState,
 	SyncMode
 } from '$lib/rb/types';
 
@@ -145,6 +162,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		sync_mode: 'bar',
 		sync_error: null,
 		processor_error: null,
+		stems: unavailableStemDeckState(),
 		loop: null,
 		hot_cues: [],
 		anlz: null,
@@ -287,8 +305,10 @@ interface _PendingSegment {
 	tempoRatio: number;
 }
 
+type _DeckProcessor = StretchDeckProcessor | AlignedStemDeckProcessor;
+
 interface _DeckRuntime {
-	processor: StretchDeckProcessor | null;
+	processor: _DeckProcessor | null;
 	durationSec: number;
 	latencySec: number;
 	controlActive: boolean;
@@ -1667,6 +1687,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.transport_pending = false;
 	st.cue_ms = null;
 	st.pitch = 1;
+	st.stems = unavailableStemDeckState();
 	st.loop = null;
 	st.hot_cues = [];
 	st.anlz = null;
@@ -1926,7 +1947,7 @@ class RbAudioEngine implements AudioEngine {
 	 * publish after navigation.
 	 */
 	async dispose(): Promise<void> {
-		const processors: StretchDeckProcessor[] = [];
+		const processors: _DeckProcessor[] = [];
 		const nodes: AudioNode[] = [];
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
@@ -1970,23 +1991,58 @@ class RbAudioEngine implements AudioEngine {
 		let buffer: AudioBuffer | null = null;
 		let anlz: DeckState['anlz'] = null;
 		let latencySec = 0;
-		let processor: StretchDeckProcessor | null = null;
+		let processor: _DeckProcessor | null = null;
+		let candidateStemState: StemDeckState = unavailableStemDeckState();
 		try {
 			const [trackRes, audioBytes, requiredAnlz] = await Promise.all([
 				getTrack(stable_id),
 				fetchAudioArrayBuffer(stable_id),
 				fetchAnlz(stable_id)
 			]);
+			const stemProbe = await probeStemArtifact(stable_id);
 			const ctx = _ensureGraph();
 			track = trackRes.track;
 			anlz = requiredAnlz;
 			buffer = await ctx.decodeAudioData(audioBytes);
-			processor = await StretchDeckProcessor.create(ctx, {
-				onProcessorError: (error) => {
+			const processorOptions = {
+				onProcessorError: (error: unknown) => {
 					if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
 				}
-			});
-			await processor.load(buffer);
+			};
+			if (stemProbe.status === 'ready') {
+				const encodedParts = await fetchStemAudioArrayBuffers(stable_id);
+				const decodedEntries = await Promise.all(
+					DEMUCS_PARTS.map(async (part) => [part, await ctx.decodeAudioData(encodedParts[part])] as const)
+				);
+				const stemBuffers = Object.fromEntries(decodedEntries) as Record<
+					DemucsStemPart,
+					AudioBuffer
+				> as StemBuffers;
+				const created = await AlignedStemDeckProcessor.create(ctx, stemBuffers, processorOptions);
+				if (
+					created.alignment.sample_rate_hz !== buffer.sampleRate ||
+					created.alignment.frame_count !== buffer.length ||
+					Math.abs(created.alignment.duration_ms - buffer.duration * 1000) >
+						1000 / buffer.sampleRate
+				) {
+					created.processor.disconnect();
+					throw new Error(
+						`stem/source alignment mismatch: source ${buffer.sampleRate}Hz, ${buffer.length} ` +
+							`frames, ${buffer.duration}s; stems ${created.alignment.sample_rate_hz}Hz, ` +
+							`${created.alignment.frame_count} frames, ${created.alignment.duration_ms / 1000}s`
+					);
+				}
+				processor = created.processor;
+				candidateStemState = readyStemDeckState(
+					{ source: stemProbe.manifest.source, model: stemProbe.manifest.model },
+					created.alignment
+				);
+			} else {
+				const mixProcessor = await StretchDeckProcessor.create(ctx, processorOptions);
+				await mixProcessor.load(buffer);
+				processor = mixProcessor;
+				candidateStemState = unavailableStemDeckState(stemProbe.error);
+			}
 			latencySec = await processor.latencySec();
 		} catch (exc) {
 			if (processor !== null) processor.disconnect();
@@ -2061,6 +2117,7 @@ class RbAudioEngine implements AudioEngine {
 			st.anlz_error = null;
 			st.processor_error = null;
 			st.sync_error = null;
+			st.stems = candidateStemState;
 			st.hot_cues = _hotCuesFrom(candidateAnlz.cues);
 			st.loop = _displayLoopFrom(candidateAnlz.cues);
 			if (replacingMaster) _electPlayingMaster();
@@ -2402,6 +2459,41 @@ class RbAudioEngine implements AudioEngine {
 		const followers = masterSwitchFollowers(deck, deckStates);
 		await _synchronizeFollowers(deck, followers);
 		_assignMaster(deck);
+	}
+
+	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void {
+		if (typeof muted !== 'boolean') throw new TypeError('setStemMute: muted must be boolean');
+		this._setStemControl(deck, stem, 'muted', muted);
+	}
+
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void {
+		if (typeof solo !== 'boolean') throw new TypeError('setStemSolo: solo must be boolean');
+		this._setStemControl(deck, stem, 'solo', solo);
+	}
+
+	private _setStemControl(
+		deck: DeckId,
+		stem: StemControl,
+		field: 'muted' | 'solo',
+		value: boolean
+	): void {
+		if (!STEM_CONTROLS.includes(stem)) {
+			throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(stem)}`);
+		}
+		const { st, rt } = _requireLoaded(deck, `setStem${field === 'muted' ? 'Mute' : 'Solo'}`);
+		if (st.stems.status !== 'ready' || !(rt.processor instanceof AlignedStemDeckProcessor)) {
+			throw new Error(
+				`deck ${deck} stems are ${st.stems.status}: ${st.stems.error ?? 'no aligned artifact'}`
+			);
+		}
+		const controls = {
+			vocal: { ...st.stems.controls.vocal },
+			instrumental: { ...st.stems.controls.instrumental },
+			drums: { ...st.stems.controls.drums }
+		};
+		controls[stem][field] = value;
+		rt.processor.setControls(controls);
+		st.stems.controls = controls;
 	}
 
 	captureDeckAudio(deck: DeckId): DeckAudioSnapshot {

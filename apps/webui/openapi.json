@@ -721,6 +721,28 @@
         "title": "HealthSyncthing",
         "type": "object"
       },
+      "LabelRequest": {
+        "description": "Body for the relabel endpoint.",
+        "properties": {
+          "class": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Class",
+            "type": "string"
+          },
+          "labeler": {
+            "default": "web_ui",
+            "maxLength": 64,
+            "title": "Labeler",
+            "type": "string"
+          }
+        },
+        "required": [
+          "class"
+        ],
+        "title": "LabelRequest",
+        "type": "object"
+      },
       "LinksPatchIn": {
         "additionalProperties": false,
         "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
@@ -1507,6 +1529,105 @@
         "title": "ReconcileSummary",
         "type": "object"
       },
+      "RecorderRecoveryRequest": {
+        "properties": {
+          "expected_pid": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_pid"
+        ],
+        "title": "RecorderRecoveryRequest",
+        "type": "object"
+      },
+      "RecorderStartRequest": {
+        "description": "Explicit real-capture configuration for the REC button.",
+        "properties": {
+          "ffmpeg_device_idx": {
+            "minimum": 0.0,
+            "title": "Ffmpeg Device Idx",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}(?:_\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "djay_monitor",
+                "rb_history"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ffmpeg_device_idx"
+        ],
+        "title": "RecorderStartRequest",
+        "type": "object"
+      },
+      "RecorderStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "boolean"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "recoverable": {
+            "title": "Recoverable",
+            "type": "boolean"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "active",
+          "session_id",
+          "pid",
+          "owned",
+          "recoverable"
+        ],
+        "title": "RecorderStatus",
+        "type": "object"
+      },
       "SettingItem": {
         "properties": {
           "key": {
@@ -1689,6 +1810,72 @@
           "tracks"
         ],
         "title": "SmartlistTracks",
+        "type": "object"
+      },
+      "StemManifestOut": {
+        "description": "Frontend manifest projected from a stricter durable artifact manifest.",
+        "properties": {
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "parts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StemPartOut"
+            },
+            "title": "Parts",
+            "type": "object"
+          },
+          "sample_rate_hz": {
+            "title": "Sample Rate Hz",
+            "type": "integer"
+          },
+          "schema": {
+            "default": 1,
+            "title": "Schema",
+            "type": "integer"
+          },
+          "source": {
+            "default": "demucs",
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "model",
+          "sample_rate_hz",
+          "frame_count",
+          "channel_count",
+          "parts"
+        ],
+        "title": "StemManifestOut",
+        "type": "object"
+      },
+      "StemPartOut": {
+        "description": "A validated standard part, available from the paired file endpoint.",
+        "properties": {
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_type"
+        ],
+        "title": "StemPartOut",
         "type": "object"
       },
       "SuggestNextIn": {
@@ -2500,6 +2687,18 @@
             "title": "Blocked",
             "type": "boolean"
           },
+          "client_action": {
+            "anyOf": [
+              {
+                "const": "browser_search",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Action"
+          },
           "intent": {
             "anyOf": [
               {
@@ -2510,6 +2709,11 @@
               }
             ],
             "title": "Intent"
+          },
+          "probe_only": {
+            "default": true,
+            "title": "Probe Only",
+            "type": "boolean"
           },
           "reason": {
             "anyOf": [
@@ -2560,6 +2764,411 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/sets": {
+      "get": {
+        "operationId": "api_list_sessions_api_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api List Sessions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder": {
+      "get": {
+        "operationId": "api_recorder_status_api_sets_recorder_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/start": {
+      "post": {
+        "operationId": "api_recorder_start_api_sets_recorder_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecorderStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/recover": {
+      "post": {
+        "operationId": "api_recorder_recover_api_sets_recorder__session_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecorderRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Recover",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/stop": {
+      "post": {
+        "operationId": "api_recorder_stop_api_sets_recorder__session_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}": {
+      "get": {
+        "operationId": "api_get_session_api_sets__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Session",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/audio/{segment}": {
+      "get": {
+        "operationId": "api_audio_api_sets__session_id__audio__segment__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "audio_<iso>.mp3",
+            "in": "path",
+            "name": "segment",
+            "required": true,
+            "schema": {
+              "description": "audio_<iso>.mp3",
+              "title": "Segment",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/timeline": {
+      "get": {
+        "operationId": "api_timeline_stream_api_sets__session_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Timeline Stream",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/transitions": {
+      "get": {
+        "operationId": "api_transitions_api_sets__session_id__transitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Transitions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/transitions/{idx}/label": {
+      "post": {
+        "operationId": "api_relabel_api_sets__session_id__transitions__idx__label_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "idx",
+            "required": true,
+            "schema": {
+              "title": "Idx",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Relabel",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/copilot/suggest-next": {
       "post": {
         "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",
@@ -4192,6 +4801,94 @@
         "summary": "Get Track Rb Meta",
         "tags": [
           "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems": {
+      "get": {
+        "description": "Return a stored v1 manifest only after all four files prove alignment.",
+        "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemManifestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stem Manifest",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/{part}": {
+      "get": {
+        "description": "Stream one validated WAV stem from its already-verified file handle.",
+        "operationId": "get_stem_file_api_v1_tracks__stable_id__stems__part__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "part",
+            "required": true,
+            "schema": {
+              "title": "Part",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stem File",
+        "tags": [
+          "stems"
         ]
       }
     },

@@ -7,6 +7,7 @@ read-only analysis.
 """
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -35,8 +36,26 @@ STATE_DB: Path = STATE_DIR / "state.db"
 
 # ----- Filesystem music library -----------------------------------------
 # We scan the whole ``~/Music`` tree so comparison catches files outside the
-# curated "Manual Library" subfolder too.
-MUSIC_ROOTS: list[Path] = [Path("/Users/dev3/Music")]
+# curated "Manual Library" subfolder too. Derive from HOME so the scan works
+# on any machine/user. Override with MDT_MUSIC_ROOTS when the library lives
+# elsewhere.
+def _parse_music_roots(configured_roots: str) -> list[Path]:
+    """Parse a configured, path-separator-delimited music-root list."""
+    roots = [
+        Path(entry.strip()).expanduser()
+        for entry in configured_roots.split(os.pathsep)
+        if entry.strip()
+    ]
+    if not roots:
+        raise ValueError("MDT_MUSIC_ROOTS is configured but contains no usable paths.")
+    return roots
+
+
+MUSIC_ROOTS: list[Path] = (
+    _parse_music_roots(os.environ["MDT_MUSIC_ROOTS"])
+    if "MDT_MUSIC_ROOTS" in os.environ
+    else [HOME / "Music"]
+)
 
 # ----- Phase 7 dedup + tag unification ----------------------------------
 # Fallback SQLite store used when the Phase 5 shared-state DB is not yet

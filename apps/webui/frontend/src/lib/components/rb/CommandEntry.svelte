@@ -3,12 +3,11 @@
 	// section): the closest rekordbox-parity hook for apps/voice is the
 	// top-bar mic/voice indicator area. This mounts a plain text input next
 	// to it, submits to POST /api/v1/voice/probe (grammar-only, no mic, no
-	// daemon), and renders the parsed intent inline. SEARCH results are
-	// rendered here only - wiring the query into the browser pane search
-	// box is a local follow-up (browser search state is per-pane, not a
-	// shared store yet).
+	// daemon), and renders the parsed intent inline. SEARCH is forwarded
+	// through the shared browser-search command path to the active pane.
 	import { probeVoiceCommand } from '$lib/rb/api-rb';
 	import type { VoiceProbeResult } from '$lib/rb/api-rb';
+	import { requestBrowserSearch } from '$lib/rb/browser-search';
 
 	let text = $state('');
 	let loading = $state(false);
@@ -29,6 +28,13 @@
 		errorMessage = null;
 		try {
 			result = await probeVoiceCommand(submitted);
+			if (result.client_action === 'browser_search') {
+				const query = result.slots.query;
+				if (typeof query !== 'string') {
+					throw new Error('voice probe browser_search action omitted query');
+				}
+				requestBrowserSearch(query);
+			}
 		} catch (e) {
 			result = null;
 			errorMessage = e instanceof Error ? e.message : 'voice probe failed';

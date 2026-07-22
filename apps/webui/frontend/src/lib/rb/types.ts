@@ -185,6 +185,35 @@ export interface LoopState {
 	beat_length: number | null;
 }
 
+// ------------------------------------------------------------- stem state
+
+/** Rekordbox's three user-facing stem groups. Instrumental is the real
+ * Demucs bass + other pair, never source-audio subtraction. */
+export type StemControl = 'vocal' | 'instrumental' | 'drums';
+
+export interface StemControlState {
+	muted: boolean;
+	solo: boolean;
+}
+
+export interface StemAlignment {
+	sample_rate_hz: number;
+	frame_count: number;
+	channel_count: number;
+	duration_ms: number;
+}
+
+/** Serializable stem graph capability and control read model. `ready` is
+ * reserved for four decoded, metadata-aligned Demucs parts. */
+export interface StemDeckState {
+	status: 'unavailable' | 'ready' | 'error';
+	source: 'demucs' | null;
+	model: string | null;
+	alignment: StemAlignment | null;
+	controls: Record<StemControl, StemControlState>;
+	error: string | null;
+}
+
 /** Everything one deck panel + its wavestack row renders. Owned by the
  * audio-engine rune store (MUST live in a .svelte.ts module). */
 export interface DeckState {
@@ -226,6 +255,8 @@ export interface DeckState {
 	sync_error: string | null;
 	/** Terminal AudioWorklet failure. null means the processor is healthy. */
 	processor_error: string | null;
+	/** Real precomputed stem artifact and graph state. */
+	stems: StemDeckState;
 	/** Active loop or null. */
 	loop: LoopState | null;
 	/** Hot-cue bank content (empty slots = letters absent from this array). */
@@ -380,6 +411,10 @@ export interface AudioEngine {
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void>;
 	/** Elect one loaded deck as the globally exclusive master. */
 	setDeckMaster(deck: DeckId): Promise<void>;
+	/** Mute one real stem group. Rejects unless aligned artifacts are ready. */
+	setStemMute(deck: DeckId, stem: StemControl, muted: boolean): void;
+	/** Solo one real stem group. Rejects unless aligned artifacts are ready. */
+	setStemSolo(deck: DeckId, stem: StemControl, solo: boolean): void;
 	/** Explicit seek entry point. cueJump delegates here so quantize is central. */
 	quantizedSeek(deck: DeckId, ms: number): Promise<void>;
 	/** Capture real post-Signalsmith analyser data; never synthesised. */

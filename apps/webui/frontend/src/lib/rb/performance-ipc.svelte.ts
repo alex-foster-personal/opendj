@@ -45,6 +45,8 @@ import type {
 	EqBand,
 	LoopState,
 	MixerChannelState,
+	StemControl,
+	StemDeckState,
 	SyncMode
 } from '$lib/rb/types';
 import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
@@ -63,6 +65,8 @@ export type PerformanceCommand =
 	| { type: 'sync_mode'; deck: DeckId; mode: SyncMode }
 	| { type: 'master'; deck: DeckId }
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
+	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
+	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
@@ -93,6 +97,7 @@ export interface PerformanceDeckSnapshot {
 	sync_mode: SyncMode;
 	sync_error: string | null;
 	processor_error: string | null;
+	stems: StemDeckState;
 	loop: LoopState | null;
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
@@ -224,6 +229,13 @@ function _unit(name: string, value: unknown): number {
 	return parsed;
 }
 
+function _stem(value: unknown): StemControl {
+	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
+		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
+	}
+	return value;
+}
+
 function _parseCommand(message: unknown): PerformanceCommand {
 	const record = _record(message);
 	if (typeof record.type !== 'string') throw new TypeError('performance command type must be string');
@@ -282,6 +294,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'stem_mute') {
+		_exactKeys(record, ['type', 'deck', 'stem', 'muted']);
+		return { type, deck, stem: _stem(record.stem), muted: _boolean('muted', record.muted) };
+	} else if (type === 'stem_solo') {
+		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
+		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
 	} else if (type === 'sync_mode') {
 		_exactKeys(record, ['type', 'deck', 'mode']);
 		if (record.mode !== 'beat' && record.mode !== 'bar') {
@@ -334,6 +352,15 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		sync_mode: deck.sync_mode,
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error,
+		stems: {
+			...deck.stems,
+			alignment: deck.stems.alignment === null ? null : { ...deck.stems.alignment },
+			controls: {
+				vocal: { ...deck.stems.controls.vocal },
+				instrumental: { ...deck.stems.controls.instrumental },
+				drums: { ...deck.stems.controls.drums }
+			}
+		},
 		loop: deck.loop === null ? null : { ...deck.loop },
 		beatgrid:
 			deck.anlz?.beatgrid.beats.map((beat) => ({
@@ -446,6 +473,10 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		await engine.setDeckMaster(command.deck);
 	} else if (command.type === 'master_tempo') {
 		await engine.setMasterTempo(command.deck, command.enabled);
+	} else if (command.type === 'stem_mute') {
+		engine.setStemMute(command.deck, command.stem, command.muted);
+	} else if (command.type === 'stem_solo') {
+		engine.setStemSolo(command.deck, command.stem, command.solo);
 	} else if (command.type === 'trim') {
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
