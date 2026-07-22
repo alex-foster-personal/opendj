@@ -4,7 +4,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from ..backend import BatchConflictError, StateBackend, TrackFilter, TrackUpdate
+from ..backend import (
+    BatchConflictError, MyTagMergeConfirmationRequiredError,
+    MyTagScopeConflictError, StateBackend, TrackFilter, TrackUpdate,
+    compute_mytag_catalog_revision,
+)
 from ..deps import get_read_state, get_write_state
 from ..etag import compute_etag
 
@@ -19,6 +23,7 @@ class MyTagSummary(BaseModel):
 
 class MyTagListOut(BaseModel):
     tags: list[MyTagSummary]
+    catalog_revision: str
 
 
 class MyTagAssignIn(BaseModel):
@@ -45,9 +50,15 @@ class MyTagAssignOut(BaseModel):
     results: list[MyTagAssignRowOut]
 
 
-class MyTagRenameIn(BaseModel):
+class MyTagSweepPreconditionIn(BaseModel):
+    expected_catalog_revision: str = Field(min_length=1)
+    expected_track_count: int = Field(ge=0)
+
+
+class MyTagRenameIn(MyTagSweepPreconditionIn):
     old_name: str = Field(min_length=1)
     new_name: str = Field(min_length=1)
+    confirm_merge: bool = False
 
     @model_validator(mode="after")
     def _names_differ(self) -> "MyTagRenameIn":
@@ -56,7 +67,7 @@ class MyTagRenameIn(BaseModel):
         return self
 
 
-class MyTagDeleteIn(BaseModel):
+class MyTagDeleteIn(MyTagSweepPreconditionIn):
     name: str = Field(min_length=1)
 
 
@@ -85,11 +96,13 @@ def _raise_conflict(exc: BatchConflictError) -> None:
 @router.get("", response_model=MyTagListOut)
 def list_mytags(backend: StateBackend = Depends(get_read_state)) -> MyTagListOut:
     counts: dict[str, int] = {}
-    for track in _all_tracks(backend):
+    tracks = _all_tracks(backend)
+    for track in tracks:
         for tag in track.tags or []:
             counts[tag] = counts.get(tag, 0) + 1
     return MyTagListOut(
         tags=[MyTagSummary(name=name, track_count=count) for name, count in sorted(counts.items())],
+        catalog_revision=compute_mytag_catalog_revision(tracks),
     )
 
 
@@ -116,21 +129,57 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
     )
 
 
-def _sweep_tag(backend: StateBackend, old_name: str, new_name: str | None) -> int:
+def _sweep_tag(
+    backend: StateBackend, old_name: str, new_name: str | None, *,
+    expected_catalog_revision: str, expected_track_count: int,
+    confirm_merge: bool = False,
+) -> int:
     try:
-        return backend.update_tag_members(old_name, new_name, source="webui")
+        return backend.update_tag_members(
+            old_name, new_name,
+            expected_catalog_revision=expected_catalog_revision,
+            expected_track_count=expected_track_count,
+            confirm_merge=confirm_merge,
+            source="webui",
+        )
     except BatchConflictError as exc:
         _raise_conflict(exc)
+    except MyTagScopeConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "stale_mytag_scope",
+                "catalog_revision": exc.catalog_revision,
+                "affected_track_count": exc.affected_track_count,
+            },
+        ) from exc
+    except MyTagMergeConfirmationRequiredError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "mytag_merge_confirmation_required",
+                "destination_name": exc.destination_name,
+            },
+        ) from exc
 
 
 @router.post("/rename", response_model=MyTagSweepOut)
 def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
-    return MyTagSweepOut(tracks_updated=_sweep_tag(backend, body.old_name, body.new_name))
+    return MyTagSweepOut(tracks_updated=_sweep_tag(
+        backend, body.old_name, body.new_name,
+        expected_catalog_revision=body.expected_catalog_revision,
+        expected_track_count=body.expected_track_count,
+        confirm_merge=body.confirm_merge,
+    ))
 
 
 @router.post("/delete", response_model=MyTagSweepOut)
 def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
-    return MyTagSweepOut(tracks_updated=_sweep_tag(backend, body.name, None))
+    return MyTagSweepOut(tracks_updated=_sweep_tag(
+        backend, body.name, None,
+        expected_catalog_revision=body.expected_catalog_revision,
+        expected_track_count=body.expected_track_count,
+    ))
 
 
 __all__ = ["router"]

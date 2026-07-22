@@ -19,7 +19,8 @@ import pytest
 
 from apps.shared.state import db as state_db
 from apps.webui.server.backend import (
-    InMemoryBackend, NotFoundError, Pairing, QueueItem, Track, TrackFilter,
+    InMemoryBackend, MyTagScopeConflictError, NotFoundError, Pairing,
+    QueueItem, Track, TrackFilter, compute_mytag_catalog_revision,
 )
 from apps.webui.server import sqlite_backend as sb_mod
 from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
@@ -418,11 +419,14 @@ class TestFallbackPaths:
         assert backend.get_track("sid-001").notes == first.notes
         assert backend.get_track("sid-002").notes == second.notes
 
-    def test_update_tag_members_includes_a_member_added_before_transaction_lock(
+    def test_update_tag_members_rejects_a_member_added_before_transaction_lock(
         self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A tag added after request entry is swept once BEGIN acquires the lock."""
+        """The transaction validates the observed scope after its writer lock."""
         backend = SqliteBackend(fresh_state_db)
+        expected_catalog_revision = compute_mytag_catalog_revision(
+            backend.list_tracks(TrackFilter(limit=1000)).items,
+        )
         original_open_rw = sb_mod._state_db.open_rw
         injected = False
 
@@ -442,8 +446,14 @@ class TestFallbackPaths:
             return original_open_rw(*args, **kwargs)
 
         monkeypatch.setattr(sb_mod._state_db, "open_rw", open_rw_after_racing_add)
-        assert backend.update_tag_members("late", "renamed") == 1
-        assert backend.get_track("sid-002").tags == ["renamed"]
+        with pytest.raises(MyTagScopeConflictError) as exc_info:
+            backend.update_tag_members(
+                "late", "renamed",
+                expected_catalog_revision=expected_catalog_revision,
+                expected_track_count=0,
+            )
+        assert exc_info.value.affected_track_count == 1
+        assert backend.get_track("sid-002").tags == ["late"]
         assert backend.get_track("sid-001").tags == ["deep-house", "smooth"]
 
     def test_create_and_delete_pairing_via_fallback(

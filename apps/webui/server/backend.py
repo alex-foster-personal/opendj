@@ -24,9 +24,11 @@ All methods are synchronous. FastAPI handles the thread pool.
 """
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass, field, asdict, replace
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Any, Literal, Protocol, Sequence
 
 # --- data models (dict-shaped; pydantic is a view layer) -----------------
@@ -158,6 +160,23 @@ class BatchConflictError(BackendError):
         super().__init__("one or more If-Match values do not match")
 
 
+class MyTagScopeConflictError(BackendError):
+    """Raised when a destructive MyTag acknowledgement is no longer current."""
+
+    def __init__(self, catalog_revision: str, affected_track_count: int) -> None:
+        self.catalog_revision = catalog_revision
+        self.affected_track_count = affected_track_count
+        super().__init__("MyTag catalog scope changed")
+
+
+class MyTagMergeConfirmationRequiredError(BackendError):
+    """Raised when a rename would merge the source catalog into an existing tag."""
+
+    def __init__(self, destination_name: str) -> None:
+        self.destination_name = destination_name
+        super().__init__("MyTag rename requires explicit merge confirmation")
+
+
 @dataclass(frozen=True)
 class TrackUpdate:
     """One compare-and-swap update belonging to an atomic track batch."""
@@ -165,6 +184,17 @@ class TrackUpdate:
     stable_id: str
     patch: dict[str, Any]
     expected_etag: str
+
+
+def compute_mytag_catalog_revision(tracks: Sequence[Track]) -> str:
+    """Return a stable quoted revision for the complete tag membership catalog."""
+    catalog = [
+        [track.stable_id, sorted(set(track.tags or []))]
+        for track in sorted(tracks, key=lambda item: item.stable_id)
+        if track.tags
+    ]
+    encoded = json.dumps(catalog, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return f'"{sha256(encoded).hexdigest()}"'
 
 
 class StateBackend(Protocol):
@@ -183,6 +213,9 @@ class StateBackend(Protocol):
     def update_tracks(self, updates: Sequence[TrackUpdate], *,
                       source: Source = "webui") -> list[Track]: ...
     def update_tag_members(self, old_name: str, new_name: str | None, *,
+                           expected_catalog_revision: str,
+                           expected_track_count: int,
+                           confirm_merge: bool = False,
                            source: Source = "webui") -> int: ...
     def create_pairing(self, pairing: Pairing) -> Pairing: ...
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None: ...
@@ -378,10 +411,23 @@ class InMemoryBackend:
             return results
 
     def update_tag_members(self, old_name: str, new_name: str | None, *,
+                           expected_catalog_revision: str,
+                           expected_track_count: int,
+                           confirm_merge: bool = False,
                            source: Source = "webui") -> int:
-        """Rename or delete a tag after discovering members under one lock."""
+        """Atomically validate and mutate a MyTag catalog-wide scope."""
         from .etag import compute_etag
         with self._mutex:
+            tracks = list(self._tracks.values())
+            catalog_revision = compute_mytag_catalog_revision(tracks)
+            members = [track for track in tracks if old_name in track.tags]
+            if (catalog_revision != expected_catalog_revision
+                    or len(members) != expected_track_count):
+                raise MyTagScopeConflictError(catalog_revision, len(members))
+            if (new_name is not None
+                    and any(new_name in track.tags for track in tracks)
+                    and not confirm_merge):
+                raise MyTagMergeConfirmationRequiredError(new_name)
             updates = [
                 TrackUpdate(
                     track.stable_id,
@@ -390,8 +436,7 @@ class InMemoryBackend:
                     },
                     compute_etag(track.stable_id, track.updated_at),
                 )
-                for track in self._tracks.values()
-                if old_name in track.tags
+                for track in members
             ]
             self.update_tracks(updates, source=source)
             return len(updates)

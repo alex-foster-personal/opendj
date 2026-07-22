@@ -1707,6 +1707,16 @@
       },
       "MyTagDeleteIn": {
         "properties": {
+          "expected_catalog_revision": {
+            "minLength": 1,
+            "title": "Expected Catalog Revision",
+            "type": "string"
+          },
+          "expected_track_count": {
+            "minimum": 0.0,
+            "title": "Expected Track Count",
+            "type": "integer"
+          },
           "name": {
             "minLength": 1,
             "title": "Name",
@@ -1714,6 +1724,8 @@
           }
         },
         "required": [
+          "expected_catalog_revision",
+          "expected_track_count",
           "name"
         ],
         "title": "MyTagDeleteIn",
@@ -1721,6 +1733,10 @@
       },
       "MyTagListOut": {
         "properties": {
+          "catalog_revision": {
+            "title": "Catalog Revision",
+            "type": "string"
+          },
           "tags": {
             "items": {
               "$ref": "#/components/schemas/MyTagSummary"
@@ -1730,13 +1746,29 @@
           }
         },
         "required": [
-          "tags"
+          "tags",
+          "catalog_revision"
         ],
         "title": "MyTagListOut",
         "type": "object"
       },
       "MyTagRenameIn": {
         "properties": {
+          "confirm_merge": {
+            "default": false,
+            "title": "Confirm Merge",
+            "type": "boolean"
+          },
+          "expected_catalog_revision": {
+            "minLength": 1,
+            "title": "Expected Catalog Revision",
+            "type": "string"
+          },
+          "expected_track_count": {
+            "minimum": 0.0,
+            "title": "Expected Track Count",
+            "type": "integer"
+          },
           "new_name": {
             "minLength": 1,
             "title": "New Name",
@@ -1749,6 +1781,8 @@
           }
         },
         "required": [
+          "expected_catalog_revision",
+          "expected_track_count",
           "old_name",
           "new_name"
         ],
@@ -6802,13 +6836,13 @@
         "operationId": "search_collection_api_v1_search_get",
         "parameters": [
           {
-            "description": "Search text, matched against title, artist, genre, comments and custom tags across the whole collection (not just the active pane).",
+            "description": "Search text, matched against title, artist, genre, comments, notes and custom tags across the whole collection (not just the active pane).",
             "in": "query",
             "name": "q",
             "required": false,
             "schema": {
               "default": "",
-              "description": "Search text, matched against title, artist, genre, comments and custom tags across the whole collection (not just the active pane).",
+              "description": "Search text, matched against title, artist, genre, comments, notes and custom tags across the whole collection (not just the active pane).",
               "title": "Q",
               "type": "string"
             }
