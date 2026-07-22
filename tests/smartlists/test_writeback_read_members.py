@@ -283,4 +283,3 @@ class TestDjayReadMembers:
             assert [row_to_uuid[rowid] for rowid in rowids] == ["dj-uuid-100"]
         finally:
             con.close()
-
