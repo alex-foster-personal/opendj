@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterator
 
 from pyrekordbox import Rekordbox6Database
 
@@ -121,12 +121,14 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
         bpm_raw = _coerce_int(t.BPM)
         bpm = bpm_raw / 100.0 if bpm_raw else None
 
-        # Length is stored in milliseconds on DjmdContent; surface as
-        # seconds for Phase 2 matcher + Phase 15 adapter. Some pyrekordbox
-        # builds expose ``Length`` (ms) while older rows may be missing --
-        # fall back to None when unavailable.
-        length_ms = _coerce_int(getattr(t, "Length", None))
-        duration_s = (length_ms / 1000.0) if length_ms else None
+        # DjmdContent.Length is stored in WHOLE SECONDS (verified against live
+        # data: sound-effect samples read Length=5/7, full tracks Length=491
+        # for an 8:11 / 15.8 MB @256 kbps file). The previous code divided by
+        # 1000 (treating it as ms), making every duration 1000x too small and
+        # silently killing the matcher/relocator ``duration_match`` signal.
+        # Fall back to None when missing.
+        length_s = _coerce_int(getattr(t, "Length", None))
+        duration_s = float(length_s) if length_s is not None else None
 
         isrc_raw = getattr(t, "ISRC", None)
         isrc = isrc_raw.strip() if isinstance(isrc_raw, str) and isrc_raw.strip() else None
