@@ -93,3 +93,28 @@ test('empty and duplicate scopes fail fast before any command executes', async (
 	await assert.rejects(scheduler.run([1, 1], async () => calls++), /duplicate scope/i);
 	assert.equal(calls, 0);
 });
+
+test('session invalidation rejects queued load and play before execution without blocking new work', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	const predecessorGate = deferred();
+	const invoked = [];
+	const predecessor = scheduler.run([1], async () => {
+		invoked.push('predecessor');
+		await predecessorGate.promise;
+	});
+	const queuedLoad = scheduler.run([1], async () => invoked.push('stale-load'));
+	const queuedPlay = scheduler.run([1, 'sync'], async () => invoked.push('stale-play'));
+
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.deepEqual(invoked, ['predecessor']);
+	scheduler.invalidateQueued('performance route session ended');
+	const newSessionCommand = scheduler.run([1], async () => invoked.push('new-session-load'));
+	await newSessionCommand;
+	assert.deepEqual(invoked, ['predecessor', 'new-session-load']);
+
+	const loadRejected = assert.rejects(queuedLoad, /performance route session ended/i);
+	const playRejected = assert.rejects(queuedPlay, /performance route session ended/i);
+	predecessorGate.resolve();
+	await Promise.all([predecessor, loadRejected, playRejected]);
+	assert.deepEqual(invoked, ['predecessor', 'new-session-load']);
+});

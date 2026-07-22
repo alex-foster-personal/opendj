@@ -96,3 +96,29 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 	await ipc.dispatchPerformanceCommand({ type: 'crossfader', value: 0.5 });
 	await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 1 });
 });
+
+test('uninstall invalidates retained IPC dispatchers and a new route session remains usable', async () => {
+	globalThis.window = {};
+	try {
+		const uninstallOldSession = ipc.installPerformanceBrowserIpc();
+		const staleDispatch = window.musicDjToolsPerformance.dispatch;
+		uninstallOldSession();
+
+		await assert.rejects(
+			staleDispatch({ type: 'master_volume', value: 0.2 }),
+			/performance command session .* invalidated/i
+		);
+		assert.equal(ipc.queryPerformanceState().mixer.master, 1);
+
+		const uninstallNewSession = ipc.installPerformanceBrowserIpc();
+		await window.musicDjToolsPerformance.dispatch({ type: 'master_volume', value: 0.4 });
+		const state = ipc.queryPerformanceState();
+		assert.equal(state.mixer.master, 0.4);
+		assert.equal(state.command_pending, false);
+		assert.equal(state.command_queued, 0);
+		await window.musicDjToolsPerformance.dispatch({ type: 'master_volume', value: 1 });
+		uninstallNewSession();
+	} finally {
+		delete globalThis.window;
+	}
+});
