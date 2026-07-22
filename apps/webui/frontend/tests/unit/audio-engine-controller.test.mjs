@@ -309,6 +309,87 @@ test('KEY SYNC reads effective offsets from the last output-presented schedule o
 	);
 });
 
+test('KEY SYNC uses desired controls for a fresh paused target and output truth for its audible master', () => {
+	const freshPaused = audio.createPresentedTransportTimeline(0);
+	const audibleMaster = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(audibleMaster, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 2,
+		startPositionSec: 0,
+		tempoRatio: 0.9,
+		masterTempoEnabled: false,
+		keyShiftSemitones: -1
+	});
+	audio.observePresentedTransportTimeline(
+		audibleMaster,
+		{ contextTime: 3, performanceTime: 3_000 },
+		60
+	);
+
+	const targetEffective = audio.keySyncEffectiveAudibleSemitones({
+		audible: false,
+		transportPending: false,
+		pendingMutation: false,
+		control: { tempoRatio: 1.1, masterTempoEnabled: false, keyShiftSemitones: 2 },
+		presentation: freshPaused
+	});
+	const masterEffective = audio.keySyncEffectiveAudibleSemitones({
+		audible: true,
+		transportPending: false,
+		pendingMutation: false,
+		control: { tempoRatio: 1.2, masterTempoEnabled: false, keyShiftSemitones: 7 },
+		presentation: audibleMaster
+	});
+	assert.ok(Math.abs(targetEffective - (12 * Math.log2(1.1) + 2)) < 1e-12);
+	assert.ok(
+		Math.abs(masterEffective - (12 * Math.log2(0.9) - 1)) < 1e-12,
+		'the audible master must ignore its render/control settings'
+	);
+	assert.equal(Number.isInteger(audio.deriveKeySyncNudge('8A', '9B', targetEffective, masterEffective, 2)), true);
+});
+
+test('KEY SYNC supports two fresh paused loaded decks but rejects live or pending decks without presentation truth', () => {
+	const freshDeck = (control) =>
+		audio.keySyncEffectiveAudibleSemitones({
+			audible: false,
+			transportPending: false,
+			pendingMutation: false,
+			control,
+			presentation: audio.createPresentedTransportTimeline(0)
+		});
+	const deckEffective = freshDeck({
+		tempoRatio: 1.08,
+		masterTempoEnabled: false,
+		keyShiftSemitones: 1
+	});
+	const masterEffective = freshDeck({
+		tempoRatio: 0.96,
+		masterTempoEnabled: false,
+		keyShiftSemitones: -2
+	});
+	assert.ok(Math.abs(deckEffective - (12 * Math.log2(1.08) + 1)) < 1e-12);
+	assert.ok(Math.abs(masterEffective - (12 * Math.log2(0.96) - 2)) < 1e-12);
+	assert.equal(Number.isInteger(audio.deriveKeySyncNudge('8A', '8A', deckEffective, masterEffective, 1)), true);
+
+	for (const [label, activity] of [
+		['live', { audible: true, transportPending: false, pendingMutation: false }],
+		['pending', { audible: false, transportPending: true, pendingMutation: true }]
+	]) {
+		assert.throws(
+			() =>
+				audio.keySyncEffectiveAudibleSemitones({
+					...activity,
+					control: { tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 0 },
+					presentation: audio.createPresentedTransportTimeline(0)
+				}),
+			/presentation truth/i,
+			label
+		);
+	}
+});
+
 test('legacy Key Sync helper remains a zero-offset convenience wrapper', () => {
 	assert.equal(audio.deriveKeySyncSemitones('8A', '8B'), 0);
 	assert.equal(audio.deriveKeySyncSemitones('8A', '10A'), 2);

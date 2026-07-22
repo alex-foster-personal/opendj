@@ -1237,6 +1237,46 @@ export function presentedEffectiveAudibleSemitones(
 	);
 }
 
+export interface KeySyncEffectiveOffsetSource {
+	audible: boolean;
+	transportPending: boolean;
+	pendingMutation: boolean;
+	control: DeckControlSettings;
+	presentation: PresentedTransportTimeline;
+}
+
+/** A truly stopped deck has no listener-facing schedule to read, so its next
+ * play must use the desired control values. Every live or queued path remains
+ * output-clock authoritative and fails until presentation truth exists. */
+export function keySyncEffectiveAudibleSemitones(
+	source: KeySyncEffectiveOffsetSource
+): number {
+	for (const [name, value] of Object.entries({
+		audible: source.audible,
+		transportPending: source.transportPending,
+		pendingMutation: source.pendingMutation
+	})) {
+		if (typeof value !== 'boolean') throw new TypeError(`KEY SYNC ${name} must be boolean`);
+	}
+	const hasPresentedActiveSchedule = source.presentation.presented_active;
+	const hasPendingPresentationMutation =
+		source.presentation.desired_revision !== source.presentation.presented_revision;
+	const quiescent =
+		!source.audible &&
+		!source.transportPending &&
+		!source.pendingMutation &&
+		!hasPresentedActiveSchedule &&
+		!hasPendingPresentationMutation;
+	if (quiescent) {
+		return composeStretchSemitones(
+			source.control.tempoRatio,
+			source.control.masterTempoEnabled,
+			source.control.keyShiftSemitones
+		);
+	}
+	return presentedEffectiveAudibleSemitones(source.presentation);
+}
+
 export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
 	if (typeof playing !== 'boolean' || typeof slipEnabled !== 'boolean') {
 		throw new TypeError('SLIP activation inputs must be boolean');
@@ -1886,7 +1926,19 @@ function _desiredKeyShiftSemitones(deck: DeckId): number {
 }
 
 function _effectiveAudibleSemitones(deck: DeckId): number {
-	return presentedEffectiveAudibleSemitones(_rt[deck].presentation);
+	const st = deckStates[deck];
+	const rt = _rt[deck];
+	return keySyncEffectiveAudibleSemitones({
+		audible: st.audible,
+		transportPending: st.transport_pending,
+		pendingMutation: rt.pending.length > 0 || rt.scheduleIntentCount > 0,
+		control: {
+			tempoRatio: rt.controlTempoRatio,
+			masterTempoEnabled: rt.controlMasterTempoEnabled,
+			keyShiftSemitones: rt.controlKeyShiftSemitones
+		},
+		presentation: rt.presentation
+	});
 }
 
 function _clearSlip(deck: DeckId): void {
