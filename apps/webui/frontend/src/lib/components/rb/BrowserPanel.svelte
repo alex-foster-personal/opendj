@@ -34,6 +34,7 @@
 	import { deckStates as decks } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { setHideBrokenLinks, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
 	import { pushToast } from '$lib/stores.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import IconRail from './browser/IconRail.svelte';
@@ -151,7 +152,11 @@
 	});
 
 	onMount(() => {
+		const unsubscribeSearch = subscribeBrowserSearch((request) => {
+			if (request.revision > 0) panes[activePane].search = request.query;
+		});
 		void _init();
+		return unsubscribeSearch;
 	});
 
 	async function _init(): Promise<void> {

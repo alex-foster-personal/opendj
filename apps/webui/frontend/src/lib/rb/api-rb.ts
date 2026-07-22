@@ -350,6 +350,8 @@ export interface VoiceProbeResult {
 	blocked: boolean;
 	reason: string | null;
 	reply: string | null;
+	client_action: 'browser_search' | null;
+	probe_only: boolean;
 }
 
 /** Text-command entry: sends free text through the apps/voice grammar
