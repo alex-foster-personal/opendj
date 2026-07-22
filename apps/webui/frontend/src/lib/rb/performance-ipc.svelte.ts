@@ -15,6 +15,11 @@
  *   ✔︎ Preset phases form one barrier across every deck and sync coordination.
  *     [if] a preset is claimed while deck work is active [then] it waits for
  *       every prior scope and no later command can overlap it
+ *   ✔︎ ✅ 🎯 Route command sessions invalidate queued work before audio teardown.
+ *     [if] load/play commands are queued when IPC uninstalls [then] they reject
+ *       before invoking the engine or recreating an off-route audio graph ⛔️
+ *     [if] a new route session starts while old work settles [then] its commands
+ *       use fresh scheduler tails and clean pending counters
  */
 
 import { pushToast } from '$lib/stores.svelte';
@@ -29,7 +34,10 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
-import { ScopedCommandScheduler } from '$lib/rb/performance-command-scheduler';
+import {
+	ScopedCommandInvalidatedError,
+	ScopedCommandScheduler
+} from '$lib/rb/performance-command-scheduler';
 import type {
 	CrossfaderAssign,
 	DeckAudioSnapshot,
@@ -158,6 +166,9 @@ export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $s
 let _presetClaim: { id: string } | null = null;
 type CommandScope = DeckId | 'sync';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+let _commandGeneration = 0;
+let _commandStatusGeneration = 0;
+let _activeCommandSession: { generation: number } | null = null;
 export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
 	...DECK_IDS,
 	'sync'
@@ -460,6 +471,57 @@ function _persistCommandError(deck: DeckId | null, error: unknown): void {
 	pushToast(`Performance command failed - ${messageText}`, 'error');
 }
 
+function _resetCommandStatus(): void {
+	performanceCommandStatus.last_error = null;
+	performanceCommandStatus.active = 0;
+	performanceCommandStatus.queued = 0;
+	for (const deck of DECK_IDS) {
+		performanceCommandStatus.deck_errors[deck] = null;
+		performanceCommandStatus.deck_pending[deck] = 0;
+	}
+}
+
+function _commandSessionError(generation: number): ScopedCommandInvalidatedError {
+	return new ScopedCommandInvalidatedError(
+		`performance command session ${generation} was invalidated`
+	);
+}
+
+function _assertCommandSession(generation: number): void {
+	if (_activeCommandSession?.generation !== generation) {
+		throw _commandSessionError(generation);
+	}
+}
+
+function _commandSessionIsCurrent(generation: number): boolean {
+	return _activeCommandSession?.generation === generation;
+}
+
+function _startCommandSession(): number {
+	if (_activeCommandSession !== null) {
+		throw new Error(
+			`performance command session ${_activeCommandSession.generation} is already active`
+		);
+	}
+	_commandGeneration += 1;
+	_activeCommandSession = { generation: _commandGeneration };
+	return _commandGeneration;
+}
+
+function _invalidateCommandSession(generation: number): void {
+	_assertCommandSession(generation);
+	_activeCommandSession = null;
+	_commandStatusGeneration += 1;
+	_commandScheduler.invalidateQueued(`performance command session ${generation} was invalidated`);
+	_resetCommandStatus();
+}
+
+function _currentCommandSession(): number {
+	const session = _activeCommandSession;
+	if (session === null) throw _commandSessionError(_commandGeneration);
+	return session.generation;
+}
+
 function _assertPresetId(id: string): void {
 	if (typeof id !== 'string' || id.trim() === '') {
 		throw new TypeError('performance preset transaction id must be a non-empty string');
@@ -500,9 +562,15 @@ function _enqueuePresetPhase<T>(
 	id: string,
 	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
 ): Promise<T> {
+	const statusGeneration = _commandStatusGeneration;
+	let started = false;
 	performanceCommandStatus.queued += 1;
 	for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
 	const run = async (): Promise<T> => {
+		if (statusGeneration !== _commandStatusGeneration) {
+			throw _commandSessionError(_commandGeneration);
+		}
+		started = true;
 		performanceCommandStatus.queued -= 1;
 		performanceCommandStatus.active += 1;
 		performanceCommandStatus.last_error = null;
@@ -514,11 +582,18 @@ function _enqueuePresetPhase<T>(
 				setPhase: (phase) => _setPresetPhase(id, phase)
 			});
 		} finally {
-			performanceCommandStatus.active -= 1;
-			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+			if (statusGeneration === _commandStatusGeneration) {
+				performanceCommandStatus.active -= 1;
+				for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+			}
 		}
 	};
-	return _commandScheduler.run(PERFORMANCE_PRESET_COMMAND_SCOPES, run);
+	return _commandScheduler.run(PERFORMANCE_PRESET_COMMAND_SCOPES, run).finally(() => {
+		if (!started && statusGeneration === _commandStatusGeneration) {
+			performanceCommandStatus.queued -= 1;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+		}
+	});
 }
 
 function _recordPresetFailure(id: string, error: unknown): void {
@@ -616,7 +691,11 @@ export function abortPreparedPerformancePreset(id: string, reason: string): void
 	_releasePreset(id, 'error', _errorMessage(error));
 }
 
-async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
+async function _dispatchUnknown(
+	message: unknown,
+	commandGeneration: number
+): Promise<PerformanceState> {
+	_assertCommandSession(commandGeneration);
 	let command: PerformanceCommand;
 	try {
 		command = _parseCommand(message);
@@ -638,45 +717,53 @@ async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 		performanceCommandStatus.last_error = null;
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
+			_assertCommandSession(commandGeneration);
 			await _execute(command);
+			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
-			_persistCommandError(deck, error);
+			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error);
 			throw error;
 		}
 	}
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
+	let started = false;
 
 	const run = async (): Promise<PerformanceState> => {
+		_assertCommandSession(commandGeneration);
+		started = true;
 		performanceCommandStatus.queued -= 1;
 		performanceCommandStatus.active += 1;
 		performanceCommandStatus.last_error = null;
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
 			await _execute(command);
-		} catch (error) {
-			_persistCommandError(deck, error);
-			throw error;
-		} finally {
-			performanceCommandStatus.active -= 1;
-			if (deck !== null) performanceCommandStatus.deck_pending[deck] -= 1;
-		}
-		try {
+			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();
 		} catch (error) {
-			_persistCommandError(deck, error);
+			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(deck, error);
 			throw error;
+		} finally {
+			if (_commandSessionIsCurrent(commandGeneration)) {
+				performanceCommandStatus.active -= 1;
+				if (deck !== null) performanceCommandStatus.deck_pending[deck] -= 1;
+			}
 		}
 	};
 
-	return _commandScheduler.run(scopes, run);
+	return _commandScheduler.run(scopes, run).finally(() => {
+		if (!started && _commandSessionIsCurrent(commandGeneration)) {
+			performanceCommandStatus.queued -= 1;
+			if (deck !== null) performanceCommandStatus.deck_pending[deck] -= 1;
+		}
+	});
 }
 
 export async function dispatchPerformanceCommand(
 	command: PerformanceCommand
 ): Promise<PerformanceState> {
-	return _dispatchUnknown(command);
+	return _dispatchUnknown(command, _currentCommandSession());
 }
 
 /** UI event boundary: await the same fail-fast dispatcher, then consume the
@@ -713,17 +800,25 @@ export function installPerformanceBrowserIpc(): () => void {
 	if (window.musicDjToolsPerformance !== undefined) {
 		throw new Error('performance IPC is already installed');
 	}
+	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
 		version: 1 as const,
-		dispatch: _dispatchUnknown,
-		query: queryPerformanceState,
-		capture: _captureUnknown
+		dispatch: (message: unknown) => _dispatchUnknown(message, commandGeneration),
+		query: () => {
+			_assertCommandSession(commandGeneration);
+			return queryPerformanceState();
+		},
+		capture: (deck: unknown) => {
+			_assertCommandSession(commandGeneration);
+			return _captureUnknown(deck);
+		}
 	});
 	window.musicDjToolsPerformance = ipc;
 	return () => {
 		if (window.musicDjToolsPerformance !== ipc) {
 			throw new Error('performance IPC ownership changed before cleanup');
 		}
+		_invalidateCommandSession(commandGeneration);
 		delete window.musicDjToolsPerformance;
 	};
 }
