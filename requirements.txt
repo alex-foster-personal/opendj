@@ -66,11 +66,9 @@ soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
 
 # --- Phase 11 -- web UI daemon (CAT-05) + cloud sync (CAT-04) ---
 # FastAPI + uvicorn are MIT; pydantic is MIT. Starlette's TestClient imports
-# the standard ``httpx`` distribution, while httpx2 remains used by the
-# progress client helpers.
+# the standard ``httpx`` distribution.
 # boto3 (Apache-2) is opt-in, used only by apps.cloud.replicate in
 # production (lazy-imported so tests run without it).
 fastapi>=0.115
 uvicorn[standard]>=0.30
-httpx2>=2.7,<3
 httpx>=0.28,<1
