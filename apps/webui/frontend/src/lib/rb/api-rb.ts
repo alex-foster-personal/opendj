@@ -243,6 +243,35 @@ export async function getPlaylistHydrated(id: string): Promise<PlaylistDetailHyd
 	return detail;
 }
 
+// -------------------------------------------- global search (global-fts5-search)
+// Whole-collection search (bm25-ranked FTS5 over title/artist/genre/comments/
+// custom tags), as opposed to the browser's default within-pane client filter.
+
+/** One search hit: the same hydrated row shape as a playlist-detail track
+ * row, plus an excerpt of what matched. */
+export interface SearchHitWire extends PlaylistTrackRowWire {
+	match_context: string;
+}
+
+export interface SearchResultsWire {
+	query: string;
+	items: SearchHitWire[];
+	total: number;
+	next_offset: number | null;
+}
+
+/** GET /search - whole-collection search, not scoped to the active pane. */
+export async function searchCollection(params: {
+	q: string;
+	limit?: number;
+	offset?: number;
+}): Promise<SearchResultsWire> {
+	const qs = new URLSearchParams({ q: params.q });
+	if (params.limit !== undefined) qs.set('limit', String(params.limit));
+	if (params.offset !== undefined) qs.set('offset', String(params.offset));
+	return _fetchJson<SearchResultsWire>(`/api/v1/search?${qs.toString()}`);
+}
+
 /** PlaylistSummary + contract point 2's available_count. */
 export interface PlaylistSummaryHydrated extends PlaylistSummary {
 	/** Tracks whose audio file exists on disk (bulk-stat pass, cached). */
