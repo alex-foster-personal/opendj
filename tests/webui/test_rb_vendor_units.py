@@ -11,9 +11,11 @@ Regression one-liners:
   - if vocals_payload doesn't return exactly the three contract states then broken
   - if _peak_downsample_cols isn't a per-bucket max (transient-preserving) then broken
   - if keep_by_availability doesn't map all/true/false explicitly then broken
+  - if a crash mid anlz-cache write can leave truncated JSON behind then broken
 """
 from __future__ import annotations
 
+import json
 import struct
 from pathlib import Path
 
@@ -141,6 +143,51 @@ def test_peak_downsample_is_per_bucket_max() -> None:
 def test_peak_downsample_rejects_too_few_columns() -> None:
     with pytest.raises(ValueError, match="cannot downsample"):
         rb_vendor._peak_downsample_cols(np.zeros((60, 3), dtype=np.uint8), 120)
+
+
+# ----- anlz-cache atomic write ---------------------------------------------------
+
+def test_store_cached_payload_roundtrips(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
+    assert rb_vendor._load_cached_payload("sid", 111.0, 300) == {"marker": "v1"}
+    assert list((tmp_path / "anlz-cache").glob("*.tmp")) == [], (
+        "a completed store must not leave .tmp files behind"
+    )
+
+
+def test_interrupted_cache_write_never_truncates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kill mid-write -> old entry intact (or absent), never truncated JSON."""
+    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    cache_file = rb_vendor._cache_path("sid")
+    real_write_text = Path.write_text
+
+    def truncating_write_text(self: Path, data: str, *args, **kwargs) -> int:
+        real_write_text(self, data[: len(data) // 2], *args, **kwargs)
+        raise OSError("simulated kill mid-write")
+
+    # No prior entry: an interrupted write must publish nothing at all.
+    monkeypatch.setattr(Path, "write_text", truncating_write_text)
+    with pytest.raises(OSError, match="simulated kill"):
+        rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
+    assert not cache_file.exists()
+    assert rb_vendor._load_cached_payload("sid", 111.0, 300) is None
+
+    # Prior complete entry, interrupted overwrite: the entry must stay
+    # byte-identical and parseable (the old direct write left half a file).
+    monkeypatch.setattr(Path, "write_text", real_write_text)
+    rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
+    before = cache_file.read_text(encoding="utf-8")
+    monkeypatch.setattr(Path, "write_text", truncating_write_text)
+    with pytest.raises(OSError, match="simulated kill"):
+        rb_vendor._store_cached_payload("sid", 222.0, 300, {"marker": "v2"})
+    assert cache_file.read_text(encoding="utf-8") == before
+    assert json.loads(before)["payload"] == {"marker": "v1"}
+    assert rb_vendor._load_cached_payload("sid", 111.0, 300) == {"marker": "v1"}
 
 
 # ----- keep_by_availability ------------------------------------------------------

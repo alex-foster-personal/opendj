@@ -925,6 +925,31 @@ def _load_cached_payload(
     return None
 
 
+def _store_cached_payload(
+    stable_id: str, anlz_mtime: float, points: int, payload: dict[str, Any]
+) -> None:
+    """Persist a cache entry atomically (tmp + rename, like the vocal-cache).
+
+    A crash mid-write must never leave a truncated {stable_id}.json behind:
+    the entry lands in a sibling .json.tmp first and only the atomic rename
+    publishes it, so a reader sees the old complete entry or the new one --
+    an orphaned .tmp is inert and gets overwritten by the next store.
+    """
+    ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _cache_path(stable_id)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(
+        json.dumps({
+            "schema": ANLZ_CACHE_SCHEMA,
+            "anlz_mtime": anlz_mtime,
+            "points": points,
+            "payload": payload,
+        }),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
 def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     """Parse ANLZ + djmdCue into the COMPONENT-MAP 2.3 JSON, with file cache.
 
@@ -970,16 +995,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         "vocals": vocals_payload(twoex_path),
     }
 
-    ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    _cache_path(content.stable_id).write_text(
-        json.dumps({
-            "schema": ANLZ_CACHE_SCHEMA,
-            "anlz_mtime": anlz_mtime,
-            "points": points,
-            "payload": payload,
-        }),
-        encoding="utf-8",
-    )
+    _store_cached_payload(content.stable_id, anlz_mtime, points, payload)
     return payload
 
 
