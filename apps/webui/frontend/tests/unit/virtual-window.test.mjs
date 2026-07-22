@@ -105,6 +105,25 @@ test('computeVirtualWindow: negative scrollTop clamps to 0 instead of producing 
 	assert.equal(w.startIndex, 0);
 });
 
+test('computeVirtualWindow: a stale deep scrollTop from a since-shrunk list still yields a valid, non-empty window', () => {
+	// Regression: e.g. the user scrolled to row 4990 of a 5000-row list,
+	// then a search/filter narrowed rowCount to 10 without resetting
+	// scrollTop. startIndex must not be left past endIndex (which would
+	// slice to nothing behind a stale, oversized top spacer).
+	const w = mod.computeVirtualWindow({
+		scrollTop: 22 * 4990,
+		viewportHeight: 220,
+		rowHeight: 22,
+		rowCount: 10,
+		overscan: 10
+	});
+	assert.ok(w.startIndex <= w.endIndex);
+	assert.equal(w.endIndex, 10);
+	assert.equal(w.startIndex, 0);
+	assert.equal(w.topPad, 0);
+	assert.equal(w.bottomPad, 0);
+});
+
 test('computeVirtualWindow: non-positive rowHeight throws (would divide toward NaN/Infinity indices)', () => {
 	assert.throws(() =>
 		mod.computeVirtualWindow({

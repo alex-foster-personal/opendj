@@ -42,7 +42,16 @@ export function computeVirtualWindow(params: {
 	if (rowCount <= 0 || viewportHeight <= 0) {
 		return { startIndex: 0, endIndex: 0, topPad: 0, bottomPad: 0 };
 	}
-	const firstVisible = Math.floor(Math.max(0, scrollTop) / rowHeight);
+	// Clamp BEFORE deriving start/end: scrollTop is caller-owned state that
+	// can still reflect a deeper list (e.g. a search/filter just shrank
+	// rowCount out from under an unchanged scroll position). Without this,
+	// only endIndex would clamp to rowCount while startIndex stayed past
+	// it, producing an empty slice behind a stale, oversized top spacer.
+	const maxFirstVisible = Math.max(0, rowCount - 1);
+	const firstVisible = Math.min(
+		maxFirstVisible,
+		Math.floor(Math.max(0, scrollTop) / rowHeight)
+	);
 	const visibleCount = Math.ceil(viewportHeight / rowHeight);
 	const startIndex = Math.max(0, firstVisible - overscan);
 	const endIndex = Math.min(rowCount, firstVisible + visibleCount + overscan);
