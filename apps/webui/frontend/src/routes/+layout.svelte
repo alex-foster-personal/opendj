@@ -33,6 +33,7 @@
 		<nav>
 			<a href="/">Library</a>
 			<a href="/pairings">Pairings</a>
+			<a href="/smartlists">Smartlists</a>
 			<a href="/queues">Queues</a>
 			<a href="/performance">Performance</a>
 			<a href="/play-analytics">Play analytics</a>

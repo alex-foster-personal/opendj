@@ -5,6 +5,7 @@
  * api-types.ts during hot-path development; `pnpm api:gen` regenerates
  * `src/lib/api-types.ts` for strict usage.
  */
+import type { RuleAst } from './smartlists/rule-form';
 
 const DEFAULT_BASE = typeof window === 'undefined' ? 'http://127.0.0.1:8585' : '';
 const ENV_BASE = import.meta.env.VITE_API_BASE as string | undefined;
@@ -293,6 +294,41 @@ export async function getQueue(kind: string): Promise<QueueOut> {
 
 export async function getSettings(): Promise<SettingsOut> {
 	const r = await request('/api/v1/settings');
+	return r.json();
+}
+
+export interface SmartlistOut {
+	id: string;
+	name: string;
+	rule: RuleAst;
+	order_by: string;
+	referenced_fields: string[];
+	last_evaluated_at: string | null;
+	created_at: string;
+	modified_at: string;
+}
+
+export interface SmartlistTrackOut {
+	stable_id: string;
+	title: string | null;
+	artist: string | null;
+	key: string | null;
+	bpm: number | null;
+	rating: number | null;
+	genre: string | null;
+}
+
+/** Backend contract: `apps/webui/server` route landing on `af--gating-wave`
+ * (GET /api/v1/smartlists + /{id}/tracks). No single-smartlist GET is
+ * documented yet, so the edit route filters the list client-side. */
+export async function listSmartlists(): Promise<SmartlistOut[]> {
+	const r = await request('/api/v1/smartlists');
+	return r.json();
+}
+
+export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[]> {
+	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}/tracks`);
+	if (!r.ok) throw new Error(`GET smartlist tracks failed: ${r.status}`);
 	return r.json();
 }
 
