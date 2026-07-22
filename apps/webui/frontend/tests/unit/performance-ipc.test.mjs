@@ -36,17 +36,20 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 });
 
 test('continuous mixer controls execute through IPC immediately and round-trip in query state', async () => {
-	await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.7 });
-	await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.25 });
-	await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 0.8 });
-	await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'THRU' });
-	await ipc.dispatchPerformanceCommand({ type: 'crossfader', value: 0.3 });
-	await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 0.6 });
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.7 });
+		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.25 });
+		await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 0.8 });
+		await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'THRU' });
+		await ipc.dispatchPerformanceCommand({ type: 'crossfader', value: 0.3 });
+		await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 0.6 });
 
-	const state = ipc.queryPerformanceState();
-	assert.equal(state.command_pending, false);
-	assert.equal(state.command_queued, 0);
-	assert.deepEqual(state.mixer, {
+		const state = ipc.queryPerformanceState();
+		assert.equal(state.command_pending, false);
+		assert.equal(state.command_queued, 0);
+		assert.deepEqual(state.mixer, {
 		crossfader: 0.3,
 		master: 0.6,
 		channels: {
@@ -87,14 +90,18 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				assign: 'B'
 			}
 		}
-	});
+		});
 
-	await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.5 });
-	await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.5 });
-	await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 1 });
-	await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'B' });
-	await ipc.dispatchPerformanceCommand({ type: 'crossfader', value: 0.5 });
-	await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 1 });
+		await ipc.dispatchPerformanceCommand({ type: 'trim', deck: 2, value: 0.5 });
+		await ipc.dispatchPerformanceCommand({ type: 'eq', deck: 2, band: 'mid', value: 0.5 });
+		await ipc.dispatchPerformanceCommand({ type: 'fader', deck: 2, value: 1 });
+		await ipc.dispatchPerformanceCommand({ type: 'assign', deck: 2, assign: 'B' });
+		await ipc.dispatchPerformanceCommand({ type: 'crossfader', value: 0.5 });
+		await ipc.dispatchPerformanceCommand({ type: 'master_volume', value: 1 });
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('uninstall invalidates retained IPC dispatchers and a new route session remains usable', async () => {
@@ -119,6 +126,25 @@ test('uninstall invalidates retained IPC dispatchers and a new route session rem
 		await window.musicDjToolsPerformance.dispatch({ type: 'master_volume', value: 1 });
 		uninstallNewSession();
 	} finally {
+		delete globalThis.window;
+	}
+});
+
+test('uninstall cannot invalidate a session after browser IPC ownership changes', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	const ownedIpc = window.musicDjToolsPerformance;
+	const foreignIpc = { version: 1 };
+	window.musicDjToolsPerformance = foreignIpc;
+	try {
+		assert.throws(uninstall, /ownership changed before cleanup/i);
+		assert.equal(window.musicDjToolsPerformance, foreignIpc);
+		await ownedIpc.dispatch({ type: 'master_volume', value: 0.4 });
+		assert.equal(ipc.queryPerformanceState().mixer.master, 0.4);
+		await ownedIpc.dispatch({ type: 'master_volume', value: 1 });
+	} finally {
+		window.musicDjToolsPerformance = ownedIpc;
+		uninstall();
 		delete globalThis.window;
 	}
 });
