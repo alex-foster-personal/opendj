@@ -20,9 +20,12 @@
 
 import { initMidi } from '$lib/rb/midi/webmidi.svelte';
 import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
+import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
 
-// Device maps must be registered before initMidi resolves connected ports,
-// else every device falls through to "no map - learn log only". Register once.
+// Device maps must be registered before initMidi resolves connected ports
+// (else every device is "no map - learn log only"), and attachMidiGlue must
+// run or every mapped action lands as "no action handler registered".
+// Both were exported but never called anywhere - wire them here, once.
 let _mapsRegistered = false;
 
 export const midiUi: {
@@ -52,6 +55,7 @@ export async function requestMidiAccess(): Promise<void> {
 	try {
 		if (!_mapsRegistered) {
 			registerAllDeviceMaps();
+			attachMidiGlue();
 			_mapsRegistered = true;
 		}
 		await initMidi();
