@@ -25,6 +25,8 @@ tests/test_reconcile_route.py.
 """
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Iterator
 
@@ -35,6 +37,7 @@ from apps.shared import paths as shared_paths
 from apps.webui.server import rb_vendor
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Track
+from apps.reconcile import locate
 
 
 @pytest.fixture
@@ -79,12 +82,54 @@ def _current_etag(backend: InMemoryBackend, stable_id: str) -> str:
     return compute_etag(track.stable_id, track.updated_at)
 
 
-def _apply_body(library: dict[str, Path], *, confirm: bool = True) -> dict[str, object]:
+def _candidate_identity(path: Path) -> str:
+    stat_result = path.stat()
+    return ":".join(
+        str(value)
+        for value in (
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_size,
+            stat_result.st_mtime_ns,
+        )
+    )
+
+
+def _apply_body(
+    library: dict[str, Path], *, confirm: bool = True, vendor_id: str | None = None,
+) -> dict[str, object]:
     return {
         "new_path": str(library["candidate"]),
+        "expected_candidate_identity": _candidate_identity(library["candidate"]),
         "expected_original_path": str(library["gone"]),
+        "expected_vendor_id": vendor_id,
         "confirm": confirm,
     }
+
+
+def _vendor_meta(vendor_id: str, original_path: Path) -> rb_vendor.RbRowMeta:
+    return rb_vendor.RbRowMeta(
+        vendor_id=vendor_id,
+        folder_path=str(original_path),
+        analysis_data_path=None,
+        comment=None,
+        genre=None,
+    )
+
+
+def _swap_candidate_after_scan(
+    monkeypatch: pytest.MonkeyPatch, candidate: Path,
+) -> None:
+    original_find = locate.find_candidates
+
+    def _swap(*args: object, **kwargs: object):
+        found = original_find(*args, **kwargs)
+        replacement = candidate.with_suffix(".replacement")
+        replacement.write_bytes(b"replacement bytes")
+        replacement.replace(candidate)
+        return found
+
+    monkeypatch.setattr(locate, "find_candidates", _swap)
 
 
 # ------------------------------------------------------------------ candidates
@@ -102,6 +147,7 @@ def test_candidates_finds_basename_match(
     assert body["total"] == 1
     cand = body["candidates"][0]
     assert cand["path"] == str(library["candidate"])
+    assert cand["identity_token"] == _candidate_identity(library["candidate"])
     assert "basename_exact" in cand["signals"]
 
 
@@ -180,7 +226,9 @@ def test_apply_rejects_nonexistent_candidate_path(
     r = client.post("/api/v1/relocate/t-gone/apply",
                     json={
                         "new_path": str(tmp_path / "nope.mp3"),
+                        "expected_candidate_identity": "stale",
                         "expected_original_path": str(library["gone"]),
+                        "expected_vendor_id": None,
                         "confirm": True,
                     }, headers={"If-Match": _current_etag(client.app.state.backend, "t-gone")})
     assert r.status_code == 422
@@ -278,6 +326,157 @@ def test_apply_rejects_stale_recorded_path(
 
 
 @pytest.mark.requirement("RECON-04")
+def test_apply_rejects_changed_vendor_mapping(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        rb_vendor,
+        "bulk_rb_meta",
+        lambda _: {"t-gone": _vendor_meta("new-vendor", library["gone"])},
+    )
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json=_apply_body(library, vendor_id="old-vendor"),
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RELOCATE_VENDOR_MAPPING_CHANGED"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_state_rejects_candidate_swap_before_mutation(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _apply_body(library)
+    _swap_candidate_after_scan(monkeypatch, library["candidate"])
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RELOCATE_CANDIDATE_CHANGED"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rekordbox_verify_failure_restores_backup(
+    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-commit verify failure must restore the unique live-db backup."""
+    live_db = tmp_path / "master.db"
+    original_db = b"original database bytes"
+    live_db.write_bytes(original_db)
+    content = SimpleNamespace(FolderPath=str(library["gone"]))
+
+    class FakeRekordboxDatabase:
+        opens = 0
+
+        def __init__(self, path: str) -> None:
+            assert path == str(live_db)
+            type(self).opens += 1
+            self._verify = type(self).opens > 1
+
+        def get_content(self, ID: str):
+            assert ID == "99"
+            if self._verify:
+                raise RuntimeError("forced verify read failure")
+            return content
+
+        def commit(self) -> None:
+            live_db.write_bytes(b"mutated database bytes")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        rb_vendor,
+        "bulk_rb_meta",
+        lambda _: {"t-gone": _vendor_meta("99", library["gone"])},
+    )
+    monkeypatch.setattr(shared_paths, "REKORDBOX_LIVE_DB", live_db)
+    monkeypatch.setattr(shared_paths, "DATA_DIR", tmp_path)
+    monkeypatch.setitem(
+        sys.modules,
+        "pyrekordbox",
+        SimpleNamespace(Rekordbox6Database=FakeRekordboxDatabase),
+    )
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
+    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/v1/relocate/t-gone/apply",
+            json=_apply_body(library, vendor_id="99"),
+            headers={"If-Match": _current_etag(backend, "t-gone")},
+        )
+    assert r.status_code == 500
+    assert r.json()["detail"]["code"] == "RELOCATE_WRITE_ROLLED_BACK"
+    assert live_db.read_bytes() == original_db
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rekordbox_rejects_candidate_swap_before_commit(
+    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_db = tmp_path / "master.db"
+    live_db.write_bytes(b"original database bytes")
+    committed = False
+    content = SimpleNamespace(FolderPath=str(library["gone"]))
+
+    class FakeRekordboxDatabase:
+        def __init__(self, path: str) -> None:
+            assert path == str(live_db)
+
+        def get_content(self, ID: str):
+            assert ID == "99"
+            return content
+
+        def commit(self) -> None:
+            nonlocal committed
+            committed = True
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        rb_vendor,
+        "bulk_rb_meta",
+        lambda _: {"t-gone": _vendor_meta("99", library["gone"])},
+    )
+    monkeypatch.setattr(shared_paths, "REKORDBOX_LIVE_DB", live_db)
+    monkeypatch.setattr(shared_paths, "DATA_DIR", tmp_path)
+    monkeypatch.setitem(
+        sys.modules,
+        "pyrekordbox",
+        SimpleNamespace(Rekordbox6Database=FakeRekordboxDatabase),
+    )
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
+    body = _apply_body(library, vendor_id="99")
+    _swap_candidate_after_scan(monkeypatch, library["candidate"])
+    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/v1/relocate/t-gone/apply",
+            json=body,
+            headers={"If-Match": _current_etag(backend, "t-gone")},
+        )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RELOCATE_CANDIDATE_CHANGED"
+    assert not committed
+
+
+@pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_branch_503s_without_live_db(
     backend: InMemoryBackend, library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
@@ -296,7 +495,7 @@ def test_apply_rekordbox_branch_503s_without_live_db(
                      mount_frontend=False)
     with TestClient(app) as c:
         r = c.post("/api/v1/relocate/t-gone/apply",
-                   json=_apply_body(library),
+                   json=_apply_body(library, vendor_id="99"),
                    headers={"If-Match": _current_etag(backend, "t-gone")})
     assert r.status_code == 503
     assert r.json()["detail"]["code"] == "REKORDBOX_DB_UNAVAILABLE"

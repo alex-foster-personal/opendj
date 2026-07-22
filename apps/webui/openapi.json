@@ -3410,11 +3410,29 @@
             "title": "Confirm",
             "type": "boolean"
           },
+          "expected_candidate_identity": {
+            "description": "Opaque identity token returned for the selected candidate.",
+            "minLength": 1,
+            "title": "Expected Candidate Identity",
+            "type": "string"
+          },
           "expected_original_path": {
             "description": "Recorded path returned with the selected candidate; prevents stale targeting.",
             "minLength": 1,
             "title": "Expected Original Path",
             "type": "string"
+          },
+          "expected_vendor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Vendor mapping returned with the selected candidate, or null for state writes.",
+            "title": "Expected Vendor Id"
           },
           "new_path": {
             "description": "Candidate path to adopt; must exist on disk.",
@@ -3425,7 +3443,9 @@
         },
         "required": [
           "new_path",
+          "expected_candidate_identity",
           "expected_original_path",
+          "expected_vendor_id",
           "confirm"
         ],
         "title": "RelocateApplyIn",
@@ -3538,6 +3558,10 @@
             "title": "Confidence",
             "type": "number"
           },
+          "identity_token": {
+            "title": "Identity Token",
+            "type": "string"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -3556,6 +3580,7 @@
         },
         "required": [
           "path",
+          "identity_token",
           "confidence",
           "signals",
           "triple_validated"

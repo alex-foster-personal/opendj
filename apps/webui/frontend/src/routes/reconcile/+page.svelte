@@ -16,6 +16,7 @@
 	let expanded = $state<string | null>(null);
 	let candidates = $state<RelocateCandidate[]>([]);
 	let candidateOriginalPath = $state<string | null>(null);
+	let candidateVendorId = $state<string | null>(null);
 	let candidatesLoading = $state(false);
 	let applying = $state<string | null>(null);
 
@@ -36,6 +37,7 @@
 			expanded = null;
 			candidates = [];
 			candidateOriginalPath = null;
+			candidateVendorId = null;
 			return;
 		}
 		expanded = track.stable_id;
@@ -45,6 +47,7 @@
 			const found = await getRelocateCandidates(track.stable_id);
 			candidates = found.candidates;
 			candidateOriginalPath = found.original_path;
+			candidateVendorId = found.vendor_id;
 		} catch (exc) {
 			pushToast(`Failed to find candidates: ${exc}`, 'error');
 		} finally {
@@ -61,12 +64,15 @@
 			const { etag } = await getTrack(track.stable_id);
 			await applyRelocate(track.stable_id, candidate.path, {
 				ifMatch: etag,
-				expectedOriginalPath: candidateOriginalPath
+				expectedOriginalPath: candidateOriginalPath,
+				expectedVendorId: candidateVendorId,
+				expectedCandidateIdentity: candidate.identity_token
 			});
 			pushToast(`Relocated "${track.title ?? track.stable_id}"`, 'info');
 			expanded = null;
 			candidates = [];
 			candidateOriginalPath = null;
+			candidateVendorId = null;
 			await load();
 		} catch (exc) {
 			if (exc instanceof RelocateApplyError) {

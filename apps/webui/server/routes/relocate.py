@@ -51,9 +51,10 @@ import shutil
 import subprocess
 import threading
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional, TypeVar
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -69,12 +70,14 @@ from ..etag import compute_etag, strip_quotes
 
 router = APIRouter(prefix="/relocate", tags=["relocate"])
 _REKORDBOX_WRITE_LOCK = threading.Lock()
+_MutationResult = TypeVar("_MutationResult")
 
 
 # ----- response/request models (route-local: models.py is a hotspot file) --
 
 class RelocateCandidateOut(BaseModel):
     path: str
+    identity_token: str
     confidence: float
     signals: list[str]
     triple_validated: bool
@@ -90,9 +93,16 @@ class RelocateCandidateList(BaseModel):
 
 class RelocateApplyIn(BaseModel):
     new_path: str = Field(min_length=1, description="Candidate path to adopt; must exist on disk.")
+    expected_candidate_identity: str = Field(
+        min_length=1,
+        description="Opaque identity token returned for the selected candidate.",
+    )
     expected_original_path: str = Field(
         min_length=1,
         description="Recorded path returned with the selected candidate; prevents stale targeting.",
+    )
+    expected_vendor_id: str | None = Field(
+        description="Vendor mapping returned with the selected candidate, or null for state writes.",
     )
     confirm: bool = Field(
         description="Must be true. Explicit safety gate -- this writes to "
@@ -106,6 +116,14 @@ class RelocateApplyOut(BaseModel):
     target: Literal["rekordbox", "state"]
     vendor_id: Optional[str]
     backup_path: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateFile:
+    """Canonical candidate path plus its stable filesystem identity."""
+
+    path: str
+    identity_token: str
 
 
 # ----- shared path resolution (mirrors reconcile._scan_broken's order) -----
@@ -149,12 +167,27 @@ def _require_current_etag(track: Track, if_match: str | None) -> None:
         })
 
 
-def _validated_candidate_path(new_path: str) -> str:
-    """Return a canonical regular audio path contained in a configured root.
+def _identity_token(stat_result: os.stat_result) -> str:
+    """Opaque stable identity for the candidate selected by the user."""
+    return ":".join(
+        str(value)
+        for value in (
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_size,
+            stat_result.st_mtime_ns,
+        )
+    )
 
-    ``resolve`` prevents a symlink from escaping a music root and the
-    descriptor check rejects a final-component symlink swap between stat and
-    use. We persist the canonical path, never the caller's spelling.
+
+def _open_candidate_file(
+    new_path: str, expected_identity: str | None = None,
+) -> tuple[CandidateFile, int]:
+    """Open a canonical candidate without following its final symlink.
+
+    Callers must keep the descriptor open until their mutation boundary. The
+    same token is checked on the selection read and immediately before the
+    mutation, so delete, rename, and symlink replacement races fail closed.
     """
     requested = Path(new_path)
     if not requested.is_absolute():
@@ -162,6 +195,7 @@ def _validated_candidate_path(new_path: str) -> str:
             "code": "CANDIDATE_PATH_NOT_ABSOLUTE",
             "message": "candidate path must be absolute",
         })
+    descriptor: int | None = None
     try:
         before = requested.lstat()
         resolved = requested.resolve(strict=True)
@@ -172,21 +206,27 @@ def _validated_candidate_path(new_path: str) -> str:
                 "message": "this platform cannot safely verify a symlink-free candidate path",
             })
         descriptor = os.open(str(resolved), os.O_RDONLY | no_follow)
-        try:
-            after = os.fstat(descriptor)
-        finally:
-            os.close(descriptor)
+        after = os.fstat(descriptor)
     except FileNotFoundError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
         raise HTTPException(status_code=422, detail={
             "code": "CANDIDATE_PATH_NOT_FOUND",
             "message": f"candidate path does not exist on disk: {requested}",
         }) from exc
     except OSError as exc:
+        if descriptor is not None:
+            os.close(descriptor)
         raise HTTPException(status_code=422, detail={
             "code": "CANDIDATE_PATH_UNSAFE",
             "message": f"candidate path must be a non-symlink readable file: {requested}",
         }) from exc
-    if requested.is_symlink() or before.st_ino != after.st_ino or not resolved.is_file():
+    if (
+        requested.is_symlink()
+        or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+        or not resolved.is_file()
+    ):
+        os.close(descriptor)
         raise HTTPException(status_code=422, detail={
             "code": "CANDIDATE_PATH_UNSAFE",
             "message": f"candidate path must be a stable regular file: {requested}",
@@ -194,13 +234,41 @@ def _validated_candidate_path(new_path: str) -> str:
     for root in paths.MUSIC_ROOTS:
         try:
             resolved.relative_to(root.resolve(strict=True))
-            return str(resolved)
+            candidate = CandidateFile(str(resolved), _identity_token(after))
+            if expected_identity is not None and candidate.identity_token != expected_identity:
+                os.close(descriptor)
+                raise HTTPException(status_code=409, detail={
+                    "code": "RELOCATE_CANDIDATE_CHANGED",
+                    "message": "candidate changed since it was selected; refresh candidates",
+                })
+            return candidate, descriptor
         except (FileNotFoundError, ValueError):
             continue
+    os.close(descriptor)
     raise HTTPException(status_code=422, detail={
         "code": "CANDIDATE_PATH_OUTSIDE_MUSIC_ROOTS",
         "message": "candidate path must be contained in a configured music root",
     })
+
+
+def _validated_candidate_path(new_path: str) -> CandidateFile:
+    """Validate a candidate now, then close its descriptor before later checks."""
+    candidate, descriptor = _open_candidate_file(new_path)
+    os.close(descriptor)
+    return candidate
+
+
+def _mutate_with_candidate_guard(
+    candidate: CandidateFile,
+    expected_identity: str,
+    mutation: Callable[[CandidateFile], _MutationResult],
+) -> _MutationResult:
+    """Reopen the selected candidate immediately before a state mutation."""
+    checked, descriptor = _open_candidate_file(candidate.path, expected_identity)
+    try:
+        return mutation(checked)
+    finally:
+        os.close(descriptor)
 
 
 # ----- candidates ------------------------------------------------------------
@@ -230,14 +298,22 @@ def get_candidates(
     }
     id3_cache: dict[Path, audio_files.AudioMetadata | None] = {}
     found = locate.find_candidates(row, index, id3_cache, limit=limit)
+    candidates: list[RelocateCandidateOut] = []
+    for found_candidate in found:
+        try:
+            candidate = _validated_candidate_path(str(found_candidate.path))
+        except HTTPException:
+            continue
+        candidates.append(RelocateCandidateOut(
+            path=candidate.path,
+            identity_token=candidate.identity_token,
+            confidence=found_candidate.confidence,
+            signals=found_candidate.signals,
+            triple_validated=found_candidate.triple_validated,
+        ))
     return RelocateCandidateList(
         stable_id=stable_id, original_path=original_path, vendor_id=vendor_id,
-        total=len(found),
-        candidates=[
-            RelocateCandidateOut(path=str(c.path), confidence=c.confidence,
-                                 signals=c.signals, triple_validated=c.triple_validated)
-            for c in found
-        ],
+        total=len(candidates), candidates=candidates,
     )
 
 
@@ -293,7 +369,10 @@ def _restore_live_database(backup: Path) -> None:
 
 
 def _write_rekordbox_folder_path(
-    vendor_id: str, expected_original_path: str, new_path: str,
+    vendor_id: str,
+    expected_original_path: str,
+    candidate: CandidateFile,
+    expected_identity: str,
 ) -> str:
     """Patch ``djmdContent.FolderPath`` on the LIVE rekordbox db.
 
@@ -339,9 +418,16 @@ def _write_rekordbox_folder_path(
                 })
             backup = _backup_live_database()
             _assert_rekordbox_not_running()
-            write_started = True
-            content.FolderPath = new_path
-            db.commit()
+            content.FolderPath = candidate.path
+
+            def _commit(_: CandidateFile) -> None:
+                nonlocal write_started
+                write_started = True
+                db.commit()
+
+            _mutate_with_candidate_guard(
+                candidate, expected_identity, _commit,
+            )
         except Exception as exc:
             write_error = exc
         finally:
@@ -357,19 +443,20 @@ def _write_rekordbox_folder_path(
             }) from write_error
 
         assert backup is not None
-        verify_db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
-        verify_failed = False
         try:
-            readback = verify_db.get_content(ID=vendor_id)
-            verify_failed = readback is None or readback.FolderPath != new_path
-        finally:
-            verify_db.close()
-        if verify_failed:
+            verify_db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
+            try:
+                readback = verify_db.get_content(ID=vendor_id)
+                if readback is None or readback.FolderPath != candidate.path:
+                    raise RuntimeError("rekordbox FolderPath readback mismatch")
+            finally:
+                verify_db.close()
+        except Exception as exc:
             _restore_live_database(backup)
             raise HTTPException(status_code=500, detail={
                 "code": "RELOCATE_WRITE_ROLLED_BACK",
                 "message": f"FolderPath verification failed and backup was restored: {backup}",
-            })
+            }) from exc
         return str(backup)
 
 
@@ -394,7 +481,15 @@ def apply_relocate(
             "code": "RELOCATE_TARGET_CHANGED",
             "message": "recorded path changed; refresh candidates before applying",
         })
-    new_path = _validated_candidate_path(body.new_path)
+    if vendor_id != body.expected_vendor_id:
+        raise HTTPException(status_code=409, detail={
+            "code": "RELOCATE_VENDOR_MAPPING_CHANGED",
+            "message": "vendor mapping changed; refresh candidates before applying",
+        })
+    candidate, descriptor = _open_candidate_file(
+        body.new_path, body.expected_candidate_identity,
+    )
+    os.close(descriptor)
     index = locate.FsIndex.build(audio_files.scan_music_files())
     row = {
         "original_path": original_path,
@@ -405,7 +500,7 @@ def apply_relocate(
         "file_size": "",
     }
     current_candidates = locate.find_candidates(row, index, {}, limit=20)
-    if new_path not in {str(candidate.path.resolve()) for candidate in current_candidates}:
+    if candidate.path not in {str(found.path.resolve()) for found in current_candidates}:
         raise HTTPException(status_code=409, detail={
             "code": "RELOCATE_CANDIDATE_STALE",
             "message": "candidate no longer matches this track; refresh candidates before applying",
@@ -413,23 +508,36 @@ def apply_relocate(
 
     if vendor_id is not None:
         backup_path = _write_rekordbox_folder_path(
-            vendor_id, original_path, new_path,
+            vendor_id,
+            original_path,
+            candidate,
+            body.expected_candidate_identity,
         )
         return RelocateApplyOut(
-            stable_id=stable_id, new_path=str(new_path), target="rekordbox",
+            stable_id=stable_id, new_path=candidate.path, target="rekordbox",
             vendor_id=vendor_id, backup_path=backup_path,
         )
 
-    updated = backend.update_track(
-        stable_id, {"file_path": new_path}, expected_etag=if_match, source="webui",
+    updated = _mutate_with_candidate_guard(
+        candidate,
+        body.expected_candidate_identity,
+        lambda checked: backend.update_track(
+            stable_id,
+            {"file_path": checked.path},
+            expected_etag=if_match,
+            source="webui",
+        ),
     )
-    if updated.file_path != new_path or backend.get_track(stable_id).file_path != new_path:
+    if (
+        updated.file_path != candidate.path
+        or backend.get_track(stable_id).file_path != candidate.path
+    ):
         raise HTTPException(status_code=500, detail={
             "code": "RELOCATE_STATE_READBACK_FAILED",
             "message": "state-layer file_path did not read back after update",
         })
     return RelocateApplyOut(
-        stable_id=stable_id, new_path=new_path, target="state",
+        stable_id=stable_id, new_path=candidate.path, target="state",
         vendor_id=None, backup_path=None,
     )
 

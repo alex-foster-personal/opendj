@@ -33,6 +33,7 @@ export interface BrokenTrackList {
 
 export interface RelocateCandidate {
 	path: string;
+	identity_token: string;
 	confidence: number;
 	signals: string[];
 	triple_validated: boolean;
@@ -92,14 +93,21 @@ export async function getRelocateCandidates(
 export async function applyRelocate(
 	stableId: string,
 	newPath: string,
-	opts: { ifMatch: string; expectedOriginalPath: string }
+	opts: {
+		ifMatch: string;
+		expectedOriginalPath: string;
+		expectedVendorId: string | null;
+		expectedCandidateIdentity: string;
+	}
 ): Promise<RelocateApplyResult> {
 	const r = await request(`/api/v1/relocate/${encodeURIComponent(stableId)}/apply`, {
 		method: 'POST',
 		headers: { 'If-Match': opts.ifMatch },
 		body: JSON.stringify({
 			new_path: newPath,
+			expected_candidate_identity: opts.expectedCandidateIdentity,
 			expected_original_path: opts.expectedOriginalPath,
+			expected_vendor_id: opts.expectedVendorId,
 			confirm: true
 		})
 	});
