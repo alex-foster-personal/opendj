@@ -22,6 +22,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.webui.server.app import create_app
 from apps.webui.server.routes.stems import router
 
 
@@ -98,6 +99,14 @@ def test_get_manifest_and_real_stem_file(tmp_path: Path) -> None:
     assert stem.status_code == 200
     assert stem.headers["content-type"] == "audio/wav"
     assert stem.content.startswith(b"RIFF")
+
+
+def test_production_app_registers_stem_artifact_contract() -> None:
+    """The app factory must expose the real stem routes, not only test mounts."""
+    paths = create_app(mount_frontend=False).openapi()["paths"]
+
+    assert "/api/v1/tracks/{stable_id}/stems" in paths
+    assert "/api/v1/tracks/{stable_id}/stems/{part}" in paths
 
 
 def test_rejects_incomplete_or_unproven_manifest(tmp_path: Path) -> None:
