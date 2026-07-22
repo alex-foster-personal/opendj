@@ -30,13 +30,18 @@ def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> N
         vendor_id="vendor-1",
         folder_path=None,
         image_path=None,
-        analysis_data_path=None,
+        analysis_data_path="ANLZ0000.DAT",
         length_s=None,
         comment=None,
         genre=None,
     )
 
     monkeypatch.setattr(rb_vendor, "anlz_dir", lambda _content: tmp_path)
+    monkeypatch.setattr(
+        rb_vendor,
+        "resolve_share_path",
+        lambda _analysis_path: tmp_path / "ANLZ0000.DAT",
+    )
     monkeypatch.setattr(rb_vendor, "_anlz_mtime", lambda _directory: 1.0)
     monkeypatch.setattr(
         rb_vendor,

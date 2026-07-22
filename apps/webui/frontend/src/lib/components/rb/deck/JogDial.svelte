@@ -1,18 +1,26 @@
 <script lang="ts">
 	// Jog readout dial (SCREENSHOT-SPEC 3): circular SVG dial with live BPM
 	// large, pitch percent, pitch range, and a red position tick rotating
-	// with playback position. Right column: Q / SLIP / MT / AU / MA buttons
-	// - ALL inert v1 (the AudioEngine contract exposes no quantize flag, so
-	// Q cannot be real without touching the engine unit - see PARITY-TODO).
-	// MT painted lit statically per the screenshot.
+	// with playback position. Right column: real Q and MT state; SLIP / AU /
+	// MA remain explicitly inert.
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { DeckState } from '$lib/rb/types';
 
 	let {
 		deck,
 		pitchRange,
+		pending,
+		onQuantize,
+		onMasterTempo,
 		inertTip
-	}: { deck: DeckState; pitchRange: PitchRange; inertTip: string } = $props();
+	}: {
+		deck: DeckState;
+		pitchRange: PitchRange;
+		pending: boolean;
+		onQuantize: () => Promise<void>;
+		onMasterTempo: () => Promise<void>;
+		inertTip: string;
+	} = $props();
 
 	// Live BPM = track BPM x playback ratio (ratio fixed 1.0 at v1).
 	const liveBpm: number | null = $derived(deck.bpm === null ? null : deck.bpm * deck.pitch);
@@ -50,12 +58,52 @@
 	</svg>
 
 	<div class="side-buttons">
-		<button class="rb-lit-button rb-inert" disabled title={inertTip}>Q</button>
+		<button
+			class="rb-lit-button"
+			class:lit={deck.quantize_enabled}
+			disabled={pending}
+			aria-pressed={deck.quantize_enabled}
+			data-performance-control="quantize"
+			data-state={deck.quantize_enabled ? 'on' : 'off'}
+			title="toggle quantize"
+			onclick={async () => await onQuantize()}
+		>
+			Q
+		</button>
 		<button class="rb-lit-button rb-inert" disabled title={inertTip}>SLIP</button>
-		<button class="rb-lit-button rb-inert lit" disabled title={inertTip}>MT</button>
+		<button
+			class="rb-lit-button"
+			class:lit={deck.master_tempo_enabled}
+			disabled={pending}
+			aria-pressed={deck.master_tempo_enabled}
+			data-performance-control="master-tempo"
+			data-state={deck.master_tempo_enabled ? 'on' : 'off'}
+			data-processor-state={deck.processor_error !== null
+				? 'error'
+				: deck.master_tempo_enabled
+					? deck.stable_id === null
+						? 'armed'
+						: 'active'
+					: 'bypass'}
+			title="toggle Master Tempo"
+			onclick={async () => await onMasterTempo()}
+		>
+			MT
+		</button>
 		<button class="rb-lit-button rb-inert" disabled title={inertTip}>AU</button>
 		<button class="rb-lit-button rb-inert" disabled title={inertTip}>MA</button>
-		<button class="rb-lit-button rb-inert small" disabled title={inertTip}>MT</button>
+		<button
+			class="rb-lit-button small"
+			class:lit={deck.master_tempo_enabled}
+			disabled={pending}
+			aria-pressed={deck.master_tempo_enabled}
+			data-performance-control="master-tempo"
+			data-state={deck.master_tempo_enabled ? 'on' : 'off'}
+			title="toggle Master Tempo"
+			onclick={async () => await onMasterTempo()}
+		>
+			MT
+		</button>
 	</div>
 </div>
 

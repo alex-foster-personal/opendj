@@ -1,77 +1,100 @@
 <script lang="ts">
 	// Loop cluster (SCREENSHOT-SPEC 3): INT source dropdown (visual-only),
 	// big beat-length readout, < > halve/double. Real behaviour via the
-	// audio engine: clicking the readout engages/disengages a beat loop at
-	// the current position; halve/double resize a live loop in place.
-	// Requires a loaded track WITH a BPM - otherwise disabled (fail-fast,
-	// no guessed beat lengths).
+	// audio engine: clicking the readout engages/disengages an exact PQTZ
+	// beat loop at the current position; halve/double resize it in place.
+	// Requires a loaded track with a real beatgrid. Sub-beat loops remain
+	// unimplemented until the engine has honest PQTZ interpolation.
 	import type { DeckState } from '$lib/rb/types';
 
 	let {
 		deck,
+		pending,
 		onEngage,
 		onDisengage,
 		inertTip
 	}: {
 		deck: DeckState;
-		onEngage: (in_ms: number, out_ms: number) => void;
-		onDisengage: () => void;
+		pending: boolean;
+		onEngage: (beats: number, startMs?: number) => Promise<void>;
+		onDisengage: () => Promise<void>;
 		inertTip: string;
 	} = $props();
 
-	const MIN_BEATS = 0.125;
+	const MIN_BEATS = 1;
 	const MAX_BEATS = 512;
 
 	let beatLength: number = $state(4);
 
+	$effect(() => {
+		if (
+			deck.loop !== null &&
+			deck.loop.beat_length !== null &&
+			beatLength !== deck.loop.beat_length
+		) {
+			beatLength = deck.loop.beat_length;
+		}
+	});
+
 	const engaged: boolean = $derived(deck.loop !== null && deck.loop.engaged);
-	const canLoop: boolean = $derived(deck.stable_id !== null && deck.bpm !== null);
+	const gridBeatCount: number = $derived(deck.anlz?.beatgrid.beats.length ?? 0);
+	const canToggle: boolean = $derived(
+		!pending && deck.stable_id !== null && (engaged || gridBeatCount > beatLength)
+	);
+	const nextHalved: number = $derived(Math.max(MIN_BEATS, Math.floor(beatLength / 2)));
+	const nextDoubled: number = $derived(Math.min(MAX_BEATS, beatLength * 2));
+	const canHalve: boolean = $derived(
+		!pending && deck.stable_id !== null && gridBeatCount > nextHalved
+	);
+	const canDouble: boolean = $derived(
+		!pending &&
+		deck.stable_id !== null &&
+		nextDoubled > beatLength &&
+		gridBeatCount > nextDoubled
+	);
 	const disabledTip: string = $derived(
-		deck.stable_id === null
+		pending
+			? 'deck command pending'
+			: deck.stable_id === null
 			? 'no track loaded'
-			: deck.bpm === null
-				? 'track has no BPM - beat loop unavailable'
+			: deck.anlz === null || deck.anlz.beatgrid.beats.length === 0
+				? 'track has no beatgrid - beat loop unavailable'
+				: deck.anlz.beatgrid.beats.length <= beatLength
+					? `beatgrid has too few beats for a ${beatLength}-beat loop`
 				: ''
 	);
 
 	// ----------------------------------------------------------- _helpers
 
-	function _beatMs(): number {
-		if (deck.bpm === null) throw new Error('LoopCluster: beat maths need a BPM');
-		return 60000 / deck.bpm;
-	}
-
 	function _fmtBeats(n: number): string {
-		if (n >= 1) return String(n);
-		return `1/${Math.round(1 / n)}`;
+		return String(n);
 	}
 
-	function _reapply(): void {
+	async function _reapply(): Promise<void> {
 		// Resize a live loop keeping its in point.
 		if (!engaged || deck.loop === null) return;
-		onEngage(deck.loop.in_ms, deck.loop.in_ms + beatLength * _beatMs());
+		await onEngage(beatLength, deck.loop.in_ms);
 	}
 
-	function toggleLoop(): void {
-		if (!canLoop) return;
+	async function toggleLoop(): Promise<void> {
+		if (!canToggle) return;
 		if (engaged) {
-			onDisengage();
+			await onDisengage();
 		} else {
-			const in_ms = deck.position_ms;
-			onEngage(in_ms, in_ms + beatLength * _beatMs());
+			await onEngage(beatLength);
 		}
 	}
 
-	function halve(): void {
-		if (!canLoop) return;
-		beatLength = Math.max(MIN_BEATS, beatLength / 2);
-		_reapply();
+	async function halve(): Promise<void> {
+		if (!canHalve) return;
+		beatLength = nextHalved;
+		await _reapply();
 	}
 
-	function double(): void {
-		if (!canLoop) return;
-		beatLength = Math.min(MAX_BEATS, beatLength * 2);
-		_reapply();
+	async function double(): Promise<void> {
+		if (!canDouble) return;
+		beatLength = nextDoubled;
+		await _reapply();
 	}
 </script>
 
@@ -82,19 +105,27 @@
 	<button
 		class="readout"
 		class:engaged
-		disabled={!canLoop}
-		title={canLoop ? (engaged ? 'exit loop' : `loop ${_fmtBeats(beatLength)} beats`) : disabledTip}
+		disabled={!canToggle}
+		data-performance-control="loop"
+		data-state={engaged ? 'on' : 'off'}
+		title={canToggle ? (engaged ? 'exit loop' : `loop ${_fmtBeats(beatLength)} beats`) : disabledTip}
 		onclick={toggleLoop}
 	>
 		{_fmtBeats(beatLength)}
 	</button>
 	<div class="halve-double">
-		<button disabled={!canLoop} title={canLoop ? 'halve loop length' : disabledTip} onclick={halve}>
+		<button
+			disabled={!canHalve}
+			data-performance-control="loop-halve"
+			title={canHalve ? 'halve loop length' : disabledTip}
+			onclick={halve}
+		>
 			&lt;
 		</button>
 		<button
-			disabled={!canLoop}
-			title={canLoop ? 'double loop length' : disabledTip}
+			disabled={!canDouble}
+			data-performance-control="loop-double"
+			title={canDouble ? 'double loop length' : disabledTip}
 			onclick={double}
 		>
 			&gt;

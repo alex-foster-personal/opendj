@@ -1,15 +1,23 @@
 <script lang="ts">
-	// 8-slot hot-cue bank A-H, 2 columns x 4 rows (A-D left, E-H right,
-	// SCREENSHOT-SPEC 3). Populated slot click = real jump to in_ms via the
-	// audio engine (COMPONENT-MAP 1.3); empty slots render dim + disabled.
-	// HOT CUE dropdown selector below-left is visual-only (inert).
+	// 8-slot hot-cue bank A-H as WIDE slot rows, 2 columns x 4 rows (A-D
+	// left, E-H right, SCREENSHOT-SPEC 3 wide layout): this bank is the
+	// deck panel's flexible middle and fills all spare width. Populated
+	// slot click = real jump to in_ms via the audio engine (COMPONENT-MAP
+	// 1.3); empty slots render dim + disabled. HOT CUE dropdown selector
+	// below-left is visual-only (inert).
 	import type { DeckState, HotCue, HotCueSlot } from '$lib/rb/types';
 
 	let {
 		deck,
+		pending,
 		onJump,
 		inertTip
-	}: { deck: DeckState; onJump: (ms: number) => void; inertTip: string } = $props();
+	}: {
+		deck: DeckState;
+		pending: boolean;
+		onJump: (ms: number) => Promise<void>;
+		inertTip: string;
+	} = $props();
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
@@ -19,6 +27,13 @@
 			cue: deck.hot_cues.find((c) => c.slot === slot) ?? null
 		}))
 	);
+
+	function fmtMs(ms: number): string {
+		const total = Math.floor(ms / 1000);
+		const m = Math.floor(total / 60);
+		const s = total % 60;
+		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+	}
 </script>
 
 <div class="cue-area">
@@ -28,15 +43,19 @@
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
-				disabled={entry.cue === null}
+				disabled={entry.cue === null || pending}
 				title={entry.cue === null
 					? 'empty hot cue slot'
 					: (entry.cue.comment ?? `hot cue ${entry.slot}`)}
-				onclick={() => {
-					if (entry.cue !== null) onJump(entry.cue.in_ms);
+				onclick={async () => {
+					if (entry.cue !== null) await onJump(entry.cue.in_ms);
 				}}
 			>
-				{entry.slot}
+				<span class="letter">{entry.slot}</span>
+				{#if entry.cue !== null}
+					<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
+					<span class="cue-time">{fmtMs(entry.cue.in_ms)}</span>
+				{/if}
 			</button>
 		{/each}
 	</div>
@@ -51,19 +70,24 @@
 		flex-direction: column;
 		gap: 3px;
 		min-height: 0;
+		min-width: 0;
+		flex: 1 1 auto;
+		width: 100%;
 	}
 	.bank {
 		display: grid;
-		grid-template-rows: repeat(4, 1fr);
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-rows: repeat(4, minmax(18px, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		grid-auto-flow: column;
-		gap: 2px;
+		gap: 3px;
 		flex: 1 1 auto;
 		min-height: 0;
 	}
 	.slot {
-		min-width: 34px;
-		min-height: 16px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
@@ -72,9 +96,12 @@
 		font-size: var(--rb-fs-label);
 		font-weight: 600;
 		text-align: left;
-		padding: 1px 4px;
+		padding: 1px 6px;
 		opacity: 0.55;
 		cursor: default;
+	}
+	.slot .letter {
+		flex: 0 0 auto;
 	}
 	.slot.filled {
 		opacity: 1;
@@ -82,11 +109,28 @@
 		border-left: 3px solid var(--rb-green);
 		cursor: pointer;
 	}
+	.slot.filled .letter {
+		color: var(--rb-green);
+	}
 	.slot.filled.loop {
 		border-left-color: var(--rb-orange);
 	}
-	.slot.filled:active {
-		background: var(--rb-select);
+	.slot.filled.loop .letter {
+		color: var(--rb-orange);
+	}
+	.cue-label {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-weight: 400;
+	}
+	.cue-time {
+		flex: 0 0 auto;
+		color: var(--rb-text-dim);
+		font-weight: 400;
+		font-variant-numeric: tabular-nums;
 	}
 	.dropdown {
 		align-self: flex-start;

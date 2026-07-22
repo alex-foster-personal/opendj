@@ -1,17 +1,34 @@
 """Tracks endpoints (list / get / patch) -- CAT-05."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
+from .. import rb_vendor
 from ..backend import StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
-from ..models import ProvenanceOut, TrackOut, TrackPatch, TracksPage
+from ..models import (ProvenanceOut, TrackListItemOut, TrackOut, TrackPatch,
+                      TracksPage)
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
+
+# FR-1 item 5 (agent parity for the UI "Hide broken links" toggle). Any
+# other value is a 422 straight from FastAPI's Literal validation.
+AvailableFilter = Literal["all", "true", "false"]
+
+
+def keep_by_availability(available: AvailableFilter, file_exists: bool) -> bool:
+    """True when a row passes the ?available filter (explicit three-state)."""
+    if available == "all":
+        return True
+    elif available == "true":
+        return file_exists
+    elif available == "false":
+        return not file_exists
+    raise AssertionError(f"unhandled available filter: {available}")
 
 
 def _track_to_out(track: Track) -> TrackOut:
@@ -38,6 +55,15 @@ def list_tracks(
     key: Optional[str] = None,
     rating_min: Optional[int] = None,
     tag: Optional[str] = None,
+    available: AvailableFilter = Query(
+        "all",
+        description=(
+            "Filter rows on file_exists disk truth (FR-1 agent parity). "
+            "Applied to the page AFTER cursor pagination, so a page may "
+            "return fewer than `limit` rows while next_cursor still "
+            "advances over the full track set."
+        ),
+    ),
     cursor: Optional[str] = None,
     limit: int = Query(200, ge=1, le=1000),
     backend: StateBackend = Depends(get_read_state),
@@ -45,10 +71,18 @@ def list_tracks(
     flt = TrackFilter(q=q, bpm_min=bpm_min, bpm_max=bpm_max, key=key,
                       rating_min=rating_min, tag=tag, cursor=cursor, limit=limit)
     page = backend.list_tracks(flt)
-    return TracksPage(
-        items=[_track_to_out(t) for t in page.items],
-        next_cursor=page.next_cursor,
-    )
+    rows = rb_vendor.build_track_rows(page.items)
+    items: list[TrackListItemOut] = []
+    for track, row in zip(page.items, rows):
+        if not keep_by_availability(available, row["file_exists"]):
+            continue
+        items.append(TrackListItemOut(
+            **_track_to_out(track).model_dump(),
+            preview_b64=row["preview_b64"],
+            preview_max=row["preview_max"],
+            file_exists=row["file_exists"],
+        ))
+    return TracksPage(items=items, next_cursor=page.next_cursor)
 
 
 @router.get("/{stable_id}", response_model=TrackOut)

@@ -11,8 +11,26 @@
  * payloads draw a single-colour waveform from the per-point max of whatever
  * band arrays the server filled - bands are NEVER synthesised.
  */
+import { vocalsOf } from '$lib/rb/api-rb';
 import type { AnlzBeat, AnlzCue, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/types';
-import { firstBeatAtOrAfter } from './wave-math';
+import { visibleBeatLines } from './wave-math';
+
+/** Vocal-region bar colour (SPIKE-B1 blue bars). A literal on purpose:
+ * theme.css belongs to the shared theme unit and the canvas painters
+ * already mirror colours as literals where a var cannot be read cheaply.
+ * Shared by the wavestack rows, deck strip and browser preview strips. */
+export const VOCAL_BLUE = '#4fb2ff';
+
+/** Height of the vocal bar layer in CSS px ('2px-ish' per requirement). */
+export const VOCAL_BAR_PX = 2;
+
+/** PVDI region intensity (1..4, max-in-run per SPIKE-B1) -> bar opacity,
+ * ramp 0.5 -> 1.0 so stronger vocal passages read stronger. Real data
+ * only: callers must never invoke this without a rekordbox-status region. */
+export function vocalAlpha(intensity: number): number {
+	const i = Math.max(1, Math.min(4, Math.round(intensity)));
+	return 0.5 + ((i - 1) * 0.5) / 3;
+}
 
 /** Seconds of track visible across one row (window is centered on the
  * fixed playhead). 24s keeps the <=2400-point detail waveform dense. */
@@ -146,9 +164,10 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 
 	if (frame.anlz !== null && durS > 0) {
 		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
-		_drawBeatTicks(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, palette);
+		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		_drawCues(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
+		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
 	}
 	_drawPlayhead(ctx, w, h);
 }
@@ -237,29 +256,23 @@ function _drawBands(
 	ctx.globalAlpha = 1;
 }
 
-function _drawBeatTicks(
+function _drawBeatGrid(
 	ctx: CanvasRenderingContext2D,
 	beats: AnlzBeat[],
 	tLeft: number,
 	pxPerS: number,
 	w: number,
+	h: number,
 	palette: WavePalette
 ): void {
-	if (beats.length === 0) return;
-	const tRight = tLeft + w / pxPerS;
 	ctx.fillStyle = palette.tick;
-	for (let i = firstBeatAtOrAfter(beats, tLeft); i < beats.length; i++) {
-		const beat = beats[i];
-		if (beat.t > tRight) break;
-		const x = Math.round((beat.t - tLeft) * pxPerS);
-		if (beat.n === 1) {
-			// Bar tick: taller + brighter (SCREENSHOT-SPEC 2, COMPONENT-MAP 1.2).
-			ctx.globalAlpha = 1;
-			ctx.fillRect(x, 0, 2, 8);
-		} else {
-			ctx.globalAlpha = 0.55;
-			ctx.fillRect(x, 0, 1, 4);
-		}
+	for (const line of visibleBeatLines(beats, tLeft, pxPerS, w, h)) {
+		// The low-alpha grid remains visible through the waveform. The original
+		// 8px/4px beat caps are then repainted at their stronger alpha.
+		ctx.globalAlpha = line.alpha;
+		ctx.fillRect(line.x, line.y, line.width, line.height);
+		ctx.globalAlpha = line.capAlpha;
+		ctx.fillRect(line.x, line.y, line.width, line.capHeight);
 	}
 	ctx.globalAlpha = 1;
 }
@@ -307,6 +320,30 @@ function _drawPhrases(
 		ctx.lineTo(x, 7.5);
 		ctx.stroke();
 	}
+}
+
+function _drawVocals(
+	ctx: CanvasRenderingContext2D,
+	anlz: AnlzData,
+	tLeft: number,
+	pxPerS: number,
+	w: number
+): void {
+	// Three mandatory states (SPIKE-B1): only status 'rekordbox' draws
+	// bars; no_vocals / not_analyzed draw NOTHING here (WaveRow surfaces
+	// them as tooltips). vocalsOf throws on a malformed payload - a
+	// contract breach must never render as 'no vocals'.
+	const vocals = vocalsOf(anlz);
+	if (vocals.status !== 'rekordbox') return;
+	ctx.fillStyle = VOCAL_BLUE;
+	for (const region of vocals.regions) {
+		const x0 = Math.max(0, (region.start_s - tLeft) * pxPerS);
+		const x1 = Math.min(w, (region.end_s - tLeft) * pxPerS);
+		if (x1 <= x0) continue; // fully outside the window
+		ctx.globalAlpha = vocalAlpha(region.intensity);
+		ctx.fillRect(x0, 0, x1 - x0, VOCAL_BAR_PX);
+	}
+	ctx.globalAlpha = 1;
 }
 
 function _drawPlayhead(ctx: CanvasRenderingContext2D, w: number, h: number): void {

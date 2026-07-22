@@ -22,6 +22,7 @@ from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import health as health_routes
 from .routes import pairings as pairings_routes
 from .routes import playlists as playlists_routes
+from .routes import progress as progress_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import tracks as tracks_routes
@@ -77,7 +78,14 @@ def create_app(
         # See apps/webui/README.md -> "CORS policy" for rationale.
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+            allow_origins=[
+                "http://localhost:5173", "http://127.0.0.1:5173",
+                # Isolated e2e verify stacks (loopback-only, see
+                # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
+                # talks to daemons :8686/:8688 via VITE_API_BASE.
+                "http://localhost:5273", "http://127.0.0.1:5273",
+                "http://localhost:5275", "http://127.0.0.1:5275",
+            ],
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -100,6 +108,7 @@ def create_app(
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
+    app.include_router(progress_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):

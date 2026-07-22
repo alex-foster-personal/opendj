@@ -32,7 +32,7 @@
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 </script>
 
-<div class="strip">
+<div class="strip" data-mixer-channel={deckId}>
 	<span class="ch-num">{deckId}</span>
 	<Knob label="TRIM" value={trim} onchange={ontrim} />
 	<Knob label="HIGH" value={eqHigh} onchange={(v) => oneq('high', v)} />

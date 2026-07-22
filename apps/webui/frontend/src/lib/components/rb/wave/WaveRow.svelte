@@ -3,15 +3,26 @@
 	// Canvas window scrolls under a fixed center playhead; left gutter shows
 	// the deck number + bars-to-next-cue counter. Empty deck = flat dark row.
 	// rAF repaints ONLY while this deck is playing or being scrubbed.
+	import { vocalsOf } from '$lib/rb/api-rb';
+	import {
+		performanceCommandStatus,
+		runPerformanceCommandFromUi
+	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/types';
-	import { engine, getDeckState } from './engine-accessor';
+	import { getDeckState } from './engine-accessor';
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
 	import { barsToNextCueLabel } from './wave-math';
 	import { drawWaveRow, readPalette, WAVE_WINDOW_S, type WavePalette } from './render';
+	import {
+		createLatestSeekDispatcher,
+		waveClickTargetMs,
+		waveDragTargetMs
+	} from './wave-scrub';
 
 	const { deckId }: { deckId: DeckId } = $props();
 
 	const deck = $derived(getDeckState(deckId));
+	const commandPending = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
 
 	// ---- anlz source: prefer the engine-populated payload; else our own
 	// cached /anlz fetch keyed by the deck's stable_id (deck-load event).
@@ -37,14 +48,35 @@
 		anlzData !== null ? barsToNextCueLabel(anlzData, deck.position_ms) : null
 	);
 
+	// Vocal state tooltip (SPIKE-B1 three mandatory states): bars are
+	// painted by render.ts only for status 'rekordbox'; the two barless
+	// states get an explicit tooltip so absence is never ambiguous.
+	const vocalsTitle = $derived.by((): string | null => {
+		if (anlzData === null) return null;
+		const v = vocalsOf(anlzData);
+		if (v.status === 'no_vocals') return 'no vocals detected';
+		else if (v.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
+		else return null; // rekordbox: the blue bars speak for themselves
+	});
+
 	// ---- canvas plumbing
 	let canvasEl: HTMLCanvasElement | undefined = $state();
 	let cssW = $state(0);
 	let cssH = $state(0);
 	let palette: WavePalette | null = null;
 	let seeking = $state(false);
-	let dragTLeftS = 0; // window-left second frozen at pointerdown
+	let scrubPointerId: number | null = null;
+	let scrubOriginClientX = 0;
+	let scrubOriginPositionMs = 0;
+	let scrubDurationMs = 0;
+	let scrubLeftPx = 0;
+	let scrubWidthPx = 0;
+	let scrubMoved = false;
 	let lastSeekTs = 0;
+	const DRAG_THRESHOLD_PX = 3;
+	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
+		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
+	});
 
 	$effect(() => {
 		const el = canvasEl;
@@ -110,34 +142,94 @@
 		draw();
 	});
 
-	// ---- click-drag seek: x maps to the time shown at that pixel, with the
-	// window frozen at pointerdown so the mapping is stable for the drag.
-	function _seekToX(x: number): void {
-		if (deck.duration_ms === null) return;
-		const pxPerS = cssW / WAVE_WINDOW_S;
-		const ms = Math.min(deck.duration_ms, Math.max(0, (dragTLeftS + x / pxPerS) * 1000));
-		engine.cueJump(deckId, ms);
+	// ---- click-drag seek: the engine position at pointerdown is frozen as
+	// the gesture origin. Dragging grabs the waveform under the fixed playhead;
+	// click-without-drag still seeks to the time visibly beneath the pointer.
+	function _dragTarget(clientX: number): number {
+		return waveDragTargetMs({
+			originPositionMs: scrubOriginPositionMs,
+			originClientX: scrubOriginClientX,
+			clientX,
+			widthPx: scrubWidthPx,
+			durationMs: scrubDurationMs,
+			windowSeconds: WAVE_WINDOW_S
+		});
 	}
-	function onPointerDown(event: PointerEvent): void {
+
+	function _clickTarget(clientX: number): number {
+		return waveClickTargetMs({
+			centerPositionMs: scrubOriginPositionMs,
+			pointerX: clientX - scrubLeftPx,
+			widthPx: scrubWidthPx,
+			durationMs: scrubDurationMs,
+			windowSeconds: WAVE_WINDOW_S
+		});
+	}
+
+	function _clearGesture(): void {
+		scrubPointerId = null;
+		scrubMoved = false;
+		seeking = false;
+	}
+
+	async function onPointerDown(event: PointerEvent): Promise<void> {
 		// Empty deck rows are inert - a real state, nothing to seek.
-		if (deck.stable_id === null || deck.duration_ms === null) return;
-		(event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
-		dragTLeftS = deck.position_ms / 1000 - WAVE_WINDOW_S / 2;
+		if (
+			!event.isPrimary ||
+			event.button !== 0 ||
+			deck.stable_id === null ||
+			deck.duration_ms === null ||
+			commandPending
+		) {
+			return;
+		}
+		event.preventDefault();
+		const canvas = event.currentTarget as HTMLCanvasElement;
+		const rect = canvas.getBoundingClientRect();
+		canvas.setPointerCapture(event.pointerId);
+		scrubPointerId = event.pointerId;
+		scrubOriginClientX = event.clientX;
+		scrubOriginPositionMs = deck.position_ms;
+		scrubDurationMs = deck.duration_ms;
+		scrubLeftPx = rect.left;
+		scrubWidthPx = rect.width;
+		scrubMoved = false;
 		seeking = true;
 		lastSeekTs = performance.now();
-		_seekToX(event.offsetX);
 	}
-	function onPointerMove(event: PointerEvent): void {
-		if (!seeking) return;
+
+	async function onPointerMove(event: PointerEvent): Promise<void> {
+		if (!seeking || event.pointerId !== scrubPointerId) return;
+		const deltaPx = event.clientX - scrubOriginClientX;
+		if (!scrubMoved && Math.abs(deltaPx) < DRAG_THRESHOLD_PX) return;
+		scrubMoved = true;
 		const now = performance.now();
 		if (now - lastSeekTs < 90) return; // throttle buffer-source restarts
 		lastSeekTs = now;
-		_seekToX(event.offsetX);
+		await seekDispatcher.request(_dragTarget(event.clientX));
 	}
-	function onPointerUp(event: PointerEvent): void {
-		if (!seeking) return;
-		_seekToX(event.offsetX);
-		seeking = false;
+
+	async function onPointerUp(event: PointerEvent): Promise<void> {
+		if (!seeking || event.pointerId !== scrubPointerId) return;
+		const canvas = event.currentTarget as HTMLCanvasElement;
+		try {
+			const targetMs = scrubMoved ? _dragTarget(event.clientX) : _clickTarget(event.clientX);
+			await seekDispatcher.request(targetMs);
+		} finally {
+			_clearGesture();
+			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+		}
+	}
+
+	function onPointerCancel(event: PointerEvent): void {
+		if (!seeking || event.pointerId !== scrubPointerId) return;
+		const canvas = event.currentTarget as HTMLCanvasElement;
+		_clearGesture();
+		if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+	}
+
+	function onLostPointerCapture(event: PointerEvent): void {
+		if (seeking && event.pointerId === scrubPointerId) _clearGesture();
 	}
 </script>
 
@@ -146,7 +238,7 @@
 		<span class="deck-num">{deckId}</span>
 		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
 	</div>
-	<div class="canvas-wrap">
+	<div class="canvas-wrap" title={vocalsTitle ?? undefined}>
 		<canvas
 			bind:this={canvasEl}
 			role="slider"
@@ -154,11 +246,13 @@
 			aria-valuemin={0}
 			aria-valuemax={deck.duration_ms ?? 0}
 			aria-valuenow={Math.round(deck.position_ms)}
+			aria-disabled={deck.stable_id === null || (commandPending && !seeking)}
 			tabindex="-1"
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
 			onpointerup={onPointerUp}
-			onpointercancel={onPointerUp}
+			onpointercancel={onPointerCancel}
+			onlostpointercapture={onLostPointerCapture}
 		></canvas>
 		{#if deck.stable_id !== null && anlzErrorCode !== null}
 			<span class="anlz-state" title={anlzErrorCode}>
@@ -209,6 +303,7 @@
 		display: block;
 		cursor: ew-resize;
 		outline: none;
+		touch-action: none;
 	}
 	.anlz-state {
 		position: absolute;
