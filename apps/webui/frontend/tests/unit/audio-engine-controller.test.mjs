@@ -23,6 +23,9 @@ test('controller defaults enable quantize, Beat Sync, and Master Tempo with no s
 		assert.equal(state.quantize_enabled, true);
 		assert.equal(state.beat_sync_enabled, true);
 		assert.equal(state.master_tempo_enabled, true);
+		assert.equal(state.slip_enabled, false);
+		assert.equal(state.slip_active, false);
+		assert.equal(state.slip_position_ms, null);
 		assert.equal(state.audible, false);
 		assert.equal(state.transport_pending, false);
 		assert.equal(state.sync_mode, 'bar');
@@ -156,6 +159,18 @@ test('Master Tempo preserves pitch while the disabled mode follows playback rate
 	assert.throws(() => audio.masterTempoSemitones(0, true), /tempo ratio/i);
 });
 
+test('arming SLIP alone does not alter the paused transport read model', async () => {
+	const before = { ...audio.getDeckState(1) };
+	await audio.engine.setSlip(1, true);
+	const armed = audio.getDeckState(1);
+	assert.equal(armed.slip_enabled, true);
+	assert.equal(armed.slip_active, false);
+	assert.equal(armed.slip_position_ms, null);
+	assert.equal(armed.position_ms, before.position_ms);
+	assert.equal(armed.transport_pending, before.transport_pending);
+	await audio.engine.setSlip(1, false);
+});
+
 test('Camelot Key Sync chooses the shortest deterministic harmonic shift', () => {
 	assert.deepEqual(audio.parseCamelotKey('8A'), { number: 8, mode: 'A', root: 9 });
 	assert.equal(audio.parseCamelotKey('13A'), null);
@@ -183,6 +198,28 @@ test('key shift composes with Master Tempo compensation in the native Signalsmit
 	);
 	assert.throws(() => audio.composeStretchSemitones(1, true, 1.5), /integer/i);
 	assert.throws(() => audio.composeStretchSemitones(1, true, 13), /-12\.\.12/i);
+});
+
+test('Slip hidden playhead advances linearly from its acknowledged loop schedule without wrapping', () => {
+	const anchor = audio.createSlipAnchor({
+		startContextTime: 10,
+		startPositionSec: 30,
+		tempoRatio: 1.25,
+		durationSec: 120
+	});
+	assert.equal(audio.slipHiddenPositionSec(anchor, 10), 30);
+	assert.equal(audio.slipHiddenPositionSec(anchor, 14), 35);
+	assert.equal(audio.slipHiddenPositionSec(anchor, 200), 120);
+	assert.throws(
+		() => audio.createSlipAnchor({ startContextTime: 1, startPositionSec: 2, tempoRatio: 0, durationSec: 3 }),
+		/tempoRatio must be positive/i
+	);
+});
+
+test('Slip activation is limited to playing decks with SLIP enabled', () => {
+	assert.equal(audio.shouldActivateSlip(true, true), true);
+	assert.equal(audio.shouldActivateSlip(false, true), false);
+	assert.equal(audio.shouldActivateSlip(true, false), false);
 });
 
 test('central seek quantization snaps to real PQTZ and missing grids fail explicitly', () => {

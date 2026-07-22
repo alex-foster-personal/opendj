@@ -160,6 +160,9 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		quantize_enabled: true,
 		beat_sync_enabled: true,
 		master_tempo_enabled: true,
+		slip_enabled: false,
+		slip_active: false,
+		slip_position_ms: null,
 		sync_mode: 'bar',
 		sync_error: null,
 		processor_error: null,
@@ -307,6 +310,14 @@ interface _PendingSegment {
 }
 
 type _DeckProcessor = StretchDeckProcessor | AlignedStemDeckProcessor;
+/** A confirmed loop-entry schedule is the sole anchor for SLIP's hidden
+ * playhead. It deliberately uses control time, not the audible UI clock. */
+export interface SlipAnchor {
+	startContextTime: number;
+	startPositionSec: number;
+	tempoRatio: number;
+	durationSec: number;
+}
 
 interface _DeckRuntime {
 	processor: _DeckProcessor | null;
@@ -329,6 +340,7 @@ interface _DeckRuntime {
 	scheduleIntentCount: number;
 	scheduleTail: Promise<void>;
 	swapTail: Promise<void>;
+	slipAnchor: SlipAnchor | null;
 }
 
 function _emptyRuntime(): _DeckRuntime {
@@ -349,7 +361,8 @@ function _emptyRuntime(): _DeckRuntime {
 		desiredActive: false,
 		scheduleIntentCount: 0,
 		scheduleTail: Promise.resolve(),
-		swapTail: Promise.resolve()
+		swapTail: Promise.resolve(),
+		slipAnchor: null
 	};
 }
 
@@ -1078,6 +1091,38 @@ export function projectedTransportPosition(input: {
 	return input.startPositionSec + Math.max(0, input.projectAt - projectionEpoch) * input.tempoRatio;
 }
 
+export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
+	if (typeof playing !== 'boolean' || typeof slipEnabled !== 'boolean') {
+		throw new TypeError('SLIP activation inputs must be boolean');
+	}
+	return playing && slipEnabled;
+}
+
+export function createSlipAnchor(input: SlipAnchor): SlipAnchor {
+	for (const [name, value] of Object.entries(input)) {
+		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
+	}
+	if (input.startContextTime < 0 || input.startPositionSec < 0) {
+		throw new RangeError('SLIP anchor time and position must be non-negative');
+	}
+	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
+	if (input.durationSec <= 0 || input.startPositionSec > input.durationSec) {
+		throw new RangeError('SLIP anchor position must be within a positive decoded duration');
+	}
+	return { ...input };
+}
+
+/** Hidden SLIP time always advances linearly and clamps at decoded EOF. It
+ * never uses loop normalization or replaces the output-presented cursor. */
+export function slipHiddenPositionSec(anchor: SlipAnchor, contextTime: number): number {
+	const validAnchor = createSlipAnchor(anchor);
+	if (!Number.isFinite(contextTime)) {
+		throw new RangeError(`contextTime must be finite, got ${contextTime}`);
+	}
+	const elapsed = Math.max(0, contextTime - validAnchor.startContextTime);
+	return Math.min(validAnchor.durationSec, validAnchor.startPositionSec + elapsed * validAnchor.tempoRatio);
+}
+
 export function projectedLoopAwareTransportPosition(input: {
 	active: boolean;
 	loop: LoopState | null;
@@ -1612,6 +1657,55 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 	);
 }
 
+function _clearSlip(deck: DeckId): void {
+	const st = deckStates[deck];
+	st.slip_active = false;
+	st.slip_position_ms = null;
+	_rt[deck].slipAnchor = null;
+}
+
+function _activateSlip(deck: DeckId, anchor: SlipAnchor): void {
+	const { st, rt } = _requireLoaded(deck, 'activate SLIP');
+	if (!shouldActivateSlip(st.playing, st.slip_enabled)) {
+		throw new Error('SLIP can only activate on a playing deck with SLIP enabled');
+	}
+	rt.slipAnchor = createSlipAnchor(anchor);
+	st.slip_active = true;
+	st.slip_position_ms = slipHiddenPositionSec(rt.slipAnchor, _ctx?.currentTime ?? anchor.startContextTime) * 1000;
+}
+
+function _updateSlipPosition(deck: DeckId): void {
+	const st = deckStates[deck];
+	const anchor = _rt[deck].slipAnchor;
+	if (!st.slip_active || anchor === null) return;
+	if (!st.playing) {
+		_clearSlip(deck);
+		return;
+	}
+	if (_ctx === null) throw new Error('SLIP active without an AudioContext');
+	st.slip_position_ms = slipHiddenPositionSec(anchor, _ctx.currentTime) * 1000;
+}
+
+/** Resume an active SLIP loop through the same acknowledged processor and
+ * revision timeline used by ordinary transport mutations. */
+async function _resumeSlip(deck: DeckId): Promise<void> {
+	const { st, rt } = _requireLoaded(deck, 'resume SLIP');
+	const anchor = rt.slipAnchor;
+	if (!st.slip_active || anchor === null) throw new Error('resume SLIP requires an active hidden playhead');
+	if (!st.playing) throw new Error('resume SLIP requires a playing deck');
+	if (_ctx === null) throw new Error('resume SLIP: audio graph not initialised');
+	await _scheduleDeck(
+		deck,
+		_futureScheduleTime(deck),
+		(effectiveWhen) => slipHiddenPositionSec(anchor, effectiveWhen),
+		true,
+		undefined,
+		undefined,
+		null
+	);
+	_clearSlip(deck);
+}
+
 function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
 	if (!segment.active) return segment.startPositionSec;
 	const elapsed = Math.max(0, at - segment.startContextTime);
@@ -1764,6 +1858,7 @@ function _tick(): void {
 	for (const deck of DECK_IDS) {
 		_commitPendingIfDue(deck);
 		const observation = _publishPresentedTransport(deck, outputTimestamp);
+		_updateSlipPosition(deck);
 		if (observation?.audible || observation?.transport_pending) anyTransport = true;
 	}
 	if (anyTransport) _rafId = requestAnimationFrame(_tick);
@@ -1815,7 +1910,11 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.cue_ms = null;
 	st.pitch = 1;
 	st.stems = unavailableStemDeckState();
+	st.slip_enabled = false;
+	st.slip_active = false;
+	st.slip_position_ms = null;
 	st.loop = null;
+	_rt[st.deck_id].slipAnchor = null;
 	st.hot_cues = [];
 	st.anlz = null;
 	st.anlz_error = null;
@@ -2313,6 +2412,7 @@ class RbAudioEngine implements AudioEngine {
 			? quantizedPositionMs(pauseBeats, positionSec * 1000, true)
 			: positionSec * 1000;
 		st.cue_ms = cueMs;
+		if (st.slip_active) _clearSlip(deck);
 	}
 
 	async cueJump(deck: DeckId, ms: number): Promise<void> {
@@ -2455,6 +2555,10 @@ class RbAudioEngine implements AudioEngine {
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
 		if (loop === null) {
+			if (st.slip_active) {
+				await _resumeSlip(deck);
+				return;
+			}
 			if (wasPlaying) {
 				if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 				await _scheduleDeck(
@@ -2479,15 +2583,32 @@ class RbAudioEngine implements AudioEngine {
 		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
+			const activateSlip = shouldActivateSlip(st.playing, st.slip_enabled) && !st.slip_active;
+			let slipAnchor: SlipAnchor | null = null;
 			await _scheduleDeck(
 				deck,
 				scheduleAt,
-				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+				(effectiveWhen) => {
+					const positionSec = _projectPositionAt(deck, effectiveWhen);
+					if (activateSlip) {
+						slipAnchor = createSlipAnchor({
+							startContextTime: effectiveWhen,
+							startPositionSec: positionSec,
+							tempoRatio: _tempoAt(deck, effectiveWhen),
+							durationSec: _durationSec(deck)
+						});
+					}
+					return positionSec;
+				},
 				true,
 				undefined,
 				undefined,
 				nextLoop
 			);
+			if (activateSlip) {
+				if (slipAnchor === null) throw new Error('SLIP loop schedule did not produce an anchor');
+				_activateSlip(deck, slipAnchor);
+			}
 		} else {
 			st.loop = nextLoop;
 		}
@@ -2549,6 +2670,18 @@ class RbAudioEngine implements AudioEngine {
 			undefined,
 			enabled
 		);
+	}
+
+	async setSlip(deck: DeckId, enabled: boolean): Promise<void> {
+		if (typeof enabled !== 'boolean') throw new TypeError('setSlip: enabled must be boolean');
+		const st = deckStates[deck];
+		if (enabled) {
+			// Arming SLIP is state-only. It never schedules or publishes a transport change.
+			st.slip_enabled = true;
+			return;
+		}
+		if (st.slip_active) await _resumeSlip(deck);
+		st.slip_enabled = false;
 	}
 
 	async nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void> {

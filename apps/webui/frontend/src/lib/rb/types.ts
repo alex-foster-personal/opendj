@@ -252,6 +252,12 @@ export interface DeckState {
 	beat_sync_enabled: boolean;
 	/** Preserve source pitch while tempo changes through Signalsmith Stretch. */
 	master_tempo_enabled: boolean;
+	/** Arm slip mode. This does not alter an existing transport schedule. */
+	slip_enabled: boolean;
+	/** True only while an audible loop has an independently advancing hidden transport position. */
+	slip_active: boolean;
+	/** Hidden linear playhead in milliseconds while SLIP is active, otherwise null. */
+	slip_position_ms: number | null;
 	/** Beat-only or beat-number-within-bar phase alignment. */
 	sync_mode: SyncMode;
 	/** Explicit grid/rate/scheduling failure. null means no sync failure. */
@@ -410,6 +416,8 @@ export interface AudioEngine {
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Enable/disable pitch preservation in the Signalsmith processor. */
 	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Arm or disarm SLIP. Disarming active slip resumes through the normal schedule first. */
+	setSlip(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Shift the loaded deck by exactly one semitone. */
 	nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void>;
 	/** Align the loaded deck to the elected loaded master using the documented

@@ -2,9 +2,9 @@
 	// Build unit: deck (COMPONENT-MAP 1.3, SCREENSHOT-SPEC 3).
 	// REAL: header meta + artwork, strip overview waveform click-to-seek,
 	// hot-cue bank jumps, INT beat-loop cluster, CUE + play/pause transport,
-	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, jog readouts + position tick.
-	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown, grid-adjust stacks, SLIP, AU, MA,
-	// pitch range. Stems are live only for validated real Demucs artifacts.
+	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts + position tick.
+	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown, grid-adjust stacks, AU, MA, pitch range.
+	// Stems are live only for validated real Demucs artifacts.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
@@ -126,6 +126,14 @@
 		});
 	}
 
+	async function toggleSlip(): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'slip',
+			deck: deckId,
+			enabled: !deck.slip_enabled
+		});
+	}
+
 	async function syncKey(): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'key_sync', deck: deckId });
 	}
@@ -193,6 +201,8 @@
 			{pending}
 			onQuantize={toggleQuantize}
 			onMasterTempo={toggleMasterTempo}
+			onSlip={toggleSlip}
+			onSlip={toggleSlip}
 			inertTip={INERT_TIP}
 		/>
 	</div>

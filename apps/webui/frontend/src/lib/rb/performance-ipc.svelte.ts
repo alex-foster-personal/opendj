@@ -67,6 +67,7 @@ export type PerformanceCommand =
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId }
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
@@ -97,6 +98,9 @@ export interface PerformanceDeckSnapshot {
 	quantize_enabled: boolean;
 	beat_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
+	slip_enabled: boolean;
+	slip_active: boolean;
+	slip_position_ms: number | null;
 	is_master: boolean;
 	sync_mode: SyncMode;
 	sync_error: string | null;
@@ -295,7 +299,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`range must be 8, 16, or 100; got ${String(record.range)}`);
 		}
 		return { type, deck, range: record.range };
-	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo') {
+	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
 	} else if (type === 'stem_mute') {
@@ -360,6 +364,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		quantize_enabled: deck.quantize_enabled,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		master_tempo_enabled: deck.master_tempo_enabled,
+		slip_enabled: deck.slip_enabled,
+		slip_active: deck.slip_active,
+		slip_position_ms: deck.slip_position_ms,
 		is_master: deck.is_master,
 		sync_mode: deck.sync_mode,
 		sync_error: deck.sync_error,
@@ -490,6 +497,8 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		engine.setStemMute(command.deck, command.stem, command.muted);
 	} else if (command.type === 'stem_solo') {
 		engine.setStemSolo(command.deck, command.stem, command.solo);
+	} else if (command.type === 'slip') {
+		await engine.setSlip(command.deck, command.enabled);
 	} else if (command.type === 'key_sync') {
 		await engine.syncKey(command.deck);
 	} else if (command.type === 'key_nudge') {

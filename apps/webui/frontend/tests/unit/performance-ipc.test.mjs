@@ -42,6 +42,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_sync', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4]);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 });
@@ -60,6 +61,24 @@ test('key controls validate through IPC and round-trip serializable shift state'
 		await assert.rejects(
 			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1, extra: true }),
 			/unexpected fields/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
+test('SLIP validates through IPC and exposes its inactive read state', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const initial = ipc.queryPerformanceState().decks[1];
+		assert.equal(initial.slip_enabled, false);
+		assert.equal(initial.slip_active, false);
+		assert.equal(initial.slip_position_ms, null);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'slip', deck: 1, enabled: 'yes' }),
+			/enabled must be boolean/i
 		);
 	} finally {
 		uninstall();
@@ -110,6 +129,14 @@ test('stem commands are strict typed IPC and default state never claims artifact
 		uninstall();
 		delete globalThis.window;
 	}
+});
+
+test('jog SLIP control dispatches only through the typed performance dispatcher', async () => {
+	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
+	const jogSource = await readFile('src/lib/components/rb/deck/JogDial.svelte', 'utf8');
+	assert.match(deckSource, /type: 'slip',[\s\S]*enabled: !deck\.slip_enabled/);
+	assert.match(jogSource, /onSlip/);
+	assert.match(jogSource, /data-performance-control="slip"/);
 });
 
 test('continuous mixer controls execute through IPC immediately and round-trip in query state', async () => {
