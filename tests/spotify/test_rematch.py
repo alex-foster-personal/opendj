@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -113,6 +114,40 @@ def test_rematch_rotates_playlist_revision_and_rejects_stale_replace(
 
         assert raised.value.current["items"] == ["s1"]
         assert raised.value.etag != stale_etag
+    finally:
+        store.close()
+
+
+@pytest.mark.requirement("CAT-01")
+def test_rename_after_rematch_cannot_restore_a_stale_playlist_revision(
+    state_conn: sqlite3.Connection,
+) -> None:
+    playlist_id = _seed_unmatched_playlist(state_conn)
+    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    db_path = Path(state_conn.execute("PRAGMA database_list").fetchone()[2])
+    store = PlaylistStore(db_path)
+    try:
+        stale_etag = store.get_playlist_row(playlist_id).etag
+        stale_updated_at = state_conn.execute(
+            "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
+        ).fetchone()[0]
+        rematch_playlist(state_conn, playlist_id, live=True)
+        rematched = store.get_playlist_row(playlist_id)
+        assert rematched.items == ["s1"]
+    finally:
+        store.close()
+
+    stale_time = datetime.fromisoformat(stale_updated_at)
+    store = PlaylistStore(db_path, clock=lambda: stale_time)
+    try:
+        renamed = store.rename_playlist(
+            playlist_id, "Renamed", expected_etag=rematched.etag,
+        )
+        assert renamed.etag != stale_etag
+
+        with pytest.raises(ConflictError):
+            store.replace_memberships(playlist_id, [], expected_etag=stale_etag)
+        assert store.get_playlist_row(playlist_id).items == ["s1"]
     finally:
         store.close()
 

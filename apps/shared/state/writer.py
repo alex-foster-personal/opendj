@@ -403,9 +403,10 @@ class StateWriter:
                 )
                 kind = "playlist.insert"
             elif existing[0] != name:
+                revision = next_playlist_revision(conn, playlist_id, now)
                 conn.execute(
                     "UPDATE playlists SET name=?, updated_at=? WHERE playlist_id=?",
-                    (name, now, playlist_id),
+                    (name, revision, playlist_id),
                 )
                 kind = "playlist.update"
             else:
