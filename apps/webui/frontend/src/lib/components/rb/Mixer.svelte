@@ -6,14 +6,10 @@
 	 * STEM label. Below: headphone MIX/LEVEL (inert), crossfader assign
 	 * matrices (real) either side of the horizontal crossfader (real).
 	 *
-	 * Engine wiring: real controls call the AudioEngine contract methods
-	 * (types.ts). The implementation store is the audio-engine build unit's
-	 * rune module at $lib/rb/audio-engine.svelte.ts (`.svelte.ts` REQUIRED,
-	 * RECON-FRONTEND 10.1), expected export: `engine` implementing
-	 * AudioEngine.
-	 *
-	 * UI knob/fader positions read the same reactive engine state exposed by
-	 * browser IPC, so human and agent control paths stay visibly identical.
+	 * Engine wiring: controls render the shared mixer read model and issue
+	 * changes through the same typed command dispatcher as browser IPC.
+	 * This keeps preset automation, agent control, audio truth, and visible
+	 * knob/fader positions inseparable.
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';

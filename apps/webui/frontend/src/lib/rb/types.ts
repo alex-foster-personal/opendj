@@ -240,7 +240,7 @@ export interface DeckState {
 	is_master: boolean;
 }
 
-/** Serializable, real post-DSP analyser snapshot for acoustic verification. */
+/** Serializable real post-deck-DSP, pre-mixer/master analyser snapshot. */
 export interface DeckAudioSnapshot {
 	context_time_s: number;
 	sample_rate_hz: number;

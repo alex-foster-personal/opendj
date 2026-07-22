@@ -10,9 +10,18 @@ before(async () => {
 });
 
 test('queue scopes isolate deck loads and coordinate only sync-sensitive commands', () => {
+	assert.deepEqual(ipc.PERFORMANCE_PRESET_COMMAND_SCOPES, [1, 2, 3, 4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'load', deck: 1, stable_id: 'a' }), [
 		1
 	]);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'pitch_range', deck: 1, range: 8 }),
+		[1]
+	);
+	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({ type: 'quantize', deck: 2, enabled: false }),
+		[2]
+	);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'beat_loop', deck: 2, beats: 4 }),
 		[2]
@@ -22,6 +31,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		[3, 'sync']
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
+	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
 });
 
