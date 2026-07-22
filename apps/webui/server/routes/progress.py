@@ -35,7 +35,7 @@ from typing import Any, Literal, Optional
 
 import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from ..backend import StateBackend
 from ..deps import get_write_state
@@ -59,7 +59,7 @@ _STATUSES_WITHOUT_COMMITS: frozenset[str] = frozenset({"missing", "spiked"})
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _WRITE_LOCK = threading.Lock()
 
-NODE_SCHEMA: dict[str, str] = {
+NODE_SCHEMA: dict[str, Any] = {
     "id": "kebab-case string, globally unique across all areas",
     "title": "string",
     "status": "one of: " + "|".join(STATUSES),
@@ -70,6 +70,15 @@ NODE_SCHEMA: dict[str, str] = {
     "tests": "list of strings (test files/ids covering this node)",
     "verified": "{by, date, method} or null; agents identify themselves in by",
     "notes": "string or null",
+    "codex": {
+        "safe": "true only after Windows/headless execution and path ownership are bounded",
+        "rank": "positive integer; lower is more gating",
+        "windows_ready": "boolean",
+        "rationale": "non-empty string explaining why Codex should own the node",
+        "owned_paths": "non-empty list of exclusive path globs",
+        "avoid_paths": "non-empty list of shared or Mac-owned path globs",
+        "claim": "{state: available|claimed, owner: string|null}",
+    },
 }
 PATCH_RULES: list[str] = [
     "PATCH requires If-Match with the current ETag returned by GET /progress",
@@ -111,6 +120,22 @@ class VerifiedIn(BaseModel):
     method: str
 
 
+class CodexClaimIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    state: Literal["available", "claimed"]
+    owner: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _state_matches_owner(self) -> "CodexClaimIn":
+        owner = self.owner.strip() if self.owner is not None else None
+        if self.state == "claimed" and not owner:
+            raise ValueError("claimed Codex work requires a non-empty owner")
+        if self.state == "available" and owner is not None:
+            raise ValueError("available Codex work cannot have an owner")
+        self.owner = owner
+        return self
+
+
 class NodePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Optional[StatusLiteral] = None
@@ -118,6 +143,7 @@ class NodePatch(BaseModel):
     commits_append: Optional[list[CommitIn]] = None
     tests_append: Optional[list[str]] = None
     verified: Optional[VerifiedIn] = None
+    codex_claim: Optional[CodexClaimIn] = None
 
 
 class NodePatchOut(BaseModel):
@@ -145,6 +171,8 @@ def _load_tree() -> dict[str, Any]:
             "progress-tree.yaml must have top-level meta + areas",
         )
     seen: set[str] = set()
+    codex_ranks: dict[int, str] = {}
+    codex_owned_paths: list[tuple[str, bool, str]] = []
     for area in tree["areas"]:
         for node in area["nodes"]:
             if node["id"] in seen:
@@ -160,6 +188,79 @@ def _load_tree() -> dict[str, Any]:
                     "progress_file_invalid",
                     f"node {node['id']} has unknown status {node['status']!r}",
                 )
+            codex = node.get("codex")
+            if codex is not None:
+                required = {
+                    "safe", "rank", "windows_ready", "rationale",
+                    "owned_paths", "avoid_paths", "claim",
+                }
+                if not isinstance(codex, dict) or set(codex) != required:
+                    raise _http_error(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "progress_file_invalid",
+                        f"node {node['id']} has invalid codex assignment keys",
+                    )
+                if (
+                    codex["safe"] is not True
+                    or not isinstance(codex["rank"], int)
+                    or isinstance(codex["rank"], bool)
+                    or codex["rank"] < 1
+                    or codex["windows_ready"] is not True
+                    or not isinstance(codex["rationale"], str)
+                    or not codex["rationale"].strip()
+                    or not isinstance(codex["owned_paths"], list)
+                    or not codex["owned_paths"]
+                    or not all(isinstance(path, str) and path for path in codex["owned_paths"])
+                    or not isinstance(codex["avoid_paths"], list)
+                    or not codex["avoid_paths"]
+                    or not all(isinstance(path, str) and path for path in codex["avoid_paths"])
+                    or not isinstance(codex["claim"], dict)
+                    or set(codex["claim"]) != {"state", "owner"}
+                    or codex["claim"]["state"] not in {"available", "claimed"}
+                    or (
+                        codex["claim"]["state"] == "available"
+                        and codex["claim"]["owner"] is not None
+                    )
+                    or (
+                        codex["claim"]["state"] == "claimed"
+                        and (
+                            not isinstance(codex["claim"]["owner"], str)
+                            or not codex["claim"]["owner"].strip()
+                        )
+                    )
+                ):
+                    raise _http_error(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "progress_file_invalid",
+                        f"node {node['id']} has an unsafe codex assignment",
+                    )
+                previous_node_id = codex_ranks.get(codex["rank"])
+                if previous_node_id is not None:
+                    raise _http_error(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "progress_file_invalid",
+                        f"Codex rank {codex['rank']} is shared by "
+                        f"{previous_node_id} and {node['id']}",
+                    )
+                codex_ranks[codex["rank"]] = node["id"]
+                for owned_path in codex["owned_paths"]:
+                    normalized = owned_path.replace("\\", "/").strip("/")
+                    recursive = normalized.endswith("/**") or owned_path.endswith("/")
+                    scope = normalized.removesuffix("/**").rstrip("/")
+                    for other_scope, other_recursive, other_node_id in codex_owned_paths:
+                        overlaps = scope == other_scope or (
+                            recursive and other_scope.startswith(scope + "/")
+                        ) or (
+                            other_recursive and scope.startswith(other_scope + "/")
+                        )
+                        if overlaps:
+                            raise _http_error(
+                                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                "progress_file_invalid",
+                                f"Codex owned path {owned_path!r} overlaps "
+                                f"{other_node_id} and {node['id']}",
+                            )
+                    codex_owned_paths.append((scope, recursive, node["id"]))
     return tree
 
 
@@ -298,6 +399,7 @@ def get_progress_schema() -> dict[str, Any]:
             "commits_append": "optional list of {sha, note}",
             "tests_append": "optional list of strings",
             "verified": "optional {by, method}; date is stamped server-side",
+            "codex_claim": "optional {state: available|claimed, owner: string|null}",
         },
     }
 
@@ -326,7 +428,7 @@ def patch_progress_node(
         raise _http_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "empty_patch",
             "provide at least one of status/note/commits_append/"
-            "tests_append/verified",
+            "tests_append/verified/codex_claim",
         )
     with _WRITE_LOCK:
         current_etag = _file_etag()
@@ -375,6 +477,14 @@ def patch_progress_node(
                 "date": _now_iso(),
                 "method": patch.verified.method,
             }
+        if patch.codex_claim is not None:
+            if "codex" not in node:
+                raise _http_error(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "codex_not_safe",
+                    f"node {node_id!r} is not marked codex safe",
+                )
+            node["codex"]["claim"] = patch.codex_claim.model_dump()
 
         tree["meta"]["updated"] = _now_iso()
         _dump_tree_atomic(tree)

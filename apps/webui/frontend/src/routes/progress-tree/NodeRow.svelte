@@ -35,6 +35,17 @@
 		<StatusChip status={node.status} />
 		<span class="title" title={node.id}>{node.title}</span>
 		<span class="effort effort-{node.effort}">{node.effort}</span>
+		{#if node.codex?.safe}
+			<span
+				class="codex-safe"
+				title={`${node.codex.rationale}; owns: ${node.codex.owned_paths.join(', ')}; avoids: ${node.codex.avoid_paths.join(', ')}`}
+			>
+				codex safe #{node.codex.rank}
+				{#if node.codex.claim.state === 'claimed'}
+					: {node.codex.claim.owner}
+				{/if}
+			</span>
+		{/if}
 		{#if node.reuse}
 			<span class="reuse" title="reuse">reuse: {node.reuse}</span>
 		{/if}
@@ -128,6 +139,16 @@
 		font-weight: 700;
 		color: #fff;
 		background: var(--danger);
+		padding: 0.05rem 0.4rem;
+		border-radius: 4px;
+		cursor: help;
+	}
+	.codex-safe {
+		font-size: 0.7rem;
+		font-weight: 700;
+		color: #d8f3ff;
+		background: #155e75;
+		border: 1px solid #22d3ee;
 		padding: 0.05rem 0.4rem;
 		border-radius: 4px;
 		cursor: help;
