@@ -35,6 +35,7 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { setHideBrokenLinks, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import IconRail from './browser/IconRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
@@ -465,6 +466,9 @@
 			onrate={rateRow}
 			onrowvisible={rowVisible}
 		/>
+		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track
+		     (recommended mount point, see SuggestNextStrip.svelte). -->
+		<SuggestNextStrip stableId={decks[1].stable_id} />
 	</div>
 	<div class="bottom-bar">
 		<button
