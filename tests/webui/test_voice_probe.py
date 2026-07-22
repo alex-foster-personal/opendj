@@ -73,6 +73,8 @@ def test_mute_persists_across_probe_requests(client):
     assert muted.json()["reply"] == "muted"
     assert blocked.status_code == 200
     assert blocked.json()["reply"] == "muted"
+    assert blocked.json()["client_action"] is None
+    assert blocked.json()["probe_only"] is True
 
 
 def test_unmute_clears_persisted_probe_state(client):
@@ -97,10 +99,13 @@ def test_debounce_persists_across_probe_requests(client, monkeypatch):
     monkeypatch.setenv("VOICE_DEBOUNCE_S", "60")
 
     first = client.post("/api/v1/voice/probe", json={"text": "find daft punk"})
-    second = client.post("/api/v1/voice/probe", json={"text": "next track"})
+    second = client.post("/api/v1/voice/probe", json={"text": "find chemical brothers"})
 
     assert first.json()["reply"] == "search:daft punk"
+    assert second.json()["intent"] == "SEARCH"
     assert second.json()["reply"] == "debounced"
+    assert second.json()["client_action"] is None
+    assert second.json()["probe_only"] is True
 
 
 @pytest.mark.parametrize(
