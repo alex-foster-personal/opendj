@@ -1,12 +1,15 @@
 <script lang="ts">
-	// Far-left browser icon rail (SCREENSHOT-SPEC 5a). ALL inert at v1 per
-	// COMPONENT-MAP 1.5; tooltips name the app that could back each icon.
+	// Far-left browser icon rail (SCREENSHOT-SPEC 5a). Spotify is the only
+	// active source at this stage; all other source glyphs remain inert.
 	interface RailIcon {
 		tip: string;
 		color: string;
 		d: string;
 		mode: 'fill' | 'stroke';
+		source?: 'spotify';
 	}
+
+	let { source, onspotify }: { source: 'collection' | 'spotify'; onspotify: () => void } = $props();
 
 	const TIP = 'not implemented - see PARITY-TODO';
 
@@ -15,10 +18,11 @@
 		{ tip: TIP, color: 'currentColor', d: 'M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z', mode: 'fill' },
 		{ tip: TIP, color: 'currentColor', d: 'M2 3h12v2H2zM4 7h10v2H4zM6 11h8v2H6z', mode: 'fill' },
 		{
-			tip: `${TIP} (streaming service - future apps/spotify)`,
+			tip: 'Spotify playlists and acquisition queue',
 			color: '#35c04f',
 			d: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z',
-			mode: 'fill'
+			mode: 'fill',
+			source: 'spotify'
 		},
 		{ tip: TIP, color: '#3d7dd9', d: 'M4 2h6l3 3v9H4z', mode: 'fill' },
 		{ tip: TIP, color: '#8e5bd6', d: 'M8 2l6 6-6 6-6-6z', mode: 'fill' },
@@ -54,9 +58,18 @@
 	const SECTIONS: string[] = ['Collection', 'iTunes', 'Devices'];
 </script>
 
-<nav class="rail" aria-label="browser sources (decorative at v1)">
+<nav class="rail" aria-label="browser sources">
 	{#each ICONS as icon, i (i)}
-		<button class="rail-btn rb-inert" disabled title={icon.tip} aria-label={icon.tip}>
+		<button
+			class="rail-btn"
+			class:rb-inert={icon.source === undefined}
+			class:active={icon.source === 'spotify' && source === 'spotify'}
+			disabled={icon.source === undefined}
+			title={icon.tip}
+			aria-label={icon.tip}
+			aria-pressed={icon.source === 'spotify' ? source === 'spotify' : undefined}
+			onclick={icon.source === 'spotify' ? onspotify : undefined}
+		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
 				{#if icon.mode === 'stroke'}
 					<path d={icon.d} fill="none" stroke={icon.color} stroke-width="1.4" />
@@ -93,6 +106,14 @@
 		background: transparent;
 		border: none;
 		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.rail-btn.active {
+		background: var(--rb-panel-raised);
+		box-shadow: inset 2px 0 var(--rb-accent);
+	}
+	.rail-btn.rb-inert {
+		cursor: default;
 	}
 	/* Horizontal section labels below the rail groups (SCREENSHOT-SPEC 5a) -
 	 * NOT rotated; the rail is narrow so the type is tiny like rekordbox's. */

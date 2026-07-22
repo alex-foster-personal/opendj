@@ -50,6 +50,8 @@
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import { getAnlzEntry } from './wave/anlz-cache.svelte';
+	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
+	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
 
 	// No virtualization at v1: the existing VirtualTable is library-page
 	// specific (hardcoded columns + route navigation), so panes cap at 500
@@ -70,9 +72,18 @@
 	let activePane = $state(0);
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
+	let playlistsLoading = $state(true);
+	let playlistsError = $state<string | null>(null);
+	let source = $state<'collection' | 'spotify'>('collection');
+	let spotifySelectedId = $state<string | null>(null);
+	let spotifyPendingTracks = $state<SpotifyPendingTrack[] | null>(null);
+	let spotifyPendingLoading = $state(false);
+	let spotifyPendingError = $state<string | null>(null);
+	let spotifyPendingSequence = 0;
 	const _inflight = new Set<string>();
 
 	const pane = $derived(panes[activePane]);
+	const spotifyPlaylists = $derived(playlists.filter((playlist) => playlist.vendor === 'spotify'));
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
 	);
@@ -152,6 +163,11 @@
 	});
 
 	onMount(() => {
+		const url = new URL(window.location.href);
+		if (url.searchParams.get('source') === 'spotify') {
+			source = 'spotify';
+			spotifySelectedId = url.searchParams.get('playlist');
+		}
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
 			if (request.revision > 0) panes[activePane].search = request.query;
 		});
@@ -160,14 +176,92 @@
 	});
 
 	async function _init(): Promise<void> {
+		playlistsLoading = true;
+		playlistsError = null;
 		try {
 			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
 			allTracksCount = healthRes.health.state_db.tracks;
 			playlists = lists;
+			if (source === 'spotify' && spotifySelectedId !== null) {
+				const selected = lists.find(
+					(playlist) =>
+						playlist.vendor === 'spotify' && playlist.playlist_id === spotifySelectedId
+				);
+				if (selected === undefined) {
+					spotifyPendingError = `Spotify playlist ${spotifySelectedId} is not imported`;
+				} else {
+					_selectSpotifyPlaylist(selected, false);
+				}
+			}
 		} catch (exc) {
+			playlistsError = String(exc);
 			pushToast(`browser init failed: ${String(exc)}`, 'error');
 			throw exc;
+		} finally {
+			playlistsLoading = false;
 		}
+	}
+
+	// -------------------------------------------------------- source modes
+
+	function selectSpotifySource(): void {
+		source = 'spotify';
+		_writeSpotifyQuery(spotifySelectedId);
+	}
+
+	function selectCollectionSource(): void {
+		source = 'collection';
+		_writeCollectionQuery();
+	}
+
+	function selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated): void {
+		_selectSpotifyPlaylist(playlist, true);
+	}
+
+	function _selectSpotifyPlaylist(playlist: PlaylistSummaryHydrated, writeQuery: boolean): void {
+		spotifySelectedId = playlist.playlist_id;
+		if (writeQuery) _writeSpotifyQuery(playlist.playlist_id);
+		const node: PlaylistNode = {
+			playlist_id: playlist.playlist_id,
+			name: playlist.name,
+			track_count: playlist.track_count,
+			kind: 'playlist',
+			children: []
+		};
+		void _loadPane(panes[activePane], node);
+		void _loadSpotifyPendingTracks(playlist.playlist_id);
+	}
+
+	async function _loadSpotifyPendingTracks(playlistId: string): Promise<void> {
+		const sequence = ++spotifyPendingSequence;
+		spotifyPendingTracks = null;
+		spotifyPendingLoading = true;
+		spotifyPendingError = null;
+		try {
+			const pending = await getSpotifyPendingTracks(playlistId);
+			if (sequence !== spotifyPendingSequence) return;
+			spotifyPendingTracks = pending;
+		} catch (exc) {
+			if (sequence !== spotifyPendingSequence) return;
+			spotifyPendingError = String(exc);
+		} finally {
+			if (sequence === spotifyPendingSequence) spotifyPendingLoading = false;
+		}
+	}
+
+	function _writeSpotifyQuery(playlistId: string | null): void {
+		const url = new URL(window.location.href);
+		url.searchParams.set('source', 'spotify');
+		if (playlistId === null) url.searchParams.delete('playlist');
+		else url.searchParams.set('playlist', playlistId);
+		window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+	}
+
+	function _writeCollectionQuery(): void {
+		const url = new URL(window.location.href);
+		url.searchParams.delete('source');
+		url.searchParams.delete('playlist');
+		window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
 	}
 
 	// ------------------------------------------------- pane playlist loading
@@ -375,14 +469,28 @@
 </script>
 
 <section class="rb-browser">
-	<IconRail />
+	<IconRail {source} onspotify={selectSpotifySource} />
 	<div class="tree-panel">
-		<PlaylistTree
-			nodes={treeNodes}
-			{allTracksCount}
-			selectedId={pane.playlist_id}
-			onselect={selectPlaylist}
-		/>
+		{#if source === 'spotify'}
+			<SpotifySourcePanel
+				playlists={spotifyPlaylists}
+				playlistsLoading={playlistsLoading}
+				playlistsError={playlistsError}
+				selectedId={spotifySelectedId}
+				pendingTracks={spotifyPendingTracks}
+				loading={spotifyPendingLoading}
+				error={spotifyPendingError}
+				oncollection={selectCollectionSource}
+				onselect={selectSpotifyPlaylist}
+			/>
+		{:else}
+			<PlaylistTree
+				nodes={treeNodes}
+				{allTracksCount}
+				selectedId={pane.playlist_id}
+				onselect={selectPlaylist}
+			/>
+		{/if}
 	</div>
 	<div class="list-panel">
 		<div class="pane-header">
