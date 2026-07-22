@@ -1,19 +1,24 @@
 <script lang="ts">
-	// Playlist tree panel (SCREENSHOT-SPEC 5b). Tree View tab active; Column
-	// View locked/dim (inert). 'All Tracks' shows OUR live total (never the
-	// screenshot's 9862); 'Playlists' folder lists real playlists with
-	// right-aligned counts in rekordbox custom tree order (djmdPlaylist Seq,
-	// sorted upstream in BrowserPanel - COMPONENT-MAP 1.5).
-	import type { PlaylistNode } from '$lib/rb/types';
+	// Playlist tree panel (SCREENSHOT-SPEC 5b). 'All Tracks' shows OUR live
+	// total (never the screenshot's 9862); 'Playlists' folder lists real
+	// playlists with right-aligned counts in rekordbox custom tree order
+	// (djmdPlaylist Seq, sorted upstream in BrowserPanel - COMPONENT-MAP
+	// 1.5). The Column View tab (column-view lane) swaps this panel's body
+	// for ColumnBrowser - self-contained (own library fetch), same pattern
+	// as the smartlist self-fetch below.
+	import type { DeckId, PlaylistNode } from '$lib/rb/types';
 	import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { RbApiError } from '$lib/rb/api-rb';
+	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
 
 	let {
 		nodes,
 		allTracksCount,
 		selectedId,
 		onselect,
-		onselectsmartlist
+		onselectsmartlist,
+		onselecttrack,
+		onloadtrack
 	}: {
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
@@ -22,8 +27,14 @@
 		/** Optional until the browser integrator wires smartlist selection
 		 * into BrowserPanel; absent = smartlist rows render inert. */
 		onselectsmartlist?: (smartlist: SmartlistSummary) => void;
+		/** Column View lane callbacks - optional, same absent-means-inert
+		 * convention as onselectsmartlist (ColumnBrowser itself no-ops a
+		 * click/dblclick with no handler wired). */
+		onselecttrack?: (row: ColumnTrackRow) => void;
+		onloadtrack?: (row: ColumnTrackRow, deck: DeckId | null) => void;
 	} = $props();
 
+	let mode = $state<'tree' | 'column'>('tree');
 	let playlistsOpen = $state(true);
 	let smartlistsOpen = $state(true);
 	// Smartlists are self-fetched here (LANE smartlists-router) so this
@@ -68,11 +79,18 @@
 
 <div class="tree-root">
 	<div class="view-tabs">
-		<button class="vt active">Tree View</button>
-		<button class="vt rb-inert" disabled title="not implemented - see PARITY-TODO">
+		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
+			Tree View
+		</button>
+		<button class="vt" class:active={mode === 'column'} onclick={() => (mode = 'column')}>
 			Column View
 		</button>
 	</div>
+	{#if mode === 'column'}
+		<div class="tree-scroll column-mode">
+			<ColumnBrowser {onselecttrack} {onloadtrack} />
+		</div>
+	{:else}
 	<div class="tree-scroll">
 		<div
 			class="row"
@@ -182,6 +200,7 @@
 			{/if}
 		{/if}
 	</div>
+	{/if}
 </div>
 
 <style>
@@ -220,6 +239,11 @@
 		min-height: 0;
 		overflow-y: auto;
 		padding: 2px 0;
+	}
+	.tree-scroll.column-mode {
+		/* ColumnBrowser owns its own column padding/scroll regions. */
+		padding: 0;
+		overflow: hidden;
 	}
 	.row {
 		display: flex;
