@@ -151,6 +151,9 @@ test('FLX10 play note -> deck_play_toggle action', () => {
 	assert.deepEqual(actions[n].value, { kind: 'button', pressed: true, velocity: 0x7f });
 	assert.equal(actions[n].deviceId, 'flx-in');
 	assert.equal(webmidi.learnLog[0].mapped, true);
+	// The learn-log entry carries the matched action so the UI can render a
+	// friendly label ('Play (deck 1)') instead of the bare type string.
+	assert.deepEqual(webmidi.learnLog[0].action, { type: 'deck_play_toggle', deck: 1 });
 });
 
 test('FLX10 pad note -> deck_hot_cue action with the correct slot', () => {
@@ -190,6 +193,9 @@ test('unmapped message -> learn-log entry, no action, never silent', () => {
 	assert.equal(entry.status, 0x90);
 	assert.equal(entry.data1, 0x0a);
 	assert.deepEqual(entry.decoded, { ch: 1, kind: 'note', id: 0x0a });
+	// No binding matched -> no action attached (UI falls back to a best-guess
+	// hint or the raw note, never a phantom action label).
+	assert.equal(entry.action ?? null, null);
 });
 
 test('undecoded status family -> learn-log entry flagged out of P0 scope', () => {

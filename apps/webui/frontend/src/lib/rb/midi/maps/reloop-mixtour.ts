@@ -43,7 +43,7 @@
  *     (spike section 5 P0 scope). Unbound on purpose; they learn-log.
  */
 
-import type { DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
 
 // --------------------------------------------------------------- bindings
 
@@ -125,6 +125,24 @@ const _GLOBAL_BINDINGS: MidiBinding[] = [
 	{ source: { ch: 1, kind: 'note', id: 0x4d }, action: { type: 'deck_beat_loop', deck: 2, beats: 4 } }
 ];
 
+// -------------------------------------------------------- best-guess hints
+
+/** Documented-but-unbound controls ([S4], outside the P0 MidiAction union -
+ * see the header's "→" scope note). Named per deck so unmapped traffic from
+ * them reads as "likely: Sync (deck 1)" rather than a bare "unmapped source".
+ * Only controls with a CITED wire number are hinted (kill switches and the
+ * jog-helper script rows carry no [S4] number, so no hint - never invent). */
+function _deckHints(ch: number, deck: 1 | 2): ControlHint[] {
+	return [
+		// [S4] 0x90/0x91 0x0A -> Sync (no sync action in P0 - spike 4/§5).
+		{ source: { ch, kind: 'note', id: 0x0a }, label: `Sync (deck ${deck})` },
+		// [S4] 0x90/0x91 0x03 -> PFL (headphone cue - P0 has no PFL action).
+		{ source: { ch, kind: 'note', id: 0x03 }, label: `PFL / headphone cue (deck ${deck})` },
+		// [S4] 0xB0/0xB1 0x04 -> filter / super1 (no filter action in P0).
+		{ source: { ch, kind: 'cc', id: 0x04 }, label: `Filter / colour (deck ${deck})` }
+	];
+}
+
 // ------------------------------------------------------------ led feedback
 
 /** Hot-cue pad LEDs: [S4] output rows - Note On to the SAME (ch, note) as
@@ -177,5 +195,6 @@ export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	vendor: 'Reloop',
 	nameMatch: 'Mixtour',
 	bindings: [..._deckBindings(1, 1), ..._deckBindings(2, 2), ..._GLOBAL_BINDINGS],
-	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)]
+	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)],
+	hints: [..._deckHints(1, 1), ..._deckHints(2, 2)]
 };

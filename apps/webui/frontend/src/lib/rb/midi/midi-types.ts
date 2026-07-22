@@ -205,6 +205,18 @@ export interface LedRule {
 
 // --------------------------------------------------------------- device map
 
+/** A physical control the map's author has DOCUMENTED but intentionally left
+ * unbound (out of P0 scope: loop in/out, filter, PFL, shifted twins...).
+ * Purely a learn-log aid: when unmapped traffic arrives on this source the UI
+ * can say "likely: LOOP IN (deck 1)" instead of a bare "unmapped source".
+ * Every hint below is transcribed from a cited comment in the device map -
+ * no fabricated control names or wire numbers (same house rule as bindings). */
+export interface ControlHint {
+	source: MidiSource;
+	/** Human name of the physical control, e.g. 'LOOP IN (deck 1)'. */
+	label: string;
+}
+
 /** Full declarative map for one controller model. */
 export interface DeviceMap {
 	vendor: string;
@@ -214,6 +226,8 @@ export interface DeviceMap {
 	nameMatch: string;
 	bindings: MidiBinding[];
 	leds?: LedRule[];
+	/** Documented-but-unbound controls, for learn-log best-guess hints. */
+	hints?: ControlHint[];
 }
 
 // ---------------------------------------------------------------- learn log
@@ -237,4 +251,8 @@ export interface LearnLogEntry {
 	/** Human-readable dispatch note ('unmapped', 'no handler', action type,
 	 * error text...). Never empty for mapped === false. */
 	note: string;
+	/** The matched action, when a binding resolved for this message. The UI
+	 * turns this into a friendly label ('Play (deck 1)'); absent for unmapped
+	 * traffic and for messages that decode but match no binding. */
+	action?: MidiAction | null;
 }

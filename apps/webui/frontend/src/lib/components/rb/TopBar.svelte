@@ -16,11 +16,13 @@
 	 * below fails loudly at runtime if it does not (fail-fast, no
 	 * silent fallback).
 	 */
+	import { onMount } from 'svelte';
 	import { engine } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/types';
 	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
-	import { midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
-	import { midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
+	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
+	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 
 	interface MasterCapableEngine extends AudioEngine {
@@ -57,9 +59,17 @@
 	const midiStatus = $derived(
 		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
 	);
+	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
 	const midiTitle = $derived(
 		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
 	);
+
+	// Re-run the access request on load IFF the user opted in before (persisted
+	// choice). Goes through requestMidiAccess() - the single init trigger that
+	// also registers device maps + attaches the glue - so the invariant holds.
+	onMount(() => {
+		void maybeAutoEnableMidi();
+	});
 
 	$effect(() => {
 		const id = setInterval(() => {
@@ -204,12 +214,13 @@
 		class:st-grey={midiStatus === 'grey'}
 		class:st-green={midiStatus === 'green'}
 		class:st-amber={midiStatus === 'amber'}
+		class:st-red={midiStatus === 'red'}
 		title={midiTitle}
 		aria-label="MIDI panel"
 		aria-expanded={midiUi.panelOpen}
 		onclick={toggleMidiPanel}
 	>
-		MIDI
+		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
 	</button>
 
 	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="information">
@@ -271,6 +282,10 @@
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
+
+<!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
+     panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
+<MidiLearnLogPopout />
 
 <style>
 	.rb-topbar {
@@ -371,6 +386,15 @@
 	.midi-label.st-green {
 		color: var(--rb-green);
 		opacity: 1;
+	}
+	.midi-label.st-red {
+		color: var(--rb-red);
+		opacity: 1;
+	}
+	.midi-glyph {
+		margin-left: 3px;
+		font-size: 10px;
+		font-weight: 700;
 	}
 	.midi-label.st-amber {
 		color: var(--rb-orange);

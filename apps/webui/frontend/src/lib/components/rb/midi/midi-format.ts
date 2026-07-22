@@ -19,10 +19,10 @@
  *     [if] granted with only UNMAPPED devices shows green [then ⛔️] broken
  */
 
-import type { MidiSource } from '$lib/rb/midi/midi-types';
+import type { DeviceMap, MidiAction, MidiSource } from '$lib/rb/midi/midi-types';
 import type { MidiPermission } from '$lib/rb/midi/webmidi.svelte';
 
-export type MidiLabelStatus = 'green' | 'amber' | 'grey';
+export type MidiLabelStatus = 'green' | 'amber' | 'grey' | 'red';
 
 // ---------------------------------------------------------------- _helpers
 
@@ -58,18 +58,30 @@ export function formatLogTs(tsMs: number): string {
 
 // ------------------------------------------------------- label status logic
 
-/** TopBar MIDI label colour (unit spec):
- * grey  = unsupported / denied / idle-prompt / granted-without-mapped-device
+/** TopBar MIDI label colour + glyph (unit spec):
+ * grey  = unsupported / denied / idle-prompt (MIDI not enabled yet)
  * amber = a permission request is currently in flight (prompt pending)
- * green = granted AND at least one connected device matched a DeviceMap */
+ * green = granted AND at least one connected device matched a DeviceMap (tick)
+ * red   = granted but NO mapped device bound - access was granted and the
+ *         controller then disconnected (or nothing recognised is plugged in);
+ *         the actionable "MIDI is on but nothing is driving the app" state (X) */
 export function midiLabelStatus(
 	permission: MidiPermission,
 	requestPending: boolean,
 	hasMappedDevice: boolean
 ): MidiLabelStatus {
 	if (requestPending) return 'amber';
-	if (permission === 'granted' && hasMappedDevice) return 'green';
+	if (permission === 'granted') return hasMappedDevice ? 'green' : 'red';
 	return 'grey';
+}
+
+/** The glyph shown next to the TopBar MIDI label for a given status: a tick
+ * when a controller is bound, an X when access is granted but disconnected,
+ * nothing otherwise (amber pulses; grey is idle). */
+export function midiLabelGlyph(status: MidiLabelStatus): string {
+	if (status === 'green') return '✓'; // check mark
+	if (status === 'red') return '✗'; // ballot X
+	return '';
 }
 
 /** Tooltip for the TopBar MIDI label - states WHY the colour is what it is. */
@@ -84,8 +96,94 @@ export function midiLabelTitle(
 	if (permission === 'denied') return 'MIDI: permission denied - re-enable in browser site settings';
 	if (permission === 'prompt') return 'MIDI: click to open the panel and request access';
 	if (permission === 'granted') {
+		if (mappedDeviceCount === 0) {
+			return 'MIDI: access granted but no mapped controller connected - reconnect your device';
+		}
 		return `MIDI: ${mappedDeviceCount} mapped / ${deviceCount} connected device(s) - click for panel`;
 	}
 	const _exhaustive: never = permission;
 	throw new Error(`Unhandled MidiPermission: ${_exhaustive}`);
+}
+
+// ----------------------------------------------------- decoded trace labels
+
+/** A mapped action -> a friendly, jargon-free label for the learn log, e.g.
+ * deck_play_toggle deck 1 -> 'Play (deck 1)'. Exhaustive over MidiAction so
+ * a new action type is a compile error here, not a bare type string leaking
+ * into the UI. */
+export function friendlyLabel(action: MidiAction): string {
+	switch (action.type) {
+		case 'deck_play_toggle':
+			return `Play (deck ${action.deck})`;
+		case 'deck_cue':
+			return `Cue (deck ${action.deck})`;
+		case 'deck_hot_cue':
+			return `Hot cue ${action.slot} (deck ${action.deck})`;
+		case 'deck_beat_loop':
+			return `Beat loop ${action.beats} (deck ${action.deck})`;
+		case 'deck_loop_exit':
+			return `Loop exit (deck ${action.deck})`;
+		case 'mixer_channel': {
+			if (action.target === 'trim') return `Trim (deck ${action.deck})`;
+			if (action.target === 'fader') return `Channel fader (deck ${action.deck})`;
+			if (action.target === 'eq') {
+				return action.band === undefined
+					? `EQ (deck ${action.deck})`
+					: `EQ ${action.band} (deck ${action.deck})`;
+			}
+			const _exhaustiveTarget: never = action.target;
+			throw new Error(`Unhandled mixer_channel target: ${_exhaustiveTarget}`);
+		}
+		case 'mixer_global': {
+			if (action.target === 'crossfader') return 'Crossfader';
+			if (action.target === 'master') return 'Master level';
+			const _exhaustiveTarget: never = action.target;
+			throw new Error(`Unhandled mixer_global target: ${_exhaustiveTarget}`);
+		}
+		case 'deck_pitch':
+			return `Tempo (deck ${action.deck})`;
+		case 'browse_encoder':
+			return 'Browse';
+		case 'browse_load':
+			return `Load (deck ${action.deck})`;
+		case 'shift_modifier':
+			return 'Shift';
+		default: {
+			const _exhaustive: never = action;
+			throw new Error(`Unhandled MidiAction: ${JSON.stringify(_exhaustive)}`);
+		}
+	}
+}
+
+/** Best-guess hint for an UNMAPPED source: if the device map documents this
+ * control (as an out-of-scope hint), name it. Returns null when the map has
+ * no hint for the source (so the caller falls back to the raw dispatch note).
+ * Pure lookup - no fabricated names, hints come straight from the map. */
+export function bestGuessHint(map: DeviceMap | null, source: MidiSource | null): string | null {
+	if (map === null || source === null || map.hints === undefined) return null;
+	for (const hint of map.hints) {
+		if (
+			hint.source.ch === source.ch &&
+			hint.source.kind === source.kind &&
+			hint.source.id === source.id
+		) {
+			return hint.label;
+		}
+	}
+	return null;
+}
+
+/** The label a learn-log row should DISPLAY: a friendly action label for
+ * mapped traffic, a documented best-guess for unmapped-but-known controls,
+ * else the raw dispatch note (never empty - unmapped traffic stays a signal).
+ * `action` and `hint` are resolved by the caller (the component knows the
+ * device's map); this keeps the decision in one tested place. */
+export function traceLabel(
+	note: string,
+	action: MidiAction | null | undefined,
+	hint: string | null
+): string {
+	if (action !== null && action !== undefined) return friendlyLabel(action);
+	if (hint !== null) return `likely: ${hint}`;
+	return note;
 }

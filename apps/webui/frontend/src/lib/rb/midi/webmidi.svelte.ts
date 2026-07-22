@@ -255,12 +255,22 @@ function _emit(
 			throw new Error('shift_modifier must be bound to a note (button) source');
 		}
 		midiState.shiftHeld = value.pressed;
-		_pushLearnLog({ ...log, mapped: true, note: `shift ${value.pressed ? 'held' : 'released'}` });
+		_pushLearnLog({
+			...log,
+			mapped: true,
+			note: `shift ${value.pressed ? 'held' : 'released'}`,
+			action: binding.action
+		});
 		return;
 	}
 	if (_actionHandler === null) {
 		// Loud, not silent: mapping matched but nothing is wired to act.
-		_pushLearnLog({ ...log, mapped: false, note: `no action handler registered (${binding.action.type})` });
+		_pushLearnLog({
+			...log,
+			mapped: false,
+			note: `no action handler registered (${binding.action.type})`,
+			action: binding.action
+		});
 		console.error('[midi] action arrived before registerActionHandler()', binding.action);
 		return;
 	}
@@ -269,11 +279,16 @@ function _emit(
 	} catch (exc) {
 		// Loud fail-fast: the message still lands in the learn log, the error
 		// still propagates (no silent swallow).
-		_pushLearnLog({ ...log, mapped: false, note: `handler error: ${String(exc)}` });
+		_pushLearnLog({
+			...log,
+			mapped: false,
+			note: `handler error: ${String(exc)}`,
+			action: binding.action
+		});
 		console.error('[midi] action handler threw', binding.action, exc);
 		throw exc;
 	}
-	_pushLearnLog({ ...log, mapped: true, note: binding.action.type });
+	_pushLearnLog({ ...log, mapped: true, note: binding.action.type, action: binding.action });
 }
 
 function _dispatch(device: _ResolvedDevice, ev: MIDIMessageEvent): void {
@@ -337,7 +352,12 @@ function _dispatch(device: _ResolvedDevice, ev: MIDIMessageEvent): void {
 		src.kind === 'cc'
 	) {
 		device.msbValues.set(_chKey(src.ch, src.id), d2);
-		_pushLearnLog({ ...log, mapped: true, note: 'deck_pitch MSB stored (awaiting LSB)' });
+		_pushLearnLog({
+			...log,
+			mapped: true,
+			note: 'deck_pitch MSB stored (awaiting LSB)',
+			action: binding.action
+		});
 		return;
 	}
 	if (src.kind === 'pitchbend') {

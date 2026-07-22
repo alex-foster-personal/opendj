@@ -57,7 +57,7 @@
  *   ✔︎ Zero fabricated numbers: each block comments its [PDF] Fig. row.
  */
 
-import type { DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
+import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
 import type { DeckId, HotCueSlot } from '$lib/rb/types';
 
 // -------------------------------------------------------------- constants
@@ -211,6 +211,23 @@ function _browserAndGlobalBindings(): MidiBinding[] {
 
 // -------------------------------------------------------------- led rules
 
+/** Documented-but-unbound loop buttons ([PDF] p.2 D14/D15). These are real
+ * physical buttons with NO P0 action (the union has no loop_in/out cases),
+ * so a user pressing them sees only learn-log traffic - the hint names what
+ * they pressed. Wire numbers are the SAME ones cited in _deckBindings' NOT
+ * BOUND comment; the shift twins are hardware-encoded (own note, same ch). */
+function _deckHints(deck: DeckId): ControlHint[] {
+	const ch = _deckCh(deck);
+	return [
+		// [PDF] p.2 D14 LOOP IN.1/2X: note 16 (0x10), +SHIFT note 76 (0x4C).
+		{ source: _note(ch, 0x10), label: `LOOP IN (deck ${deck})` },
+		{ source: _note(ch, 0x4c), label: `LOOP IN + SHIFT (deck ${deck})` },
+		// [PDF] p.2 D15 LOOP OUT.2X: note 17 (0x11), +SHIFT note 77 (0x4D).
+		{ source: _note(ch, 0x11), label: `LOOP OUT (deck ${deck})` },
+		{ source: _note(ch, 0x4d), label: `LOOP OUT + SHIFT (deck ${deck})` }
+	];
+}
+
 function _ledRules(deck: DeckId): LedRule[] {
 	const ch = _deckCh(deck);
 	const padCh = _padCh(deck);
@@ -258,5 +275,6 @@ export const FLX10_MAP: DeviceMap = {
 		...DECKS.flatMap((deck) => _padBindings(deck)),
 		..._browserAndGlobalBindings()
 	],
-	leds: DECKS.flatMap((deck) => _ledRules(deck))
+	leds: DECKS.flatMap((deck) => _ledRules(deck)),
+	hints: DECKS.flatMap((deck) => _deckHints(deck))
 };
