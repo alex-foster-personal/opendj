@@ -271,24 +271,28 @@ def write_playlist_and_pending(
     """
     ensure_aux_tables(conn)
 
-    prior_snapshot = already_imported_snapshot(conn, playlist.id)
-    if prior_snapshot == playlist.snapshot_id and not force:
-        return WriteSummary(
-            playlist_id=_state_playlist_id(playlist.id),
-            vendor_pl_id=playlist.id,
-            snapshot_id=playlist.snapshot_id,
-            backup_path=backup_path,
-            reversal_script_path=reversal_script_path,
-            matched_written=0,
-            pending_written=0,
-            skipped_existing_snapshot=True,
-        )
-
-    now = datetime.now(timezone.utc).isoformat()
     playlist_id = _state_playlist_id(playlist.id)
 
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # The snapshot short-circuit is an idempotency precondition, so it
+        # belongs after the writer lock. Two import processes otherwise can
+        # both observe the old snapshot and each rewrite the same playlist.
+        prior_snapshot = already_imported_snapshot(conn, playlist.id)
+        if prior_snapshot == playlist.snapshot_id and not force:
+            conn.execute("COMMIT")
+            return WriteSummary(
+                playlist_id=playlist_id,
+                vendor_pl_id=playlist.id,
+                snapshot_id=playlist.snapshot_id,
+                backup_path=backup_path,
+                reversal_script_path=reversal_script_path,
+                matched_written=0,
+                pending_written=0,
+                skipped_existing_snapshot=True,
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
         revision = next_playlist_revision(conn, playlist_id, now)
         conn.execute(
             """

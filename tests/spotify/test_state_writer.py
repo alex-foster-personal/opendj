@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import LocalTrack, MatchedPair, MatchResult
 from apps.spotify.state_writer import (
     SUGGESTED_SOURCE_KEYS,
+    WriteSummary,
     _state_playlist_id,
     already_imported_snapshot,
     backup_state_db,
@@ -160,6 +162,67 @@ def test_snapshot_short_circuit(state_conn: sqlite3.Connection) -> None:
     # backup/reversal paths passed in, not sentinel /dev/null values.
     assert summary2.backup_path == _TEST_BACKUP
     assert summary2.reversal_script_path == _TEST_REVERSAL
+
+
+def test_concurrent_same_snapshot_has_one_writer_and_one_short_circuit(
+    state_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] two imports share a snapshot [then] only one rewrites state."""
+    from apps.spotify import state_writer
+
+    src = _mk_src(sid="t1", isrc="USABC2500001", title="Hello")
+    tgt = _mk_local("s1", "USABC2500001")
+    result = MatchResult(pairs=[MatchedPair(src, tgt, 0.35, ("isrc",), "matched")])
+    playlist = _mk_playlist(pid="race", snapshot="snap-race", tracks=(src,))
+    db_path = Path(state_conn.execute("PRAGMA database_list").fetchone()[2])
+    first_preflight = threading.Event()
+    second_preflight = threading.Event()
+    release_first = threading.Event()
+    call_count = 0
+    call_lock = threading.Lock()
+    original_snapshot = state_writer.already_imported_snapshot
+
+    def pause_first_preflight(conn: sqlite3.Connection, vendor_pl_id: str) -> str | None:
+        nonlocal call_count
+        with call_lock:
+            call_count += 1
+            is_first = call_count == 1
+        if is_first:
+            first_preflight.set()
+            assert release_first.wait(timeout=5), "test did not release first import"
+        else:
+            second_preflight.set()
+        return original_snapshot(conn, vendor_pl_id)
+
+    monkeypatch.setattr(state_writer, "already_imported_snapshot", pause_first_preflight)
+    summaries: list[WriteSummary] = []
+    errors: list[BaseException] = []
+
+    def write_once() -> None:
+        conn = sqlite3.connect(db_path, isolation_level=None)
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            summaries.append(_write(conn, playlist, result))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            conn.close()
+
+    first = threading.Thread(target=write_once)
+    second = threading.Thread(target=write_once)
+    first.start()
+    assert first_preflight.wait(timeout=5), "first import did not preflight"
+    second.start()
+    assert not second_preflight.wait(timeout=0.5), (
+        "second import bypassed the SQLite writer lock"
+    )
+    release_first.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert sorted(s.skipped_existing_snapshot for s in summaries) == [False, True]
 
 
 @pytest.mark.requirement("CAT-01")
