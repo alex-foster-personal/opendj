@@ -94,10 +94,15 @@ def read_gpu_state(nvidia_smi: str = "nvidia-smi") -> GpuReading:
     return GpuReading(utilization_pct=int(util_str), memory_used_mb=int(mem_str))
 
 
-def gpu_is_busy(reading: GpuReading) -> bool:
+def gpu_is_busy(
+    reading: GpuReading,
+    *,
+    utilization_threshold: int = GPU_UTIL_BUSY_THRESHOLD,
+    memory_threshold_mb: int = GPU_MEM_BUSY_THRESHOLD_MB,
+) -> bool:
     return (
-        reading.utilization_pct >= GPU_UTIL_BUSY_THRESHOLD
-        or reading.memory_used_mb >= GPU_MEM_BUSY_THRESHOLD_MB
+        reading.utilization_pct >= utilization_threshold
+        or reading.memory_used_mb >= memory_threshold_mb
     )
 
 
@@ -124,6 +129,37 @@ def _pending_files(inbox: Path) -> list[Path]:
 
 def _stop_path(inbox: Path) -> Path:
     return inbox.parent / STOP_SENTINEL_NAME
+
+
+def _read_resource_percent(resource_percent_file: Path) -> int:
+    """Read the explicit 1..100 duty-cycle limit without guessing a default."""
+    try:
+        value = int(resource_percent_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError) as exc:
+        raise ValueError(
+            f"resource percent file must contain an integer 1..100: {resource_percent_file}"
+        ) from exc
+    if not 1 <= value <= 100:
+        raise ValueError(
+            f"resource percent must be in 1..100: {resource_percent_file}"
+        )
+    return value
+
+
+def _sleep_duty_cycle(
+    stop_path: Path,
+    duration_seconds: float,
+    sleep_fn: Callable[[float], None],
+) -> bool:
+    """Sleep in short chunks so a STOP sentinel interrupts throttling promptly."""
+    remaining = duration_seconds
+    while remaining > 0:
+        if stop_path.exists():
+            return False
+        chunk = min(1.0, remaining)
+        sleep_fn(chunk)
+        remaining -= chunk
+    return not stop_path.exists()
 
 
 def _failed_destination(audio_path: Path) -> Path:
@@ -245,8 +281,13 @@ def run_once(
     device: str,
     *,
     gpu_gate: bool,
+    gpu_utilization_threshold: int = GPU_UTIL_BUSY_THRESHOLD,
+    gpu_memory_threshold_mb: int = GPU_MEM_BUSY_THRESHOLD_MB,
+    resource_percent_file: Path | None = None,
     gpu_reader: Callable[[], GpuReading] = read_gpu_state,
     run_worker_fn: Callable[[Path], dict[str, Any]] = run_worker,
+    clock_fn: Callable[[], float] = time.monotonic,
+    sleep_fn: Callable[[float], None] = time.sleep,
 ) -> int:
     """Process every currently-pending inbox file once. Returns the count
     attempted (success + failure). A STOP sentinel or a busy GPU stops the
@@ -258,17 +299,33 @@ def run_once(
         if stop_path.exists():
             _log(logs_dir, "stop: STOP sentinel present, exiting before processing")
             break
+        if resource_percent_file is not None:
+            _read_resource_percent(resource_percent_file)
         if gpu_gate:
             reading = gpu_reader()
-            if gpu_is_busy(reading):
+            if gpu_is_busy(
+                reading,
+                utilization_threshold=gpu_utilization_threshold,
+                memory_threshold_mb=gpu_memory_threshold_mb,
+            ):
                 _log(
                     logs_dir,
                     f"hold: gpu busy (util={reading.utilization_pct}% "
                     f"mem={reading.memory_used_mb}MB), pausing this pass",
                 )
                 break
+        started_at = clock_fn()
         process_one(audio_path, outbox, logs_dir, device, run_worker_fn=run_worker_fn)
         processed += 1
+        if resource_percent_file is not None:
+            resource_percent = _read_resource_percent(resource_percent_file)
+            elapsed_seconds = clock_fn() - started_at
+            duty_sleep_seconds = elapsed_seconds * (100 / resource_percent - 1)
+            if duty_sleep_seconds > 0 and not _sleep_duty_cycle(
+                stop_path, duty_sleep_seconds, sleep_fn,
+            ):
+                _log(logs_dir, "stop: STOP sentinel present during duty-cycle sleep")
+                break
     return processed
 
 
@@ -280,6 +337,9 @@ def run_loop(
     *,
     gpu_gate: bool,
     poll_seconds: float,
+    gpu_utilization_threshold: int = GPU_UTIL_BUSY_THRESHOLD,
+    gpu_memory_threshold_mb: int = GPU_MEM_BUSY_THRESHOLD_MB,
+    resource_percent_file: Path | None = None,
     gpu_reader: Callable[[], GpuReading] = read_gpu_state,
     run_worker_fn: Callable[[Path], dict[str, Any]] = run_worker,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -294,7 +354,11 @@ def run_loop(
             return
         run_once(
             inbox, outbox, logs_dir, device,
-            gpu_gate=gpu_gate, gpu_reader=gpu_reader, run_worker_fn=run_worker_fn,
+            gpu_gate=gpu_gate,
+            gpu_utilization_threshold=gpu_utilization_threshold,
+            gpu_memory_threshold_mb=gpu_memory_threshold_mb,
+            resource_percent_file=resource_percent_file,
+            gpu_reader=gpu_reader, run_worker_fn=run_worker_fn,
         )
         sleep_fn(poll_seconds)
 
@@ -319,6 +383,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu-gate", action="store_true",
                         help="hold while nvidia-smi reports util>=10%% or "
                              "mem>=500MB (never contend with a running game)")
+    parser.add_argument("--gpu-utilization-threshold", type=int,
+                        default=GPU_UTIL_BUSY_THRESHOLD,
+                        help=f"GPU gate utilization threshold (default {GPU_UTIL_BUSY_THRESHOLD})")
+    parser.add_argument("--gpu-memory-threshold-mb", type=int,
+                        default=GPU_MEM_BUSY_THRESHOLD_MB,
+                        help=f"GPU gate memory threshold MB (default {GPU_MEM_BUSY_THRESHOLD_MB})")
+    parser.add_argument("--resource-percent-file", type=Path,
+                        help="required 1..100 duty-cycle limit file, reread between tracks")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true",
                       help="process the current inbox contents once and "
@@ -338,9 +410,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_loop(
             args.inbox, args.outbox, args.logs, args.device,
             gpu_gate=args.gpu_gate, poll_seconds=args.poll_seconds,
+            gpu_utilization_threshold=args.gpu_utilization_threshold,
+            gpu_memory_threshold_mb=args.gpu_memory_threshold_mb,
+            resource_percent_file=args.resource_percent_file,
         )
     else:
-        run_once(args.inbox, args.outbox, args.logs, args.device, gpu_gate=args.gpu_gate)
+        run_once(
+            args.inbox, args.outbox, args.logs, args.device,
+            gpu_gate=args.gpu_gate,
+            gpu_utilization_threshold=args.gpu_utilization_threshold,
+            gpu_memory_threshold_mb=args.gpu_memory_threshold_mb,
+            resource_percent_file=args.resource_percent_file,
+        )
     return 0
 
 

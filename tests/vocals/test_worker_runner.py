@@ -68,6 +68,12 @@ def test_gpu_is_busy_false_when_idle() -> None:
     assert runner.gpu_is_busy(reading) is False
 
 
+def test_gpu_is_busy_uses_supplied_thresholds() -> None:
+    reading = runner.GpuReading(utilization_pct=50, memory_used_mb=2047)
+    assert runner.gpu_is_busy(reading, utilization_threshold=50, memory_threshold_mb=2048)
+    assert not runner.gpu_is_busy(reading, utilization_threshold=51, memory_threshold_mb=2048)
+
+
 # ----- read_gpu_state: parses a stubbed nvidia-smi's CSV output --------------------
 
 @pytest.mark.skipif(sys.platform == "win32", reason="posix shebang script stub")
@@ -347,6 +353,72 @@ def test_run_once_processes_a_one_file_inbox_end_to_end(tmp_path: Path) -> None:
     assert "done: onlyfile" in (logs / "worker.log").read_text(encoding="utf-8")
 
 
+def test_run_once_resource_percent_sleeps_to_enforce_duty_cycle(tmp_path: Path) -> None:
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    logs = tmp_path / "logs"
+    _make_inbox_file(inbox)
+    resource_file = tmp_path / "RESOURCE_PERCENT"
+    resource_file.write_text("50\n", encoding="utf-8")
+    now = [10.0]
+    sleeps: list[float] = []
+
+    def _worker(_: Path) -> dict[str, Any]:
+        now[0] += 4.0
+        return _worker_result()
+
+    processed = runner.run_once(
+        inbox, outbox, logs, "cpu", gpu_gate=False,
+        run_worker_fn=_worker, resource_percent_file=resource_file,
+        clock_fn=lambda: now[0], sleep_fn=sleeps.append,
+    )
+
+    assert processed == 1
+    assert sleeps == [1.0, 1.0, 1.0, 1.0]
+
+
+@pytest.mark.parametrize("value", ["0", "101", "not-an-integer", "50.5"])
+def test_run_once_rejects_invalid_resource_percent_before_work(
+    tmp_path: Path, value: str,
+) -> None:
+    inbox = tmp_path / "inbox"
+    resource_file = tmp_path / "RESOURCE_PERCENT"
+    _make_inbox_file(inbox)
+    resource_file.write_text(value, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="resource percent"):
+        runner.run_once(
+            inbox, tmp_path / "outbox", tmp_path / "logs", "cpu", gpu_gate=False,
+            resource_percent_file=resource_file,
+        )
+
+
+def test_run_once_stop_sentinel_interrupts_duty_sleep(tmp_path: Path) -> None:
+    inbox = tmp_path / "inbox"
+    _make_inbox_file(inbox)
+    resource_file = tmp_path / "RESOURCE_PERCENT"
+    resource_file.write_text("50", encoding="utf-8")
+    now = [0.0]
+    sleeps: list[float] = []
+
+    def _sleep(duration: float) -> None:
+        sleeps.append(duration)
+        (tmp_path / "STOP").write_text("", encoding="utf-8")
+
+    def _worker(_: Path) -> dict[str, Any]:
+        now[0] += 3.0
+        return _worker_result()
+
+    processed = runner.run_once(
+        inbox, tmp_path / "outbox", tmp_path / "logs", "cpu", gpu_gate=False,
+        run_worker_fn=_worker, resource_percent_file=resource_file,
+        clock_fn=lambda: now[0], sleep_fn=_sleep,
+    )
+
+    assert processed == 1
+    assert sleeps == [1.0]
+
+
 # ----- CLI parser --------------------------------------------------------------------
 
 def test_build_parser_rejects_once_and_loop_together(tmp_path: Path) -> None:
@@ -371,3 +443,31 @@ def test_build_parser_defaults(tmp_path: Path) -> None:
     assert args.gpu_gate is False
     assert args.loop is False
     assert args.poll_seconds == runner.DEFAULT_POLL_SECONDS
+
+
+def test_build_parser_accepts_resource_and_gpu_gate_thresholds(tmp_path: Path) -> None:
+    args = runner.build_parser().parse_args([
+        "--inbox", str(tmp_path / "in"), "--outbox", str(tmp_path / "out"),
+        "--logs", str(tmp_path / "logs"), "--gpu-utilization-threshold", "50",
+        "--gpu-memory-threshold-mb", "2048", "--resource-percent-file", str(tmp_path / "RESOURCE_PERCENT"),
+    ])
+    assert args.gpu_utilization_threshold == 50
+    assert args.gpu_memory_threshold_mb == 2048
+    assert args.resource_percent_file == tmp_path / "RESOURCE_PERCENT"
+
+
+def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
+    wrapper = (Path(__file__).parents[2] / "scripts" / "run_worker.cmd").read_text(
+        encoding="utf-8",
+    )
+    assert r"set BENCH_PYTHON=D:\tmp\demucs-bench\.venv\Scripts\python.exe" in wrapper
+    assert r"set HF_HOME=D:\tmp\demucs-bench\hf-home" in wrapper
+    assert r"set MDT_PATH_MAP=D:\mdt-data\path-map.json" in wrapper
+    assert r"set MDT_FFMPEG=D:\tools\ffmpeg\bin\ffmpeg.exe" in wrapper
+    assert "set OMP_NUM_THREADS=3" in wrapper
+    assert "set MKL_NUM_THREADS=3" in wrapper
+    assert "set OPENBLAS_NUM_THREADS=3" in wrapper
+    assert "/belownormal /affinity 07" in wrapper
+    assert "--gpu-utilization-threshold 50" in wrapper
+    assert "--gpu-memory-threshold-mb 2048" in wrapper
+    assert "--resource-percent-file \"%RESOURCE_PERCENT_FILE%\"" in wrapper

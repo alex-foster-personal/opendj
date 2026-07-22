@@ -17,7 +17,14 @@ setlocal
 
 set REPO_ROOT=D:\music-dj-tools
 set WORK_ROOT=D:\demucs-work
-set BENCH_PYTHON=D:\tmp\demucs-bench\Scripts\python.exe
+set BENCH_PYTHON=D:\tmp\demucs-bench\.venv\Scripts\python.exe
+set HF_HOME=D:\tmp\demucs-bench\hf-home
+set MDT_PATH_MAP=D:\mdt-data\path-map.json
+set MDT_FFMPEG=D:\tools\ffmpeg\bin\ffmpeg.exe
+set OMP_NUM_THREADS=3
+set MKL_NUM_THREADS=3
+set OPENBLAS_NUM_THREADS=3
+set RESOURCE_PERCENT_FILE=%WORK_ROOT%\RESOURCE_PERCENT
 
 REM run_worker's own interpreter override (apps.vocals.cli.run_worker):
 REM use the proven bench env (torch+cuda, demucs, htdemucs weights cached)
@@ -25,12 +32,16 @@ REM instead of a plain `uv run`, which would resolve CPU-only wheels here
 REM (HANDOFF.md section 4.1).
 set MDT_VOCAL_WORKER_PYTHON=%BENCH_PYTHON%
 
-"%BENCH_PYTHON%" "%REPO_ROOT%\scripts\vocal_worker_runner.py" ^
+REM BelowNormal priority and affinity 0x07 are inherited by the worker children.
+start "demucs-farm" /wait /belownormal /affinity 07 "%BENCH_PYTHON%" "%REPO_ROOT%\scripts\vocal_worker_runner.py" ^
     --inbox "%WORK_ROOT%\inbox" ^
     --outbox "%WORK_ROOT%\outbox" ^
     --logs "%WORK_ROOT%\logs" ^
     --device cuda ^
     --gpu-gate ^
+    --gpu-utilization-threshold 50 ^
+    --gpu-memory-threshold-mb 2048 ^
+    --resource-percent-file "%RESOURCE_PERCENT_FILE%" ^
     --loop ^
     --poll-seconds 60
 
