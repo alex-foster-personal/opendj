@@ -32,6 +32,124 @@ test('controller defaults enable quantize, Beat Sync, and Master Tempo with no s
 	}
 });
 
+test('route teardown cancels animation, disconnects every graph resource, and closes context', async () => {
+	const calls = [];
+	const disconnectable = (name) => ({ disconnect: () => calls.push(`disconnect:${name}`) });
+	const context = {
+		state: 'running',
+		close: async () => {
+			calls.push('close:context');
+		}
+	};
+
+	await audio.disposeAudioResources(
+		{
+			rafId: 17,
+			processors: [disconnectable('processor-1'), disconnectable('processor-2')],
+			nodes: [disconnectable('deck-nodes')],
+			masterGain: disconnectable('master'),
+			context
+		},
+		(rafId) => calls.push(`cancel:${rafId}`)
+	);
+
+	assert.deepEqual(calls, [
+		'cancel:17',
+		'disconnect:processor-1',
+		'disconnect:processor-2',
+		'disconnect:deck-nodes',
+		'disconnect:master',
+		'close:context'
+	]);
+});
+
+test('route teardown detaches old processor ownership before async disposal', () => {
+	const processor = { disconnect() {} };
+	const owner = { processor };
+
+	assert.equal(audio.detachProcessorForDisposal(owner), processor);
+	assert.equal(owner.processor, null);
+});
+
+test('route teardown propagates AudioContext close failures after audio is disconnected', async () => {
+	const calls = [];
+	const failure = new Error('close failed');
+	const context = {
+		state: 'running',
+		close: async () => {
+			calls.push('close');
+			throw failure;
+		}
+	};
+
+	await assert.rejects(
+		audio.disposeAudioResources(
+			{
+				rafId: null,
+				processors: [{ disconnect: () => calls.push('disconnect') }],
+				nodes: [],
+				masterGain: null,
+				context
+			},
+			() => calls.push('unexpected cancel')
+		),
+		failure
+	);
+	assert.deepEqual(calls, ['disconnect', 'close']);
+});
+
+test('one teardown failure cannot prevent later audio resources from being silenced', async () => {
+	const calls = [];
+	const failure = new Error('processor disconnect failed');
+
+	await assert.rejects(
+		audio.disposeAudioResources(
+			{
+				rafId: null,
+				processors: [
+					{
+						disconnect: () => {
+							calls.push('disconnect:failed');
+							throw failure;
+						}
+					},
+					{ disconnect: () => calls.push('disconnect:later') }
+				],
+				nodes: [{ disconnect: () => calls.push('disconnect:node') }],
+				masterGain: { disconnect: () => calls.push('disconnect:master') },
+				context: {
+					state: 'running',
+					close: async () => calls.push('close')
+				}
+			},
+			() => calls.push('unexpected cancel')
+		),
+		failure
+	);
+	assert.deepEqual(calls, [
+		'disconnect:failed',
+		'disconnect:later',
+		'disconnect:node',
+		'disconnect:master',
+		'close'
+	]);
+});
+
+test('engine disposal resets all route-owned reactive state and is safe without a graph', async () => {
+	audio.engine.setQuantize(1, false);
+	audio.engine.setTrim(1, 0.7);
+	audio.engine.setCrossfader(0.2);
+	audio.engine.setMaster(0.4);
+
+	await audio.engine.dispose();
+
+	assert.equal(audio.getDeckState(1).quantize_enabled, true);
+	assert.equal(audio.getDeckState(1).stable_id, null);
+	assert.equal(audio.mixerState.channels[1].trim, 0.5);
+	assert.equal(audio.mixerState.crossfader, 0.5);
+	assert.equal(audio.mixerState.master, 1);
+});
+
 test('Master Tempo preserves pitch while the disabled mode follows playback rate', () => {
 	assert.equal(audio.masterTempoSemitones(1.1, true), 0);
 	assert.ok(Math.abs(audio.masterTempoSemitones(1.1, false) - 12 * Math.log2(1.1)) < 1e-12);
@@ -63,6 +181,14 @@ test('audible Beat-Synced follower seeks route back through the selected master'
 	assert.equal(audio.seekSyncMaster(1, true, true, 1), null);
 	assert.equal(audio.seekSyncMaster(2, false, true, 1), null);
 	assert.equal(audio.seekSyncMaster(2, true, false, 1), null);
+});
+
+test('sync changes reschedule desired pending starts before they become audible', () => {
+	assert.equal(audio.syncChangeRequiresReschedule(2, true, true, 1), true);
+	assert.equal(audio.syncChangeRequiresReschedule(2, false, true, 1), false);
+	assert.equal(audio.syncChangeRequiresReschedule(2, true, false, 1), false);
+	assert.equal(audio.syncChangeRequiresReschedule(1, true, true, 1), false);
+	assert.equal(audio.syncChangeRequiresReschedule(2, true, true, null), false);
 });
 
 test('central loop quantization snaps both endpoints and rejects collapsed loops', () => {
@@ -108,7 +234,7 @@ test('presented timeline supersedes an unpresented schedule at the same boundary
 		tempoRatio: 1
 	});
 
-	assert.equal(timeline.schedules.length, 2, 'every acknowledged schedule remains mirrored');
+	assert.equal(timeline.schedules.length, 1, 'superseded schedules are pruned immediately');
 	const before = audio.observePresentedTransportTimeline(
 		timeline,
 		{ contextTime: 9, performanceTime: 9000 },
@@ -180,6 +306,40 @@ test('presented timeline retains intermediate boundaries and clears pending only
 	assert.equal(latest.position_sec, 2);
 	assert.equal(latest.presented_revision, 2);
 	assert.equal(latest.transport_pending, false);
+});
+
+test('presented timeline prunes long-session history but retains current and future revisions', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	for (let revision = 1; revision <= 10_000; revision += 1) {
+		audio.acknowledgePresentedTransportSchedule(timeline, {
+			revision,
+			active: true,
+			loop: null,
+			startContextTime: revision,
+			startPositionSec: revision,
+			tempoRatio: 1
+		});
+		audio.observePresentedTransportTimeline(
+			timeline,
+			{ contextTime: revision + 0.25, performanceTime: (revision + 0.25) * 1000 },
+			20_000
+		);
+		assert.ok(timeline.schedules.length <= 1, `revision ${revision} leaked schedule history`);
+	}
+
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 10_001,
+		active: false,
+		loop: null,
+		startContextTime: 10_002,
+		startPositionSec: 10_001.25,
+		tempoRatio: 1
+	});
+	assert.deepEqual(
+		timeline.schedules.map(({ revision }) => revision),
+		[10_000, 10_001],
+		'the effective current revision and needed future revision remain mirrored'
+	);
 });
 
 test('presented timeline evaluates tempo and engaged loops at the output clock', () => {
@@ -409,6 +569,79 @@ test('transport scheduling horizon is strictly future and latency-aware', () => 
 	);
 });
 
+test('pending pause transport mutations stay scheduled instead of touching the frozen cursor', () => {
+	assert.equal(
+		audio.transportNeedsScheduledMutation({
+			playing: false,
+			audible: true,
+			controlActive: true,
+			pendingScheduleCount: 1,
+			scheduleIntentCount: 0
+		}),
+		true,
+		'pause then play or seek must supersede the pending stop'
+	);
+	assert.equal(
+		audio.transportNeedsScheduledMutation({
+			playing: false,
+			audible: false,
+			controlActive: false,
+			pendingScheduleCount: 0,
+			scheduleIntentCount: 0
+		}),
+		false,
+		'a fully paused deck may move its frozen cursor directly'
+	);
+	assert.throws(
+		() =>
+			audio.transportNeedsScheduledMutation({
+				playing: false,
+				audible: false,
+				controlActive: false,
+				pendingScheduleCount: -1,
+				scheduleIntentCount: 0
+			}),
+		/pendingScheduleCount/i
+	);
+});
+
+test('context-time waits reject suspended, stale, and stalled clocks within a bounded interval', async () => {
+	await assert.rejects(
+		audio.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
+		/not running/i
+	);
+	await assert.rejects(
+		audio.waitForAdvancingContextTime({ currentTime: Number.NaN, state: 'running' }, 1),
+		/finite and non-negative/i
+	);
+	await assert.rejects(
+		audio.waitForAdvancingContextTime(
+			{ currentTime: 0, state: 'running' },
+			1,
+			() => false,
+			20
+		),
+		/state changed/i
+	);
+	const startedAt = Date.now();
+	await assert.rejects(
+		audio.waitForAdvancingContextTime(
+			{ currentTime: 0, state: 'running' },
+			1,
+			() => true,
+			20
+		),
+		/stalled/i
+	);
+	assert.ok(Date.now() - startedAt < 250, 'stalled context wait exceeded its bounded interval');
+
+	const advancing = { currentTime: 0, state: 'running' };
+	setTimeout(() => {
+		advancing.currentTime = 1;
+	}, 5);
+	await audio.waitForAdvancingContextTime(advancing, 1, () => true, 100);
+});
+
 test('deck transport clock exposes the paused cursor and revision diagnostics', () => {
 	assert.deepEqual(audio.deckTransportClock(1), {
 		source: 'paused_cursor',
@@ -621,6 +854,7 @@ test('MASTER switching includes Beat-Synced pending starts at the next common ho
 
 test('public controller exposes semantic tempo, sync, master, quantize, and analysis APIs', async () => {
 	for (const method of [
+		'dispose',
 		'setTempoRatio',
 		'setQuantize',
 		'setBeatSync',

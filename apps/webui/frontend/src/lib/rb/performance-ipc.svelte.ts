@@ -4,6 +4,17 @@
  * UI controls and browser automation both dispatch through the same command
  * function. Runtime validation rejects malformed IPC messages, while command
  * failures are recorded in reactive state and shown by each deck.
+ *
+ * Requirements:
+ *   ✔︎ Independent deck queues prevent one slow load from blocking another.
+ *     [if] deck 1 load is pending [then] deck 2 load starts independently
+ *   ✔︎ Sync-sensitive transport uses one explicit coordination scope.
+ *     [if] master/follower commands overlap [then] their engine writes serialize
+ *   ✔︎ Continuous mixer controls execute immediately and round-trip in query().
+ *     [if] an agent moves EQ [then] the visible UI and IPC snapshot both update
+ *   ✔︎ Preset phases form one barrier across every deck and sync coordination.
+ *     [if] a preset is claimed while deck work is active [then] it waits for
+ *       every prior scope and no later command can overlap it
  */
 
 import { pushToast } from '$lib/stores.svelte';
@@ -18,6 +29,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { ScopedCommandScheduler } from '$lib/rb/performance-command-scheduler';
 import type {
 	CrossfaderAssign,
 	DeckAudioSnapshot,
@@ -126,13 +138,13 @@ export const performanceCommandStatus: {
 	last_error: string | null;
 	deck_errors: Record<DeckId, string | null>;
 	deck_pending: Record<DeckId, number>;
-	active: boolean;
+	active: number;
 	queued: number;
 } = $state({
 	last_error: null,
 	deck_errors: { 1: null, 2: null, 3: null, 4: null },
 	deck_pending: { 1: 0, 2: 0, 3: 0, 4: 0 },
-	active: false,
+	active: 0,
 	queued: 0
 });
 
@@ -143,8 +155,13 @@ export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $s
 	error: null
 });
 
-let _commandQueue: Promise<void> = Promise.resolve();
 let _presetClaim: { id: string } | null = null;
+type CommandScope = DeckId | 'sync';
+const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
+	...DECK_IDS,
+	'sync'
+];
 
 declare global {
 	interface Window {
@@ -327,7 +344,7 @@ export function queryPerformanceState(): PerformanceState {
 	return {
 		version: 1,
 		master_deck: masterDecks[0] ?? null,
-		command_pending: performanceCommandStatus.active || performanceCommandStatus.queued > 0,
+		command_pending: performanceCommandStatus.active > 0 || performanceCommandStatus.queued > 0,
 		command_queued: performanceCommandStatus.queued,
 		decks: {
 			1: _deckSnapshot(1),
@@ -354,6 +371,36 @@ export function queryPerformanceState(): PerformanceState {
 
 function _commandDeck(command: PerformanceCommand): DeckId | null {
 	return 'deck' in command ? command.deck : null;
+}
+
+export function performanceCommandQueueScopes(
+	command: PerformanceCommand
+): readonly CommandScope[] | null {
+	const deck = _commandDeck(command);
+	if (
+		command.type === 'trim' ||
+		command.type === 'eq' ||
+		command.type === 'fader' ||
+		command.type === 'assign' ||
+		command.type === 'crossfader' ||
+		command.type === 'master_volume'
+	) {
+		return null;
+	}
+	if (deck === null) throw new Error(`${command.type} has no command queue scope`);
+	if (
+		command.type === 'play' ||
+		command.type === 'cue' ||
+		command.type === 'seek' ||
+		command.type === 'tempo' ||
+		command.type === 'beat_sync' ||
+		command.type === 'sync_mode' ||
+		command.type === 'master' ||
+		command.type === 'master_tempo'
+	) {
+		return [deck, 'sync'];
+	}
+	return [deck];
 }
 
 function _errorMessage(error: unknown): string {
@@ -457,7 +504,7 @@ function _enqueuePresetPhase<T>(
 	for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
 	const run = async (): Promise<T> => {
 		performanceCommandStatus.queued -= 1;
-		performanceCommandStatus.active = true;
+		performanceCommandStatus.active += 1;
 		performanceCommandStatus.last_error = null;
 		for (const deck of DECK_IDS) performanceCommandStatus.deck_errors[deck] = null;
 		try {
@@ -467,16 +514,11 @@ function _enqueuePresetPhase<T>(
 				setPhase: (phase) => _setPresetPhase(id, phase)
 			});
 		} finally {
-			performanceCommandStatus.active = false;
+			performanceCommandStatus.active -= 1;
 			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
 		}
 	};
-	const scheduled = _commandQueue.then(run);
-	_commandQueue = scheduled.then(
-		() => undefined,
-		() => undefined
-	);
-	return scheduled;
+	return _commandScheduler.run(PERFORMANCE_PRESET_COMMAND_SCOPES, run);
 }
 
 function _recordPresetFailure(id: string, error: unknown): void {
@@ -591,12 +633,24 @@ async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 		_persistCommandError(deck, error);
 		throw error;
 	}
+	const scopes = performanceCommandQueueScopes(command);
+	if (scopes === null) {
+		performanceCommandStatus.last_error = null;
+		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
+		try {
+			await _execute(command);
+			return queryPerformanceState();
+		} catch (error) {
+			_persistCommandError(deck, error);
+			throw error;
+		}
+	}
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
 
 	const run = async (): Promise<PerformanceState> => {
 		performanceCommandStatus.queued -= 1;
-		performanceCommandStatus.active = true;
+		performanceCommandStatus.active += 1;
 		performanceCommandStatus.last_error = null;
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
 		try {
@@ -605,7 +659,7 @@ async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 			_persistCommandError(deck, error);
 			throw error;
 		} finally {
-			performanceCommandStatus.active = false;
+			performanceCommandStatus.active -= 1;
 			if (deck !== null) performanceCommandStatus.deck_pending[deck] -= 1;
 		}
 		try {
@@ -616,12 +670,7 @@ async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 		}
 	};
 
-	const scheduled = _commandQueue.then(run);
-	_commandQueue = scheduled.then(
-		() => undefined,
-		() => undefined
-	);
-	return scheduled;
+	return _commandScheduler.run(scopes, run);
 }
 
 export async function dispatchPerformanceCommand(

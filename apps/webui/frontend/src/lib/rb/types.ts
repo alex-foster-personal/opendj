@@ -348,6 +348,8 @@ export interface PlaylistNode {
  * input or missing backing data - no silent no-ops, no fabricated audio.
  */
 export interface AudioEngine {
+	/** Stop and release all route-owned processors, nodes, clocks, and context. */
+	dispose(): Promise<void>;
 	/** Fetch /tracks/{sid}/audio, decodeAudioData, build the deck chain and
 	 * populate DeckState. Rejects with the backend error code on 404
 	 * (AUDIO_FILE_MISSING / AUDIO_IS_STREAMING_URI / TRACK_NOT_FOUND). */
