@@ -466,13 +466,16 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     """Parse ANLZ + djmdCue into the COMPONENT-MAP 2.3 JSON, with file cache.
 
     Cache: data/state/anlz-cache/{stable_id}.json keyed on (anlz file mtime,
-    points); any mismatch recomputes and rewrites.
+    points); any mismatch recomputes and rewrites. Cues are always overlaid from
+    the live ``djmdCue`` rows because they can change without touching ANLZ files.
     """
     directory = anlz_dir(content)
     anlz_mtime = _anlz_mtime(directory)
     cached = _load_cached_payload(content.stable_id, anlz_mtime, points)
     if cached is not None:
-        return cached
+        payload = dict(cached)
+        payload["cues"] = fetch_cues(content.vendor_id)
+        return payload
 
     tags = _first_tags(directory)
     if "PWV6" in tags and "PWV7" in tags:
@@ -496,7 +499,6 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
             if detail_bands else dict(empty_bands),
         },
         "beatgrid": beatgrid,
-        "cues": fetch_cues(content.vendor_id),
         "phrases": _phrases_payload(tags, times),
     }
 
@@ -509,6 +511,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         }),
         encoding="utf-8",
     )
+    payload["cues"] = fetch_cues(content.vendor_id)
     return payload
 
 

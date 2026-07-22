@@ -32,11 +32,15 @@ def list_playlists(
     playlists = backend.list_playlists()
     # Rekordbox playlists carry the user's custom tree order (djmdPlaylist
     # ParentID/Seq - SCREENSHOT-SPEC 5b); resolve it once for the whole list.
-    # Only consulted when rekordbox playlists exist, so non-rekordbox setups
-    # never require master.plain.db; a missing db then fails loudly inside
-    # rb_vendor rather than silently dropping the order.
+    # Only consult Rekordbox when at least one row can actually participate in
+    # vendor ordering. Imported/test rows without vendor IDs have no order to
+    # resolve and must not make an otherwise self-contained backend require
+    # master.plain.db.
     order: dict[str, int] = {}
-    if any(pl.vendor == "rekordbox" for pl in playlists):
+    if any(
+        pl.vendor == "rekordbox" and pl.vendor_pl_id is not None
+        for pl in playlists
+    ):
         order = rb_vendor.playlist_order_index()
     return [
         PlaylistSummary(
