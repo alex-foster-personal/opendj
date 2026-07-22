@@ -50,9 +50,10 @@ from apps.shared.state import db as _state_db
 from apps.shared.state.writer import StateWriter
 
 from .backend import (
-    BackendError, ConflictError, InMemoryBackend, MAX_LIMIT, NotFoundError,
-    Page, Pairing, Playlist, Provenance, QueueItem, QueueKind, Source,
-    StateBackend, Track, TrackFilter,
+    BackendError, BatchConflictError, ConflictError, InMemoryBackend,
+    MAX_LIMIT, NotFoundError, Page, Pairing, Playlist, Provenance,
+    QueueItem, QueueKind, Source, StateBackend, Track, TrackFilter,
+    TrackUpdate,
 )
 from .etag import compute_etag, strip_quotes
 
@@ -236,6 +237,27 @@ def _fetch_fields(
                 value, row["source"], row["confidence"], row["modified_at"],
             )
     return out
+
+
+def _field_writes(current: Track, patch: dict[str, Any]) -> dict[str, Any]:
+    """Validate a patch and resolve tag deltas against the current track."""
+    writes: dict[str, Any] = {}
+    if "rating" in patch:
+        rating = patch["rating"]
+        if rating is not None and not (0 <= rating <= 5):
+            raise BackendError("rating must be between 0 and 5")
+        writes["rating"] = rating
+    if "notes" in patch:
+        writes["notes"] = patch["notes"]
+    if "tags_add" in patch or "tags_remove" in patch:
+        tags = list(current.tags or [])
+        for tag in patch.get("tags_add") or []:
+            if tag and tag not in tags:
+                tags.append(tag)
+        if patch.get("tags_remove"):
+            tags = [tag for tag in tags if tag not in patch["tags_remove"]]
+        writes["tags"] = tags
+    return writes
 
 
 class SqliteBackend:
@@ -517,45 +539,142 @@ class SqliteBackend:
           * A fresh backend instance (daemon restart) re-reads the same
             values and re-derives the same etag.
         """
+        try:
+            return self.update_tracks(
+                [TrackUpdate(stable_id, patch, expected_etag)], source=source,
+            )[0]
+        except BatchConflictError as exc:
+            current = self.get_track(stable_id)
+            raise ConflictError(current.to_dict(), exc.conflicts[0]["current_etag"]) from exc
+
+    def update_tracks(
+        self, updates: Sequence[TrackUpdate], *, source: Source = "webui",
+    ) -> list[Track]:
+        """Atomically compare-and-swap and persist every requested update.
+
+        The complete ETag preflight and all mutations happen inside one
+        SQLite writer transaction. ``StateWriter`` uses nested SAVEPOINTs,
+        which compose with this outer transaction and therefore cannot leave
+        earlier rows committed when a later write fails.
+        """
+        if not updates:
+            return []
+        stable_ids = [update.stable_id for update in updates]
+        if len(stable_ids) != len(set(stable_ids)):
+            raise BackendError("batch contains duplicate stable_ids")
+
         with self._write_lock:
-            current = self.get_track(stable_id)  # NotFoundError propagates
-            current_etag = compute_etag(current.stable_id, current.updated_at)
-            if strip_quotes(current_etag) != strip_quotes(expected_etag):
-                raise ConflictError(current=current.to_dict(), etag=current_etag)
-
-            field_writes: dict[str, Any] = {}
-            if "rating" in patch:
-                rating = patch["rating"]
-                if rating is not None and not (0 <= rating <= 5):
-                    raise BackendError("rating must be between 0 and 5")
-                field_writes["rating"] = rating
-            if "notes" in patch:
-                field_writes["notes"] = patch["notes"]
-            if "tags_add" in patch or "tags_remove" in patch:
-                tags = list(current.tags or [])
-                for t in patch.get("tags_add") or []:
-                    if t and t not in tags:
-                        tags.append(t)
-                if patch.get("tags_remove"):
-                    tags = [t for t in tags if t not in patch["tags_remove"]]
-                field_writes["tags"] = tags
-            if not field_writes:
-                # Empty patch: explicit no-op, etag unchanged.
-                return current
-
-            now = datetime.now(timezone.utc).isoformat()
             conn = _state_db.open_rw(self._path)
+            conn.row_factory = sqlite3.Row
             try:
+                conn.execute("BEGIN IMMEDIATE")
+                current_rows: list[Track] = []
+                conflicts: list[dict[str, str]] = []
+                for update in updates:
+                    row = conn.execute(
+                        "SELECT stable_id, title, artists_json, album, duration_ms, "
+                        "file_path, created_at, updated_at FROM tracks WHERE stable_id = ?",
+                        (update.stable_id,),
+                    ).fetchone()
+                    if row is None:
+                        raise NotFoundError(f"track not found: {update.stable_id}")
+                    fields = _fetch_fields(conn, [update.stable_id])
+                    current = _row_to_track(row, fields.get(update.stable_id, {}))
+                    current_rows.append(current)
+                    current_etag = compute_etag(current.stable_id, current.updated_at)
+                    if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
+                        conflicts.append({
+                            "stable_id": update.stable_id,
+                            "current_etag": current_etag,
+                        })
+                if conflicts:
+                    raise BatchConflictError(conflicts)
+
+                writes = [
+                    _field_writes(current, update.patch)
+                    for current, update in zip(current_rows, updates)
+                ]
+                now = datetime.now(timezone.utc).isoformat()
                 with StateWriter(conn, actor="webui") as writer:
-                    for field_name, value in field_writes.items():
-                        writer.set_field(
-                            stable_id, field_name, value,
-                            source=source, modified_at=now, confidence=1.0,
-                        )
+                    for update, field_writes in zip(updates, writes):
+                        for field_name, value in field_writes.items():
+                            writer.set_field(
+                                update.stable_id, field_name, value,
+                                source=source, modified_at=now, confidence=1.0,
+                            )
+                conn.execute("COMMIT")
+            except Exception:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
             finally:
                 conn.close()
+
             self._sqlite_last_writer = (source, now)
-            return self.get_track(stable_id)
+            return [self.get_track(update.stable_id) for update in updates]
+
+    def update_tag_members(
+        self, old_name: str, new_name: str | None, *, source: Source = "webui",
+    ) -> int:
+        """Atomically rename or delete every current member of a tag.
+
+        Discovery occurs only after ``BEGIN IMMEDIATE`` has acquired the
+        SQLite writer lock. The discovered ETags are then prechecked before
+        any field write, so a tag added between an HTTP request arriving and
+        this transaction acquiring the lock is part of the same sweep.
+        """
+        with self._write_lock:
+            conn = _state_db.open_rw(self._path)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                rows = list(conn.execute(
+                    "SELECT stable_id, title, artists_json, album, duration_ms, "
+                    "file_path, created_at, updated_at FROM tracks ORDER BY stable_id",
+                ))
+                fields_by_id = _fetch_fields(conn, [row["stable_id"] for row in rows])
+                members = [
+                    _row_to_track(row, fields_by_id.get(row["stable_id"], {}))
+                    for row in rows
+                ]
+                members = [track for track in members if old_name in track.tags]
+                updates = [
+                    TrackUpdate(
+                        track.stable_id,
+                        {"tags_remove": [old_name]} if new_name is None else {
+                            "tags_add": [new_name], "tags_remove": [old_name],
+                        },
+                        compute_etag(track.stable_id, track.updated_at),
+                    )
+                    for track in members
+                ]
+
+                conflicts: list[dict[str, str]] = []
+                for track, update in zip(members, updates):
+                    current_etag = compute_etag(track.stable_id, track.updated_at)
+                    if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
+                        conflicts.append({"stable_id": track.stable_id, "current_etag": current_etag})
+                if conflicts:
+                    raise BatchConflictError(conflicts)
+
+                now = datetime.now(timezone.utc).isoformat()
+                with StateWriter(conn, actor="webui") as writer:
+                    for track, update in zip(members, updates):
+                        for field_name, value in _field_writes(track, update.patch).items():
+                            writer.set_field(
+                                update.stable_id, field_name, value,
+                                source=source, modified_at=now, confidence=1.0,
+                            )
+                conn.execute("COMMIT")
+            except Exception:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+            finally:
+                conn.close()
+            if updates:
+                self._sqlite_last_writer = (source, now)
+            return len(updates)
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
         _warn_fallback_once(

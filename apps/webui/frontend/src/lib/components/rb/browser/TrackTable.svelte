@@ -27,7 +27,7 @@
 
 	let {
 		provider,
-		selectedId,
+		selectedIds,
 		loadedIds,
 		vocalsById,
 		sortKey,
@@ -45,7 +45,7 @@
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
 		provider: RowProvider;
-		selectedId: string | null;
+		selectedIds: string[];
 		loadedIds: Set<string>;
 		/** Vocals ALREADY known client-side (loaded decks / anlz cache) -
 		 * v1 scope: strips never fetch /anlz themselves (see BrowserPanel). */
@@ -61,7 +61,7 @@
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
 		onsort: (key: SortKey) => void;
-		onselectrow: (row: BrowserRow) => void;
+		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
 		/** deck null = load onto lowest free deck (double-click). */
 		onloadrow: (row: BrowserRow, deck: DeckId | null) => void;
 		onrate: (row: BrowserRow, next: number) => void;
@@ -69,6 +69,7 @@
 	} = $props();
 
 	const rows = $derived(provider.rows);
+	const selectedIdSet = $derived(new Set(selectedIds));
 
 	// ------------------------------------------- per-pane scroll cursor
 	// Restore ONLY when the rendered pane changes (restoreKey): reading
@@ -209,10 +210,10 @@
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<tr
 						use:observeRow={row}
-						class:rb-row-selected={row.stable_id === selectedId}
+						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:loaded={loadedIds.has(row.stable_id)}
 						class:broken={!row.file_exists}
-						onclick={() => onselectrow(row)}
+						onclick={(event) => onselectrow(row, event)}
 						ondblclick={() => onloadrow(row, null)}
 					>
 						<td class="c-funnel"></td>

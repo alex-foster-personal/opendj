@@ -388,6 +388,64 @@ class TestFallbackPaths:
         assert final.notes == winner_note
         assert final.provenance["notes"].source == "webui"
 
+    def test_update_tracks_rolls_back_every_row_when_a_later_write_fails(
+        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If one StateWriter call fails, an earlier row must not persist."""
+        from apps.webui.server.backend import TrackUpdate
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        first = backend.get_track("sid-001")
+        second = backend.get_track("sid-002")
+        original_set_field = sb_mod.StateWriter.set_field
+        calls = 0
+
+        def fail_second_write(self, *args, **kwargs):  # noqa: ANN001
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected second write failure")
+            return original_set_field(self, *args, **kwargs)
+
+        monkeypatch.setattr(sb_mod.StateWriter, "set_field", fail_second_write)
+        with pytest.raises(RuntimeError, match="injected second write failure"):
+            backend.update_tracks([
+                TrackUpdate("sid-001", {"notes": "first changed"}, compute_etag(first.stable_id, first.updated_at)),
+                TrackUpdate("sid-002", {"notes": "second changed"}, compute_etag(second.stable_id, second.updated_at)),
+            ])
+
+        assert backend.get_track("sid-001").notes == first.notes
+        assert backend.get_track("sid-002").notes == second.notes
+
+    def test_update_tag_members_includes_a_member_added_before_transaction_lock(
+        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A tag added after request entry is swept once BEGIN acquires the lock."""
+        backend = SqliteBackend(fresh_state_db)
+        original_open_rw = sb_mod._state_db.open_rw
+        injected = False
+
+        def open_rw_after_racing_add(*args, **kwargs):  # noqa: ANN002, ANN003
+            nonlocal injected
+            if not injected:
+                injected = True
+                race_conn = original_open_rw(*args, **kwargs)
+                try:
+                    with sb_mod.StateWriter(race_conn, actor="test-racer") as writer:
+                        writer.set_field(
+                            "sid-002", "tags", ["late"], source="webui",
+                            modified_at=_iso_now(), confidence=1.0,
+                        )
+                finally:
+                    race_conn.close()
+            return original_open_rw(*args, **kwargs)
+
+        monkeypatch.setattr(sb_mod._state_db, "open_rw", open_rw_after_racing_add)
+        assert backend.update_tag_members("late", "renamed") == 1
+        assert backend.get_track("sid-002").tags == ["renamed"]
+        assert backend.get_track("sid-001").tags == ["deep-house", "smooth"]
+
     def test_create_and_delete_pairing_via_fallback(
         self, fresh_state_db: Path,
     ) -> None:

@@ -150,6 +150,23 @@ class ConflictError(BackendError):
         super().__init__("If-Match mismatch")
 
 
+class BatchConflictError(BackendError):
+    """Raised when one or more rows fail an atomic batch CAS precondition."""
+
+    def __init__(self, conflicts: list[dict[str, str]]) -> None:
+        self.conflicts = conflicts
+        super().__init__("one or more If-Match values do not match")
+
+
+@dataclass(frozen=True)
+class TrackUpdate:
+    """One compare-and-swap update belonging to an atomic track batch."""
+
+    stable_id: str
+    patch: dict[str, Any]
+    expected_etag: str
+
+
 class StateBackend(Protocol):
     """Narrow surface the web UI needs from the state layer."""
     def list_tracks(self, flt: TrackFilter) -> Page: ...
@@ -163,6 +180,10 @@ class StateBackend(Protocol):
     def get_queue(self, kind: QueueKind) -> tuple[list[QueueItem], str | None]: ...
     def update_track(self, stable_id: str, patch: dict[str, Any], *,
                      expected_etag: str, source: Source = "webui") -> Track: ...
+    def update_tracks(self, updates: Sequence[TrackUpdate], *,
+                      source: Source = "webui") -> list[Track]: ...
+    def update_tag_members(self, old_name: str, new_name: str | None, *,
+                           source: Source = "webui") -> int: ...
     def create_pairing(self, pairing: Pairing) -> Pairing: ...
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None: ...
     def stats(self) -> dict[str, Any]: ...
@@ -289,44 +310,91 @@ class InMemoryBackend:
 
     def update_track(self, stable_id: str, patch: dict[str, Any], *,
                      expected_etag: str, source: Source = "webui") -> Track:
+        try:
+            return self.update_tracks(
+                [TrackUpdate(stable_id, patch, expected_etag)], source=source,
+            )[0]
+        except BatchConflictError as exc:
+            current = self.get_track(stable_id)
+            raise ConflictError(current.to_dict(), exc.conflicts[0]["current_etag"]) from exc
+
+    def update_tracks(self, updates: Sequence[TrackUpdate], *,
+                      source: Source = "webui") -> list[Track]:
         from .etag import compute_etag, strip_quotes
         with self._mutex:
-            track = self._tracks.get(stable_id)
-            if track is None:
-                raise NotFoundError(f"track not found: {stable_id}")
-            current_etag = compute_etag(track.stable_id, track.updated_at)
-            if strip_quotes(current_etag) != strip_quotes(expected_etag):
-                raise ConflictError(current=track.to_dict(), etag=current_etag)
-            now = _utcnow_iso()
-            updated = replace(track, updated_at=now)
-            prov = dict(updated.provenance)
-            if "rating" in patch:
-                rating = patch["rating"]
-                if rating is not None and not (0 <= rating <= 5):
+            stable_ids = [update.stable_id for update in updates]
+            if len(stable_ids) != len(set(stable_ids)):
+                raise BackendError("batch contains duplicate stable_ids")
+            current_rows: list[Track] = []
+            conflicts: list[dict[str, str]] = []
+            for update in updates:
+                track = self._tracks.get(update.stable_id)
+                if track is None:
+                    raise NotFoundError(f"track not found: {update.stable_id}")
+                current_rows.append(track)
+                current_etag = compute_etag(track.stable_id, track.updated_at)
+                if strip_quotes(current_etag) != strip_quotes(update.expected_etag):
+                    conflicts.append({"stable_id": update.stable_id, "current_etag": current_etag})
+            if conflicts:
+                raise BatchConflictError(conflicts)
+            for update in updates:
+                rating = update.patch.get("rating")
+                if "rating" in update.patch and rating is not None and not (0 <= rating <= 5):
                     raise BackendError("rating must be between 0 and 5")
-                updated.rating = rating
-                prov["rating"] = Provenance(value=rating, source=source,
-                                             confidence=1.0, modified_at=now)
-            if "notes" in patch:
-                notes = patch["notes"]
-                updated.notes = notes
-                prov["notes"] = Provenance(value=notes, source=source,
-                                            confidence=1.0, modified_at=now)
-            tags = list(updated.tags or [])
-            if patch.get("tags_add"):
-                for t in patch["tags_add"]:
-                    if t and t not in tags:
-                        tags.append(t)
-            if patch.get("tags_remove"):
-                tags = [t for t in tags if t not in patch["tags_remove"]]
-            if "tags_add" in patch or "tags_remove" in patch:
-                updated.tags = tags
-                prov["tags"] = Provenance(value=list(tags), source=source,
-                                           confidence=1.0, modified_at=now)
-            updated.provenance = prov
-            self._tracks[stable_id] = updated
-            self._last_writer = (source, now)
-            return updated
+            now = _utcnow_iso()
+            results: list[Track] = []
+            for track, update in zip(current_rows, updates):
+                if not update.patch:
+                    results.append(track)
+                    continue
+                updated = replace(track, updated_at=now)
+                prov = dict(updated.provenance)
+                if "rating" in update.patch:
+                    updated.rating = update.patch["rating"]
+                    prov["rating"] = Provenance(value=updated.rating, source=source,
+                                                 confidence=1.0, modified_at=now)
+                if "notes" in update.patch:
+                    updated.notes = update.patch["notes"]
+                    prov["notes"] = Provenance(value=updated.notes, source=source,
+                                                confidence=1.0, modified_at=now)
+                tags = list(updated.tags or [])
+                if update.patch.get("tags_add"):
+                    for tag in update.patch["tags_add"]:
+                        if tag and tag not in tags:
+                            tags.append(tag)
+                if update.patch.get("tags_remove"):
+                    tags = [tag for tag in tags if tag not in update.patch["tags_remove"]]
+                if "tags_add" in update.patch or "tags_remove" in update.patch:
+                    updated.tags = tags
+                    prov["tags"] = Provenance(value=list(tags), source=source,
+                                               confidence=1.0, modified_at=now)
+                updated.provenance = prov
+                results.append(updated)
+            for current, updated in zip(current_rows, results):
+                if updated is not current:
+                    self._tracks[updated.stable_id] = updated
+            if any(updated is not current for current, updated in zip(current_rows, results)):
+                self._last_writer = (source, now)
+            return results
+
+    def update_tag_members(self, old_name: str, new_name: str | None, *,
+                           source: Source = "webui") -> int:
+        """Rename or delete a tag after discovering members under one lock."""
+        from .etag import compute_etag
+        with self._mutex:
+            updates = [
+                TrackUpdate(
+                    track.stable_id,
+                    {"tags_remove": [old_name]} if new_name is None else {
+                        "tags_add": [new_name], "tags_remove": [old_name],
+                    },
+                    compute_etag(track.stable_id, track.updated_at),
+                )
+                for track in self._tracks.values()
+                if old_name in track.tags
+            ]
+            self.update_tracks(updates, source=source)
+            return len(updates)
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
         with self._mutex:
