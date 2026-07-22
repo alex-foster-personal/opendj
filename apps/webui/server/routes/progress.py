@@ -71,6 +71,15 @@ _WRITE_LOCK = threading.Lock()
 
 BuildState = Literal["active", "idle", "blocked", "hanging"]
 
+# WHERE a node can be iteratively built: cloud (Claude Code cloud / any remote
+# sandbox) vs this Mac. cloud = the build+test loop never needs local-only
+# resources; hybrid = cloud-able against fixtures with a final local verify;
+# local = iteration itself needs hardware / the real library / a remote host.
+# Full rationale + per-node reasons in
+# .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+BUILDABLE_TIERS: tuple[str, ...] = ("cloud", "hybrid", "local")
+TierLiteral = Literal["cloud", "hybrid", "local"]
+
 NODE_SCHEMA: dict[str, str] = {
     "id": "kebab-case string, globally unique across all areas",
     "title": "string",
@@ -85,6 +94,9 @@ NODE_SCHEMA: dict[str, str] = {
     "build": "optional {branch?, pr?, worktree?, stage?, state?, updated?}; "
     "state one of active|idle|blocked|hanging; updated is server-stamped",
     "links": "optional {issues?: [str], specs?: [str], refs?: [str]}",
+    "buildable": "optional {tier, reason}; tier one of cloud|hybrid|local -- "
+    "where the node's iterative build loop can run (see "
+    ".planning/rekordbox-parity/CLOUD-BUILDABILITY.md)",
 }
 PATCH_RULES: list[str] = [
     "status changes MUST include commits_append unless the new status is "
@@ -100,6 +112,8 @@ PATCH_RULES: list[str] = [
     "'build' partial merges into the existing build object; server stamps "
     "build.updated on any build PATCH",
     "'links' partial merges into the existing links object, per key",
+    "'buildable' {tier, reason} replaces the node's buildable classification "
+    "wholesale; tier is one of cloud|hybrid|local",
     "every sha must match ^[0-9a-f]{7,40}$ and resolve via git cat-file -e",
     "the API bumps meta.updated but never git-commits; agents own their "
     "commits",
@@ -142,6 +156,18 @@ class LinksPatchIn(BaseModel):
     refs: Optional[list[str]] = None
 
 
+class BuildableIn(BaseModel):
+    """Buildability classification; both fields required, replaces wholesale.
+
+    tier says WHERE the node's iterative build loop can run (cloud/hybrid/
+    local); reason is a one-line justification grounded in what the node
+    touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
+    """
+    model_config = ConfigDict(extra="forbid")
+    tier: TierLiteral
+    reason: str
+
+
 class NodePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Optional[StatusLiteral] = None
@@ -151,6 +177,7 @@ class NodePatch(BaseModel):
     verified: Optional[VerifiedIn] = None
     build: Optional[BuildPatchIn] = None
     links: Optional[LinksPatchIn] = None
+    buildable: Optional[BuildableIn] = None
 
 
 class NodePatchOut(BaseModel):
@@ -198,6 +225,15 @@ def _load_tree() -> dict[str, Any]:
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
                     "progress_file_invalid",
                     f"node {node['id']} has unknown status {node['status']!r}",
+                )
+            buildable = node.get("buildable")
+            if buildable is not None and buildable.get("tier") not in BUILDABLE_TIERS:
+                raise _http_error(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "progress_file_invalid",
+                    f"node {node['id']} has unknown buildable tier "
+                    f"{buildable.get('tier')!r} (expected "
+                    f"{'|'.join(BUILDABLE_TIERS)})",
                 )
     return tree
 
@@ -337,7 +373,10 @@ def get_progress_schema() -> dict[str, Any]:
             "updated",
             "links": "optional partial {issues?, specs?, refs?}; each "
             "supplied key replaces that key's list in the existing object",
+            "buildable": "optional {tier, reason}; tier one of "
+            "cloud|hybrid|local; replaces the node's classification wholesale",
         },
+        "tiers": list(BUILDABLE_TIERS),
     }
 
 
@@ -349,7 +388,7 @@ def patch_progress_node(node_id: str, patch: NodePatch) -> NodePatchOut:
         raise _http_error(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "empty_patch",
             "provide at least one of status/note/commits_append/"
-            "tests_append/verified/build/links",
+            "tests_append/verified/build/links/buildable",
         )
     for commit in patch.commits_append or []:
         _require_resolvable_sha(commit.sha)
@@ -409,6 +448,8 @@ def patch_progress_node(node_id: str, patch: NodePatch) -> NodePatchOut:
         if patch.links is not None:
             node.setdefault("links", {})
             node["links"].update(patch.links.model_dump(exclude_none=True))
+        if patch.buildable is not None:
+            node["buildable"] = patch.buildable.model_dump()
 
         # Deprecation note appended AFTER note/build handling so it survives
         # (and is never clobbered by) an explicit patch.note in the same call.

@@ -10,6 +10,7 @@
 	 */
 	import NodeDetail from './NodeDetail.svelte';
 	import StatusChip from './StatusChip.svelte';
+	import TierIcon from './TierIcon.svelte';
 	import {
 		BUILD_STATE_GLYPH,
 		BUILD_STATE_LABEL,
@@ -74,6 +75,9 @@
 			{expanded ? '▾' : '▸'}
 		</span>
 		<StatusChip status={node.status} />
+		{#if node.buildable}
+			<TierIcon buildable={node.buildable} />
+		{/if}
 		{#if node.build?.state}
 			<span
 				class="build-glyph state-{node.build.state}"

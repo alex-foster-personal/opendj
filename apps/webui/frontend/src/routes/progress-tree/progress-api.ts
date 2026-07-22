@@ -13,7 +13,10 @@ import {
 	BUILD_STATES,
 	EFFORTS,
 	STATUSES,
+	TIERS,
 	type Build,
+	type Buildable,
+	type BuildableTier,
 	type BuildState,
 	type Commit,
 	type Effort,
@@ -136,6 +139,19 @@ function parseLinks(v: unknown, ctx: string): Links | null {
 	};
 }
 
+/** buildable is an OPTIONAL object: absent (or null) means the node has not
+ * been classified yet -- tolerate it rather than throw, so a mid-seed ledger
+ * still renders. When present, tier must be a known value and reason a string. */
+function parseBuildable(v: unknown, ctx: string): Buildable | null {
+	if (v === undefined || v === null) return null;
+	const o = asObject(v, ctx);
+	const tier = asString(o.tier, `${ctx}.tier`);
+	if (!(TIERS as readonly string[]).includes(tier)) {
+		throw new Error(`progress: ${ctx}.tier has unknown value '${tier}' (expected ${TIERS.join('|')})`);
+	}
+	return { tier: tier as BuildableTier, reason: asString(o.reason, `${ctx}.reason`) };
+}
+
 function parseNode(v: unknown, ctx: string): ProgressNode {
 	const o = asObject(v, ctx);
 	const id = asString(o.id, `${ctx}.id`);
@@ -156,7 +172,8 @@ function parseNode(v: unknown, ctx: string): ProgressNode {
 		verified: parseVerified(o.verified, `${nodeCtx}.verified`),
 		notes: asStringOrNull(o.notes, `${nodeCtx}.notes`),
 		build: parseBuild(o.build, `${nodeCtx}.build`),
-		links: parseLinks(o.links, `${nodeCtx}.links`)
+		links: parseLinks(o.links, `${nodeCtx}.links`),
+		buildable: parseBuildable(o.buildable, `${nodeCtx}.buildable`)
 	};
 }
 

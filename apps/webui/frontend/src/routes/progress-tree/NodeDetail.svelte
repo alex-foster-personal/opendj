@@ -7,6 +7,7 @@
 	 * click-to-copy + note), build metadata, the test list, links
 	 * (issues/specs/refs), and the verified by/date/method line.
 	 */
+	import TierIcon from './TierIcon.svelte';
 	import {
 		BUILD_STATE_GLYPH,
 		BUILD_STATE_LABEL,
@@ -14,6 +15,7 @@
 		githubIssueUrl,
 		noteSegments,
 		staleBuildLabel,
+		TIER_META,
 		type ProgressNode
 	} from './types';
 
@@ -57,6 +59,18 @@
 				<li>{seg}</li>
 			{/each}
 		</ul>
+	{/if}
+
+	{#if node.buildable}
+		{@const buildable = node.buildable}
+		<div class="row">
+			<span class="label">build @</span>
+			<div class="buildable" style="--tier: {TIER_META[buildable.tier].color}">
+				<TierIcon {buildable} size={16} />
+				<span class="tier-name">{TIER_META[buildable.tier].label}</span>
+				<span class="tier-reason">{buildable.reason}</span>
+			</div>
+		</div>
 	{/if}
 
 	{#if node.deps.length > 0}
@@ -290,6 +304,27 @@
 	.verified-line {
 		font-size: 0.76rem;
 		color: #4ade80;
+	}
+	.buildable {
+		display: flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		font-size: 0.76rem;
+		flex-wrap: wrap;
+	}
+	.buildable :global(.tier-icon) {
+		align-self: center;
+	}
+	.tier-name {
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		font-size: 0.68rem;
+		color: var(--tier);
+	}
+	.tier-reason {
+		color: var(--muted);
+		min-width: 0;
 	}
 	.dep.blocks {
 		color: #ffb43a;

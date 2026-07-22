@@ -13,12 +13,16 @@
 	import { onMount, tick } from 'svelte';
 	import AreaSection from './AreaSection.svelte';
 	import DepGraph from './DepGraph.svelte';
+	import TierIcon from './TierIcon.svelte';
 	import { fetchProgress } from './progress-api';
 	import {
 		buildReverseDeps,
 		EFFORTS,
 		hasFoldoutDetail,
 		STATUSES,
+		TIER_META,
+		TIERS,
+		type BuildableTier,
 		type Effort,
 		type NodeStatus,
 		type ProgressNode,
@@ -38,6 +42,7 @@
 	let error = $state<string | null>(null);
 	let statusFilter = $state<ReadonlySet<NodeStatus>>(new Set(STATUSES));
 	let effortFilter = $state<ReadonlySet<Effort>>(new Set(EFFORTS));
+	let tierFilter = $state<ReadonlySet<BuildableTier>>(new Set(TIERS));
 	let textFilter = $state('');
 	let collapsedAreas = $state<ReadonlySet<string>>(new Set());
 	let expandedNodes = $state<ReadonlySet<string>>(new Set());
@@ -85,6 +90,8 @@
 	function nodeMatches(node: ProgressNode): boolean {
 		if (!statusFilter.has(node.status)) return false;
 		if (!effortFilter.has(node.effort)) return false;
+		// A node with no classification yet is never hidden by the tier filter.
+		if (node.buildable !== null && !tierFilter.has(node.buildable.tier)) return false;
 		const q = textFilter.trim().toLowerCase();
 		if (q === '') return true;
 		const haystack = [node.id, node.title, node.reuse ?? '', node.notes ?? '']
@@ -101,9 +108,20 @@
 		return counts;
 	});
 
+	const tierCounts = $derived.by((): Record<BuildableTier, number> => {
+		const counts = Object.fromEntries(TIERS.map((t) => [t, 0])) as Record<BuildableTier, number>;
+		for (const area of data?.areas ?? []) {
+			for (const node of area.nodes) {
+				if (node.buildable !== null) counts[node.buildable.tier] += 1;
+			}
+		}
+		return counts;
+	});
+
 	const filtersActive = $derived(
 		statusFilter.size !== STATUSES.length ||
 			effortFilter.size !== EFFORTS.length ||
+			tierFilter.size !== TIERS.length ||
 			textFilter.trim() !== ''
 	);
 
@@ -121,9 +139,17 @@
 		effortFilter = next;
 	}
 
+	function toggleTier(tier: BuildableTier): void {
+		const next = new Set(tierFilter);
+		if (next.has(tier)) next.delete(tier);
+		else next.add(tier);
+		tierFilter = next;
+	}
+
 	function resetFilters(): void {
 		statusFilter = new Set(STATUSES);
 		effortFilter = new Set(EFFORTS);
+		tierFilter = new Set(TIERS);
 		textFilter = '';
 	}
 
@@ -264,6 +290,19 @@
 					{effort}
 				</button>
 			{/each}
+			<span class="sep"></span>
+			{#each TIERS as tier (tier)}
+				<button
+					class="tier-toggle"
+					class:off={!tierFilter.has(tier)}
+					style="--tier: {TIER_META[tier].color}"
+					onclick={() => toggleTier(tier)}
+					title="show only where a node can be built: toggle {TIER_META[tier].label} nodes"
+				>
+					<TierIcon buildable={{ tier, reason: '' }} size={13} />
+					{TIER_META[tier].label} <strong>{tierCounts[tier]}</strong>
+				</button>
+			{/each}
 			<input type="search" placeholder="filter by id / title / reuse / notes" bind:value={textFilter} />
 			{#if filtersActive}
 				<button class="reset" onclick={resetFilters}>reset</button>
@@ -293,7 +332,13 @@
 			/>
 		{/each}
 	{:else}
-		<DepGraph nodes={allNodes} onViewInTree={(id) => void viewInTree(id)} />
+		<DepGraph
+				nodes={allNodes}
+				{tierFilter}
+				{tierCounts}
+				onToggleTier={toggleTier}
+				onViewInTree={(id) => void viewInTree(id)}
+			/>
 	{/if}
 
 	<footer class="pt-footer" title={data.meta.convention}>
@@ -404,6 +449,21 @@
 		font-size: 0.72rem;
 		font-weight: 700;
 		padding: 0.1rem 0.5rem;
+	}
+	.tier-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.28rem;
+		font-size: 0.72rem;
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		border: 1px solid var(--tier);
+		color: var(--tier);
+		background: color-mix(in srgb, var(--tier) 12%, transparent);
+	}
+	.tier-toggle.off {
+		opacity: 0.35;
+		border-color: var(--border);
 	}
 	.filter-row input {
 		font-size: 0.78rem;

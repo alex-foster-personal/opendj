@@ -12,23 +12,34 @@
 	 * column counts are computed live and never hardcoded.
 	 */
 	import NodeDetail from './NodeDetail.svelte';
+	import TierIcon from './TierIcon.svelte';
 	import { buildGraphLayout, edgePath, type GraphNodeBox } from './graph-layout';
 	import {
 		BUILD_STATE_GLYPH,
 		BUILD_STATE_LABEL,
+		buildableTooltip,
 		buildReverseDeps,
 		hasProvenanceGap,
 		laneColor,
 		staleBuildLabel,
 		STATUS_PALETTE,
+		TIER_META,
+		TIERS,
+		type BuildableTier,
 		type ProgressNode
 	} from './types';
 
 	let {
 		nodes,
+		tierFilter,
+		tierCounts,
+		onToggleTier,
 		onViewInTree
 	}: {
 		nodes: ProgressNode[];
+		tierFilter: ReadonlySet<BuildableTier>;
+		tierCounts: Record<BuildableTier, number>;
+		onToggleTier: (tier: BuildableTier) => void;
 		onViewInTree: (id: string) => void;
 	} = $props();
 
@@ -62,7 +73,15 @@
 		return from === activeId || to === activeId;
 	}
 
+	function tierFilteredOut(box: GraphNodeBox): boolean {
+		const b = box.node.buildable;
+		return b !== null && !tierFilter.has(b.tier);
+	}
+
 	function chipDimmed(box: GraphNodeBox): boolean {
+		// Tier filter wins: a deselected tier is always dimmed so 'show only
+		// cloud' reads at a glance regardless of hover/lane state.
+		if (tierFilteredOut(box)) return true;
 		if (hoveredLane !== null && !box.lanes.includes(hoveredLane)) return true;
 		if (activeId !== null && !neighbours.has(box.node.id)) return true;
 		return box.done && activeId === null && hoveredLane === null;
@@ -92,6 +111,20 @@
 			<input type="checkbox" bind:checked={showAll} />
 			show all ({nodes.length})
 		</label>
+		<div class="tier-legend" role="group" aria-label="buildable tier filter">
+			{#each TIERS as tier (tier)}
+				<button
+					class="tier-filter"
+					class:off={!tierFilter.has(tier)}
+					style="--tier: {TIER_META[tier].color}"
+					onclick={() => onToggleTier(tier)}
+					title="show only where a node can be built: toggle {TIER_META[tier].label} nodes"
+				>
+					<TierIcon buildable={{ tier, reason: '' }} size={12} />
+					{TIER_META[tier].label} <strong>{tierCounts[tier]}</strong>
+				</button>
+			{/each}
+		</div>
 		{#if layout.allLanes.length > 0}
 			<div class="legend" role="group" aria-label="lane legend">
 				{#each layout.allLanes as lane (lane)}
@@ -208,6 +241,28 @@
 								{chipStale(box)}
 							</text>
 						{/if}
+						{#if box.node.buildable}
+							{@const bd = box.node.buildable}
+							<g class="tier-badge">
+								<title>{buildableTooltip(bd)}</title>
+								<rect
+									x={box.x + box.w - 21}
+									y={box.y + 4}
+									width="17"
+									height="14"
+									rx="3"
+									fill={TIER_META[bd.tier].color}
+								/>
+								<text
+									class="tier-badge-letter"
+									x={box.x + box.w - 12.5}
+									y={box.y + 14}
+									text-anchor="middle"
+								>
+									{TIER_META[bd.tier].letter}
+								</text>
+							</g>
+						{/if}
 					</g>
 				{/each}
 			</g>
@@ -264,6 +319,26 @@
 		gap: 0.35rem;
 		font-size: 0.78rem;
 		color: var(--fg);
+	}
+	.tier-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+	.tier-filter {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.28rem;
+		font-size: 0.68rem;
+		padding: 0.1rem 0.45rem;
+		border-radius: 999px;
+		border: 1px solid var(--tier);
+		color: var(--tier);
+		background: color-mix(in srgb, var(--tier) 12%, transparent);
+	}
+	.tier-filter.off {
+		opacity: 0.4;
+		border-color: var(--border);
 	}
 	.legend {
 		display: flex;
@@ -378,6 +453,15 @@
 		font-size: 9px;
 		fill: var(--muted);
 		opacity: 0.8;
+	}
+	.tier-badge {
+		cursor: help;
+	}
+	.tier-badge-letter {
+		font-size: 10px;
+		font-weight: 700;
+		fill: #0b0f14;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	}
 	.side-panel {
 		position: absolute;
