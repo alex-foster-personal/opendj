@@ -36,6 +36,7 @@
 			<a href="/queues">Queues</a>
 			<a href="/performance">Performance</a>
 			<a href="/progress-tree">Progress</a>
+			<a href="/settings">Settings</a>
 		</nav>
 	</aside>
 	<main>

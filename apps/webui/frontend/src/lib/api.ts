@@ -72,6 +72,22 @@ export interface QueueOut {
 	note: string | null;
 }
 
+export interface SettingItem {
+	key: string;
+	value: unknown;
+	tbd: boolean;
+	note: string | null;
+}
+
+export interface SettingsGroup {
+	group: string;
+	items: SettingItem[];
+}
+
+export interface SettingsOut {
+	groups: SettingsGroup[];
+}
+
 export interface HealthOut {
 	status: 'ok';
 	state_db: { path: string; tracks: number; playlists: number; pairings: number };
@@ -167,6 +183,11 @@ export async function deletePairing(pairing_id: string, etag: string): Promise<v
 
 export async function getQueue(kind: string): Promise<QueueOut> {
 	const r = await request(`/api/v1/queues/${encodeURIComponent(kind)}`);
+	return r.json();
+}
+
+export async function getSettings(): Promise<SettingsOut> {
+	const r = await request('/api/v1/settings');
 	return r.json();
 }
 
