@@ -43,6 +43,7 @@ import type {
 	DeckAudioSnapshot,
 	DeckId,
 	EqBand,
+	HeadphoneState,
 	LoopState,
 	MixerChannelState,
 	StemControl,
@@ -67,12 +68,20 @@ export type PerformanceCommand =
 	| { type: 'master_tempo'; deck: DeckId; enabled: boolean }
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
+	| { type: 'slip'; deck: DeckId; enabled: boolean }
+	| { type: 'key_sync'; deck: DeckId }
+	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
 	| { type: 'assign'; deck: DeckId; assign: CrossfaderAssign }
+	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
 	| { type: 'crossfader'; value: number }
-	| { type: 'master_volume'; value: number };
+	| { type: 'master_volume'; value: number }
+	| { type: 'headphone_mix'; value: number }
+	| { type: 'headphone_level'; value: number }
+	| { type: 'headphone_outputs_refresh' }
+	| { type: 'headphone_output_select'; device_id: string };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -80,6 +89,8 @@ export interface PerformanceDeckSnapshot {
 	title: string | null;
 	artist: string | null;
 	bpm: number | null;
+	key: string | null;
+	key_shift_semitones: number;
 	effective_bpm: number | null;
 	duration_ms: number | null;
 	position_ms: number;
@@ -93,6 +104,9 @@ export interface PerformanceDeckSnapshot {
 	quantize_enabled: boolean;
 	beat_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
+	slip_enabled: boolean;
+	slip_active: boolean;
+	slip_position_ms: number | null;
 	is_master: boolean;
 	sync_mode: SyncMode;
 	sync_error: string | null;
@@ -115,6 +129,7 @@ export interface PerformanceState {
 		crossfader: number;
 		master: number;
 		channels: Record<DeckId, MixerChannelState>;
+		headphones: HeadphoneState;
 	};
 	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
@@ -169,14 +184,15 @@ export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $s
 });
 
 let _presetClaim: { id: string } | null = null;
-type CommandScope = DeckId | 'sync';
+type CommandScope = DeckId | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
 export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
 	...DECK_IDS,
-	'sync'
+	'sync',
+	'headphone'
 ];
 
 declare global {
@@ -240,9 +256,20 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	const record = _record(message);
 	if (typeof record.type !== 'string') throw new TypeError('performance command type must be string');
 	const type = record.type;
-	if (type === 'crossfader' || type === 'master_volume') {
+	if (type === 'crossfader' || type === 'master_volume' || type === 'headphone_mix' || type === 'headphone_level') {
 		_exactKeys(record, ['type', 'value']);
 		return { type, value: _unit('value', record.value) };
+	}
+	if (type === 'headphone_outputs_refresh') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'headphone_output_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
@@ -254,7 +281,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'play') {
 		_exactKeys(record, ['type', 'deck', 'playing']);
 		return { type, deck, playing: _boolean('playing', record.playing) };
-	} else if (type === 'cue' || type === 'master') {
+	} else if (type === 'cue' || type === 'master' || type === 'key_sync') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
 	} else if (type === 'seek') {
@@ -291,7 +318,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`range must be 8, 16, or 100; got ${String(record.range)}`);
 		}
 		return { type, deck, range: record.range };
-	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo') {
+	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
 	} else if (type === 'stem_mute') {
@@ -300,6 +327,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'stem_solo') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'solo']);
 		return { type, deck, stem: _stem(record.stem), solo: _boolean('solo', record.solo) };
+	} else if (type === 'key_nudge') {
+		_exactKeys(record, ['type', 'deck', 'semitones']);
+		if (record.semitones !== -1 && record.semitones !== 1) {
+			throw new RangeError(`semitones must be -1 or 1, got ${String(record.semitones)}`);
+		}
+		return { type, deck, semitones: record.semitones };
 	} else if (type === 'sync_mode') {
 		_exactKeys(record, ['type', 'deck', 'mode']);
 		if (record.mode !== 'beat' && record.mode !== 'bar') {
@@ -335,6 +368,8 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		title: deck.title,
 		artist: deck.artist,
 		bpm: deck.bpm,
+		key: deck.key,
+		key_shift_semitones: deck.key_shift_semitones,
 		effective_bpm: deckEffectiveBpm(deckId),
 		duration_ms: deck.duration_ms,
 		position_ms: deck.position_ms,
@@ -348,6 +383,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		quantize_enabled: deck.quantize_enabled,
 		beat_sync_enabled: deck.beat_sync_enabled,
 		master_tempo_enabled: deck.master_tempo_enabled,
+		slip_enabled: deck.slip_enabled,
+		slip_active: deck.slip_active,
+		slip_position_ms: deck.slip_position_ms,
 		is_master: deck.is_master,
 		sync_mode: deck.sync_mode,
 		sync_error: deck.sync_error,
@@ -393,6 +431,10 @@ export function queryPerformanceState(): PerformanceState {
 		mixer: {
 			crossfader: mixerState.crossfader,
 			master: mixerState.master,
+			headphones: {
+				...mixerState.headphones,
+				outputs: mixerState.headphones.outputs.map((output) => ({ ...output }))
+			},
 			channels: {
 				1: { ...mixerState.channels[1] },
 				2: { ...mixerState.channels[2] },
@@ -414,14 +456,23 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
+	if (command.type === 'headphone_outputs_refresh' || command.type === 'headphone_output_select') {
+		return ['headphone'];
+	}
 	const deck = _commandDeck(command);
+	if (command.type === 'channel_cue') {
+		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
+		return [deck];
+	}
 	if (
 		command.type === 'trim' ||
 		command.type === 'eq' ||
 		command.type === 'fader' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
-		command.type === 'master_volume'
+		command.type === 'master_volume' ||
+		command.type === 'headphone_mix' ||
+		command.type === 'headphone_level'
 	) {
 		return null;
 	}
@@ -434,7 +485,9 @@ export function performanceCommandQueueScopes(
 		command.type === 'beat_sync' ||
 		command.type === 'sync_mode' ||
 		command.type === 'master' ||
-		command.type === 'master_tempo'
+		command.type === 'master_tempo' ||
+		command.type === 'key_sync' ||
+		command.type === 'key_nudge'
 	) {
 		return [deck, 'sync'];
 	}
@@ -477,18 +530,34 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		engine.setStemMute(command.deck, command.stem, command.muted);
 	} else if (command.type === 'stem_solo') {
 		engine.setStemSolo(command.deck, command.stem, command.solo);
+	} else if (command.type === 'slip') {
+		await engine.setSlip(command.deck, command.enabled);
+	} else if (command.type === 'key_sync') {
+		await engine.syncKey(command.deck);
+	} else if (command.type === 'key_nudge') {
+		await engine.nudgeKey(command.deck, command.semitones);
 	} else if (command.type === 'trim') {
 		engine.setTrim(command.deck, command.value);
 	} else if (command.type === 'eq') {
 		engine.setEq(command.deck, command.band, command.value);
 	} else if (command.type === 'fader') {
 		engine.setFader(command.deck, command.value);
-	} else if (command.type === 'assign') {
+		} else if (command.type === 'assign') {
 		engine.assignChannel(command.deck, command.assign);
+	} else if (command.type === 'channel_cue') {
+		engine.setChannelCue(command.deck, command.enabled);
 	} else if (command.type === 'crossfader') {
 		engine.setCrossfader(command.value);
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
+	} else if (command.type === 'headphone_mix') {
+		engine.setHeadphoneMix(command.value);
+	} else if (command.type === 'headphone_level') {
+		engine.setHeadphoneLevel(command.value);
+	} else if (command.type === 'headphone_outputs_refresh') {
+		await engine.refreshHeadphoneOutputs();
+	} else if (command.type === 'headphone_output_select') {
+		await engine.selectHeadphoneOutput(command.device_id);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);

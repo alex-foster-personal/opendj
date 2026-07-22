@@ -105,6 +105,8 @@ import type {
 	DeckId,
 	DeckState,
 	EqBand,
+	HeadphoneOutputDevice,
+	HeadphoneState,
 	HotCue,
 	LoopState,
 	MixerChannelState,
@@ -138,6 +140,7 @@ const SYNC_SCHEDULE_SAFETY_S = 0.1;
 const ANALYSER_FFT_SIZE = 4096;
 const CONTEXT_WAIT_POLL_MS = 25;
 const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
+const HEADPHONE_OPERATION_TIMEOUT_MS = 5_000;
 
 // ------------------------------------------------------------ rune stores
 
@@ -149,6 +152,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		artist: null,
 		bpm: null,
 		key: null,
+		key_shift_semitones: 0,
 		duration_ms: null,
 		position_ms: 0,
 		playing: false,
@@ -159,6 +163,9 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		quantize_enabled: true,
 		beat_sync_enabled: true,
 		master_tempo_enabled: true,
+		slip_enabled: false,
+		slip_active: false,
+		slip_position_ms: null,
 		sync_mode: 'bar',
 		sync_error: null,
 		processor_error: null,
@@ -180,7 +187,20 @@ function _defaultChannel(deck_id: DeckId): MixerChannelState {
 		eq_low: 0.5,
 		fader: 1,
 		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
-		assign: deck_id % 2 === 1 ? 'A' : 'B'
+		assign: deck_id % 2 === 1 ? 'A' : 'B',
+		cue_enabled: false
+	};
+}
+
+function _defaultHeadphones(): HeadphoneState {
+	return {
+		mix: 0.5,
+		level: 0.5,
+		selected_output_device_id: null,
+		outputs: [],
+		supported: false,
+		active: false,
+		error: null
 	};
 }
 
@@ -219,7 +239,8 @@ export const mixerState: MixerState = $state({
 		4: _defaultChannel(4)
 	},
 	crossfader: 0.5,
-	master: 1
+	master: 1,
+	headphones: _defaultHeadphones()
 });
 
 /** Per-deck store accessor (contract: singleton engine + accessor). */
@@ -251,6 +272,7 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
+	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
 }
@@ -261,6 +283,8 @@ interface _ClockSegment {
 	startContextTime: number;
 	startPositionSec: number;
 	tempoRatio: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
 }
 
 export interface PresentedTransportSchedule extends _ClockSegment {
@@ -303,9 +327,19 @@ interface _PendingSegment {
 	startContextTime: number;
 	startPositionSec: number;
 	tempoRatio: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
 }
 
 type _DeckProcessor = StretchDeckProcessor | AlignedStemDeckProcessor;
+/** A confirmed loop-entry schedule is the sole anchor for SLIP's hidden
+ * playhead. It deliberately uses control time, not the audible UI clock. */
+export interface SlipAnchor {
+	startContextTime: number;
+	startPositionSec: number;
+	tempoRatio: number;
+	durationSec: number;
+}
 
 interface _DeckRuntime {
 	processor: _DeckProcessor | null;
@@ -314,6 +348,8 @@ interface _DeckRuntime {
 	controlActive: boolean;
 	controlLoop: LoopState | null;
 	controlTempoRatio: number;
+	controlMasterTempoEnabled: boolean;
+	controlKeyShiftSemitones: number;
 	/** ctx.currentTime at the moment the current processor segment starts. */
 	startCtxTime: number;
 	/** Track offset (seconds) at the moment the segment started. */
@@ -328,6 +364,7 @@ interface _DeckRuntime {
 	scheduleIntentCount: number;
 	scheduleTail: Promise<void>;
 	swapTail: Promise<void>;
+	slipAnchor: SlipAnchor | null;
 }
 
 function _emptyRuntime(): _DeckRuntime {
@@ -338,6 +375,8 @@ function _emptyRuntime(): _DeckRuntime {
 		controlActive: false,
 		controlLoop: null,
 		controlTempoRatio: 1,
+		controlMasterTempoEnabled: true,
+		controlKeyShiftSemitones: 0,
 		startCtxTime: 0,
 		startOffsetSec: 0,
 		loadToken: 0,
@@ -348,12 +387,24 @@ function _emptyRuntime(): _DeckRuntime {
 		desiredActive: false,
 		scheduleIntentCount: 0,
 		scheduleTail: Promise.resolve(),
-		swapTail: Promise.resolve()
+		swapTail: Promise.resolve(),
+		slipAnchor: null
 	};
 }
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
+interface _HeadphoneNodes {
+	cueSum: GainNode;
+	masterMonitor: GainNode;
+	cueMix: GainNode;
+	masterMix: GainNode;
+	level: GainNode;
+	destination: MediaStreamAudioDestinationNode;
+	element: HTMLAudioElement;
+}
+let _headphoneNodes: _HeadphoneNodes | null = null;
+let _headphoneGeneration = 0;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _rt: Record<DeckId, _DeckRuntime> = {
@@ -459,6 +510,175 @@ function _setParam(param: AudioParam, value: number): void {
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
 }
 
+/** Equal-power CUE/MASTER gains, where 0 is full cue and 1 is full master. */
+export function headphoneMixGains(mix: number): { cue: number; master: number } {
+	_assertUnit('headphone mix', mix);
+	if (mix === 0) return { cue: 1, master: 0 };
+	if (mix === 1) return { cue: 0, master: 1 };
+	return {
+		cue: Math.cos((mix * Math.PI) / 2),
+		master: Math.sin((mix * Math.PI) / 2)
+	};
+}
+
+export function assertHeadphoneOutputSelection(
+	deviceId: string,
+	outputs: readonly HeadphoneOutputDevice[]
+): void {
+	if (typeof deviceId !== 'string' || deviceId.trim() === '') {
+		throw new TypeError('headphone output device id must be a non-empty string');
+	}
+	if (!outputs.some((output) => output.id === deviceId)) {
+		throw new RangeError(`headphone output ${deviceId} is not an enumerated headphone output`);
+	}
+}
+
+export function headphoneSelectionStages(): readonly string[] {
+	return ['setSinkId', 'attachStream', 'play', 'publish'];
+}
+
+export function headphoneReselectionStages(): readonly string[] {
+	return [
+		'createCandidate',
+		'setSinkId',
+		'attachStream',
+		'play',
+		'replaceAndPublish',
+		'detachPrevious'
+	];
+}
+
+export function headphoneReselectionResult(candidateAccepted: boolean): {
+	replaceCurrentElement: boolean;
+	publishSelection: boolean;
+	detachPrevious: boolean;
+} {
+	if (typeof candidateAccepted !== 'boolean') {
+		throw new TypeError('headphone candidate acceptance must be boolean');
+	}
+	return candidateAccepted
+		? { replaceCurrentElement: true, publishSelection: true, detachPrevious: true }
+		: { replaceCurrentElement: false, publishSelection: false, detachPrevious: false };
+}
+
+export function headphoneOwnershipIsCurrent(
+	operationGeneration: number,
+	currentGeneration: number,
+	nodesOwned: boolean
+): boolean {
+	return (
+		Number.isInteger(operationGeneration) &&
+		Number.isInteger(currentGeneration) &&
+		operationGeneration === currentGeneration &&
+		nodesOwned
+	);
+}
+
+export function assertHeadphoneOwnership(
+	operationGeneration: number,
+	currentGeneration: number,
+	nodesOwned: boolean
+): void {
+	if (!headphoneOwnershipIsCurrent(operationGeneration, currentGeneration, nodesOwned)) {
+		throw new Error('stale headphone operation cannot publish state after disposal');
+	}
+}
+
+export async function withHeadphoneOperationTimeout<T>(
+	operation: string,
+	promise: Promise<T>,
+	timeoutMs = HEADPHONE_OPERATION_TIMEOUT_MS
+): Promise<T> {
+	if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+		throw new RangeError(`headphone ${operation} timeout must be a positive integer, got ${timeoutMs}`);
+	}
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	const timeout = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(() => reject(new Error(`headphone ${operation} timed out after ${timeoutMs}ms`)), timeoutMs);
+	});
+	try {
+		return await Promise.race([promise, timeout]);
+	} finally {
+		if (timeoutId !== null) clearTimeout(timeoutId);
+	}
+}
+
+function _applyHeadphoneMix(): void {
+	const nodes = _headphoneNodes;
+	if (nodes === null) return;
+	const gains = headphoneMixGains(mixerState.headphones.mix);
+	_setParam(nodes.cueMix.gain, gains.cue);
+	_setParam(nodes.masterMix.gain, gains.master);
+	_setParam(nodes.level.gain, mixerState.headphones.level);
+}
+
+function _headphoneError(operation: string, error: unknown): Error {
+	const message = error instanceof Error ? error.message : String(error);
+	mixerState.headphones.error = `${operation}: ${message}`;
+	return new Error(mixerState.headphones.error, { cause: error });
+}
+
+function _assertCurrentHeadphoneOperation(generation: number, nodes: _HeadphoneNodes | null): void {
+	assertHeadphoneOwnership(generation, _headphoneGeneration, nodes === null || nodes === _headphoneNodes);
+}
+
+function _requireHeadphoneDeviceApi(): MediaDevices {
+	if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
+		mixerState.headphones.supported = false;
+		throw _headphoneError('headphone output unsupported', 'navigator.mediaDevices is unavailable');
+	}
+	if (typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+		mixerState.headphones.supported = false;
+		throw _headphoneError('headphone output unsupported', 'enumerateDevices is unavailable');
+	}
+	if (typeof HTMLMediaElement === 'undefined' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
+		mixerState.headphones.supported = false;
+		throw _headphoneError('headphone output unsupported', 'HTMLMediaElement.setSinkId is unavailable');
+	}
+	mixerState.headphones.supported = true;
+	return navigator.mediaDevices;
+}
+
+function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _HeadphoneNodes {
+	if (_headphoneNodes !== null) return _headphoneNodes;
+	const cueSum = context.createGain();
+	const masterMonitor = context.createGain();
+	const cueMix = context.createGain();
+	const masterMix = context.createGain();
+	const level = context.createGain();
+	const destination = context.createMediaStreamDestination();
+	const element = _createDetachedHeadphoneElement();
+	cueSum.connect(cueMix);
+	masterGain.connect(masterMonitor);
+	masterMonitor.connect(masterMix);
+	cueMix.connect(level);
+	masterMix.connect(level);
+	level.connect(destination);
+	_headphoneNodes = { cueSum, masterMonitor, cueMix, masterMix, level, destination, element };
+	_applyHeadphoneMix();
+	return _headphoneNodes;
+}
+
+function _createDetachedHeadphoneElement(): HTMLAudioElement {
+	return new Audio();
+}
+
+function _detachHeadphoneElement(element: HTMLAudioElement): void {
+	element.pause();
+	element.srcObject = null;
+}
+
+function _disposeHeadphoneGraph(): void {
+	const nodes = _headphoneNodes;
+	_headphoneNodes = null;
+	if (nodes === null) return;
+	for (const node of [nodes.cueSum, nodes.masterMonitor, nodes.cueMix, nodes.masterMix, nodes.level, nodes.destination]) {
+		node.disconnect();
+	}
+	_detachHeadphoneElement(nodes.element);
+	for (const track of nodes.destination.stream.getTracks()) track.stop();
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -468,6 +688,7 @@ function _ensureGraph(): AudioContext {
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
 	_masterGain.connect(_ctx.destination);
+	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -490,6 +711,8 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		const cue = _ctx.createGain();
+		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
 		fader.gain.value = ch.fader;
 		const xf = _ctx.createGain();
@@ -498,10 +721,12 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
+		high.connect(cue);
+		cue.connect(headphones.cueSum);
 		high.connect(fader);
 		fader.connect(xf);
 		xf.connect(_masterGain);
-		_rt[deck].nodes = { analyser, trim, low, mid, high, fader, xf };
+		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf };
 	}
 	return _ctx;
 }
@@ -527,6 +752,200 @@ export function masterTempoSemitones(tempoRatio: number, enabled: boolean): numb
 		throw new RangeError(`tempo ratio must be a finite positive number, got ${tempoRatio}`);
 	}
 	return enabled ? 0 : 12 * Math.log2(tempoRatio);
+}
+
+/** Parsed, canonical Camelot key. `root` is a chromatic pitch class where C
+ * is 0. Only numbered Camelot notation is accepted, never a guessed musical
+ * key label. */
+export interface CamelotKey {
+	number: number;
+	mode: 'A' | 'B';
+	root: number;
+}
+
+const CAMELOT_ROOTS: Record<CamelotKey['mode'], readonly number[]> = {
+	// 1A = Ab minor through 12A = C# minor.
+	A: [8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1],
+	// 1B = B major through 12B = E major.
+	B: [11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4]
+};
+
+function _pitchClass(semitones: number): number {
+	return ((semitones % 12) + 12) % 12;
+}
+
+/** Return null for non-Camelot metadata so callers can fail explicitly at
+ * their operation boundary rather than inventing a harmonic relationship. */
+export function parseCamelotKey(value: string | null): CamelotKey | null {
+	if (typeof value !== 'string') return null;
+	const match = /^(1[0-2]|[1-9])([ab])$/i.exec(value.trim());
+	if (match === null) return null;
+	const number = Number(match[1]);
+	const mode = match[2].toUpperCase() as CamelotKey['mode'];
+	return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
+}
+
+function _assertKeyShift(semitones: number): asserts semitones is number {
+	if (!Number.isInteger(semitones)) {
+		throw new TypeError(`key shift must be an integer number of semitones, got ${semitones}`);
+	}
+	if (semitones < -12 || semitones > 12) {
+		throw new RangeError(`key shift must be within -12..12 semitones, got ${semitones}`);
+	}
+}
+
+function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
+	_assertKeyShift(semitones);
+	const root = _pitchClass(key.root + semitones);
+	const number = CAMELOT_ROOTS[key.mode].indexOf(root) + 1;
+	if (number === 0) throw new Error(`Camelot ${key.mode} root ${root} cannot be represented`);
+	return { number, mode: key.mode, root };
+}
+
+function _camelotCircularDistance(left: number, right: number): number {
+	const raw = Math.abs(left - right);
+	return Math.min(raw, 12 - raw);
+}
+
+/** AlphaTheta/Pioneer least-change families: same-wheel and cross-wheel keys
+ * are compatible at the same Camelot number and one step either direction.
+ * That makes the six named relationships (A/A and A/B, each same/+1/-1)
+ * symmetric and preserves 1 <-> 12 wraparound. */
+export function camelotKeysAreCompatible(
+	deckKey: string | null,
+	masterKey: string | null
+): boolean {
+	const deck = parseCamelotKey(deckKey);
+	const master = parseCamelotKey(masterKey);
+	if (deck === null || master === null) return false;
+	return _camelotCircularDistance(deck.number, master.number) <= 1;
+}
+
+function _assertEffectiveAudibleSemitones(name: string, value: number): void {
+	if (!Number.isFinite(value)) {
+		throw new RangeError(`${name} effective audible semitones must be finite, got ${value}`);
+	}
+}
+
+function _circularPitchDistance(left: number, right: number): number {
+	const distance = Math.abs(_pitchClass(left - right));
+	return Math.min(distance, 12 - distance);
+}
+
+function _keySyncNudgeCandidates(): number[] {
+	const candidates: number[] = [];
+	for (let magnitude = 0; magnitude <= 12; magnitude += 1) {
+		if (magnitude === 0) candidates.push(0);
+		else candidates.push(-magnitude, magnitude);
+	}
+	return candidates;
+}
+
+/** Pick the smallest integer manual nudge whose audible pitch is closest to
+ * one of the six Pioneer-compatible Camelot family roots. The source deck
+ * mode is retained, while each deck and master may already have a fractional
+ * Signalsmith offset from Master Tempo-off tempo compensation. */
+export function deriveKeySyncNudge(
+	deckKey: string | null,
+	masterKey: string | null,
+	deckEffectiveAudibleSemitones: number,
+	masterEffectiveAudibleSemitones: number,
+	deckManualShiftSemitones: number
+): number {
+	const deck = parseCamelotKey(deckKey);
+	const master = parseCamelotKey(masterKey);
+	if (deck === null) throw new Error('KEY SYNC requires a parseable Camelot key on the deck');
+	if (master === null) throw new Error('KEY SYNC requires a parseable Camelot key on the master');
+	_assertEffectiveAudibleSemitones('deck', deckEffectiveAudibleSemitones);
+	_assertEffectiveAudibleSemitones('master', masterEffectiveAudibleSemitones);
+	_assertKeyShift(deckManualShiftSemitones);
+
+	let bestNudge: number | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const nudge of _keySyncNudgeCandidates()) {
+		const nextManualShift = deckManualShiftSemitones + nudge;
+		if (nextManualShift < -12 || nextManualShift > 12) continue;
+		const deckAudibleRoot = deck.root + deckEffectiveAudibleSemitones + nudge;
+		for (let number = 1; number <= 12; number += 1) {
+			if (_camelotCircularDistance(number, master.number) > 1) continue;
+			const familyRoot = CAMELOT_ROOTS[deck.mode][number - 1] + masterEffectiveAudibleSemitones;
+			const distance = _circularPitchDistance(deckAudibleRoot, familyRoot);
+			if (distance < bestDistance - 1e-12) {
+				bestDistance = distance;
+				bestNudge = nudge;
+			}
+		}
+	}
+	if (bestNudge === null) {
+		throw new RangeError('KEY SYNC cannot apply a compatible nudge within -12..12 manual semitones');
+	}
+	return bestNudge;
+}
+
+/** Legacy zero-offset convenience wrapper, returning the final manual shift. */
+export function deriveKeySyncSemitones(
+	deckKey: string | null,
+	masterKey: string | null,
+	masterKeyShiftSemitones = 0
+): number {
+	_assertKeyShift(masterKeyShiftSemitones);
+	return deriveKeySyncNudge(deckKey, masterKey, 0, masterKeyShiftSemitones, 0);
+}
+
+/** Signalsmith receives one native semitone field. Key shift composes additively
+ * with the existing Master Tempo compensation, never by changing transport rate. */
+export function composeStretchSemitones(
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	keyShiftSemitones: number
+): number {
+	_assertKeyShift(keyShiftSemitones);
+	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
+}
+
+export interface DeckControlSettings {
+	tempoRatio: number;
+	masterTempoEnabled: boolean;
+	keyShiftSemitones: number;
+}
+
+export interface PausedDeckControlUpdate {
+	tempoRatio?: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
+}
+
+/** Paused controls are the desired DSP settings for the next schedule. Keep
+ * them separate from DeckState's output-presented read model. */
+export function applyPausedDeckControlSettings(
+	current: DeckControlSettings,
+	update: PausedDeckControlUpdate
+): DeckControlSettings {
+	if (!Number.isFinite(current.tempoRatio) || current.tempoRatio <= 0) {
+		throw new RangeError(`control tempo ratio must be finite and positive, got ${current.tempoRatio}`);
+	}
+	if (typeof current.masterTempoEnabled !== 'boolean') {
+		throw new TypeError('control Master Tempo must be boolean');
+	}
+	_assertKeyShift(current.keyShiftSemitones);
+	if (
+		update.tempoRatio !== undefined &&
+		(!Number.isFinite(update.tempoRatio) || update.tempoRatio <= 0)
+	) {
+		throw new RangeError(`updated tempo ratio must be finite and positive, got ${update.tempoRatio}`);
+	}
+	if (
+		update.masterTempoEnabled !== undefined &&
+		typeof update.masterTempoEnabled !== 'boolean'
+	) {
+		throw new TypeError('updated Master Tempo must be boolean');
+	}
+	if (update.keyShiftSemitones !== undefined) _assertKeyShift(update.keyShiftSemitones);
+	return {
+		tempoRatio: update.tempoRatio ?? current.tempoRatio,
+		masterTempoEnabled: update.masterTempoEnabled ?? current.masterTempoEnabled,
+		keyShiftSemitones: update.keyShiftSemitones ?? current.keyShiftSemitones
+	};
 }
 
 export function quantizedPositionMs(
@@ -634,9 +1053,14 @@ export function acknowledgePresentedTransportSchedule(
 		}
 		timeline.desired_revision = schedule.revision;
 	}
+	const masterTempoEnabled = schedule.masterTempoEnabled ?? true;
+	const keyShiftSemitones = schedule.keyShiftSemitones ?? 0;
+	_assertKeyShift(keyShiftSemitones);
 	timeline.schedules.push({
 		...schedule,
 		loop: schedule.loop === null ? null : { ...schedule.loop },
+		masterTempoEnabled,
+		keyShiftSemitones,
 		supersededByRevision
 	});
 	_prunePresentedTransportSchedules(timeline);
@@ -981,6 +1405,111 @@ export function projectedTransportPosition(input: {
 	if (input.projectAt < input.now) throw new RangeError('projectAt must not precede now');
 	const projectionEpoch = Math.max(input.now, input.startContextTime);
 	return input.startPositionSec + Math.max(0, input.projectAt - projectionEpoch) * input.tempoRatio;
+}
+
+/** The key UI must not lead the listener. This accessor resolves only the
+ * schedule revision which has crossed the output presentation clock. */
+export function presentedKeyShiftSemitonesAt(
+	timeline: PresentedTransportTimeline,
+	contextTime: number
+): number | null {
+	if (!Number.isFinite(contextTime) || contextTime < 0) {
+		throw new RangeError(`presentation context time must be finite and non-negative, got ${contextTime}`);
+	}
+	const schedule = _effectivePresentedScheduleAt(timeline, contextTime);
+	return schedule?.keyShiftSemitones ?? null;
+}
+
+/** KEY SYNC derives harmonic offsets from the acknowledged output clock only.
+ * Render/control time may be ahead of the listener and must never leak here. */
+export function presentedEffectiveAudibleSemitones(
+	timeline: PresentedTransportTimeline
+): number {
+	const presentedAt = timeline.last_presentation_context_time_s;
+	if (presentedAt === null) {
+		throw new Error('KEY SYNC requires output presentation truth before deriving effective offsets');
+	}
+	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
+	if (schedule === null) {
+		throw new Error('KEY SYNC requires an output-presented schedule before deriving effective offsets');
+	}
+	return composeStretchSemitones(
+		schedule.tempoRatio,
+		schedule.masterTempoEnabled ?? true,
+		schedule.keyShiftSemitones ?? 0
+	);
+}
+
+export interface KeySyncEffectiveOffsetSource {
+	audible: boolean;
+	transportPending: boolean;
+	pendingMutation: boolean;
+	control: DeckControlSettings;
+	presentation: PresentedTransportTimeline;
+}
+
+/** A truly stopped deck has no listener-facing schedule to read, so its next
+ * play must use the desired control values. Every live or queued path remains
+ * output-clock authoritative and fails until presentation truth exists. */
+export function keySyncEffectiveAudibleSemitones(
+	source: KeySyncEffectiveOffsetSource
+): number {
+	for (const [name, value] of Object.entries({
+		audible: source.audible,
+		transportPending: source.transportPending,
+		pendingMutation: source.pendingMutation
+	})) {
+		if (typeof value !== 'boolean') throw new TypeError(`KEY SYNC ${name} must be boolean`);
+	}
+	const hasPresentedActiveSchedule = source.presentation.presented_active;
+	const hasPendingPresentationMutation =
+		source.presentation.desired_revision !== source.presentation.presented_revision;
+	const quiescent =
+		!source.audible &&
+		!source.transportPending &&
+		!source.pendingMutation &&
+		!hasPresentedActiveSchedule &&
+		!hasPendingPresentationMutation;
+	if (quiescent) {
+		return composeStretchSemitones(
+			source.control.tempoRatio,
+			source.control.masterTempoEnabled,
+			source.control.keyShiftSemitones
+		);
+	}
+	return presentedEffectiveAudibleSemitones(source.presentation);
+}
+
+export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
+	if (typeof playing !== 'boolean' || typeof slipEnabled !== 'boolean') {
+		throw new TypeError('SLIP activation inputs must be boolean');
+	}
+	return playing && slipEnabled;
+}
+
+export function createSlipAnchor(input: SlipAnchor): SlipAnchor {
+	for (const [name, value] of Object.entries(input)) {
+		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
+	}
+	if (input.startContextTime < 0 || input.startPositionSec < 0) {
+		throw new RangeError('SLIP anchor time and position must be non-negative');
+	}
+	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
+	if (input.durationSec <= 0 || input.startPositionSec > input.durationSec) {
+		throw new RangeError('SLIP anchor position must be within a positive decoded duration');
+	}
+	return { ...input };
+}
+
+/** Hidden SLIP time always advances linearly and clamps at decoded EOF. It
+ * never uses loop normalization or replaces the output-presented cursor. */
+export function slipHiddenPositionSec(anchor: SlipAnchor, contextTime: number): number {
+	const validAnchor = createSlipAnchor(anchor);
+	if (!Number.isFinite(contextTime)) {
+		throw new RangeError(`contextTime must be finite, got ${contextTime}`);
+	}
+	const elapsed = Math.max(0, contextTime - validAnchor.startContextTime);
+	return Math.min(validAnchor.durationSec, validAnchor.startPositionSec + elapsed * validAnchor.tempoRatio);
 }
 
 export function projectedLoopAwareTransportPosition(input: {
@@ -1341,6 +1870,8 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.controlActive = false;
 	rt.controlLoop = null;
 	rt.controlTempoRatio = 1;
+	rt.controlMasterTempoEnabled = true;
+	rt.controlKeyShiftSemitones = 0;
 	rt.presentation = createPresentedTransportTimeline(0);
 	rt.nextScheduleRevision = 0;
 	rt.desiredActive = false;
@@ -1351,18 +1882,19 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	if (_masterDeck === deck) _electPlayingMaster();
 }
 
-function _stretchChange(
+export function stretchScheduleChange(
 	inputSec: number,
 	active: boolean,
 	tempoRatio: number,
 	masterTempoEnabled: boolean,
+	keyShiftSemitones: number,
 	loop: LoopState | null
 ): StretchScheduleChange {
 	return {
 		active,
 		input: inputSec,
 		rate: tempoRatio,
-		semitones: masterTempoSemitones(tempoRatio, masterTempoEnabled),
+		semitones: composeStretchSemitones(tempoRatio, masterTempoEnabled, keyShiftSemitones),
 		loopStart: loop !== null && loop.engaged ? loop.in_ms / 1000 : 0,
 		loopEnd: loop !== null && loop.engaged ? loop.out_ms / 1000 : 0
 	};
@@ -1375,7 +1907,8 @@ async function _scheduleDeck(
 	active: boolean,
 	tempoRatio?: number,
 	masterTempoEnabled?: boolean,
-	loop?: LoopState | null
+	loop?: LoopState | null,
+	keyShiftSemitones?: number
 ): Promise<number> {
 	const rt = _rt[deck];
 	const expectedLoadToken = rt.loadToken;
@@ -1399,7 +1932,8 @@ async function _scheduleDeck(
 			active,
 			tempoRatio,
 			masterTempoEnabled,
-			loop
+			loop,
+			keyShiftSemitones
 		);
 	} finally {
 		rt.scheduleIntentCount -= 1;
@@ -1414,7 +1948,8 @@ async function _scheduleDeckSerial(
 	active: boolean,
 	tempoRatio: number | undefined,
 	masterTempoEnabled: boolean | undefined,
-	loop: LoopState | null | undefined
+	loop: LoopState | null | undefined,
+	keyShiftSemitones: number | undefined
 ): Promise<number> {
 	const { st, rt } = _requireLoaded(deck, '_scheduleDeck');
 	_commitPendingIfDue(deck);
@@ -1429,8 +1964,12 @@ async function _scheduleDeckSerial(
 		latestPending?.startContextTime ?? null,
 		minimumSafeWhen
 	);
-	const scheduledTempoRatio = tempoRatio ?? st.pitch;
-	const scheduledMasterTempoEnabled = masterTempoEnabled ?? st.master_tempo_enabled;
+	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
+	const scheduledMasterTempoEnabled =
+		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;
+	const scheduledKeyShiftSemitones =
+		keyShiftSemitones ?? latestPending?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
+	_assertKeyShift(scheduledKeyShiftSemitones);
 	const scheduledLoop = loop === undefined ? st.loop : loop;
 	const requestedInputSec =
 		typeof inputSec === 'function' ? inputSec(effectiveWhen) : inputSec;
@@ -1444,11 +1983,12 @@ async function _scheduleDeckSerial(
 	try {
 		await processor.schedule(
 			effectiveWhen,
-			_stretchChange(
+			stretchScheduleChange(
 				scheduledInputSec,
 				active,
 				scheduledTempoRatio,
 				scheduledMasterTempoEnabled,
+				scheduledKeyShiftSemitones,
 				scheduledLoop
 			)
 		);
@@ -1465,7 +2005,9 @@ async function _scheduleDeckSerial(
 		loop: scheduledLoop,
 		startContextTime: effectiveWhen,
 		startPositionSec: scheduledInputSec,
-		tempoRatio: scheduledTempoRatio
+		tempoRatio: scheduledTempoRatio,
+		masterTempoEnabled: scheduledMasterTempoEnabled,
+		keyShiftSemitones: scheduledKeyShiftSemitones
 	});
 	st.pitch = scheduledTempoRatio;
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
@@ -1477,13 +2019,178 @@ async function _scheduleDeckSerial(
 		loop: scheduledLoop === null ? null : { ...scheduledLoop },
 		startContextTime: effectiveWhen,
 		startPositionSec: scheduledInputSec,
-		tempoRatio: scheduledTempoRatio
+		tempoRatio: scheduledTempoRatio,
+		masterTempoEnabled: scheduledMasterTempoEnabled,
+		keyShiftSemitones: scheduledKeyShiftSemitones
 	});
 	st.transport_pending =
 		rt.presentation.presented_revision !== rt.presentation.desired_revision;
 	_commitPendingIfDue(deck);
 	_ensureRaf();
 	return scheduledInputSec;
+}
+
+function _applyPausedDeckControlSettings(
+	st: DeckState,
+	rt: _DeckRuntime,
+	update: PausedDeckControlUpdate
+): DeckControlSettings {
+	const next = applyPausedDeckControlSettings(
+		{
+			tempoRatio: rt.controlTempoRatio,
+			masterTempoEnabled: rt.controlMasterTempoEnabled,
+			keyShiftSemitones: rt.controlKeyShiftSemitones
+		},
+		update
+	);
+	rt.controlTempoRatio = next.tempoRatio;
+	rt.controlMasterTempoEnabled = next.masterTempoEnabled;
+	rt.controlKeyShiftSemitones = next.keyShiftSemitones;
+	st.pitch = next.tempoRatio;
+	st.master_tempo_enabled = next.masterTempoEnabled;
+	return next;
+}
+
+/** Apply a validated key transposition through the same revisioned Signalsmith
+ * schedule path as tempo and Master Tempo. A paused deck stores the next DSP
+ * value; a live deck preserves its presented transport projection. */
+async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promise<void> {
+	const { st, rt } = _requireLoaded(deck, 'set key shift');
+	_assertKeyShift(keyShiftSemitones);
+	const plan = planKeyShiftMutation(
+		{
+			playing: st.playing,
+			audible: st.audible,
+			controlActive: rt.controlActive,
+			pendingScheduleCount: rt.pending.length,
+			scheduleIntentCount: rt.scheduleIntentCount
+		},
+		rt.desiredActive,
+		keyShiftSemitones
+	);
+	if (plan.kind === 'immediate') {
+		if (plan.publishedKeyShiftSemitones === null) {
+			throw new Error('immediate key shift plan omitted its public value');
+		}
+		st.key_shift_semitones = plan.publishedKeyShiftSemitones;
+		_applyPausedDeckControlSettings(st, rt, {
+			keyShiftSemitones: plan.publishedKeyShiftSemitones
+		});
+		return;
+	}
+	if (_ctx === null) throw new Error('set key shift: audio graph not initialised');
+	await _scheduleDeck(
+		deck,
+		_futureScheduleTime(deck),
+		(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+		plan.active,
+		undefined,
+		undefined,
+		undefined,
+		keyShiftSemitones
+	);
+}
+
+export interface KeyShiftMutationPlan {
+	kind: 'immediate' | 'scheduled';
+	active: boolean;
+	publishedKeyShiftSemitones: number | null;
+}
+
+/** A stop acknowledged by the processor can remain audible at the output.
+ * Key changes must join that revisioned schedule instead of publishing ahead
+ * of the listener. */
+export function planKeyShiftMutation(
+	activity: TransportMutationActivity,
+	desiredActive: boolean,
+	requestedKeyShiftSemitones: number
+): KeyShiftMutationPlan {
+	if (typeof desiredActive !== 'boolean') {
+		throw new TypeError('key shift desired active must be boolean');
+	}
+	_assertKeyShift(requestedKeyShiftSemitones);
+	if (transportNeedsScheduledMutation(activity)) {
+		return {
+			kind: 'scheduled',
+			active: desiredActive,
+			publishedKeyShiftSemitones: null
+		};
+	}
+	return {
+		kind: 'immediate',
+		active: false,
+		publishedKeyShiftSemitones: requestedKeyShiftSemitones
+	};
+}
+
+function _desiredKeyShiftSemitones(deck: DeckId): number {
+	const rt = _rt[deck];
+	return rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
+}
+
+function _effectiveAudibleSemitones(deck: DeckId): number {
+	const st = deckStates[deck];
+	const rt = _rt[deck];
+	return keySyncEffectiveAudibleSemitones({
+		audible: st.audible,
+		transportPending: st.transport_pending,
+		pendingMutation: rt.pending.length > 0 || rt.scheduleIntentCount > 0,
+		control: {
+			tempoRatio: rt.controlTempoRatio,
+			masterTempoEnabled: rt.controlMasterTempoEnabled,
+			keyShiftSemitones: rt.controlKeyShiftSemitones
+		},
+		presentation: rt.presentation
+	});
+}
+
+function _clearSlip(deck: DeckId): void {
+	const st = deckStates[deck];
+	st.slip_active = false;
+	st.slip_position_ms = null;
+	_rt[deck].slipAnchor = null;
+}
+
+function _activateSlip(deck: DeckId, anchor: SlipAnchor): void {
+	const { st, rt } = _requireLoaded(deck, 'activate SLIP');
+	if (!shouldActivateSlip(st.playing, st.slip_enabled)) {
+		throw new Error('SLIP can only activate on a playing deck with SLIP enabled');
+	}
+	rt.slipAnchor = createSlipAnchor(anchor);
+	st.slip_active = true;
+	st.slip_position_ms = slipHiddenPositionSec(rt.slipAnchor, _ctx?.currentTime ?? anchor.startContextTime) * 1000;
+}
+
+function _updateSlipPosition(deck: DeckId): void {
+	const st = deckStates[deck];
+	const anchor = _rt[deck].slipAnchor;
+	if (!st.slip_active || anchor === null) return;
+	if (!st.playing) {
+		_clearSlip(deck);
+		return;
+	}
+	if (_ctx === null) throw new Error('SLIP active without an AudioContext');
+	st.slip_position_ms = slipHiddenPositionSec(anchor, _ctx.currentTime) * 1000;
+}
+
+/** Resume an active SLIP loop through the same acknowledged processor and
+ * revision timeline used by ordinary transport mutations. */
+async function _resumeSlip(deck: DeckId): Promise<void> {
+	const { st, rt } = _requireLoaded(deck, 'resume SLIP');
+	const anchor = rt.slipAnchor;
+	if (!st.slip_active || anchor === null) throw new Error('resume SLIP requires an active hidden playhead');
+	if (!st.playing) throw new Error('resume SLIP requires a playing deck');
+	if (_ctx === null) throw new Error('resume SLIP: audio graph not initialised');
+	await _scheduleDeck(
+		deck,
+		_futureScheduleTime(deck),
+		(effectiveWhen) => slipHiddenPositionSec(anchor, effectiveWhen),
+		true,
+		undefined,
+		undefined,
+		null
+	);
+	_clearSlip(deck);
 }
 
 function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
@@ -1505,7 +2212,9 @@ function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
 		loop: pending.loop,
 		startContextTime: pending.startContextTime,
 		startPositionSec: pending.startPositionSec,
-		tempoRatio: pending.tempoRatio
+		tempoRatio: pending.tempoRatio,
+		masterTempoEnabled: pending.masterTempoEnabled ?? true,
+		keyShiftSemitones: pending.keyShiftSemitones ?? 0
 	};
 }
 
@@ -1515,7 +2224,9 @@ function _controlSegmentAt(rt: _DeckRuntime, contextTime: number): _ClockSegment
 		loop: rt.controlLoop,
 		startContextTime: rt.startCtxTime,
 		startPositionSec: rt.startOffsetSec,
-		tempoRatio: rt.controlTempoRatio
+		tempoRatio: rt.controlTempoRatio,
+		masterTempoEnabled: rt.controlMasterTempoEnabled,
+		keyShiftSemitones: rt.controlKeyShiftSemitones
 	};
 	for (const pending of rt.pending) {
 		if (pending.startContextTime > contextTime) break;
@@ -1538,6 +2249,8 @@ function _commitPendingIfDue(deck: DeckId): void {
 		rt.controlActive = pending.active;
 		rt.controlLoop = pending.loop === null ? null : { ...pending.loop };
 		rt.controlTempoRatio = pending.tempoRatio;
+		rt.controlMasterTempoEnabled = pending.masterTempoEnabled ?? true;
+		rt.controlKeyShiftSemitones = pending.keyShiftSemitones ?? 0;
 	}
 }
 
@@ -1609,6 +2322,11 @@ function _publishPresentedTransport(
 	st.position_ms = observation.position_sec * 1000;
 	st.audible = observation.audible;
 	st.transport_pending = observation.transport_pending;
+	const presentedKeyShift = presentedKeyShiftSemitonesAt(
+		rt.presentation,
+		outputTimestamp.contextTime
+	);
+	if (presentedKeyShift !== null) st.key_shift_semitones = presentedKeyShift;
 	if (wasAudible !== observation.audible) {
 		_handleAudibleTransition(deck, wasAudible, observation.audible);
 	}
@@ -1638,6 +2356,7 @@ function _tick(): void {
 	for (const deck of DECK_IDS) {
 		_commitPendingIfDue(deck);
 		const observation = _publishPresentedTransport(deck, outputTimestamp);
+		_updateSlipPosition(deck);
 		if (observation?.audible || observation?.transport_pending) anyTransport = true;
 	}
 	if (anyTransport) _rafId = requestAnimationFrame(_tick);
@@ -1680,6 +2399,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.artist = null;
 	st.bpm = null;
 	st.key = null;
+	st.key_shift_semitones = 0;
 	st.duration_ms = null;
 	st.position_ms = 0;
 	st.playing = false;
@@ -1688,7 +2408,11 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.cue_ms = null;
 	st.pitch = 1;
 	st.stems = unavailableStemDeckState();
+	st.slip_enabled = false;
+	st.slip_active = false;
+	st.slip_position_ms = null;
 	st.loop = null;
+	_rt[st.deck_id].slipAnchor = null;
 	st.hot_cues = [];
 	st.anlz = null;
 	st.anlz_error = null;
@@ -1956,6 +2680,8 @@ class RbAudioEngine implements AudioEngine {
 			if (processor !== null) processors.push(processor);
 			if (rt.nodes !== null) nodes.push(...Object.values(rt.nodes));
 		}
+		_headphoneGeneration += 1;
+		_disposeHeadphoneGraph();
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -1977,6 +2703,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		mixerState.crossfader = 0.5;
 		mixerState.master = 1;
+		mixerState.headphones = _defaultHeadphones();
 		await closing;
 	}
 
@@ -2099,6 +2826,8 @@ class RbAudioEngine implements AudioEngine {
 			rt.controlActive = false;
 			rt.controlLoop = null;
 			rt.controlTempoRatio = 1;
+			rt.controlMasterTempoEnabled = true;
+			rt.controlKeyShiftSemitones = 0;
 			rt.startCtxTime = 0;
 			rt.startOffsetSec = 0;
 			rt.pending = [];
@@ -2186,6 +2915,7 @@ class RbAudioEngine implements AudioEngine {
 			? quantizedPositionMs(pauseBeats, positionSec * 1000, true)
 			: positionSec * 1000;
 		st.cue_ms = cueMs;
+		if (st.slip_active) _clearSlip(deck);
 	}
 
 	async cueJump(deck: DeckId, ms: number): Promise<void> {
@@ -2261,7 +2991,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async setTempoRatio(deck: DeckId, ratio: number): Promise<void> {
-		const { st } = _requireLoaded(deck, 'setTempoRatio');
+		const { st, rt } = _requireLoaded(deck, 'setTempoRatio');
 		if (!Number.isFinite(ratio) || ratio <= 0) {
 			throw new RangeError(`setTempoRatio: ratio must be > 0, got ${ratio}`);
 		}
@@ -2304,7 +3034,7 @@ class RbAudioEngine implements AudioEngine {
 				);
 			}
 		} else {
-			st.pitch = ratio;
+			_applyPausedDeckControlSettings(st, rt, { tempoRatio: ratio });
 		}
 	}
 
@@ -2328,6 +3058,10 @@ class RbAudioEngine implements AudioEngine {
 		const wasPlaying = st.playing;
 		const scheduleAt = wasPlaying ? _futureScheduleTime(deck) : 0;
 		if (loop === null) {
+			if (st.slip_active) {
+				await _resumeSlip(deck);
+				return;
+			}
 			if (wasPlaying) {
 				if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 				await _scheduleDeck(
@@ -2352,15 +3086,32 @@ class RbAudioEngine implements AudioEngine {
 		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
+			const activateSlip = shouldActivateSlip(st.playing, st.slip_enabled) && !st.slip_active;
+			let slipAnchor: SlipAnchor | null = null;
 			await _scheduleDeck(
 				deck,
 				scheduleAt,
-				(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+				(effectiveWhen) => {
+					const positionSec = _projectPositionAt(deck, effectiveWhen);
+					if (activateSlip) {
+						slipAnchor = createSlipAnchor({
+							startContextTime: effectiveWhen,
+							startPositionSec: positionSec,
+							tempoRatio: _tempoAt(deck, effectiveWhen),
+							durationSec: _durationSec(deck)
+						});
+					}
+					return positionSec;
+				},
 				true,
 				undefined,
 				undefined,
 				nextLoop
 			);
+			if (activateSlip) {
+				if (slipAnchor === null) throw new Error('SLIP loop schedule did not produce an anchor');
+				_activateSlip(deck, slipAnchor);
+			}
 		} else {
 			st.loop = nextLoop;
 		}
@@ -2409,7 +3160,7 @@ class RbAudioEngine implements AudioEngine {
 		if (typeof enabled !== 'boolean') throw new TypeError('setMasterTempo: enabled must be boolean');
 		const st = deckStates[deck];
 		if (!st.playing) {
-			st.master_tempo_enabled = enabled;
+			_applyPausedDeckControlSettings(st, _rt[deck], { masterTempoEnabled: enabled });
 			return;
 		}
 		if (_ctx === null) throw new Error('setMasterTempo: audio graph not initialised');
@@ -2422,6 +3173,43 @@ class RbAudioEngine implements AudioEngine {
 			undefined,
 			enabled
 		);
+	}
+
+	async setSlip(deck: DeckId, enabled: boolean): Promise<void> {
+		if (typeof enabled !== 'boolean') throw new TypeError('setSlip: enabled must be boolean');
+		const st = deckStates[deck];
+		if (enabled) {
+			// Arming SLIP is state-only. It never schedules or publishes a transport change.
+			st.slip_enabled = true;
+			return;
+		}
+		if (st.slip_active) await _resumeSlip(deck);
+		st.slip_enabled = false;
+	}
+
+	async nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void> {
+		if (semitones !== -1 && semitones !== 1) {
+			throw new RangeError(`nudgeKey: semitones must be -1 or 1, got ${semitones}`);
+		}
+		_requireLoaded(deck, 'nudgeKey');
+		await _setDeckKeyShift(deck, _desiredKeyShiftSemitones(deck) + semitones);
+	}
+
+	async syncKey(deck: DeckId): Promise<void> {
+		const { st } = _requireLoaded(deck, 'syncKey');
+		const masterDeck = _masterDeck;
+		if (masterDeck === null) throw new Error('KEY SYNC requires an elected loaded master deck');
+		if (masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
+		const { st: master } = _requireLoaded(masterDeck, 'KEY SYNC master');
+		const deckManualShiftSemitones = _desiredKeyShiftSemitones(deck);
+		const nudge = deriveKeySyncNudge(
+			st.key,
+			master.key,
+			_effectiveAudibleSemitones(deck),
+			_effectiveAudibleSemitones(masterDeck),
+			deckManualShiftSemitones
+		);
+		await _setDeckKeyShift(deck, deckManualShiftSemitones + nudge);
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {
@@ -2590,6 +3378,79 @@ class RbAudioEngine implements AudioEngine {
 		}
 		mixerState.channels[deck].assign = assign;
 		if (_ctx !== null) _applyCrossfader();
+	}
+
+	setChannelCue(deck: DeckId, enabled: boolean): void {
+		if (typeof enabled !== 'boolean') throw new TypeError('channel cue enabled must be boolean');
+		mixerState.channels[deck].cue_enabled = enabled;
+		const nodes = _rt[deck].nodes;
+		if (nodes !== null) _setParam(nodes.cue.gain, enabled ? 1 : 0);
+	}
+
+	setHeadphoneMix(value: number): void {
+		_assertUnit('setHeadphoneMix value', value);
+		mixerState.headphones.mix = value;
+		if (_headphoneNodes !== null) _applyHeadphoneMix();
+	}
+
+	setHeadphoneLevel(value: number): void {
+		_assertUnit('setHeadphoneLevel value', value);
+		mixerState.headphones.level = value;
+		if (_headphoneNodes !== null) _applyHeadphoneMix();
+	}
+
+	async refreshHeadphoneOutputs(): Promise<void> {
+		const generation = _headphoneGeneration;
+		let devices: MediaDeviceInfo[];
+		try {
+			devices = await withHeadphoneOperationTimeout(
+				'enumerateDevices',
+				_requireHeadphoneDeviceApi().enumerateDevices()
+			);
+			_assertCurrentHeadphoneOperation(generation, null);
+		} catch (error) {
+			_assertCurrentHeadphoneOperation(generation, null);
+			throw _headphoneError('headphone output enumeration failed', error);
+		}
+		mixerState.headphones.outputs = devices
+			.filter((device) => device.kind === 'audiooutput')
+			.map((device) => ({ id: device.deviceId, label: device.label }));
+		mixerState.headphones.error = null;
+	}
+
+	async selectHeadphoneOutput(deviceId: string): Promise<void> {
+		const generation = _headphoneGeneration;
+		let nodes: _HeadphoneNodes | null = null;
+		let candidate: HTMLAudioElement | null = null;
+		try {
+			_requireHeadphoneDeviceApi();
+			assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
+			const context = _ensureGraph();
+			if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
+			nodes = _ensureHeadphoneGraph(context, _masterGain);
+			candidate = _createDetachedHeadphoneElement();
+			await withHeadphoneOperationTimeout('setSinkId', candidate.setSinkId(deviceId));
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			candidate.srcObject = nodes.destination.stream;
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			await withHeadphoneOperationTimeout('play', candidate.play());
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			const transaction = headphoneReselectionResult(true);
+			const previous = nodes.element;
+			if (!transaction.replaceCurrentElement || !transaction.publishSelection || !transaction.detachPrevious) {
+				throw new Error('accepted headphone candidate did not produce a complete replacement transaction');
+			}
+			nodes.element = candidate;
+			mixerState.headphones.selected_output_device_id = deviceId;
+			mixerState.headphones.active = true;
+			mixerState.headphones.error = null;
+			_detachHeadphoneElement(previous);
+			candidate = null;
+		} catch (error) {
+			if (candidate !== null) _detachHeadphoneElement(candidate);
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			throw _headphoneError('headphone output selection failed', error);
+		}
 	}
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */

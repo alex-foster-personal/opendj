@@ -2,14 +2,19 @@
 	// Build unit: deck (COMPONENT-MAP 1.3, SCREENSHOT-SPEC 3).
 	// REAL: header meta + artwork, strip overview waveform click-to-seek,
 	// hot-cue bank jumps, INT beat-loop cluster, CUE + play/pause transport,
-	// Q, BEAT SYNC, MASTER, MT, jog readouts + position tick.
-	// INERT (tooltip 'not implemented - see PARITY-TODO'): KEY SYNC, key
-	// nudge arrows, HOT CUE dropdown, grid-adjust stacks, SLIP, AU, MA,
-	// pitch range. Stems are live only for validated real Demucs artifacts.
+	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts + position tick.
+	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown, grid-adjust stacks, AU, MA, pitch range.
+	// Stems are live only for validated real Demucs artifacts.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
-	import { getDeckState, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import {
+		DECK_IDS,
+		deckStates,
+		getDeckState,
+		parseCamelotKey,
+		pitchRanges
+	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
@@ -31,6 +36,17 @@
 	const pending: boolean = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
 	const controlError: string | null = $derived(
 		performanceCommandStatus.deck_errors[deckId] ?? deck.sync_error ?? deck.processor_error
+	);
+	const keySyncAvailable: boolean = $derived(
+		deck.stable_id !== null &&
+		parseCamelotKey(deck.key) !== null &&
+		DECK_IDS.some(
+			(candidate) =>
+				candidate !== deckId &&
+				deckStates[candidate].is_master &&
+				deckStates[candidate].stable_id !== null &&
+				parseCamelotKey(deckStates[candidate].key) !== null
+		)
 	);
 
 	const INERT_TIP = 'not implemented - see PARITY-TODO';
@@ -109,6 +125,22 @@
 			solo: !deck.stems.controls[stem].solo
 		});
 	}
+
+	async function toggleSlip(): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'slip',
+			deck: deckId,
+			enabled: !deck.slip_enabled
+		});
+	}
+
+	async function syncKey(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'key_sync', deck: deckId });
+	}
+
+	async function nudgeKey(semitones: -1 | 1): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'key_nudge', deck: deckId, semitones });
+	}
 </script>
 
 <section class="rb-deck rb-panel" data-deck={deckId} data-command-pending={pending}>
@@ -129,7 +161,9 @@
 		{pending}
 		onBeatSync={toggleBeatSync}
 		onMaster={selectMaster}
-		inertTip={INERT_TIP}
+		onKeySync={syncKey}
+		onKeyNudge={nudgeKey}
+		{keySyncAvailable}
 	/>
 
 	<StripWaveform {deck} {pending} onSeek={seekTo} />
@@ -167,6 +201,7 @@
 			{pending}
 			onQuantize={toggleQuantize}
 			onMasterTempo={toggleMasterTempo}
+			onSlip={toggleSlip}
 			inertTip={INERT_TIP}
 		/>
 	</div>
