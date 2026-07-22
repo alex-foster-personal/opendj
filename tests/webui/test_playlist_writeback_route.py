@@ -77,3 +77,17 @@ def test_http_plan_apply_and_rollback_share_serializable_contract(client: TestCl
 def test_http_plan_refuses_missing_vendor_id(client: TestClient) -> None:
     response = client.get("/api/v1/playlists/pl-001/writeback/plan?" + _query().replace("native-1", "wrong"))
     assert response.status_code == 409
+
+
+def test_production_service_rechecks_members_from_the_injected_backend() -> None:
+    class _Playlist:
+        items = ["a", "b"]
+
+    class _Backend:
+        def get_playlist(self, playlist_id: str):
+            assert playlist_id == "source"
+            return _Playlist()
+
+    service = get_writeback_service(_Backend())
+    assert service._source_members_reader is not None
+    assert service._source_members_reader("source") == ["a", "b"]

@@ -402,6 +402,22 @@ class DjayPlaylistWriter:
                 target = list(native_members)
                 post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, native_current, post_revision)
+                # Backup and durable reversal persistence are deliberately before
+                # the write. Re-read the mapping and source at the actual vendor
+                # mutation boundary so either interleaving is fail-closed.
+                mapping_rows = self.state_conn.execute(
+                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
+                    (self.vendor, *dict.fromkeys(stable_members)),
+                ).fetchall() if stable_members else []
+                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if mapping_revision != expected_mapping_revision:
+                    raise WritebackConflict("djay: mapping changed at vendor mutation boundary")
+                native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
+                missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
+                if missing:
+                    raise WritebackConflict(f"djay: mapping lost desired IDs at vendor mutation boundary: {missing[:5]}")
+                target = [native_mapping[stable_id] for stable_id in stable_members]
+                assert_source_current()
                 result = _apply_single_op(con, {
                     "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": playlist_id,
                     "target_members": [{"djay_uuid": item} for item in target],

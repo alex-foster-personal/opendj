@@ -27,6 +27,7 @@ class _FakeVendorWriter:
     target_path: Path = Path("/fixture/live.db")
     calls: list[tuple] = field(default_factory=list)
     before_boundary_check: object | None = None
+    after_cas_interleave: object | None = None
 
     def list_playlists(self) -> list[VendorPlaylist]:
         return [VendorPlaylist(playlist_id=playlist_id, name=name) for playlist_id, (name, _members) in self.playlists.items()]
@@ -35,9 +36,9 @@ class _FakeVendorWriter:
     def apply_with_backup_by_id(self, playlist_id: str, stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str, assert_source_current) -> tuple[WritebackBackup, str]:
         if _revision(playlist_id, self.read_members_by_id(playlist_id)) != expected_target_revision:
             raise WritebackConflict("target revision changed before transaction")
+        assert_source_current()
         if self.before_boundary_check is not None:
             self.before_boundary_check()
-        assert_source_current()
         rows = self.state_conn.execute(
             "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ("
             + ",".join("?" * len(set(stable_members))) + ")",
@@ -46,12 +47,24 @@ class _FakeVendorWriter:
         mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if mapping_revision != expected_mapping_revision:
             raise WritebackConflict("mapping changed inside vendor transaction")
-        native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in rows}
-        native_members = [native_mapping[stable_id] for stable_id in stable_members]
         backup_id = f"backup-{len(self.reversals) + 1}"
         preimage = self.read_members_by_id(playlist_id)
         backup = WritebackBackup(backup_id)
         self.calls.append(("backup", self.target_path))
+        self.calls.append(("reversal", playlist_id, preimage))
+        if self.after_cas_interleave is not None:
+            self.after_cas_interleave()
+        rows = self.state_conn.execute(
+            "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN ("
+            + ",".join("?" * len(set(stable_members))) + ")",
+            (self.vendor, *dict.fromkeys(stable_members)),
+        ).fetchall() if stable_members else []
+        mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if mapping_revision != expected_mapping_revision:
+            raise WritebackConflict("mapping changed at vendor mutation boundary")
+        native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in rows}
+        native_members = [native_mapping[stable_id] for stable_id in stable_members]
+        assert_source_current()
         self.calls.append(("native", playlist_id, native_members))
         self.calls.append(("replace", playlist_id, list(stable_members)))
         name, members = self.playlists[playlist_id]
@@ -127,29 +140,31 @@ def test_plan_token_rejects_concurrent_source_membership(service) -> None:
         service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "c"], target_mode="live", target_path="/fixture/live.db", target_id="one", plan_token=plan.plan_token, dry_run=False, confirmed=True)
 
 
-def test_vendor_boundary_rejects_source_edit_interleaved_after_plan(writer) -> None:
+def test_vendor_boundary_rejects_source_edit_after_initial_cas_before_target_mutation(writer) -> None:
     source = ["a", "b"]
     service = WritebackService(
         writer_factory=lambda *_args: writer,
         source_members_reader=lambda _playlist_id: list(source),
     )
     plan = _plan(service)
-    writer.before_boundary_check = lambda: source.__setitem__(slice(None), ["a", "c"])
+    writer.after_cas_interleave = lambda: source.__setitem__(slice(None), ["a", "c"])
     with pytest.raises(WritebackConflict, match="source changed"):
         service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target_mode="live", target_path="/fixture/live.db", target_id="one", plan_token=plan.plan_token, dry_run=False, confirmed=True)
     assert writer.playlists["one"][1] == ["a", "c"]
     assert not writer.reversals
+    assert ("replace", "one", ["a", "b"]) not in writer.calls
 
 
-def test_vendor_boundary_rejects_mapping_remap_inside_vendor_transaction(service, writer) -> None:
+def test_vendor_boundary_rejects_mapping_remap_after_cas_before_target_mutation(service, writer) -> None:
     plan = _plan(service)
-    writer.before_boundary_check = lambda: writer.state_conn.execute(
+    writer.after_cas_interleave = lambda: writer.state_conn.execute(
         "UPDATE track_vendor_ids SET vendor_id = 'rb-remapped-a' WHERE vendor = 'rekordbox' AND stable_id = 'a'"
     )
     with pytest.raises(WritebackConflict, match="mapping changed"):
         service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target_mode="live", target_path="/fixture/live.db", target_id="one", plan_token=plan.plan_token, dry_run=False, confirmed=True)
     assert writer.playlists["one"][1] == ["a", "c"]
     assert not writer.reversals
+    assert ("replace", "one", ["a", "b"]) not in writer.calls
 
 
 def test_vendor_boundary_derives_native_occurrences_from_the_checked_mapping_rows(service, writer) -> None:

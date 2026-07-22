@@ -22,6 +22,7 @@ from apps.smartlists.djay_writer import (
     _resolve_stable_id_for_djay,
 )
 from apps.smartlists.rb_writer import RBPlaylistWriter, _resolve_stable_id_for_rb
+from apps.webui.server.playlist_writeback import WritebackConflict
 
 
 # ---------------------------------------------------------------- state DB
@@ -282,3 +283,60 @@ class TestDjayReadMembers:
             assert [row_to_uuid[rowid] for rowid in rowids] == ["dj-uuid-100"]
         finally:
             con.close()
+
+    def test_source_edit_after_initial_cas_before_djay_mutation_is_rejected(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
+        from apps.smartlists import writeback_backup
+
+        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
+        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
+        expected = hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        mapping_revision = hashlib.sha256(json.dumps(sorted([
+            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
+        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        source = ["sid-1", "sid-2"]
+        monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+        persisted_reversal = writeback_backup.write_reversal
+
+        def interleave_source_edit(*args) -> None:
+            persisted_reversal(*args)
+            source[:] = ["sid-1", "sid-3"]
+
+        def assert_source_current() -> None:
+            if source != ["sid-1", "sid-2"]:
+                raise WritebackConflict("source changed at vendor mutation boundary")
+
+        monkeypatch.setattr(writeback_backup, "write_reversal", interleave_source_edit)
+        with pytest.raises(WritebackConflict, match="source changed at vendor mutation boundary"):
+            writer.apply_with_backup_by_id(
+                playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, assert_source_current,
+            )
+        assert writer.read_members_by_id(playlist_id) == ["sid-1"]
+
+    def test_mapping_edit_after_initial_cas_before_djay_mutation_is_rejected(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
+        from apps.smartlists import writeback_backup
+
+        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
+        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
+        expected = hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        mapping_revision = hashlib.sha256(json.dumps(sorted([
+            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
+        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+        persisted_reversal = writeback_backup.write_reversal
+
+        def interleave_mapping_edit(*args) -> None:
+            persisted_reversal(*args)
+            state_conn.execute(
+                "UPDATE track_vendor_ids SET vendor_id = 'dj-remapped-200' WHERE vendor = 'djay' AND stable_id = 'sid-2'",
+            )
+
+        monkeypatch.setattr(writeback_backup, "write_reversal", interleave_mapping_edit)
+        with pytest.raises(WritebackConflict, match="mapping changed at vendor mutation boundary"):
+            writer.apply_with_backup_by_id(
+                playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, lambda: None,
+            )
+        assert writer.read_members_by_id(playlist_id) == ["sid-1"]
