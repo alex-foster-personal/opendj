@@ -149,6 +149,30 @@ def test_write_rejects_wrong_source(tmp_path: Path, audio: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "overrides",
+    [
+        {"fps": 0.0},
+        {"fps": float("nan")},
+        {"duration_s": 0.0},
+        {"coverage_pct": 100.1},
+        {
+            "regions": [
+                {"start_s": 10.0, "end_s": 121.0, "confidence": 0.84},
+            ],
+        },
+    ],
+)
+def test_write_semantic_validation_never_publishes_poison_entry(
+    tmp_path: Path, audio: Path, overrides: dict[str, Any],
+) -> None:
+    path = vcache.cache_path(tmp_path, "poison")
+    with pytest.raises(ValueError):
+        vcache.write_entry(path, _worker_result(**overrides), audio)
+    assert not path.exists()
+    assert not list(path.parent.glob(f".{path.name}.*.tmp"))
+
+
+@pytest.mark.parametrize(
     ("confidence", "intensity"),
     [(0.0, 1), (0.2, 1), (0.5, 2), (0.84, 3), (1.0, 4)],
 )

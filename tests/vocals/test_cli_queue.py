@@ -17,6 +17,7 @@ import os
 import sqlite3
 import struct
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -278,28 +279,106 @@ def test_run_worker_deadline_raises_and_never_reads_stdin(
     audio.write_bytes(b"audio")
     seen: dict[str, Any] = {}
 
-    def _timeout(*_args: Any, **kwargs: Any) -> Any:
-        seen.update(kwargs)
-        raise subprocess.TimeoutExpired("uv", 1.0)
+    class TimedOutProcess:
+        pid = 123456
+        returncode: Optional[int] = None
 
-    monkeypatch.setattr(vcli.subprocess, "run", _timeout)
+        def communicate(self, timeout: Optional[float] = None) -> tuple[str, None]:
+            seen.setdefault("timeouts", []).append(timeout)
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("worker", timeout)
+            return "", None
+
+    process = TimedOutProcess()
+
+    def _popen(*_args: Any, **kwargs: Any) -> TimedOutProcess:
+        seen.update(kwargs)
+        return process
+
+    def _terminate(proc: object) -> None:
+        assert proc is process
+        seen["terminated"] = True
+        process.returncode = -9
+
+    monkeypatch.setattr(vcli.subprocess, "Popen", _popen)
+    monkeypatch.setattr(vcli, "_terminate_worker_tree", _terminate)
     with pytest.raises(RuntimeError, match="timed out"):
         vcli.run_worker(audio, timeout_s=1.0)
     assert seen["stdin"] is subprocess.DEVNULL
-    assert seen["timeout"] == 1.0
+    assert seen["timeouts"] == [1.0, None]
+    assert seen["terminated"] is True
+    if os.name == "nt":
+        assert seen["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        assert seen["start_new_session"] is True
 
 
-def test_track_claim_skips_duplicate_and_recovers_stale_lock(tmp_path: Path) -> None:
-    """[if] another CLI owns a track [then] duplicate Demucs work is skipped."""
+def test_track_claim_lease_and_old_owner_cannot_release_successor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An expired prior owner cannot clear the successor's immutable token."""
     from apps.vocals import cli as vcli
+
+    clock = {"now": 100.0}
+    monkeypatch.setattr(vcli.time, "time", lambda: clock["now"])
     cache_file = vcache.cache_path(tmp_path, "track")
-    first = vcli._claim_track(cache_file, timeout_s=1.0)
+    first = vcli._claim_track(cache_file, lease_s=10.0)
     assert first is not None
-    assert vcli._claim_track(cache_file, timeout_s=1.0) is None
-    os.utime(first, (first.stat().st_atime, first.stat().st_mtime - 100))
-    recovered = vcli._claim_track(cache_file, timeout_s=1.0)
-    assert recovered is not None
-    vcli._release_track_claim(recovered)
+    first_record = vcli._read_claim_record(first.path)
+    assert first_record is not None
+    assert first_record["owner_token"] == first.owner_token
+    assert first_record["heartbeat_at"] == 100.0
+    assert first_record["lease_s"] == 10.0
+    clock["now"] = 105.0
+    assert vcli._claim_track(cache_file, lease_s=0.1) is None
+    clock["now"] = 111.0
+    successor = vcli._claim_track(cache_file, lease_s=20.0)
+    assert successor is not None
+    assert successor.owner_token != first.owner_token
+    vcli._release_track_claim(first)
+    record = vcli._read_claim_record(successor.path)
+    assert record is not None
+    assert record["owner_token"] == successor.owner_token
+    assert record["released"] is False
+    assert vcli._claim_track(cache_file, lease_s=0.1) is None
+    vcli._release_track_claim(successor)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group regression")
+def test_worker_timeout_reaps_descendant_before_claim_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A timed-out worker's TERM-resistant child is gone before unlock."""
+    from apps.vocals import cli as vcli
+
+    child_pid_file = tmp_path / "child.pid"
+    worker = tmp_path / "worker.py"
+    worker.write_text(
+        "import signal, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', "
+        "'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "time.sleep(60)'])\n"
+        "open(sys.argv[1], 'w').write(str(child.pid))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        vcli,
+        "_worker_command",
+        lambda _audio: [sys.executable, str(worker), str(child_pid_file)],
+    )
+    cache_file = vcache.cache_path(tmp_path, "process-tree")
+    claim = vcli._claim_track(cache_file)
+    assert claim is not None
+    try:
+        with pytest.raises(RuntimeError, match="timed out"):
+            vcli.run_worker(child_pid_file, timeout_s=0.5)
+        child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+        with pytest.raises(ProcessLookupError):
+            os.kill(child_pid, 0)
+        vcli._assert_track_claim(claim)
+    finally:
+        vcli._release_track_claim(claim)
 
 
 def test_pioneer_path_cannot_escape_share_root(

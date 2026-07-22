@@ -42,15 +42,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import signal
 import sqlite3
 import struct
 import subprocess
 import sys
+import tempfile
+import threading
 import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from apps.shared.paths import DATA_DIR
 from apps.vocals import cache as vcache
@@ -59,7 +65,9 @@ from apps.vocals import cache as vcache
 DEMUCS_REALTIME_FACTOR: float = 1.36   # SPIKE-B2 measured CPU rate (honest band 0.8-1.4x)
 DEFAULT_TRICKLE_LIMIT: int = 5
 WORKER_TIMEOUT_S: float = 30 * 60
-LOCK_STALE_GRACE_S: float = 60
+LOCK_LEASE_S: float = 30
+LOCK_HEARTBEAT_S: float = 5
+WORKER_TERMINATE_GRACE_S: float = 2
 SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
 WORKER_SCRIPT: Path = Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
@@ -103,6 +111,18 @@ class VocalTrack:
     audio_path: Optional[Path]
     audio_on_disk: bool
     category: str = ""
+
+
+@dataclass(frozen=True)
+class TrackClaim:
+    """One immutable lock owner with a renewable, process-independent lease."""
+
+    path: Path
+    owner_token: str
+    lease_s: float
+    stop_heartbeat: threading.Event
+    heartbeat_thread: threading.Thread
+    heartbeat_errors: list[BaseException]
 
 
 # ----- db plumbing ---------------------------------------------------------------
@@ -310,21 +330,84 @@ def order_todo(
 
 # ----- worker invocation --------------------------------------------------------------
 
+def _worker_command(audio_path: Path) -> list[str]:
+    return ["uv", "run", "--script", str(WORKER_SCRIPT), str(audio_path)]
+
+
+def _posix_process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
+    """Terminate and reap the complete worker process group before returning."""
+    if os.name == "nt":
+        taskkill = subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        try:
+            proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"taskkill did not reap vocal worker tree {proc.pid}: "
+                f"{taskkill.stderr.strip()}"
+            ) from exc
+        return
+
+    process_group_id = proc.pid
+    try:
+        os.killpg(process_group_id, signal.SIGTERM)
+    except ProcessLookupError:
+        proc.wait()
+        return
+    try:
+        proc.wait(timeout=WORKER_TERMINATE_GRACE_S)
+    except subprocess.TimeoutExpired:
+        pass
+    if _posix_process_group_exists(process_group_id):
+        os.killpg(process_group_id, signal.SIGKILL)
+    proc.wait()
+    deadline = time.monotonic() + WORKER_TERMINATE_GRACE_S
+    while _posix_process_group_exists(process_group_id):
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"vocal worker process group {process_group_id} survived SIGKILL"
+            )
+        time.sleep(0.01)
+
+
 def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
     """Run the PEP 723 demucs worker via ``uv run`` and parse its stdout
     JSON. Worker logs pass through on stderr; a non-zero exit raises."""
-    cmd = ["uv", "run", "--script", str(WORKER_SCRIPT), str(audio_path)]
     if timeout_s <= 0:
         raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
+    process_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        process_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        process_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(
+        _worker_command(audio_path),
+        stdout=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        **process_kwargs,
+    )
     try:
-        proc = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            timeout=timeout_s,
-        )
+        stdout, _ = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired as exc:
+        _terminate_worker_tree(proc)
+        proc.communicate()
         raise RuntimeError(
             f"vocal_region_worker timed out after {timeout_s}s for {audio_path}"
         ) from exc
@@ -333,42 +416,185 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
             f"vocal_region_worker failed (exit {proc.returncode}) "
             f"for {audio_path}"
         )
-    return json.loads(proc.stdout)
+    return json.loads(stdout)
 
 
-def _claim_track(cache_file: Path, timeout_s: float) -> Optional[Path]:
+@contextmanager
+def _claim_record_guard(lock: Path) -> Iterator[None]:
+    """Serialize short claim-record transitions across processes."""
+    mutex_path = lock.with_name(f"{lock.name}.mutex")
+    mutex_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(mutex_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.fstat(descriptor).st_size == 0:
+            os.write(descriptor, b"\0")
+            os.fsync(descriptor)
+        if os.name == "nt":
+            import msvcrt  # noqa: PLC0415
+
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl  # noqa: PLC0415
+
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
+def _read_claim_record(lock: Path) -> Optional[dict[str, Any]]:
+    if not lock.exists():
+        return None
+    try:
+        record = json.loads(lock.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise RuntimeError(f"invalid vocals claim record: {lock}") from exc
+    if not isinstance(record, dict):
+        raise RuntimeError(f"invalid vocals claim record: {lock}")
+    if (
+        not isinstance(record.get("owner_token"), str)
+        or not record["owner_token"]
+        or not isinstance(record.get("pid"), int)
+        or isinstance(record["pid"], bool)
+        or not isinstance(record.get("heartbeat_at"), (int, float))
+        or isinstance(record["heartbeat_at"], bool)
+        or not math.isfinite(record["heartbeat_at"])
+        or not isinstance(record.get("lease_s"), (int, float))
+        or isinstance(record["lease_s"], bool)
+        or not math.isfinite(record["lease_s"])
+        or record["lease_s"] <= 0
+        or not isinstance(record.get("released"), bool)
+    ):
+        raise RuntimeError(f"invalid vocals claim record: {lock}")
+    return record
+
+
+def _write_claim_record(lock: Path, record: dict[str, Any]) -> None:
+    descriptor, tmp_name = tempfile.mkstemp(
+        dir=str(lock.parent), prefix=f".{lock.name}.", suffix=".tmp",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file_handle:
+            json.dump(record, file_handle, sort_keys=True)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+        os.replace(tmp_name, lock)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def _claim_is_active(record: dict[str, Any], now: float) -> bool:
+    return not record["released"] and now - record["heartbeat_at"] <= record["lease_s"]
+
+
+def _heartbeat_claim(
+    lock: Path,
+    owner_token: str,
+    lease_s: float,
+    stop: threading.Event,
+    errors: list[BaseException],
+) -> None:
+    interval_s = min(LOCK_HEARTBEAT_S, lease_s / 3)
+    while not stop.wait(interval_s):
+        try:
+            with _claim_record_guard(lock):
+                record = _read_claim_record(lock)
+                if record is None or record["owner_token"] != owner_token:
+                    return
+                record["heartbeat_at"] = time.time()
+                _write_claim_record(lock, record)
+        except BaseException as exc:
+            errors.append(exc)
+            return
+
+
+def _claim_track(
+    cache_file: Path, lease_s: float = LOCK_LEASE_S,
+) -> Optional[TrackClaim]:
     """Claim one uncached track without waiting behind another CLI process.
 
-    The claim is an O_EXCL lock beside the eventual JSON entry. A process
-    crash cannot strand work forever because a lock older than the worker
-    deadline plus a small grace period is reclaimed before retrying once.
+    The persisted lease duration and heartbeat are independent of any
+    contender's worker timeout. Every transition is serialized, and the
+    immutable owner token prevents an expired owner from releasing its
+    successor's lease.
     """
-    if timeout_s <= 0:
-        raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
+    if lease_s <= 0:
+        raise ValueError(f"claim lease must be > 0 seconds, got {lease_s}")
     lock = cache_file.with_suffix(".json.lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(2):
-        try:
-            fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            try:
-                age_s = time.time() - lock.stat().st_mtime
-            except FileNotFoundError:
-                continue
-            if attempt == 0 and age_s > timeout_s + LOCK_STALE_GRACE_S:
-                lock.unlink(missing_ok=True)
-                continue
+    now = time.time()
+    owner_token = uuid.uuid4().hex
+    with _claim_record_guard(lock):
+        record = _read_claim_record(lock)
+        if record is not None and _claim_is_active(record, now):
             return None
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(f"pid={os.getpid()}\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        return lock
-    raise AssertionError("unreachable claim retry exhausted")
+        _write_claim_record(lock, {
+            "owner_token": owner_token,
+            "pid": os.getpid(),
+            "heartbeat_at": now,
+            "lease_s": lease_s,
+            "released": False,
+        })
+    stop = threading.Event()
+    heartbeat_errors: list[BaseException] = []
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat_claim,
+        args=(lock, owner_token, lease_s, stop, heartbeat_errors),
+        name=f"vocals-claim-{owner_token[:8]}",
+        daemon=True,
+    )
+    heartbeat_thread.start()
+    return TrackClaim(
+        path=lock,
+        owner_token=owner_token,
+        lease_s=lease_s,
+        stop_heartbeat=stop,
+        heartbeat_thread=heartbeat_thread,
+        heartbeat_errors=heartbeat_errors,
+    )
 
 
-def _release_track_claim(lock: Path) -> None:
-    lock.unlink(missing_ok=True)
+@contextmanager
+def _owned_track_claim(claim: TrackClaim) -> Iterator[None]:
+    if claim.heartbeat_errors:
+        raise RuntimeError("vocals claim heartbeat failed") from claim.heartbeat_errors[0]
+    with _claim_record_guard(claim.path):
+        record = _read_claim_record(claim.path)
+        if (
+            record is None
+            or record["owner_token"] != claim.owner_token
+            or not _claim_is_active(record, time.time())
+        ):
+            raise RuntimeError("vocals track claim expired or changed owner")
+        yield
+
+
+def _assert_track_claim(claim: TrackClaim) -> None:
+    with _owned_track_claim(claim):
+        return
+
+
+def _release_track_claim(claim: TrackClaim) -> None:
+    claim.stop_heartbeat.set()
+    claim.heartbeat_thread.join(timeout=WORKER_TERMINATE_GRACE_S)
+    if claim.heartbeat_thread.is_alive():
+        raise RuntimeError("vocals claim heartbeat thread did not stop")
+    with _claim_record_guard(claim.path):
+        record = _read_claim_record(claim.path)
+        if record is None or record["owner_token"] != claim.owner_token:
+            return
+        record["released"] = True
+        record["heartbeat_at"] = time.time()
+        _write_claim_record(claim.path, record)
 
 
 # ----- output helpers ------------------------------------------------------------------
@@ -431,7 +657,11 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 
 def _process_one(
-    ctx: Ctx, tr: VocalTrack, prefix: str, timeout_s: float = WORKER_TIMEOUT_S
+    ctx: Ctx,
+    tr: VocalTrack,
+    prefix: str,
+    timeout_s: float = WORKER_TIMEOUT_S,
+    claim: Optional[TrackClaim] = None,
 ) -> tuple[float, dict[str, Any]]:
     """Run the worker for one track and write its cache entry.
 
@@ -453,10 +683,17 @@ def _process_one(
             f"(source identity changed); regions were computed "
             f"from the old content, refusing to cache them"
         )
-    entry = vcache.write_entry(
-        vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
-        audio_mtime=pre_mtime, source_signature=pre_signature,
-    )
+    if claim is None:
+        entry = vcache.write_entry(
+            vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
+            audio_mtime=pre_mtime, source_signature=pre_signature,
+        )
+    else:
+        with _owned_track_claim(claim):
+            entry = vcache.write_entry(
+                vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
+                audio_mtime=pre_mtime, source_signature=pre_signature,
+            )
     wall_s = time.perf_counter() - t0
     rate = wall_s / tr.length_s if tr.length_s else float("nan")
     print(
@@ -523,7 +760,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
             print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
             continue
         cache_file = vcache.cache_path(ctx.data_dir, tr.stable_id)
-        claim = _claim_track(cache_file, args.worker_timeout_s)
+        claim = _claim_track(cache_file)
         if claim is None:
             print(f"[SKIP in-progress] {tr.stable_id} {tr.title!r}: another CLI owns it")
             continue
@@ -533,7 +770,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
                 continue
             print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
             wall_s, _entry = _process_one(
-                ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s
+                ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s, claim,
             )
         finally:
             _release_track_claim(claim)
@@ -574,7 +811,7 @@ def cmd_one(args: argparse.Namespace) -> int:
               f"{cache_file} ({len(existing['regions'])} regions, "
               f"cov={existing['coverage_pct']}%); use --force to recompute")
         return 0
-    claim = _claim_track(cache_file, args.worker_timeout_s)
+    claim = _claim_track(cache_file)
     if claim is None:
         raise SystemExit(
             f"error: {tr.stable_id} is already being analysed by another vocals CLI process"
@@ -585,7 +822,7 @@ def cmd_one(args: argparse.Namespace) -> int:
             return 0
         print(f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
               f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}")
-        _process_one(ctx, tr, "[one]", args.worker_timeout_s)
+        _process_one(ctx, tr, "[one]", args.worker_timeout_s, claim)
     finally:
         _release_track_claim(claim)
     return 0
