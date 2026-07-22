@@ -1,0 +1,152 @@
+"""Read-only settings endpoint (settings-page).
+
+Surfaces the daemon's effective runtime config so the frontend can render
+a diagnostics page without SSH-ing into the host. Every value below is
+sourced from ``request.app.state``, a middleware/route introspection, or
+an ``apps.shared.paths`` constant -- see the citing comment on each field.
+Nothing here is user-editable; v1 is read-only (no PATCH/POST).
+
+Anything the running process cannot actually introspect (e.g. the CLI
+``--port`` flag, which ``apps.webui.server.app.create_app`` never
+receives -- see ``apps/webui/server/__main__.py``) is reported with
+``tbd=true`` and a note instead of a guessed value.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Optional
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
+from starlette.middleware.cors import CORSMiddleware
+from starlette.routing import Mount
+
+from apps.shared.paths import DATA_DIR, STATE_DIR
+
+from .. import rb_vendor
+
+router = APIRouter(prefix="/settings", tags=["settings"])
+
+# Mirrors apps/webui/server/app.py:FRONTEND_BUILD_DIR. Recomputed locally
+# (rather than imported) because app.py imports this router at module load
+# time, and app.py -> routes.settings -> app.py would be a circular import.
+_FRONTEND_BUILD_DIR: Path = Path(__file__).resolve().parents[2] / "frontend" / "build"
+
+
+# ----- pydantic models (inline per router convention, see progress.py) -------
+
+class SettingItem(BaseModel):
+    key: str
+    value: Any = None
+    tbd: bool = False
+    note: Optional[str] = None
+
+
+class SettingsGroup(BaseModel):
+    group: str
+    items: list[SettingItem]
+
+
+class SettingsOut(BaseModel):
+    groups: list[SettingsGroup]
+
+
+# ----- helpers -----------------------------------------------------------
+
+def _cors_middleware(request: Request) -> Optional[dict[str, Any]]:
+    """Pull the live CORSMiddleware kwargs off the app, if it was added.
+
+    ``app.user_middleware`` holds each registered ``Middleware(cls, **kwargs)``
+    entry (app.py:79-93); this reads the actual configured values instead of
+    re-stating the README's CORS policy prose.
+    """
+    for mw in request.app.user_middleware:
+        if mw.cls is CORSMiddleware:
+            return dict(mw.kwargs)
+    return None
+
+
+def _frontend_mounted(request: Request) -> bool:
+    """True if app.py mounted the built SPA (app.py:114-116, name="spa")."""
+    return any(
+        isinstance(r, Mount) and getattr(r, "name", None) == "spa"
+        for r in request.app.routes
+    )
+
+
+# ----- route ---------------------------------------------------------------
+
+@router.get("", response_model=SettingsOut)
+def get_settings(request: Request) -> SettingsOut:
+    state = request.app.state
+    cors = _cors_middleware(request)
+
+    network_items = [
+        SettingItem(key="bind_host", value=getattr(state, "bind_host", None),
+                    note="MUSIC_DJ_BIND_HOST env var; default 127.0.0.1 (D5/CAT-05b)."),
+        SettingItem(key="hostname", value=getattr(state, "hostname", None)),
+        SettingItem(
+            key="port", tbd=True,
+            note=(
+                "CLI --port (apps/webui/server/__main__.py, default 8585) is "
+                "not passed into create_app/app.state, so the running daemon "
+                "cannot introspect its own bound port."
+            ),
+        ),
+        SettingItem(
+            key="cors_enabled", value=cors is not None,
+            note="Whether CORSMiddleware is registered (app.py enable_cors).",
+        ),
+        SettingItem(
+            key="cors_allow_origins",
+            value=(cors or {}).get("allow_origins") if cors else None,
+            tbd=cors is None,
+            note="Live CORSMiddleware allow_origins; see apps/webui/README.md CORS policy.",
+        ),
+    ]
+
+    backend_items = [
+        SettingItem(
+            key="backend_type", value=type(getattr(state, "backend", None)).__name__,
+            note="InMemoryBackend or SqliteBackend (apps/webui/server/sqlite_backend.py).",
+        ),
+        SettingItem(key="state_db_path", value=str(getattr(state, "state_db_path", None))),
+        SettingItem(key="version", value=getattr(state, "version", None)),
+    ]
+
+    storage_items = [
+        SettingItem(key="data_dir", value=str(DATA_DIR),
+                    note="apps.shared.paths.DATA_DIR"),
+        SettingItem(key="state_dir", value=str(STATE_DIR),
+                    note="apps.shared.paths.STATE_DIR"),
+        SettingItem(key="anlz_cache_dir", value=str(rb_vendor.ANLZ_CACHE_DIR),
+                    note="apps.webui.server.rb_vendor.ANLZ_CACHE_DIR"),
+    ]
+
+    frontend_items = [
+        SettingItem(key="frontend_mounted", value=_frontend_mounted(request),
+                    note="Whether apps/webui/frontend/build is mounted as the SPA at /."),
+        SettingItem(key="frontend_build_dir", value=str(_FRONTEND_BUILD_DIR)),
+    ]
+
+    toggle_items = [
+        SettingItem(
+            key="feature_toggles", tbd=True,
+            note=(
+                "No env-var-driven feature toggles exist in apps/webui/server "
+                "today; bind_host and CORS (above) are the only runtime knobs "
+                "documented in apps/webui/README.md."
+            ),
+        ),
+    ]
+
+    return SettingsOut(groups=[
+        SettingsGroup(group="Network", items=network_items),
+        SettingsGroup(group="Backend", items=backend_items),
+        SettingsGroup(group="Storage", items=storage_items),
+        SettingsGroup(group="Frontend", items=frontend_items),
+        SettingsGroup(group="Feature toggles", items=toggle_items),
+    ])
+
+
+__all__ = ["SettingItem", "SettingsGroup", "SettingsOut", "router"]
