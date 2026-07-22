@@ -121,6 +121,56 @@ def _backup_rb_db(
     return dst
 
 
+def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
+    """Export an encrypted Rekordbox DB through its unlocked SQLCipher engine."""
+    from apps.smartlists import writeback_backup
+
+    expected_target = live_db_path.resolve(strict=True)
+    backup_id = uuid4().hex
+    destination = writeback_backup.backup_path("rekordbox", backup_id)
+    schema_name = f"writeback_backup_{backup_id}"
+    connection = db.engine.raw_connection()
+    try:
+        driver = connection.driver_connection
+        database_rows = driver.execute("PRAGMA database_list").fetchall()
+        main_row = next((row for row in database_rows if row[1] == "main"), None)
+        if main_row is None or not main_row[2]:
+            raise RuntimeError("rekordbox: unlocked connection has no main database")
+        actual_target = Path(main_row[2]).resolve(strict=True)
+        if actual_target != expected_target:
+            raise RuntimeError(
+                "rekordbox: unlocked connection does not own exact target "
+                f"{expected_target}; connected to {actual_target}"
+            )
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            raise FileExistsError(f"rekordbox: backup already exists: {destination}")
+        driver.execute(
+            f"ATTACH DATABASE ? AS {schema_name} KEY ''",
+            (str(destination),),
+        )
+        driver.execute(f"SELECT sqlcipher_export('{schema_name}')").fetchone()
+        driver.commit()
+        driver.execute(f"DETACH DATABASE {schema_name}")
+        connection.close()
+        connection = None
+
+        if destination.stat().st_size <= 0:
+            raise RuntimeError(f"rekordbox: online backup is empty: {destination}")
+        with sqlite3.connect(destination) as backup:
+            if backup.execute("PRAGMA quick_check").fetchone() != ("ok",):
+                raise RuntimeError(
+                    f"rekordbox: online backup failed integrity check: {destination}"
+                )
+    except Exception:
+        if connection is not None:
+            connection.invalidate()
+        destination.unlink(missing_ok=True)
+        raise
+    return backup_id
+
+
 @dataclass
 class RBPlaylistWriter:
     """``PlaylistWriter`` backed by pyrekordbox's ORM.
@@ -294,7 +344,7 @@ class RBPlaylistWriter:
         """CAS, WAL-safe backup, and mutation in one Rekordbox transaction."""
         from pyrekordbox.db6 import tables
         from sqlalchemy import text
-        from apps.smartlists.writeback_backup import exclusive_target_lock, online_backup, write_reversal
+        from apps.smartlists.writeback_backup import exclusive_target_lock, write_reversal
         from apps.webui.server.playlist_writeback import WritebackBackup, WritebackConflict
 
         self._assert_safe_to_write(take_backup=False)
@@ -328,8 +378,9 @@ class RBPlaylistWriter:
                     if missing:
                         raise WritebackConflict(f"rekordbox: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
                     native_members = [native_mapping[stable_id] for stable_id in stable_members]
-                    with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
-                        backup = WritebackBackup(online_backup(snapshot, "rekordbox"))
+                    backup = WritebackBackup(
+                        _online_backup_unlocked_rekordbox(self.db, self.live_db_path)
+                    )
                     post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                     write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, native_before, post_revision)
                     playlist = self._find_playlist_by_id(playlist_id)
@@ -353,10 +404,10 @@ class RBPlaylistWriter:
     def backup_target(self):
         """Snapshot the exact DB this writer opened, never the working copy."""
         from apps.webui.server.playlist_writeback import WritebackBackup
-        from apps.smartlists.writeback_backup import online_backup
 
-        with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as source:
-            return WritebackBackup(online_backup(source, "rekordbox"))
+        return WritebackBackup(
+            _online_backup_unlocked_rekordbox(self.db, self.live_db_path)
+        )
 
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str:
         """Atomically restore a writeback backup when the target still matches CAS."""

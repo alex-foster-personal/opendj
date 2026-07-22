@@ -22,7 +22,11 @@ from apps.smartlists.djay_writer import (
     _find_djay_playlist_by_id,
     _resolve_stable_id_for_djay,
 )
-from apps.smartlists.rb_writer import RBPlaylistWriter, _resolve_stable_id_for_rb
+from apps.smartlists.rb_writer import (
+    RBPlaylistWriter,
+    _online_backup_unlocked_rekordbox,
+    _resolve_stable_id_for_rb,
+)
 
 
 # ---------------------------------------------------------------- state DB
@@ -124,6 +128,92 @@ class TestRBReadMembers:
         w = RBPlaylistWriter(db=db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="not found"):
             w.read_members("Ghost")
+
+
+class _RawConnection:
+    def __init__(self, driver_connection) -> None:
+        self.driver_connection = driver_connection
+
+    def close(self) -> None:
+        self.driver_connection.close()
+
+    def invalidate(self) -> None:
+        self.driver_connection.close()
+
+
+class _UnlockedEngine:
+    def __init__(self, driver_connection) -> None:
+        self._driver_connection = driver_connection
+
+    def raw_connection(self) -> _RawConnection:
+        return _RawConnection(self._driver_connection)
+
+
+class _UnlockedDatabase:
+    def __init__(self, driver_connection) -> None:
+        self.engine = _UnlockedEngine(driver_connection)
+
+
+def _encrypted_rekordbox_db(path: Path):
+    import sqlcipher3
+
+    connection = sqlcipher3.connect(path)
+    connection.execute("PRAGMA key = 'pr273-test-key'")
+    connection.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+    connection.execute("INSERT INTO marker VALUES ('encrypted-rekordbox')")
+    connection.commit()
+    connection.close()
+
+    with sqlite3.connect(path) as locked:
+        with pytest.raises(sqlite3.DatabaseError, match="not a database"):
+            locked.execute("SELECT value FROM marker").fetchone()
+
+    unlocked = sqlcipher3.connect(path)
+    unlocked.execute("PRAGMA key = 'pr273-test-key'")
+    return unlocked
+
+
+def test_online_backup_uses_unlocked_sqlcipher_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    unlocked = _encrypted_rekordbox_db(encrypted)
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    backup_id = _online_backup_unlocked_rekordbox(
+        _UnlockedDatabase(unlocked), encrypted
+    )
+
+    backup = writeback_backup.backup_path("rekordbox", backup_id)
+    with sqlite3.connect(backup) as plain:
+        assert plain.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert plain.execute("SELECT value FROM marker").fetchone() == (
+            "encrypted-rekordbox",
+        )
+
+
+def test_online_backup_rejects_unlocked_connection_for_another_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    unlocked = _encrypted_rekordbox_db(encrypted)
+    other_target = tmp_path / "other.db"
+    other_target.write_bytes(encrypted.read_bytes())
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", backup_dir)
+
+    with pytest.raises(RuntimeError, match="does not own exact target"):
+        _online_backup_unlocked_rekordbox(
+            _UnlockedDatabase(unlocked), other_target
+        )
+
+    assert not backup_dir.exists() or list(backup_dir.iterdir()) == []
 
 
 # ------------------------------------------------------------ djay_writer
