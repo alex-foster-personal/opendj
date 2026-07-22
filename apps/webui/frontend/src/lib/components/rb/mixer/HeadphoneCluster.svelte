@@ -11,10 +11,11 @@
 		onmix: (value: number) => void;
 		onlevel: (value: number) => void;
 		onrefresh: () => void;
+		onacquire: () => void;
 		onselect: (deviceId: string) => void;
 	}
 
-	let { state, onmix, onlevel, onrefresh, onselect }: Props = $props();
+	let { state, onmix, onlevel, onrefresh, onacquire, onselect }: Props = $props();
 </script>
 
 <div class="hp" data-performance-control="headphones">
@@ -31,6 +32,7 @@
 	</svg>
 	<Knob label="MIX" value={state.mix} onchange={onmix} />
 	<Knob label="LEVEL" value={state.level} onchange={onlevel} />
+	<button type="button" onclick={onacquire}>ADD OUTPUT</button>
 	<button type="button" onclick={onrefresh}>REFRESH</button>
 	<select
 		aria-label="headphone output device"

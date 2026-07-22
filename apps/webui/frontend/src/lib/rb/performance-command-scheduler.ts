@@ -31,6 +31,34 @@ export class ScopedCommandScheduler<Scope extends PropertyKey> {
 		this.#tails.clear();
 	}
 
+	/** Claim one idle scope without a promise-turn delay. Permission APIs that
+	 * require a trusted click use this path and must never wait in the queue. */
+	runImmediatelyIfIdle<T>(scope: Scope, command: () => Promise<T>): Promise<T> {
+		if (this.#tails.has(scope)) throw new Error(`command scope ${String(scope)} is busy`);
+		const generation = this.#generation;
+		let result: Promise<T>;
+		try {
+			result = Promise.resolve(command());
+		} catch (error) {
+			result = Promise.reject(error);
+		}
+		const guarded = result.then((value) => {
+			if (generation !== this.#generation) {
+				throw new ScopedCommandInvalidatedError(this.#invalidationReason);
+			}
+			return value;
+		});
+		const tail = guarded.then(
+			() => undefined,
+			() => undefined
+		);
+		this.#tails.set(scope, tail);
+		void tail.then(() => {
+			if (this.#tails.get(scope) === tail) this.#tails.delete(scope);
+		});
+		return guarded;
+	}
+
 	async run<T>(scopes: readonly Scope[], command: () => Promise<T>): Promise<T> {
 		if (scopes.length === 0) throw new Error('command requires at least one scope');
 		const uniqueScopes = new Set(scopes);
