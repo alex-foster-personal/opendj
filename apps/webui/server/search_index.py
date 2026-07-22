@@ -2,13 +2,15 @@
 
 Constraint: never mutate state.db's own schema. The index lives in a
 separate sqlite file next to the source DB (``ensure_index`` derives the
-name), rebuilt lazily whenever the source file's mtime moves past what is
-recorded in the index's own ``search_meta`` table -- a cheap stat + compare
-on every call, and a full re-ingest pass only when the source actually
-changed (or the index does not exist yet, or its schema version is stale).
+name), rebuilt lazily whenever SQLite's source state changes. The freshness
+token covers both ``state.db`` and its active ``state.db-wal`` sidecar, so
+committed WAL writes are visible before a checkpoint updates the main file.
+Every call performs only cheap file metadata reads; a full re-ingest happens
+only when that source state changed (or the index does not exist yet, or its
+schema version is stale).
 
 Indexed columns: title, artist (joined from ``tracks.artists_json``), plus
-genre / comments / tags pulled from the ``track_fields`` EAV table
+genre / comments / notes / tags pulled from the ``track_fields`` EAV table
 (apps/shared/state/schema.py) -- whichever of those field names a given
 track actually carries; EAV is sparse by design, so absent fields simply
 contribute empty text. Query tokenisation mirrors the launcher's Tauri
@@ -25,8 +27,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-_SCHEMA_VERSION = 1
-_EAV_FIELDS: tuple[str, ...] = ("genre", "comments", "tags")
+_SCHEMA_VERSION = 2
+_EAV_FIELDS: tuple[str, ...] = ("genre", "comments", "notes", "tags")
+_SOURCE_READ_ATTEMPTS = 3
 
 
 class SearchIndexUnavailable(RuntimeError):
@@ -58,16 +61,43 @@ def _open_index(index_db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _current_meta(conn: sqlite3.Connection) -> tuple[int, float] | None:
+def _source_fingerprint(state_db_path: Path) -> str:
+    """Return a cheap fingerprint of the SQLite main database and live WAL.
+
+    SQLite commits into ``-wal`` without changing the main database file until
+    checkpointing. Both files therefore comprise the committed source state
+    visible to a read-only SQLite connection.
+    """
+    return json.dumps(
+        (_file_fingerprint(state_db_path), _file_fingerprint(Path(f"{state_db_path}-wal"))),
+        separators=(",", ":"),
+    )
+
+
+def _file_fingerprint(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def _current_meta(conn: sqlite3.Connection) -> tuple[int, str] | None:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='search_meta'"
     ).fetchone()
     if row is None:
         return None
+    row = conn.execute("SELECT schema FROM search_meta WHERE id = 1").fetchone()
+    if row is None:
+        return None
+    schema = int(row[0])
+    if schema != _SCHEMA_VERSION:
+        return (schema, "")
     row = conn.execute(
-        "SELECT schema, source_mtime FROM search_meta WHERE id = 1"
+        "SELECT source_fingerprint FROM search_meta WHERE id = 1"
     ).fetchone()
-    return (int(row[0]), float(row[1])) if row is not None else None
+    return (schema, str(row[0])) if row is not None else None
 
 
 def _artist_of(artists_json: str | None) -> str:
@@ -98,7 +128,9 @@ def _eav_text(raw_value_json: str | None) -> str:
     return str(value)
 
 
-def _rebuild(conn: sqlite3.Connection, state_db_path: Path, source_mtime: float) -> None:
+def _read_source(
+    state_db_path: Path,
+) -> tuple[list[sqlite3.Row], dict[str, dict[str, str]]]:
     state = sqlite3.connect(f"file:{state_db_path}?mode=ro", uri=True)
     state.row_factory = sqlite3.Row
     try:
@@ -115,40 +147,61 @@ def _rebuild(conn: sqlite3.Connection, state_db_path: Path, source_mtime: float)
             eav.setdefault(row["stable_id"], {})[row["field_name"]] = row["value_json"]
     finally:
         state.close()
+    return tracks, eav
 
-    conn.execute("DROP TABLE IF EXISTS tracks_fts")
-    conn.execute("DROP TABLE IF EXISTS search_meta")
-    conn.execute(
-        "CREATE VIRTUAL TABLE tracks_fts USING fts5("
-        "stable_id UNINDEXED, title, artist, genre, comments, tags, "
-        "tokenize='unicode61 remove_diacritics 2')"
-    )
-    conn.execute(
-        "CREATE TABLE search_meta ("
-        "id INTEGER PRIMARY KEY, schema INTEGER NOT NULL, source_mtime REAL NOT NULL"
-        ")"
-    )
-    rows = [
-        (
-            r["stable_id"],
-            r["title"] or "",
-            _artist_of(r["artists_json"]),
-            _eav_text(eav.get(r["stable_id"], {}).get("genre")),
-            _eav_text(eav.get(r["stable_id"], {}).get("comments")),
-            _eav_text(eav.get(r["stable_id"], {}).get("tags")),
+
+def _rebuild(conn: sqlite3.Connection, state_db_path: Path) -> None:
+    for _ in range(_SOURCE_READ_ATTEMPTS):
+        before = _source_fingerprint(state_db_path)
+        tracks, eav = _read_source(state_db_path)
+        source_fingerprint = _source_fingerprint(state_db_path)
+        if source_fingerprint == before:
+            break
+    else:
+        raise SearchIndexUnavailable(
+            f"state.db changed during search index rebuild at {state_db_path}"
         )
-        for r in tracks
-    ]
-    conn.executemany(
-        "INSERT INTO tracks_fts(stable_id, title, artist, genre, comments, tags) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        rows,
-    )
-    conn.execute(
-        "INSERT INTO search_meta(id, schema, source_mtime) VALUES (1, ?, ?)",
-        (_SCHEMA_VERSION, source_mtime),
-    )
-    conn.commit()
+
+    conn.execute("BEGIN")
+    try:
+        conn.execute("DROP TABLE IF EXISTS tracks_fts")
+        conn.execute("DROP TABLE IF EXISTS search_meta")
+        conn.execute(
+            "CREATE VIRTUAL TABLE tracks_fts USING fts5("
+            "stable_id UNINDEXED, title, artist, genre, comments, notes, tags, "
+            "tokenize='unicode61 remove_diacritics 2')"
+        )
+        conn.execute(
+            "CREATE TABLE search_meta ("
+            "id INTEGER PRIMARY KEY, schema INTEGER NOT NULL, "
+            "source_fingerprint TEXT NOT NULL"
+            ")"
+        )
+        rows = [
+            (
+                r["stable_id"],
+                r["title"] or "",
+                _artist_of(r["artists_json"]),
+                _eav_text(eav.get(r["stable_id"], {}).get("genre")),
+                _eav_text(eav.get(r["stable_id"], {}).get("comments")),
+                _eav_text(eav.get(r["stable_id"], {}).get("notes")),
+                _eav_text(eav.get(r["stable_id"], {}).get("tags")),
+            )
+            for r in tracks
+        ]
+        conn.executemany(
+            "INSERT INTO tracks_fts(stable_id, title, artist, genre, comments, notes, tags) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        conn.execute(
+            "INSERT INTO search_meta(id, schema, source_fingerprint) VALUES (1, ?, ?)",
+            (_SCHEMA_VERSION, source_fingerprint),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def ensure_index(state_db_path: Path, index_db_path: Path | None = None) -> Path:
@@ -157,16 +210,22 @@ def ensure_index(state_db_path: Path, index_db_path: Path | None = None) -> Path
     Raises :class:`SearchIndexUnavailable` if ``state_db_path`` does not
     exist -- there is nothing to derive an index from.
     """
-    if not state_db_path.exists():
-        raise SearchIndexUnavailable(f"state.db not found at {state_db_path}")
-    target = index_db_path or index_path_for(state_db_path)
-    source_mtime = state_db_path.stat().st_mtime
-    conn = _open_index(target)
+    conn: sqlite3.Connection | None = None
     try:
-        if _current_meta(conn) != (_SCHEMA_VERSION, source_mtime):
-            _rebuild(conn, state_db_path, source_mtime)
+        if not state_db_path.exists():
+            raise SearchIndexUnavailable(f"state.db not found at {state_db_path}")
+        target = index_db_path or index_path_for(state_db_path)
+        source_fingerprint = _source_fingerprint(state_db_path)
+        conn = _open_index(target)
+        if _current_meta(conn) != (_SCHEMA_VERSION, source_fingerprint):
+            _rebuild(conn, state_db_path)
+    except (OSError, sqlite3.Error) as exc:
+        raise SearchIndexUnavailable(
+            f"search index unavailable for {state_db_path}: {exc}"
+        ) from exc
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
     return target
 
 
@@ -201,7 +260,7 @@ def search(
             "SELECT stable_id, "
             "snippet(tracks_fts, -1, '', '', ' ... ', 10) AS context "
             "FROM tracks_fts WHERE tracks_fts MATCH ? "
-            "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 1.0) "
+            "ORDER BY bm25(tracks_fts, 10.0, 5.0, 3.0, 2.0, 1.0, 1.0, 1.0) "
             "LIMIT ? OFFSET ?",
             (fts_query, limit, offset),
         ).fetchall()

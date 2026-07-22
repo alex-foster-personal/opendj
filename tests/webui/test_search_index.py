@@ -4,7 +4,8 @@ Builds its own fixture ``state.db`` under ``tmp_path`` via the real
 ``apps.shared.state`` schema/writer (never touches the repo's real
 data/state/state.db -- absent in CI/sandbox anyway, see test_search.py's
 503 test). Exercises tokenisation/prefix-matching, bm25 ranking, EAV
-(genre/comments/tags) indexing, pagination, and lazy rebuild-on-mtime.
+(genre/comments/notes/tags) indexing, pagination, and lazy refresh when
+SQLite's main database or active WAL changes.
 """
 from __future__ import annotations
 
@@ -109,10 +110,23 @@ def test_search_matches_comments_eav_field(fixture_db: Path) -> None:
     assert hits[0][0] == "s4"
 
 
+def test_search_matches_writable_notes_eav_field(fixture_db: Path) -> None:
+    conn = state_db.open_rw(fixture_db)
+    try:
+        _set_eav_field(conn, "s4", "notes", "tailored outro annotation")
+    finally:
+        conn.close()
+
+    hits, total = search_index.search(fixture_db, "tailored", limit=10)
+
+    assert total == 1
+    assert hits[0][0] == "s4"
+
+
 def test_search_matches_tags_eav_field(fixture_db: Path) -> None:
     # "banger" is s1's tag AND a word in s6's comments ("banger opener") --
-    # both are real matches, s1 via tags (weight 1) and s6 via comments
-    # (weight 2), so s6 ranks first.
+    # both are real matches. Keep this established ordering while adding
+    # notes as an equal-weight searchable annotation.
     hits, total = search_index.search(fixture_db, "banger", limit=10)
     assert total == 2
     assert {sid for sid, _ in hits} == {"s1", "s6"}
@@ -195,6 +209,57 @@ def test_index_rebuilds_when_source_mtime_changes(fixture_db: Path) -> None:
     hits_after, total = search_index.search(fixture_db, "phoenix", limit=10)
     assert total == 1
     assert hits_after[0][0] == "s7"
+
+
+def test_index_refreshes_for_committed_wal_write_without_main_db_mtime_change(
+    fixture_db: Path,
+) -> None:
+    search_index.ensure_index(fixture_db)
+    main_db_mtime = fixture_db.stat().st_mtime_ns
+    conn = state_db.open_rw(fixture_db)
+    bus = FakeEventBus()
+    writer = StateWriter(conn, bus=bus, actor="test")
+    try:
+        writer.upsert_track(
+            stable_id="s7", stable_id_tier="inferred", title="WAL Arrival",
+            artists=["Delta"], album=None, isrc=None, duration_ms=180_000,
+            file_path="/music/s7.mp3",
+        )
+        assert fixture_db.stat().st_mtime_ns == main_db_mtime
+
+        hits, total = search_index.search(fixture_db, "arrival", limit=10)
+    finally:
+        writer.close()
+        conn.close()
+
+    assert total == 1
+    assert hits[0][0] == "s7"
+
+
+def test_index_rebuild_commits_schema_and_metadata_atomically(
+    fixture_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statements: list[str] = []
+    original_open_index = search_index._open_index
+
+    def open_index_with_trace(index_db_path: Path) -> sqlite3.Connection:
+        conn = original_open_index(index_db_path)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(search_index, "_open_index", open_index_with_trace)
+
+    search_index.ensure_index(fixture_db)
+
+    begin = statements.index("BEGIN")
+    first_drop = next(i for i, sql in enumerate(statements) if sql.startswith("DROP TABLE"))
+    metadata = next(
+        i for i, sql in enumerate(statements)
+        if sql.startswith("INSERT INTO search_meta")
+    )
+    commit = statements.index("COMMIT")
+    assert begin < first_drop < metadata < commit
 
 
 def test_index_not_rebuilt_when_source_unchanged(fixture_db: Path) -> None:
