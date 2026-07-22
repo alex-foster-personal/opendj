@@ -558,6 +558,23 @@ export function mergeHeadphoneOutput(
 		: [...outputs.map((output) => ({ ...output })), next];
 }
 
+/** Browsers may rotate opaque output IDs when device permission changes. An
+ * unenumerated sink is no longer trustworthy, so stop reporting it as live. */
+export function reconcileHeadphoneOutputRefresh(
+	active: boolean,
+	selectedOutputDeviceId: string | null,
+	outputs: readonly HeadphoneOutputDevice[]
+): { active: boolean; selected_output_device_id: string | null } {
+	if (typeof active !== 'boolean') throw new TypeError('headphone active state must be boolean');
+	if (selectedOutputDeviceId !== null && typeof selectedOutputDeviceId !== 'string') {
+		throw new TypeError('selected headphone output device id must be a string or null');
+	}
+	if (selectedOutputDeviceId === null || outputs.some((output) => output.id === selectedOutputDeviceId)) {
+		return { active, selected_output_device_id: selectedOutputDeviceId };
+	}
+	return { active: false, selected_output_device_id: null };
+}
+
 export function headphoneSelectionStages(): readonly string[] {
 	return ['setSinkId', 'attachStream', 'play', 'publish'];
 }
@@ -3651,6 +3668,17 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.headphones.outputs = devices
 			.filter((device) => device.kind === 'audiooutput')
 			.map((device) => ({ id: device.deviceId, label: device.label }));
+		const reconciled = reconcileHeadphoneOutputRefresh(
+			mixerState.headphones.active,
+			mixerState.headphones.selected_output_device_id,
+			mixerState.headphones.outputs
+		);
+		if (reconciled.selected_output_device_id === null && mixerState.headphones.selected_output_device_id !== null) {
+			const currentElement = _headphoneNodes?.element;
+			if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
+		}
+		mixerState.headphones.active = reconciled.active;
+		mixerState.headphones.selected_output_device_id = reconciled.selected_output_device_id;
 		mixerState.headphones.error = null;
 	}
 

@@ -194,6 +194,25 @@ test('headphone cue/master mix uses equal-power gains and validates serializable
 	);
 });
 
+test('headphone output refresh fails closed when browser device IDs rotate', () => {
+	assert.deepEqual(
+		audio.reconcileHeadphoneOutputRefresh(
+			true,
+			'rotated-device-id',
+			[{ id: 'current-device-id', label: 'USB Headphones' }]
+		),
+		{ active: false, selected_output_device_id: null }
+	);
+	assert.deepEqual(
+		audio.reconcileHeadphoneOutputRefresh(
+			true,
+			'current-device-id',
+			[{ id: 'current-device-id', label: 'USB Headphones' }]
+		),
+		{ active: true, selected_output_device_id: 'current-device-id' }
+	);
+});
+
 test('headphone selection declares sink, stream attach, play, then publish and rejects stale ownership', async () => {
 	assert.deepEqual(audio.headphoneSelectionStages(), ['setSinkId', 'attachStream', 'play', 'publish']);
 	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, true), true);
