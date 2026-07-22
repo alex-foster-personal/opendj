@@ -5,7 +5,7 @@
 	// Q, BEAT SYNC, MASTER, MT, jog readouts + position tick.
 	// INERT (tooltip 'not implemented - see PARITY-TODO'): KEY SYNC, key
 	// nudge arrows, HOT CUE dropdown, grid-adjust stacks, SLIP, AU, MA,
-	// stems, pitch range.
+	// pitch range. Stems are live only for validated real Demucs artifacts.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
@@ -15,7 +15,7 @@
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import type { DeckId, DeckState } from '$lib/rb/types';
+	import type { DeckId, DeckState, StemControl } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
 	import JogDial from './deck/JogDial.svelte';
@@ -91,6 +91,24 @@
 			enabled: !deck.master_tempo_enabled
 		});
 	}
+
+	async function toggleStemMute(stem: StemControl): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'stem_mute',
+			deck: deckId,
+			stem,
+			muted: !deck.stems.controls[stem].muted
+		});
+	}
+
+	async function toggleStemSolo(stem: StemControl): Promise<void> {
+		await runPerformanceCommandFromUi({
+			type: 'stem_solo',
+			deck: deckId,
+			stem,
+			solo: !deck.stems.controls[stem].solo
+		});
+	}
 </script>
 
 <section class="rb-deck rb-panel" data-deck={deckId} data-command-pending={pending}>
@@ -153,7 +171,12 @@
 		/>
 	</div>
 
-	<StemRow inertTip={INERT_TIP} />
+	<StemRow
+		{deck}
+		{pending}
+		onMute={toggleStemMute}
+		onSolo={toggleStemSolo}
+	/>
 
 	{#if controlError !== null}
 		<div class="deck-error" role="alert" data-performance-error={deckId} title={controlError}>

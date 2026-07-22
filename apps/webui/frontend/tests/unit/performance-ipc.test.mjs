@@ -27,12 +27,57 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 		[2]
 	);
 	assert.deepEqual(
+		ipc.performanceCommandQueueScopes({
+			type: 'stem_mute',
+			deck: 2,
+			stem: 'instrumental',
+			muted: true
+		}),
+		[2]
+	);
+	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'seek', deck: 3, position_ms: 1000 }),
 		[3, 'sync']
 	);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'crossfader', value: 0.3 }), null);
+});
+
+test('stem commands are strict typed IPC and default state never claims artifacts exist', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const state = ipc.queryPerformanceState();
+		assert.equal(state.decks[1].stems.status, 'unavailable');
+		assert.deepEqual(state.decks[1].stems.controls, {
+			vocal: { muted: false, solo: false },
+			instrumental: { muted: false, solo: false },
+			drums: { muted: false, solo: false }
+		});
+
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_mute',
+				deck: 1,
+				stem: 'mix',
+				muted: true
+			}),
+			/stem must be vocal, instrumental, or drums/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'stem_solo',
+				deck: 1,
+				stem: 'vocal',
+				solo: 'yes'
+			}),
+			/solo must be boolean/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
 });
 
 test('continuous mixer controls execute through IPC immediately and round-trip in query state', async () => {

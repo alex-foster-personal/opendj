@@ -1812,6 +1812,72 @@
         "title": "SmartlistTracks",
         "type": "object"
       },
+      "StemManifestOut": {
+        "description": "Frontend manifest projected from a stricter durable artifact manifest.",
+        "properties": {
+          "channel_count": {
+            "title": "Channel Count",
+            "type": "integer"
+          },
+          "frame_count": {
+            "title": "Frame Count",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "parts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/StemPartOut"
+            },
+            "title": "Parts",
+            "type": "object"
+          },
+          "sample_rate_hz": {
+            "title": "Sample Rate Hz",
+            "type": "integer"
+          },
+          "schema": {
+            "default": 1,
+            "title": "Schema",
+            "type": "integer"
+          },
+          "source": {
+            "default": "demucs",
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "model",
+          "sample_rate_hz",
+          "frame_count",
+          "channel_count",
+          "parts"
+        ],
+        "title": "StemManifestOut",
+        "type": "object"
+      },
+      "StemPartOut": {
+        "description": "A validated standard part, available from the paired file endpoint.",
+        "properties": {
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_type"
+        ],
+        "title": "StemPartOut",
+        "type": "object"
+      },
       "SuggestNextIn": {
         "properties": {
           "explain": {
@@ -4735,6 +4801,94 @@
         "summary": "Get Track Rb Meta",
         "tags": [
           "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems": {
+      "get": {
+        "description": "Return a stored v1 manifest only after all four files prove alignment.",
+        "operationId": "get_stem_manifest_api_v1_tracks__stable_id__stems_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemManifestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stem Manifest",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/{part}": {
+      "get": {
+        "description": "Stream one validated WAV stem from its already-verified file handle.",
+        "operationId": "get_stem_file_api_v1_tracks__stable_id__stems__part__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "part",
+            "required": true,
+            "schema": {
+              "title": "Part",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stem File",
+        "tags": [
+          "stems"
         ]
       }
     },

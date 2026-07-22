@@ -340,6 +340,102 @@ export async function fetchAudioArrayBuffer(stable_id: string): Promise<ArrayBuf
 	return r.arrayBuffer();
 }
 
+// ------------------------------------------------ precomputed Demucs stems
+
+export const DEMUCS_STEM_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
+export type DemucsStemPart = (typeof DEMUCS_STEM_PARTS)[number];
+
+export interface StemArtifactManifest {
+	schema: 1;
+	stable_id: string;
+	source: 'demucs';
+	model: string;
+	sample_rate_hz: number;
+	frame_count: number;
+	channel_count: number;
+	parts: Record<DemucsStemPart, { media_type: 'audio/wav' }>;
+}
+
+export type StemArtifactProbe =
+	| { status: 'ready'; manifest: StemArtifactManifest }
+	| { status: 'unavailable'; error: string };
+
+function _validateStemManifest(raw: unknown, stableId: string): StemArtifactManifest {
+	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+		throw new TypeError('stem manifest must be an object');
+	}
+	const manifest = raw as Partial<StemArtifactManifest>;
+	if (manifest.schema !== 1) throw new Error(`stem manifest schema must be 1, got ${String(manifest.schema)}`);
+	if (manifest.stable_id !== stableId) {
+		throw new Error(`stem manifest stable_id mismatch: expected ${stableId}, got ${String(manifest.stable_id)}`);
+	}
+	if (manifest.source !== 'demucs') {
+		throw new Error(`stem manifest source must be demucs, got ${String(manifest.source)}`);
+	}
+	if (typeof manifest.model !== 'string' || manifest.model.trim() === '') {
+		throw new Error('stem manifest model must be a non-empty string');
+	}
+	for (const field of ['sample_rate_hz', 'frame_count', 'channel_count'] as const) {
+		const value = manifest[field];
+		if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+			throw new Error(`stem manifest ${field} must be a positive integer`);
+		}
+	}
+	if (typeof manifest.parts !== 'object' || manifest.parts === null || Array.isArray(manifest.parts)) {
+		throw new Error('stem manifest parts must be an object');
+	}
+	const partKeys = Object.keys(manifest.parts).sort();
+	const expectedPartKeys = [...DEMUCS_STEM_PARTS].sort();
+	if (
+		partKeys.length !== expectedPartKeys.length ||
+		partKeys.some((key, index) => key !== expectedPartKeys[index])
+	) {
+		throw new Error(`stem manifest parts must contain exactly ${expectedPartKeys.join(', ')}`);
+	}
+	for (const part of DEMUCS_STEM_PARTS) {
+		if (manifest.parts[part]?.media_type !== 'audio/wav') {
+			throw new Error(`stem manifest ${part} media_type must be audio/wav`);
+		}
+	}
+	return manifest as StemArtifactManifest;
+}
+
+/** Probe the optional precomputed artifact capability. A 404 is published as
+ * explicit unavailable state; malformed or broken artifacts still reject. */
+export async function probeStemArtifact(stableId: string): Promise<StemArtifactProbe> {
+	try {
+		const raw = await _fetchJson<unknown>(
+			`/api/v1/tracks/${encodeURIComponent(stableId)}/stems`
+		);
+		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
+	} catch (error) {
+		if (error instanceof RbApiError && error.status === 404) {
+			return { status: 'unavailable', error: error.message };
+		}
+		throw error;
+	}
+}
+
+export function stemAudioUrl(stableId: string, part: DemucsStemPart): string {
+	return (
+		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/stems/` +
+		encodeURIComponent(part)
+	);
+}
+
+export async function fetchStemAudioArrayBuffers(
+	stableId: string
+): Promise<Record<DemucsStemPart, ArrayBuffer>> {
+	const entries = await Promise.all(
+		DEMUCS_STEM_PARTS.map(async (part) => {
+			const response = await fetch(stemAudioUrl(stableId, part));
+			if (!response.ok) await _throwRbApiError(response);
+			return [part, await response.arrayBuffer()] as const;
+		})
+	);
+	return Object.fromEntries(entries) as Record<DemucsStemPart, ArrayBuffer>;
+}
+
 // --------------------------------------------- voice probe (text-command-entry)
 
 /** POST /voice/probe response shape (apps/webui/server/routes/voice_probe.py). */

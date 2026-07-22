@@ -37,6 +37,7 @@ from .routes import rb_assets as rb_assets_routes
 from .routes import reconcile as reconcile_routes
 from .routes import settings as settings_routes
 from .routes import smartlists as smartlists_routes
+from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
 from .routes import voice_probe as voice_probe_routes
 
@@ -151,6 +152,7 @@ def create_app(
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)
     app.include_router(smartlists_routes.router, prefix=api_prefix)
+    app.include_router(stems_routes.router, prefix=api_prefix)
     app.include_router(reconcile_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
