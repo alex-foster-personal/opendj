@@ -19,6 +19,11 @@
  */
 
 import { initMidi } from '$lib/rb/midi/webmidi.svelte';
+import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
+
+// Device maps must be registered before initMidi resolves connected ports,
+// else every device falls through to "no map - learn log only". Register once.
+let _mapsRegistered = false;
 
 export const midiUi: {
 	panelOpen: boolean;
@@ -45,6 +50,10 @@ export async function requestMidiAccess(): Promise<void> {
 	midiUi.lastError = null;
 	midiUi.requestPending = true;
 	try {
+		if (!_mapsRegistered) {
+			registerAllDeviceMaps();
+			_mapsRegistered = true;
+		}
 		await initMidi();
 	} catch (exc) {
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
