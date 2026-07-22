@@ -105,12 +105,13 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
         registry = actions.default_registry()
         response = registry.dispatch(intent, ctx)
 
+    browser_search_published = intent.kind == "SEARCH" and response.published
     return VoiceProbeResponse(
         transcript=body.text,
         intent=intent.kind,
         slots=intent.slots,
         blocked=False,
         reply=response.reply,
-        client_action="browser_search" if intent.kind == "SEARCH" else None,
-        probe_only=intent.kind != "SEARCH",
+        client_action="browser_search" if browser_search_published else None,
+        probe_only=not browser_search_published,
     )
