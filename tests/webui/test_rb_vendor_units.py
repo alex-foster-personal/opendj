@@ -12,11 +12,14 @@ Regression one-liners:
   - if _peak_downsample_cols isn't a per-bucket max (transient-preserving) then broken
   - if keep_by_availability doesn't map all/true/false explicitly then broken
   - if a crash mid anlz-cache write can leave truncated JSON behind then broken
+  - if concurrent anlz-cache writers can corrupt staging or fail then broken
 """
 from __future__ import annotations
 
 import json
 import struct
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -188,6 +191,33 @@ def test_interrupted_cache_write_never_truncates(
     assert cache_file.read_text(encoding="utf-8") == before
     assert json.loads(before)["payload"] == {"marker": "v1"}
     assert rb_vendor._load_cached_payload("sid", 111.0, 300) == {"marker": "v1"}
+
+
+def test_store_cached_payload_allows_concurrent_writers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    real_write_text = Path.write_text
+    writers_ready = threading.Barrier(2)
+
+    def synchronized_write_text(self: Path, data: str, *args, **kwargs) -> int:
+        written = real_write_text(self, data, *args, **kwargs)
+        writers_ready.wait(timeout=5)
+        return written
+
+    monkeypatch.setattr(Path, "write_text", synchronized_write_text)
+    writes = [(300, {"marker": "v1"}), (600, {"marker": "v2"})]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(rb_vendor._store_cached_payload, "sid", 111.0, points, payload)
+            for points, payload in writes
+        ]
+        errors = [future.exception(timeout=5) for future in futures]
+
+    assert errors == [None, None]
+    cache_entry = json.loads(rb_vendor._cache_path("sid").read_text(encoding="utf-8"))
+    assert (cache_entry["points"], cache_entry["payload"]) in writes
+    assert list((tmp_path / "anlz-cache").glob("*.tmp")) == []
 
 
 # ----- keep_by_availability ------------------------------------------------------
