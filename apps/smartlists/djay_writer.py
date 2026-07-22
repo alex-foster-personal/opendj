@@ -371,6 +371,7 @@ class DjayPlaylistWriter:
                     "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
                 )}
                 current: list[str] = []
+                native_current: list[str] = []
                 for rowid in rowids:
                     djay_uuid = row_to_uuid.get(rowid)
                     if djay_uuid is None:
@@ -379,6 +380,7 @@ class DjayPlaylistWriter:
                     if stable_id is None:
                         raise RuntimeError(f"djay: target {playlist_id!r} has unmapped UUID {djay_uuid!r}")
                     current.append(stable_id)
+                    native_current.append(str(djay_uuid))
                 actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("djay: target revision changed before transaction")
@@ -399,7 +401,7 @@ class DjayPlaylistWriter:
                     backup = WritebackBackup(online_backup(snapshot, "djay"))
                 target = list(native_members)
                 post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, post_revision)
+                write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, native_current, post_revision)
                 result = _apply_single_op(con, {
                     "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": playlist_id,
                     "target_members": [{"djay_uuid": item} for item in target],
@@ -455,11 +457,11 @@ class DjayPlaylistWriter:
                 actual = hashlib.sha256(json.dumps({"target_id": target_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("djay: rollback target revision conflict")
-                preimage = read_reversal("djay", backup_id, self.djay_db_path, target_id, expected_target_revision)
-                restored_revision = hashlib.sha256(json.dumps({"target_id": target_id, "members": preimage}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                stable_preimage, native_preimage = read_reversal("djay", backup_id, self.djay_db_path, target_id, expected_target_revision)
+                restored_revision = hashlib.sha256(json.dumps({"target_id": target_id, "members": stable_preimage}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 result = _apply_single_op(con, {
                     "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": target_id,
-                    "target_members": [{"djay_uuid": item} for item in self._resolve_or_raise(preimage)],
+                    "target_members": [{"djay_uuid": item} for item in native_preimage],
                 }, leaf_type_byte=self.leaf_type_byte)
                 if result.status == "failed":
                     raise PlaylistApplyError(result.message)

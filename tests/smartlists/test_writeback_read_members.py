@@ -18,6 +18,7 @@ import pytest
 
 from apps.smartlists.djay_writer import (
     DjayPlaylistWriter,
+    _find_djay_playlist_by_id,
     _resolve_stable_id_for_djay,
 )
 from apps.smartlists.rb_writer import RBPlaylistWriter, _resolve_stable_id_for_rb
@@ -251,3 +252,33 @@ class TestDjayReadMembers:
         with pytest.raises(OSError, match="disk full"):
             writer.apply_with_backup_by_id(playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, lambda: None)
         assert writer.read_members_by_id(playlist_id) == ["sid-1"]
+
+    def test_rollback_uses_stable_cas_but_restores_exact_native_preimage(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
+        from apps.smartlists import writeback_backup
+
+        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
+        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
+        expected = hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        mapping_revision = hashlib.sha256(json.dumps(sorted([
+            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
+        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+        backup, post_revision = writer.apply_with_backup_by_id(
+            playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, lambda: None,
+        )
+
+        assert post_revision == hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": ["sid-1", "sid-2"]}, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        assert writer.restore_backup(backup.backup_id, playlist_id, post_revision) == expected
+
+        con = sqlite3.connect(djay_db)
+        try:
+            _id, rowids = _find_djay_playlist_by_id(con, playlist_id) or pytest.fail("playlist missing")
+            row_to_uuid = dict(con.execute("SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"))
+            assert [row_to_uuid[rowid] for rowid in rowids] == ["dj-uuid-100"]
+        finally:
+            con.close()

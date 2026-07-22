@@ -28,15 +28,16 @@ def reversal_path(vendor: str, backup_id: str) -> Path:
 
 def write_reversal(
     vendor: str, backup_id: str, target_path: Path, target_id: str,
-    preimage: list[str], post_apply_revision: str,
+    stable_preimage: list[str], native_preimage: list[str], post_apply_revision: str,
 ) -> None:
-    """Persist a target-scoped reversal record beside disaster-recovery evidence."""
+    """Persist stable and native preimages for one exact reversible target."""
     canonical_target = target_path.resolve(strict=True)
     destination = reversal_path(vendor, backup_id)
     temporary = destination.with_name(f".{destination.name}.tmp")
     payload = json.dumps({
         "backup_id": backup_id, "vendor": vendor, "target_path": str(canonical_target), "target_id": target_id,
-        "preimage": preimage, "post_apply_revision": post_apply_revision,
+        "stable_preimage": stable_preimage, "native_preimage": native_preimage,
+        "post_apply_revision": post_apply_revision,
     }, sort_keys=True)
     with temporary.open("w", encoding="utf-8") as handle:
         handle.write(payload)
@@ -45,7 +46,9 @@ def write_reversal(
     os.replace(temporary, destination)
 
 
-def read_reversal(vendor: str, backup_id: str, target_path: Path, target_id: str, expected_revision: str) -> list[str]:
+def read_reversal(
+    vendor: str, backup_id: str, target_path: Path, target_id: str, expected_revision: str,
+) -> tuple[list[str], list[str]]:
     """Load one exact reversal record or reject it before a vendor mutation."""
     path = reversal_path(vendor, backup_id)
     if not path.exists():
@@ -54,10 +57,13 @@ def read_reversal(vendor: str, backup_id: str, target_path: Path, target_id: str
     expected = {"backup_id": backup_id, "vendor": vendor, "target_path": str(target_path.resolve(strict=True)), "target_id": target_id, "post_apply_revision": expected_revision}
     if any(data.get(key) != value for key, value in expected.items()):
         raise RuntimeError(f"{vendor}: reversal metadata does not bind this exact target and revision")
-    preimage = data.get("preimage")
-    if not isinstance(preimage, list) or not all(isinstance(item, str) for item in preimage):
-        raise RuntimeError(f"{vendor}: reversal preimage is malformed")
-    return preimage
+    stable_preimage = data.get("stable_preimage")
+    native_preimage = data.get("native_preimage")
+    if not isinstance(stable_preimage, list) or not all(isinstance(item, str) for item in stable_preimage):
+        raise RuntimeError(f"{vendor}: stable reversal preimage is malformed")
+    if not isinstance(native_preimage, list) or not all(isinstance(item, str) for item in native_preimage):
+        raise RuntimeError(f"{vendor}: native reversal preimage is malformed")
+    return stable_preimage, native_preimage
 
 
 def online_backup(source: sqlite3.Connection, vendor: str) -> str:

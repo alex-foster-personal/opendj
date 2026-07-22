@@ -46,8 +46,8 @@ def test_reversal_metadata_is_bound_to_one_exact_vendor_target_and_revision(monk
     writeback_backup.WRITEBACK_BACKUP_DIR.mkdir()
     target = tmp_path / "live.db"
     target.touch()
-    writeback_backup.write_reversal("djay", "r1", target, "playlist-a", ["a"], "post-revision")
-    assert writeback_backup.read_reversal("djay", "r1", target, "playlist-a", "post-revision") == ["a"]
+    writeback_backup.write_reversal("djay", "r1", target, "playlist-a", ["a"], ["native-a"], "post-revision")
+    assert writeback_backup.read_reversal("djay", "r1", target, "playlist-a", "post-revision") == (["a"], ["native-a"])
     try:
         other = tmp_path / "other.db"
         other.touch()

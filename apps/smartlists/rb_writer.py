@@ -306,6 +306,12 @@ class RBPlaylistWriter:
             try:
                 session.expire_all()
                 before = self.read_members_by_id(playlist_id)
+                before_playlist = self._find_playlist_by_id(playlist_id)
+                if before_playlist is None:
+                    raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
+                before_songs = list(getattr(before_playlist, "Songs", []) or [])
+                before_songs.sort(key=lambda song: (getattr(song, "TrackNo", 0) or 0))
+                native_before = [str(song.ContentID) for song in before_songs]
                 actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": before}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("rekordbox: target revision changed before transaction")
@@ -324,9 +330,8 @@ class RBPlaylistWriter:
                 assert_source_current()
                 with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
                     backup = WritebackBackup(online_backup(snapshot, "rekordbox"))
-                post_members = list(stable_members)
-                post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": post_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, post_revision)
+                post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, native_before, post_revision)
                 playlist = self._find_playlist_by_id(playlist_id)
                 if playlist is None:
                     raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
@@ -372,8 +377,8 @@ class RBPlaylistWriter:
                 actual = hashlib.sha256(json.dumps({"target_id": target_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("rekordbox: rollback target revision conflict")
-                preimage = read_reversal("rekordbox", backup_id, self.live_db_path, target_id, expected_target_revision)
-                restored_revision = hashlib.sha256(json.dumps({"target_id": target_id, "members": preimage}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                stable_preimage, native_preimage = read_reversal("rekordbox", backup_id, self.live_db_path, target_id, expected_target_revision)
+                restored_revision = hashlib.sha256(json.dumps({"target_id": target_id, "members": stable_preimage}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 playlist = self._find_playlist_by_id(target_id)
                 if playlist is None:
                     raise RuntimeError(f"rekordbox: playlist ID {target_id!r} not found")
@@ -381,7 +386,7 @@ class RBPlaylistWriter:
                     self.db.delete(song)
                 session.flush()
                 now = datetime.datetime.now()
-                for number, content_id in enumerate(self._resolve_or_raise(preimage), start=1):
+                for number, content_id in enumerate(native_preimage, start=1):
                     self.db.add(tables.DjmdSongPlaylist.create(
                         ID=str(uuid4()), UUID=str(uuid4()), PlaylistID=str(playlist.ID),
                         ContentID=str(content_id), TrackNo=number, created_at=now, updated_at=now,

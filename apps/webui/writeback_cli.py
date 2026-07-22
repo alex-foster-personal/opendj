@@ -52,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     _target_args(apply)
     apply.add_argument("--plan-token", required=True)
     apply.add_argument("--confirm", action="store_true")
+    apply.add_argument("--dry-run", action="store_true")
     rollback = commands.add_parser("rollback")
     rollback.add_argument("playlist_id")
     _target_args(rollback)
@@ -76,11 +77,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "plan":
             result = _request(args.base_url, "GET", f"{root}/plan?{target_query}&{urlencode({'target_id': args.target_id})}")
         elif args.command == "apply":
-            if not args.confirm:
-                raise RuntimeError("apply refuses without --confirm")
+            if not args.confirm and not args.dry_run:
+                raise RuntimeError("apply refuses without --confirm or --dry-run")
             result = _request(args.base_url, "POST", f"{root}/apply", {
                 "vendor": args.vendor, "target_mode": args.target_mode, "target_path": args.target_path,
-                "target_id": args.target_id, "plan_token": args.plan_token, "dry_run": False, "confirmed": True,
+                "target_id": args.target_id, "plan_token": args.plan_token,
+                "dry_run": args.dry_run, "confirmed": args.confirm,
             })
         else:
             if not args.confirm:
