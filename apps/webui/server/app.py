@@ -25,6 +25,7 @@ from apps.sets.api import router as sets_router
 
 from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
+from .cloud_sync import probe_syncthing_status
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import analysis as analysis_routes
 from .routes import copilot as copilot_routes
@@ -203,6 +204,7 @@ def _build_default_app() -> FastAPI:
         backend = None
     return create_app(
         backend=backend, bind_host=bind_host, hostname=hostname,
+        syncthing_status_fn=probe_syncthing_status,
     )
 
 
