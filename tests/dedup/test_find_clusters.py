@@ -195,6 +195,48 @@ def test_idempotent_outcomes(
     assert shape(first) == shape(second)
 
 
+@pytest.mark.requirement("META-03")
+def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
+    db = tmp_path / "phase7.sqlite"
+    canonical = Fingerprint(
+        path=tmp_path / "canonical.flac",
+        duration=180.0,
+        fp_str="same-fingerprint",
+        size=2_000,
+        mtime=100.0,
+        bitrate=320,
+    )
+    alias = Fingerprint(
+        path=tmp_path / "alias.mp3",
+        duration=190.0,
+        fp_str="same-fingerprint",
+        size=1_000,
+        mtime=200.0,
+        bitrate=128,
+    )
+    cache = FingerprintCache(db)
+    cache.put(canonical, stable_id="canonical-sid")
+    cache.put(alias, stable_id="alias-sid")
+
+    outcomes = fc_mod.run_find_clusters(
+        db_path=db,
+        threshold=0.9,
+        duration_delta_s=3.0,
+        roots=[tmp_path],
+        clusters_csv=tmp_path / "clusters.csv",
+        manual_review_csv=tmp_path / "manual.csv",
+        fingerprints=[canonical, alias],
+    )
+
+    assert len(outcomes) == 1
+    assert outcomes[0].flagged_manual_review is True
+    with sqlite3.connect(db) as conn:
+        stored = conn.execute(
+            "SELECT flagged_manual_review FROM duplicate_clusters"
+        ).fetchone()
+    assert stored == (1,)
+
+
 # ---------------------------------------------------------------- CLI smoke
 
 

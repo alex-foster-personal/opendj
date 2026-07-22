@@ -513,6 +513,96 @@
         "title": "BulkEditRowOut",
         "type": "object"
       },
+      "ClusterOut": {
+        "properties": {
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flagged_manual_review": {
+            "title": "Flagged Manual Review",
+            "type": "boolean"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberOut"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "survivor_stable_id": {
+            "title": "Survivor Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "cluster_key",
+          "survivor_stable_id",
+          "rationale",
+          "flagged_manual_review",
+          "members"
+        ],
+        "title": "ClusterOut",
+        "type": "object"
+      },
+      "ClustersOut": {
+        "properties": {
+          "clusters": {
+            "items": {
+              "$ref": "#/components/schemas/ClusterOut"
+            },
+            "title": "Clusters",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clusters",
+          "revision"
+        ],
+        "title": "ClustersOut",
+        "type": "object"
+      },
       "CommitIn": {
         "additionalProperties": false,
         "properties": {
@@ -603,6 +693,116 @@
           "energy"
         ],
         "title": "CopilotTrackOut",
+        "type": "object"
+      },
+      "DecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "merge",
+              "keep-all",
+              "skip"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_key",
+          "survivor",
+          "action"
+        ],
+        "title": "DecisionIn",
+        "type": "object"
+      },
+      "DecisionOut": {
+        "properties": {
+          "action": {
+            "enum": [
+              "merge",
+              "keep-all",
+              "skip"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "decided_at": {
+            "title": "Decided At",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_key",
+          "survivor",
+          "action",
+          "decided_at"
+        ],
+        "title": "DecisionOut",
+        "type": "object"
+      },
+      "DecisionRecordOut": {
+        "properties": {
+          "action": {
+            "enum": [
+              "merge",
+              "keep-all",
+              "skip"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_id": {
+            "title": "Cluster Id",
+            "type": "integer"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "decided_at": {
+            "title": "Decided At",
+            "type": "string"
+          },
+          "pending_apply": {
+            "default": true,
+            "title": "Pending Apply",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "cluster_key",
+          "survivor",
+          "action",
+          "decided_at",
+          "revision"
+        ],
+        "title": "DecisionRecordOut",
         "type": "object"
       },
       "ErrorBody": {
@@ -1153,6 +1353,118 @@
           }
         },
         "title": "LinksPatchIn",
+        "type": "object"
+      },
+      "MemberOut": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "file_exists": {
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "is_canonical": {
+            "title": "Is Canonical",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "path",
+          "is_canonical",
+          "similarity",
+          "title",
+          "artist",
+          "bpm",
+          "key",
+          "duration_ms",
+          "rating",
+          "file_exists"
+        ],
+        "title": "MemberOut",
         "type": "object"
       },
       "MembershipReplaceIn": {
@@ -4735,6 +5047,122 @@
         "summary": "Suggest Next Route",
         "tags": [
           "copilot"
+        ]
+      }
+    },
+    "/api/v1/dedup/clusters": {
+      "get": {
+        "operationId": "get_dedup_clusters_api_v1_dedup_clusters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClustersOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The persisted decision store is unreadable or invalid"
+          }
+        },
+        "summary": "Get Dedup Clusters",
+        "tags": [
+          "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/dedup/clusters/{cluster_id}/decision": {
+      "post": {
+        "description": "Persist a pending review decision without applying a merge.",
+        "operationId": "post_dedup_decision_api_v1_dedup_clusters__cluster_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster_id",
+            "required": true,
+            "schema": {
+              "title": "Cluster Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Decision-store ETag returned by GET /api/v1/dedup/clusters",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionRecordOut"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The decision revision or stable cluster identity is stale",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the exact decision-store bytes",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "428": {
+            "description": "If-Match is required for every decision write"
+          }
+        },
+        "summary": "Post Dedup Decision",
+        "tags": [
+          "dedup-review"
         ]
       }
     },

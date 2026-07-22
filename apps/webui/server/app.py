@@ -30,6 +30,7 @@ from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import analysis as analysis_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import copilot as copilot_routes
+from .routes import dedup_review as dedup_review_routes
 from .routes import health as health_routes
 from .routes import find_replace as find_replace_routes
 from .routes import mytag as mytag_routes
@@ -162,6 +163,7 @@ def create_app(
     app.include_router(play_it_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
+    app.include_router(dedup_review_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)
