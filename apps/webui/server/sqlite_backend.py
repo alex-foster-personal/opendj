@@ -10,16 +10,30 @@ shape is projected from the normalized Phase 5 schema:
     ``notes``, ``last_played_at``) come from the ``track_fields`` EAV
     table.
 
+Writes: ``update_track`` (PATCH /tracks/{stable_id} -- rating / notes /
+tags) goes through Phase 5's single supported mutation surface,
+:class:`apps.shared.state.writer.StateWriter`. Each accepted patch lands
+in ``track_fields`` with provenance (``source='webui'``,
+``confidence=1.0``) plus a ``track.field.set`` row in ``events``, so
+edits survive a daemon restart. There is NO in-memory fallback on this
+path: writer/lock failures raise.
+
 Phase 5 does NOT (yet) model:
 
   * the webui ``pairings`` entity,
-  * the triage ``queues`` (dedup / bad_beatgrid / auto_cue),
-  * writes with optimistic concurrency (If-Match / ETag).
+  * the triage ``queues`` (dedup / bad_beatgrid / auto_cue).
 
 For those methods we delegate to an :class:`InMemoryBackend` companion and
 log a one-shot warning per process so deployments know they are on the
 fallback path. When Phase 6/7/12 ship the missing tables, individual
 methods here should switch to real SQL without the fallback.
+
+ETag derivation: the projected ``Track.updated_at`` is the LATEST of the
+``tracks`` row's ``updated_at`` and every ``track_fields.modified_at``
+for that track ("effective updated_at"). ``StateWriter.set_field`` does
+not touch the identity row, so deriving the etag input from the field
+stamps is what makes a PATCH advance the etag -- and, because it is pure
+projection, the same etag is re-derived after restart.
 """
 from __future__ import annotations
 
@@ -28,17 +42,19 @@ import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
-from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional, Sequence
 
 from apps.shared.state import db as _state_db
+from apps.shared.state.writer import StateWriter
 
 from .backend import (
-    InMemoryBackend, MAX_LIMIT, NotFoundError,
+    BackendError, ConflictError, InMemoryBackend, MAX_LIMIT, NotFoundError,
     Page, Pairing, Playlist, Provenance, QueueItem, QueueKind, Source,
     StateBackend, Track, TrackFilter,
 )
+from .etag import compute_etag, strip_quotes
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +90,39 @@ def _reset_warnings_for_tests() -> None:
 _EAV_FIELDS: tuple[str, ...] = (
     "bpm", "key", "rating", "tags", "notes", "last_played_at",
 )
+
+
+def _parse_rfc3339(ts: str) -> datetime:
+    """Parse an RFC 3339 timestamp (``Z`` or ``+00:00`` form). Fail fast.
+
+    Naive timestamps are treated as UTC (legacy fixture rows). Anything
+    unparseable raises ``ValueError`` -- no silent clock guessing.
+    """
+    raw = ts[:-1] + "+00:00" if ts.endswith("Z") else ts
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _effective_updated_at(
+    row_updated_at: str,
+    fields: dict[str, tuple[Any, str, Optional[float], str]],
+) -> str:
+    """Latest of the row ``updated_at`` and every field ``modified_at``.
+
+    This is the etag input (see module docstring): field-only writes via
+    ``StateWriter.set_field`` must advance the etag even though they never
+    touch the ``tracks`` identity row. Returns the original string of the
+    winning stamp so the derivation is byte-stable across restarts.
+    """
+    best = row_updated_at
+    best_dt = _parse_rfc3339(row_updated_at)
+    for _value, _source, _confidence, modified_at in fields.values():
+        dt = _parse_rfc3339(modified_at)
+        if dt > best_dt:
+            best, best_dt = modified_at, dt
+    return best
 
 
 def _row_to_track(
@@ -145,7 +194,7 @@ def _row_to_track(
         last_played_at=last_played_at,
         file_path=row["file_path"],
         created_at=row["created_at"],
-        updated_at=row["updated_at"],
+        updated_at=_effective_updated_at(row["updated_at"], fields),
         provenance=provenance,
     )
 
@@ -190,13 +239,13 @@ def _fetch_fields(
 
 
 class SqliteBackend:
-    """Read-focused StateBackend backed by Phase 5's ``state.db``.
+    """StateBackend backed by Phase 5's ``state.db``.
 
+    Reads project the normalized schema; ``update_track`` writes through
+    :class:`apps.shared.state.writer.StateWriter` (see module docstring).
     The constructor takes the path to ``state.db`` and a companion
-    :class:`InMemoryBackend` used for:
-
-      * unimplemented writes,
-      * entities Phase 5 does not yet model (``pairings``, queues).
+    :class:`InMemoryBackend` used only for entities Phase 5 does not yet
+    model (``pairings``, queues).
 
     The companion can be pre-seeded in tests to exercise fallback paths.
     """
@@ -209,14 +258,14 @@ class SqliteBackend:
     ) -> None:
         self._path = Path(state_db_path)
         self._fallback = fallback if fallback is not None else InMemoryBackend()
-        # Serialise compound read-then-write paths (e.g. update_track, which
-        # reads via self.get_track / seeds the fallback / then hands off to
-        # InMemoryBackend.update_track for the ETag CAS). Without this lock,
-        # two concurrent writers race between the unlocked get_track read
-        # and the fallback update, so a second caller reseeds the fallback
-        # from a stale sqlite row and overwrites the first caller's write
-        # with the old value (lost update). Adversarial R4 finding.
+        # Serialise the read-CAS-write sequence in update_track. Without
+        # this lock two in-process callers could both pass the etag CAS
+        # against the same snapshot and both commit (lost-update on the
+        # second write's history ordering). Adversarial R4 finding kept
+        # from the fallback era; cross-process CAS is still last-write-wins
+        # (single-daemon deployment assumption; cloud lock gates peers).
         self._write_lock = threading.RLock()
+        self._sqlite_last_writer: tuple[str, str] | None = None
 
     # --- connection helper ------------------------------------------------
     @contextmanager
@@ -448,43 +497,65 @@ class SqliteBackend:
             "pairings": fb.get("pairings", 0),
         }
 
-    # --- writes (delegated) ----------------------------------------------
+    # --- writes -----------------------------------------------------------
     def update_track(
         self, stable_id: str, patch: dict[str, Any], *,
         expected_etag: str, source: Source = "webui",
     ) -> Track:
-        _warn_fallback_once(
-            "update_track",
-            "webui writes not yet wired through apps.shared.state.writer",
-        )
-        # Hold the write lock across the read-then-write sequence so a second
-        # caller cannot slip in between self.get_track (unlocked _ro read)
-        # and self._fallback.update_track and overwrite the first caller's
-        # commit with a stale seed. Also avoid reseeding the fallback from
-        # sqlite when the fallback is already ahead: Phase 5 writes still
-        # live in the fallback (sqlite is read-only from here), so if the
-        # fallback carries a later ``updated_at`` it is the authoritative
-        # post-write state; seeding from sqlite would silently clobber the
-        # prior writer's commit and the next CAS would accept a stale
-        # ``expected_etag``. Adversarial R4 finding (TOCTOU on update_track).
+        """Persist a rating / notes / tags patch through ``StateWriter``.
+
+        Contract (ratings-persistence-restart):
+
+          * CAS: ``expected_etag`` must match the etag derived from the
+            current effective ``updated_at`` or ``ConflictError`` raises.
+          * Each changed field lands in ``track_fields`` with provenance
+            ``source=<source>`` (webui for UI PATCHes), ``confidence=1.0``
+            and one ``track.field.set`` event row -- via the Phase 5
+            single-writer chokepoint, never direct SQL.
+          * No in-memory fallback: a locked DB / writer conflict raises
+            ``sqlite3.OperationalError`` after the 5s busy_timeout.
+          * A fresh backend instance (daemon restart) re-reads the same
+            values and re-derives the same etag.
+        """
         with self._write_lock:
+            current = self.get_track(stable_id)  # NotFoundError propagates
+            current_etag = compute_etag(current.stable_id, current.updated_at)
+            if strip_quotes(current_etag) != strip_quotes(expected_etag):
+                raise ConflictError(current=current.to_dict(), etag=current_etag)
+
+            field_writes: dict[str, Any] = {}
+            if "rating" in patch:
+                rating = patch["rating"]
+                if rating is not None and not (0 <= rating <= 5):
+                    raise BackendError("rating must be between 0 and 5")
+                field_writes["rating"] = rating
+            if "notes" in patch:
+                field_writes["notes"] = patch["notes"]
+            if "tags_add" in patch or "tags_remove" in patch:
+                tags = list(current.tags or [])
+                for t in patch.get("tags_add") or []:
+                    if t and t not in tags:
+                        tags.append(t)
+                if patch.get("tags_remove"):
+                    tags = [t for t in tags if t not in patch["tags_remove"]]
+                field_writes["tags"] = tags
+            if not field_writes:
+                # Empty patch: explicit no-op, etag unchanged.
+                return current
+
+            now = datetime.now(timezone.utc).isoformat()
+            conn = _state_db.open_rw(self._path)
             try:
-                current = self.get_track(stable_id)
-            except NotFoundError:
-                raise
-            existing = self._fallback._tracks.get(stable_id)  # type: ignore[attr-defined]
-            # Seed only on cold-start, i.e. fallback has never seen this
-            # track. If ``existing`` is already present, trust it: the
-            # fallback is the authoritative post-write state (sqlite is
-            # read-only from this code path until Phase 5 ships real
-            # writes). The CAS inside ``_fallback.update_track`` will
-            # return ConflictError against a stale ``expected_etag``.
-            if existing is None:
-                self._fallback.seed_track(replace(current))
-            return self._fallback.update_track(
-                stable_id, patch,
-                expected_etag=expected_etag, source=source,
-            )
+                with StateWriter(conn, actor="webui") as writer:
+                    for field_name, value in field_writes.items():
+                        writer.set_field(
+                            stable_id, field_name, value,
+                            source=source, modified_at=now, confidence=1.0,
+                        )
+            finally:
+                conn.close()
+            self._sqlite_last_writer = (source, now)
+            return self.get_track(stable_id)
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
         _warn_fallback_once(
@@ -501,6 +572,8 @@ class SqliteBackend:
         )
 
     def last_writer(self) -> tuple[str, str] | None:
+        if self._sqlite_last_writer is not None:
+            return self._sqlite_last_writer
         return self._fallback.last_writer()
 
 
