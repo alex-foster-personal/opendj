@@ -85,7 +85,7 @@ def _current_etag(backend: InMemoryBackend, stable_id: str) -> str:
 # ------------------------------------------------------------------ candidates
 
 
-@pytest.mark.requirement("RELOC-01")
+@pytest.mark.requirement("RECON-02")
 def test_candidates_finds_basename_match(
     client: TestClient, library: dict[str, Path],
 ) -> None:
@@ -100,7 +100,7 @@ def test_candidates_finds_basename_match(
     assert "basename_exact" in cand["signals"]
 
 
-@pytest.mark.requirement("RELOC-01")
+@pytest.mark.requirement("RECON-02")
 def test_candidates_empty_when_no_music_roots(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -118,7 +118,7 @@ def test_candidates_empty_when_no_music_roots(
     }
 
 
-@pytest.mark.requirement("RELOC-01")
+@pytest.mark.requirement("RECON-02")
 def test_candidates_empty_for_streaming_and_pathless(client: TestClient) -> None:
     for sid in ("t-stream", "t-nopath"):
         r = client.get(f"/api/v1/relocate/candidates/{sid}")
@@ -129,13 +129,13 @@ def test_candidates_empty_for_streaming_and_pathless(client: TestClient) -> None
         assert body["candidates"] == []
 
 
-@pytest.mark.requirement("RELOC-01")
+@pytest.mark.requirement("RECON-02")
 def test_candidates_unknown_track_404(client: TestClient) -> None:
     r = client.get("/api/v1/relocate/candidates/nope")
     assert r.status_code == 404
 
 
-@pytest.mark.requirement("RELOC-01")
+@pytest.mark.requirement("RECON-02")
 def test_candidates_uses_rekordbox_vendor_mapping(
     backend: InMemoryBackend, library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -161,7 +161,7 @@ def test_candidates_uses_rekordbox_vendor_mapping(
 # ------------------------------------------------------------------ apply
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_requires_confirm(client: TestClient, library: dict[str, Path]) -> None:
     r = client.post("/api/v1/relocate/t-gone/apply",
                     json={"new_path": str(library["candidate"]), "confirm": False})
@@ -169,7 +169,7 @@ def test_apply_requires_confirm(client: TestClient, library: dict[str, Path]) ->
     assert r.json()["detail"]["code"] == "CONFIRM_REQUIRED"
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_rejects_nonexistent_candidate_path(
     client: TestClient, tmp_path: Path,
 ) -> None:
@@ -178,7 +178,7 @@ def test_apply_rejects_nonexistent_candidate_path(
     assert r.status_code == 422
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_unknown_track_404(client: TestClient, library: dict[str, Path]) -> None:
     r = client.post("/api/v1/relocate/nope/apply",
                     json={"new_path": str(library["candidate"]), "confirm": True},
@@ -186,7 +186,7 @@ def test_apply_unknown_track_404(client: TestClient, library: dict[str, Path]) -
     assert r.status_code == 404
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_state_layer_requires_if_match(
     client: TestClient, library: dict[str, Path],
 ) -> None:
@@ -195,7 +195,7 @@ def test_apply_state_layer_requires_if_match(
     assert r.status_code == 428
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_state_layer_patches_file_path(
     client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
 ) -> None:
@@ -210,7 +210,7 @@ def test_apply_state_layer_patches_file_path(
     assert backend.get_track("t-gone").file_path == str(library["candidate"])
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_state_layer_stale_etag_conflicts(
     client: TestClient, library: dict[str, Path],
 ) -> None:
@@ -220,7 +220,7 @@ def test_apply_state_layer_stale_etag_conflicts(
     assert r.status_code == 409
 
 
-@pytest.mark.requirement("RELOC-02")
+@pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_branch_503s_without_live_db(
     backend: InMemoryBackend, library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
