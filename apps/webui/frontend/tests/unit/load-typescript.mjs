@@ -8,7 +8,7 @@ let moduleSequence = 0;
 
 /** Bundle one frontend TypeScript module in memory for deterministic unit
  * tests. This avoids Vite's long-lived dependency-optimizer handles. */
-export async function loadTypeScriptModule(relativePath) {
+export async function loadTypeScriptModule(relativePath, { viteApiBase } = {}) {
 	const absolutePath = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
 	const result = await build({
 		entryPoints: [absolutePath],
@@ -17,7 +17,8 @@ export async function loadTypeScriptModule(relativePath) {
 		bundle: true,
 		define: {
 			'$state': 'globalThis.__musicDjToolsTestState',
-			'import.meta.env.VITE_API_BASE': 'undefined'
+			'import.meta.env.VITE_API_BASE':
+				viteApiBase === undefined ? 'undefined' : JSON.stringify(viteApiBase)
 		},
 		format: 'esm',
 		logLevel: 'silent',

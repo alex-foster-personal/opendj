@@ -6,13 +6,14 @@
  *
  * Base URL: mirrors src/lib/api.ts (relative '/api/...' in the browser via
  * the Vite dev proxy / prod same-origin; absolute host during SSR), with a
- * VITE_API_BASE env override supported in THIS file only.
+ * VITE_API_BASE env override shared with the hand-written API client.
  *
  * Fail-fast: every helper checks r.ok and throws RbApiError carrying the
  * backend's explicit {"detail": {code, message}} payload. No silent
  * fallbacks, no invented data.
  */
 
+import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { AnlzData, ArtworkSize, RbMeta } from './types';
 
@@ -34,9 +35,7 @@ export type {
 	TracksPage
 } from '$lib/api';
 
-const DEFAULT_BASE: string = typeof window === 'undefined' ? 'http://127.0.0.1:8585' : '';
-const ENV_BASE: string | undefined = import.meta.env.VITE_API_BASE as string | undefined;
-export const RB_API_BASE: string = ENV_BASE ?? DEFAULT_BASE;
+export const RB_API_BASE: string = API_BASE;
 
 /** Explicit backend error: HTTP status + the contract's detail.code. */
 export class RbApiError extends Error {

@@ -24,11 +24,15 @@
  *   ✔︎ CUE semantics: pause() stores the cue at the pause position;
  *     pressCue() while playing returns-to-cue and pauses; while paused it
  *     jumps the playhead to the cue; play() resumes from there.
- *   ✔︎ Loop: engageBeatLoop(beats) converts beats -> seconds from track bpm;
+ *   ✔︎ ✅ 🎯 Loop: engageBeatLoop(beats) converts beats -> seconds from track bpm;
  *     seamless audio via buffer-source loopStart/loopEnd; UI clock wraps the
  *     position manually with the same bounds.
  *     [if] loop engaged and linear clock passes out point [then] position_ms
  *       wraps to in point, audio does not glitch
+ *     [if] a requested loop end exceeds decoded duration [then] it clamps to
+ *       decoded duration
+ *     [if] a requested loop already fits [then] its endpoints stay exact
+ *     [if] a requested loop starts at decoded duration [then ⛔️] RangeError
  *   ✔︎ Pitch: setPitch validates 0 < ratio and that it fits the selected
  *     +-8 / +-16 / WIDE range; rebases the clock so position stays correct.
  *     [if] setPitch(1.2) while range is 16 [then ⛔️] RangeError
@@ -785,6 +789,33 @@ export function quantizedLoopEndpointsMs(
 		);
 	}
 	return snapped;
+}
+
+/** Bound a valid loop to the decoded audio duration. Overshoot is expected
+ * for a final PQTZ interval that extends past the decoded buffer boundary;
+ * an empty loop remains an explicit error. */
+export function loopEndpointsWithinDurationMs(
+	loop: { in_ms: number; out_ms: number },
+	durationMs: number
+): { in_ms: number; out_ms: number } {
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		throw new RangeError(`decoded duration must be finite and positive, got ${durationMs}`);
+	}
+	if (
+		!Number.isFinite(loop.in_ms) ||
+		!Number.isFinite(loop.out_ms) ||
+		loop.in_ms < 0 ||
+		loop.out_ms <= loop.in_ms
+	) {
+		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
+	}
+	const out_ms = Math.min(loop.out_ms, durationMs);
+	if (out_ms <= loop.in_ms) {
+		throw new RangeError(
+			`loop would be empty at decoded duration ${durationMs}ms, got ${loop.in_ms}..${loop.out_ms}`
+		);
+	}
+	return { in_ms: loop.in_ms, out_ms };
 }
 
 export function exactBeatLoopRangeMs(
@@ -2266,12 +2297,8 @@ class RbAudioEngine implements AudioEngine {
 		const snapped = st.quantize_enabled
 			? quantizedLoopEndpointsMs(_requireBeatGrid(st, 'setLoop quantize'), loop, true)
 			: quantizedLoopEndpointsMs([], loop, false);
-		if (snapped.out_ms > durMs) {
-			throw new RangeError(
-				`setLoop: out_ms must be <= ${Math.round(durMs)}, got ${snapped.out_ms}`
-			);
-		}
-		const nextLoop: LoopState = { ...snapped, engaged: true, beat_length: null };
+		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
+		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
 		if (wasPlaying) {
 			if (_ctx === null) throw new Error('setLoop: audio graph not initialised');
 			await _scheduleDeck(

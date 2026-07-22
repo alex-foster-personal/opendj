@@ -202,6 +202,21 @@ test('central loop quantization snaps both endpoints and rejects collapsed loops
 	);
 });
 
+test('loop endpoints clamp to decoded duration near EOF without hiding an empty loop', () => {
+	assert.deepEqual(
+		audio.loopEndpointsWithinDurationMs({ in_ms: 9_000, out_ms: 13_000 }, 10_000),
+		{ in_ms: 9_000, out_ms: 10_000 }
+	);
+	assert.deepEqual(
+		audio.loopEndpointsWithinDurationMs({ in_ms: 1_000, out_ms: 3_000 }, 10_000),
+		{ in_ms: 1_000, out_ms: 3_000 }
+	);
+	assert.throws(
+		() => audio.loopEndpointsWithinDurationMs({ in_ms: 10_000, out_ms: 13_000 }, 10_000),
+		/empty at decoded duration/i
+	);
+});
+
 test('future-scheduled transport projection starts from the scheduled epoch', () => {
 	assert.equal(
 		audio.projectedTransportPosition({
