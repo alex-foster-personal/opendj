@@ -7,6 +7,7 @@ fan-out contract reserves ``apps/webui/server/app.py`` for the integrator.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -33,11 +34,16 @@ FIXTURE_DB = (
 )
 
 
+def _promote_exclusively_on_test_filesystem(
+    source: Path, destination: Path
+) -> None:
+    """Exercise real no-replace promotion without claiming host USB support."""
+    os.link(source, destination)
+    source.unlink()
+
+
 @pytest.fixture
 def target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    # Exercise the real promotion contract under its supported platform
-    # boundary while the target and volume inspector remain disposable.
-    monkeypatch.setattr(workflow.sys, "platform", "darwin")
     root = tmp_path / "DISPOSABLE-API"
     root.mkdir()
     (root / workflow.DISPOSABLE_MARKER_NAME).write_text(
@@ -61,6 +67,9 @@ def target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             volume_uuid="USB-API",
             authorization_id="api-test",
         ),
+    )
+    monkeypatch.setattr(
+        workflow, "_rename_exclusive", _promote_exclusively_on_test_filesystem
     )
     return root
 

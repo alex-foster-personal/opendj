@@ -13,6 +13,7 @@ fails before any export path is created.
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -57,6 +58,21 @@ def _require_rbox_runtime() -> None:
         )
 
 
+def _promote_exclusively_on_test_filesystem(
+    source: Path, destination: Path
+) -> None:
+    """Exercise real no-replace promotion without claiming host USB support."""
+    os.link(source, destination)
+    source.unlink()
+
+
+@pytest.fixture
+def platform_neutral_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        workflow, "_rename_exclusive", _promote_exclusively_on_test_filesystem
+    )
+
+
 def test_rbox_dependency_contract_is_pinned_for_ci() -> None:
     """Both CI install contracts must provide the tested rbox runtime."""
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
@@ -72,14 +88,7 @@ def test_rbox_dependency_contract_is_pinned_for_ci() -> None:
 
 
 @pytest.fixture
-def disposable_target(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> Path:
-    # Promotion is intentionally supported only on macOS. These tests use a
-    # disposable temp directory and stub the real volume inspector, so run the
-    # promotion contract under its supported platform boundary on every CI OS.
-    monkeypatch.setattr(workflow.sys, "platform", "darwin")
+def disposable_target(tmp_path: Path) -> Path:
     target = tmp_path / "DISPOSABLE-205"
     target.mkdir()
     (target / workflow.DISPOSABLE_MARKER_NAME).write_text(
@@ -134,6 +143,23 @@ def test_real_inspector_refuses_non_macos_without_writing(
 
     assert exc_info.value.code == "platform_unsupported"
     assert list(target.iterdir()) == []
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_exclusive_promotion_refuses_non_macos_without_moving_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str
+) -> None:
+    source = tmp_path / "source.part"
+    destination = tmp_path / "exportLibrary.db"
+    source.write_bytes(b"transaction")
+    monkeypatch.setattr(workflow.sys, "platform", platform)
+
+    with pytest.raises(workflow.UsbExportError, match="macOS only") as exc_info:
+        workflow._rename_exclusive(source, destination)
+
+    assert exc_info.value.code == "platform_unsupported"
+    assert source.read_bytes() == b"transaction"
+    assert not destination.exists()
 
 
 @pytest.mark.parametrize(
@@ -216,7 +242,9 @@ def test_apply_refuses_existing_payload_without_modifying_it(
 
 
 def test_apply_and_readback_real_onelibrary_round_trip(
-    disposable_target: Path, monkeypatch: pytest.MonkeyPatch
+    disposable_target: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform_neutral_promotion: None,
 ) -> None:
     _require_rbox_runtime()
     monkeypatch.setattr(
@@ -291,6 +319,7 @@ def test_cli_plan_apply_readback_uses_same_serializable_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    platform_neutral_promotion: None,
 ) -> None:
     _require_rbox_runtime()
     monkeypatch.setattr(
@@ -404,6 +433,7 @@ def test_promotion_preserves_competing_part_file(
 def test_identity_drift_after_promotion_refuses_rollback_deletion(
     disposable_target: Path,
     monkeypatch: pytest.MonkeyPatch,
+    platform_neutral_promotion: None,
 ) -> None:
     _require_rbox_runtime()
     original = _identity(disposable_target)
@@ -434,6 +464,7 @@ def test_identity_drift_after_promotion_refuses_rollback_deletion(
 def test_oserror_during_mounted_readback_rolls_back_exact_output(
     disposable_target: Path,
     monkeypatch: pytest.MonkeyPatch,
+    platform_neutral_promotion: None,
 ) -> None:
     _require_rbox_runtime()
     identity = _identity(disposable_target)
