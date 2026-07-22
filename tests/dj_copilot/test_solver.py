@@ -42,6 +42,21 @@ def test_orders_full_playlist() -> None:
     assert len(set(result.order)) == len(tracks)
 
 
+def test_duplicate_stable_ids_remain_distinct_playlist_occurrences() -> None:
+    """A playlist membership position, not stable_id, identifies a solver input."""
+    tracks = [
+        TrackFeature("a", "A", 120.0, "8A", 3),
+        TrackFeature("a", "A", 120.0, "8A", 4),
+        TrackFeature("b", "B", 121.0, "9A", 5),
+    ]
+
+    result = suggest_order(tracks=tracks, goal=SetGoal(duration_min=30))
+
+    assert len(result.order) == 3
+    assert sorted(result.order) == ["a", "a", "b"]
+    assert [trace.position for trace in result.per_step_trace] == [0, 1, 2]
+
+
 def test_deterministic_same_inputs() -> None:
     tracks = make_tracks(30, seed=42)
     r1 = suggest_order(tracks=tracks, goal=_goal_peak())

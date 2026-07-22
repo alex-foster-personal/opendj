@@ -47,6 +47,32 @@ def test_solve_order_is_deterministic(client: TestClient) -> None:
     assert first.json()["steps"] == second.json()["steps"]
 
 
+def test_solve_preserves_duplicate_membership_occurrences() -> None:
+    """PLAY IT output is directly reusable by membership replacement unchanged."""
+    backend = InMemoryBackend()
+    base = _iso(datetime(2026, 4, 17, 10, 0, 0, tzinfo=timezone.utc))
+    for stable_id in ("a", "b"):
+        backend.seed_track(Track(
+            stable_id=stable_id, title=stable_id, artist=stable_id.upper(),
+            bpm=120.0, key="8A", created_at=base, updated_at=base,
+        ))
+    backend.seed_playlist(Playlist(
+        playlist_id="pl-duplicates", name="Duplicate Test",
+        items=["a", "a", "b"], created_at=base, updated_at=base,
+    ))
+    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host")
+    with TestClient(app) as c:
+        response = c.post(
+            "/api/v1/play-it/pl-duplicates/solve", json={"duration_min": 30},
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["proposed_order"]) == 3
+    assert sorted(body["proposed_order"]) == ["a", "a", "b"]
+    assert [step["position"] for step in body["steps"]] == [0, 1, 2]
+
+
 def test_solve_unknown_playlist_is_404(client: TestClient) -> None:
     r = client.post("/api/v1/play-it/nope/solve", json={"duration_min": 60})
     assert r.status_code == 404
