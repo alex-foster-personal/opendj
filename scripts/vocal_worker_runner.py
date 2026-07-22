@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -184,14 +185,20 @@ def _apply_windows_resource_controls(
         return
     if os.name != "nt":
         raise RuntimeError("Windows process resource controls require Windows")
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.SetPriorityClass.restype = wintypes.BOOL
+    kernel32.SetProcessAffinityMask.argtypes = [wintypes.HANDLE, ctypes.c_size_t]
+    kernel32.SetProcessAffinityMask.restype = wintypes.BOOL
     process_handle = kernel32.GetCurrentProcess()
     if below_normal and not kernel32.SetPriorityClass(
         process_handle, BELOW_NORMAL_PRIORITY_CLASS,
     ):
         raise ctypes.WinError(ctypes.get_last_error())
     if cpu_affinity_mask is not None and not kernel32.SetProcessAffinityMask(
-        process_handle, ctypes.c_size_t(cpu_affinity_mask),
+        process_handle, cpu_affinity_mask,
     ):
         raise ctypes.WinError(ctypes.get_last_error())
 

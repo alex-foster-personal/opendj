@@ -18,6 +18,8 @@ Regression one-liners:
 from __future__ import annotations
 
 import sys
+import os
+import subprocess
 import textwrap
 from pathlib import Path
 from typing import Any
@@ -514,3 +516,35 @@ def test_build_parser_accepts_windows_process_resource_controls(tmp_path: Path) 
     ])
     assert args.windows_below_normal is True
     assert args.cpu_affinity_mask == 7
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows process controls only")
+def test_windows_resource_controls_apply_in_isolated_subprocess() -> None:
+    repo_root = Path(__file__).parents[2]
+    child_code = textwrap.dedent(
+        """
+        import ctypes
+        from ctypes import wintypes
+        from scripts.vocal_worker_runner import _apply_windows_resource_controls
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.GetProcessAffinityMask.argtypes = [wintypes.HANDLE, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t)]
+        kernel32.GetProcessAffinityMask.restype = wintypes.BOOL
+        process_mask = ctypes.c_size_t()
+        system_mask = ctypes.c_size_t()
+        if not kernel32.GetProcessAffinityMask(kernel32.GetCurrentProcess(), ctypes.byref(process_mask), ctypes.byref(system_mask)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        _apply_windows_resource_controls(below_normal=True, cpu_affinity_mask=process_mask.value)
+        print("resource-controls-ok")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", child_code],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "resource-controls-ok"
