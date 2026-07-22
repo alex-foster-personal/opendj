@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Jog readout dial (SCREENSHOT-SPEC 3): circular SVG dial with live BPM
 	// large, pitch percent, pitch range, and a red position tick rotating
-	// with playback position. Right column: real Q and MT state; SLIP / AU /
+	// with playback position. Right column: real Q, SLIP, and MT state; AU /
 	// MA remain explicitly inert.
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { DeckState } from '$lib/rb/types';
@@ -12,6 +12,7 @@
 		pending,
 		onQuantize,
 		onMasterTempo,
+		onSlip,
 		inertTip
 	}: {
 		deck: DeckState;
@@ -19,6 +20,7 @@
 		pending: boolean;
 		onQuantize: () => Promise<void>;
 		onMasterTempo: () => Promise<void>;
+		onSlip: () => Promise<void>;
 		inertTip: string;
 	} = $props();
 
@@ -70,7 +72,19 @@
 		>
 			Q
 		</button>
-		<button class="rb-lit-button rb-inert" disabled title={inertTip}>SLIP</button>
+		<button
+			class="rb-lit-button"
+			class:lit={deck.slip_enabled}
+			class:active={deck.slip_active}
+			disabled={pending}
+			aria-pressed={deck.slip_enabled}
+			data-performance-control="slip"
+			data-state={deck.slip_active ? 'active' : deck.slip_enabled ? 'armed' : 'off'}
+			title="toggle SLIP mode"
+			onclick={async () => await onSlip()}
+		>
+			SLIP
+		</button>
 		<button
 			class="rb-lit-button"
 			class:lit={deck.master_tempo_enabled}

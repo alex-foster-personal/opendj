@@ -2,12 +2,15 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getPlaylist, type PlaylistDetail } from '$lib/api';
+	import PlayItPanel from '$lib/components/PlayItPanel.svelte';
 
 	let detail = $state<PlaylistDetail | null>(null);
+	let playlistId = $state<string | null>(null);
 
 	onMount(async () => {
 		const id = $page.params.id;
 		if (id === undefined) throw new Error('playlist route param "id" missing');
+		playlistId = id;
 		detail = await getPlaylist(id);
 	});
 </script>
@@ -15,7 +18,10 @@
 {#if detail}
 	<a href="/">&larr; back</a>
 	<h2>{detail.name}</h2>
-	<p style="color: var(--muted);">Reviewing only. Apply changes via CLI: <code>python -m apps.sync.playlist_apply</code>.</p>
+	<p style="color: var(--muted);">Review the current playlist and preview a PLAY IT reorder before applying it.</p>
+	{#if playlistId}
+		<PlayItPanel playlistId={playlistId} />
+	{/if}
 	<div class="diff-columns">
 		<div>
 			<h3>RB only</h3>

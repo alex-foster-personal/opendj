@@ -23,6 +23,9 @@ test('controller defaults enable quantize, Beat Sync, and Master Tempo with no s
 		assert.equal(state.quantize_enabled, true);
 		assert.equal(state.beat_sync_enabled, true);
 		assert.equal(state.master_tempo_enabled, true);
+		assert.equal(state.slip_enabled, false);
+		assert.equal(state.slip_active, false);
+		assert.equal(state.slip_position_ms, null);
 		assert.equal(state.audible, false);
 		assert.equal(state.transport_pending, false);
 		assert.equal(state.sync_mode, 'bar');
@@ -154,6 +157,335 @@ test('Master Tempo preserves pitch while the disabled mode follows playback rate
 	assert.equal(audio.masterTempoSemitones(1.1, true), 0);
 	assert.ok(Math.abs(audio.masterTempoSemitones(1.1, false) - 12 * Math.log2(1.1)) < 1e-12);
 	assert.throws(() => audio.masterTempoSemitones(0, true), /tempo ratio/i);
+});
+
+test('headphone cue/master mix uses equal-power gains and validates serializable output state', () => {
+	assert.deepEqual(audio.headphoneMixGains(0), { cue: 1, master: 0 });
+	assert.deepEqual(audio.headphoneMixGains(1), { cue: 0, master: 1 });
+	const center = audio.headphoneMixGains(0.5);
+	assert.ok(Math.abs(center.cue - Math.SQRT1_2) < 1e-12);
+	assert.ok(Math.abs(center.master - Math.SQRT1_2) < 1e-12);
+	assert.throws(() => audio.headphoneMixGains(1.1), /within 0\.\.1/i);
+	assert.doesNotThrow(() =>
+		audio.assertHeadphoneOutputSelection('usb-headphones', [
+			{ id: 'usb-headphones', label: 'USB Headphones' }
+		])
+	);
+	assert.throws(
+		() => audio.assertHeadphoneOutputSelection('missing', [{ id: 'usb-headphones', label: '' }]),
+		/enumerated headphone output/i
+	);
+});
+
+test('headphone selection declares sink, stream attach, play, then publish and rejects stale ownership', async () => {
+	assert.deepEqual(audio.headphoneSelectionStages(), ['setSinkId', 'attachStream', 'play', 'publish']);
+	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, true), true);
+	assert.equal(audio.headphoneOwnershipIsCurrent(4, 5, true), false);
+	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, false), false);
+	assert.throws(() => audio.assertHeadphoneOwnership(4, 5, true), /stale headphone operation/i);
+	await assert.rejects(
+		audio.withHeadphoneOperationTimeout('enumerateDevices', new Promise(() => {}), 1),
+		/enumerateDevices timed out/i
+	);
+	assert.equal(
+		await audio.withHeadphoneOperationTimeout('setSinkId', Promise.resolve('accepted'), 20),
+		'accepted'
+	);
+});
+
+test('headphone reselection keeps the previous monitor until a candidate commits', () => {
+	assert.deepEqual(audio.headphoneReselectionStages(), [
+		'createCandidate',
+		'setSinkId',
+		'attachStream',
+		'play',
+		'replaceAndPublish',
+		'detachPrevious'
+	]);
+	assert.deepEqual(audio.headphoneReselectionResult(false), {
+		replaceCurrentElement: false,
+		publishSelection: false,
+		detachPrevious: false
+	});
+	assert.deepEqual(audio.headphoneReselectionResult(true), {
+		replaceCurrentElement: true,
+		publishSelection: true,
+		detachPrevious: true
+	});
+});
+
+test('paused tempo and Master Tempo settings persist into the next requested Signalsmith play', () => {
+	const afterTempo = audio.applyPausedDeckControlSettings(
+		{ tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 2 },
+		{ tempoRatio: 1.08 }
+	);
+	const afterMasterTempo = audio.applyPausedDeckControlSettings(afterTempo, {
+		masterTempoEnabled: false
+	});
+
+	assert.deepEqual(afterMasterTempo, {
+		tempoRatio: 1.08,
+		masterTempoEnabled: false,
+		keyShiftSemitones: 2
+	});
+	const nextPlay = audio.stretchScheduleChange(
+		0,
+		true,
+		afterMasterTempo.tempoRatio,
+		afterMasterTempo.masterTempoEnabled,
+		afterMasterTempo.keyShiftSemitones,
+		null
+	);
+	assert.equal(nextPlay.rate, 1.08);
+	assert.ok(Math.abs(nextPlay.semitones - (12 * Math.log2(1.08) + 2)) < 1e-12);
+});
+
+test('arming SLIP alone does not alter the paused transport read model', async () => {
+	const before = { ...audio.getDeckState(1) };
+	await audio.engine.setSlip(1, true);
+	const armed = audio.getDeckState(1);
+	assert.equal(armed.slip_enabled, true);
+	assert.equal(armed.slip_active, false);
+	assert.equal(armed.slip_position_ms, null);
+	assert.equal(armed.position_ms, before.position_ms);
+	assert.equal(armed.transport_pending, before.transport_pending);
+	await audio.engine.setSlip(1, false);
+});
+
+test('Camelot Key Sync models all AlphaTheta least-change compatibility families', () => {
+	assert.deepEqual(audio.parseCamelotKey('8A'), { number: 8, mode: 'A', root: 9 });
+	assert.equal(audio.parseCamelotKey('13A'), null);
+	assert.equal(audio.parseCamelotKey('8C'), null);
+
+	// Same-mode: same, clockwise, anti-clockwise. Cross-mode: same, clockwise,
+	// anti-clockwise. Numbering is circular at the 1/12 boundary.
+	for (const [deck, master] of [
+		['8A', '8A'],
+		['8A', '9A'],
+		['8A', '7A'],
+		['8A', '8B'],
+		['8A', '9B'],
+		['8A', '7B'],
+		['1A', '12B']
+	]) {
+		assert.equal(audio.camelotKeysAreCompatible(deck, master), true, `${deck}/${master}`);
+		assert.equal(audio.deriveKeySyncNudge(deck, master, 0, 0, 0), 0, `${deck}/${master}`);
+	}
+	assert.equal(audio.camelotKeysAreCompatible('8A', '10B'), false);
+
+	// A deck two wheel numbers away requires the least transposition.
+	assert.equal(audio.deriveKeySyncNudge('8A', '10A', 0, 0, 0), 2);
+	assert.throws(() => audio.deriveKeySyncNudge('not-a-key', '8B', 0, 0, 0), /Camelot/i);
+});
+
+test('KEY SYNC compares effective audible Signalsmith offsets when Master Tempo is off', () => {
+	const deckEffective = audio.composeStretchSemitones(1.1, false, 0);
+	const masterEffective = audio.composeStretchSemitones(0.9, false, 2);
+	const nudge = audio.deriveKeySyncNudge('8A', '10A', deckEffective, masterEffective, 0);
+	assert.equal(Number.isInteger(nudge), true);
+	assert.ok(nudge >= -12 && nudge <= 12);
+	assert.equal(
+		audio.deriveKeySyncNudge('8A', '8A', 0, 0, 12),
+		0,
+		'already-compatible manual shift remains untouched'
+	);
+	assert.throws(
+		() => audio.deriveKeySyncNudge('8A', '8A', Number.NaN, 0, 0),
+		/effective audible semitones/i
+	);
+});
+
+test('key shift state remains on its presented revision until output crosses its schedule', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 0,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 0
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 20,
+		startPositionSec: 10,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 3
+	});
+	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 15), 0);
+	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 20), 3);
+
+	// Existing output-clock evaluation still owns publication, not command time.
+	audio.observePresentedTransportTimeline(timeline, { contextTime: 15, performanceTime: 15_000 }, 60);
+	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 15), 0);
+});
+
+test('KEY SYNC reads effective offsets from the last output-presented schedule only', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 4,
+		startPositionSec: 0,
+		tempoRatio: 1.1,
+		masterTempoEnabled: false,
+		keyShiftSemitones: 2
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 6,
+		tempoRatio: 0.9,
+		masterTempoEnabled: false,
+		keyShiftSemitones: -1
+	});
+	audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 5, performanceTime: 5_000 },
+		60
+	);
+
+	assert.ok(
+		Math.abs(audio.presentedEffectiveAudibleSemitones(timeline) - (12 * Math.log2(1.1) + 2)) <
+			1e-12,
+		'the unpresented revision at contextTime 10 must not affect KEY SYNC'
+	);
+	assert.throws(
+		() => audio.presentedEffectiveAudibleSemitones(audio.createPresentedTransportTimeline(0)),
+		/presentation truth/i
+	);
+});
+
+test('KEY SYNC uses desired controls for a fresh paused target and output truth for its audible master', () => {
+	const freshPaused = audio.createPresentedTransportTimeline(0);
+	const audibleMaster = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(audibleMaster, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 2,
+		startPositionSec: 0,
+		tempoRatio: 0.9,
+		masterTempoEnabled: false,
+		keyShiftSemitones: -1
+	});
+	audio.observePresentedTransportTimeline(
+		audibleMaster,
+		{ contextTime: 3, performanceTime: 3_000 },
+		60
+	);
+
+	const targetEffective = audio.keySyncEffectiveAudibleSemitones({
+		audible: false,
+		transportPending: false,
+		pendingMutation: false,
+		control: { tempoRatio: 1.1, masterTempoEnabled: false, keyShiftSemitones: 2 },
+		presentation: freshPaused
+	});
+	const masterEffective = audio.keySyncEffectiveAudibleSemitones({
+		audible: true,
+		transportPending: false,
+		pendingMutation: false,
+		control: { tempoRatio: 1.2, masterTempoEnabled: false, keyShiftSemitones: 7 },
+		presentation: audibleMaster
+	});
+	assert.ok(Math.abs(targetEffective - (12 * Math.log2(1.1) + 2)) < 1e-12);
+	assert.ok(
+		Math.abs(masterEffective - (12 * Math.log2(0.9) - 1)) < 1e-12,
+		'the audible master must ignore its render/control settings'
+	);
+	assert.equal(Number.isInteger(audio.deriveKeySyncNudge('8A', '9B', targetEffective, masterEffective, 2)), true);
+});
+
+test('KEY SYNC supports two fresh paused loaded decks but rejects live or pending decks without presentation truth', () => {
+	const freshDeck = (control) =>
+		audio.keySyncEffectiveAudibleSemitones({
+			audible: false,
+			transportPending: false,
+			pendingMutation: false,
+			control,
+			presentation: audio.createPresentedTransportTimeline(0)
+		});
+	const deckEffective = freshDeck({
+		tempoRatio: 1.08,
+		masterTempoEnabled: false,
+		keyShiftSemitones: 1
+	});
+	const masterEffective = freshDeck({
+		tempoRatio: 0.96,
+		masterTempoEnabled: false,
+		keyShiftSemitones: -2
+	});
+	assert.ok(Math.abs(deckEffective - (12 * Math.log2(1.08) + 1)) < 1e-12);
+	assert.ok(Math.abs(masterEffective - (12 * Math.log2(0.96) - 2)) < 1e-12);
+	assert.equal(Number.isInteger(audio.deriveKeySyncNudge('8A', '8A', deckEffective, masterEffective, 1)), true);
+
+	for (const [label, activity] of [
+		['live', { audible: true, transportPending: false, pendingMutation: false }],
+		['pending', { audible: false, transportPending: true, pendingMutation: true }]
+	]) {
+		assert.throws(
+			() =>
+				audio.keySyncEffectiveAudibleSemitones({
+					...activity,
+					control: { tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 0 },
+					presentation: audio.createPresentedTransportTimeline(0)
+				}),
+			/presentation truth/i,
+			label
+		);
+	}
+});
+
+test('legacy Key Sync helper remains a zero-offset convenience wrapper', () => {
+	assert.equal(audio.deriveKeySyncSemitones('8A', '8B'), 0);
+	assert.equal(audio.deriveKeySyncSemitones('8A', '10A'), 2);
+});
+
+test('key shift composes with Master Tempo compensation in the native Signalsmith semitones field', () => {
+	assert.equal(
+		audio.stretchScheduleChange(4, true, 1.1, true, 3, null).semitones,
+		3
+	);
+	assert.ok(
+		Math.abs(
+			audio.stretchScheduleChange(4, true, 1.1, false, -2, null).semitones -
+				(12 * Math.log2(1.1) - 2)
+		) <
+			1e-12
+	);
+	assert.throws(() => audio.composeStretchSemitones(1, true, 1.5), /integer/i);
+	assert.throws(() => audio.composeStretchSemitones(1, true, 13), /-12\.\.12/i);
+});
+
+test('Slip hidden playhead advances linearly from its acknowledged loop schedule without wrapping', () => {
+	const anchor = audio.createSlipAnchor({
+		startContextTime: 10,
+		startPositionSec: 30,
+		tempoRatio: 1.25,
+		durationSec: 120
+	});
+	assert.equal(audio.slipHiddenPositionSec(anchor, 10), 30);
+	assert.equal(audio.slipHiddenPositionSec(anchor, 14), 35);
+	assert.equal(audio.slipHiddenPositionSec(anchor, 200), 120);
+	assert.throws(
+		() => audio.createSlipAnchor({ startContextTime: 1, startPositionSec: 2, tempoRatio: 0, durationSec: 3 }),
+		/tempoRatio must be positive/i
+	);
+});
+
+test('Slip activation is limited to playing decks with SLIP enabled', () => {
+	assert.equal(audio.shouldActivateSlip(true, true), true);
+	assert.equal(audio.shouldActivateSlip(false, true), false);
+	assert.equal(audio.shouldActivateSlip(true, false), false);
 });
 
 test('central seek quantization snaps to real PQTZ and missing grids fail explicitly', () => {
@@ -617,6 +949,40 @@ test('pending pause transport mutations stay scheduled instead of touching the f
 				scheduleIntentCount: 0
 			}),
 		/pendingScheduleCount/i
+	);
+});
+
+test('KEY nudge keeps an acknowledged pending stop on the scheduled output path', () => {
+	const pendingStop = audio.planKeyShiftMutation(
+		{
+			playing: false,
+			audible: true,
+			controlActive: true,
+			pendingScheduleCount: 1,
+			scheduleIntentCount: 0
+		},
+		false,
+		3
+	);
+	assert.deepEqual(pendingStop, {
+		kind: 'scheduled',
+		active: false,
+		publishedKeyShiftSemitones: null
+	});
+
+	assert.deepEqual(
+		audio.planKeyShiftMutation(
+			{
+				playing: false,
+				audible: false,
+				controlActive: false,
+				pendingScheduleCount: 0,
+				scheduleIntentCount: 0
+			},
+			false,
+			3
+		),
+		{ kind: 'immediate', active: false, publishedKeyShiftSemitones: 3 }
 	);
 });
 

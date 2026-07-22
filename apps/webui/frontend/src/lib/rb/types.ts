@@ -229,6 +229,9 @@ export interface DeckState {
 	bpm: number | null;
 	/** Camelot key text from TrackOut (e.g. '7A'); null unknown. */
 	key: string | null;
+	/** Musical pitch transposition applied by the real deck DSP, in integer
+	 * semitones from -12 through +12. The source key remains immutable. */
+	key_shift_semitones: number;
 	/** Track length ms from TrackOut.duration_ms; null until loaded. */
 	duration_ms: number | null;
 	/** Playhead position ms - UI mirror of the engine clock, updated via rAF. */
@@ -249,6 +252,12 @@ export interface DeckState {
 	beat_sync_enabled: boolean;
 	/** Preserve source pitch while tempo changes through Signalsmith Stretch. */
 	master_tempo_enabled: boolean;
+	/** Arm slip mode. This does not alter an existing transport schedule. */
+	slip_enabled: boolean;
+	/** True only while an audible loop has an independently advancing hidden transport position. */
+	slip_active: boolean;
+	/** Hidden linear playhead in milliseconds while SLIP is active, otherwise null. */
+	slip_position_ms: number | null;
 	/** Beat-only or beat-number-within-bar phase alignment. */
 	sync_mode: SyncMode;
 	/** Explicit grid/rate/scheduling failure. null means no sync failure. */
@@ -305,10 +314,30 @@ export interface MixerChannelState {
 	fader: number;
 	/** Crossfader bus assignment (the 2x2 numeral matrices). */
 	assign: CrossfaderAssign;
+	/** Headphone pre-fader cue assignment for this channel. */
+	cue_enabled: boolean;
 }
 
-/** Whole mixer surface. Headphone CUE/MIX/LEVEL are inert v1 (no headphone
- * bus) so they carry no state here. */
+/** One real browser-selectable audio output. Labels may be empty until the
+ * browser grants device-label permission. */
+export interface HeadphoneOutputDevice {
+	id: string;
+	label: string;
+}
+
+/** Serializable headphone cue-bus read model. `active` means the monitor
+ * stream is attached to the element and the selected sink accepted playback. */
+export interface HeadphoneState {
+	mix: number;
+	level: number;
+	selected_output_device_id: string | null;
+	outputs: HeadphoneOutputDevice[];
+	supported: boolean;
+	active: boolean;
+	error: string | null;
+}
+
+/** Whole mixer surface including the real headphone cue bus. */
 export interface MixerState {
 	/** All four channel strips keyed by deck. */
 	channels: Record<DeckId, MixerChannelState>;
@@ -316,6 +345,8 @@ export interface MixerState {
 	crossfader: number;
 	/** Master volume 0..1 (topbar horizontal slider -> master GainNode). */
 	master: number;
+	/** Headphone cue / monitor output state. */
+	headphones: HeadphoneState;
 }
 
 // ----------------------------------------------------------- browser state
@@ -407,6 +438,13 @@ export interface AudioEngine {
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void>;
 	/** Enable/disable pitch preservation in the Signalsmith processor. */
 	setMasterTempo(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Arm or disarm SLIP. Disarming active slip resumes through the normal schedule first. */
+	setSlip(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Shift the loaded deck by exactly one semitone. */
+	nudgeKey(deck: DeckId, semitones: -1 | 1): Promise<void>;
+	/** Align the loaded deck to the elected loaded master using the documented
+	 * deterministic Camelot harmonic policy. */
+	syncKey(deck: DeckId): Promise<void>;
 	/** Select beat or bar phase alignment for Beat Sync. */
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void>;
 	/** Elect one loaded deck as the globally exclusive master. */
@@ -430,4 +468,13 @@ export interface AudioEngine {
 	setCrossfader(value: number): void;
 	/** Route a channel to crossfader bus A, B, or THRU (bypass). */
 	assignChannel(deck: DeckId, assign: CrossfaderAssign): void;
+	/** Enable or disable a channel's post-EQ, pre-fader headphone cue tap. */
+	setChannelCue(deck: DeckId, enabled: boolean): void;
+	/** Set CUE-to-MASTER monitor mix and headphone level. */
+	setHeadphoneMix(value: number): void;
+	setHeadphoneLevel(value: number): void;
+	/** Enumerate browser audio-output devices for explicit sink selection. */
+	refreshHeadphoneOutputs(): Promise<void>;
+	/** Route the real monitor element to an explicitly enumerated output device. */
+	selectHeadphoneOutput(deviceId: string): Promise<void>;
 }

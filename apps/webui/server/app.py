@@ -25,12 +25,14 @@ from apps.sets.api import router as sets_router
 
 from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
+from .cloud_sync import probe_syncthing_status
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import analysis as analysis_routes
 from .routes import copilot as copilot_routes
 from .routes import health as health_routes
 from .routes import pairings as pairings_routes
 from .routes import playlist_write as playlist_write_routes
+from .routes import play_it as play_it_routes
 from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
 from .routes import queues as queues_routes
@@ -150,6 +152,7 @@ def create_app(
     app.include_router(tracks_routes.router, prefix=api_prefix)
     app.include_router(playlists_routes.router, prefix=api_prefix)
     app.include_router(playlist_write_routes.router, prefix=api_prefix)
+    app.include_router(play_it_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
@@ -203,6 +206,7 @@ def _build_default_app() -> FastAPI:
         backend = None
     return create_app(
         backend=backend, bind_host=bind_host, hostname=hostname,
+        syncthing_status_fn=probe_syncthing_status,
     )
 
 

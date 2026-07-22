@@ -1262,6 +1262,255 @@
         "title": "PlanRequest",
         "type": "object"
       },
+      "PlayItGoalIn": {
+        "properties": {
+          "ceiling_energy": {
+            "default": 9,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Ceiling Energy",
+            "type": "integer"
+          },
+          "duration_min": {
+            "default": 60,
+            "maximum": 240.0,
+            "minimum": 30.0,
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "floor_energy": {
+            "default": 3,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Floor Energy",
+            "type": "integer"
+          },
+          "peak_at_min": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak At Min"
+          }
+        },
+        "title": "PlayItGoalIn",
+        "type": "object"
+      },
+      "PlayItSolveOut": {
+        "properties": {
+          "constraints_unmet": {
+            "items": {
+              "$ref": "#/components/schemas/PlayItUnmetOut"
+            },
+            "title": "Constraints Unmet",
+            "type": "array"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "previous_order": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Previous Order",
+            "type": "array"
+          },
+          "proposed_order": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Proposed Order",
+            "type": "array"
+          },
+          "solve_ms": {
+            "title": "Solve Ms",
+            "type": "number"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/PlayItStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "etag",
+          "previous_order",
+          "proposed_order",
+          "unchanged",
+          "steps",
+          "constraints_unmet",
+          "solve_ms"
+        ],
+        "title": "PlayItSolveOut",
+        "type": "object"
+      },
+      "PlayItStepOut": {
+        "properties": {
+          "actual_energy": {
+            "title": "Actual Energy",
+            "type": "number"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "bpm_delta_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Delta Pct"
+          },
+          "camelot_distance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camelot Distance"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "key_camelot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Camelot"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "target_energy": {
+            "title": "Target Energy",
+            "type": "number"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "transition_hint": {
+            "title": "Transition Hint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "position",
+          "stable_id",
+          "title",
+          "artist",
+          "bpm",
+          "key_camelot",
+          "energy",
+          "transition_hint",
+          "camelot_distance",
+          "bpm_delta_pct",
+          "target_energy",
+          "actual_energy"
+        ],
+        "title": "PlayItStepOut",
+        "type": "object"
+      },
+      "PlayItUnmetOut": {
+        "properties": {
+          "detail": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Detail",
+            "type": "object"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "position",
+          "detail"
+        ],
+        "title": "PlayItUnmetOut",
+        "type": "object"
+      },
       "PlaylistBrokenSummary": {
         "properties": {
           "broken_count": {
@@ -3936,6 +4185,68 @@
         "summary": "Delete Pairing",
         "tags": [
           "pairings"
+        ]
+      }
+    },
+    "/api/v1/play-it/{playlist_id}/solve": {
+      "post": {
+        "operationId": "solve_play_it_api_v1_play_it__playlist_id__solve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayItGoalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayItSolveOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "unknown playlist"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "insufficient analysis data / bad goal"
+          }
+        },
+        "summary": "Solve Play It",
+        "tags": [
+          "play-it"
         ]
       }
     },
