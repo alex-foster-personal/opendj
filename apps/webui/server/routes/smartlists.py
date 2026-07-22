@@ -1,4 +1,4 @@
-"""Smartlists read router -- LANE smartlists-router (tree-gear-live-eval).
+"""Smartlists router -- read/evaluate plus full rule replacement.
 
 Read-only evaluation surface over the ``smartlists`` table + Phase 5
 shared-state schema. The rule-AST -> SQL compiler in
@@ -42,6 +42,7 @@ from pydantic import BaseModel
 
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, evaluate
+from apps.smartlists.repo import SmartlistsRepo, SmartlistsRepoError
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -78,6 +79,13 @@ class SmartlistSummary(BaseModel):
     last_evaluated_at: str | None
     created_at: str
     modified_at: str
+
+
+class SmartlistUpdateIn(BaseModel):
+    """Complete desired rule plus optional replacement ordering."""
+
+    rule: dict[str, Any]
+    order_by: str | None = None
 
 
 class SmartlistTracks(BaseModel):
@@ -199,6 +207,27 @@ def get_smartlists_conn(request: Request) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def get_smartlists_write_conn(request: Request) -> Iterator[sqlite3.Connection]:
+    """Writable, autocommit connection for explicit smartlist updates."""
+    db_path = Path(
+        getattr(request.app.state, "state_db_path", "data/state/state.db")
+    )
+    if not db_path.exists():
+        raise HTTPException(status_code=503, detail={
+            "code": "SMARTLISTS_DB_UNAVAILABLE",
+            "message": f"state DB not found at {db_path}",
+        })
+    conn = sqlite3.connect(
+        str(db_path), isolation_level=None, check_same_thread=False,
+    )
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def _fetch_smartlist(
     conn: sqlite3.Connection, smartlist_id: str,
 ) -> SmartlistRow:
@@ -241,6 +270,26 @@ def get_smartlist(
     conn: sqlite3.Connection = Depends(get_smartlists_conn),
 ) -> SmartlistSummary:
     return _to_summary(_fetch_smartlist(conn, smartlist_id))
+
+
+@router.put("/{smartlist_id}", response_model=SmartlistSummary)
+def update_smartlist(
+    smartlist_id: str,
+    body: SmartlistUpdateIn,
+    conn: sqlite3.Connection = Depends(get_smartlists_write_conn),
+) -> SmartlistSummary:
+    """Apply a complete rule replacement and return persisted readback."""
+    _fetch_smartlist(conn, smartlist_id)
+    try:
+        row = SmartlistsRepo(conn, ensure_schema=False).update_rule(
+            smartlist_id, body.rule, order_by=body.order_by,
+        )
+    except (SmartlistRuleError, SmartlistsRepoError) as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "SMARTLIST_RULE_INVALID",
+            "message": str(exc),
+        }) from exc
+    return _to_summary(row)
 
 
 @router.get("/{smartlist_id}/tracks", response_model=SmartlistTracks)
@@ -297,8 +346,11 @@ def get_smartlist_tracks(
 
 __all__ = [
     "SmartlistSummary",
+
+    "SmartlistUpdateIn",
     "SmartlistTracks",
     "get_smartlists_conn",
+    "get_smartlists_write_conn",
     "router",
     "summarize_rule",
 ]

@@ -55,6 +55,23 @@ test('round-trips every field type with its representative op', () => {
 	assert.deepEqual(ruleForm.formToAst(form), rule);
 });
 
+test('round-trips arbitrary in strings without splitting, trimming, or dropping values', () => {
+	const rule = { field: 'genre', op: 'in', value: ['drum, bass', ' drum, bass ', '', 'techno'] };
+	const form = ruleForm.astToForm(rule);
+	assert.deepEqual(form.valueList, ['drum, bass', ' drum, bass ', '', 'techno']);
+	assert.deepEqual(ruleForm.formToAst(form), rule);
+});
+
+test('rejects changing a multi-child group to NOT without discarding a child', () => {
+	const group = ruleForm.createEmptyGroup('and');
+	group.children.push(ruleForm.createEmptyPredicate('genre'));
+	group.children.push(ruleForm.createEmptyPredicate('bpm'));
+
+	assert.match(ruleForm.changeGroupOp(group, 'not'), /exactly one child/);
+	assert.equal(group.op, 'and');
+	assert.equal(group.children.length, 2);
+});
+
 test('a bare predicate root (no logical wrapper) round-trips too', () => {
 	const rule = { field: 'genre', op: '=', value: 'techno' };
 	const form = ruleForm.astToForm(rule);
@@ -103,10 +120,10 @@ test('validateForm requires both between bounds to be present and numeric', () =
 test('validateForm requires at least one item for an "in" op', () => {
 	const form = ruleForm.createEmptyPredicate('genre');
 	form.op = 'in';
-	form.valueList = '   , ,  ';
+	form.valueList = [];
 	const errors = ruleForm.validateForm(form);
 	assert.equal(errors.length, 1);
-	assert.match(errors[0].message, /at least one comma-separated value/);
+	assert.match(errors[0].message, /at least one value/);
 });
 
 test('validateForm accepts a relative date literal and rejects a garbage one', () => {

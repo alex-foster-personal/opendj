@@ -179,6 +179,34 @@ def test_get_smartlist_404(client):
     assert r.json()["detail"]["code"] == "SMARTLIST_NOT_FOUND"
 
 
+def test_update_smartlist_returns_persisted_readback(client, state_db_path):
+    sid = _create_smartlist(state_db_path, "120s", _BPM_RULE)
+    replacement = {"field": "genre", "op": "in", "value": ["drum, bass"]}
+
+    r = client.put(
+        f"/api/v1/smartlists/{sid}",
+        json={"rule": replacement, "order_by": "rating desc"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["id"] == sid
+    assert r.json()["rule"] == replacement
+    assert r.json()["order_by"] == "rating desc"
+    readback = client.get(f"/api/v1/smartlists/{sid}")
+    assert readback.json()["rule"] == replacement
+    assert readback.json()["referenced_fields"] == ["genre"]
+
+
+def test_update_smartlist_rejects_invalid_rule_explicitly(client, state_db_path):
+    sid = _create_smartlist(state_db_path, "120s", _BPM_RULE)
+    r = client.put(
+        f"/api/v1/smartlists/{sid}",
+        json={"rule": {"field": "mystery", "op": "=", "value": "x"}},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "SMARTLIST_RULE_INVALID"
+
+
 # ----------------------------------------------------------- evaluation
 
 

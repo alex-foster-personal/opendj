@@ -41,3 +41,35 @@ test('smartlist list failures surface explicitly', async () => {
 
 	await assert.rejects(() => api.listSmartlists(), /GET smartlists failed: 503/);
 });
+
+test('smartlist update sends the complete replacement and returns server readback', async () => {
+	let requestedUrl = '';
+	let requestedInit;
+	globalThis.fetch = async (input, init) => {
+		requestedUrl = String(input);
+		requestedInit = init;
+		return Response.json({
+			id: 'smart / one',
+			name: 'Late night',
+			rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
+			order_by: 'rating desc',
+			referenced_fields: ['genre'],
+			last_evaluated_at: null,
+			created_at: '2026-01-01T00:00:00+00:00',
+			modified_at: '2026-01-01T00:00:01+00:00'
+		});
+	};
+
+	const saved = await api.updateSmartlist('smart / one', {
+		rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
+		order_by: 'rating desc'
+	});
+
+	assert.equal(requestedUrl, `${API_BASE}/api/v1/smartlists/smart%20%2F%20one`);
+	assert.equal(requestedInit.method, 'PUT');
+	assert.deepEqual(JSON.parse(requestedInit.body), {
+		rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
+		order_by: 'rating desc'
+	});
+	assert.equal(saved.order_by, 'rating desc');
+});

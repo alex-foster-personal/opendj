@@ -3430,6 +3430,32 @@
         "title": "SmartlistTracks",
         "type": "object"
       },
+      "SmartlistUpdateIn": {
+        "description": "Complete desired rule plus optional replacement ordering.",
+        "properties": {
+          "order_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order By"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "title": "Rule",
+            "type": "object"
+          }
+        },
+        "required": [
+          "rule"
+        ],
+        "title": "SmartlistUpdateIn",
+        "type": "object"
+      },
       "StemManifestOut": {
         "description": "Frontend manifest projected from a stricter durable artifact manifest.",
         "properties": {
@@ -6789,6 +6815,57 @@
           }
         },
         "summary": "Get Smartlist",
+        "tags": [
+          "smartlists"
+        ]
+      },
+      "put": {
+        "description": "Apply a complete rule replacement and return persisted readback.",
+        "operationId": "update_smartlist_api_v1_smartlists__smartlist_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartlistUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Smartlist",
         "tags": [
           "smartlists"
         ]
