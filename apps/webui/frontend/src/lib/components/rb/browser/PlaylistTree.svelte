@@ -20,6 +20,13 @@
 
 	let playlistsOpen = $state(true);
 
+	/** Static chrome per SCREENSHOT-SPEC 5b: the CUE Analysis Playlist row
+	 * carries an "extra" badge in the reference screenshot; not tied to any
+	 * real analysis state. */
+	function _hasExtraBadge(name: string): boolean {
+		return name === 'CUE Analysis Playlist';
+	}
+
 	const allNode = $derived<PlaylistNode>({
 		playlist_id: 'all',
 		name: 'All Tracks',
@@ -88,6 +95,12 @@
 					</svg>
 					<span class="name" title={node.name}>{node.name}</span>
 					<span class="count">{node.track_count}</span>
+					{#if _hasExtraBadge(node.name)}
+						<span class="badge badge-extra" aria-hidden="true">extra</span>
+					{/if}
+					{#if selectedId === node.playlist_id}
+						<span class="badge badge-plus" aria-hidden="true">+</span>
+					{/if}
 				</div>
 			{/each}
 		{/if}
@@ -174,5 +187,24 @@
 	}
 	.disclosure.open {
 		transform: rotate(90deg);
+	}
+	.badge {
+		flex: none;
+		font-size: 8px;
+		line-height: 1.3;
+		border-radius: 2px;
+		padding: 0 3px;
+	}
+	.badge-extra {
+		color: var(--rb-text-dim);
+		border: 1px solid var(--rb-border);
+		background: var(--rb-panel-raised);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.badge-plus {
+		color: var(--rb-text);
+		background: var(--rb-accent);
+		font-weight: 600;
 	}
 </style>
