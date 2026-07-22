@@ -9,6 +9,7 @@
  * surfacing corruption loudly is the point.
  */
 
+import { API_BASE } from '$lib/api';
 import {
 	EFFORTS,
 	STATUSES,
@@ -22,8 +23,6 @@ import {
 	type ProgressResponse,
 	type Verified
 } from './types';
-
-const BASE = typeof window === 'undefined' ? 'http://127.0.0.1:8585' : '';
 
 //----- primitive validators -----------------------------------------------
 
@@ -165,11 +164,14 @@ export function validateProgressResponse(raw: unknown): ProgressResponse {
 }
 
 export async function fetchProgress(): Promise<ProgressResponse> {
+	const endpoint = `${API_BASE}/api/v1/progress`;
 	let r: Response;
 	try {
-		r = await fetch(`${BASE}/api/v1/progress`, { headers: { Accept: 'application/json' } });
+		r = await fetch(endpoint, { headers: { Accept: 'application/json' } });
 	} catch (e) {
-		throw new Error(`daemon unreachable at :8585 (${e instanceof Error ? e.message : String(e)})`);
+		throw new Error(
+			`daemon unreachable at ${endpoint} (${e instanceof Error ? e.message : String(e)})`
+		);
 	}
 	if (!r.ok) {
 		const body = await r.text();
