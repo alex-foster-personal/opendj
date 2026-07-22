@@ -11,7 +11,8 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Literal, Optional, Protocol
+from contextlib import contextmanager
+from typing import Callable, ContextManager, Iterator, Literal, Optional, Protocol
 
 from apps.shared import paths
 from apps.smartlists.diff import diff_sets
@@ -40,12 +41,13 @@ class VendorPlaylistWriter(Protocol):
     def read_members_by_id(self, playlist_id: str) -> list[str]: ...
     def apply_with_backup_by_id(
         self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
-        expected_mapping_revision: str, assert_source_current: Callable[[], None],
+        expected_mapping_revision: str, source_transaction: Callable[[], ContextManager[None]],
     ) -> tuple[WritebackBackup, str]: ...
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str: ...
 
 
 WriterFactory = Callable[[Vendor, TargetMode, Path], Optional[VendorPlaylistWriter]]
+SourceLockFactory = Callable[[], ContextManager[None]]
 
 
 def _canonical_live_path(vendor: Vendor) -> Path:
@@ -163,9 +165,11 @@ class WritebackService:
     def __init__(
         self, *, writer_factory: WriterFactory = default_writer_factory,
         source_members_reader: Optional[Callable[[str], list[str]]] = None,
+        source_lock_factory: Optional[SourceLockFactory] = None,
     ) -> None:
         self._writer_factory = writer_factory
         self._source_members_reader = source_members_reader
+        self._source_lock_factory = source_lock_factory
 
     def _writer(
         self, vendor: Vendor, target_mode: TargetMode, target_path: str,
@@ -212,13 +216,29 @@ class WritebackService:
         return _revision(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in rows))
 
     def _assert_source_snapshot(self, source_playlist_id: str, expected_source_revision: str) -> None:
-        """Reject a source edit at the vendor mutation boundary when available."""
+        """Reject a source edit while its authoritative writer lock is held."""
         if self._source_members_reader is None:
-            return
+            raise WritebackUnavailable("writeback source validator is unavailable")
         current = list(self._source_members_reader(source_playlist_id))
         actual = _revision({"source_playlist_id": source_playlist_id, "members": current})
         if actual != expected_source_revision:
             raise WritebackConflict("writeback source changed before vendor transaction")
+
+    @contextmanager
+    def _source_transaction(
+        self, source_playlist_id: str, expected_source_revision: str,
+    ) -> Iterator[None]:
+        """Lock and validate the source before any vendor-side mutation.
+
+        The state DB lock is acquired before a vendor target lock everywhere,
+        which gives writeback one deadlock-safe lock ordering and prevents a
+        source edit or vendor-ID remap between validation and the mutation.
+        """
+        if self._source_lock_factory is None:
+            raise WritebackUnavailable("writeback source ownership lock is unavailable")
+        with self._source_lock_factory():
+            self._assert_source_snapshot(source_playlist_id, expected_source_revision)
+            yield
 
     def targets(self, *, vendor: Vendor, target_mode: TargetMode, target_path: str) -> list[VendorPlaylist]:
         return self._writer(vendor, target_mode, target_path).list_playlists()
@@ -275,7 +295,7 @@ class WritebackService:
         writer = self._writer(vendor, target_mode, target_path)
         backup, target_revision = writer.apply_with_backup_by_id(
             target_id, desired_ids, plan.target_revision, plan.mapping_revision,
-            lambda: self._assert_source_snapshot(source_playlist_id, plan.source_revision),
+            lambda: self._source_transaction(source_playlist_id, plan.source_revision),
         )
         return WritebackApplyResult(vendor, target_id, plan.target_name, True, False,
             added=plan.added, removed=plan.removed, backup_id=backup.backup_id,

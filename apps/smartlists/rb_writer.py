@@ -46,7 +46,7 @@ import sys
 from uuid import uuid4
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, ContextManager
 
 from apps.shared import paths
 
@@ -289,7 +289,7 @@ class RBPlaylistWriter:
 
     def apply_with_backup_by_id(
         self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
-        expected_mapping_revision: str, assert_source_current: Callable[[], None],
+        expected_mapping_revision: str, source_transaction: Callable[[], ContextManager[None]],
     ):
         """CAS, WAL-safe backup, and mutation in one Rekordbox transaction."""
         from pyrekordbox.db6 import tables
@@ -301,69 +301,53 @@ class RBPlaylistWriter:
         session = getattr(self.db, "session", None)
         if session is None:
             raise RuntimeError("rekordbox: writer has no SQLAlchemy session for transactional writeback")
-        with exclusive_target_lock(self.live_db_path):
-            session.execute(text("BEGIN IMMEDIATE"))
-            try:
-                session.expire_all()
-                before = self.read_members_by_id(playlist_id)
-                before_playlist = self._find_playlist_by_id(playlist_id)
-                if before_playlist is None:
-                    raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
-                before_songs = list(getattr(before_playlist, "Songs", []) or [])
-                before_songs.sort(key=lambda song: (getattr(song, "TrackNo", 0) or 0))
-                native_before = [str(song.ContentID) for song in before_songs]
-                actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": before}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                if actual != expected_target_revision:
-                    raise WritebackConflict("rekordbox: target revision changed before transaction")
-                mapping_rows = self.state_conn.execute(
-                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
-                    (self.vendor, *dict.fromkeys(stable_members)),
-                ).fetchall() if stable_members else []
-                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                if mapping_revision != expected_mapping_revision:
-                    raise WritebackConflict("rekordbox: mapping changed inside vendor transaction")
-                native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
-                missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
-                if missing:
-                    raise WritebackConflict(f"rekordbox: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
-                native_members = [native_mapping[stable_id] for stable_id in stable_members]
-                assert_source_current()
-                with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
-                    backup = WritebackBackup(online_backup(snapshot, "rekordbox"))
-                post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, native_before, post_revision)
-                # Revalidate after persistence and immediately before the first
-                # ORM mutation. The state DB is separate from this vendor DB,
-                # so no earlier check can close this interleaving window.
-                mapping_rows = self.state_conn.execute(
-                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
-                    (self.vendor, *dict.fromkeys(stable_members)),
-                ).fetchall() if stable_members else []
-                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                if mapping_revision != expected_mapping_revision:
-                    raise WritebackConflict("rekordbox: mapping changed at vendor mutation boundary")
-                native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
-                missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
-                if missing:
-                    raise WritebackConflict(f"rekordbox: mapping lost desired IDs at vendor mutation boundary: {missing[:5]}")
-                native_members = [native_mapping[stable_id] for stable_id in stable_members]
-                assert_source_current()
-                playlist = self._find_playlist_by_id(playlist_id)
-                if playlist is None:
-                    raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
-                for song in list(getattr(playlist, "Songs", []) or []):
-                    self.db.delete(song)
-                session.flush()
-                now = datetime.datetime.now()
-                for number, content_id in enumerate(native_members, start=1):
-                    self.db.add(tables.DjmdSongPlaylist.create(
-                        ID=str(uuid4()), UUID=str(uuid4()), PlaylistID=str(playlist.ID),
-                        ContentID=str(content_id), TrackNo=number, created_at=now, updated_at=now,
-                    ))
-                self.db.commit()
-            except Exception:
-                session.rollback()
-                raise
+        with source_transaction():
+            with exclusive_target_lock(self.live_db_path):
+                session.execute(text("BEGIN IMMEDIATE"))
+                try:
+                    session.expire_all()
+                    before = self.read_members_by_id(playlist_id)
+                    before_playlist = self._find_playlist_by_id(playlist_id)
+                    if before_playlist is None:
+                        raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
+                    before_songs = list(getattr(before_playlist, "Songs", []) or [])
+                    before_songs.sort(key=lambda song: (getattr(song, "TrackNo", 0) or 0))
+                    native_before = [str(song.ContentID) for song in before_songs]
+                    actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": before}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    if actual != expected_target_revision:
+                        raise WritebackConflict("rekordbox: target revision changed before transaction")
+                    mapping_rows = self.state_conn.execute(
+                        "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
+                        (self.vendor, *dict.fromkeys(stable_members)),
+                    ).fetchall() if stable_members else []
+                    mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    if mapping_revision != expected_mapping_revision:
+                        raise WritebackConflict("rekordbox: mapping changed inside vendor transaction")
+                    native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
+                    missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
+                    if missing:
+                        raise WritebackConflict(f"rekordbox: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
+                    native_members = [native_mapping[stable_id] for stable_id in stable_members]
+                    with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
+                        backup = WritebackBackup(online_backup(snapshot, "rekordbox"))
+                    post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, native_before, post_revision)
+                    playlist = self._find_playlist_by_id(playlist_id)
+                    if playlist is None:
+                        raise RuntimeError(f"rekordbox: playlist ID {playlist_id!r} not found")
+                    for song in list(getattr(playlist, "Songs", []) or []):
+                        self.db.delete(song)
+                    session.flush()
+                    now = datetime.datetime.now()
+                    for number, content_id in enumerate(native_members, start=1):
+                        self.db.add(tables.DjmdSongPlaylist.create(
+                            ID=str(uuid4()), UUID=str(uuid4()), PlaylistID=str(playlist.ID),
+                            ContentID=str(content_id), TrackNo=number, created_at=now, updated_at=now,
+                        ))
+                    self.db.commit()
+                except Exception:
+                    session.rollback()
+                    raise
         return backup, post_revision
 
     def backup_target(self):
