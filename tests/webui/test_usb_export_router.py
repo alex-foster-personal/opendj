@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.sync.usb.pioneer import export_workflow as workflow
+from apps.sync.usb.pioneer import writer_rbox
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import usb_export
 
@@ -68,6 +69,17 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+def _require_rbox_runtime() -> None:
+    """Fail HTTP parity at the USB runtime dependency contract boundary."""
+    if not writer_rbox.RBOX_AVAILABLE:
+        pytest.fail(
+            "USB export HTTP parity requires the pinned runtime dependency "
+            "rbox==0.1.7. Install the repository dependency contract before "
+            f"running these tests: {writer_rbox.RBOX_IMPORT_ERROR}",
+            pytrace=False,
+        )
+
+
 def test_production_app_registers_all_usb_export_contracts() -> None:
     """Agent and UI callers share the routes registered by the production app."""
     paths = create_app(mount_frontend=False).openapi()["paths"]
@@ -80,6 +92,7 @@ def test_production_app_registers_all_usb_export_contracts() -> None:
 def test_http_plan_apply_readback_matches_core_schema(
     client: TestClient, target: Path
 ) -> None:
+    _require_rbox_runtime()
     plan_response = client.post(
         "/api/v1/usb-export/plan",
         json={

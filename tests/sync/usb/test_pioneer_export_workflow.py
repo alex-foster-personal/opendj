@@ -13,11 +13,13 @@ fails before any export path is created.
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
 
 from apps.sync.usb.pioneer import export_workflow as workflow
+from apps.sync.usb.pioneer import writer_rbox
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
 
 
@@ -41,6 +43,31 @@ def _identity(target: Path, *, uuid: str = "USB-205") -> workflow.TargetIdentity
         volume_label=target.name,
         volume_uuid=uuid,
         authorization_id="issue-205-disposable",
+    )
+
+
+def _require_rbox_runtime() -> None:
+    """Fail USB integration tests at the dependency contract boundary."""
+    if not writer_rbox.RBOX_AVAILABLE:
+        pytest.fail(
+            "USB export integration requires the pinned runtime dependency "
+            "rbox==0.1.7. Install the repository dependency contract before "
+            f"running these tests: {writer_rbox.RBOX_IMPORT_ERROR}",
+            pytrace=False,
+        )
+
+
+def test_rbox_dependency_contract_is_pinned_for_ci() -> None:
+    """Both CI install contracts must provide the tested rbox runtime."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
+    assert "rbox==0.1.7" in pyproject["project"]["dependencies"], (
+        "pyproject.toml must pin rbox==0.1.7 so fresh Windows parity "
+        "environments install the OneLibrary runtime."
+    )
+    requirements = (REPO_ROOT / "requirements.txt").read_text("utf-8").splitlines()
+    assert "rbox==0.1.7" in requirements, (
+        "requirements.txt must pin rbox==0.1.7 so the Linux CI job installs "
+        "the OneLibrary runtime."
     )
 
 
@@ -184,6 +211,7 @@ def test_apply_refuses_existing_payload_without_modifying_it(
 def test_apply_and_readback_real_onelibrary_round_trip(
     disposable_target: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _require_rbox_runtime()
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -257,6 +285,7 @@ def test_cli_plan_apply_readback_uses_same_serializable_contract(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    _require_rbox_runtime()
     monkeypatch.setattr(
         workflow,
         "inspect_macos_target",
@@ -369,6 +398,7 @@ def test_identity_drift_after_promotion_refuses_rollback_deletion(
     disposable_target: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_rbox_runtime()
     original = _identity(disposable_target)
     monkeypatch.setattr(workflow, "inspect_macos_target", lambda target: original)
     plan = workflow.plan_export(
@@ -398,6 +428,7 @@ def test_oserror_during_mounted_readback_rolls_back_exact_output(
     disposable_target: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_rbox_runtime()
     identity = _identity(disposable_target)
     monkeypatch.setattr(workflow, "inspect_macos_target", lambda target: identity)
     plan = workflow.plan_export(
