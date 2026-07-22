@@ -15,6 +15,7 @@
 	import DepGraph from './DepGraph.svelte';
 	import { fetchProgress } from './progress-api';
 	import {
+		buildReverseDeps,
 		EFFORTS,
 		hasFoldoutDetail,
 		STATUSES,
@@ -46,6 +47,9 @@
 	const allNodes = $derived<ProgressNode[]>(
 		(data?.areas ?? []).flatMap((area) => area.nodes)
 	);
+
+	/** node id -> ids of nodes that declare it as a dep ("blocks: ..."). */
+	const reverseDeps = $derived(buildReverseDeps(allNodes));
 
 	//----- data loading -----------------------------------------------------
 
@@ -282,6 +286,7 @@
 				collapsed={collapsedAreas.has(area.id)}
 				convention={data.meta.convention}
 				{expandedNodes}
+				{reverseDeps}
 				onToggle={toggleArea}
 				onToggleExpand={toggleExpand}
 				onJump={(id) => void jumpToNode(id)}
@@ -379,9 +384,15 @@
 	.rollup-chip.partial {
 		color: #7cc0ff;
 	}
-	.rollup-chip.working,
+	.rollup-chip.built,
 	.rollup-chip.verified {
 		color: #4ade80;
+	}
+	.rollup-chip.merged {
+		color: #c4a4fb;
+	}
+	.rollup-chip.user-finalized {
+		color: #fef08a;
 	}
 	.sep {
 		width: 1px;

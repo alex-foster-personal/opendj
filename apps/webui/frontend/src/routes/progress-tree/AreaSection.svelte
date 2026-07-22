@@ -12,6 +12,7 @@
 		collapsed,
 		convention,
 		expandedNodes,
+		reverseDeps,
 		onToggle,
 		onToggleExpand,
 		onJump
@@ -21,6 +22,7 @@
 		collapsed: boolean;
 		convention: string;
 		expandedNodes: ReadonlySet<string>;
+		reverseDeps: ReadonlyMap<string, string[]>;
 		onToggle: (areaId: string) => void;
 		onToggleExpand: (id: string) => void;
 		onJump: (id: string) => void;
@@ -42,6 +44,7 @@
 					{node}
 					{convention}
 					expanded={expandedNodes.has(node.id)}
+					blocks={reverseDeps.get(node.id) ?? []}
 					{onToggleExpand}
 					{onJump}
 				/>

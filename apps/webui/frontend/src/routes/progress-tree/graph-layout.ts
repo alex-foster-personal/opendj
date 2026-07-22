@@ -7,11 +7,11 @@
  * data drifts from the conventions doc the rendered truth follows the data.
  *
  * Wave rule (mirrors .planning/FANOUT-CONVENTIONS.md):
- *   wave 0 = an outstanding node with no unmet deps. A dep on a working/
- *   verified node counts as met; a dep on another outstanding node is unmet
- *   until that dep is itself placed. wave(n) = 1 + max(wave of outstanding
- *   deps). Nodes tangled in a cycle are placed one past the deepest placed
- *   wave so they still render.
+ *   wave 0 = an outstanding node with no unmet deps. A dep on a built/
+ *   verified/merged/user-finalized node counts as met; a dep on another
+ *   outstanding node is unmet until that dep is itself placed. wave(n) = 1 +
+ *   max(wave of outstanding deps). Nodes tangled in a cycle are placed one
+ *   past the deepest placed wave so they still render.
  */
 
 import { isDoneStatus, isOutstanding, parseLanes, type ProgressNode } from './types';
@@ -115,7 +115,9 @@ export interface GraphLayout {
 	waves: WaveResult;
 }
 
-const CHIP_W = 168;
+// Wave columns run 2x wider than the original 168 so a chip has room for a
+// longer title plus the build-state icon (CHANGE 3, Wed 22 Jul 2026).
+const CHIP_W = 336;
 const CHIP_H = 48;
 const COL_GAP = 56;
 const ROW_GAP = 16;

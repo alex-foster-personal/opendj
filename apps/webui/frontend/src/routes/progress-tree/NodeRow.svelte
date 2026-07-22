@@ -11,11 +11,14 @@
 	import NodeDetail from './NodeDetail.svelte';
 	import StatusChip from './StatusChip.svelte';
 	import {
+		BUILD_STATE_GLYPH,
+		BUILD_STATE_LABEL,
 		hasFoldoutDetail,
 		hasProvenanceGap,
 		laneColor,
 		noteSegments,
 		parseLanes,
+		staleBuildLabel,
 		type ProgressNode
 	} from './types';
 
@@ -23,15 +26,19 @@
 		node,
 		convention,
 		expanded,
+		blocks = [],
 		onToggleExpand,
 		onJump
 	}: {
 		node: ProgressNode;
 		convention: string;
 		expanded: boolean;
+		blocks?: string[];
 		onToggleExpand: (id: string) => void;
 		onJump: (id: string) => void;
 	} = $props();
+
+	const staleLabel = $derived(staleBuildLabel(node.build?.updated ?? null));
 
 	const lanes = $derived(parseLanes(node.notes));
 	const expandable = $derived(hasFoldoutDetail(node));
@@ -67,6 +74,19 @@
 			{expanded ? '▾' : '▸'}
 		</span>
 		<StatusChip status={node.status} />
+		{#if node.build?.state}
+			<span
+				class="build-glyph state-{node.build.state}"
+				title="build: {BUILD_STATE_LABEL[node.build.state]}{node.build.stage
+					? ` - ${node.build.stage}`
+					: ''}"
+			>
+				{BUILD_STATE_GLYPH[node.build.state]}
+			</span>
+		{/if}
+		{#if staleLabel}
+			<span class="stale-tag" title="build.updated: {node.build?.updated}">{staleLabel}</span>
+		{/if}
 		<span class="title" title={node.id}>{node.title}</span>
 		<span class="effort effort-{node.effort}">{node.effort}</span>
 		{#each lanes as lane (lane)}
@@ -79,6 +99,11 @@
 			<span class="no-provenance" title={convention}>no provenance</span>
 		{/if}
 		<span class="spacer"></span>
+		{#if blocks.length > 0}
+			<span class="count blocks" title="blocks {blocks.length} node{blocks.length === 1 ? '' : 's'}">
+				blocks {blocks.length}
+			</span>
+		{/if}
 		{#if node.deps.length > 0}
 			<span class="count deps" title="{node.deps.length} dependencies">
 				{node.deps.length} dep{node.deps.length === 1 ? '' : 's'}
@@ -94,7 +119,7 @@
 		<div class="inline-note">{inlineNote}</div>
 	{/if}
 	{#if expandable && expanded}
-		<NodeDetail {node} {onJump} />
+		<NodeDetail {node} {blocks} {onJump} />
 	{/if}
 </div>
 
@@ -196,6 +221,46 @@
 	}
 	.count.sha {
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	}
+	.count.blocks {
+		color: #ffb43a;
+		border-color: #7a5a1f;
+	}
+	.build-glyph {
+		font-size: 0.85rem;
+		line-height: 1;
+		cursor: help;
+	}
+	.build-glyph.state-active {
+		color: #4ade80;
+		animation: nr-pulse 1.6s ease-in-out infinite;
+	}
+	.build-glyph.state-idle {
+		color: #7cc0ff;
+	}
+	.build-glyph.state-blocked {
+		color: #ffb43a;
+	}
+	.build-glyph.state-hanging {
+		color: var(--danger);
+	}
+	@keyframes nr-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
+	}
+	.stale-tag {
+		font-size: 0.66rem;
+		color: var(--muted);
+		opacity: 0.75;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 0.02rem 0.35rem;
+		cursor: help;
 	}
 	.inline-note {
 		margin: 0 0 0.3rem 1.9rem;

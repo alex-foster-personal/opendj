@@ -13,7 +13,16 @@
 	 */
 	import NodeDetail from './NodeDetail.svelte';
 	import { buildGraphLayout, edgePath, type GraphNodeBox } from './graph-layout';
-	import { laneColor, STATUS_PALETTE, type ProgressNode } from './types';
+	import {
+		BUILD_STATE_GLYPH,
+		BUILD_STATE_LABEL,
+		buildReverseDeps,
+		hasProvenanceGap,
+		laneColor,
+		staleBuildLabel,
+		STATUS_PALETTE,
+		type ProgressNode
+	} from './types';
 
 	let {
 		nodes,
@@ -29,9 +38,12 @@
 	let hoveredLane = $state<string | null>(null);
 
 	const layout = $derived(buildGraphLayout(nodes, showAll));
+	const reverseDeps = $derived(buildReverseDeps(nodes));
 	const selected = $derived(
 		selectedId === null ? null : (layout.boxById.get(selectedId)?.node ?? null)
 	);
+	const selectedLanes = $derived(selected === null ? [] : (layout.boxById.get(selected.id)?.lanes ?? []));
+	const selectedBlocks = $derived(selected === null ? [] : (reverseDeps.get(selected.id) ?? []));
 
 	/** Node ids on either end of a hovered/selected node, for edge + chip focus. */
 	const activeId = $derived(hoveredId ?? selectedId);
@@ -62,6 +74,15 @@
 
 	function select(id: string): void {
 		selectedId = selectedId === id ? null : id;
+	}
+
+	function chipBuildGlyph(box: GraphNodeBox): string | null {
+		const state = box.node.build?.state;
+		return state ? BUILD_STATE_GLYPH[state] : null;
+	}
+
+	function chipStale(box: GraphNodeBox): string | null {
+		return staleBuildLabel(box.node.build?.updated ?? null);
 	}
 </script>
 
@@ -166,11 +187,27 @@
 							fill={laneStroke}
 						/>
 						<text class="chip-title" x={box.x + 14} y={box.cy - 2} fill={pal.fg}>
-							{truncate(box.node.title, 22)}
+							{truncate(box.node.title, 46)}
 						</text>
 						<text class="chip-status" x={box.x + 14} y={box.cy + 13} fill={pal.fg}>
 							{box.node.status}{box.done ? ' (met)' : ''}
 						</text>
+						{#if chipBuildGlyph(box)}
+							<text
+								class="chip-build-glyph state-{box.node.build?.state}"
+								x={box.x + box.w - (chipStale(box) ? 58 : 14)}
+								y={box.cy + 13}
+								text-anchor="end"
+							>
+								<title>build: {box.node.build?.state ? BUILD_STATE_LABEL[box.node.build.state] : ''}</title>
+								{chipBuildGlyph(box)}
+							</text>
+						{/if}
+						{#if chipStale(box)}
+							<text class="chip-stale" x={box.x + box.w - 14} y={box.cy + 13} text-anchor="end">
+								{chipStale(box)}
+							</text>
+						{/if}
 					</g>
 				{/each}
 			</g>
@@ -186,9 +223,23 @@
 			<div class="side-meta">
 				<code>{selected.id}</code>
 				<span>status: {selected.status}</span>
-				<span>effort: {selected.effort}</span>
+				<span class="effort-wrap" title="effort: {selected.effort}">
+					<span class="effort-square effort-{selected.effort}"></span>
+					{selected.effort}
+				</span>
+				{#if selected.reuse}
+					<span title="reuse">reuse: {selected.reuse}</span>
+				{/if}
+				{#each selectedLanes as lane (lane)}
+					<span class="lane-chip" style="--lane: {laneColor(lane)}" title="LANE {lane}">{lane}</span>
+				{/each}
+				{#if hasProvenanceGap(selected)}
+					<span class="gap-icon" title="no provenance: status changes must append commits">
+						&#9888;
+					</span>
+				{/if}
 			</div>
-			<NodeDetail node={selected} onJump={(id) => select(id)} />
+			<NodeDetail node={selected} blocks={selectedBlocks} onJump={(id) => select(id)} />
 			<button class="view-tree" onclick={() => onViewInTree(selected.id)}>
 				&#8599; view in tree
 			</button>
@@ -298,6 +349,36 @@
 		font-size: 10px;
 		opacity: 0.85;
 	}
+	.chip-build-glyph {
+		font-size: 12px;
+	}
+	.chip-build-glyph.state-active {
+		fill: #4ade80;
+		animation: dg-pulse 1.6s ease-in-out infinite;
+	}
+	.chip-build-glyph.state-idle {
+		fill: #7cc0ff;
+	}
+	.chip-build-glyph.state-blocked {
+		fill: #ffb43a;
+	}
+	.chip-build-glyph.state-hanging {
+		fill: #ff5c5c;
+	}
+	@keyframes dg-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.4;
+		}
+	}
+	.chip-stale {
+		font-size: 9px;
+		fill: var(--muted);
+		opacity: 0.8;
+	}
 	.side-panel {
 		position: absolute;
 		top: 3rem;
@@ -339,6 +420,43 @@
 	}
 	.side-meta code {
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	}
+	.effort-wrap {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		cursor: help;
+	}
+	.effort-square {
+		display: inline-block;
+		border: 1px solid var(--accent-dim);
+		border-radius: 2px;
+	}
+	.effort-square.effort-S {
+		width: 6px;
+		height: 6px;
+	}
+	.effort-square.effort-M {
+		width: 9px;
+		height: 9px;
+	}
+	.effort-square.effort-L {
+		width: 12px;
+		height: 12px;
+		background: var(--accent-dim);
+	}
+	.lane-chip {
+		font-size: 0.66rem;
+		font-weight: 700;
+		padding: 0.02rem 0.4rem;
+		border-radius: 999px;
+		color: var(--lane);
+		border: 1px solid var(--lane);
+		background: color-mix(in srgb, var(--lane) 14%, transparent);
+	}
+	.gap-icon {
+		color: var(--danger);
+		cursor: help;
 	}
 	.view-tree {
 		margin-top: 0.5rem;
