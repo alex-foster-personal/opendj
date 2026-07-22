@@ -210,11 +210,11 @@ def match_spotify_tracks(
     O(S * T). Fine up to a few thousand tracks. ISRC index short-circuits
     the hottest path.
     """
-    targets_list = list(targets)
+    targets_list = sorted(targets, key=lambda target: target.stable_id)
     isrc_index: dict[str, LocalTrack] = {}
     for t in targets_list:
         if t.isrc:
-            isrc_index[t.isrc.upper()] = t
+            isrc_index.setdefault(t.isrc.upper(), t)
 
     pairs: list[MatchedPair] = []
     for src in sources:
