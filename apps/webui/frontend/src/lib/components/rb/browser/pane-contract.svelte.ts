@@ -159,6 +159,8 @@ export class PaneStore {
 	search = $state('');
 	/** stable_id of the selected row; null = no selection. */
 	selected_id = $state<string | null>(null);
+	/** Ordered multi-selection used by the edit-suite batch actions. */
+	selected_ids = $state<string[]>([]);
 	sort_key = $state<SortKey | null>(null);
 	sort_dir = $state<SortDir>(1);
 	/** True when the source fetch hit the row cap (truncation note). */
@@ -184,6 +186,7 @@ export class PaneStore {
 		this.loading = true;
 		this.error = null;
 		this.selected_id = null;
+		this.selected_ids = [];
 		this.truncated = false;
 		this.scroll_top = 0;
 		return this.#load_seq;
@@ -222,8 +225,15 @@ export class PaneStore {
 		}
 	}
 
-	select(stable_id: string): void {
+	select(stable_id: string, extend: boolean): void {
 		this.selected_id = stable_id;
+		if (extend) {
+			this.selected_ids = this.selected_ids.includes(stable_id)
+				? this.selected_ids.filter((id) => id !== stable_id)
+				: [...this.selected_ids, stable_id];
+		} else {
+			this.selected_ids = [stable_id];
+		}
 	}
 
 	setSearch(next: string): void {

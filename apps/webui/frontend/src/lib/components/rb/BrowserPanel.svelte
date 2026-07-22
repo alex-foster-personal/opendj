@@ -39,6 +39,9 @@
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
 	import { pushToast } from '$lib/stores.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
+	import BulkEditModal from './BulkEditModal.svelte';
+	import FindReplaceModal from './FindReplaceModal.svelte';
+	import MyTagEditorModal from './MyTagEditorModal.svelte';
 	import IconRail from './browser/IconRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
@@ -74,6 +77,8 @@
 		createPaneStore()
 	];
 	let activePane = $state(0);
+	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
+	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
 	let playlistsLoading = $state(true);
@@ -478,8 +483,8 @@
 		panes[activePane].toggleSort(key);
 	}
 
-	function selectRow(row: BrowserRow): void {
-		panes[activePane].select(row.stable_id);
+	function selectRow(row: BrowserRow, event: MouseEvent): void {
+		panes[activePane].select(row.stable_id, event.metaKey || event.ctrlKey);
 	}
 
 	function setSearch(next: string): void {
@@ -491,6 +496,32 @@
 			() => void _searchWholeCollection(panes[paneIndex], next),
 			SEARCH_DEBOUNCE_MS
 		);
+	}
+
+	async function openEditModal(kind: 'bulk-edit' | 'find-replace' | 'mytag'): Promise<void> {
+		if (kind !== 'mytag' && pane.selected_ids.length === 0) {
+			pushToast('select at least one track first', 'error');
+			return;
+		}
+		try {
+			const etags: Record<string, string> = {};
+			for (const stableId of pane.selected_ids) {
+				const row = pane.rows.find((candidate) => candidate.stable_id === stableId);
+				etags[stableId] = row?.etag ? row.etag : (await getTrack(stableId)).etag;
+			}
+			modalEtags = etags;
+			openModal = kind;
+		} catch (exc) {
+			pushToast(`could not load selected track versions: ${String(exc)}`, 'error');
+		}
+	}
+
+	function onEditApplied(): void {
+		openModal = null;
+		const node = pane.playlist_id === 'all'
+			? { playlist_id: 'all', name: 'All Tracks', track_count: 0, kind: 'all_tracks' as const, children: [] }
+			: treeNodes.find((candidate) => candidate.playlist_id === pane.playlist_id);
+		if (node !== undefined) void _loadPane(pane, node);
 	}
 
 	const _searchDebounce: Record<number, ReturnType<typeof setTimeout>> = {};
@@ -631,11 +662,14 @@
 					<span>Whole collection</span>
 				</label>
 				<SearchBox value={pane.search} oninput={setSearch} />
+				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
+				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
+				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
 			</div>
 		</div>
 		<TrackTable
 			{provider}
-			selectedId={pane.selected_id}
+			selectedIds={pane.selected_ids}
 			{loadedIds}
 			{vocalsById}
 			sortKey={pane.sort_key}
@@ -673,6 +707,14 @@
 		</span>
 	</div>
 </section>
+
+{#if openModal === 'find-replace'}
+	<FindReplaceModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
+{:else if openModal === 'bulk-edit'}
+	<BulkEditModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
+{:else if openModal === 'mytag'}
+	<MyTagEditorModal stableIds={pane.selected_ids} etags={modalEtags} onclose={() => (openModal = null)} onapplied={onEditApplied} />
+{/if}
 
 <style>
 	.rb-browser {
