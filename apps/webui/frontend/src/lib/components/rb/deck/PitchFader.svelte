@@ -26,7 +26,7 @@
 	const THUMB_H = 12; // matches .rb-fader-thumb height in theme.css
 	const KEY_STEP_PCT = 0.1; // ArrowUp/Down nudges pitch by 0.1%
 
-	let dragging = false;
+	let activePointerId: number | null = null;
 
 	// 0 = -range%, 0.5 = 0% (ratio 1.0), 1 = +range% (top = faster).
 	const value: number = $derived(faderValueFromPitchRatio(deck.pitch, pitchRange));
@@ -38,32 +38,58 @@
 		return Math.min(1, Math.max(0, 1 - y / (TRACK_H - THUMB_H)));
 	}
 
-	async function handlePointerDown(e: PointerEvent): Promise<void> {
+	function _setTempoFromValue(value: number): void {
+		// runPerformanceCommandFromUi owns errors and route-session generation.
+		// Do not await pointer events: a drag must keep sampling while the prior
+		// scheduled tempo update is pending on the deck/sync command scope.
+		void onTempoChange(pitchRatioFromFaderValue(value, pitchRange));
+	}
+
+	function _setTempoFromKey(value: number): void {
+		_setTempoFromValue(faderValueFromPitchRatio(value, pitchRange));
+	}
+
+	function handlePointerDown(e: PointerEvent): void {
 		if (pending) return;
-		dragging = true;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-		await onTempoChange(pitchRatioFromFaderValue(_valueFromEvent(e), pitchRange));
+		const target = e.currentTarget as HTMLElement;
+		target.focus();
+		activePointerId = e.pointerId;
+		target.setPointerCapture(e.pointerId);
+		_setTempoFromValue(_valueFromEvent(e));
 	}
 
-	async function handlePointerMove(e: PointerEvent): Promise<void> {
-		if (!dragging || pending) return;
-		await onTempoChange(pitchRatioFromFaderValue(_valueFromEvent(e), pitchRange));
+	function handlePointerMove(e: PointerEvent): void {
+		if (activePointerId !== e.pointerId) return;
+		_setTempoFromValue(_valueFromEvent(e));
 	}
 
-	function handlePointerUp(e: PointerEvent): void {
-		if (!dragging) return;
-		dragging = false;
-		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+	function handlePointerDone(e: PointerEvent): void {
+		if (activePointerId !== e.pointerId) return;
+		activePointerId = null;
+		const target = e.currentTarget as HTMLElement;
+		if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
 	}
 
-	async function handleKeyDown(e: KeyboardEvent): Promise<void> {
+	function handleKeyDown(e: KeyboardEvent): void {
 		if (pending) return;
 		if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			await onTempoChange(deck.pitch + KEY_STEP_PCT / 100);
+			_setTempoFromKey(deck.pitch + KEY_STEP_PCT / 100);
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			await onTempoChange(deck.pitch - KEY_STEP_PCT / 100);
+			_setTempoFromKey(deck.pitch - KEY_STEP_PCT / 100);
+		} else if (e.key === 'PageUp') {
+			e.preventDefault();
+			_setTempoFromKey(deck.pitch + 0.01);
+		} else if (e.key === 'PageDown') {
+			e.preventDefault();
+			_setTempoFromKey(deck.pitch - 0.01);
+		} else if (e.key === 'Home') {
+			e.preventDefault();
+			_setTempoFromValue(0);
+		} else if (e.key === 'End') {
+			e.preventDefault();
+			_setTempoFromValue(1);
 		}
 	}
 </script>
@@ -82,7 +108,8 @@
 		data-performance-control="pitch"
 		onpointerdown={handlePointerDown}
 		onpointermove={handlePointerMove}
-		onpointerup={handlePointerUp}
+		onpointerup={handlePointerDone}
+		onpointercancel={handlePointerDone}
 		onkeydown={handleKeyDown}
 	>
 		<div class="rb-fader-track"></div>
@@ -119,6 +146,12 @@
 	}
 	.rb-fader {
 		position: relative;
+		cursor: ns-resize;
+		touch-action: none;
+		outline: none;
+	}
+	.rb-fader:focus-visible .rb-fader-thumb {
+		box-shadow: 0 0 4px var(--rb-accent-glow);
 	}
 	.center-tick {
 		position: absolute;

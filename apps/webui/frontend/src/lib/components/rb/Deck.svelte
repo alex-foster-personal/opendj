@@ -193,6 +193,7 @@
 	async function setPitchRangeUi(range: PitchRange): Promise<void> {
 		if (range !== pitchRange && Math.abs(deck.pitch - 1) * 100 > range + 1e-9) {
 			await runPerformanceCommandFromUi({ type: 'tempo', deck: deckId, ratio: 1 });
+			if (Math.abs(getDeckState(deckId).pitch - 1) * 100 > range + 1e-9) return;
 		}
 		await runPerformanceCommandFromUi({ type: 'pitch_range', deck: deckId, range });
 	}

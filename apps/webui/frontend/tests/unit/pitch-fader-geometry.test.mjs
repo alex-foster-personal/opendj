@@ -5,9 +5,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let faderValueFromPitchRatio;
 let pitchRatioFromFaderValue;
+let MIN_TEMPO_RATIO;
 
 before(async () => {
-	({ faderValueFromPitchRatio, pitchRatioFromFaderValue } = await loadTypeScriptModule(
+	({ faderValueFromPitchRatio, pitchRatioFromFaderValue, MIN_TEMPO_RATIO } = await loadTypeScriptModule(
 		'src/lib/components/rb/deck/pitch-fader-geometry.ts'
 	));
 });
@@ -24,7 +25,8 @@ test('fader travel spans exactly the selected pitch range', () => {
 	assert.equal(pitchRatioFromFaderValue(1, 16), 1.16);
 	assert.equal(pitchRatioFromFaderValue(0, 16), 0.84);
 	assert.equal(pitchRatioFromFaderValue(1, 100), 2);
-	assert.equal(pitchRatioFromFaderValue(0, 100), 0);
+	assert.equal(pitchRatioFromFaderValue(0, 100), MIN_TEMPO_RATIO);
+	assert.ok(pitchRatioFromFaderValue(0, 100) > 0);
 });
 
 test('out-of-travel fader values clamp to the range endpoints', () => {

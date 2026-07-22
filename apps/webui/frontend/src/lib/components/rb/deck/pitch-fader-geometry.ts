@@ -5,7 +5,8 @@
  *   ✔︎ A centered-zero fader value of 0.5 always means 0% pitch (ratio 1.0),
  *     independent of the selected +-8/+-16/WIDE range.
  *     [if] value is 0.5 [then] ratio is 1.0 for every pitchRangePct
- *   ✔︎ The fader's full 0..1 travel always spans exactly the selected range.
+ *   ✔︎ The fader's full 0..1 travel always spans the selected range. WIDE's
+ *     zero-rate lower endpoint becomes the smallest positive valid ratio.
  *     [if] pitchRangePct is 8 and value is 1 [then] ratio is 1.08
  *     [if] pitchRangePct is 8 and value is 0 [then] ratio is 0.92
  *   ✔︎ Round-tripping a ratio through faderValueFromPitchRatio then back
@@ -22,10 +23,18 @@ function _clamp01(value: number): number {
 	return Math.min(1, Math.max(0, value));
 }
 
+/** AudioEngine rejects zero-rate transport. The WIDE fader's bottom endpoint
+ * therefore means the smallest representable positive ratio, which still
+ * renders as -100.0% but never queues an invalid tempo command. */
+export const MIN_TEMPO_RATIO = Number.EPSILON;
+
 export function pitchRatioFromFaderValue(value: number, pitchRangePct: number): number {
 	_assertPositive('pitchRangePct', pitchRangePct);
 	if (!Number.isFinite(value)) throw new RangeError(`value must be finite, got ${value}`);
-	return 1 + (_clamp01(value) - 0.5) * 2 * (pitchRangePct / 100);
+	return Math.max(
+		MIN_TEMPO_RATIO,
+		1 + (_clamp01(value) - 0.5) * 2 * (pitchRangePct / 100)
+	);
 }
 
 export function faderValueFromPitchRatio(ratio: number, pitchRangePct: number): number {
