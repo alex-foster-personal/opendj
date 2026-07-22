@@ -193,6 +193,27 @@ test('headphone selection declares sink, stream attach, play, then publish and r
 	);
 });
 
+test('headphone reselection keeps the previous monitor until a candidate commits', () => {
+	assert.deepEqual(audio.headphoneReselectionStages(), [
+		'createCandidate',
+		'setSinkId',
+		'attachStream',
+		'play',
+		'replaceAndPublish',
+		'detachPrevious'
+	]);
+	assert.deepEqual(audio.headphoneReselectionResult(false), {
+		replaceCurrentElement: false,
+		publishSelection: false,
+		detachPrevious: false
+	});
+	assert.deepEqual(audio.headphoneReselectionResult(true), {
+		replaceCurrentElement: true,
+		publishSelection: true,
+		detachPrevious: true
+	});
+});
+
 test('paused tempo and Master Tempo settings persist into the next requested Signalsmith play', () => {
 	const afterTempo = audio.applyPausedDeckControlSettings(
 		{ tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 2 },

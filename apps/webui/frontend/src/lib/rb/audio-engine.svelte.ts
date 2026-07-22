@@ -537,6 +537,30 @@ export function headphoneSelectionStages(): readonly string[] {
 	return ['setSinkId', 'attachStream', 'play', 'publish'];
 }
 
+export function headphoneReselectionStages(): readonly string[] {
+	return [
+		'createCandidate',
+		'setSinkId',
+		'attachStream',
+		'play',
+		'replaceAndPublish',
+		'detachPrevious'
+	];
+}
+
+export function headphoneReselectionResult(candidateAccepted: boolean): {
+	replaceCurrentElement: boolean;
+	publishSelection: boolean;
+	detachPrevious: boolean;
+} {
+	if (typeof candidateAccepted !== 'boolean') {
+		throw new TypeError('headphone candidate acceptance must be boolean');
+	}
+	return candidateAccepted
+		? { replaceCurrentElement: true, publishSelection: true, detachPrevious: true }
+		: { replaceCurrentElement: false, publishSelection: false, detachPrevious: false };
+}
+
 export function headphoneOwnershipIsCurrent(
 	operationGeneration: number,
 	currentGeneration: number,
@@ -623,7 +647,7 @@ function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _He
 	const masterMix = context.createGain();
 	const level = context.createGain();
 	const destination = context.createMediaStreamDestination();
-	const element = new Audio();
+	const element = _createDetachedHeadphoneElement();
 	cueSum.connect(cueMix);
 	masterGain.connect(masterMonitor);
 	masterMonitor.connect(masterMix);
@@ -635,6 +659,15 @@ function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _He
 	return _headphoneNodes;
 }
 
+function _createDetachedHeadphoneElement(): HTMLAudioElement {
+	return new Audio();
+}
+
+function _detachHeadphoneElement(element: HTMLAudioElement): void {
+	element.pause();
+	element.srcObject = null;
+}
+
 function _disposeHeadphoneGraph(): void {
 	const nodes = _headphoneNodes;
 	_headphoneNodes = null;
@@ -642,8 +675,7 @@ function _disposeHeadphoneGraph(): void {
 	for (const node of [nodes.cueSum, nodes.masterMonitor, nodes.cueMix, nodes.masterMix, nodes.level, nodes.destination]) {
 		node.disconnect();
 	}
-	nodes.element.pause();
-	nodes.element.srcObject = null;
+	_detachHeadphoneElement(nodes.element);
 	for (const track of nodes.destination.stream.getTracks()) track.stop();
 }
 
@@ -3389,27 +3421,34 @@ class RbAudioEngine implements AudioEngine {
 	async selectHeadphoneOutput(deviceId: string): Promise<void> {
 		const generation = _headphoneGeneration;
 		let nodes: _HeadphoneNodes | null = null;
+		let candidate: HTMLAudioElement | null = null;
 		try {
 			_requireHeadphoneDeviceApi();
 			assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
 			const context = _ensureGraph();
 			if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
 			nodes = _ensureHeadphoneGraph(context, _masterGain);
-			await withHeadphoneOperationTimeout('setSinkId', nodes.element.setSinkId(deviceId));
+			candidate = _createDetachedHeadphoneElement();
+			await withHeadphoneOperationTimeout('setSinkId', candidate.setSinkId(deviceId));
 			_assertCurrentHeadphoneOperation(generation, nodes);
-			nodes.element.srcObject = nodes.destination.stream;
+			candidate.srcObject = nodes.destination.stream;
 			_assertCurrentHeadphoneOperation(generation, nodes);
-			await withHeadphoneOperationTimeout('play', nodes.element.play());
+			await withHeadphoneOperationTimeout('play', candidate.play());
 			_assertCurrentHeadphoneOperation(generation, nodes);
+			const transaction = headphoneReselectionResult(true);
+			const previous = nodes.element;
+			if (!transaction.replaceCurrentElement || !transaction.publishSelection || !transaction.detachPrevious) {
+				throw new Error('accepted headphone candidate did not produce a complete replacement transaction');
+			}
+			nodes.element = candidate;
 			mixerState.headphones.selected_output_device_id = deviceId;
 			mixerState.headphones.active = true;
 			mixerState.headphones.error = null;
+			_detachHeadphoneElement(previous);
+			candidate = null;
 		} catch (error) {
+			if (candidate !== null) _detachHeadphoneElement(candidate);
 			_assertCurrentHeadphoneOperation(generation, nodes);
-			if (nodes !== null) {
-				nodes.element.pause();
-				nodes.element.srcObject = null;
-			}
 			throw _headphoneError('headphone output selection failed', error);
 		}
 	}
