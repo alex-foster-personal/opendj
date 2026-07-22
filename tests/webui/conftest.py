@@ -18,6 +18,23 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+def _stub_rb_vendor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the app fixtures hermetic: no live master.plain.db dependency.
+
+    ``list_playlists`` consults ``rb_vendor.playlist_order_index`` whenever
+    rekordbox playlists exist; it reads the live ``master.plain.db``. On a
+    dev Mac that happens to exist, so the unit test silently depended on
+    machine state; on any other machine it fails loudly (by design) and the
+    endpoint 500s. Stub ONLY the db-backed order lookup -- everything else
+    (``bulk_availability`` is a pure stat pass) stays real. rb_vendor's own
+    behaviour is covered by tests/webui/test_rb_vendor_portability.py and
+    the live-db suite.
+    """
+    from apps.webui.server import rb_vendor
+
+    monkeypatch.setattr(rb_vendor, "playlist_order_index", lambda: {})
+
+
 @pytest.fixture
 def seed_backend() -> InMemoryBackend:
     """5 tracks, 2 playlists, 1 pairing, 1 dedup candidate."""
@@ -71,7 +88,10 @@ def seed_backend() -> InMemoryBackend:
 
 
 @pytest.fixture
-def client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
+def client(
+    seed_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    _stub_rb_vendor(monkeypatch)
     app = create_app(
         backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
         lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
@@ -81,7 +101,10 @@ def client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def insecure_client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
+def insecure_client(
+    seed_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    _stub_rb_vendor(monkeypatch)
     app = create_app(backend=seed_backend, bind_host="0.0.0.0",
                      hostname="test-host")
     with TestClient(app) as c:
@@ -89,7 +112,10 @@ def insecure_client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def locked_client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
+def locked_client(
+    seed_backend: InMemoryBackend, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    _stub_rb_vendor(monkeypatch)
     app = create_app(
         backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
         lock_status_fn=lambda: {"holder": "other-host",
