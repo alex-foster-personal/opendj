@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.shared import paths
-from apps.shared.tag_writer import UnifiedTags, read_tags, write_tags
+from apps.shared.tag_writer import read_tags, write_tags
 
 from apps.dedup import schema as dedup_schema
 from . import collect as tag_collect
@@ -226,7 +226,9 @@ def _write_reversal(apply_results: list[ApplyResult], out_dir: Path) -> Path:
     lines = ["#!/usr/bin/env bash", "set -euo pipefail"]
     for r in apply_results:
         if r.backup and r.error is None:
-            lines.append(f'cp -v "{r.backup}" "{r.path}"')
+            # as_posix(): the reversal is a bash script; backslashed Windows
+            # paths would be mangled by quoting/escaping rules.
+            lines.append(f'cp -v "{r.backup.as_posix()}" "{Path(r.path).as_posix()}"')
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:
         out.chmod(0o755)

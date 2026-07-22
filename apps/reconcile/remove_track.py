@@ -573,12 +573,15 @@ if __name__ == "__main__":
     sys.exit(main())
 '''
     body = (
+        # as_posix(), not str(): a backslashed Windows path inside the
+        # generated docstring is a SyntaxError (truncated \U escape), and
+        # forward slashes are valid everywhere Python opens files.
         body.replace("__TS__", ts)
-            .replace("__BACKUP__", str(backup))
-            .replace("__DB_PATH__", str(db_path))
+            .replace("__BACKUP__", Path(backup).as_posix())
+            .replace("__DB_PATH__", Path(db_path).as_posix())
             .replace("__PAYLOAD__", payload_json)
     )
-    out.write_text(body)
+    out.write_text(body, encoding="utf-8")
     out.chmod(0o755)
     return out
 
