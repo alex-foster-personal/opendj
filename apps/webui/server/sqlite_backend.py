@@ -44,7 +44,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional, Sequence
+from typing import Any, Callable, Iterator, Optional, Sequence
 
 from apps.shared.state import db as _state_db
 from apps.shared.state.writer import StateWriter
@@ -525,6 +525,7 @@ class SqliteBackend:
     def update_track(
         self, stable_id: str, patch: dict[str, Any], *,
         expected_etag: str, source: Source = "webui",
+        mutation_guard: Callable[[], None] | None = None,
     ) -> Track:
         """Persist a rating / notes / tags patch through ``StateWriter``.
 
@@ -544,6 +545,7 @@ class SqliteBackend:
         try:
             return self.update_tracks(
                 [TrackUpdate(stable_id, patch, expected_etag)], source=source,
+                mutation_guard=mutation_guard,
             )[0]
         except BatchConflictError as exc:
             current = self.get_track(stable_id)
@@ -551,6 +553,7 @@ class SqliteBackend:
 
     def update_tracks(
         self, updates: Sequence[TrackUpdate], *, source: Source = "webui",
+        mutation_guard: Callable[[], None] | None = None,
     ) -> list[Track]:
         """Atomically compare-and-swap and persist every requested update.
 
@@ -574,8 +577,9 @@ class SqliteBackend:
                 conflicts: list[dict[str, str]] = []
                 for update in updates:
                     row = conn.execute(
-                        "SELECT stable_id, title, artists_json, album, duration_ms, "
-                        "file_path, created_at, updated_at FROM tracks WHERE stable_id = ?",
+                        "SELECT stable_id, stable_id_tier, title, artists_json, album, isrc, "
+                        "duration_ms, file_path, content_hash, created_at, updated_at "
+                        "FROM tracks WHERE stable_id = ?",
                         (update.stable_id,),
                     ).fetchone()
                     if row is None:
@@ -596,14 +600,54 @@ class SqliteBackend:
                     _field_writes(current, update.patch)
                     for current, update in zip(current_rows, updates)
                 ]
+                file_paths: list[str | None] = []
+                for update in updates:
+                    if "file_path" not in update.patch:
+                        file_paths.append(None)
+                        continue
+                    file_path = update.patch["file_path"]
+                    if not isinstance(file_path, str) or not file_path:
+                        raise BackendError("file_path must be a non-empty string")
+                    file_paths.append(file_path)
                 now = datetime.now(timezone.utc).isoformat()
+                if mutation_guard is not None:
+                    mutation_guard()
                 with StateWriter(conn, actor="webui") as writer:
-                    for update, field_writes in zip(updates, writes):
+                    for current, update, field_writes, file_path in zip(
+                        current_rows, updates, writes, file_paths,
+                    ):
                         for field_name, value in field_writes.items():
                             writer.set_field(
                                 update.stable_id, field_name, value,
                                 source=source, modified_at=now, confidence=1.0,
                             )
+                        if file_path is not None:
+                            row = conn.execute(
+                                "SELECT stable_id_tier, title, artists_json, album, isrc, "
+                                "duration_ms, content_hash FROM tracks WHERE stable_id = ?",
+                                (current.stable_id,),
+                            ).fetchone()
+                            if row is None:
+                                raise NotFoundError(
+                                    f"track not found: {current.stable_id}"
+                                )
+                            writer.upsert_track(
+                                stable_id=current.stable_id,
+                                stable_id_tier=row["stable_id_tier"],
+                                title=row["title"],
+                                artists=(
+                                    json.loads(row["artists_json"])
+                                    if row["artists_json"]
+                                    else []
+                                ),
+                                album=row["album"],
+                                isrc=row["isrc"],
+                                duration_ms=row["duration_ms"],
+                                file_path=file_path,
+                                content_hash=row["content_hash"],
+                            )
+                if mutation_guard is not None:
+                    mutation_guard()
                 conn.execute("COMMIT")
             except Exception:
                 if conn.in_transaction:

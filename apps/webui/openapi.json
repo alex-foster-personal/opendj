@@ -3403,6 +3403,191 @@
         "title": "RecorderStatus",
         "type": "object"
       },
+      "RelocateApplyIn": {
+        "properties": {
+          "confirm": {
+            "description": "Must be true. Explicit safety gate -- this writes to the live rekordbox database or the state layer.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "expected_candidate_identity": {
+            "description": "Opaque identity token returned for the selected candidate.",
+            "minLength": 1,
+            "title": "Expected Candidate Identity",
+            "type": "string"
+          },
+          "expected_original_path": {
+            "description": "Recorded path returned with the selected candidate; prevents stale targeting.",
+            "minLength": 1,
+            "title": "Expected Original Path",
+            "type": "string"
+          },
+          "expected_vendor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Vendor mapping returned with the selected candidate, or null for state writes.",
+            "title": "Expected Vendor Id"
+          },
+          "new_path": {
+            "description": "Candidate path to adopt; must exist on disk.",
+            "minLength": 1,
+            "title": "New Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_path",
+          "expected_candidate_identity",
+          "expected_original_path",
+          "expected_vendor_id",
+          "confirm"
+        ],
+        "title": "RelocateApplyIn",
+        "type": "object"
+      },
+      "RelocateApplyOut": {
+        "properties": {
+          "backup_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Path"
+          },
+          "new_path": {
+            "title": "New Path",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "rekordbox",
+              "state"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
+          }
+        },
+        "required": [
+          "stable_id",
+          "new_path",
+          "target",
+          "vendor_id",
+          "backup_path"
+        ],
+        "title": "RelocateApplyOut",
+        "type": "object"
+      },
+      "RelocateCandidateList": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/RelocateCandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
+          }
+        },
+        "required": [
+          "stable_id",
+          "original_path",
+          "vendor_id",
+          "total",
+          "candidates"
+        ],
+        "title": "RelocateCandidateList",
+        "type": "object"
+      },
+      "RelocateCandidateOut": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "identity_token": {
+            "title": "Identity Token",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "signals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signals",
+            "type": "array"
+          },
+          "triple_validated": {
+            "title": "Triple Validated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "identity_token",
+          "confidence",
+          "signals",
+          "triple_validated"
+        ],
+        "title": "RelocateCandidateOut",
+        "type": "object"
+      },
       "SearchHit": {
         "description": "One hydrated result row + the FTS match excerpt.",
         "properties": {
@@ -7436,6 +7621,130 @@
         "summary": "Reconcile Summary",
         "tags": [
           "reconcile"
+        ]
+      }
+    },
+    "/api/v1/relocate/candidates/{stable_id}": {
+      "get": {
+        "operationId": "get_candidates_api_v1_relocate_candidates__stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max ranked candidates to return",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "description": "Max ranked candidates to return",
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelocateCandidateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Candidates",
+        "tags": [
+          "relocate"
+        ]
+      }
+    },
+    "/api/v1/relocate/{stable_id}/apply": {
+      "post": {
+        "operationId": "apply_relocate_api_v1_relocate__stable_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelocateApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelocateApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Relocate",
+        "tags": [
+          "relocate"
         ]
       }
     },
