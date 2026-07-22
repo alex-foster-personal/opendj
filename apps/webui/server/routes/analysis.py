@@ -1,0 +1,366 @@
+"""Analysis-derived read endpoints (gating unit: analysis router).
+
+Implements the data side of two downstream features:
+
+  * auto-cue-proposals   -> GET /api/v1/tracks/{stable_id}/auto-cues
+  * anlz-fallback-beatgrid -> GET /api/v1/tracks/{stable_id}/beatgrid-fallback
+
+Both endpoints are read-only projections of the ``analysis`` table in
+``state.db`` (written exclusively by :mod:`apps.analysis`). This module
+NEVER writes state.db - it opens the file ``mode=ro`` with
+``query_only`` on, matching :func:`apps.shared.state.db.open_ro`.
+
+Contract notes for downstream builders
+--------------------------------------
+* ``/auto-cues`` items are PROPOSALS, never committed cues. The response
+  carries a top-level ``proposal: true`` and every item carries
+  ``source`` so a UI can render them distinctly from djmdCue hot cues.
+* ``/beatgrid-fallback`` returns ``beatgrid`` in EXACTLY the ANLZ shape
+  served by ``GET /tracks/{stable_id}/anlz`` (rb_vendor._beatgrid_payload):
+  ``{"beat_count": N, "beats": [{"n": 1..4, "bpm": <2dp>, "t": <3dp s>}]}``
+  so clients can swap sources without a schema branch. ``anlz_available``
+  tells the client whether the authoritative rekordbox grid also exists
+  (prefer ``/anlz`` when it does).
+* Fail-fast: 404s are explicit ``{"code", "message"}`` details (same
+  shape as rb_vendor.not_found). A grid is never invented - no analysis
+  downbeats and no ANLZ means 404, not a synthesised guess.
+
+Test injection points (mirrors the ``lock_status_fn`` pattern in deps.py):
+  * ``app.state.analysis_db_path``  -> Path of the state DB to read
+    (default: apps.shared.paths.STATE_DB).
+  * ``app.state.anlz_available_fn`` -> Callable[[str], bool] overriding
+    the rekordbox ANLZ on-disk probe.
+
+The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from typing import Callable, List, Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
+
+from apps.analysis.auto_cues import propose_cues
+from apps.analysis.record import AnalysisRecord
+from apps.shared.paths import STATE_DB
+
+from .. import rb_vendor
+from ..backend import StateBackend
+from ..deps import get_read_state
+
+router = APIRouter(prefix="/tracks", tags=["analysis"])
+
+AUTO_CUES_SOURCE: str = "apps.analysis.auto_cues"
+BEATGRID_SOURCE: str = "apps.analysis"
+BEATS_PER_BAR: int = 4          # 4/4 assumed, matching ANLZ PQTZ n=1..4
+_MIN_BEAT_INTERVAL_S: float = 0.05   # < 50 ms/beat (1200 BPM) = corrupt record
+
+_CACHE_ANALYSIS = "no-store"    # analysis rows can be re-run at any time
+
+
+# ----- response models --------------------------------------------------------
+
+class AutoCueOut(BaseModel):
+    """One PROPOSED cue. ``kind`` is intro|drop|break|outro|'' (unlabelled)."""
+
+    time_s: float
+    kind: str
+    confidence: float
+    source: str
+    rms_dbfs: float
+
+
+class AutoCuesOut(BaseModel):
+    stable_id: str
+    proposal: Literal[True] = True   # never committed cues - render distinctly
+    source: str
+    backend: str
+    backend_version: str
+    proposals: List[AutoCueOut]
+
+
+class FallbackBeatOut(BaseModel):
+    """Identical field set to one ANLZ beatgrid ``beats`` entry."""
+
+    n: int      # beat-in-bar 1..4
+    bpm: float  # rounded 2dp, like /anlz
+    t: float    # seconds, rounded 3dp, like /anlz
+
+
+class FallbackBeatgridOut(BaseModel):
+    """Identical shape to the ``beatgrid`` object served by /anlz."""
+
+    beat_count: int
+    beats: List[FallbackBeatOut]
+
+
+class BeatgridFallbackOut(BaseModel):
+    stable_id: str
+    source: str
+    backend: str
+    backend_version: str
+    bpm: float
+    bpm_confidence: float
+    anlz_available: bool
+    beatgrid: FallbackBeatgridOut
+
+
+# ----- helpers ----------------------------------------------------------------
+
+def _analysis_db_path(request: Request) -> Path:
+    override: Optional[Path] = getattr(request.app.state, "analysis_db_path", None)
+    return Path(override) if override is not None else STATE_DB
+
+
+def _open_analysis_ro(path: Path) -> sqlite3.Connection:
+    if not path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "STATE_DB_UNAVAILABLE",
+                "message": f"state DB missing on disk: {path}",
+            },
+        )
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
+def _load_latest_record(
+    db_path: Path, stable_id: str, backend: Optional[str]
+) -> Optional[AnalysisRecord]:
+    """Newest analysis row for ``stable_id`` (deterministic tie-break).
+
+    Returns None when the track has no analysis row (or the ``analysis``
+    table itself does not exist yet - the pipeline has never run). Both
+    are the same client-visible state: nothing to serve.
+    """
+    conn = _open_analysis_ro(db_path)
+    try:
+        sql = (
+            "SELECT record_json FROM analysis WHERE stable_id = ?"
+        )
+        params: list[object] = [stable_id]
+        if backend is not None:
+            sql += " AND backend = ?"
+            params.append(backend)
+        sql += " ORDER BY analyzed_at DESC, backend ASC, backend_version DESC LIMIT 1"
+        try:
+            row = conn.execute(sql, params).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table: analysis" in str(exc):
+                return None
+            raise
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return AnalysisRecord.from_json(row[0])
+
+
+def _default_anlz_available(stable_id: str) -> bool:
+    """Disk truth: does a rekordbox ANLZ .DAT exist for this track?
+
+    ``VENDOR_MAPPING_NOT_FOUND`` (track known but not a rekordbox track)
+    and ``MASTER_DB_UNAVAILABLE`` (no rekordbox install on this machine)
+    both mean "no ANLZ" by definition, not an error. ``TRACK_NOT_FOUND``
+    and everything else propagates - an unknown stable_id stays a 404.
+    """
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+    except HTTPException as exc:
+        code = exc.detail.get("code") if isinstance(exc.detail, dict) else None
+        if code in ("VENDOR_MAPPING_NOT_FOUND", "MASTER_DB_UNAVAILABLE"):
+            return False
+        raise
+    if content.analysis_data_path is None:
+        return False
+    return rb_vendor.resolve_share_path(content.analysis_data_path).is_file()
+
+
+def _anlz_available(request: Request, stable_id: str) -> bool:
+    fn: Optional[Callable[[str], bool]] = getattr(
+        request.app.state, "anlz_available_fn", None
+    )
+    if fn is not None:
+        return bool(fn(stable_id))
+    return _default_anlz_available(stable_id)
+
+
+def _invalid_record(stable_id: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=500,
+        detail={
+            "code": "ANALYSIS_RECORD_INVALID",
+            "message": f"analysis record for {stable_id} is corrupt: {message}",
+        },
+    )
+
+
+def synthesize_fallback_beats(record: AnalysisRecord) -> Optional[list[FallbackBeatOut]]:
+    """Derive an ANLZ-shaped beat list from measured analysis data.
+
+    Anchored on ``downbeats_s`` (n=1 on every detected downbeat, beats
+    2..4 interpolated inside each bar), extended past the last downbeat
+    at the last measured bar tempo (or ``record.bpm`` when only one
+    downbeat exists). The grid starts at the FIRST detected downbeat -
+    beats before it are not invented.
+
+    Returns None when nothing measurable anchors a grid (no downbeats,
+    or a single downbeat with no usable BPM). Corrupt data (negative
+    duration, non-increasing downbeats, absurd tempo) raises via the
+    caller - it is never smoothed over.
+    """
+    downbeats = [float(d) for d in record.downbeats_s]
+    if not downbeats:
+        return None
+    if record.duration_s <= 0:
+        raise _invalid_record(record.stable_id, f"duration_s={record.duration_s}")
+    for a, b in zip(downbeats, downbeats[1:]):
+        if b <= a:
+            raise _invalid_record(
+                record.stable_id, f"downbeats_s not strictly increasing ({a} -> {b})"
+            )
+
+    beats: list[FallbackBeatOut] = []
+
+    def _emit(t: float, n: int, bar_s: float) -> None:
+        beats.append(FallbackBeatOut(
+            n=n, bpm=round(240.0 / bar_s, 2), t=round(t, 3),
+        ))
+
+    # Bars between consecutive measured downbeats.
+    for start, end in zip(downbeats, downbeats[1:]):
+        bar_s = end - start
+        if bar_s / BEATS_PER_BAR < _MIN_BEAT_INTERVAL_S:
+            raise _invalid_record(
+                record.stable_id, f"bar of {bar_s:.4f}s implies >1200 BPM"
+            )
+        for k in range(BEATS_PER_BAR):
+            _emit(start + k * bar_s / BEATS_PER_BAR, k + 1, bar_s)
+
+    # Tail past the last downbeat, at the last measured bar tempo.
+    if len(downbeats) >= 2:
+        tail_bar_s = downbeats[-1] - downbeats[-2]
+    elif record.bpm > 0:
+        tail_bar_s = BEATS_PER_BAR * 60.0 / record.bpm
+    else:
+        # Single downbeat and no usable BPM: nothing anchors a grid.
+        return None
+    if tail_bar_s / BEATS_PER_BAR < _MIN_BEAT_INTERVAL_S:
+        raise _invalid_record(
+            record.stable_id, f"tempo bar of {tail_bar_s:.4f}s implies >1200 BPM"
+        )
+    t = downbeats[-1]
+    n = 1
+    while t < record.duration_s:
+        _emit(t, n, tail_bar_s)
+        t += tail_bar_s / BEATS_PER_BAR
+        n = n % BEATS_PER_BAR + 1
+    return beats
+
+
+# ----- endpoints --------------------------------------------------------------
+
+@router.get("/{stable_id}/auto-cues", response_model=AutoCuesOut)
+def get_auto_cues(
+    stable_id: str,
+    request: Request,
+    backend: Optional[str] = Query(
+        None, description="Analysis backend to read (default: newest row)"
+    ),
+    _backend: StateBackend = Depends(get_read_state),
+) -> AutoCuesOut:
+    """PROPOSED hot cues from apps.analysis (META-04). Never committed cues."""
+    record = _load_latest_record(_analysis_db_path(request), stable_id, backend)
+    if record is None:
+        raise rb_vendor.not_found(
+            "ANALYSIS_NOT_FOUND",
+            f"no apps.analysis record for stable_id {stable_id}"
+            + (f" with backend {backend}" if backend else "")
+            + "; run the analysis pipeline first",
+        )
+    tp = propose_cues(record)
+    return AutoCuesOut(
+        stable_id=stable_id,
+        source=AUTO_CUES_SOURCE,
+        backend=record.backend,
+        backend_version=tp.backend_version,
+        proposals=[
+            AutoCueOut(
+                time_s=c.time_s, kind=c.label, confidence=c.confidence,
+                source=AUTO_CUES_SOURCE, rms_dbfs=c.rms_dbfs,
+            )
+            for c in tp.cues
+        ],
+    )
+
+
+@router.get("/{stable_id}/beatgrid-fallback", response_model=BeatgridFallbackOut)
+def get_beatgrid_fallback(
+    stable_id: str,
+    request: Request,
+    backend: Optional[str] = Query(
+        None, description="Analysis backend to read (default: newest row)"
+    ),
+    _backend: StateBackend = Depends(get_read_state),
+) -> BeatgridFallbackOut:
+    """Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.
+
+    Serves the apps.analysis grid whenever one is derivable (with
+    ``anlz_available`` reporting whether the authoritative rekordbox grid
+    also exists). 404 with an explicit code when no grid can be served -
+    a beatgrid is never invented.
+    """
+    anlz_ok = _anlz_available(request, stable_id)
+    record = _load_latest_record(_analysis_db_path(request), stable_id, backend)
+    beats = synthesize_fallback_beats(record) if record is not None else None
+    if record is None or beats is None:
+        reason = (
+            "no apps.analysis record" if record is None
+            else "analysis record has no usable downbeats"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "BEATGRID_FALLBACK_NOT_FOUND",
+                "message": (
+                    f"{reason} for stable_id {stable_id}; "
+                    + (
+                        "rekordbox ANLZ exists - use GET "
+                        f"/api/v1/tracks/{stable_id}/anlz"
+                        if anlz_ok
+                        else "no rekordbox ANLZ either - nothing to serve "
+                             "(a beatgrid is never invented)"
+                    )
+                ),
+                "anlz_available": anlz_ok,
+            },
+        )
+    return BeatgridFallbackOut(
+        stable_id=stable_id,
+        source=BEATGRID_SOURCE,
+        backend=record.backend,
+        backend_version=record.backend_version,
+        bpm=record.bpm,
+        bpm_confidence=record.bpm_confidence,
+        anlz_available=anlz_ok,
+        beatgrid=FallbackBeatgridOut(beat_count=len(beats), beats=beats),
+    )
+
+
+__all__ = [
+    "AUTO_CUES_SOURCE",
+    "BEATGRID_SOURCE",
+    "AutoCueOut",
+    "AutoCuesOut",
+    "BeatgridFallbackOut",
+    "FallbackBeatOut",
+    "FallbackBeatgridOut",
+    "get_auto_cues",
+    "get_beatgrid_fallback",
+    "router",
+    "synthesize_fallback_beats",
+]

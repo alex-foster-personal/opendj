@@ -43,15 +43,24 @@ def open_rw(
     path: Path | None = None,
     *,
     apply_schema: bool = True,
+    check_same_thread: bool = True,
 ) -> sqlite3.Connection:
     """Open ``path`` read-write; optionally apply migrations.
 
     The parent directory is created if missing so ``init`` can be called on
     a fresh checkout.
+
+    ``check_same_thread=False`` is for callers that own a single connection
+    behind their own lock but are invoked from a thread pool (e.g. the webui
+    ``PlaylistStore`` under FastAPI's sync-endpoint executor). Such callers
+    MUST serialise all access themselves.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
-    conn = sqlite3.connect(str(target), isolation_level=None)
+    conn = sqlite3.connect(
+        str(target), isolation_level=None,
+        check_same_thread=check_same_thread,
+    )
     try:
         _apply_rw_pragmas(conn)
         if apply_schema:

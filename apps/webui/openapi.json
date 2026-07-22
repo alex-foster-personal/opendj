@@ -1,6 +1,293 @@
 {
   "components": {
     "schemas": {
+      "AutoCueOut": {
+        "description": "One PROPOSED cue. ``kind`` is intro|drop|break|outro|'' (unlabelled).",
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "rms_dbfs": {
+            "title": "Rms Dbfs",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "time_s": {
+            "title": "Time S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time_s",
+          "kind",
+          "confidence",
+          "source",
+          "rms_dbfs"
+        ],
+        "title": "AutoCueOut",
+        "type": "object"
+      },
+      "AutoCuesOut": {
+        "properties": {
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "backend_version": {
+            "title": "Backend Version",
+            "type": "string"
+          },
+          "proposal": {
+            "const": true,
+            "default": true,
+            "title": "Proposal",
+            "type": "boolean"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/AutoCueOut"
+            },
+            "title": "Proposals",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "backend",
+          "backend_version",
+          "proposals"
+        ],
+        "title": "AutoCuesOut",
+        "type": "object"
+      },
+      "BeatgridFallbackOut": {
+        "properties": {
+          "anlz_available": {
+            "title": "Anlz Available",
+            "type": "boolean"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "backend_version": {
+            "title": "Backend Version",
+            "type": "string"
+          },
+          "beatgrid": {
+            "$ref": "#/components/schemas/FallbackBeatgridOut"
+          },
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "bpm_confidence": {
+            "title": "Bpm Confidence",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "backend",
+          "backend_version",
+          "bpm",
+          "bpm_confidence",
+          "anlz_available",
+          "beatgrid"
+        ],
+        "title": "BeatgridFallbackOut",
+        "type": "object"
+      },
+      "BrokenTrackList": {
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/BrokenTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "total",
+          "tracks"
+        ],
+        "title": "BrokenTrackList",
+        "type": "object"
+      },
+      "BrokenTrackOut": {
+        "description": "One broken track row. Field names align with ``TrackRowOut`` where the\nconcepts overlap (title/artist/key/bpm/rating/duration_ms/file_exists/\nis_streaming) and with ``apps.reconcile.list_broken.CSV_COLUMNS`` for the\nreconcile-specific path fields (original_path/basename/parent_dir).",
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "basename": {
+            "title": "Basename",
+            "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "file_exists": {
+            "default": false,
+            "title": "File Exists",
+            "type": "boolean"
+          },
+          "is_streaming": {
+            "default": false,
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "original_path": {
+            "title": "Original Path",
+            "type": "string"
+          },
+          "parent_dir": {
+            "title": "Parent Dir",
+            "type": "string"
+          },
+          "playlist_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Playlist Ids",
+            "type": "array"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "album",
+          "bpm",
+          "key",
+          "rating",
+          "duration_ms",
+          "original_path",
+          "basename",
+          "parent_dir",
+          "vendor_id",
+          "playlist_ids"
+        ],
+        "title": "BrokenTrackOut",
+        "type": "object"
+      },
       "BuildPatchIn": {
         "additionalProperties": false,
         "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
@@ -112,6 +399,155 @@
           "note"
         ],
         "title": "CommitIn",
+        "type": "object"
+      },
+      "CopilotTrackOut": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "key_camelot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Camelot"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "bpm",
+          "key_camelot",
+          "energy"
+        ],
+        "title": "CopilotTrackOut",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "FallbackBeatOut": {
+        "description": "Identical field set to one ANLZ beatgrid ``beats`` entry.",
+        "properties": {
+          "bpm": {
+            "title": "Bpm",
+            "type": "number"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "t": {
+            "title": "T",
+            "type": "number"
+          }
+        },
+        "required": [
+          "n",
+          "bpm",
+          "t"
+        ],
+        "title": "FallbackBeatOut",
+        "type": "object"
+      },
+      "FallbackBeatgridOut": {
+        "description": "Identical shape to the ``beatgrid`` object served by /anlz.",
+        "properties": {
+          "beat_count": {
+            "title": "Beat Count",
+            "type": "integer"
+          },
+          "beats": {
+            "items": {
+              "$ref": "#/components/schemas/FallbackBeatOut"
+            },
+            "title": "Beats",
+            "type": "array"
+          }
+        },
+        "required": [
+          "beat_count",
+          "beats"
+        ],
+        "title": "FallbackBeatgridOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -357,6 +793,23 @@
         "title": "LinksPatchIn",
         "type": "object"
       },
+      "MembershipReplaceIn": {
+        "properties": {
+          "stable_ids": {
+            "description": "Complete desired membership in position order. Duplicates allowed; unknown ids -> 422.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Stable Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stable_ids"
+        ],
+        "title": "MembershipReplaceIn",
+        "type": "object"
+      },
       "NodePatch": {
         "additionalProperties": false,
         "properties": {
@@ -596,6 +1049,54 @@
         "title": "PairingOut",
         "type": "object"
       },
+      "PlaylistBrokenSummary": {
+        "properties": {
+          "broken_count": {
+            "title": "Broken Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "track_count",
+          "broken_count"
+        ],
+        "title": "PlaylistBrokenSummary",
+        "type": "object"
+      },
+      "PlaylistCreateIn": {
+        "properties": {
+          "name": {
+            "description": "Display name (non-empty)",
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PlaylistCreateIn",
+        "type": "object"
+      },
       "PlaylistDetail": {
         "properties": {
           "diff": {
@@ -678,6 +1179,44 @@
         "title": "PlaylistDiff",
         "type": "object"
       },
+      "PlaylistDuplicateIn": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Name for the copy; defaults to '<source name> (copy)'",
+            "title": "Name"
+          }
+        },
+        "title": "PlaylistDuplicateIn",
+        "type": "object"
+      },
+      "PlaylistRenameIn": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "New display name; omit for a no-op that returns the current row + etag",
+            "title": "Name"
+          }
+        },
+        "title": "PlaylistRenameIn",
+        "type": "object"
+      },
       "PlaylistSummary": {
         "properties": {
           "available_count": {
@@ -725,6 +1264,57 @@
           "updated_at"
         ],
         "title": "PlaylistSummary",
+        "type": "object"
+      },
+      "PlaylistWriteOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "items",
+          "track_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlaylistWriteOut",
         "type": "object"
       },
       "ProvenanceOut": {
@@ -908,6 +1498,37 @@
         "title": "RbMetaOut",
         "type": "object"
       },
+      "ReconcileSummary": {
+        "properties": {
+          "orphan_broken": {
+            "title": "Orphan Broken",
+            "type": "integer"
+          },
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistBrokenSummary"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "total_broken": {
+            "title": "Total Broken",
+            "type": "integer"
+          },
+          "total_tracks": {
+            "title": "Total Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tracks",
+          "total_broken",
+          "orphan_broken",
+          "playlists"
+        ],
+        "title": "ReconcileSummary",
+        "type": "object"
+      },
       "RecorderRecoveryRequest": {
         "properties": {
           "expected_pid": {
@@ -1074,6 +1695,291 @@
           "groups"
         ],
         "title": "SettingsOut",
+        "type": "object"
+      },
+      "SmartlistSummary": {
+        "description": "List/detail row for one smartlist (contract for rule-editor-ui).",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_evaluated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Evaluated At"
+          },
+          "modified_at": {
+            "title": "Modified At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "order_by": {
+            "title": "Order By",
+            "type": "string"
+          },
+          "referenced_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Referenced Fields",
+            "type": "array"
+          },
+          "rule": {
+            "additionalProperties": true,
+            "title": "Rule",
+            "type": "object"
+          },
+          "rule_schema_version": {
+            "title": "Rule Schema Version",
+            "type": "integer"
+          },
+          "rule_summary": {
+            "title": "Rule Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "rule",
+          "rule_summary",
+          "order_by",
+          "referenced_fields",
+          "rule_schema_version",
+          "last_evaluated_at",
+          "created_at",
+          "modified_at"
+        ],
+        "title": "SmartlistSummary",
+        "type": "object"
+      },
+      "SmartlistTracks": {
+        "description": "Live evaluation result, shaped like playlist detail.\n\n``items`` is the full ordered membership (stable_ids, evaluator\norder); ``tracks`` are hydrated rows in the SAME order, field-for-\nfield identical to the playlist-detail ``tracks`` rows so browser\ntable components render either without branching.",
+        "properties": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "order_by": {
+            "title": "Order By",
+            "type": "string"
+          },
+          "rule_summary": {
+            "title": "Rule Summary",
+            "type": "string"
+          },
+          "smartlist_id": {
+            "title": "Smartlist Id",
+            "type": "string"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRowOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "smartlist_id",
+          "name",
+          "rule_summary",
+          "order_by",
+          "items",
+          "tracks"
+        ],
+        "title": "SmartlistTracks",
+        "type": "object"
+      },
+      "SuggestNextIn": {
+        "properties": {
+          "explain": {
+            "default": false,
+            "title": "Explain",
+            "type": "boolean"
+          },
+          "session_ids": {
+            "description": "Recently played stable_ids, oldest first, most-recent last. Unknown ids are a 404, not silently dropped.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Session Ids",
+            "type": "array"
+          },
+          "stable_id": {
+            "description": "Deck-loaded (current) track",
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "top_n": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Top N",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stable_id"
+        ],
+        "title": "SuggestNextIn",
+        "type": "object"
+      },
+      "SuggestNextOut": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestionOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "context_size": {
+            "title": "Context Size",
+            "type": "integer"
+          },
+          "context_source": {
+            "title": "Context Source",
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/CopilotTrackOut"
+          }
+        },
+        "required": [
+          "current",
+          "context_source",
+          "context_size",
+          "candidates"
+        ],
+        "title": "SuggestNextOut",
+        "type": "object"
+      },
+      "SuggestionOut": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "energy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy"
+          },
+          "explain_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explain Text"
+          },
+          "key_camelot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Camelot"
+          },
+          "rationale_numbers": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Rationale Numbers",
+            "type": "object"
+          },
+          "rationale_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rationale Tags",
+            "type": "array"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "bpm",
+          "key_camelot",
+          "energy",
+          "score",
+          "rationale_tags",
+          "rationale_numbers",
+          "explain_text"
+        ],
+        "title": "SuggestionOut",
         "type": "object"
       },
       "TrackListItemOut": {
@@ -2180,6 +3086,57 @@
         ]
       }
     },
+    "/api/v1/copilot/suggest-next": {
+      "post": {
+        "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestNextIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestNextOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "unknown stable_id / session id"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "insufficient analysis data"
+          }
+        },
+        "summary": "Suggest Next Route",
+        "tags": [
+          "copilot"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -2399,9 +3356,97 @@
         "tags": [
           "playlists"
         ]
+      },
+      "post": {
+        "operationId": "create_playlist_api_v1_playlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Playlist",
+        "tags": [
+          "playlists-write"
+        ]
       }
     },
     "/api/v1/playlists/{playlist_id}": {
+      "delete": {
+        "operationId": "delete_playlist_api_v1_playlists__playlist_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Playlist",
+        "tags": [
+          "playlists-write"
+        ]
+      },
       "get": {
         "operationId": "get_playlist_api_v1_playlists__playlist_id__get",
         "parameters": [
@@ -2457,6 +3502,215 @@
         "summary": "Get Playlist",
         "tags": [
           "playlists"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_playlist_api_v1_playlists__playlist_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistRenameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Playlist",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/duplicate": {
+      "post": {
+        "operationId": "duplicate_playlist_api_v1_playlists__playlist_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PlaylistDuplicateIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Playlist",
+        "tags": [
+          "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/tracks": {
+      "put": {
+        "operationId": "replace_playlist_tracks_api_v1_playlists__playlist_id__tracks_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipReplaceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Playlist Tracks",
+        "tags": [
+          "playlists-write"
         ]
       }
     },
@@ -2652,6 +3906,78 @@
         ]
       }
     },
+    "/api/v1/reconcile/broken": {
+      "get": {
+        "operationId": "list_broken_tracks_api_v1_reconcile_broken_get",
+        "parameters": [
+          {
+            "description": "Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing.",
+            "in": "query",
+            "name": "playlist_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing.",
+              "title": "Playlist Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokenTrackList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Broken Tracks",
+        "tags": [
+          "reconcile"
+        ]
+      }
+    },
+    "/api/v1/reconcile/summary": {
+      "get": {
+        "operationId": "reconcile_summary_api_v1_reconcile_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reconcile Summary",
+        "tags": [
+          "reconcile"
+        ]
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "operationId": "get_settings_api_v1_settings_get",
@@ -2670,6 +3996,135 @@
         "summary": "Get Settings",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/v1/smartlists": {
+      "get": {
+        "operationId": "list_smartlists_api_v1_smartlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SmartlistSummary"
+                  },
+                  "title": "Response List Smartlists Api V1 Smartlists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Smartlists",
+        "tags": [
+          "smartlists"
+        ]
+      }
+    },
+    "/api/v1/smartlists/{smartlist_id}": {
+      "get": {
+        "operationId": "get_smartlist_api_v1_smartlists__smartlist_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Smartlist",
+        "tags": [
+          "smartlists"
+        ]
+      }
+    },
+    "/api/v1/smartlists/{smartlist_id}/tracks": {
+      "get": {
+        "operationId": "get_smartlist_tracks_api_v1_smartlists__smartlist_id__tracks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartlist_id",
+            "required": true,
+            "schema": {
+              "title": "Smartlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Cap the evaluated membership (evaluator LIMIT).",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 10000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cap the evaluated membership (evaluator LIMIT).",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistTracks"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Smartlist Tracks",
+        "tags": [
+          "smartlists"
         ]
       }
     },
@@ -3098,6 +4553,128 @@
         "summary": "Get Track Audio",
         "tags": [
           "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/auto-cues": {
+      "get": {
+        "description": "PROPOSED hot cues from apps.analysis (META-04). Never committed cues.",
+        "operationId": "get_auto_cues_api_v1_tracks__stable_id__auto_cues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Analysis backend to read (default: newest row)",
+            "in": "query",
+            "name": "backend",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Analysis backend to read (default: newest row)",
+              "title": "Backend"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCuesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Auto Cues",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/beatgrid-fallback": {
+      "get": {
+        "description": "Analysis-derived beatgrid in the exact /anlz ``beatgrid`` shape.\n\nServes the apps.analysis grid whenever one is derivable (with\n``anlz_available`` reporting whether the authoritative rekordbox grid\nalso exists). 404 with an explicit code when no grid can be served -\na beatgrid is never invented.",
+        "operationId": "get_beatgrid_fallback_api_v1_tracks__stable_id__beatgrid_fallback_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Analysis backend to read (default: newest row)",
+            "in": "query",
+            "name": "backend",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Analysis backend to read (default: newest row)",
+              "title": "Backend"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridFallbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Beatgrid Fallback",
+        "tags": [
+          "analysis"
         ]
       }
     },

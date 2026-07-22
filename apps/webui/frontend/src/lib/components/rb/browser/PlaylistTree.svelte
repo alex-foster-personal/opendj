@@ -5,20 +5,46 @@
 	// right-aligned counts in rekordbox custom tree order (djmdPlaylist Seq,
 	// sorted upstream in BrowserPanel - COMPONENT-MAP 1.5).
 	import type { PlaylistNode } from '$lib/rb/types';
+	import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
+	import { RbApiError } from '$lib/rb/api-rb';
 
 	let {
 		nodes,
 		allTracksCount,
 		selectedId,
-		onselect
+		onselect,
+		onselectsmartlist
 	}: {
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
 		selectedId: string | null;
 		onselect: (node: PlaylistNode) => void;
+		/** Optional until the browser integrator wires smartlist selection
+		 * into BrowserPanel; absent = smartlist rows render inert. */
+		onselectsmartlist?: (smartlist: SmartlistSummary) => void;
 	} = $props();
 
 	let playlistsOpen = $state(true);
+	let smartlistsOpen = $state(true);
+	// Smartlists are self-fetched here (LANE smartlists-router) so this
+	// component needs zero BrowserPanel / api-rb.ts (hotspot) changes.
+	let smartlists = $state<SmartlistSummary[] | null>(null);
+	let smartlistsError = $state<string | null>(null);
+
+	$effect(() => {
+		listSmartlists().then(
+			(rows) => (smartlists = rows),
+			(err: unknown) => {
+				// Explicit backend error (e.g. SMARTLISTS_DB_UNAVAILABLE on an
+				// in-memory deploy) renders as a dim error row - never hidden.
+				smartlistsError = err instanceof RbApiError ? err.code : String(err);
+			}
+		);
+	});
+
+	function _smartlistClick(sl: SmartlistSummary): void {
+		if (onselectsmartlist) onselectsmartlist(sl);
+	}
 
 	/** Static chrome per SCREENSHOT-SPEC 5b: the CUE Analysis Playlist row
 	 * carries an "extra" badge in the reference screenshot; not tied to any
@@ -103,6 +129,57 @@
 					{/if}
 				</div>
 			{/each}
+		{/if}
+		<div
+			class="row folder"
+			role="button"
+			tabindex="0"
+			onclick={() => (smartlistsOpen = !smartlistsOpen)}
+			onkeydown={(e) => {
+				if (e.key === 'Enter') smartlistsOpen = !smartlistsOpen;
+			}}
+		>
+			<span class="disclosure" class:open={smartlistsOpen}>&#9656;</span>
+			<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
+			</svg>
+			<span class="name">Smartlists</span>
+		</div>
+		{#if smartlistsOpen}
+			{#if smartlistsError !== null}
+				<div class="row child rb-inert" title={smartlistsError}>
+					<span class="name error">smartlists unavailable</span>
+				</div>
+			{:else if smartlists === null}
+				<div class="row child rb-inert">
+					<span class="name dim">...</span>
+				</div>
+			{:else}
+				{#each smartlists as sl (sl.id)}
+					<div
+						class="row child"
+						class:rb-inert={!onselectsmartlist}
+						class:selected={selectedId === sl.id}
+						role="button"
+						tabindex="0"
+						title={onselectsmartlist
+							? sl.rule_summary
+							: 'not implemented - see PARITY-TODO'}
+						onclick={() => _smartlistClick(sl)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') _smartlistClick(sl);
+						}}
+					>
+						<svg class="gear" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+							<path
+								d="M8 5.2A2.8 2.8 0 1 0 8 10.8 2.8 2.8 0 0 0 8 5.2zm0 4.3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm6-.5.1-1-1.5-.6-.2-.6.8-1.4-.7-.7-1.4.8-.6-.3L9.9 3.7h-1L8.3 5.2l-.6.3-1.4-.8-.7.7.8 1.4-.3.6-1.5.5v1l1.5.6.3.6-.8 1.4.7.7 1.4-.8.6.3.6 1.5h1l.6-1.5.6-.3 1.4.8.7-.7-.8-1.4.3-.6z"
+								fill="currentColor"
+							/>
+						</svg>
+						<span class="name" title={sl.rule_summary}>{sl.name}</span>
+					</div>
+				{/each}
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -206,5 +283,19 @@
 		color: var(--rb-text);
 		background: var(--rb-accent);
 		font-weight: 600;
+	}
+	.row.rb-inert {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.row.rb-inert:hover {
+		background: transparent;
+	}
+	.name.dim,
+	.name.error {
+		color: var(--rb-text-dim);
+	}
+	.gear {
+		flex: none;
 	}
 </style>
