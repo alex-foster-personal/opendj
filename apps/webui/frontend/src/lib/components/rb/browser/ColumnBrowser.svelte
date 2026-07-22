@@ -28,6 +28,7 @@
 	// genre column would be a fake column here (always-null, house rule).
 	import { onMount } from 'svelte';
 	import { listTracksHydrated, RbApiError } from '$lib/rb/api-rb';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import type { DeckId } from '$lib/rb/types';
 	import {
 		albumBuckets,
@@ -101,13 +102,20 @@
 		onloadtrack?.(row, deck);
 	}
 
-	const artistList = $derived<ColumnBucket[]>(rows === null ? [] : artistBuckets(rows));
-	const albumList = $derived<ColumnBucket[]>(rows === null ? [] : albumBuckets(rows, artist));
-	const artistFilteredCount = $derived(
-		rows === null ? 0 : filterByColumn(rows, artist, undefined).length
+	// FR-1: the global 'Hide broken links' preference applies here too -
+	// this view self-fetches independently of the panes, so it has to read
+	// uiPrefs itself rather than inherit a pre-filtered row set. Filter
+	// BEFORE bucketing (same order as pane-contract's filterRows) so a
+	// broken track can't still surface as an otherwise-empty artist/album
+	// bucket.
+	const visibleRows = $derived<ColumnTrackRow[]>(
+		rows === null ? [] : uiPrefs.hide_broken_links ? rows.filter((r) => r.file_exists) : rows
 	);
+	const artistList = $derived<ColumnBucket[]>(artistBuckets(visibleRows));
+	const albumList = $derived<ColumnBucket[]>(albumBuckets(visibleRows, artist));
+	const artistFilteredCount = $derived(filterByColumn(visibleRows, artist, undefined).length);
 	const trackList = $derived<ColumnTrackRow[]>(
-		rows === null ? [] : (filterByColumn(rows, artist, album) as ColumnTrackRow[])
+		filterByColumn(visibleRows, artist, album) as ColumnTrackRow[]
 	);
 
 	function _label(bucket: ColumnBucket): string {
@@ -168,7 +176,7 @@
 	{:else if rows === null}
 		<div class="cb-status">loading library...</div>
 	{:else}
-		{@render bucketColumn('Artist', artistList, artist, rows.length, _selectArtist)}
+		{@render bucketColumn('Artist', artistList, artist, visibleRows.length, _selectArtist)}
 		{@render bucketColumn('Album', albumList, album, artistFilteredCount, _selectAlbum)}
 		<div class="col col-tracks">
 			<div class="col-head">Track</div>
