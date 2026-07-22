@@ -9,6 +9,8 @@ export interface RecorderStatus {
 	active: boolean;
 	session_id: string | null;
 	pid: number | null;
+	owned: boolean;
+	recoverable: boolean;
 }
 
 export interface RecorderStartInput {
@@ -102,6 +104,13 @@ export function startRecorder(input: RecorderStartInput): Promise<RecorderStatus
 export function stopRecorder(sessionId: string): Promise<RecorderStatus> {
 	return requestJson<RecorderStatus>(`/recorder/${encodeURIComponent(sessionId)}/stop`, {
 		method: 'POST'
+	});
+}
+
+export function recoverRecorder(sessionId: string, expectedPid: number): Promise<RecorderStatus> {
+	return requestJson<RecorderStatus>(`/recorder/${encodeURIComponent(sessionId)}/recover`, {
+		method: 'POST',
+		body: JSON.stringify({ expected_pid: expectedPid })
 	});
 }
 

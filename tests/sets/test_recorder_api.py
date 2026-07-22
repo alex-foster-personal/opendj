@@ -7,14 +7,17 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.sets import record as record_mod
 from apps.sets.api import router
 from apps.sets.recorder_service import RecorderService
+from apps.sets.state import SetsState
 
 
 @pytest.fixture
@@ -43,16 +46,72 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
     assert started.status_code == 201
     assert started.json()["active"] is True
     assert duplicate.status_code == 409
-    assert stopped.json() == {"active": False, "session_id": None, "pid": None}
+    assert stopped.json() == {
+        "active": False,
+        "session_id": None,
+        "pid": None,
+        "owned": False,
+        "recoverable": False,
+    }
     session_dir = service.sets_root / session_id
     assert not (session_dir / "recorder.pid").exists()
     assert (session_dir / "manifest.json").exists()
     actions = [
         json.loads(line)["action"]
-        for line in (session_dir / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (session_dir / "timeline.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
     assert actions[0] == "session_start"
     assert "session_end" in actions
+
+
+def test_recover_finalizes_only_a_proven_stale_pid(recorder_client):
+    client, service = recorder_client
+    session_id = "2026-07-22T22-30-00"
+    record_mod.start(
+        session_id=session_id,
+        config=record_mod.RecorderConfig(sources=(), capture_disabled=True),
+        sets_root=service.sets_root,
+        state=SetsState(db_path=service.db_path),
+    )
+    stale_pid = 2_000_000_000
+    session_dir = service.sets_root / session_id
+    (session_dir / "recorder.pid").write_text(str(stale_pid), encoding="utf-8")
+
+    status_response = client.get("/api/sets/recorder")
+    recovered = client.post(
+        f"/api/sets/recorder/{session_id}/recover",
+        json={"expected_pid": stale_pid},
+    )
+
+    assert status_response.json()["recoverable"] is True
+    assert recovered.status_code == 200
+    assert recovered.json()["active"] is False
+    assert not (session_dir / "recorder.pid").exists()
+    assert (session_dir / "manifest.json").exists()
+    assert "session_end" in (session_dir / "timeline.jsonl").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_recover_rejects_a_live_external_pid(recorder_client):
+    client, service = recorder_client
+    session_id = "2026-07-22T22-40-00"
+    record_mod.start(
+        session_id=session_id,
+        config=record_mod.RecorderConfig(sources=(), capture_disabled=True),
+        sets_root=service.sets_root,
+        state=SetsState(db_path=service.db_path),
+    )
+
+    response = client.post(
+        f"/api/sets/recorder/{session_id}/recover",
+        json={"expected_pid": os.getpid()},
+    )
+
+    assert response.status_code == 409
+    assert "still running" in response.json()["detail"]
 
 
 def test_stop_rejects_session_other_than_owned_recorder(recorder_client):

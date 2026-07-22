@@ -29,6 +29,7 @@ test('all REC controls use the configured HTTP API contract', async () => {
 	await api.getRecorderStatus();
 	await api.startRecorder({ session_id: null, ffmpeg_device_idx: 2, sources: ['djay_monitor'] });
 	await api.stopRecorder('session / one');
+	await api.recoverRecorder('session / one', 42);
 
 	assert.deepEqual(requests, [
 		{ url: `${API_BASE}/api/sets/recorder`, method: 'GET', body: null },
@@ -41,6 +42,11 @@ test('all REC controls use the configured HTTP API contract', async () => {
 			url: `${API_BASE}/api/sets/recorder/session%20%2F%20one/stop`,
 			method: 'POST',
 			body: null
+		},
+		{
+			url: `${API_BASE}/api/sets/recorder/session%20%2F%20one/recover`,
+			method: 'POST',
+			body: JSON.stringify({ expected_pid: 42 })
 		}
 	]);
 });

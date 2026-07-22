@@ -7,6 +7,7 @@
 		getTimeline,
 		getTransitions,
 		listSessions,
+		recoverRecorder,
 		sessionAudioUrl,
 		startRecorder,
 		stopRecorder,
@@ -19,12 +20,19 @@
 
 	type SessionView = SessionDetail & { transitions: Transition[] };
 
-	let recorder = $state<RecorderStatus>({ active: false, session_id: null, pid: null });
+	let recorder = $state<RecorderStatus>({
+		active: false,
+		session_id: null,
+		pid: null,
+		owned: false,
+		recoverable: false
+	});
 	let sessions = $state<SessionSummary[]>([]);
 	let selected = $state<SessionView | null>(null);
 	let timeline = $state<TimelineEvent[]>([]);
 	let busy = $state(false);
 	let deviceIndex = $state('');
+	let selectionRequest = 0;
 
 	onMount(loadSurface);
 
@@ -50,14 +58,17 @@
 	}
 
 	async function selectSession(sessionId: string): Promise<void> {
+		const requestId = ++selectionRequest;
 		try {
 			const [nextSession, nextTimeline, nextTransitions] = await Promise.all([
 				getSession(sessionId),
 				getTimeline(sessionId),
 				getTransitions(sessionId)
 			]);
-			selected = { ...nextSession, transitions: nextTransitions };
-			timeline = nextTimeline;
+			if (requestId === selectionRequest) {
+				selected = { ...nextSession, transitions: nextTransitions };
+				timeline = nextTimeline;
+			}
 		} catch (error) {
 			pushToast(`Failed to open session: ${error}`, 'error');
 		}
@@ -98,6 +109,20 @@
 		}
 	}
 
+	async function recoverRecording(): Promise<void> {
+		if (!recorder.session_id || recorder.pid === null) return;
+		busy = true;
+		try {
+			recorder = await recoverRecorder(recorder.session_id, recorder.pid);
+			await loadSurface();
+			pushToast('Stale recording finalized.');
+		} catch (error) {
+			pushToast(`Recovery failed: ${error}`, 'error');
+		} finally {
+			busy = false;
+		}
+	}
+
 	function formatDuration(seconds: number | null): string {
 		if (seconds === null) return 'active';
 		const hours = Math.floor(seconds / 3600);
@@ -130,8 +155,12 @@
 			<p>{recorder.session_id ?? 'No active session'}</p>
 		</div>
 	</div>
-	{#if recorder.active}
+	{#if recorder.active && recorder.owned}
 		<button class="stop" onclick={stopRecording} disabled={busy}>Stop recording</button>
+	{:else if recorder.active && recorder.recoverable}
+		<button class="stop" onclick={recoverRecording} disabled={busy}>Finalize stale session</button>
+	{:else if recorder.active}
+		<span class="external-owner">Owned by process {recorder.pid}</span>
 	{:else}
 		<label>
 			<span>ffmpeg input index</span>
@@ -231,6 +260,7 @@
 	.rec-panel input { width: 92px; }
 	.record { background: #e83c47; border-color: #ff6570; color: white; font-weight: 800; letter-spacing: 0.08em; }
 	.stop { border-color: #ff6570; color: #ff9198; }
+	.external-owner { color: var(--muted); font-size: 0.8rem; }
 	.session-layout { display: grid; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); gap: 1rem; min-height: 520px; }
 	.session-list, .session-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
 	.section-title { margin-bottom: 0.75rem; }

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import threading
+import ctypes
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,8 @@ class RecorderService:
                     "active": True,
                     "session_id": self._recorder.session_id,
                     "pid": os.getpid(),
+                    "owned": True,
+                    "recoverable": False,
                 }
             external = record_mod.status(
                 sets_root=self.sets_root,
@@ -51,6 +54,10 @@ class RecorderService:
             "active": bool(external["active"]),
             "session_id": external.get("session_id"),
             "pid": external.get("pid"),
+            "owned": False,
+            "recoverable": bool(
+                external["active"] and not _pid_is_running(int(external["pid"]))
+            ),
         }
 
     def start(
@@ -109,6 +116,8 @@ class RecorderService:
                 "active": True,
                 "session_id": recorder.session_id,
                 "pid": os.getpid(),
+                "owned": True,
+                "recoverable": False,
             }
 
     def stop(self, session_id: str) -> dict[str, Any]:
@@ -130,7 +139,43 @@ class RecorderService:
                 )
             record_mod.stop(self._recorder)
             self._recorder = None
-        return {"active": False, "session_id": None, "pid": None}
+        return {
+            "active": False,
+            "session_id": None,
+            "pid": None,
+            "owned": False,
+            "recoverable": False,
+        }
+
+    def recover_stale(self, session_id: str, expected_pid: int) -> dict[str, Any]:
+        """Finalize a crashed recorder only after proving its PID is not live."""
+        with self._lock:
+            if self._recorder is not None:
+                raise RecorderConflict("the HTTP-owned recorder is still active")
+            external = record_mod.status(
+                sets_root=self.sets_root,
+                state=SetsState(db_path=self.db_path),
+            )
+            if not external["active"]:
+                raise RecorderConflict("no stale recorder is present")
+            if external["session_id"] != session_id or external["pid"] != expected_pid:
+                raise RecorderConflict("recorder ownership changed; refresh before recovery")
+            if _pid_is_running(expected_pid):
+                raise RecorderConflict(
+                    f"recorder process {expected_pid} is still running"
+                )
+            record_mod.finalize(
+                session_id,
+                sets_root=self.sets_root,
+                state=SetsState(db_path=self.db_path),
+            )
+        return {
+            "active": False,
+            "session_id": None,
+            "pid": None,
+            "owned": False,
+            "recoverable": False,
+        }
 
     def stop_owned_on_shutdown(self) -> None:
         """Settle any live HTTP-owned recorder before the daemon exits."""
@@ -139,6 +184,26 @@ class RecorderService:
                 return
             record_mod.stop(self._recorder)
             self._recorder = None
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        process_query_limited_information = 0x1000
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return ctypes.get_last_error() == 5
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 __all__ = ["RecorderConflict", "RecorderService"]

@@ -106,6 +106,12 @@ class RecorderStatus(BaseModel):
     active: bool
     session_id: str | None
     pid: int | None
+    owned: bool
+    recoverable: bool
+
+
+class RecorderRecoveryRequest(BaseModel):
+    expected_pid: int = Field(gt=0)
 
 
 def _recorder_service(request: Request) -> RecorderService:
@@ -154,6 +160,21 @@ async def api_recorder_start(
 async def api_recorder_stop(request: Request, session_id: str) -> dict[str, Any]:
     try:
         return _recorder_service(request).stop(session_id)
+    except RecorderConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/recorder/{session_id}/recover", response_model=RecorderStatus)
+async def api_recorder_recover(
+    request: Request,
+    session_id: str,
+    body: RecorderRecoveryRequest,
+) -> dict[str, Any]:
+    try:
+        return _recorder_service(request).recover_stale(
+            session_id,
+            body.expected_pid,
+        )
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -256,6 +277,7 @@ async def api_audio(
 __all__ = [
     "LabelRequest",
     "RecorderStartRequest",
+    "RecorderRecoveryRequest",
     "RecorderStatus",
     "router",
 ]

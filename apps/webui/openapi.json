@@ -1,6 +1,100 @@
 {
   "components": {
     "schemas": {
+      "BuildPatchIn": {
+        "additionalProperties": false,
+        "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "pr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "idle",
+                  "blocked",
+                  "hanging"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "worktree": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worktree"
+          }
+        },
+        "title": "BuildPatchIn",
+        "type": "object"
+      },
+      "BuildableIn": {
+        "additionalProperties": false,
+        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "cloud",
+              "hybrid",
+              "local"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "reason"
+        ],
+        "title": "BuildableIn",
+        "type": "object"
+      },
       "CommitIn": {
         "additionalProperties": false,
         "properties": {
@@ -191,9 +285,101 @@
         "title": "HealthSyncthing",
         "type": "object"
       },
+      "LabelRequest": {
+        "description": "Body for the relabel endpoint.",
+        "properties": {
+          "class": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Class",
+            "type": "string"
+          },
+          "labeler": {
+            "default": "web_ui",
+            "maxLength": 64,
+            "title": "Labeler",
+            "type": "string"
+          }
+        },
+        "required": [
+          "class"
+        ],
+        "title": "LabelRequest",
+        "type": "object"
+      },
+      "LinksPatchIn": {
+        "additionalProperties": false,
+        "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
+        "properties": {
+          "issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issues"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refs"
+          },
+          "specs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specs"
+          }
+        },
+        "title": "LinksPatchIn",
+        "type": "object"
+      },
       "NodePatch": {
         "additionalProperties": false,
         "properties": {
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildPatchIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buildable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuildableIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "commits_append": {
             "anyOf": [
               {
@@ -207,6 +393,16 @@
               }
             ],
             "title": "Commits Append"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinksPatchIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "note": {
             "anyOf": [
@@ -227,8 +423,11 @@
                   "spiked",
                   "building",
                   "partial",
-                  "working",
-                  "verified"
+                  "built",
+                  "verified",
+                  "merged",
+                  "user-finalized",
+                  "working"
                 ],
                 "type": "string"
               },
@@ -707,6 +906,105 @@
           "cue_count"
         ],
         "title": "RbMetaOut",
+        "type": "object"
+      },
+      "RecorderRecoveryRequest": {
+        "properties": {
+          "expected_pid": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Pid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_pid"
+        ],
+        "title": "RecorderRecoveryRequest",
+        "type": "object"
+      },
+      "RecorderStartRequest": {
+        "description": "Explicit real-capture configuration for the REC button.",
+        "properties": {
+          "ffmpeg_device_idx": {
+            "minimum": 0.0,
+            "title": "Ffmpeg Device Idx",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}(?:_\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "djay_monitor",
+                "rb_history"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ffmpeg_device_idx"
+        ],
+        "title": "RecorderStartRequest",
+        "type": "object"
+      },
+      "RecorderStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "boolean"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "recoverable": {
+            "title": "Recoverable",
+            "type": "boolean"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "active",
+          "session_id",
+          "pid",
+          "owned",
+          "recoverable"
+        ],
+        "title": "RecorderStatus",
         "type": "object"
       },
       "SettingItem": {
@@ -1396,6 +1694,77 @@
         ],
         "title": "VerifiedIn",
         "type": "object"
+      },
+      "VoiceProbeRequest": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "VoiceProbeRequest",
+        "type": "object"
+      },
+      "VoiceProbeResponse": {
+        "properties": {
+          "blocked": {
+            "default": false,
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply"
+          },
+          "slots": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Slots",
+            "type": "object"
+          },
+          "transcript": {
+            "title": "Transcript",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript",
+          "intent"
+        ],
+        "title": "VoiceProbeResponse",
+        "type": "object"
       }
     }
   },
@@ -1406,6 +1775,411 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/sets": {
+      "get": {
+        "operationId": "api_list_sessions_api_sets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api List Sessions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder": {
+      "get": {
+        "operationId": "api_recorder_status_api_sets_recorder_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Status",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/start": {
+      "post": {
+        "operationId": "api_recorder_start_api_sets_recorder_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecorderStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Start",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/recover": {
+      "post": {
+        "operationId": "api_recorder_recover_api_sets_recorder__session_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecorderRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Recover",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/{session_id}/stop": {
+      "post": {
+        "operationId": "api_recorder_stop_api_sets_recorder__session_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Recorder Stop",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}": {
+      "get": {
+        "operationId": "api_get_session_api_sets__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Session",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/audio/{segment}": {
+      "get": {
+        "operationId": "api_audio_api_sets__session_id__audio__segment__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "audio_<iso>.mp3",
+            "in": "path",
+            "name": "segment",
+            "required": true,
+            "schema": {
+              "description": "audio_<iso>.mp3",
+              "title": "Segment",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Audio",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/timeline": {
+      "get": {
+        "operationId": "api_timeline_stream_api_sets__session_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Timeline Stream",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/transitions": {
+      "get": {
+        "operationId": "api_transitions_api_sets__session_id__transitions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Transitions",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/{session_id}/transitions/{idx}/label": {
+      "post": {
+        "operationId": "api_relabel_api_sets__session_id__transitions__idx__label_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "idx",
+            "required": true,
+            "schema": {
+              "title": "Idx",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Relabel",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -2367,6 +3141,47 @@
         "summary": "Get Track Rb Meta",
         "tags": [
           "rb-assets"
+        ]
+      }
+    },
+    "/api/v1/voice/probe": {
+      "post": {
+        "operationId": "probe_api_v1_voice_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceProbeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe",
+        "tags": [
+          "voice"
         ]
       }
     }
