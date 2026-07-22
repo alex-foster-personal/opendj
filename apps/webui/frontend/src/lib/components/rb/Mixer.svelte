@@ -48,6 +48,26 @@
 	function handleCrossfader(value: number): void {
 		void runPerformanceCommandFromUi({ type: 'crossfader', value });
 	}
+
+	function handleCue(deck: DeckId, enabled: boolean): void {
+		void runPerformanceCommandFromUi({ type: 'channel_cue', deck, enabled });
+	}
+
+	function handleHeadphoneMix(value: number): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_mix', value });
+	}
+
+	function handleHeadphoneLevel(value: number): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_level', value });
+	}
+
+	function refreshHeadphoneOutputs(): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
+	}
+
+	function selectHeadphoneOutput(device_id: string): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_output_select', device_id });
+	}
 </script>
 
 <section class="rb-mixer rb-panel">
@@ -60,15 +80,23 @@
 				eqMid={mixerState.channels[deck].eq_mid}
 				eqLow={mixerState.channels[deck].eq_low}
 				fader={mixerState.channels[deck].fader}
+				cueEnabled={mixerState.channels[deck].cue_enabled}
 				ontrim={(v) => handleTrim(deck, v)}
 				oneq={(band, v) => handleEq(deck, band, v)}
 				onfader={(v) => handleFader(deck, v)}
+				oncue={(enabled) => handleCue(deck, enabled)}
 			/>
 		{/each}
 	</div>
 	<div class="lower">
 		<div class="hp-row">
-			<HeadphoneCluster />
+			<HeadphoneCluster
+				state={mixerState.headphones}
+				onmix={handleHeadphoneMix}
+				onlevel={handleHeadphoneLevel}
+				onrefresh={refreshHeadphoneOutputs}
+				onselect={selectHeadphoneOutput}
+			/>
 		</div>
 		<div class="xfade-row">
 			<AssignMatrix bus="A" {assigns} onassign={handleAssign} />

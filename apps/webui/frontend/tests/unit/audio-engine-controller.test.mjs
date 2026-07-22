@@ -159,6 +159,24 @@ test('Master Tempo preserves pitch while the disabled mode follows playback rate
 	assert.throws(() => audio.masterTempoSemitones(0, true), /tempo ratio/i);
 });
 
+test('headphone cue/master mix uses equal-power gains and validates serializable output state', () => {
+	assert.deepEqual(audio.headphoneMixGains(0), { cue: 1, master: 0 });
+	assert.deepEqual(audio.headphoneMixGains(1), { cue: 0, master: 1 });
+	const center = audio.headphoneMixGains(0.5);
+	assert.ok(Math.abs(center.cue - Math.SQRT1_2) < 1e-12);
+	assert.ok(Math.abs(center.master - Math.SQRT1_2) < 1e-12);
+	assert.throws(() => audio.headphoneMixGains(1.1), /within 0\.\.1/i);
+	assert.doesNotThrow(() =>
+		audio.assertHeadphoneOutputSelection('usb-headphones', [
+			{ id: 'usb-headphones', label: 'USB Headphones' }
+		])
+	);
+	assert.throws(
+		() => audio.assertHeadphoneOutputSelection('missing', [{ id: 'usb-headphones', label: '' }]),
+		/enumerated headphone output/i
+	);
+});
+
 test('paused tempo and Master Tempo settings persist into the next requested Signalsmith play', () => {
 	const afterTempo = audio.applyPausedDeckControlSettings(
 		{ tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 2 },

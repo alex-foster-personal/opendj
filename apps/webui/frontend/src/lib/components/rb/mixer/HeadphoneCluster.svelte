@@ -1,15 +1,23 @@
 <script lang="ts">
 	/**
 	 * Headphone MIX + LEVEL knobs with headphone icon (SCREENSHOT-SPEC 4).
-	 * Entirely inert at v1: single output device, no headphone bus
-	 * (COMPONENT-MAP 1.4 "mixer aux").
+	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
 	import Knob from './Knob.svelte';
+	import type { HeadphoneState } from '$lib/rb/types';
 
-	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+	interface Props {
+		state: HeadphoneState;
+		onmix: (value: number) => void;
+		onlevel: (value: number) => void;
+		onrefresh: () => void;
+		onselect: (deviceId: string) => void;
+	}
+
+	let { state, onmix, onlevel, onrefresh, onselect }: Props = $props();
 </script>
 
-<div class="hp" title={INERT_TITLE}>
+<div class="hp" data-performance-control="headphones">
 	<svg class="hp-icon" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 		<!-- headphone band + ear cups -->
 		<path
@@ -21,8 +29,21 @@
 		<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 		<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 	</svg>
-	<Knob label="MIX" value={0.5} inert={true} />
-	<Knob label="LEVEL" value={0.5} inert={true} />
+	<Knob label="MIX" value={state.mix} onchange={onmix} />
+	<Knob label="LEVEL" value={state.level} onchange={onlevel} />
+	<button type="button" onclick={onrefresh}>REFRESH</button>
+	<select
+		aria-label="headphone output device"
+		value={state.selected_output_device_id ?? ''}
+		disabled={!state.supported}
+		onchange={(event) => onselect(event.currentTarget.value)}
+	>
+		<option value="" disabled>Select output</option>
+		{#each state.outputs as output (output.id)}
+			<option value={output.id}>{output.label || output.id}</option>
+		{/each}
+	</select>
+	{#if state.error !== null}<span class="hp-error">{state.error}</span>{/if}
 </div>
 
 <style>
@@ -35,4 +56,6 @@
 		color: var(--rb-text-dim);
 		flex: 0 0 auto;
 	}
+	button, select { font: inherit; font-size: 8px; max-width: 120px; }
+	.hp-error { color: var(--rb-danger, #ff6b6b); font-size: 8px; max-width: 150px; }
 </style>

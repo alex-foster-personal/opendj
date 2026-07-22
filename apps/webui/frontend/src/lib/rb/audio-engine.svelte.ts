@@ -105,6 +105,8 @@ import type {
 	DeckId,
 	DeckState,
 	EqBand,
+	HeadphoneOutputDevice,
+	HeadphoneState,
 	HotCue,
 	LoopState,
 	MixerChannelState,
@@ -184,7 +186,20 @@ function _defaultChannel(deck_id: DeckId): MixerChannelState {
 		eq_low: 0.5,
 		fader: 1,
 		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
-		assign: deck_id % 2 === 1 ? 'A' : 'B'
+		assign: deck_id % 2 === 1 ? 'A' : 'B',
+		cue_enabled: false
+	};
+}
+
+function _defaultHeadphones(): HeadphoneState {
+	return {
+		mix: 0.5,
+		level: 0.5,
+		selected_output_device_id: null,
+		outputs: [],
+		supported: false,
+		active: false,
+		error: null
 	};
 }
 
@@ -223,7 +238,8 @@ export const mixerState: MixerState = $state({
 		4: _defaultChannel(4)
 	},
 	crossfader: 0.5,
-	master: 1
+	master: 1,
+	headphones: _defaultHeadphones()
 });
 
 /** Per-deck store accessor (contract: singleton engine + accessor). */
@@ -255,6 +271,7 @@ interface _ChannelNodes {
 	low: BiquadFilterNode;
 	mid: BiquadFilterNode;
 	high: BiquadFilterNode;
+	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
 }
@@ -376,6 +393,16 @@ function _emptyRuntime(): _DeckRuntime {
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
+interface _HeadphoneNodes {
+	cueSum: GainNode;
+	masterMonitor: GainNode;
+	cueMix: GainNode;
+	masterMix: GainNode;
+	level: GainNode;
+	destination: MediaStreamAudioDestinationNode;
+	element: HTMLAudioElement;
+}
+let _headphoneNodes: _HeadphoneNodes | null = null;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _rt: Record<DeckId, _DeckRuntime> = {
@@ -481,6 +508,95 @@ function _setParam(param: AudioParam, value: number): void {
 	param.setTargetAtTime(value, _ctx.currentTime, PARAM_SMOOTH_S);
 }
 
+/** Equal-power CUE/MASTER gains, where 0 is full cue and 1 is full master. */
+export function headphoneMixGains(mix: number): { cue: number; master: number } {
+	_assertUnit('headphone mix', mix);
+	if (mix === 0) return { cue: 1, master: 0 };
+	if (mix === 1) return { cue: 0, master: 1 };
+	return {
+		cue: Math.cos((mix * Math.PI) / 2),
+		master: Math.sin((mix * Math.PI) / 2)
+	};
+}
+
+export function assertHeadphoneOutputSelection(
+	deviceId: string,
+	outputs: readonly HeadphoneOutputDevice[]
+): void {
+	if (typeof deviceId !== 'string' || deviceId.trim() === '') {
+		throw new TypeError('headphone output device id must be a non-empty string');
+	}
+	if (!outputs.some((output) => output.id === deviceId)) {
+		throw new RangeError(`headphone output ${deviceId} is not an enumerated headphone output`);
+	}
+}
+
+function _applyHeadphoneMix(): void {
+	const nodes = _headphoneNodes;
+	if (nodes === null) return;
+	const gains = headphoneMixGains(mixerState.headphones.mix);
+	_setParam(nodes.cueMix.gain, gains.cue);
+	_setParam(nodes.masterMix.gain, gains.master);
+	_setParam(nodes.level.gain, mixerState.headphones.level);
+}
+
+function _headphoneError(operation: string, error: unknown): Error {
+	const message = error instanceof Error ? error.message : String(error);
+	mixerState.headphones.error = `${operation}: ${message}`;
+	return new Error(mixerState.headphones.error, { cause: error });
+}
+
+function _requireHeadphoneDeviceApi(): MediaDevices {
+	if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
+		mixerState.headphones.supported = false;
+		throw _headphoneError('headphone output unsupported', 'navigator.mediaDevices is unavailable');
+	}
+	if (typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+		mixerState.headphones.supported = false;
+		throw _headphoneError('headphone output unsupported', 'enumerateDevices is unavailable');
+	}
+	if (typeof HTMLMediaElement === 'undefined' || typeof HTMLMediaElement.prototype.setSinkId !== 'function') {
+		mixerState.headphones.supported = false;
+		throw _headphoneError('headphone output unsupported', 'HTMLMediaElement.setSinkId is unavailable');
+	}
+	mixerState.headphones.supported = true;
+	return navigator.mediaDevices;
+}
+
+function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _HeadphoneNodes {
+	if (_headphoneNodes !== null) return _headphoneNodes;
+	const cueSum = context.createGain();
+	const masterMonitor = context.createGain();
+	const cueMix = context.createGain();
+	const masterMix = context.createGain();
+	const level = context.createGain();
+	const destination = context.createMediaStreamDestination();
+	const element = new Audio();
+	element.autoplay = true;
+	element.srcObject = destination.stream;
+	cueSum.connect(cueMix);
+	masterGain.connect(masterMonitor);
+	masterMonitor.connect(masterMix);
+	cueMix.connect(level);
+	masterMix.connect(level);
+	level.connect(destination);
+	_headphoneNodes = { cueSum, masterMonitor, cueMix, masterMix, level, destination, element };
+	_applyHeadphoneMix();
+	return _headphoneNodes;
+}
+
+function _disposeHeadphoneGraph(): void {
+	const nodes = _headphoneNodes;
+	_headphoneNodes = null;
+	if (nodes === null) return;
+	for (const node of [nodes.cueSum, nodes.masterMonitor, nodes.cueMix, nodes.masterMix, nodes.level, nodes.destination]) {
+		node.disconnect();
+	}
+	nodes.element.pause();
+	nodes.element.srcObject = null;
+	for (const track of nodes.destination.stream.getTracks()) track.stop();
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -490,6 +606,7 @@ function _ensureGraph(): AudioContext {
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
 	_masterGain.connect(_ctx.destination);
+	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
 		const analyser = _ctx.createAnalyser();
@@ -512,6 +629,8 @@ function _ensureGraph(): AudioContext {
 		high.type = 'highshelf';
 		high.frequency.value = EQ_FREQ_HIGH_HZ;
 		high.gain.value = _eqDbFromKnob(ch.eq_high);
+		const cue = _ctx.createGain();
+		cue.gain.value = ch.cue_enabled ? 1 : 0;
 		const fader = _ctx.createGain();
 		fader.gain.value = ch.fader;
 		const xf = _ctx.createGain();
@@ -520,10 +639,12 @@ function _ensureGraph(): AudioContext {
 		trim.connect(low);
 		low.connect(mid);
 		mid.connect(high);
+		high.connect(cue);
+		cue.connect(headphones.cueSum);
 		high.connect(fader);
 		fader.connect(xf);
 		xf.connect(_masterGain);
-		_rt[deck].nodes = { analyser, trim, low, mid, high, fader, xf };
+		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf };
 	}
 	return _ctx;
 }
@@ -2477,6 +2598,7 @@ class RbAudioEngine implements AudioEngine {
 			if (processor !== null) processors.push(processor);
 			if (rt.nodes !== null) nodes.push(...Object.values(rt.nodes));
 		}
+		_disposeHeadphoneGraph();
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -2498,6 +2620,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		mixerState.crossfader = 0.5;
 		mixerState.master = 1;
+		mixerState.headphones = _defaultHeadphones();
 		await closing;
 	}
 
@@ -3172,6 +3295,55 @@ class RbAudioEngine implements AudioEngine {
 		}
 		mixerState.channels[deck].assign = assign;
 		if (_ctx !== null) _applyCrossfader();
+	}
+
+	setChannelCue(deck: DeckId, enabled: boolean): void {
+		if (typeof enabled !== 'boolean') throw new TypeError('channel cue enabled must be boolean');
+		mixerState.channels[deck].cue_enabled = enabled;
+		const nodes = _rt[deck].nodes;
+		if (nodes !== null) _setParam(nodes.cue.gain, enabled ? 1 : 0);
+	}
+
+	setHeadphoneMix(value: number): void {
+		_assertUnit('setHeadphoneMix value', value);
+		mixerState.headphones.mix = value;
+		if (_headphoneNodes !== null) _applyHeadphoneMix();
+	}
+
+	setHeadphoneLevel(value: number): void {
+		_assertUnit('setHeadphoneLevel value', value);
+		mixerState.headphones.level = value;
+		if (_headphoneNodes !== null) _applyHeadphoneMix();
+	}
+
+	async refreshHeadphoneOutputs(): Promise<void> {
+		let devices: MediaDeviceInfo[];
+		try {
+			devices = await _requireHeadphoneDeviceApi().enumerateDevices();
+		} catch (error) {
+			throw _headphoneError('headphone output enumeration failed', error);
+		}
+		mixerState.headphones.outputs = devices
+			.filter((device) => device.kind === 'audiooutput')
+			.map((device) => ({ id: device.deviceId, label: device.label }));
+		mixerState.headphones.error = null;
+	}
+
+	async selectHeadphoneOutput(deviceId: string): Promise<void> {
+		try {
+			_requireHeadphoneDeviceApi();
+			assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
+			const context = _ensureGraph();
+			if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
+			const nodes = _ensureHeadphoneGraph(context, _masterGain);
+			await nodes.element.setSinkId(deviceId);
+			await nodes.element.play();
+			mixerState.headphones.selected_output_device_id = deviceId;
+			mixerState.headphones.active = true;
+			mixerState.headphones.error = null;
+		} catch (error) {
+			throw _headphoneError('headphone output selection failed', error);
+		}
 	}
 
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */

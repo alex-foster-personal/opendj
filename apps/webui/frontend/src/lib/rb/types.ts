@@ -314,10 +314,30 @@ export interface MixerChannelState {
 	fader: number;
 	/** Crossfader bus assignment (the 2x2 numeral matrices). */
 	assign: CrossfaderAssign;
+	/** Headphone pre-fader cue assignment for this channel. */
+	cue_enabled: boolean;
 }
 
-/** Whole mixer surface. Headphone CUE/MIX/LEVEL are inert v1 (no headphone
- * bus) so they carry no state here. */
+/** One real browser-selectable audio output. Labels may be empty until the
+ * browser grants device-label permission. */
+export interface HeadphoneOutputDevice {
+	id: string;
+	label: string;
+}
+
+/** Serializable headphone cue-bus read model. `active` means the monitor
+ * stream is attached to the element and the selected sink accepted playback. */
+export interface HeadphoneState {
+	mix: number;
+	level: number;
+	selected_output_device_id: string | null;
+	outputs: HeadphoneOutputDevice[];
+	supported: boolean;
+	active: boolean;
+	error: string | null;
+}
+
+/** Whole mixer surface including the real headphone cue bus. */
 export interface MixerState {
 	/** All four channel strips keyed by deck. */
 	channels: Record<DeckId, MixerChannelState>;
@@ -325,6 +345,8 @@ export interface MixerState {
 	crossfader: number;
 	/** Master volume 0..1 (topbar horizontal slider -> master GainNode). */
 	master: number;
+	/** Headphone cue / monitor output state. */
+	headphones: HeadphoneState;
 }
 
 // ----------------------------------------------------------- browser state
@@ -446,4 +468,13 @@ export interface AudioEngine {
 	setCrossfader(value: number): void;
 	/** Route a channel to crossfader bus A, B, or THRU (bypass). */
 	assignChannel(deck: DeckId, assign: CrossfaderAssign): void;
+	/** Enable or disable a channel's post-EQ, pre-fader headphone cue tap. */
+	setChannelCue(deck: DeckId, enabled: boolean): void;
+	/** Set CUE-to-MASTER monitor mix and headphone level. */
+	setHeadphoneMix(value: number): void;
+	setHeadphoneLevel(value: number): void;
+	/** Enumerate browser audio-output devices for explicit sink selection. */
+	refreshHeadphoneOutputs(): Promise<void>;
+	/** Route the real monitor element to an explicitly enumerated output device. */
+	selectHeadphoneOutput(deviceId: string): Promise<void>;
 }

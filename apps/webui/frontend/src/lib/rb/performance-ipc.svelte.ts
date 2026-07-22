@@ -43,6 +43,7 @@ import type {
 	DeckAudioSnapshot,
 	DeckId,
 	EqBand,
+	HeadphoneState,
 	LoopState,
 	MixerChannelState,
 	StemControl,
@@ -74,8 +75,13 @@ export type PerformanceCommand =
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
 	| { type: 'fader'; deck: DeckId; value: number }
 	| { type: 'assign'; deck: DeckId; assign: CrossfaderAssign }
+	| { type: 'channel_cue'; deck: DeckId; enabled: boolean }
 	| { type: 'crossfader'; value: number }
-	| { type: 'master_volume'; value: number };
+	| { type: 'master_volume'; value: number }
+	| { type: 'headphone_mix'; value: number }
+	| { type: 'headphone_level'; value: number }
+	| { type: 'headphone_outputs_refresh' }
+	| { type: 'headphone_output_select'; device_id: string };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -123,6 +129,7 @@ export interface PerformanceState {
 		crossfader: number;
 		master: number;
 		channels: Record<DeckId, MixerChannelState>;
+		headphones: HeadphoneState;
 	};
 	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
@@ -248,9 +255,20 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	const record = _record(message);
 	if (typeof record.type !== 'string') throw new TypeError('performance command type must be string');
 	const type = record.type;
-	if (type === 'crossfader' || type === 'master_volume') {
+	if (type === 'crossfader' || type === 'master_volume' || type === 'headphone_mix' || type === 'headphone_level') {
 		_exactKeys(record, ['type', 'value']);
 		return { type, value: _unit('value', record.value) };
+	}
+	if (type === 'headphone_outputs_refresh') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'headphone_output_select') {
+		_exactKeys(record, ['type', 'device_id']);
+		if (typeof record.device_id !== 'string' || record.device_id.trim() === '') {
+			throw new TypeError('device_id must be a non-empty string');
+		}
+		return { type, device_id: record.device_id };
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
@@ -299,7 +317,7 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new RangeError(`range must be 8, 16, or 100; got ${String(record.range)}`);
 		}
 		return { type, deck, range: record.range };
-	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip') {
+	} else if (type === 'quantize' || type === 'beat_sync' || type === 'master_tempo' || type === 'slip' || type === 'channel_cue') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
 	} else if (type === 'stem_mute') {
@@ -412,6 +430,10 @@ export function queryPerformanceState(): PerformanceState {
 		mixer: {
 			crossfader: mixerState.crossfader,
 			master: mixerState.master,
+			headphones: {
+				...mixerState.headphones,
+				outputs: mixerState.headphones.outputs.map((output) => ({ ...output }))
+			},
 			channels: {
 				1: { ...mixerState.channels[1] },
 				2: { ...mixerState.channels[2] },
@@ -433,14 +455,23 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
+	if (command.type === 'headphone_outputs_refresh' || command.type === 'headphone_output_select') {
+		return ['sync'];
+	}
 	const deck = _commandDeck(command);
+	if (command.type === 'channel_cue') {
+		if (deck === null) throw new Error('channel_cue has no deck command queue scope');
+		return [deck];
+	}
 	if (
 		command.type === 'trim' ||
 		command.type === 'eq' ||
 		command.type === 'fader' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
-		command.type === 'master_volume'
+		command.type === 'master_volume' ||
+		command.type === 'headphone_mix' ||
+		command.type === 'headphone_level'
 	) {
 		return null;
 	}
@@ -510,12 +541,22 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		engine.setEq(command.deck, command.band, command.value);
 	} else if (command.type === 'fader') {
 		engine.setFader(command.deck, command.value);
-	} else if (command.type === 'assign') {
+		} else if (command.type === 'assign') {
 		engine.assignChannel(command.deck, command.assign);
+	} else if (command.type === 'channel_cue') {
+		engine.setChannelCue(command.deck, command.enabled);
 	} else if (command.type === 'crossfader') {
 		engine.setCrossfader(command.value);
 	} else if (command.type === 'master_volume') {
 		engine.setMaster(command.value);
+	} else if (command.type === 'headphone_mix') {
+		engine.setHeadphoneMix(command.value);
+	} else if (command.type === 'headphone_level') {
+		engine.setHeadphoneLevel(command.value);
+	} else if (command.type === 'headphone_outputs_refresh') {
+		await engine.refreshHeadphoneOutputs();
+	} else if (command.type === 'headphone_output_select') {
+		await engine.selectHeadphoneOutput(command.device_id);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);
