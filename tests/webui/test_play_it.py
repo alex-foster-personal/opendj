@@ -3,11 +3,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
-from apps.webui.server.backend import InMemoryBackend, Playlist, Provenance, Track
+from apps.webui.server.backend import InMemoryBackend, Playlist, Track
 from apps.webui.server.etag import compute_etag
 
 
@@ -29,6 +28,23 @@ def test_solve_happy_path(client: TestClient, seed_backend: InMemoryBackend) -> 
     assert body["etag"] == compute_etag(
         "pl-002", seed_backend.get_playlist("pl-002").updated_at
     )
+
+
+def test_production_app_registers_play_it_contract() -> None:
+    """Agent and UI callers share the route mounted by the production app."""
+    paths = create_app(mount_frontend=False).openapi()["paths"]
+
+    assert "/api/v1/play-it/{playlist_id}/solve" in paths
+
+
+def test_solve_order_is_deterministic(client: TestClient) -> None:
+    first = client.post("/api/v1/play-it/pl-002/solve", json={"duration_min": 60})
+    second = client.post("/api/v1/play-it/pl-002/solve", json={"duration_min": 60})
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["proposed_order"] == second.json()["proposed_order"]
+    assert first.json()["steps"] == second.json()["steps"]
 
 
 def test_solve_unknown_playlist_is_404(client: TestClient) -> None:

@@ -18,7 +18,7 @@
 {#if detail}
 	<a href="/">&larr; back</a>
 	<h2>{detail.name}</h2>
-	<p style="color: var(--muted);">Reviewing only. Apply changes via CLI: <code>python -m apps.sync.playlist_apply</code>.</p>
+	<p style="color: var(--muted);">Review the current playlist and preview a PLAY IT reorder before applying it.</p>
 	{#if playlistId}
 		<PlayItPanel playlistId={playlistId} />
 	{/if}
