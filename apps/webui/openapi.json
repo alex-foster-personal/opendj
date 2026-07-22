@@ -1752,6 +1752,45 @@
         "title": "MyTagListOut",
         "type": "object"
       },
+      "MyTagMergeConflictDetail": {
+        "properties": {
+          "destination_name": {
+            "title": "Destination Name",
+            "type": "string"
+          },
+          "error": {
+            "const": "mytag_merge_confirmation_required",
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "destination_name"
+        ],
+        "title": "MyTagMergeConflictDetail",
+        "type": "object"
+      },
+      "MyTagRenameConflictOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MyTagScopeConflictDetail"
+              },
+              {
+                "$ref": "#/components/schemas/MyTagMergeConflictDetail"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "MyTagRenameConflictOut",
+        "type": "object"
+      },
       "MyTagRenameIn": {
         "properties": {
           "confirm_merge": {
@@ -1787,6 +1826,42 @@
           "new_name"
         ],
         "title": "MyTagRenameIn",
+        "type": "object"
+      },
+      "MyTagScopeConflictDetail": {
+        "properties": {
+          "affected_track_count": {
+            "title": "Affected Track Count",
+            "type": "integer"
+          },
+          "catalog_revision": {
+            "title": "Catalog Revision",
+            "type": "string"
+          },
+          "error": {
+            "const": "stale_mytag_scope",
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "catalog_revision",
+          "affected_track_count"
+        ],
+        "title": "MyTagScopeConflictDetail",
+        "type": "object"
+      },
+      "MyTagScopeConflictOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/MyTagScopeConflictDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "MyTagScopeConflictOut",
         "type": "object"
       },
       "MyTagSummary": {
@@ -5742,6 +5817,16 @@
             },
             "description": "Successful Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTagScopeConflictOut"
+                }
+              }
+            },
+            "description": "The acknowledged catalog scope is stale."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5782,6 +5867,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyTagRenameConflictOut"
+                }
+              }
+            },
+            "description": "The acknowledged scope is stale or merge consent is required."
           },
           "422": {
             "content": {

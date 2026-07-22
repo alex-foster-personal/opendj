@@ -1,6 +1,8 @@
 """Atomic management endpoints for the custom ``Track.tags`` catalog."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
@@ -73,6 +75,25 @@ class MyTagDeleteIn(MyTagSweepPreconditionIn):
 
 class MyTagSweepOut(BaseModel):
     tracks_updated: int
+
+
+class MyTagScopeConflictDetail(BaseModel):
+    error: Literal["stale_mytag_scope"]
+    catalog_revision: str
+    affected_track_count: int
+
+
+class MyTagMergeConflictDetail(BaseModel):
+    error: Literal["mytag_merge_confirmation_required"]
+    destination_name: str
+
+
+class MyTagScopeConflictOut(BaseModel):
+    detail: MyTagScopeConflictDetail
+
+
+class MyTagRenameConflictOut(BaseModel):
+    detail: MyTagScopeConflictDetail | MyTagMergeConflictDetail
 
 
 def _all_tracks(backend: StateBackend, tag: str | None = None) -> list:
@@ -163,7 +184,16 @@ def _sweep_tag(
         ) from exc
 
 
-@router.post("/rename", response_model=MyTagSweepOut)
+@router.post(
+    "/rename",
+    response_model=MyTagSweepOut,
+    responses={
+        409: {
+            "model": MyTagRenameConflictOut,
+            "description": "The acknowledged scope is stale or merge consent is required.",
+        },
+    },
+)
 def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
     return MyTagSweepOut(tracks_updated=_sweep_tag(
         backend, body.old_name, body.new_name,
@@ -173,7 +203,16 @@ def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_
     ))
 
 
-@router.post("/delete", response_model=MyTagSweepOut)
+@router.post(
+    "/delete",
+    response_model=MyTagSweepOut,
+    responses={
+        409: {
+            "model": MyTagScopeConflictOut,
+            "description": "The acknowledged catalog scope is stale.",
+        },
+    },
+)
 def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
     return MyTagSweepOut(tracks_updated=_sweep_tag(
         backend, body.name, None,

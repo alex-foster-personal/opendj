@@ -294,3 +294,22 @@ def test_mytag_transaction_rejects_member_added_after_scope_observation(client, 
     }
     assert "deep-house" in seed_backend.get_track("track-001").tags
     assert "deep-house" in seed_backend.get_track("track-002").tags
+
+
+@pytest.mark.requirement("CAT-05")
+def test_mytag_openapi_documents_stale_scope_and_merge_confirmation_conflicts(client) -> None:
+    schema = client.get("/openapi.json").json()
+    delete_conflict = schema["paths"]["/api/v1/mytags/delete"]["post"]["responses"]["409"]
+    rename_conflict = schema["paths"]["/api/v1/mytags/rename"]["post"]["responses"]["409"]
+
+    assert delete_conflict["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/MyTagScopeConflictOut",
+    }
+    assert rename_conflict["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/MyTagRenameConflictOut",
+    }
+    detail_schema = schema["components"]["schemas"]["MyTagRenameConflictOut"]["properties"]["detail"]
+    assert detail_schema["anyOf"] == [
+        {"$ref": "#/components/schemas/MyTagScopeConflictDetail"},
+        {"$ref": "#/components/schemas/MyTagMergeConflictDetail"},
+    ]
