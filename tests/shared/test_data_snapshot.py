@@ -63,6 +63,52 @@ def test_pack_raises_when_master_plain_db_missing(tmp_path: Path) -> None:
         data_snapshot.pack(data_dir, tmp_path / "out.tar")
 
 
+@pytest.mark.parametrize("member", ["state/state.db", "master.plain.db"])
+def test_pack_rejects_symlinked_required_members_before_creating_tar(
+    tmp_path: Path, member: str
+) -> None:
+    data_dir = _make_data_dir(tmp_path, with_vocal_cache=False)
+    required_path = data_dir / member
+    target = tmp_path / f"real-{required_path.name}"
+    required_path.replace(target)
+    try:
+        required_path.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    out = tmp_path / "out.tar"
+
+    with pytest.raises(ValueError, match="regular file"):
+        data_snapshot.pack(data_dir, out)
+
+    assert not out.exists()
+
+
+def test_pack_checks_cache_size_before_reading_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_dir = _make_data_dir(tmp_path, with_vocal_cache=False)
+    cache_dir = data_dir / "state" / "vocal-cache"
+    cache_dir.mkdir()
+    oversized = cache_dir / "oversized.json"
+    oversized.write_bytes(b'{"oversized": true}')
+    monkeypatch.setattr(data_snapshot, "MAX_JSON_MEMBER_BYTES", 4)
+    real_read_bytes = Path.read_bytes
+    read_paths: list[Path] = []
+
+    def spy_read_bytes(path: Path) -> bytes:
+        read_paths.append(path)
+        return real_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", spy_read_bytes)
+    out = tmp_path / "out.tar"
+
+    with pytest.raises(ValueError, match="JSON member byte limit"):
+        data_snapshot.pack(data_dir, out)
+
+    assert read_paths == []
+    assert not out.exists()
+
+
 def test_pack_discovers_distinct_folder_path_roots(tmp_path: Path) -> None:
     data_dir = _make_data_dir(tmp_path)
     out = tmp_path / "snapshot.tar"

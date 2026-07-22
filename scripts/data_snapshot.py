@@ -35,6 +35,7 @@ import argparse
 import io
 import json
 import sqlite3
+import stat
 import sys
 import tarfile
 from pathlib import Path
@@ -90,6 +91,16 @@ def _generated_path_map_json(roots: list[str]) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
 
 
+def _required_regular_file_size(path: Path) -> int:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"required member missing: {path}") from exc
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"required member must be a regular file: {path}")
+    return metadata.st_size
+
+
 def _vocal_cache_files(vocal_cache_dir: Path) -> list[Path]:
     """Return contract-valid vocal cache entries, rejecting anything else.
 
@@ -99,11 +110,22 @@ def _vocal_cache_files(vocal_cache_dir: Path) -> list[Path]:
     """
     files: list[Path] = []
     for entry in sorted(vocal_cache_dir.iterdir()):
-        if entry.is_symlink() or not entry.is_file() or entry.suffix != ".json":
+        metadata = entry.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or entry.suffix != ".json":
             raise ValueError(
                 f"vocal cache contains unsupported member {entry}; only regular .json files may be packed"
             )
-        _validate_json_object(entry.read_bytes(), str(entry))
+        if metadata.st_size > MAX_JSON_MEMBER_BYTES:
+            raise ValueError(
+                f"JSON member byte limit exceeded for {entry}: "
+                f"{metadata.st_size} > {MAX_JSON_MEMBER_BYTES}"
+            )
+        payload = entry.read_bytes()
+        if len(payload) != metadata.st_size:
+            raise ValueError(
+                f"vocal cache member changed while being read: {entry}"
+            )
+        _validate_json_object(payload, str(entry))
         files.append(entry)
     return files
 
@@ -153,10 +175,8 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
     master_plain_db = data_dir / "master.plain.db"
     vocal_cache_dir = data_dir / "state" / "vocal-cache"
 
-    if not state_db.is_file():
-        raise FileNotFoundError(f"required member missing: {state_db}")
-    if not master_plain_db.is_file():
-        raise FileNotFoundError(f"required member missing: {master_plain_db}")
+    state_db_size = _required_regular_file_size(state_db)
+    master_plain_db_size = _required_regular_file_size(master_plain_db)
 
     roots = _discover_folder_path_roots(master_plain_db)
     path_map_bytes = _generated_path_map_json(roots)
@@ -164,8 +184,8 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
         _vocal_cache_files(vocal_cache_dir) if vocal_cache_dir.is_dir() else []
     )
     pack_sizes = [
-        (STATE_DB_MEMBER, state_db.stat().st_size),
-        (MASTER_PLAIN_DB_MEMBER, master_plain_db.stat().st_size),
+        (STATE_DB_MEMBER, state_db_size),
+        (MASTER_PLAIN_DB_MEMBER, master_plain_db_size),
         (PATH_MAP_MEMBER, len(path_map_bytes)),
     ]
     if vocal_cache_dir.is_dir():
@@ -180,11 +200,11 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
     out.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(out, "w") as tar:
         tar.add(state_db, arcname=STATE_DB_MEMBER)
-        members.append({"member": STATE_DB_MEMBER, "bytes": state_db.stat().st_size})
+        members.append({"member": STATE_DB_MEMBER, "bytes": state_db_size})
 
         tar.add(master_plain_db, arcname=MASTER_PLAIN_DB_MEMBER)
         members.append(
-            {"member": MASTER_PLAIN_DB_MEMBER, "bytes": master_plain_db.stat().st_size}
+            {"member": MASTER_PLAIN_DB_MEMBER, "bytes": master_plain_db_size}
         )
 
         if vocal_cache_dir.is_dir():
