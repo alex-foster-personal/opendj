@@ -12,9 +12,11 @@
 	 */
 	import { onMount, tick } from 'svelte';
 	import AreaSection from './AreaSection.svelte';
+	import DepGraph from './DepGraph.svelte';
 	import { fetchProgress } from './progress-api';
 	import {
 		EFFORTS,
+		hasFoldoutDetail,
 		STATUSES,
 		type Effort,
 		type NodeStatus,
@@ -26,6 +28,10 @@
 	const REFRESH_INTERVAL_MS = 30_000;
 	/** How long a dep-jump target stays highlighted. */
 	const FLASH_MS = 1600;
+	/** localStorage key persisting the Tree/Graph tab choice. */
+	const TAB_KEY = 'pt-active-tab';
+
+	type Tab = 'tree' | 'graph';
 
 	let data = $state<ProgressResponse | null>(null);
 	let error = $state<string | null>(null);
@@ -33,6 +39,13 @@
 	let effortFilter = $state<ReadonlySet<Effort>>(new Set(EFFORTS));
 	let textFilter = $state('');
 	let collapsedAreas = $state<ReadonlySet<string>>(new Set());
+	let expandedNodes = $state<ReadonlySet<string>>(new Set());
+	let activeTab = $state<Tab>('tree');
+
+	/** Flat list of every node across all areas (graph input + expand-all). */
+	const allNodes = $derived<ProgressNode[]>(
+		(data?.areas ?? []).flatMap((area) => area.nodes)
+	);
 
 	//----- data loading -----------------------------------------------------
 
@@ -47,6 +60,8 @@
 	}
 
 	onMount(() => {
+		const stored = localStorage.getItem(TAB_KEY);
+		if (stored === 'tree' || stored === 'graph') activeTab = stored;
 		void load();
 		const intervalId = setInterval(() => {
 			if (!document.hidden) void load();
@@ -115,6 +130,39 @@
 		collapsedAreas = next;
 	}
 
+	//----- tabs + fold-out ----------------------------------------------------
+
+	function setTab(tab: Tab): void {
+		activeTab = tab;
+		localStorage.setItem(TAB_KEY, tab);
+	}
+
+	function toggleExpand(nodeId: string): void {
+		const next = new Set(expandedNodes);
+		if (next.has(nodeId)) next.delete(nodeId);
+		else next.add(nodeId);
+		expandedNodes = next;
+	}
+
+	function expandAll(): void {
+		expandedNodes = new Set(allNodes.filter(hasFoldoutDetail).map((n) => n.id));
+	}
+
+	function collapseAll(): void {
+		expandedNodes = new Set();
+	}
+
+	/** Graph 'view in tree': switch to the Tree tab, expand the node's detail,
+	 * then scroll-flash its row. */
+	async function viewInTree(nodeId: string): Promise<void> {
+		setTab('tree');
+		if (hasFoldoutDetail(allNodes.find((n) => n.id === nodeId) ?? ({} as ProgressNode))) {
+			expandedNodes = new Set(expandedNodes).add(nodeId);
+		}
+		await tick();
+		await jumpToNode(nodeId);
+	}
+
 	//----- dep jump: scroll-to + flash ----------------------------------------
 
 	function areaIdForNode(nodeId: string): string | null {
@@ -169,6 +217,26 @@
 		<div class="header-row">
 			<h2>Progress tree</h2>
 			<span class="branch">branch: {data.meta.branch}</span>
+			<div class="tabs" role="tablist">
+				<button
+					class="tab"
+					class:active={activeTab === 'tree'}
+					role="tab"
+					aria-selected={activeTab === 'tree'}
+					onclick={() => setTab('tree')}
+				>
+					Tree
+				</button>
+				<button
+					class="tab"
+					class:active={activeTab === 'graph'}
+					role="tab"
+					aria-selected={activeTab === 'graph'}
+					onclick={() => setTab('graph')}
+				>
+					Graph
+				</button>
+			</div>
 		</div>
 		<div class="filter-row">
 			{#each STATUSES as status (status)}
@@ -196,22 +264,31 @@
 			{#if filtersActive}
 				<button class="reset" onclick={resetFilters}>reset</button>
 			{/if}
+			{#if activeTab === 'tree'}
+				<span class="sep"></span>
+				<button class="expand-ctl" onclick={expandAll}>expand all</button>
+				<button class="expand-ctl" onclick={collapseAll}>collapse all</button>
+			{/if}
 		</div>
 	</div>
 
 	{#if data.areas.length === 0}
 		<p class="empty">Ledger is empty: no areas in data/progress-tree.yaml yet.</p>
-	{:else}
+	{:else if activeTab === 'tree'}
 		{#each data.areas as area (area.id)}
 			<AreaSection
 				{area}
 				visibleNodes={area.nodes.filter(nodeMatches)}
 				collapsed={collapsedAreas.has(area.id)}
 				convention={data.meta.convention}
+				{expandedNodes}
 				onToggle={toggleArea}
+				onToggleExpand={toggleExpand}
 				onJump={(id) => void jumpToNode(id)}
 			/>
 		{/each}
+	{:else}
+		<DepGraph nodes={allNodes} onViewInTree={(id) => void viewInTree(id)} />
 	{/if}
 
 	<footer class="pt-footer" title={data.meta.convention}>
@@ -325,6 +402,37 @@
 	.reset {
 		font-size: 0.72rem;
 		color: var(--accent);
+	}
+	.tabs {
+		margin-left: auto;
+		display: flex;
+		gap: 0.25rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 0.15rem;
+	}
+	.tab {
+		font-size: 0.78rem;
+		font-weight: 600;
+		padding: 0.2rem 0.75rem;
+		border-radius: 6px;
+		color: var(--muted);
+		background: transparent;
+		border: none;
+		cursor: pointer;
+	}
+	.tab.active {
+		color: var(--bg);
+		background: var(--accent);
+	}
+	.expand-ctl {
+		font-size: 0.72rem;
+		color: var(--accent);
+		background: transparent;
+		border: 1px solid var(--accent-dim);
+		border-radius: 4px;
+		padding: 0.1rem 0.45rem;
+		cursor: pointer;
 	}
 	.empty {
 		color: var(--muted);
