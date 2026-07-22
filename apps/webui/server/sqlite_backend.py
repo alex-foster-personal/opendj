@@ -308,6 +308,33 @@ class SqliteBackend:
         ).fetchone()
         return row is not None
 
+    @property
+    def writeback_state_db_path(self) -> Path:
+        """Return the exact state database protected by the writeback lock."""
+        return self._path
+
+    @contextmanager
+    def hold_writeback_source_lock(self) -> Iterator[None]:
+        """Exclude source edits and vendor-ID remaps during a writeback apply.
+
+        Live writeback always acquires this shared-state lock before its
+        vendor-target lock. Keeping the transaction open through the vendor
+        mutation makes the source membership and native-ID mapping snapshot
+        authoritative instead of merely advisory.
+        """
+        with self._write_lock:
+            conn = _state_db.open_rw(self._path)
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                yield
+                conn.execute("COMMIT")
+            except Exception:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+            finally:
+                conn.close()
+
     # --- reads ------------------------------------------------------------
     def list_tracks(self, flt: TrackFilter) -> Page:
         with self._ro() as conn:

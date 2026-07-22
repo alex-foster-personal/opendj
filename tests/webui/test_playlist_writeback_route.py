@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import nullcontext
 from typing import Iterator
 
 import pytest
@@ -29,16 +30,16 @@ class _Writer:
     def read_members_by_id(self, playlist_id):
         assert playlist_id == "native-1"
         return list(self.members)
-    def apply_with_backup_by_id(self, playlist_id, stable_members, expected, _mapping_revision, assert_source_current):
-        current = self.read_members_by_id(playlist_id)
-        revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        if revision != expected:
-            raise WritebackConflict("stale")
-        assert_source_current()
-        self.backup = current
-        self.members = list(stable_members)
-        after = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        return WritebackBackup("b1"), after
+    def apply_with_backup_by_id(self, playlist_id, stable_members, expected, _mapping_revision, source_transaction):
+        with source_transaction():
+            current = self.read_members_by_id(playlist_id)
+            revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if revision != expected:
+                raise WritebackConflict("stale")
+            self.backup = current
+            self.members = list(stable_members)
+            after = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            return WritebackBackup("b1"), after
     def restore_backup(self, backup_id, target_id, expected):
         current = hashlib.sha256(json.dumps({"target_id": target_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if current != expected:
@@ -51,7 +52,11 @@ class _Writer:
 def client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
     writer = _Writer()
     app = create_app(backend=seed_backend, bind_host="127.0.0.1", hostname="test-host", lock_status_fn=lambda: None)
-    app.dependency_overrides[get_writeback_service] = lambda: WritebackService(writer_factory=lambda *_args: writer)
+    app.dependency_overrides[get_writeback_service] = lambda: WritebackService(
+        writer_factory=lambda *_args: writer,
+        source_members_reader=lambda playlist_id: list(seed_backend.get_playlist(playlist_id).items),
+        source_lock_factory=nullcontext,
+    )
     with TestClient(app) as result:
         yield result
 

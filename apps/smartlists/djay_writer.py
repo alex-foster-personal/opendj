@@ -20,7 +20,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, ContextManager
 
 
 def _resolve_djay_uuid(
@@ -351,7 +351,7 @@ class DjayPlaylistWriter:
 
     def apply_with_backup_by_id(
         self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
-        expected_mapping_revision: str, assert_source_current: Callable[[], None],
+        expected_mapping_revision: str, source_transaction: Callable[[], ContextManager[None]],
     ):
         """Hold one SQLite write lock for CAS, online backup, and mutation."""
         from apps.smartlists.writeback_backup import exclusive_target_lock, online_backup, write_reversal
@@ -359,80 +359,64 @@ class DjayPlaylistWriter:
         from apps.sync.playlist_apply import _apply_single_op, PlaylistApplyError
 
         self._assert_safe_to_write()
-        with exclusive_target_lock(self.djay_db_path):
-            con = self._open_djay()
-            try:
-                con.execute("BEGIN IMMEDIATE")
-                found = _find_djay_playlist_by_id(con, playlist_id)
-                if found is None:
-                    raise RuntimeError(f"djay: playlist ID {playlist_id!r} not found")
-                _uuid, rowids = found
-                row_to_uuid = {int(rowid): key for rowid, key in con.execute(
-                    "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
-                )}
-                current: list[str] = []
-                native_current: list[str] = []
-                for rowid in rowids:
-                    djay_uuid = row_to_uuid.get(rowid)
-                    if djay_uuid is None:
-                        raise RuntimeError(f"djay: target {playlist_id!r} has an unknown member row {rowid}")
-                    stable_id = _resolve_stable_id_for_djay(self.state_conn, djay_uuid)
-                    if stable_id is None:
-                        raise RuntimeError(f"djay: target {playlist_id!r} has unmapped UUID {djay_uuid!r}")
-                    current.append(stable_id)
-                    native_current.append(str(djay_uuid))
-                actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                if actual != expected_target_revision:
-                    raise WritebackConflict("djay: target revision changed before transaction")
-                mapping_rows = self.state_conn.execute(
-                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
-                    (self.vendor, *dict.fromkeys(stable_members)),
-                ).fetchall() if stable_members else []
-                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                if mapping_revision != expected_mapping_revision:
-                    raise WritebackConflict("djay: mapping changed inside vendor transaction")
-                native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
-                missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
-                if missing:
-                    raise WritebackConflict(f"djay: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
-                native_members = [native_mapping[stable_id] for stable_id in stable_members]
-                assert_source_current()
-                with sqlite3.connect(f"file:{self.djay_db_path}?mode=ro", uri=True) as snapshot:
-                    backup = WritebackBackup(online_backup(snapshot, "djay"))
-                target = list(native_members)
-                post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, native_current, post_revision)
-                # Backup and durable reversal persistence are deliberately before
-                # the write. Re-read the mapping and source at the actual vendor
-                # mutation boundary so either interleaving is fail-closed.
-                mapping_rows = self.state_conn.execute(
-                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
-                    (self.vendor, *dict.fromkeys(stable_members)),
-                ).fetchall() if stable_members else []
-                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                if mapping_revision != expected_mapping_revision:
-                    raise WritebackConflict("djay: mapping changed at vendor mutation boundary")
-                native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
-                missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
-                if missing:
-                    raise WritebackConflict(f"djay: mapping lost desired IDs at vendor mutation boundary: {missing[:5]}")
-                target = [native_mapping[stable_id] for stable_id in stable_members]
-                assert_source_current()
-                result = _apply_single_op(con, {
-                    "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": playlist_id,
-                    "target_members": [{"djay_uuid": item} for item in target],
-                }, leaf_type_byte=self.leaf_type_byte)
-                if result.status == "failed":
-                    raise PlaylistApplyError(result.message)
-                con.execute("COMMIT")
-            except Exception:
+        with source_transaction():
+            with exclusive_target_lock(self.djay_db_path):
+                con = self._open_djay()
                 try:
-                    con.execute("ROLLBACK")
-                except sqlite3.DatabaseError:
-                    pass
-                raise
-            finally:
-                con.close()
+                    con.execute("BEGIN IMMEDIATE")
+                    found = _find_djay_playlist_by_id(con, playlist_id)
+                    if found is None:
+                        raise RuntimeError(f"djay: playlist ID {playlist_id!r} not found")
+                    _uuid, rowids = found
+                    row_to_uuid = {int(rowid): key for rowid, key in con.execute(
+                        "SELECT rowid, key FROM database2 WHERE collection = 'mediaItemUserData'"
+                    )}
+                    current: list[str] = []
+                    native_current: list[str] = []
+                    for rowid in rowids:
+                        djay_uuid = row_to_uuid.get(rowid)
+                        if djay_uuid is None:
+                            raise RuntimeError(f"djay: target {playlist_id!r} has an unknown member row {rowid}")
+                        stable_id = _resolve_stable_id_for_djay(self.state_conn, djay_uuid)
+                        if stable_id is None:
+                            raise RuntimeError(f"djay: target {playlist_id!r} has unmapped UUID {djay_uuid!r}")
+                        current.append(stable_id)
+                        native_current.append(str(djay_uuid))
+                    actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    if actual != expected_target_revision:
+                        raise WritebackConflict("djay: target revision changed before transaction")
+                    mapping_rows = self.state_conn.execute(
+                        "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
+                        (self.vendor, *dict.fromkeys(stable_members)),
+                    ).fetchall() if stable_members else []
+                    mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    if mapping_revision != expected_mapping_revision:
+                        raise WritebackConflict("djay: mapping changed inside vendor transaction")
+                    native_mapping = {str(stable_id): str(vendor_id) for stable_id, vendor_id in mapping_rows}
+                    missing = [stable_id for stable_id in stable_members if stable_id not in native_mapping]
+                    if missing:
+                        raise WritebackConflict(f"djay: mapping lost desired IDs inside vendor transaction: {missing[:5]}")
+                    native_members = [native_mapping[stable_id] for stable_id in stable_members]
+                    with sqlite3.connect(f"file:{self.djay_db_path}?mode=ro", uri=True) as snapshot:
+                        backup = WritebackBackup(online_backup(snapshot, "djay"))
+                    target = list(native_members)
+                    post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": stable_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                    write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, native_current, post_revision)
+                    result = _apply_single_op(con, {
+                        "rb_id": "", "rb_name": "", "op": "update", "djay_uuid": playlist_id,
+                        "target_members": [{"djay_uuid": item} for item in target],
+                    }, leaf_type_byte=self.leaf_type_byte)
+                    if result.status == "failed":
+                        raise PlaylistApplyError(result.message)
+                    con.execute("COMMIT")
+                except Exception:
+                    try:
+                        con.execute("ROLLBACK")
+                    except sqlite3.DatabaseError:
+                        pass
+                    raise
+                finally:
+                    con.close()
         return backup, post_revision
 
     def backup_target(self):

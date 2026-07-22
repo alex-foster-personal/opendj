@@ -12,17 +12,24 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 from apps.smartlists.djay_writer import (
     DjayPlaylistWriter,
     _find_djay_playlist_by_id,
     _resolve_stable_id_for_djay,
 )
-from apps.smartlists.rb_writer import RBPlaylistWriter, _resolve_stable_id_for_rb
-from apps.webui.server.playlist_writeback import WritebackConflict
+from apps.smartlists.rb_writer import (
+    RBPlaylistWriter,
+    _online_backup_unlocked_rekordbox,
+    _resolve_stable_id_for_rb,
+)
 
 
 # ---------------------------------------------------------------- state DB
@@ -124,6 +131,213 @@ class TestRBReadMembers:
         w = RBPlaylistWriter(db=db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="not found"):
             w.read_members("Ghost")
+
+
+_SQLCIPHER_KEY = "pr273-test-key"
+_PYREKORDBOX_TEST_KEY = (
+    "402fd0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+)
+
+
+def _create_encrypted_marker_db(path: Path) -> None:
+    import sqlcipher3
+
+    connection = sqlcipher3.connect(path)
+    connection.execute(f"PRAGMA key = '{_SQLCIPHER_KEY}'")
+    connection.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+    connection.execute("INSERT INTO marker VALUES ('encrypted-rekordbox')")
+    connection.commit()
+    connection.close()
+
+    with sqlite3.connect(path) as locked:
+        with pytest.raises(sqlite3.DatabaseError, match="not a database"):
+            locked.execute("SELECT value FROM marker").fetchone()
+
+
+def _open_sqlcipher_database(path: Path) -> SimpleNamespace:
+    import sqlcipher3
+
+    engine = create_engine(
+        f"sqlite+pysqlcipher://:{_SQLCIPHER_KEY}@/{path}?",
+        module=sqlcipher3,
+    )
+    return SimpleNamespace(engine=engine, session=Session(engine))
+
+
+def _close_sqlcipher_database(database: SimpleNamespace) -> None:
+    database.session.close()
+    database.engine.dispose()
+
+
+def _encrypt_rekordbox_copy(source: Path, destination: Path) -> None:
+    import sqlcipher3
+
+    connection = sqlcipher3.connect(source)
+    try:
+        connection.execute(
+            f"ATTACH DATABASE ? AS encrypted KEY '{_PYREKORDBOX_TEST_KEY}'",
+            (str(destination),),
+        )
+        connection.execute("SELECT sqlcipher_export('encrypted')").fetchone()
+        connection.commit()
+        connection.execute("DETACH DATABASE encrypted")
+    finally:
+        connection.close()
+
+
+def test_online_backup_preserves_real_sqlcipher_session_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sqlcipher3
+
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    session = database.session
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        assert type(database.engine.pool).__name__ == "SingletonThreadPool"
+        session.execute(text("BEGIN IMMEDIATE"))
+        session_driver = session.connection().connection.driver_connection
+        assert session_driver.in_transaction
+
+        _online_backup_unlocked_rekordbox(database, encrypted)
+
+        assert session_driver.in_transaction
+        contender = sqlcipher3.connect(encrypted, timeout=0, isolation_level=None)
+        try:
+            contender.execute(f"PRAGMA key = '{_SQLCIPHER_KEY}'")
+            with pytest.raises(sqlcipher3.OperationalError, match="locked"):
+                contender.execute("BEGIN IMMEDIATE")
+        finally:
+            contender.close()
+    finally:
+        session.rollback()
+        _close_sqlcipher_database(database)
+
+
+def test_online_backup_uses_unlocked_sqlcipher_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        backup_id = _online_backup_unlocked_rekordbox(database, encrypted)
+    finally:
+        _close_sqlcipher_database(database)
+
+    backup = writeback_backup.backup_path("rekordbox", backup_id)
+    with sqlite3.connect(backup) as plain:
+        assert plain.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert plain.execute("SELECT value FROM marker").fetchone() == (
+            "encrypted-rekordbox",
+        )
+
+
+def test_online_backup_rejects_unlocked_connection_for_another_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    other_target = tmp_path / "other.db"
+    other_target.write_bytes(encrypted.read_bytes())
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", backup_dir)
+
+    try:
+        with pytest.raises(RuntimeError, match="does not own exact target"):
+            _online_backup_unlocked_rekordbox(database, other_target)
+    finally:
+        _close_sqlcipher_database(database)
+
+    assert not backup_dir.exists() or list(backup_dir.iterdir()) == []
+
+
+def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
+    tmp_rb_db: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pyrekordbox import Rekordbox6Database
+
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _encrypt_rekordbox_copy(tmp_rb_db, encrypted)
+    database = Rekordbox6Database(
+        path=str(encrypted),
+        key=_PYREKORDBOX_TEST_KEY,
+    )
+    mapping_conn = sqlite3.connect(":memory:", isolation_level=None)
+    mapping_conn.executescript(_STATE_DDL)
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        playlist = next(
+            candidate
+            for candidate in database.get_playlist()
+            if list(getattr(candidate, "Songs", []) or [])
+        )
+        playlist_id = str(playlist.ID)
+        songs = sorted(
+            list(playlist.Songs),
+            key=lambda song: (getattr(song, "TrackNo", 0) or 0),
+        )
+        native_members = [str(song.ContentID) for song in songs]
+        stable_members = [f"stable-{index}" for index in range(len(native_members))]
+        mapping_conn.executemany(
+            "INSERT INTO track_vendor_ids VALUES (?, 'rekordbox', ?)",
+            list(zip(stable_members, native_members, strict=True)),
+        )
+        desired_members = list(reversed(stable_members))
+        expected_revision = hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": stable_members},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        mapping_revision = hashlib.sha256(json.dumps(sorted(
+            zip(stable_members, native_members, strict=True)
+        ), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        writer = RBPlaylistWriter(
+            db=database,
+            state_conn=mapping_conn,
+            live_db_path=encrypted,
+        )
+
+        backup, post_revision = writer.apply_with_backup_by_id(
+            playlist_id,
+            desired_members,
+            expected_revision,
+            mapping_revision,
+            nullcontext,
+        )
+
+        assert writer.read_members_by_id(playlist_id) == desired_members
+        backup_path = writeback_backup.backup_path("rekordbox", backup.backup_id)
+        with sqlite3.connect(backup_path) as plain_backup:
+            assert plain_backup.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert writer.restore_backup(
+            backup.backup_id,
+            playlist_id,
+            post_revision,
+        ) == expected_revision
+        assert writer.read_members_by_id(playlist_id) == stable_members
+    finally:
+        mapping_conn.close()
+        database.close()
 
 
 # ------------------------------------------------------------ djay_writer
@@ -251,7 +465,7 @@ class TestDjayReadMembers:
         monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
         monkeypatch.setattr(writeback_backup, "write_reversal", lambda *_args: (_ for _ in ()).throw(OSError("disk full")))
         with pytest.raises(OSError, match="disk full"):
-            writer.apply_with_backup_by_id(playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, lambda: None)
+            writer.apply_with_backup_by_id(playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, nullcontext)
         assert writer.read_members_by_id(playlist_id) == ["sid-1"]
 
     def test_rollback_uses_stable_cas_but_restores_exact_native_preimage(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
@@ -268,7 +482,7 @@ class TestDjayReadMembers:
         monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
 
         backup, post_revision = writer.apply_with_backup_by_id(
-            playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, lambda: None,
+            playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, nullcontext,
         )
 
         assert post_revision == hashlib.sha256(json.dumps(
@@ -283,60 +497,3 @@ class TestDjayReadMembers:
             assert [row_to_uuid[rowid] for rowid in rowids] == ["dj-uuid-100"]
         finally:
             con.close()
-
-    def test_source_edit_after_initial_cas_before_djay_mutation_is_rejected(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
-        from apps.smartlists import writeback_backup
-
-        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
-        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
-        expected = hashlib.sha256(json.dumps(
-            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
-        ).encode()).hexdigest()
-        mapping_revision = hashlib.sha256(json.dumps(sorted([
-            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
-        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        source = ["sid-1", "sid-2"]
-        monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
-        persisted_reversal = writeback_backup.write_reversal
-
-        def interleave_source_edit(*args) -> None:
-            persisted_reversal(*args)
-            source[:] = ["sid-1", "sid-3"]
-
-        def assert_source_current() -> None:
-            if source != ["sid-1", "sid-2"]:
-                raise WritebackConflict("source changed at vendor mutation boundary")
-
-        monkeypatch.setattr(writeback_backup, "write_reversal", interleave_source_edit)
-        with pytest.raises(WritebackConflict, match="source changed at vendor mutation boundary"):
-            writer.apply_with_backup_by_id(
-                playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, assert_source_current,
-            )
-        assert writer.read_members_by_id(playlist_id) == ["sid-1"]
-
-    def test_mapping_edit_after_initial_cas_before_djay_mutation_is_rejected(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
-        from apps.smartlists import writeback_backup
-
-        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
-        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
-        expected = hashlib.sha256(json.dumps(
-            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
-        ).encode()).hexdigest()
-        mapping_revision = hashlib.sha256(json.dumps(sorted([
-            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
-        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
-        persisted_reversal = writeback_backup.write_reversal
-
-        def interleave_mapping_edit(*args) -> None:
-            persisted_reversal(*args)
-            state_conn.execute(
-                "UPDATE track_vendor_ids SET vendor_id = 'dj-remapped-200' WHERE vendor = 'djay' AND stable_id = 'sid-2'",
-            )
-
-        monkeypatch.setattr(writeback_backup, "write_reversal", interleave_mapping_edit)
-        with pytest.raises(WritebackConflict, match="mapping changed at vendor mutation boundary"):
-            writer.apply_with_backup_by_id(
-                playlist_id, ["sid-1", "sid-2"], expected, mapping_revision, lambda: None,
-            )
-        assert writer.read_members_by_id(playlist_id) == ["sid-1"]
