@@ -57,16 +57,27 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared.paths import DATA_DIR, STATE_DB
+from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
+from apps.shared.platform_paths import MappedPath, SHARE_ROOT, resolve_library_path
 from apps.vocals import cache as vocal_cache
 
 log = logging.getLogger(__name__)
 
+# MDT_DATA_DIR: explicit override so a backend run against an unpacked
+# scripts/data_snapshot.py pack (e.g. on a Windows box, or any Mac dev dir
+# other than the default) never touches apps.shared.paths' hardcoded layout.
+# Read once at import; every constant below is rederived from the SAME
+# DATA_DIR so there is one source of truth. Constant NAMES are unchanged.
+_MDT_DATA_DIR_ENV: Optional[str] = os.environ.get("MDT_DATA_DIR")
+DATA_DIR: Path = Path(_MDT_DATA_DIR_ENV) if _MDT_DATA_DIR_ENV else _PATHS_DATA_DIR
+
 MASTER_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
-SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 ANLZ_CACHE_DIR: Path = DATA_DIR / "state" / "anlz-cache"
 # demucs gap-fill cache written by ``python -m apps.vocals`` (SPIKE-B2).
 VOCAL_CACHE_DIR: Path = vocal_cache.cache_dir(DATA_DIR)
+# Matches apps.shared.paths' STATE_DIR/STATE_DB formula exactly, so this
+# equals the default STATE_DB when MDT_DATA_DIR is unset.
+STATE_DB: Path = DATA_DIR / "state" / "state.db"
 
 AUDIO_MEDIA_TYPES: dict[str, str] = {
     ".mp3": "audio/mpeg",
@@ -237,13 +248,27 @@ def resolve_content(stable_id: str) -> RbContent:
 
 
 def resolve_share_path(path: str) -> Path:
-    """RECON-DATA.md section 1: /PIONEER/ paths are share-relative."""
-    if path.startswith("/PIONEER/"):
-        root = SHARE_ROOT.resolve()
-        resolved = (root / path.lstrip("/")).resolve()
-        if not resolved.is_relative_to(root):
-            raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
-        return resolved
+    """Backward-compat alias over :func:`resolve_library_path`.
+
+    Kept ONLY for the legacy non-owned call sites that still expect a bare
+    ``Path`` back and never raise (``apps/webui/server/routes/rb_assets.py``,
+    ``tests/test_rb_assets.py``) -- new code in this module calls
+    :func:`resolve_library_path` directly so it can see the explicit
+    unmapped state. Mirrors the pre-portability behaviour when the shared
+    resolver reports "unmapped" by falling back to ``Path(path)`` verbatim
+    (never existing -- every caller already guards with ``.is_file()``).
+    """
+    mapped: MappedPath = resolve_library_path(path)
+    if mapped.resolved is not None:
+        if mapped.reason == "share":
+            root = SHARE_ROOT.resolve()
+            resolved = mapped.resolved.resolve()
+            if not resolved.is_relative_to(root):
+                raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
+            return resolved
+        return mapped.resolved
+    if mapped.reason.startswith("unsafe:"):
+        raise ValueError(f"unsafe rekordbox asset path: {path!r}")
     return Path(path)
 
 
@@ -266,7 +291,15 @@ def audio_file(content: RbContent) -> tuple[Path, str]:
             f"track {content.stable_id} is a streaming row "
             f"({content.folder_path.split(':', 1)[0]}:) with no local file",
         )
-    path = resolve_share_path(content.folder_path)
+    mapped: MappedPath = resolve_library_path(content.folder_path)
+    if mapped.resolved is None:
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"audio file for track {content.stable_id} could not be "
+            f"resolved on this platform ({mapped.reason}): "
+            f"{content.folder_path}",
+        )
+    path = mapped.resolved
     if not path.is_file():
         raise not_found(
             "AUDIO_FILE_MISSING",
@@ -301,7 +334,15 @@ def artwork_file(content: RbContent, size: str) -> Path:
             f"track {content.stable_id} has no ImagePath in rekordbox",
         )
     # ImagePath points at .../artwork.jpg; siblings artwork_s / artwork_m.
-    path = resolve_share_path(content.image_path).parent / ARTWORK_FILENAMES[size]
+    mapped: MappedPath = resolve_library_path(content.image_path)
+    if mapped.resolved is None:
+        raise not_found(
+            "ARTWORK_NOT_FOUND",
+            f"artwork ImagePath for track {content.stable_id} could not be "
+            f"resolved on this platform ({mapped.reason}): "
+            f"{content.image_path}",
+        )
+    path = mapped.resolved.parent / ARTWORK_FILENAMES[size]
     if not path.is_file():
         raise not_found(
             "ARTWORK_NOT_FOUND",
@@ -317,7 +358,15 @@ def anlz_dir(content: RbContent) -> Path:
             "ANALYSIS_NOT_FOUND",
             f"track {content.stable_id} has no AnalysisDataPath in rekordbox",
         )
-    dat = resolve_share_path(content.analysis_data_path)
+    mapped: MappedPath = resolve_library_path(content.analysis_data_path)
+    if mapped.resolved is None:
+        raise not_found(
+            "ANALYSIS_NOT_FOUND",
+            f"AnalysisDataPath for track {content.stable_id} could not be "
+            f"resolved on this platform ({mapped.reason}): "
+            f"{content.analysis_data_path}",
+        )
+    dat = mapped.resolved
     if not dat.is_file():
         raise not_found(
             "ANALYSIS_NOT_FOUND",
@@ -445,7 +494,10 @@ def preview_strip(
     """
     if not analysis_data_path:
         return None, None
-    dat = resolve_share_path(analysis_data_path)
+    mapped: MappedPath = resolve_library_path(analysis_data_path)
+    if mapped.resolved is None:
+        return None, None  # unmapped on this platform: a real "no analysis" state
+    dat = mapped.resolved
     for suffix, reader in _PREVIEW_SOURCES:
         source = dat.with_suffix(suffix)
         if not source.is_file():
@@ -565,9 +617,12 @@ def demucs_vocals_payload(content: RbContent) -> Optional[dict[str, Any]]:
     """
     if content.folder_path is None or is_streaming_path(content.folder_path):
         return None
+    mapped: MappedPath = resolve_library_path(content.folder_path)
+    if mapped.resolved is None:
+        return None  # unmapped on this platform: audio is not locatable
     entry = vocal_cache.load_valid_entry(
         VOCAL_CACHE_DIR / f"{content.stable_id}.json",
-        resolve_share_path(content.folder_path),
+        mapped.resolved,
     )
     if entry is None:
         return None
@@ -784,7 +839,8 @@ def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
             else:
                 stale.append(path)
     for path in stale:
-        out[path] = resolve_share_path(path).is_file()
+        mapped: MappedPath = resolve_library_path(path)
+        out[path] = mapped.resolved is not None and mapped.resolved.is_file()
     if stale:
         with _FILE_EXISTS_LOCK:
             for path in stale:
@@ -1041,10 +1097,12 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     the live ``djmdCue`` rows because they can change without touching ANLZ files.
     """
     directory = anlz_dir(content)
-    # anlz_dir() enforced a non-None AnalysisDataPath pointing at the .DAT;
-    # the .2EX sibling (PVDI carrier) shares its stem.
+    # anlz_dir() already resolved + verified AnalysisDataPath (mapped and
+    # on disk); the .2EX sibling (PVDI carrier) shares its stem.
     assert content.analysis_data_path is not None
-    twoex_path = resolve_share_path(content.analysis_data_path).with_suffix(".2EX")
+    mapped_adp: MappedPath = resolve_library_path(content.analysis_data_path)
+    assert mapped_adp.resolved is not None  # anlz_dir() would have 404'd
+    twoex_path = mapped_adp.resolved.with_suffix(".2EX")
     anlz_mtime = _anlz_mtime(directory)
     cached = _load_cached_payload(content.stable_id, anlz_mtime, points)
     if cached is not None:
@@ -1634,7 +1692,6 @@ __all__ = [
     "PREVIEW_COLUMNS",
     "RbContent",
     "RbRowMeta",
-    "SHARE_ROOT",
     "STREAMING_PREFIXES",
     "VOCAL_CACHE_DIR",
     "VOCAL_INTENSITY_MIN",
