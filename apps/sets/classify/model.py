@@ -45,7 +45,7 @@ def _load_session_corpus(
     sessions_root: Path, session_id: str
 ) -> tuple[list[dict[str, Any]], dict[int, str]]:
     """Return (transitions, labels_by_idx) for a session."""
-    sess_dir = sessions_root / session_id
+    sess_dir = sets_paths.session_dir(session_id, root=sessions_root)
     transitions: list[dict[str, Any]] = []
     labels: dict[int, str] = {}
     tpath = sess_dir / "transitions.jsonl"

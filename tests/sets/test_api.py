@@ -115,6 +115,67 @@ def test_api_timeline_streams_ndjson(api_test_client):
 
 
 @pytest.mark.requirement("SET-03")
+@pytest.mark.parametrize(
+    ("encoded_session_id", "expected_status"),
+    [("..%5Coutside", 400), ("..%2Foutside", 404)],
+)
+def test_api_timeline_rejects_encoded_session_path_traversal(
+    api_test_client, encoded_session_id: str, expected_status: int
+) -> None:
+    """Decoded separators are client errors, never out-of-tree timeline reads."""
+    client, sets_root = api_test_client
+    outside = sets_root.parent / "outside"
+    outside.mkdir()
+    (outside / "manifest.json").write_text("{}", encoding="utf-8")
+    (outside / "timeline.jsonl").write_text('{"outside":true}\n', encoding="utf-8")
+
+    response = client.get(f"/api/sets/{encoded_session_id}/timeline")
+
+    assert response.status_code == expected_status
+    if expected_status == 400:
+        assert "session_id" in response.json()["detail"]
+
+
+@pytest.mark.requirement("SET-03")
+def test_api_relabel_rejects_encoded_backslash_without_writing_outside_root(
+    api_test_client,
+) -> None:
+    """The relabel endpoint must not append labels.jsonl through ``..\\``."""
+    client, sets_root = api_test_client
+    outside = sets_root.parent / "outside"
+    outside.mkdir()
+    write_manifest(
+        outside,
+        Manifest(
+            session_id="outside",
+            started_at="2026-04-17T21:30:00+00:00",
+            ended_at=None,
+            capture_device="test",
+            event_count=0,
+        ),
+    )
+
+    response = client.post(
+        "/api/sets/..%5Coutside/transitions/0/label",
+        json={"class": "blend"},
+    )
+
+    assert response.status_code == 400
+    assert not (outside / "labels.jsonl").exists()
+
+
+@pytest.mark.requirement("SET-03")
+def test_api_timeline_rejects_encoded_nul_as_client_error(api_test_client) -> None:
+    """NUL must not escape the resolver as an internal server error."""
+    client, _ = api_test_client
+
+    response = client.get("/api/sets/bad%00id/timeline")
+
+    assert response.status_code == 400
+    assert "session_id" in response.json()["detail"]
+
+
+@pytest.mark.requirement("SET-03")
 def test_api_transitions_returns_classified(api_test_client):
     client, sets_root = api_test_client
     _seed_api_session(sets_root)
