@@ -14,8 +14,11 @@ import json
 import sqlite3
 from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 from apps.smartlists.djay_writer import (
     DjayPlaylistWriter,
@@ -130,35 +133,17 @@ class TestRBReadMembers:
             w.read_members("Ghost")
 
 
-class _RawConnection:
-    def __init__(self, driver_connection) -> None:
-        self.driver_connection = driver_connection
-
-    def close(self) -> None:
-        self.driver_connection.close()
-
-    def invalidate(self) -> None:
-        self.driver_connection.close()
+_SQLCIPHER_KEY = "pr273-test-key"
+_PYREKORDBOX_TEST_KEY = (
+    "402fd0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+)
 
 
-class _UnlockedEngine:
-    def __init__(self, driver_connection) -> None:
-        self._driver_connection = driver_connection
-
-    def raw_connection(self) -> _RawConnection:
-        return _RawConnection(self._driver_connection)
-
-
-class _UnlockedDatabase:
-    def __init__(self, driver_connection) -> None:
-        self.engine = _UnlockedEngine(driver_connection)
-
-
-def _encrypted_rekordbox_db(path: Path):
+def _create_encrypted_marker_db(path: Path) -> None:
     import sqlcipher3
 
     connection = sqlcipher3.connect(path)
-    connection.execute("PRAGMA key = 'pr273-test-key'")
+    connection.execute(f"PRAGMA key = '{_SQLCIPHER_KEY}'")
     connection.execute("CREATE TABLE marker (value TEXT NOT NULL)")
     connection.execute("INSERT INTO marker VALUES ('encrypted-rekordbox')")
     connection.commit()
@@ -168,9 +153,71 @@ def _encrypted_rekordbox_db(path: Path):
         with pytest.raises(sqlite3.DatabaseError, match="not a database"):
             locked.execute("SELECT value FROM marker").fetchone()
 
-    unlocked = sqlcipher3.connect(path)
-    unlocked.execute("PRAGMA key = 'pr273-test-key'")
-    return unlocked
+
+def _open_sqlcipher_database(path: Path) -> SimpleNamespace:
+    import sqlcipher3
+
+    engine = create_engine(
+        f"sqlite+pysqlcipher://:{_SQLCIPHER_KEY}@/{path}?",
+        module=sqlcipher3,
+    )
+    return SimpleNamespace(engine=engine, session=Session(engine))
+
+
+def _close_sqlcipher_database(database: SimpleNamespace) -> None:
+    database.session.close()
+    database.engine.dispose()
+
+
+def _encrypt_rekordbox_copy(source: Path, destination: Path) -> None:
+    import sqlcipher3
+
+    connection = sqlcipher3.connect(source)
+    try:
+        connection.execute(
+            f"ATTACH DATABASE ? AS encrypted KEY '{_PYREKORDBOX_TEST_KEY}'",
+            (str(destination),),
+        )
+        connection.execute("SELECT sqlcipher_export('encrypted')").fetchone()
+        connection.commit()
+        connection.execute("DETACH DATABASE encrypted")
+    finally:
+        connection.close()
+
+
+def test_online_backup_preserves_real_sqlcipher_session_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sqlcipher3
+
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
+    session = database.session
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        assert type(database.engine.pool).__name__ == "SingletonThreadPool"
+        session.execute(text("BEGIN IMMEDIATE"))
+        session_driver = session.connection().connection.driver_connection
+        assert session_driver.in_transaction
+
+        _online_backup_unlocked_rekordbox(database, encrypted)
+
+        assert session_driver.in_transaction
+        contender = sqlcipher3.connect(encrypted, timeout=0, isolation_level=None)
+        try:
+            contender.execute(f"PRAGMA key = '{_SQLCIPHER_KEY}'")
+            with pytest.raises(sqlcipher3.OperationalError, match="locked"):
+                contender.execute("BEGIN IMMEDIATE")
+        finally:
+            contender.close()
+    finally:
+        session.rollback()
+        _close_sqlcipher_database(database)
 
 
 def test_online_backup_uses_unlocked_sqlcipher_connection(
@@ -180,12 +227,14 @@ def test_online_backup_uses_unlocked_sqlcipher_connection(
     from apps.smartlists import writeback_backup
 
     encrypted = tmp_path / "master.db"
-    unlocked = _encrypted_rekordbox_db(encrypted)
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
     monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
 
-    backup_id = _online_backup_unlocked_rekordbox(
-        _UnlockedDatabase(unlocked), encrypted
-    )
+    try:
+        backup_id = _online_backup_unlocked_rekordbox(database, encrypted)
+    finally:
+        _close_sqlcipher_database(database)
 
     backup = writeback_backup.backup_path("rekordbox", backup_id)
     with sqlite3.connect(backup) as plain:
@@ -202,18 +251,93 @@ def test_online_backup_rejects_unlocked_connection_for_another_target(
     from apps.smartlists import writeback_backup
 
     encrypted = tmp_path / "master.db"
-    unlocked = _encrypted_rekordbox_db(encrypted)
+    _create_encrypted_marker_db(encrypted)
+    database = _open_sqlcipher_database(encrypted)
     other_target = tmp_path / "other.db"
     other_target.write_bytes(encrypted.read_bytes())
     backup_dir = tmp_path / "backups"
     monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", backup_dir)
 
-    with pytest.raises(RuntimeError, match="does not own exact target"):
-        _online_backup_unlocked_rekordbox(
-            _UnlockedDatabase(unlocked), other_target
-        )
+    try:
+        with pytest.raises(RuntimeError, match="does not own exact target"):
+            _online_backup_unlocked_rekordbox(database, other_target)
+    finally:
+        _close_sqlcipher_database(database)
 
     assert not backup_dir.exists() or list(backup_dir.iterdir()) == []
+
+
+def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
+    tmp_rb_db: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pyrekordbox import Rekordbox6Database
+
+    from apps.smartlists import writeback_backup
+
+    encrypted = tmp_path / "master.db"
+    _encrypt_rekordbox_copy(tmp_rb_db, encrypted)
+    database = Rekordbox6Database(
+        path=str(encrypted),
+        key=_PYREKORDBOX_TEST_KEY,
+    )
+    mapping_conn = sqlite3.connect(":memory:", isolation_level=None)
+    mapping_conn.executescript(_STATE_DDL)
+    monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+
+    try:
+        playlist = next(
+            candidate
+            for candidate in database.get_playlist()
+            if list(getattr(candidate, "Songs", []) or [])
+        )
+        playlist_id = str(playlist.ID)
+        songs = sorted(
+            list(playlist.Songs),
+            key=lambda song: (getattr(song, "TrackNo", 0) or 0),
+        )
+        native_members = [str(song.ContentID) for song in songs]
+        stable_members = [f"stable-{index}" for index in range(len(native_members))]
+        mapping_conn.executemany(
+            "INSERT INTO track_vendor_ids VALUES (?, 'rekordbox', ?)",
+            list(zip(stable_members, native_members, strict=True)),
+        )
+        desired_members = list(reversed(stable_members))
+        expected_revision = hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": stable_members},
+            sort_keys=True, separators=(",", ":"),
+        ).encode()).hexdigest()
+        mapping_revision = hashlib.sha256(json.dumps(sorted(
+            zip(stable_members, native_members, strict=True)
+        ), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        writer = RBPlaylistWriter(
+            db=database,
+            state_conn=mapping_conn,
+            live_db_path=encrypted,
+        )
+
+        backup, post_revision = writer.apply_with_backup_by_id(
+            playlist_id,
+            desired_members,
+            expected_revision,
+            mapping_revision,
+            nullcontext,
+        )
+
+        assert writer.read_members_by_id(playlist_id) == desired_members
+        backup_path = writeback_backup.backup_path("rekordbox", backup.backup_id)
+        with sqlite3.connect(backup_path) as plain_backup:
+            assert plain_backup.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        assert writer.restore_backup(
+            backup.backup_id,
+            playlist_id,
+            post_revision,
+        ) == expected_revision
+        assert writer.read_members_by_id(playlist_id) == stable_members
+    finally:
+        mapping_conn.close()
+        database.close()
 
 
 # ------------------------------------------------------------ djay_writer

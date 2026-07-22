@@ -48,6 +48,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, ContextManager
 
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
+
 from apps.shared import paths
 
 # Default backup directory for live RB DB copies taken before smartlist
@@ -129,8 +132,22 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
     backup_id = uuid4().hex
     destination = writeback_backup.backup_path("rekordbox", backup_id)
     schema_name = f"writeback_backup_{backup_id}"
-    connection = db.engine.raw_connection()
+    source_engine = getattr(db, "engine", None)
+    source_dialect = getattr(source_engine, "dialect", None)
+    source_url = getattr(source_engine, "url", None)
+    source_dbapi = getattr(source_dialect, "dbapi", None)
+    if source_url is None or source_dbapi is None:
+        raise RuntimeError(
+            "rekordbox: writer has no reusable unlocked SQLCipher engine configuration"
+        )
+    backup_engine = create_engine(
+        source_url,
+        module=source_dbapi,
+        poolclass=NullPool,
+    )
+    connection = None
     try:
+        connection = backup_engine.raw_connection()
         driver = connection.driver_connection
         database_rows = driver.execute("PRAGMA database_list").fetchall()
         main_row = next((row for row in database_rows if row[1] == "main"), None)
@@ -168,6 +185,8 @@ def _online_backup_unlocked_rekordbox(db: Any, live_db_path: Path) -> str:
             connection.invalidate()
         destination.unlink(missing_ok=True)
         raise
+    finally:
+        backup_engine.dispose()
     return backup_id
 
 
