@@ -3,19 +3,25 @@
 	// left, E-H right, SCREENSHOT-SPEC 3 wide layout): this bank is the
 	// deck panel's flexible middle and fills all spare width. Populated
 	// slot click = real jump to in_ms via the audio engine (COMPONENT-MAP
-	// 1.3); empty slots render dim + disabled. HOT CUE dropdown selector
-	// below-left is visual-only (inert).
+	// 1.3). Empty slot click = SAVE the current playhead there (djmdCue
+	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
+	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
+	// dropdown selector below-left is visual-only (inert).
 	import type { DeckState, HotCue, HotCueSlot } from '$lib/rb/types';
 
 	let {
 		deck,
 		pending,
 		onJump,
+		onSave,
+		onDelete,
 		inertTip
 	}: {
 		deck: DeckState;
 		pending: boolean;
 		onJump: (ms: number) => Promise<void>;
+		onSave: (slot: HotCueSlot) => Promise<void>;
+		onDelete: (slot: HotCueSlot) => Promise<void>;
 		inertTip: string;
 	} = $props();
 
@@ -28,11 +34,40 @@
 		}))
 	);
 
+	// Local write-round-trip busy state, separate from `pending` (transport
+	// commands) so a save/clear in flight only disables its own slot.
+	let busySlot: HotCueSlot | null = $state(null);
+
 	function fmtMs(ms: number): string {
 		const total = Math.floor(ms / 1000);
 		const m = Math.floor(total / 60);
 		const s = total % 60;
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+	}
+
+	async function onSlotClick(entry: { slot: HotCueSlot; cue: HotCue | null }): Promise<void> {
+		if (busySlot !== null) return;
+		busySlot = entry.slot;
+		try {
+			if (entry.cue !== null) {
+				await onJump(entry.cue.in_ms);
+			} else {
+				await onSave(entry.slot);
+			}
+		} finally {
+			busySlot = null;
+		}
+	}
+
+	async function onClearClick(slot: HotCueSlot, event: MouseEvent): Promise<void> {
+		event.stopPropagation();
+		if (busySlot !== null) return;
+		busySlot = slot;
+		try {
+			await onDelete(slot);
+		} finally {
+			busySlot = null;
+		}
 	}
 </script>
 
@@ -43,18 +78,32 @@
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
-				disabled={entry.cue === null || pending}
+				disabled={pending || busySlot !== null}
 				title={entry.cue === null
-					? 'empty hot cue slot'
+					? 'empty hot cue slot - click to save the current position'
 					: (entry.cue.comment ?? `hot cue ${entry.slot}`)}
-				onclick={async () => {
-					if (entry.cue !== null) await onJump(entry.cue.in_ms);
-				}}
+				onclick={() => onSlotClick(entry)}
 			>
 				<span class="letter">{entry.slot}</span>
 				{#if entry.cue !== null}
 					<span class="cue-label">{entry.cue.comment ?? `CUE ${entry.slot}`}</span>
 					<span class="cue-time">{fmtMs(entry.cue.in_ms)}</span>
+					<span
+						class="clear"
+						role="button"
+						tabindex="0"
+						aria-label={`clear hot cue ${entry.slot}`}
+						title={`clear hot cue ${entry.slot}`}
+						onclick={(event) => onClearClick(entry.slot, event)}
+						onkeydown={(event) => {
+							if (event.key === 'Enter' || event.key === ' ') {
+								event.preventDefault();
+								onClearClick(entry.slot, event as unknown as MouseEvent);
+							}
+						}}
+					>
+						&#215;
+					</span>
 				{/if}
 			</button>
 		{/each}
@@ -98,6 +147,9 @@
 		text-align: left;
 		padding: 1px 6px;
 		opacity: 0.55;
+		cursor: pointer;
+	}
+	.slot:disabled {
 		cursor: default;
 	}
 	.slot .letter {
@@ -107,7 +159,6 @@
 		opacity: 1;
 		color: var(--rb-text);
 		border-left: 3px solid var(--rb-green);
-		cursor: pointer;
 	}
 	.slot.filled .letter {
 		color: var(--rb-green);
@@ -131,6 +182,23 @@
 		color: var(--rb-text-dim);
 		font-weight: 400;
 		font-variant-numeric: tabular-nums;
+	}
+	.clear {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 14px;
+		height: 14px;
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.clear:hover,
+	.clear:focus-visible {
+		color: var(--rb-red);
+		background: rgba(255, 255, 255, 0.08);
+		outline: none;
 	}
 	.dropdown {
 		align-self: flex-start;

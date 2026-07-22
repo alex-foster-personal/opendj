@@ -11,16 +11,20 @@
 	import {
 		DECK_IDS,
 		deckStates,
+		engine,
 		getDeckState,
 		parseCamelotKey,
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
+	import { clearHotCue, saveHotCue } from '$lib/rb/api-rb';
+	import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
 	import {
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import type { DeckId, DeckState, StemControl } from '$lib/rb/types';
+	import { pushToast } from '$lib/stores.svelte';
+	import type { DeckId, DeckState, HotCueSlot, StemControl } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
 	import JogDial from './deck/JogDial.svelte';
@@ -141,6 +145,40 @@
 	async function nudgeKey(semitones: -1 | 1): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'key_nudge', deck: deckId, semitones });
 	}
+
+	// ------------------------------------------- hot-cue SAVE / CLEAR
+	// Persistence writes (djmdCue Kind 1-8), not performance commands -
+	// they go straight to the REST write surface, then refresh the deck's
+	// hot_cues from the backend (rb_vendor.fetch_cues is always live).
+
+	async function saveHotCueAt(slot: HotCueSlot): Promise<void> {
+		const stableId = deck.stable_id;
+		if (stableId === null) return;
+		let ms = deck.position_ms;
+		const beats = deck.anlz?.beatgrid.beats ?? [];
+		if (deck.quantize_enabled && beats.length > 0) {
+			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
+		}
+		try {
+			await saveHotCue(stableId, slot, ms);
+			await engine.refreshHotCues(deckId);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`Hot cue ${slot} save failed - ${message}`, 'error');
+		}
+	}
+
+	async function clearHotCueAt(slot: HotCueSlot): Promise<void> {
+		const stableId = deck.stable_id;
+		if (stableId === null) return;
+		try {
+			await clearHotCue(stableId, slot);
+			await engine.refreshHotCues(deckId);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`Hot cue ${slot} clear failed - ${message}`, 'error');
+		}
+	}
 </script>
 
 <section class="rb-deck rb-panel" data-deck={deckId} data-command-pending={pending}>
@@ -182,7 +220,14 @@
 		<!-- The cue bank is the deck panel's flexible middle (wide slot rows,
 		     SCREENSHOT-SPEC 3 wide layout) - it absorbs all spare width. -->
 		<div class="cue-flex">
-			<HotCueBank {deck} {pending} onJump={seekTo} inertTip={INERT_TIP} />
+			<HotCueBank
+				{deck}
+				{pending}
+				onJump={seekTo}
+				onSave={saveHotCueAt}
+				onDelete={clearHotCueAt}
+				inertTip={INERT_TIP}
+			/>
 		</div>
 
 		<LoopCluster

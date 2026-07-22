@@ -43,6 +43,7 @@ import base64
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import struct
 import tempfile
@@ -1028,6 +1029,176 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     return payload
 
 
+# ----- hot-cue SAVE (djmdCue Kind 1-8 write surface, edit-write-path lane) --
+#
+# This is the first write surface into master.plain.db: everything above
+# this line opens the DB `mode=ro` / `PRAGMA query_only`. Writes stop at
+# Kind 8 (slot H) on purpose -- Kind 9-11 rows are observed in the wild
+# (RECON-DATA.md section 4, 24 rows) but their slot mapping is unverified,
+# so this surface never guesses at it (PARITY-TODO.md "Hot-cue SAVE").
+# beatgrid-editing (DEPENDENCY-PATH.md line 153) reuses _open_rw below.
+#
+# master.plain.db here is the STATIC decrypted working copy (CLAUDE.md /
+# PARITY-TODO.md "Known data notes"), not the live rekordbox db the desktop
+# app has open -- SAVE round-trips through our own read path (fetch_cues is
+# always re-queried live, never cached) but does not sync back to rekordbox
+# itself; that is the separate write-back-rekordbox-djay node.
+#
+# Quantizing to the beatgrid (DEPENDENCY-PATH "quantized position") is a
+# frontend concern (beat-sync-math.quantizeToNearestBeat against the loaded
+# AnlzBeatgrid) -- this surface accepts whatever in_ms it is given verbatim.
+
+class HotCueSlotError(ValueError):
+    """Unknown/unsupported hot-cue slot letter."""
+
+
+def _slot_to_kind(slot: str) -> int:
+    if len(slot) != 1 or slot not in HOT_CUE_SLOTS:
+        raise HotCueSlotError(
+            f"unsupported hot-cue slot {slot!r}; only {HOT_CUE_SLOTS} are "
+            "write-supported (Kind 9-11 slot mapping unverified, see "
+            "PARITY-TODO.md 'Hot-cue SAVE')"
+        )
+    return HOT_CUE_SLOTS.index(slot) + 1
+
+
+def _msec_to_frame(msec: int) -> int:
+    """Same 44.1 kHz heuristic as apps/sync/rb_writer.py (InFrame is not
+    read back by fetch_cues; kept for on-disk-row authenticity only)."""
+    return int(round(msec * 0.441))
+
+
+def _rb_timestamp() -> str:
+    now = time.time()
+    struct_time = time.gmtime(now)
+    millis = int((now - int(now)) * 1000)
+    return time.strftime("%Y-%m-%d %H:%M:%S", struct_time) + f".{millis:03d} +00:00"
+
+
+def _new_cue_id(conn: sqlite3.Connection) -> str:
+    for _ in range(50):
+        candidate = str(secrets.randbelow(9_000_000_000) + 1_000_000_000)
+        if conn.execute(
+            "SELECT 1 FROM djmdCue WHERE ID = ?", (candidate,)
+        ).fetchone() is None:
+            return candidate
+    raise HTTPException(
+        status_code=500,
+        detail={
+            "code": "CUE_ID_EXHAUSTED",
+            "message": "could not allocate a unique djmdCue ID",
+        },
+    )
+
+
+def _open_rw(path: Path, label: str) -> sqlite3.Connection:
+    if not path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": f"{label}_UNAVAILABLE",
+                "message": f"required database missing on disk: {path}",
+            },
+        )
+    return sqlite3.connect(str(path))
+
+
+def save_hot_cue(
+    vendor_id: str,
+    slot: str,
+    in_ms: int,
+    *,
+    comment: Optional[str] = None,
+    color_table_index: Optional[int] = None,
+) -> dict[str, Any]:
+    """Upsert the Kind 1-8 djmdCue row for ``slot``.
+
+    SAVE always overwrites whatever already lives in the slot (last SAVE
+    wins -- the "slot conflict" case DEPENDENCY-PATH calls out); this never
+    creates a second row for the same (ContentID, Kind).
+    """
+    if in_ms < 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_CUE_POSITION",
+                "message": f"in_ms must be >= 0, got {in_ms}",
+            },
+        )
+    kind = _slot_to_kind(slot)
+    now = _rb_timestamp()
+    master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
+    try:
+        # Serialize read-then-upsert with other API processes. The fixture
+        # schema deliberately has no (ContentID, Kind) uniqueness constraint,
+        # so a deferred transaction would let concurrent writers both observe
+        # an empty slot and insert duplicate live rows.
+        master.execute("BEGIN IMMEDIATE")
+        existing = master.execute(
+            "SELECT ID FROM djmdCue "
+            "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
+            (vendor_id, kind),
+        ).fetchone()
+        if existing is not None:
+            master.execute(
+                "UPDATE djmdCue SET InMsec = ?, InFrame = ?, InMpegFrame = NULL, "
+                "InMpegAbs = NULL, OutMsec = NULL, OutFrame = NULL, "
+                "ActiveLoop = 0, ColorTableIndex = ?, Comment = ?, "
+                "updated_at = ? WHERE ID = ?",
+                (in_ms, _msec_to_frame(in_ms), color_table_index, comment,
+                 now, existing[0]),
+            )
+        else:
+            cue_id = _new_cue_id(master)
+            master.execute(
+                "INSERT INTO djmdCue (ID, ContentID, InMsec, InFrame, "
+                "InMpegFrame, InMpegAbs, OutMsec, OutFrame, Kind, "
+                "ColorTableIndex, ActiveLoop, Comment, rb_local_deleted, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, 0, ?, 0, "
+                "?, ?)",
+                (cue_id, vendor_id, in_ms, _msec_to_frame(in_ms), kind,
+                 color_table_index, comment, now, now),
+            )
+        master.commit()
+    except Exception:
+        master.rollback()
+        raise
+    finally:
+        master.close()
+    return {
+        "kind": "hot_cue",
+        "slot": slot,
+        "in_ms": in_ms,
+        "out_ms": None,
+        "is_loop": False,
+        "active_loop": False,
+        "beat_loop_size": None,
+        "color_table_index": color_table_index,
+        "comment": comment,
+    }
+
+
+def clear_hot_cue(vendor_id: str, slot: str) -> None:
+    """Soft-delete the Kind 1-8 djmdCue row for ``slot``, if any (a no-op
+    clear on an already-empty slot is not an error -- idempotent DELETE)."""
+    kind = _slot_to_kind(slot)
+    master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
+    try:
+        master.execute("BEGIN IMMEDIATE")
+        master.execute(
+            "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? "
+            "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
+            (_rb_timestamp(), vendor_id, kind),
+        )
+        master.commit()
+    except Exception:
+        master.rollback()
+        raise
+    finally:
+        master.close()
+
+
 __all__ = [
     "ANLZ_CACHE_DIR",
     "ANLZ_CACHE_SCHEMA",
@@ -1035,6 +1206,7 @@ __all__ = [
     "AUDIO_MEDIA_TYPES",
     "FILE_EXISTS_TTL_S",
     "HOT_CUE_SLOTS",
+    "HotCueSlotError",
     "MASTER_PLAIN_DB",
     "PREVIEW_COLUMNS",
     "RbContent",
@@ -1052,6 +1224,7 @@ __all__ = [
     "bulk_availability",
     "bulk_file_exists",
     "bulk_rb_meta",
+    "clear_hot_cue",
     "count_cues",
     "fetch_cues",
     "is_streaming_path",
@@ -1060,5 +1233,6 @@ __all__ = [
     "read_pvdi",
     "resolve_content",
     "resolve_share_path",
+    "save_hot_cue",
     "vocals_payload",
 ]
