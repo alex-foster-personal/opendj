@@ -50,6 +50,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -148,6 +149,40 @@ def _move_to_failed(audio_path: Path, logs_dir: Path, error: Exception) -> bool:
     return False
 
 
+def _write_json_atomic(result_path: Path, payload: dict[str, Any]) -> None:
+    """Durably publish one result without exposing partially-written JSON."""
+    lock_path = result_path.with_name(f".{result_path.name}.lock")
+    temporary_path: Path | None = None
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(lock_fd)
+    try:
+        if result_path.exists():
+            raise FileExistsError(
+                f"result already exists and will not be overwritten: {result_path}"
+            )
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=result_path.parent,
+            prefix=f".{result_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as result_file:
+            temporary_path = Path(result_file.name)
+            json.dump(payload, result_file, indent=1)
+            result_file.flush()
+            os.fsync(result_file.fileno())
+        if result_path.exists():
+            raise FileExistsError(
+                f"result already exists and will not be overwritten: {result_path}"
+            )
+        os.replace(temporary_path, result_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        lock_path.unlink(missing_ok=True)
+
+
 # ----- per-file processing -------------------------------------------------------
 
 def process_one(
@@ -193,9 +228,8 @@ def process_one(
         },
     }
     try:
-        with result_path.open("x", encoding="utf-8") as result_file:
-            json.dump(wrapped, result_file, indent=1)
-    except OSError as exc:
+        _write_json_atomic(result_path, wrapped)
+    except Exception as exc:
         return _move_to_failed(audio_path, logs_dir, exc)
     audio_path.unlink()
     _log(logs_dir, f"done: {audio_path.stem}")

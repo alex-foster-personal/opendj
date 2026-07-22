@@ -12,6 +12,8 @@ Regression one-liners:
   - if success doesn't delete the input and log a done: line then broken
   - if a worker failure doesn't move the input to inbox/failed/ then broken
   - if gpu_is_busy doesn't trip on util OR mem alone then broken
+  - if publication fails then partial final or temp output must not remain
+  - if publication skips flush, fsync, or close before replace then broken
 """
 from __future__ import annotations
 
@@ -169,6 +171,87 @@ def test_process_one_never_overwrites_an_existing_same_stem_result(tmp_path: Pat
     assert calls == []
     assert existing.read_text(encoding="utf-8") == '{"existing": true}'
     assert (inbox / "failed" / "track.wav").is_file()
+
+
+@pytest.mark.parametrize("failure_stage", ["serialize", "write", "fsync", "replace"])
+def test_process_one_publication_failure_never_leaves_partial_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    logs = tmp_path / "logs"
+    audio = _make_inbox_file(inbox, "track.wav")
+    result = _worker_result()
+
+    if failure_stage == "serialize":
+        result["not_json"] = object()
+    elif failure_stage == "write":
+        def _partial_write_then_fail(
+            _payload: object, result_file: Any, **_kwargs: object
+        ) -> None:
+            result_file.write('{"partial":')
+            raise OSError("injected write failure")
+
+        monkeypatch.setattr(runner.json, "dump", _partial_write_then_fail)
+    elif failure_stage == "fsync":
+        def _fail_fsync(_fd: int) -> None:
+            raise OSError("injected fsync failure")
+
+        monkeypatch.setattr(runner.os, "fsync", _fail_fsync)
+    elif failure_stage == "replace":
+        def _fail_replace(_source: Path, _target: Path) -> None:
+            raise OSError("injected replace failure")
+
+        monkeypatch.setattr(runner.os, "replace", _fail_replace)
+
+    ok = runner.process_one(
+        audio, outbox, logs, "cpu", run_worker_fn=lambda _: result
+    )
+
+    assert ok is False
+    assert not audio.exists()
+    assert (inbox / "failed" / "track.wav").is_file()
+    assert list(outbox.iterdir()) == []
+
+
+def test_process_one_flushes_fsyncs_and_closes_before_atomic_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    logs = tmp_path / "logs"
+    audio = _make_inbox_file(inbox, "track.wav")
+    events: list[str] = []
+    real_fsync = runner.os.fsync
+    real_replace = runner.os.replace
+
+    def _record_fsync(fd: int) -> None:
+        events.append("fsync")
+        real_fsync(fd)
+
+    def _record_replace(source: Path, target: Path) -> None:
+        assert source.parent == target.parent == outbox
+        assert source != target
+        assert source.name.startswith(f".{target.name}.")
+        assert source.name.endswith(".tmp")
+        with source.open("a", encoding="utf-8"):
+            events.append("closed")
+        events.append("replace")
+        real_replace(source, target)
+
+    monkeypatch.setattr(runner.os, "fsync", _record_fsync)
+    monkeypatch.setattr(runner.os, "replace", _record_replace)
+
+    ok = runner.process_one(
+        audio, outbox, logs, "cpu", run_worker_fn=lambda _: _worker_result()
+    )
+
+    assert ok is True
+    assert events == ["fsync", "closed", "replace"]
+    assert [path.name for path in outbox.iterdir()] == ["track.json"]
 
 
 # ----- run_once: STOP sentinel + GPU gate control flow -----------------------------
