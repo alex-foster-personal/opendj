@@ -35,6 +35,7 @@
 			<a href="/pairings">Pairings</a>
 			<a href="/queues">Queues</a>
 			<a href="/performance">Performance</a>
+			<a href="/sets">Sessions / REC</a>
 			<a href="/progress-tree">Progress</a>
 			<a href="/settings">Settings</a>
 		</nav>
