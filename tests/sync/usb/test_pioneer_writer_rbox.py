@@ -37,6 +37,7 @@ from apps.sync.usb.pioneer.writer_rbox import (
 # -----------------------------------------------------------------------
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
+    pytest.mark.requires_darwin,
     pytest.mark.skipif(
         not RBOX_AVAILABLE,
         reason=(

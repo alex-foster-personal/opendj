@@ -33,7 +33,7 @@ from apps.sync.usb.pioneer.writer_rbox import (
 )
 
 
-pytestmark = [pytest.mark.requirement("CAT-06")]
+pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.requires_darwin]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
