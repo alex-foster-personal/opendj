@@ -219,6 +219,55 @@ def test_pvdi_present_probe(data_dir: Path, tmp_path: Path) -> None:
         pvdi_present(junk)
 
 
+# ----- gate + race guards ---------------------------------------------------------------
+
+def test_trickle_rejects_dry_run_plus_live() -> None:
+    """[if] --dry-run and --live both passed [then] argparse SystemExit."""
+    from apps.vocals.cli import build_parser
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["trickle", "--dry-run", "--live"])
+
+
+def test_process_one_refuses_audio_changed_mid_analysis(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] audio mtime changes during a worker run [then] RuntimeError,
+    and NO cache entry lands (poisoned regions must never validate)."""
+    from apps.vocals import cli as vcli
+    ctx = Ctx(data_dir=data_dir)
+    tracks = load_tracks(ctx, None)
+    classify(ctx, tracks)
+    tr = next(t for t in tracks if t.stable_id == "todoB")
+
+    def _worker_that_races(audio_path: Path) -> dict[str, Any]:
+        stat = audio_path.stat()
+        os.utime(audio_path, (stat.st_atime, stat.st_mtime + 7))
+        return _worker_result()
+
+    monkeypatch.setattr(vcli, "run_worker", _worker_that_races)
+    with pytest.raises(RuntimeError, match="changed during analysis"):
+        vcli._process_one(ctx, tr, "[test]")
+    assert not vcache.cache_path(data_dir, "todoB").is_file()
+
+
+def test_process_one_records_pre_run_mtime(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cached audio_mtime is the PRE-worker stat, so a post-write file
+    replacement invalidates the entry on next load."""
+    from apps.vocals import cli as vcli
+    ctx = Ctx(data_dir=data_dir)
+    tracks = load_tracks(ctx, None)
+    classify(ctx, tracks)
+    tr = next(t for t in tracks if t.stable_id == "todoB")
+    assert tr.audio_path is not None
+    pre_mtime = tr.audio_path.stat().st_mtime
+
+    monkeypatch.setattr(vcli, "run_worker", lambda _p: _worker_result())
+    _wall, entry = vcli._process_one(ctx, tr, "[test]")
+    assert entry["audio_mtime"] == pre_mtime
+
+
 # ----- live-data smoke (skips cleanly without local library data) ---------------------
 
 def _real_data_dir() -> Optional[Path]:

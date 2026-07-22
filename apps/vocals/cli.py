@@ -22,6 +22,8 @@ Requirements (mini-PRD):
     a log line; per-track wall time + running ETA on stdout.
     [if] run twice --live [then] second run recomputes nothing
     [if] a queued file vanished before its turn [then] "[SKIP]" line, no crash
+    [if] --dry-run and --live both passed [then ⛔️] argparse rejects them
+    [if] audio mtime changes during a worker run [then ⛔️] no cache write
   ✔︎ ✅ one: analyse a single --stable-id immediately (debug path), --force
     recomputes over a valid cache entry.
     [if] cache valid and no --force [then] no worker run, prints cached
@@ -376,12 +378,28 @@ def cmd_scan(args: argparse.Namespace) -> int:
 def _process_one(
     ctx: Ctx, tr: VocalTrack, prefix: str
 ) -> tuple[float, dict[str, Any]]:
-    """Run the worker for one track and write its cache entry."""
+    """Run the worker for one track and write its cache entry.
+
+    The recorded ``audio_mtime`` is captured BEFORE the (multi-minute)
+    worker run: if the file is replaced mid-analysis the regions belong
+    to the old content, so recording the pre-run mtime guarantees the
+    entry self-invalidates against the new file instead of poisoning
+    the cache. A detected change also fails loudly right here.
+    """
     assert tr.audio_path is not None
+    pre_mtime = tr.audio_path.stat().st_mtime
     t0 = time.perf_counter()
     result = run_worker(tr.audio_path)
+    post_mtime = tr.audio_path.stat().st_mtime
+    if post_mtime != pre_mtime:
+        raise RuntimeError(
+            f"audio file changed during analysis: {tr.audio_path} "
+            f"(mtime {pre_mtime} -> {post_mtime}); regions were computed "
+            f"from the old content, refusing to cache them"
+        )
     entry = vcache.write_entry(
-        vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path
+        vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
+        audio_mtime=pre_mtime,
     )
     wall_s = time.perf_counter() - t0
     rate = wall_s / tr.length_s if tr.length_s else float("nan")
@@ -524,10 +542,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})")
     trickle.add_argument("--playlist", default=None,
                          help="limit the queue to one playlist name")
-    trickle.add_argument("--dry-run", action="store_true", default=True,
-                         help="(default) plan only, no worker runs")
-    trickle.add_argument("--live", action="store_true",
-                         help="actually run the demucs worker + write cache")
+    mode = trickle.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true",
+                      help="plan only, no worker runs (the default)")
+    mode.add_argument("--live", action="store_true",
+                      help="actually run the demucs worker + write cache")
     trickle.set_defaults(func=cmd_trickle)
 
     one = sub.add_parser(
