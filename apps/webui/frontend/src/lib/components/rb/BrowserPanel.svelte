@@ -61,14 +61,21 @@
 	import PlaylistTree from './browser/PlaylistTree.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import { fetchAllPages } from './browser/virtual-window';
 	import { getAnlzEntry } from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
 
-	// No virtualization at v1: the existing VirtualTable is library-page
-	// specific (hardcoded columns + route navigation), so panes cap at 500
-	// rows with an explicit truncation note (PARITY-TODO).
-	const MAX_ROWS = 500;
+	// track-list-virtualization: TrackTable now DOM-virtualizes its render,
+	// so panes no longer cap fetches at 500 rows - All Tracks walks every
+	// cursor page (PAGE_SIZE is a per-request page size, not a result cap);
+	// playlists were never fetch-capped (getPlaylistHydrated already
+	// returns the full membership in one call), only client-sliced - that
+	// slice is gone too (see _fetchPlaylistRows).
+	const PAGE_SIZE = 500;
+	// Whole-collection FTS5 search stays hard-capped (unrelated to the
+	// fetch-cap removal above): a global text query over the whole library
+	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
 	const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 
@@ -383,14 +390,16 @@
 	}
 
 	async function _fetchAllRows(): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
-		// All Tracks: one page of MAX_ROWS with inline preview/file_exists
-		// (contract 1). ?available stays server-default 'all': FR-1 hiding
-		// is client-side so the toggle flips instantly on loaded panes; the
-		// API filter exists for agent parity, not for this UI path.
-		const page = await listTracksHydrated({ limit: MAX_ROWS });
+		// All Tracks: walk every cursor page with inline preview/file_exists
+		// (contract 1). PAGE_SIZE is per request, while TrackTable's DOM
+		// virtualization keeps the rendered pane bounded. ?available stays
+		// server-default 'all': FR-1 hiding is client-side so the toggle
+		// flips instantly on loaded panes; the API filter exists for agent
+		// parity, not for this UI path.
+		const items = await fetchAllPages((cursor) => listTracksHydrated({ limit: PAGE_SIZE, cursor }));
 		return {
-			rows: page.items.map((t, i) => _rowFromListWire(t, i + 1)),
-			truncated: page.next_cursor !== null,
+			rows: items.map((t, i) => _rowFromListWire(t, i + 1)),
+			truncated: false,
 			// All Tracks is not a single playlist row - no membership etag.
 			etag: ''
 		};
@@ -401,12 +410,11 @@
 	): Promise<{ rows: BrowserRow[]; truncated: boolean; etag: string }> {
 		// Hydrated detail (contract 4) + the playlist's membership ETag
 		// (add-remove-reorder-tracks: required If-Match for the write side's
-		// PUT .../tracks) in one request - the 29x per-row GET fan-out stays gone.
+		// PUT .../tracks) in one request. Never client-slice membership:
+		// TrackTable's DOM virtualization keeps rendering cheap instead.
 		const { detail, etag } = await getPlaylistTracksEtag(id);
-		const rows = detail.tracks
-			.slice(0, MAX_ROWS)
-			.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
-		return { rows, truncated: detail.tracks.length > MAX_ROWS, etag };
+		const rows = detail.tracks.map((wire, i) => _rowFromPlaylistWire(wire, i + 1));
+		return { rows, truncated: false, etag };
 	}
 
 	// -------------------------------------------- lazy per-row hydration
@@ -465,12 +473,20 @@
 	}
 
 	// -------------------------------------------------------- deck loading
+	// Narrowed to exactly the fields deck-load needs (not the full
+	// BrowserRow) so the column-view lane's lighter ColumnTrackRow can
+	// reuse this same dispatcher without depending on table-only fields
+	// (strip/rb_meta/revealed) it never has.
 
-	function loadRow(row: BrowserRow, deck: DeckId | null): void {
+	type LoadableRow = Pick<BrowserRow, 'stable_id' | 'file_exists' | 'is_streaming'> & {
+		rb_meta?: BrowserRow['rb_meta'];
+	};
+
+	function loadRow(row: LoadableRow, deck: DeckId | null): void {
 		void _loadOntoDeck(row, deck);
 	}
 
-	async function _loadOntoDeck(row: BrowserRow, deck: DeckId | null): Promise<void> {
+	async function _loadOntoDeck(row: LoadableRow, deck: DeckId | null): Promise<void> {
 		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 			pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
 			return;
@@ -505,8 +521,11 @@
 		panes[activePane].toggleSort(key);
 	}
 
-	function selectRow(row: BrowserRow, event: MouseEvent): void {
-		panes[activePane].select(row.stable_id, event.metaKey || event.ctrlKey);
+	// event is absent for the column-view lane's plain click (ColumnBrowser
+	// has no multi-select concept) - treated as a non-extending single
+	// select, same as a modifier-less TrackTable click.
+	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
+		panes[activePane].select(row.stable_id, event !== undefined && (event.metaKey || event.ctrlKey));
 	}
 
 	function setSearch(next: string): void {
@@ -667,7 +686,10 @@
 				nodes={treeNodes}
 				{allTracksCount}
 				selectedId={pane.playlist_id}
+				trackSelectedId={pane.selected_id}
 				onselect={selectPlaylist}
+				onselecttrack={selectRow}
+				onloadtrack={loadRow}
 			/>
 		{/if}
 	</div>

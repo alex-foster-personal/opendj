@@ -1,29 +1,55 @@
 <script lang="ts">
-	// Playlist tree panel (SCREENSHOT-SPEC 5b). Tree View tab active; Column
-	// View locked/dim (inert). 'All Tracks' shows OUR live total (never the
-	// screenshot's 9862); 'Playlists' folder lists real playlists with
-	// right-aligned counts in rekordbox custom tree order (djmdPlaylist Seq,
-	// sorted upstream in BrowserPanel - COMPONENT-MAP 1.5).
-	import type { PlaylistNode } from '$lib/rb/types';
+	// Playlist tree panel (SCREENSHOT-SPEC 5b). 'All Tracks' shows OUR live
+	// total (never the screenshot's 9862); 'Playlists' folder lists real
+	// playlists with right-aligned counts in rekordbox custom tree order
+	// (djmdPlaylist Seq, sorted upstream in BrowserPanel - COMPONENT-MAP
+	// 1.5). The Column View tab (column-view lane) swaps this panel's body
+	// for ColumnBrowser - self-contained (own library fetch), same pattern
+	// as the smartlist self-fetch below.
+	import type { DeckId, PlaylistNode } from '$lib/rb/types';
 	import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { RbApiError } from '$lib/rb/api-rb';
+	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
 
 	let {
 		nodes,
 		allTracksCount,
 		selectedId,
+		trackSelectedId,
 		onselect,
-		onselectsmartlist
+		onselectsmartlist,
+		onselecttrack,
+		onloadtrack
 	}: {
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
 		selectedId: string | null;
+		/** The active pane's PaneStore.selected_id, forwarded to ColumnBrowser
+		 * so its track highlight reflects the current pane rather than an
+		 * independent selection that would desync on pane switches. Distinct
+		 * from `selectedId` above, which is the selected PLAYLIST id. */
+		trackSelectedId: string | null;
 		onselect: (node: PlaylistNode) => void;
 		/** Optional until the browser integrator wires smartlist selection
 		 * into BrowserPanel; absent = smartlist rows render inert. */
 		onselectsmartlist?: (smartlist: SmartlistSummary) => void;
+		/** Column View lane callbacks - optional, same absent-means-inert
+		 * convention as onselectsmartlist (ColumnBrowser itself no-ops a
+		 * click/dblclick with no handler wired). */
+		onselecttrack?: (row: ColumnTrackRow) => void;
+		onloadtrack?: (row: ColumnTrackRow, deck: DeckId | null) => void;
 	} = $props();
 
+	let mode = $state<'tree' | 'column'>('tree');
+	// ColumnBrowser mounts lazily on first activation (its onMount walks
+	// every /tracks cursor page - no point paying that for users who never
+	// open Column View) but then STAYS mounted (visibility toggled via CSS
+	// below, not {#if}/{:else}) so switching back to Tree View and back
+	// doesn't re-trigger the full-library fetch every time.
+	let columnMounted = $state(false);
+	$effect(() => {
+		if (mode === 'column') columnMounted = true;
+	});
 	let playlistsOpen = $state(true);
 	let smartlistsOpen = $state(true);
 	// Smartlists are self-fetched here (LANE smartlists-router) so this
@@ -68,12 +94,19 @@
 
 <div class="tree-root">
 	<div class="view-tabs">
-		<button class="vt active">Tree View</button>
-		<button class="vt rb-inert" disabled title="not implemented - see PARITY-TODO">
+		<button class="vt" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>
+			Tree View
+		</button>
+		<button class="vt" class:active={mode === 'column'} onclick={() => (mode = 'column')}>
 			Column View
 		</button>
 	</div>
-	<div class="tree-scroll">
+	{#if columnMounted}
+		<div class="tree-scroll column-mode" class:hidden={mode !== 'column'}>
+			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
+		</div>
+	{/if}
+	<div class="tree-scroll" class:hidden={mode === 'column'}>
 		<div
 			class="row"
 			class:selected={selectedId === 'all'}
@@ -220,6 +253,18 @@
 		min-height: 0;
 		overflow-y: auto;
 		padding: 2px 0;
+	}
+	.tree-scroll.column-mode {
+		/* ColumnBrowser owns its own column padding/scroll regions. */
+		padding: 0;
+		overflow: hidden;
+	}
+	/* Both tree-scroll blocks stay mounted once ColumnBrowser has first
+	 * activated (see columnMounted) - toggling visibility this way instead
+	 * of {#if}/{:else} keeps ColumnBrowser's fetched rows/selection alive
+	 * across repeated view switches. */
+	.tree-scroll.hidden {
+		display: none;
 	}
 	.row {
 		display: flex;
