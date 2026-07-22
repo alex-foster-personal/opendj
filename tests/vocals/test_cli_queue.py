@@ -289,6 +289,19 @@ def test_run_worker_deadline_raises_and_never_reads_stdin(
     assert seen["timeout"] == 1.0
 
 
+def test_track_claim_skips_duplicate_and_recovers_stale_lock(tmp_path: Path) -> None:
+    """[if] another CLI owns a track [then] duplicate Demucs work is skipped."""
+    from apps.vocals import cli as vcli
+    cache_file = vcache.cache_path(tmp_path, "track")
+    first = vcli._claim_track(cache_file, timeout_s=1.0)
+    assert first is not None
+    assert vcli._claim_track(cache_file, timeout_s=1.0) is None
+    os.utime(first, (first.stat().st_atime, first.stat().st_mtime - 100))
+    recovered = vcli._claim_track(cache_file, timeout_s=1.0)
+    assert recovered is not None
+    vcli._release_track_claim(recovered)
+
+
 def test_pioneer_path_cannot_escape_share_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import struct
 import subprocess
@@ -58,6 +59,7 @@ from apps.vocals import cache as vcache
 DEMUCS_REALTIME_FACTOR: float = 1.36   # SPIKE-B2 measured CPU rate (honest band 0.8-1.4x)
 DEFAULT_TRICKLE_LIMIT: int = 5
 WORKER_TIMEOUT_S: float = 30 * 60
+LOCK_STALE_GRACE_S: float = 60
 SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
 WORKER_SCRIPT: Path = Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
@@ -334,6 +336,41 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
     return json.loads(proc.stdout)
 
 
+def _claim_track(cache_file: Path, timeout_s: float) -> Optional[Path]:
+    """Claim one uncached track without waiting behind another CLI process.
+
+    The claim is an O_EXCL lock beside the eventual JSON entry. A process
+    crash cannot strand work forever because a lock older than the worker
+    deadline plus a small grace period is reclaimed before retrying once.
+    """
+    if timeout_s <= 0:
+        raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
+    lock = cache_file.with_suffix(".json.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(2):
+        try:
+            fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            try:
+                age_s = time.time() - lock.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if attempt == 0 and age_s > timeout_s + LOCK_STALE_GRACE_S:
+                lock.unlink(missing_ok=True)
+                continue
+            return None
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(f"pid={os.getpid()}\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        return lock
+    raise AssertionError("unreachable claim retry exhausted")
+
+
+def _release_track_claim(lock: Path) -> None:
+    lock.unlink(missing_ok=True)
+
+
 # ----- output helpers ------------------------------------------------------------------
 
 def _fmt_dur(seconds: float) -> str:
@@ -485,10 +522,21 @@ def cmd_trickle(args: argparse.Namespace) -> int:
         ) is not None:
             print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
             continue
-        print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
-        wall_s, _entry = _process_one(
-            ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s
-        )
+        cache_file = vcache.cache_path(ctx.data_dir, tr.stable_id)
+        claim = _claim_track(cache_file, args.worker_timeout_s)
+        if claim is None:
+            print(f"[SKIP in-progress] {tr.stable_id} {tr.title!r}: another CLI owns it")
+            continue
+        try:
+            if vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
+                print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
+                continue
+            print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
+            wall_s, _entry = _process_one(
+                ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s
+            )
+        finally:
+            _release_track_claim(claim)
         completed += 1
         done_audio_s += tr.length_s
         done_wall_s += wall_s
@@ -526,9 +574,20 @@ def cmd_one(args: argparse.Namespace) -> int:
               f"{cache_file} ({len(existing['regions'])} regions, "
               f"cov={existing['coverage_pct']}%); use --force to recompute")
         return 0
-    print(f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
-          f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}")
-    _process_one(ctx, tr, "[one]", args.worker_timeout_s)
+    claim = _claim_track(cache_file, args.worker_timeout_s)
+    if claim is None:
+        raise SystemExit(
+            f"error: {tr.stable_id} is already being analysed by another vocals CLI process"
+        )
+    try:
+        if not args.force and vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
+            print(f"[cached] {tr.stable_id} {tr.title!r}: valid entry at {cache_file}")
+            return 0
+        print(f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
+              f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}")
+        _process_one(ctx, tr, "[one]", args.worker_timeout_s)
+    finally:
+        _release_track_claim(claim)
     return 0
 
 
