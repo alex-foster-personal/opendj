@@ -426,7 +426,7 @@ function _setPresetPhase(id: string, phase: PerformancePresetPhase): void {
 	performancePresetLifecycle.phase = phase;
 }
 
-function _releasePreset(id: string, phase: 'ready' | 'error', error: string | null): void {
+function _releasePreset(id: string, phase: 'idle' | 'ready' | 'error', error: string | null): void {
 	if (_presetClaim?.id !== id) {
 		throw new Error(`performance preset ${id} cannot release an unowned lifecycle lock`);
 	}
@@ -434,6 +434,7 @@ function _releasePreset(id: string, phase: 'ready' | 'error', error: string | nu
 	performancePresetLifecycle.phase = phase;
 	performancePresetLifecycle.active = false;
 	performancePresetLifecycle.error = error;
+	if (phase === 'idle') performancePresetLifecycle.id = null;
 }
 
 async function _dispatchWithinPreset(command: PerformanceCommand): Promise<PerformanceState> {
@@ -526,6 +527,38 @@ export async function startPerformancePresetTransaction<T>(
 			throw new Error(`performance preset ${id} start returned before the command queue became idle`);
 		}
 		_releasePreset(id, 'ready', null);
+		return result;
+	} catch (error) {
+		_recordPresetFailure(id, error);
+		throw error;
+	}
+}
+
+export async function stopPerformancePresetTransaction<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	_assertPresetId(id);
+	if (_presetClaim !== null) {
+		throw new Error(
+			`performance preset ${_presetClaim.id} already owns the lifecycle lock at ` +
+				`${performancePresetLifecycle.phase}`
+		);
+	}
+	if (performancePresetLifecycle.id !== id || performancePresetLifecycle.phase !== 'ready') {
+		throw new Error(`performance preset ${id} is not ready for stop cleanup`);
+	}
+	_presetClaim = { id };
+	performancePresetLifecycle.phase = 'queued';
+	performancePresetLifecycle.active = true;
+	performancePresetLifecycle.error = null;
+	try {
+		const result = await _enqueuePresetPhase(id, work);
+		const state = queryPerformanceState();
+		if (state.command_pending || state.command_queued !== 0) {
+			throw new Error(`performance preset ${id} stop returned before the command queue became idle`);
+		}
+		_releasePreset(id, 'idle', null);
 		return result;
 	} catch (error) {
 		_recordPresetFailure(id, error);

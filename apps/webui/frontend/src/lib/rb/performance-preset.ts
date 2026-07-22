@@ -17,8 +17,14 @@ const PRESET_DECK_IDS = [1, 2, 3, 4] as const;
 const LOOP_BOUNDARY_TOLERANCE_MS = 0.01;
 const DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS = 750;
 const DEFAULT_PRESENTATION_TIMEOUT_MS = 30_000;
+const DEFAULT_STOP_TIMEOUT_MS = 30_000;
 
-export type PerformancePresetPhase = 'loading' | 'configuring' | 'awaiting_audio' | 'starting';
+export type PerformancePresetPhase =
+	| 'loading'
+	| 'configuring'
+	| 'awaiting_audio'
+	| 'starting'
+	| 'stopping';
 export type PerformanceAudioActivationPolicy = 'auto' | 'require-gesture';
 
 export interface PerformanceMixerChannelPreset {
@@ -337,13 +343,13 @@ export function buildPerformancePresetPlan(preset: PerformancePreset): Performan
 			}))
 		],
 		configure: [
-			{ type: 'master_volume', value: preset.mixer.master },
 			...decks.flatMap(_configureDeckCommands),
 			...PRESET_DECK_IDS.flatMap((deck) =>
 				_mixerChannelCommands(deck, preset.mixer.channels[deck])
 			),
 			{ type: 'crossfader', value: preset.mixer.crossfader },
-			{ type: 'master', deck: preset.master_deck }
+			{ type: 'master', deck: preset.master_deck },
+			{ type: 'master_volume', value: preset.mixer.master }
 		],
 		start: playbackDecks.map((definition) => ({
 				type: 'play' as const,
@@ -388,8 +394,12 @@ function _assertPresetDeckStaticState(
 			throw new Error(`deck ${definition.deck} configured loop does not match preset`);
 		} else if (deck.is_master !== (definition.deck === preset.master_deck)) {
 			throw new Error(`deck ${definition.deck} configured master selection does not match preset`);
-		} else if (deck.sync_error !== null || deck.processor_error !== null || deck.command_error !== null) {
-			throw new Error(`deck ${definition.deck} configured state contains an error`);
+		} else if (deck.sync_error !== null) {
+			throw new Error(`deck ${definition.deck} sync failed: ${deck.sync_error}`);
+		} else if (deck.processor_error !== null) {
+			throw new Error(`deck ${definition.deck} processor failed: ${deck.processor_error}`);
+		} else if (deck.command_error !== null) {
+			throw new Error(`deck ${definition.deck} command failed: ${deck.command_error}`);
 		}
 		if (requirePausedCursor && !_sameNumber(deck.position_ms, definition.position_ms)) {
 			throw new Error(`deck ${definition.deck} configured cursor does not match preset`);
@@ -498,6 +508,58 @@ export async function waitForPerformancePresetPresented(
 	);
 }
 
+export function assertPerformancePresetStopped(
+	preset: PerformancePreset,
+	state: PerformanceState
+): void {
+	for (const definition of _orderedDecks(preset)) {
+		const deck = state.decks[definition.deck];
+		if (
+			deck.playing ||
+			deck.audible ||
+			deck.transport_pending ||
+			deck.transport_clock.presented_revision !== deck.transport_clock.desired_revision
+		) {
+			throw new PerformancePresetPendingError(
+				`deck ${definition.deck} has not reached a fully presented stop`
+			);
+		}
+	}
+	if (state.master_deck !== null) {
+		throw new PerformancePresetPendingError(
+			`stopped performance preset still has master deck ${state.master_deck}`
+		);
+	}
+}
+
+export async function waitForPerformancePresetStopped(
+	preset: PerformancePreset,
+	query: () => PerformanceState,
+	timeoutMs: number = DEFAULT_STOP_TIMEOUT_MS
+): Promise<PerformanceState> {
+	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+		throw new RangeError(`performance preset stop timeout must be positive`);
+	}
+	const deadline = performance.now() + timeoutMs;
+	let lastPending: PerformancePresetPendingError | null = null;
+	while (performance.now() < deadline) {
+		const state = query();
+		try {
+			assertPerformancePresetStopped(preset, state);
+			return state;
+		} catch (error) {
+			if (!(error instanceof PerformancePresetPendingError)) throw error;
+			lastPending = error;
+		}
+		await _nextAnimationFrame();
+	}
+	throw new Error(
+		`performance preset ${preset.id} did not stop within ${timeoutMs}ms: ` +
+			`${lastPending?.message ?? 'no stopped transport sample was observed'}`,
+		{ cause: lastPending ?? undefined }
+	);
+}
+
 export async function probeWebAudioAutoplay(
 	timeoutMs: number = DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS
 ): Promise<boolean> {
@@ -523,13 +585,13 @@ export async function probeWebAudioAutoplay(
 	const outcome = await Promise.race([resumed, timedOut]);
 	if (timeoutId !== null) clearTimeout(timeoutId);
 	if (outcome.kind === 'timeout') {
-		void resumed
-			.then(async (settled) => {
-				if (settled.kind === 'rejected') {
-					console.error('Web Audio autoplay probe resume failed after timeout', settled.error);
-				}
-				await context.close();
-			})
+		void resumed.then((settled) => {
+			if (settled.kind === 'rejected' && context.state !== 'closed') {
+				console.error('Web Audio autoplay probe resume failed after timeout', settled.error);
+			}
+		});
+		void context
+			.close()
 			.catch((error: unknown) => console.error('Web Audio autoplay probe cleanup failed', error));
 		return false;
 	}
@@ -570,35 +632,59 @@ export async function startPerformancePreset(
 	const plan = buildPerformancePresetPlan(preset);
 	driver.setPhase('starting');
 	let finalState: PerformanceState | null = null;
-	const attemptedDecks: DeckId[] = [];
 	try {
 		for (const command of plan.start) {
 			if (command.type !== 'play' || !command.playing) {
 				throw new Error(`performance preset start plan contains a non-start command`);
 			}
-			attemptedDecks.push(command.deck);
 			assertCurrent();
 			finalState = await driver.dispatch(command);
 			assertCurrent();
 		}
+		if (finalState === null) throw new Error(`performance preset emitted no playback commands`);
+		return await waitForPerformancePresetPresented(preset, driver.query, assertCurrent);
 	} catch (startError) {
-		const rollbackErrors: unknown[] = [];
-		for (const deck of attemptedDecks.reverse()) {
-			try {
-				await driver.dispatch({ type: 'play', deck, playing: false });
-			} catch (rollbackError) {
-				rollbackErrors.push(rollbackError);
-			}
-		}
-		if (rollbackErrors.length > 0) {
+		try {
+			await _stopPerformancePresetDecks(preset, driver);
+		} catch (rollbackError) {
 			throw new AggregateError(
-				[startError, ...rollbackErrors],
-				`performance preset start failed and ${rollbackErrors.length} rollback command(s) failed`,
+				[startError, rollbackError],
+				`performance preset start failed and its full-stop rollback failed`,
 				{ cause: startError }
 			);
 		}
 		throw startError;
 	}
-	if (finalState === null) throw new Error(`performance preset emitted no playback commands`);
-	return finalState;
+}
+
+async function _stopPerformancePresetDecks(
+	preset: PerformancePreset,
+	driver: PerformancePresetDriver
+): Promise<PerformanceState> {
+	const stopErrors: unknown[] = [];
+	for (const definition of _orderedDecks(preset).reverse()) {
+		try {
+			await driver.dispatch({ type: 'play', deck: definition.deck, playing: false });
+		} catch (error) {
+			stopErrors.push(error);
+		}
+	}
+	try {
+		const stopped = await waitForPerformancePresetStopped(preset, driver.query);
+		if (stopErrors.length === 0) return stopped;
+	} catch (error) {
+		stopErrors.push(error);
+	}
+	throw new AggregateError(
+		stopErrors,
+		`performance preset ${preset.id} failed to reach a fully presented stop`
+	);
+}
+
+export async function stopPerformancePreset(
+	preset: PerformancePreset,
+	driver: PerformancePresetDriver
+): Promise<PerformanceState> {
+	driver.setPhase('stopping');
+	return _stopPerformancePresetDecks(preset, driver);
 }
