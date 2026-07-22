@@ -1,6 +1,6 @@
 """Prefix Rekordbox playlists by file-availability health.
 
-Mini-PRD (status: ✔︎ ✅ done + ran + works):
+Mini-PRD (status: ✔︎ ✅ 🎯 done + working + regression tests):
 
 R1. Classify every Rekordbox playlist by the share of its file-backed tracks
     that resolve on disk:
@@ -21,6 +21,9 @@ R2. Apply the prefix to the Rekordbox ``Name`` column for both leaf playlists
 R3. Safety: refuse to write if Rekordbox is running; take a timestamped
     backup of master.db; emit a reversal script that restores the backup.
     Dry-run by default — must pass ``--apply`` to mutate the live DB.
+    [if pgrep is unavailable then the live write fails closed ⛔️]
+    [if transactional readback differs then rollback occurs before commit ⛔️]
+    [if every rename reads back then commit occurs exactly once ⛔️]
 
 Live-write contract: never modifies any track row, only ``DjmdPlaylist.Name``.
 """
@@ -48,6 +51,10 @@ _EXISTING_PREFIX_RE = re.compile(r"^\[(dead|half)\]\s+")
 
 DEAD_THRESHOLD = 0.30  # have_ratio < this -> dead
 HALF_THRESHOLD = 0.80  # have_ratio < this (and >=DEAD) -> half
+
+
+class SafetyCheckError(RuntimeError):
+    """Raised when the live-write preflight cannot prove Rekordbox is closed."""
 
 
 @dataclass(slots=True)
@@ -167,10 +174,26 @@ def _rekordbox_running() -> bool:
             check=False,
             capture_output=True,
             text=True,
+            timeout=5,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        raise SafetyCheckError(
+            "pgrep is unavailable; cannot prove Rekordbox is closed"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SafetyCheckError(
+            "pgrep timed out; cannot prove Rekordbox is closed"
+        ) from exc
+    if r.returncode == 1:
         return False
-    return r.returncode == 0 and bool(r.stdout.strip())
+    if r.returncode == 0 and r.stdout.strip():
+        return True
+    if r.returncode == 0:
+        raise SafetyCheckError("pgrep reported a match without a process ID")
+    detail = r.stderr.strip() or "no diagnostic output"
+    raise SafetyCheckError(
+        f"pgrep failed with exit {r.returncode}: {detail}"
+    )
 
 
 def _backup_db(backup_dir: Path) -> Path:
@@ -178,6 +201,8 @@ def _backup_db(backup_dir: Path) -> Path:
     ts = datetime.now().strftime("%Y%m%dT%H%M%S")
     dst = backup_dir / f"master.{ts}.db"
     shutil.copy2(paths.REKORDBOX_LIVE_DB, dst)
+    if dst.stat().st_size <= 0:
+        raise RuntimeError(f"backup failed: {dst} is empty")
     return dst
 
 
@@ -257,36 +282,39 @@ def _print_plan(plan: list[PlaylistHealth]) -> None:
 
 
 def _apply(plan: list[PlaylistHealth]) -> int:
-    """Write the renames to the live DB. Returns succeeded count."""
+    """Write and verify every rename in one transaction before committing."""
     db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
-    n = 0
     try:
         for p in plan:
             row = db.get_playlist(ID=p.pid)
             if row is None:
-                print(f"  ! playlist {p.pid} ({p.name!r}) not found; skipping")
-                continue
+                raise RuntimeError(
+                    f"playlist {p.pid} ({p.name!r}) disappeared before apply"
+                )
             row.Name = p.new_name
-            n += 1
-        db.commit()
-    finally:
-        db.close()
-    return n
 
-
-def _verify(plan: list[PlaylistHealth]) -> int:
-    db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
-    ok = 0
-    try:
+        db.session.flush()  # type: ignore[attr-defined]
+        db.session.expire_all()  # type: ignore[attr-defined]
+        mismatches: list[str] = []
         for p in plan:
             row = db.get_playlist(ID=p.pid)
-            if row is None:
-                continue
-            if (row.Name or "") == p.new_name:
-                ok += 1
+            actual = None if row is None else (row.Name or "")
+            if actual != p.new_name:
+                mismatches.append(
+                    f"{p.pid}: expected {p.new_name!r}, got {actual!r}"
+                )
+        if mismatches:
+            raise RuntimeError(
+                "playlist rename readback mismatch before commit: "
+                + "; ".join(mismatches[:5])
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
-    return ok
+    return len(plan)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -348,9 +376,8 @@ def main(argv: list[str] | None = None) -> int:
 
     wrote = _apply(plan)
     print(f"wrote {wrote}/{len(plan)} renames to live DB")
-    verified = _verify(plan)
-    print(f"verified readback: {verified}/{len(plan)}")
-    return 0 if verified == len(plan) else 1
+    print(f"verified readback before commit: {wrote}/{len(plan)}")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
