@@ -37,6 +37,7 @@ from .routes import rb_assets as rb_assets_routes
 from .routes import reconcile as reconcile_routes
 from .routes import settings as settings_routes
 from .routes import smartlists as smartlists_routes
+from .routes import spotify as spotify_routes
 from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
 from .routes import usb_export as usb_export_routes
@@ -159,6 +160,7 @@ def create_app(
     app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
+    app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import schema as state_schema
 from apps.spotify.state_writer import ensure_aux_tables
+from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist
 from apps.webui.server.routes.spotify import router
 
@@ -46,6 +47,14 @@ def _spotify_playlist() -> Playlist:
         vendor="spotify",
         vendor_pl_id="pl123",
     )
+
+
+@pytest.mark.requirement("CAT-01")
+def test_production_app_registers_spotify_pending_track_contract() -> None:
+    """The route must be reachable from the production app, not only a test mount."""
+    paths = create_app(mount_frontend=False).openapi()["paths"]
+
+    assert "/api/v1/spotify/playlists/{playlist_id}/pending-tracks" in paths
 
 
 def _insert_pending(
