@@ -9,6 +9,8 @@ suites stay easy to cross-reference.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
@@ -223,3 +225,29 @@ class TestDjayReadMembers:
         w = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
         with pytest.raises(RuntimeError, match="not found"):
             w.read_members("Ghost")
+
+    def test_native_id_read_refuses_an_unmapped_member_before_writeback(self, djay_db, state_conn) -> None:
+        con = sqlite3.connect(str(djay_db), isolation_level=None)
+        con.execute("INSERT INTO database2(collection, key, data) VALUES ('mediaItemUserData', 'dj-unmapped', ?)", (b"blob",))
+        con.close()
+        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100", "dj-unmapped"])
+        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn)
+        with pytest.raises(RuntimeError, match="unmapped UUID"):
+            writer.read_members_by_id(playlist_id)
+
+    def test_reversal_persistence_failure_rolls_back_without_mutating_target(self, djay_db, state_conn, monkeypatch, tmp_path) -> None:
+        from apps.smartlists import writeback_backup
+
+        playlist_id = _seed_existing_playlist(djay_db, "Set", ["dj-uuid-100"])
+        writer = DjayPlaylistWriter(djay_db_path=djay_db, state_conn=state_conn, safety_session=object())
+        expected = hashlib.sha256(json.dumps(
+            {"target_id": playlist_id, "members": ["sid-1"]}, sort_keys=True, separators=(",", ":")
+        ).encode()).hexdigest()
+        mapping_revision = hashlib.sha256(json.dumps(sorted([
+            ("sid-1", "dj-uuid-100"), ("sid-2", "dj-uuid-200"),
+        ]), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+        monkeypatch.setattr(writeback_backup, "write_reversal", lambda *_args: (_ for _ in ()).throw(OSError("disk full")))
+        with pytest.raises(OSError, match="disk full"):
+            writer.apply_with_backup_by_id(playlist_id, ["sid-1", "sid-2"], expected, mapping_revision)
+        assert writer.read_members_by_id(playlist_id) == ["sid-1"]

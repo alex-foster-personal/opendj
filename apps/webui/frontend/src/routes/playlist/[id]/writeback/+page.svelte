@@ -1,178 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import {
-		applyWriteback,
-		getWritebackCapabilities,
-		getWritebackPlan,
-		type VendorCapability,
-		type WritebackApplyResult,
-		type WritebackPlan,
-		type WritebackVendor
-	} from '$lib/rb/api-writeback';
+	import { applyWriteback, getWritebackCapabilities, getWritebackPlan, getWritebackTargets, rollbackWriteback, type VendorCapability, type WritebackApplyResult, type WritebackPlan, type WritebackTarget, type WritebackVendor } from '$lib/rb/api-writeback';
 	import { RbApiError } from '$lib/rb/api-rb';
 
-	let playlistId = $state('');
-	let capabilities = $state<VendorCapability[] | null>(null);
-	let selectedVendor = $state<WritebackVendor | null>(null);
-	let plan = $state<WritebackPlan | null>(null);
-	let applyResult = $state<WritebackApplyResult | null>(null);
-	let forceAdopt = $state(false);
-	let error = $state<string | null>(null);
-	let loading = $state(false);
-
-	onMount(async () => {
-		const id = $page.params.id;
-		if (id === undefined) throw new Error('playlist route param "id" missing');
-		playlistId = id;
-		await refreshCapabilities();
-	});
-
-	async function refreshCapabilities() {
-		error = null;
-		try {
-			const caps = await getWritebackCapabilities(playlistId);
-			capabilities = caps.vendors;
-			const firstAvailable = caps.vendors.find((v) => v.available);
-			if (firstAvailable) {
-				selectedVendor = firstAvailable.vendor as WritebackVendor;
-				await refreshPlan();
-			}
-		} catch (e) {
-			error = e instanceof RbApiError ? e.message : String(e);
-		}
-	}
-
-	async function refreshPlan() {
-		if (!selectedVendor) return;
-		error = null;
-		applyResult = null;
-		loading = true;
-		try {
-			plan = await getWritebackPlan(playlistId, selectedVendor);
-		} catch (e) {
-			plan = null;
-			error = e instanceof RbApiError ? e.message : String(e);
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function onVendorChange(vendor: WritebackVendor) {
-		selectedVendor = vendor;
-		forceAdopt = false;
-		await refreshPlan();
-	}
-
-	async function onApply() {
-		if (!selectedVendor) return;
-		error = null;
-		loading = true;
-		try {
-			applyResult = await applyWriteback(playlistId, selectedVendor, {
-				dry_run: false,
-				force_adopt: forceAdopt
-			});
-			if (applyResult.applied) await refreshPlan();
-		} catch (e) {
-			error = e instanceof RbApiError ? e.message : String(e);
-		} finally {
-			loading = false;
-		}
-	}
+	let playlistId = $state(''); let capabilities = $state<VendorCapability[] | null>(null); let selectedVendor = $state<WritebackVendor | null>(null); let targets = $state<WritebackTarget[]>([]); let targetId = $state(''); let plan = $state<WritebackPlan | null>(null); let applyResult = $state<WritebackApplyResult | null>(null); let confirmed = $state(false); let error = $state<string | null>(null); let loading = $state(false);
+	onMount(async () => { playlistId = $page.params.id ?? ''; if (!playlistId) throw new Error('playlist route param "id" missing'); await refreshCapabilities(); });
+	const selectedCapability = (): VendorCapability | undefined => capabilities?.find((cap) => cap.vendor === selectedVendor);
+	async function refreshCapabilities() { try { const caps = await getWritebackCapabilities(playlistId); capabilities = caps.vendors; selectedVendor = caps.vendors.find((cap) => cap.available)?.vendor ?? null; await refreshTargets(); } catch (cause) { error = cause instanceof RbApiError ? cause.message : String(cause); } }
+	async function refreshTargets() { plan = null; applyResult = null; targetId = ''; const cap = selectedCapability(); if (!selectedVendor || !cap?.target_path) return; loading = true; try { targets = (await getWritebackTargets(playlistId, selectedVendor, cap.target_mode, cap.target_path)).targets; } catch (cause) { error = cause instanceof RbApiError ? cause.message : String(cause); } finally { loading = false; } }
+	async function refreshPlan() { const cap = selectedCapability(); if (!selectedVendor || !cap?.target_path || !targetId) return; loading = true; error = null; confirmed = false; try { plan = await getWritebackPlan(playlistId, selectedVendor, cap.target_mode, cap.target_path, targetId); } catch (cause) { error = cause instanceof RbApiError ? cause.message : String(cause); } finally { loading = false; } }
+	async function onApply() { if (!plan || !confirmed) return; loading = true; error = null; try { applyResult = await applyWriteback(playlistId, plan); await refreshPlan(); } catch (cause) { error = cause instanceof RbApiError ? cause.message : String(cause); } finally { loading = false; } }
+	async function onRollback() { if (!plan || !applyResult) return; loading = true; try { await rollbackWriteback(playlistId, applyResult, plan); applyResult = null; await refreshPlan(); } catch (cause) { error = cause instanceof RbApiError ? cause.message : String(cause); } finally { loading = false; } }
 </script>
 
-<a href={`/playlist/${playlistId}`}>&larr; back</a>
-<h2>Write back to rekordbox / djay</h2>
-
-{#if error}
-	<p style="color: var(--error, #c0392b);">{error}</p>
-{/if}
-
-{#if capabilities}
-	<div class="vendor-picker">
-		{#each capabilities as cap (cap.vendor)}
-			<label>
-				<input
-					type="radio"
-					name="vendor"
-					value={cap.vendor}
-					disabled={!cap.available}
-					checked={selectedVendor === cap.vendor}
-					onchange={() => onVendorChange(cap.vendor as WritebackVendor)}
-				/>
-				{cap.vendor}
-				{#if !cap.available}<span class="reason"> ({cap.reason})</span>{/if}
-			</label>
-		{/each}
-	</div>
-{:else}
-	<p>Loading capabilities...</p>
-{/if}
-
-{#if loading}
-	<p>Working...</p>
-{:else if plan}
-	<h3>Plan: {plan.playlist_name} -&gt; {plan.vendor}</h3>
-	<p>Target playlist {plan.target_exists ? 'already exists' : 'does not exist yet'}.</p>
-	{#if plan.is_noop}
-		<p>No changes -- target already matches.</p>
-	{:else}
-		<div class="diff-columns">
-			<div>
-				<h4>Add ({plan.added.length})</h4>
-				<ul>{#each plan.added as sid}<li>{sid}</li>{/each}</ul>
-			</div>
-			<div>
-				<h4>Remove ({plan.removed.length})</h4>
-				<ul>{#each plan.removed as sid}<li>{sid}</li>{/each}</ul>
-			</div>
-		</div>
-	{/if}
-	{#if plan.unresolved.length > 0}
-		<p class="warn">
-			{plan.unresolved.length} track(s) have no {plan.vendor} mapping and will not be written:
-			{plan.unresolved.join(', ')}
-		</p>
-	{/if}
-	{#if plan.target_exists}
-		<label>
-			<input type="checkbox" bind:checked={forceAdopt} />
-			I reviewed the plan above -- write into the existing {plan.vendor} playlist
-		</label>
-	{/if}
-	<button
-		onclick={onApply}
-		disabled={plan.is_noop || (plan.target_exists && !forceAdopt) || plan.unresolved.length > 0}
-	>
-		Apply to {plan.vendor}
-	</button>
-{/if}
-
-{#if applyResult}
-	<h3>Result</h3>
-	{#if applyResult.applied}
-		<p>Applied: +{applyResult.added.length} / -{applyResult.removed.length}</p>
-	{:else}
-		<p class="warn">Not applied: {applyResult.error}</p>
-	{/if}
-{/if}
-
-<style>
-	.vendor-picker {
-		display: flex;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-	.reason {
-		color: var(--muted);
-	}
-	.diff-columns {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 1rem;
-	}
-	.warn {
-		color: var(--error, #c0392b);
-	}
-</style>
+<a href={`/playlist/${playlistId}`}>&larr; back</a><h2>Write back to rekordbox / djay</h2>
+{#if error}<p class="warn">{error}</p>{/if}
+{#if capabilities}<div class="vendor-picker">{#each capabilities as cap (cap.vendor)}<label><input type="radio" name="vendor" value={cap.vendor} disabled={!cap.available} checked={selectedVendor === cap.vendor} onchange={() => { selectedVendor = cap.vendor; refreshTargets(); }} /> {cap.vendor}{#if !cap.available}<span class="reason"> ({cap.reason})</span>{/if}</label>{/each}</div>{/if}
+{#if selectedVendor}<label>Vendor playlist <select bind:value={targetId} onchange={refreshPlan}><option value="">Choose an exact vendor playlist</option>{#each targets as target (target.playlist_id)}<option value={target.playlist_id}>{target.name} ({target.playlist_id})</option>{/each}</select></label>{/if}
+{#if loading}<p>Working...</p>{:else if plan}<h3>Plan: {plan.target_name} -&gt; {plan.vendor}</h3><p>Target ID: <code>{plan.target_id}</code></p><p>Plan token: <code>{plan.plan_token}</code></p>{#if plan.is_noop}<p>No changes -- target already matches.</p>{:else}<p>Add {plan.added.length}, remove {plan.removed.length}.</p>{/if}{#if plan.unresolved.length}<p class="warn">Unmapped tracks block this apply: {plan.unresolved.join(', ')}</p>{/if}<label><input type="checkbox" bind:checked={confirmed} /> I confirm this exact native playlist and revision</label><button onclick={onApply} disabled={!confirmed || plan.is_noop || plan.unresolved.length > 0}>Apply to {plan.vendor}</button>{/if}
+{#if applyResult}<h3>Result</h3>{#if applyResult.applied}<p>Applied: +{applyResult.added.length} / -{applyResult.removed.length}; backup: <code>{applyResult.backup_id}</code></p><button onclick={onRollback}>Rollback this write</button>{:else}<p class="warn">Not applied: {applyResult.error}</p>{/if}{/if}
+<style>.vendor-picker { display:flex; gap:1rem; margin-bottom:1rem; }.reason { color:var(--muted); }.warn { color:var(--error, #c0392b); } select { margin-left:.5rem; }</style>
