@@ -17,6 +17,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.play_analytics")
     parser.add_argument("--db", type=Path, default=SETS_DB)
     parser.add_argument(
+        "--events-table", choices=("events", "set_events"), default="events"
+    )
+    parser.add_argument(
         "--share-state",
         choices=("private", "shared_local", "shared_cloud"),
         default=None,
@@ -32,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.db,
             share_state=args.share_state,
             limit=args.limit,
+            events_table=args.events_table,
         )
     except AnalyticsSchemaError as exc:
         print(f"error: {exc}", file=sys.stderr)

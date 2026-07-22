@@ -9,10 +9,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 from apps.sets.paths import SETS_DB
 
-from .query import AnalyticsSchemaError, ShareState, query_play_analytics
+from .query import AnalyticsSchemaError, EventsTable, ShareState, query_play_analytics
 
 
-def create_router(*, db_path: Path = SETS_DB) -> APIRouter:
+def create_router(
+    *, db_path: Path = SETS_DB, events_table: EventsTable = "events"
+) -> APIRouter:
     """Create a router bound to one explicit event-store path.
 
     Integration intentionally remains separate from the shared server app so a
@@ -30,6 +32,7 @@ def create_router(*, db_path: Path = SETS_DB) -> APIRouter:
                 db_path,
                 share_state=share_state,
                 limit=limit,
+                events_table=events_table,
             )
         except AnalyticsSchemaError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc

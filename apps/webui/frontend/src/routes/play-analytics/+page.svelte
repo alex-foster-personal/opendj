@@ -12,16 +12,24 @@
 	let error = $state<string | null>(null);
 	let loading = $state(true);
 	let shareState = $state<ShareState | ''>('');
+	let requestRevision = 0;
 
 	async function load(): Promise<void> {
+		const revision = ++requestRevision;
 		loading = true;
+		data = null;
 		try {
-			data = await fetchPlayAnalytics(shareState === '' ? null : shareState, LIMIT);
-			error = null;
+			const response = await fetchPlayAnalytics(shareState === '' ? null : shareState, LIMIT);
+			if (revision === requestRevision) {
+				data = response;
+				error = null;
+			}
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : String(caught);
+			if (revision === requestRevision) {
+				error = caught instanceof Error ? caught.message : String(caught);
+			}
 		} finally {
-			loading = false;
+			if (revision === requestRevision) loading = false;
 		}
 	}
 

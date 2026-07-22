@@ -33,7 +33,7 @@ def _seed_database(db_path: Path) -> None:
                 share_state TEXT NOT NULL,
                 notes TEXT
             );
-            CREATE TABLE set_events (
+            CREATE TABLE events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL REFERENCES sets(session_id),
                 timestamp_s REAL NOT NULL,
@@ -107,7 +107,7 @@ def _seed_database(db_path: Path) -> None:
         ]
         connection.executemany(
             """
-            INSERT INTO set_events(
+            INSERT INTO events(
                 session_id, timestamp_s, wall_clock, deck, track_stable_id,
                 action, value_json, source
             ) VALUES (?, ?, ?, ?, ?, 'track_loaded', ?, 'e2e_fixture')

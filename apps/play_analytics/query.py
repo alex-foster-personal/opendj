@@ -22,13 +22,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 ShareState = Literal["private", "shared_local", "shared_cloud"]
+EventsTable = Literal["events", "set_events"]
 _SHARE_STATES: frozenset[str] = frozenset({"private", "shared_local", "shared_cloud"})
-_REQUIRED_COLUMNS: dict[str, frozenset[str]] = {
-    "sets": frozenset({"session_id", "started_at", "ended_at", "share_state"}),
-    "set_events": frozenset(
-        {"id", "session_id", "wall_clock", "track_stable_id", "action", "value_json"}
-    ),
-}
+_SESSION_COLUMNS = frozenset({"session_id", "started_at", "ended_at", "share_state"})
+_EVENT_COLUMNS = frozenset(
+    {"id", "session_id", "wall_clock", "track_stable_id", "action", "value_json"}
+)
 
 
 class AnalyticsSchemaError(RuntimeError):
@@ -51,8 +50,11 @@ def _open_readonly(db_path: Path) -> sqlite3.Connection:
         raise AnalyticsSchemaError(f"cannot open event store read-only: {exc}") from exc
 
 
-def _require_schema(connection: sqlite3.Connection) -> None:
-    for table, required_columns in _REQUIRED_COLUMNS.items():
+def _require_schema(connection: sqlite3.Connection, events_table: EventsTable) -> None:
+    for table, required_columns in (
+        ("sets", _SESSION_COLUMNS),
+        (events_table, _EVENT_COLUMNS),
+    ):
         row = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
             (table,),
@@ -71,15 +73,20 @@ def _require_schema(connection: sqlite3.Connection) -> None:
 
 
 def _duration_seconds(started_at: str, ended_at: str | None) -> float | None:
+    started = _parse_timestamp(started_at, "sets.started_at")
     if ended_at is None:
         return None
-    try:
-        duration = datetime.fromisoformat(ended_at) - datetime.fromisoformat(started_at)
-    except ValueError as exc:
-        raise AnalyticsSchemaError(f"invalid session timestamp: {exc}") from exc
+    duration = _parse_timestamp(ended_at, "sets.ended_at") - started
     if duration.total_seconds() < 0:
         raise AnalyticsSchemaError("session ended_at precedes started_at")
     return duration.total_seconds()
+
+
+def _parse_timestamp(value: str, context: str) -> datetime:
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise AnalyticsSchemaError(f"invalid {context} timestamp: {exc}") from exc
 
 
 def _event_metadata(value_json: str | None) -> tuple[str | None, str | None]:
@@ -105,6 +112,7 @@ def query_play_analytics(
     *,
     share_state: ShareState | None = None,
     limit: int = 50,
+    events_table: EventsTable = "events",
 ) -> dict[str, Any]:
     """Return one deterministic, JSON-ready analytics read model.
 
@@ -115,10 +123,12 @@ def query_play_analytics(
         raise ValueError(f"unsupported share_state: {share_state!r}")
     if not 1 <= limit <= 200:
         raise ValueError("limit must be between 1 and 200")
+    if events_table not in {"events", "set_events"}:
+        raise ValueError(f"unsupported events_table: {events_table!r}")
 
     connection = _open_readonly(db_path)
     try:
-        _require_schema(connection)
+        _require_schema(connection, events_table)
         where = "WHERE share_state = ?" if share_state is not None else ""
         parameters: tuple[str, ...] = (share_state,) if share_state is not None else ()
         session_rows = connection.execute(
@@ -130,20 +140,25 @@ def query_play_analytics(
             """,
             parameters,
         ).fetchall()
+        session_rows.sort(key=lambda row: str(row["session_id"]), reverse=True)
+        session_rows.sort(
+            key=lambda row: _parse_timestamp(str(row["started_at"]), "sets.started_at"),
+            reverse=True,
+        )
         session_ids = [str(row["session_id"]) for row in session_rows]
         plays_by_session: Counter[str] = Counter()
         unique_by_session: dict[str, set[str]] = {
             session_id: set() for session_id in session_ids
         }
         track_counts: Counter[str] = Counter()
-        track_latest: dict[str, tuple[str, str | None, str | None, int]] = {}
+        track_latest: dict[str, tuple[str, str | None, str | None, int, datetime]] = {}
 
         if session_ids:
             placeholders = ",".join("?" for _ in session_ids)
             play_rows = connection.execute(
                 f"""
                 SELECT id, session_id, wall_clock, track_stable_id, value_json
-                FROM set_events
+                FROM {events_table}
                 WHERE action = 'track_loaded'
                   AND track_stable_id IS NOT NULL
                   AND session_id IN ({placeholders})
@@ -155,11 +170,18 @@ def query_play_analytics(
                 session_id = str(row["session_id"])
                 stable_id = str(row["track_stable_id"])
                 wall_clock = str(row["wall_clock"])
+                played_at = _parse_timestamp(wall_clock, f"{events_table}.wall_clock")
                 title, artist = _event_metadata(row["value_json"])
                 plays_by_session[session_id] += 1
                 unique_by_session[session_id].add(stable_id)
                 track_counts[stable_id] += 1
-                track_latest[stable_id] = (wall_clock, title, artist, int(row["id"]))
+                candidate = (wall_clock, title, artist, int(row["id"]), played_at)
+                current = track_latest.get(stable_id)
+                if current is None or (played_at, candidate[3]) > (
+                    current[4],
+                    current[3],
+                ):
+                    track_latest[stable_id] = candidate
 
         sessions: list[dict[str, Any]] = []
         completed_duration_s = 0.0
@@ -220,4 +242,9 @@ def query_play_analytics(
         connection.close()
 
 
-__all__ = ["AnalyticsSchemaError", "ShareState", "query_play_analytics"]
+__all__ = [
+    "AnalyticsSchemaError",
+    "EventsTable",
+    "ShareState",
+    "query_play_analytics",
+]

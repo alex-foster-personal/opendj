@@ -25,7 +25,7 @@ def analytics_db(tmp_path: Path) -> Path:
                 share_state TEXT NOT NULL,
                 notes TEXT
             );
-            CREATE TABLE set_events (
+            CREATE TABLE events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL REFERENCES sets(session_id),
                 timestamp_s REAL NOT NULL,
@@ -117,7 +117,7 @@ def analytics_db(tmp_path: Path) -> Path:
         ]
         connection.executemany(
             """
-            INSERT INTO set_events(
+            INSERT INTO events(
                 session_id, timestamp_s, wall_clock, deck, track_stable_id,
                 action, value_json, source
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)

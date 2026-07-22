@@ -89,3 +89,35 @@ def test_query_fails_on_noncanonical_schema(tmp_path: Path) -> None:
 
     with pytest.raises(AnalyticsSchemaError, match="required table"):
         query_play_analytics(malformed)
+
+
+def test_query_supports_explicit_shared_state_event_table(analytics_db: Path) -> None:
+    with sqlite3.connect(analytics_db) as connection:
+        connection.execute("ALTER TABLE events RENAME TO set_events")
+
+    result = query_play_analytics(analytics_db, events_table="set_events")
+
+    assert result["summary"]["plays"] == 4
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (
+            "UPDATE sets SET started_at = 'not-a-date' WHERE ended_at IS NULL",
+            "invalid sets.started_at timestamp",
+        ),
+        (
+            "UPDATE events SET wall_clock = 'not-a-date' WHERE id = 1",
+            "invalid events.wall_clock timestamp",
+        ),
+    ],
+)
+def test_query_rejects_malformed_timestamps(
+    analytics_db: Path, sql: str, expected: str
+) -> None:
+    with sqlite3.connect(analytics_db) as connection:
+        connection.execute(sql)
+
+    with pytest.raises(AnalyticsSchemaError, match=expected):
+        query_play_analytics(analytics_db)
