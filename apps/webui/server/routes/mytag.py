@@ -117,20 +117,10 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
 
 
 def _sweep_tag(backend: StateBackend, old_name: str, new_name: str | None) -> int:
-    tracks = _all_tracks(backend, old_name)
-    updates = [
-        TrackUpdate(
-            track.stable_id,
-            {"tags_remove": [old_name]} if new_name is None else {"tags_add": [new_name], "tags_remove": [old_name]},
-            compute_etag(track.stable_id, track.updated_at),
-        )
-        for track in tracks
-    ]
     try:
-        backend.update_tracks(updates, source="webui")
+        return backend.update_tag_members(old_name, new_name, source="webui")
     except BatchConflictError as exc:
         _raise_conflict(exc)
-    return len(updates)
 
 
 @router.post("/rename", response_model=MyTagSweepOut)

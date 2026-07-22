@@ -418,6 +418,34 @@ class TestFallbackPaths:
         assert backend.get_track("sid-001").notes == first.notes
         assert backend.get_track("sid-002").notes == second.notes
 
+    def test_update_tag_members_includes_a_member_added_before_transaction_lock(
+        self, fresh_state_db: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A tag added after request entry is swept once BEGIN acquires the lock."""
+        backend = SqliteBackend(fresh_state_db)
+        original_open_rw = sb_mod._state_db.open_rw
+        injected = False
+
+        def open_rw_after_racing_add(*args, **kwargs):  # noqa: ANN002, ANN003
+            nonlocal injected
+            if not injected:
+                injected = True
+                race_conn = original_open_rw(*args, **kwargs)
+                try:
+                    with sb_mod.StateWriter(race_conn, actor="test-racer") as writer:
+                        writer.set_field(
+                            "sid-002", "tags", ["late"], source="webui",
+                            modified_at=_iso_now(), confidence=1.0,
+                        )
+                finally:
+                    race_conn.close()
+            return original_open_rw(*args, **kwargs)
+
+        monkeypatch.setattr(sb_mod._state_db, "open_rw", open_rw_after_racing_add)
+        assert backend.update_tag_members("late", "renamed") == 1
+        assert backend.get_track("sid-002").tags == ["renamed"]
+        assert backend.get_track("sid-001").tags == ["deep-house", "smooth"]
+
     def test_create_and_delete_pairing_via_fallback(
         self, fresh_state_db: Path,
     ) -> None:

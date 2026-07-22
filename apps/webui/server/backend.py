@@ -182,6 +182,8 @@ class StateBackend(Protocol):
                      expected_etag: str, source: Source = "webui") -> Track: ...
     def update_tracks(self, updates: Sequence[TrackUpdate], *,
                       source: Source = "webui") -> list[Track]: ...
+    def update_tag_members(self, old_name: str, new_name: str | None, *,
+                           source: Source = "webui") -> int: ...
     def create_pairing(self, pairing: Pairing) -> Pairing: ...
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None: ...
     def stats(self) -> dict[str, Any]: ...
@@ -374,6 +376,25 @@ class InMemoryBackend:
             if any(updated is not current for current, updated in zip(current_rows, results)):
                 self._last_writer = (source, now)
             return results
+
+    def update_tag_members(self, old_name: str, new_name: str | None, *,
+                           source: Source = "webui") -> int:
+        """Rename or delete a tag after discovering members under one lock."""
+        from .etag import compute_etag
+        with self._mutex:
+            updates = [
+                TrackUpdate(
+                    track.stable_id,
+                    {"tags_remove": [old_name]} if new_name is None else {
+                        "tags_add": [new_name], "tags_remove": [old_name],
+                    },
+                    compute_etag(track.stable_id, track.updated_at),
+                )
+                for track in self._tracks.values()
+                if old_name in track.tags
+            ]
+            self.update_tracks(updates, source=source)
+            return len(updates)
 
     def create_pairing(self, pairing: Pairing) -> Pairing:
         with self._mutex:
