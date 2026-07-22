@@ -42,6 +42,15 @@
  *       remains intact and the repeated timestamp is accepted
  *     [if] an existing boundary enters the unsafe horizon [then] a newer
  *       command queues at a fresh safe boundary without losing the old one
+ *     [if] 10,000 revisions are presented [then] obsolete schedule history
+ *       is pruned while the effective current and future revisions remain
+ *     [if] play or seek follows a pending pause [then] the pause is
+ *       superseded through the processor schedule instead of moving a live
+ *       frozen cursor ⛔️
+ *     [if] Beat Sync or sync mode changes during a pending start [then] the
+ *       desired playing deck is rescheduled before it becomes audible
+ *     [if] AudioContext time stalls or sync state changes while waiting
+ *       [then] the wait rejects within a bounded interval ⛔️
  *
  * Rune module: this file MUST stay .svelte.ts (rune_outside_svelte
  * otherwise - RECON-FRONTEND 10.1, same bug class as stores.svelte.ts fix).
@@ -97,6 +106,8 @@ const PARAM_SMOOTH_S = 0.01;
 /** Future schedule margin after the slower deck processor's reported latency. */
 const SYNC_SCHEDULE_SAFETY_S = 0.1;
 const ANALYSER_FFT_SIZE = 4096;
+const CONTEXT_WAIT_POLL_MS = 25;
+const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
 
 // ------------------------------------------------------------ rune stores
 
@@ -280,6 +291,7 @@ interface _DeckRuntime {
 	pending: _PendingSegment[];
 	presentation: PresentedTransportTimeline;
 	nextScheduleRevision: number;
+	desiredActive: boolean;
 	scheduleIntentCount: number;
 	scheduleTail: Promise<void>;
 	swapTail: Promise<void>;
@@ -300,6 +312,7 @@ function _emptyRuntime(): _DeckRuntime {
 		pending: [],
 		presentation: createPresentedTransportTimeline(0),
 		nextScheduleRevision: 0,
+		desiredActive: false,
 		scheduleIntentCount: 0,
 		scheduleTail: Promise.resolve(),
 		swapTail: Promise.resolve()
@@ -526,6 +539,47 @@ export function acknowledgePresentedTransportSchedule(
 		loop: schedule.loop === null ? null : { ...schedule.loop },
 		supersededByRevision
 	});
+	_prunePresentedTransportSchedules(timeline);
+}
+
+function _laterPresentedSchedule(
+	candidate: PresentedTransportSchedule,
+	selected: PresentedTransportSchedule | null
+): boolean {
+	return (
+		selected === null ||
+		candidate.startContextTime > selected.startContextTime ||
+		(candidate.startContextTime === selected.startContextTime &&
+			candidate.revision > selected.revision)
+	);
+}
+
+function _effectivePresentedScheduleAt(
+	timeline: PresentedTransportTimeline,
+	contextTime: number
+): PresentedTransportSchedule | null {
+	let selected: PresentedTransportSchedule | null = null;
+	for (const candidate of timeline.schedules) {
+		if (
+			candidate.supersededByRevision === null &&
+			candidate.startContextTime <= contextTime &&
+			_laterPresentedSchedule(candidate, selected)
+		) {
+			selected = candidate;
+		}
+	}
+	return selected;
+}
+
+function _prunePresentedTransportSchedules(timeline: PresentedTransportTimeline): void {
+	const presentedAt = timeline.last_presentation_context_time_s;
+	const effective =
+		presentedAt === null ? null : _effectivePresentedScheduleAt(timeline, presentedAt);
+	timeline.schedules = timeline.schedules.filter(
+		(schedule) =>
+			schedule.supersededByRevision === null &&
+			(presentedAt === null || schedule === effective || schedule.startContextTime > presentedAt)
+	);
 }
 
 function _presentedObservation(
@@ -587,20 +641,7 @@ export function observePresentedTransportTimeline(
 		return _presentedObservation(timeline, false, true);
 	}
 
-	let selected: PresentedTransportSchedule | null = null;
-	for (const candidate of timeline.schedules) {
-		if (candidate.supersededByRevision !== null || candidate.startContextTime > contextTime) {
-			continue;
-		}
-		if (
-			selected === null ||
-			candidate.startContextTime > selected.startContextTime ||
-			(candidate.startContextTime === selected.startContextTime &&
-				candidate.revision > selected.revision)
-		) {
-			selected = candidate;
-		}
-	}
+	const selected = _effectivePresentedScheduleAt(timeline, contextTime);
 	if (selected !== null && selected.revision < timeline.presented_revision) {
 		throw new Error(
 			`presented schedule revision regressed from ${timeline.presented_revision} to ` +
@@ -626,6 +667,7 @@ export function observePresentedTransportTimeline(
 	}
 	timeline.last_presentation_context_time_s = contextTime;
 	timeline.last_presentation_performance_time_ms = performanceTime;
+	_prunePresentedTransportSchedules(timeline);
 	return _presentedObservation(timeline, true, true);
 }
 
@@ -636,6 +678,21 @@ export function seekSyncMaster(
 	master: DeckId | null
 ): DeckId | null {
 	return playing && beatSyncEnabled && master !== null && master !== deck ? master : null;
+}
+
+export function syncChangeRequiresReschedule(
+	deck: DeckId,
+	desiredActive: boolean,
+	beatSyncEnabled: boolean,
+	master: DeckId | null
+): boolean {
+	if (typeof desiredActive !== 'boolean' || typeof beatSyncEnabled !== 'boolean') {
+		throw new TypeError('sync desired-active and Beat Sync flags must be boolean');
+	}
+	if (!DECK_IDS.includes(deck) || (master !== null && !DECK_IDS.includes(master))) {
+		throw new RangeError(`sync deck ids must be within 1..4, got deck=${deck}, master=${master}`);
+	}
+	return desiredActive && beatSyncEnabled && master !== null && master !== deck;
 }
 
 export function quantizedLoopEndpointsMs(
@@ -930,6 +987,43 @@ export function naturalEndNeedsRevisionedStop(
 	);
 }
 
+export interface TransportMutationActivity {
+	playing: boolean;
+	audible: boolean;
+	controlActive: boolean;
+	pendingScheduleCount: number;
+	scheduleIntentCount: number;
+}
+
+export function transportNeedsScheduledMutation(
+	activity: TransportMutationActivity
+): boolean {
+	for (const [name, value] of Object.entries({
+		playing: activity.playing,
+		audible: activity.audible,
+		controlActive: activity.controlActive
+	})) {
+		if (typeof value !== 'boolean') {
+			throw new TypeError(`${name} must be boolean, got ${String(value)}`);
+		}
+	}
+	for (const [name, value] of Object.entries({
+		pendingScheduleCount: activity.pendingScheduleCount,
+		scheduleIntentCount: activity.scheduleIntentCount
+	})) {
+		if (!Number.isInteger(value) || value < 0) {
+			throw new RangeError(`${name} must be a non-negative integer, got ${value}`);
+		}
+	}
+	return (
+		activity.playing ||
+		activity.audible ||
+		activity.controlActive ||
+		activity.pendingScheduleCount > 0 ||
+		activity.scheduleIntentCount > 0
+	);
+}
+
 export function nextPlayingMaster(playingDecks: readonly DeckId[]): DeckId | null {
 	return DECK_IDS.find((deck) => playingDecks.includes(deck)) ?? null;
 }
@@ -1129,6 +1223,7 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	rt.controlTempoRatio = 1;
 	rt.presentation = createPresentedTransportTimeline(0);
 	rt.nextScheduleRevision = 0;
+	rt.desiredActive = false;
 	_clearLoadedTrackState(st);
 	st.processor_error = message;
 	st.sync_error = message;
@@ -1167,6 +1262,7 @@ async function _scheduleDeck(
 	const expectedProcessor = rt.processor;
 	const predecessor = rt.scheduleTail;
 	let release!: () => void;
+	rt.desiredActive = active;
 	rt.scheduleIntentCount += 1;
 	rt.scheduleTail = new Promise<void>((resolve) => {
 		release = resolve;
@@ -1254,7 +1350,7 @@ async function _scheduleDeckSerial(
 	st.pitch = scheduledTempoRatio;
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
 	st.loop = scheduledLoop === null ? null : { ...scheduledLoop };
-	st.playing = active;
+	st.playing = rt.desiredActive;
 	rt.pending = rt.pending.filter((pending) => pending.startContextTime < effectiveWhen);
 	rt.pending.push({
 		active,
@@ -1491,10 +1587,60 @@ async function _resumeContext(): Promise<AudioContext> {
 	return ctx;
 }
 
-async function _waitForContextTime(ctx: AudioContext, targetContextTime: number): Promise<void> {
+export interface ContextTimeSource {
+	readonly currentTime: number;
+	readonly state: string;
+}
+
+export async function waitForAdvancingContextTime(
+	ctx: ContextTimeSource,
+	targetContextTime: number,
+	stillCurrent: () => boolean = () => true,
+	stallTimeoutMs: number = CONTEXT_WAIT_STALL_TIMEOUT_MS
+): Promise<void> {
+	if (!Number.isFinite(targetContextTime) || targetContextTime < 0) {
+		throw new RangeError(
+			`targetContextTime must be finite and non-negative, got ${targetContextTime}`
+		);
+	}
+	if (!Number.isFinite(stallTimeoutMs) || stallTimeoutMs <= 0) {
+		throw new RangeError(`stallTimeoutMs must be finite and positive, got ${stallTimeoutMs}`);
+	}
+	const initialContextTime = ctx.currentTime;
+	if (!Number.isFinite(initialContextTime) || initialContextTime < 0) {
+		throw new RangeError(
+			`AudioContext time must be finite and non-negative, got ${initialContextTime}`
+		);
+	}
+	let lastContextTime = initialContextTime;
+	let lastProgressAtMs = Date.now();
 	while (ctx.currentTime < targetContextTime) {
-		const remainingMs = (targetContextTime - ctx.currentTime) * 1000;
-		await new Promise<void>((resolve) => setTimeout(resolve, Math.max(1, Math.ceil(remainingMs))));
+		if (!stillCurrent()) throw new Error('context-time wait state changed before target');
+		if (ctx.state !== 'running') {
+			throw new Error(`AudioContext is not running during context-time wait; got ${ctx.state}`);
+		}
+		const contextTime = ctx.currentTime;
+		if (!Number.isFinite(contextTime) || contextTime < lastContextTime) {
+			throw new Error(
+				`AudioContext time must be finite and monotonic, got ${contextTime} after ${lastContextTime}`
+			);
+		}
+		if (contextTime > lastContextTime) {
+			lastContextTime = contextTime;
+			lastProgressAtMs = Date.now();
+		}
+		const stallRemainingMs = stallTimeoutMs - (Date.now() - lastProgressAtMs);
+		if (stallRemainingMs <= 0) {
+			throw new Error(
+				`AudioContext time stalled before target ${targetContextTime} at ${contextTime}`
+			);
+		}
+		const contextRemainingMs = (targetContextTime - contextTime) * 1000;
+		const delayMs = Math.max(
+			1,
+			Math.ceil(Math.min(CONTEXT_WAIT_POLL_MS, contextRemainingMs, stallRemainingMs))
+		);
+		await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
 	}
 }
 
@@ -1520,7 +1666,7 @@ async function _synchronizeFollowers(
 		for (const deck of followers) _commitPendingIfDue(deck);
 		const masterState = deckStates[master];
 		const masterRuntime = _requireLoaded(master, 'Beat Sync master').rt;
-		if (!masterState.playing) {
+		if (!masterRuntime.desiredActive) {
 			throw new Error(`Beat Sync master deck ${master} is neither audible nor scheduled to play`);
 		}
 		const masterGrid = _requireBeatGrid(masterState, 'Beat Sync');
@@ -1548,7 +1694,24 @@ async function _synchronizeFollowers(
 			)
 		);
 		if (pendingWaitTarget !== null) {
-			await _waitForContextTime(ctx, pendingWaitTarget);
+			const waitState = supersededDecks.map((deck) => ({
+				deck,
+				loadToken: _rt[deck].loadToken,
+				desiredRevision: _rt[deck].presentation.desired_revision,
+				desiredActive: _rt[deck].desiredActive,
+				beatSyncEnabled: deckStates[deck].beat_sync_enabled,
+				syncMode: deckStates[deck].sync_mode
+			}));
+			await waitForAdvancingContextTime(ctx, pendingWaitTarget, () =>
+				waitState.every(
+					(snapshot) =>
+						_rt[snapshot.deck].loadToken === snapshot.loadToken &&
+						_rt[snapshot.deck].presentation.desired_revision === snapshot.desiredRevision &&
+						_rt[snapshot.deck].desiredActive === snapshot.desiredActive &&
+						deckStates[snapshot.deck].beat_sync_enabled === snapshot.beatSyncEnabled &&
+						deckStates[snapshot.deck].sync_mode === snapshot.syncMode
+				)
+			);
 			for (const deck of supersededDecks) _commitPendingIfDue(deck);
 			return _synchronizeFollowers(master, followers, options);
 		}
@@ -1753,6 +1916,7 @@ class RbAudioEngine implements AudioEngine {
 			rt.pending = [];
 			rt.presentation = createPresentedTransportTimeline(0);
 			rt.nextScheduleRevision = 0;
+			rt.desiredActive = false;
 			st.stable_id = stable_id;
 			st.title = candidateTrack.title;
 			st.artist = candidateTrack.artist;
@@ -1784,12 +1948,21 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async play(deck: DeckId): Promise<void> {
-		const { st } = _requireLoaded(deck, 'play');
-		if (st.playing) return; // transport already running is a valid state
+		const { st, rt } = _requireLoaded(deck, 'play');
+		if (rt.desiredActive) return; // transport already running is a valid state
 		if (st.beat_sync_enabled) _requireBeatGrid(st, 'play Beat Sync');
-		_setPausedPosition(deck, st.position_ms);
+		const needsScheduledMutation = transportNeedsScheduledMutation({
+			playing: st.playing,
+			audible: st.audible,
+			controlActive: rt.controlActive,
+			pendingScheduleCount: rt.pending.length,
+			scheduleIntentCount: rt.scheduleIntentCount
+		});
+		if (!needsScheduledMutation) _setPausedPosition(deck, st.position_ms);
 		const ctx = await _resumeContext();
-		const startSec = st.position_ms / 1000;
+		const startSec: number | ((effectiveWhen: number) => number) = needsScheduledMutation
+			? (effectiveWhen) => _projectPositionAt(deck, effectiveWhen)
+			: st.position_ms / 1000;
 		const activeMaster = _syncMaster();
 		if (activeMaster === null) {
 			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
@@ -1811,8 +1984,8 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async pause(deck: DeckId): Promise<void> {
-		const { st } = _requireLoaded(deck, 'pause');
-		if (!st.playing) return; // already paused is a valid state
+		const { st, rt } = _requireLoaded(deck, 'pause');
+		if (!rt.desiredActive) return; // already paused is a valid state
 		if (_ctx === null) throw new Error('pause: audio graph not initialised');
 		const pauseBeats = st.quantize_enabled ? _requireBeatGrid(st, 'pause cue') : null;
 		const when = _futureScheduleTime(deck);
@@ -1833,7 +2006,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async quantizedSeek(deck: DeckId, ms: number): Promise<void> {
-		const { st } = _requireLoaded(deck, 'cueJump');
+		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
 			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
@@ -1844,15 +2017,32 @@ class RbAudioEngine implements AudioEngine {
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
-		if (st.playing) {
-			const master = seekSyncMaster(deck, st.playing, st.beat_sync_enabled, _syncMaster());
+		const needsScheduledMutation = transportNeedsScheduledMutation({
+			playing: rt.desiredActive,
+			audible: st.audible,
+			controlActive: rt.controlActive,
+			pendingScheduleCount: rt.pending.length,
+			scheduleIntentCount: rt.scheduleIntentCount
+		});
+		if (needsScheduledMutation) {
+			const master = seekSyncMaster(
+				deck,
+				rt.desiredActive,
+				st.beat_sync_enabled,
+				_syncMaster()
+			);
 			if (master !== null) {
 				await _synchronizeFollowers(master, [deck], {
 					followerAnchorSec: { [deck]: targetMs / 1000 }
 				});
 			} else {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
-				await _scheduleDeck(deck, _futureScheduleTime(deck), targetMs / 1000, true);
+				await _scheduleDeck(
+					deck,
+					_futureScheduleTime(deck),
+					targetMs / 1000,
+					rt.desiredActive
+				);
 			}
 		} else {
 			_setPausedPosition(deck, targetMs);
@@ -2021,13 +2211,15 @@ class RbAudioEngine implements AudioEngine {
 			st.sync_error = null;
 			return Promise.resolve();
 		}
-		if (!st.audible) return Promise.resolve();
+		if (!_rt[deck].desiredActive) return Promise.resolve();
 		const master = _syncMaster();
 		if (master === null) {
 			_assignMaster(deck);
 			return Promise.resolve();
 		}
-		return master === deck ? Promise.resolve() : _synchronizeFollowers(master, [deck]);
+		return syncChangeRequiresReschedule(deck, true, enabled, master)
+			? _synchronizeFollowers(master, [deck])
+			: Promise.resolve();
 	}
 
 	async setMasterTempo(deck: DeckId, enabled: boolean): Promise<void> {
@@ -2057,8 +2249,18 @@ class RbAudioEngine implements AudioEngine {
 		const st = deckStates[deck];
 		st.sync_mode = mode;
 		const master = _syncMaster();
-		if (!st.audible || !st.beat_sync_enabled || master === null || master === deck) {
+		if (
+			!syncChangeRequiresReschedule(
+				deck,
+				_rt[deck].desiredActive,
+				st.beat_sync_enabled,
+				master
+			)
+		) {
 			return Promise.resolve();
+		}
+		if (master === null) {
+			throw new Error('setSyncMode: reschedule invariant requires a selected master deck');
 		}
 		return _synchronizeFollowers(master, [deck]);
 	}

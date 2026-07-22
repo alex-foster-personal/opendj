@@ -65,6 +65,14 @@ test('audible Beat-Synced follower seeks route back through the selected master'
 	assert.equal(audio.seekSyncMaster(2, true, false, 1), null);
 });
 
+test('sync changes reschedule desired pending starts before they become audible', () => {
+	assert.equal(audio.syncChangeRequiresReschedule(2, true, true, 1), true);
+	assert.equal(audio.syncChangeRequiresReschedule(2, false, true, 1), false);
+	assert.equal(audio.syncChangeRequiresReschedule(2, true, false, 1), false);
+	assert.equal(audio.syncChangeRequiresReschedule(1, true, true, 1), false);
+	assert.equal(audio.syncChangeRequiresReschedule(2, true, true, null), false);
+});
+
 test('central loop quantization snaps both endpoints and rejects collapsed loops', () => {
 	assert.deepEqual(
 		audio.quantizedLoopEndpointsMs(REAL_PQTZ_BEATS, { in_ms: 590, out_ms: 1090 }, true),
@@ -108,7 +116,7 @@ test('presented timeline supersedes an unpresented schedule at the same boundary
 		tempoRatio: 1
 	});
 
-	assert.equal(timeline.schedules.length, 2, 'every acknowledged schedule remains mirrored');
+	assert.equal(timeline.schedules.length, 1, 'superseded schedules are pruned immediately');
 	const before = audio.observePresentedTransportTimeline(
 		timeline,
 		{ contextTime: 9, performanceTime: 9000 },
@@ -180,6 +188,40 @@ test('presented timeline retains intermediate boundaries and clears pending only
 	assert.equal(latest.position_sec, 2);
 	assert.equal(latest.presented_revision, 2);
 	assert.equal(latest.transport_pending, false);
+});
+
+test('presented timeline prunes long-session history but retains current and future revisions', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	for (let revision = 1; revision <= 10_000; revision += 1) {
+		audio.acknowledgePresentedTransportSchedule(timeline, {
+			revision,
+			active: true,
+			loop: null,
+			startContextTime: revision,
+			startPositionSec: revision,
+			tempoRatio: 1
+		});
+		audio.observePresentedTransportTimeline(
+			timeline,
+			{ contextTime: revision + 0.25, performanceTime: (revision + 0.25) * 1000 },
+			20_000
+		);
+		assert.ok(timeline.schedules.length <= 1, `revision ${revision} leaked schedule history`);
+	}
+
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 10_001,
+		active: false,
+		loop: null,
+		startContextTime: 10_002,
+		startPositionSec: 10_001.25,
+		tempoRatio: 1
+	});
+	assert.deepEqual(
+		timeline.schedules.map(({ revision }) => revision),
+		[10_000, 10_001],
+		'the effective current revision and needed future revision remain mirrored'
+	);
 });
 
 test('presented timeline evaluates tempo and engaged loops at the output clock', () => {
@@ -376,6 +418,79 @@ test('transport scheduling horizon is strictly future and latency-aware', () => 
 		10.4,
 		'a still-safe pending boundary may be superseded in place'
 	);
+});
+
+test('pending pause transport mutations stay scheduled instead of touching the frozen cursor', () => {
+	assert.equal(
+		audio.transportNeedsScheduledMutation({
+			playing: false,
+			audible: true,
+			controlActive: true,
+			pendingScheduleCount: 1,
+			scheduleIntentCount: 0
+		}),
+		true,
+		'pause then play or seek must supersede the pending stop'
+	);
+	assert.equal(
+		audio.transportNeedsScheduledMutation({
+			playing: false,
+			audible: false,
+			controlActive: false,
+			pendingScheduleCount: 0,
+			scheduleIntentCount: 0
+		}),
+		false,
+		'a fully paused deck may move its frozen cursor directly'
+	);
+	assert.throws(
+		() =>
+			audio.transportNeedsScheduledMutation({
+				playing: false,
+				audible: false,
+				controlActive: false,
+				pendingScheduleCount: -1,
+				scheduleIntentCount: 0
+			}),
+		/pendingScheduleCount/i
+	);
+});
+
+test('context-time waits reject suspended, stale, and stalled clocks within a bounded interval', async () => {
+	await assert.rejects(
+		audio.waitForAdvancingContextTime({ currentTime: 0, state: 'suspended' }, 1),
+		/not running/i
+	);
+	await assert.rejects(
+		audio.waitForAdvancingContextTime({ currentTime: Number.NaN, state: 'running' }, 1),
+		/finite and non-negative/i
+	);
+	await assert.rejects(
+		audio.waitForAdvancingContextTime(
+			{ currentTime: 0, state: 'running' },
+			1,
+			() => false,
+			20
+		),
+		/state changed/i
+	);
+	const startedAt = Date.now();
+	await assert.rejects(
+		audio.waitForAdvancingContextTime(
+			{ currentTime: 0, state: 'running' },
+			1,
+			() => true,
+			20
+		),
+		/stalled/i
+	);
+	assert.ok(Date.now() - startedAt < 250, 'stalled context wait exceeded its bounded interval');
+
+	const advancing = { currentTime: 0, state: 'running' };
+	setTimeout(() => {
+		advancing.currentTime = 1;
+	}, 5);
+	await audio.waitForAdvancingContextTime(advancing, 1, () => true, 100);
 });
 
 test('deck transport clock exposes the paused cursor and revision diagnostics', () => {
