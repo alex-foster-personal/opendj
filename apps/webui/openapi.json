@@ -3219,6 +3219,74 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/play-analytics": {
+      "get": {
+        "operationId": "get_play_analytics_api_play_analytics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "share_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "private",
+                    "shared_local",
+                    "shared_cloud"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Share State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Play Analytics Api Play Analytics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Play Analytics",
+        "tags": [
+          "play-analytics"
+        ]
+      }
+    },
     "/api/sets": {
       "get": {
         "operationId": "api_list_sessions_api_sets_get",

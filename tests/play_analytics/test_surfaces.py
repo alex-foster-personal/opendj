@@ -11,6 +11,13 @@ from fastapi.testclient import TestClient
 from apps.play_analytics.api import create_router
 from apps.play_analytics.cli import main
 from apps.play_analytics.query import query_play_analytics
+from apps.webui.server.app import create_app
+
+
+def test_production_app_registers_play_analytics_contract() -> None:
+    paths = create_app(mount_frontend=False).openapi()["paths"]
+
+    assert "/api/play-analytics" in paths
 
 
 def test_http_returns_query_contract(analytics_db: Path) -> None:
