@@ -32,7 +32,7 @@ import argparse
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable, Protocol
 
 __all__ = [
@@ -70,7 +70,15 @@ def rehome_path(folder_path: str, home: str | None = None) -> str | None:
     m = _HOME_PREFIX_RE.match(folder_path or "")
     if not m:
         return None
-    return str(Path(home) / m.group(1))
+    posix_home = PurePosixPath(home)
+    if posix_home.is_absolute():
+        return str(posix_home / PurePosixPath(m.group(1)))
+    windows_home = PureWindowsPath(home)
+    if windows_home.is_absolute():
+        return str(windows_home / PureWindowsPath(m.group(1)))
+    raise ValueError(
+        f"home must be an absolute POSIX or Windows path, got {home!r}."
+    )
 
 
 @dataclass(slots=True)

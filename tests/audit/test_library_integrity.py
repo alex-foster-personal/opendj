@@ -52,6 +52,39 @@ def test_rehome_tolerates_rekordbox_double_slash():
     )
 
 
+def test_rehome_preserves_posix_home_flavor_on_windows_hosts():
+    """A migrated Mac library keeps POSIX paths even when checked on Windows."""
+    assert rehome_path("/Users/dev/Music/x.mp3", home="/Users/dev") == (
+        "/Users/dev/Music/x.mp3"
+    )
+
+
+def test_rehome_uses_windows_home_flavor_for_windows_library():
+    assert rehome_path("/Users/dev/Music/x.mp3", home=r"C:\Users\dev") == (
+        r"C:\Users\dev\Music\x.mp3"
+    )
+
+
+def test_rehome_accepts_absolute_windows_unc_home():
+    assert rehome_path(
+        "/Users/dev/Music/x.mp3", home=r"\\server\share\dev"
+    ) == r"\\server\share\dev\Music\x.mp3"
+
+
+@pytest.mark.parametrize(
+    "home",
+    [
+        "Users/dev",
+        r"C:Users\dev",
+        r"\\server",
+        "\\\\",
+    ],
+)
+def test_rehome_rejects_non_absolute_home(home: str):
+    with pytest.raises(ValueError, match="absolute POSIX or Windows"):
+        rehome_path("/Users/dev/Music/x.mp3", home=home)
+
+
 def test_rehome_returns_none_without_home_prefix():
     assert rehome_path("/Volumes/SLATER/x.mp3", home="/Users/dev") is None
     assert rehome_path("", home="/Users/dev") is None
@@ -78,6 +111,16 @@ def test_rehomable_when_only_home_prefix_differs():
     )
     assert (rep.present, rep.rehomable, rep.missing) == (0, 1, 0)
     assert rep.broken == 1  # rehomable still counts as broken-until-fixed
+
+
+def test_rehomable_when_current_home_is_windows_flavored():
+    rehomed = r"C:\Users\dev\Music\a.mp3"
+    rep = check_integrity(
+        [FakeTrack("//Users/dev/Music/a.mp3")],
+        exists=_exists_from({rehomed}),
+        home=r"C:\Users\dev",
+    )
+    assert (rep.present, rep.rehomable, rep.missing) == (0, 1, 0)
 
 
 def test_missing_when_nowhere():
