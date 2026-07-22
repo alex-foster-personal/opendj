@@ -349,7 +349,7 @@ class DjayPlaylistWriter:
         return members
 
     def apply_with_backup_by_id(
-        self, playlist_id: str, desired_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
+        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
     ):
         """Hold one SQLite write lock for CAS, online backup, and mutation."""
         from apps.smartlists.writeback_backup import exclusive_target_lock, online_backup, write_reversal
@@ -380,9 +380,16 @@ class DjayPlaylistWriter:
                 actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("djay: target revision changed before transaction")
+                mapping_rows = self.state_conn.execute(
+                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
+                    (self.vendor, *dict.fromkeys(stable_members)),
+                ).fetchall() if stable_members else []
+                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if mapping_revision != expected_mapping_revision:
+                    raise WritebackConflict("djay: mapping changed inside vendor transaction")
                 with sqlite3.connect(f"file:{self.djay_db_path}?mode=ro", uri=True) as snapshot:
                     backup = WritebackBackup(online_backup(snapshot, "djay"))
-                target = list(desired_members)
+                target = list(native_members)
                 post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": target}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 write_reversal("djay", backup.backup_id, self.djay_db_path, playlist_id, current, post_revision)
                 result = _apply_single_op(con, {

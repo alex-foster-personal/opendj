@@ -39,7 +39,7 @@ class VendorPlaylistWriter(Protocol):
     def list_playlists(self) -> list[VendorPlaylist]: ...
     def read_members_by_id(self, playlist_id: str) -> list[str]: ...
     def apply_with_backup_by_id(
-        self, playlist_id: str, desired_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
+        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
     ) -> tuple[WritebackBackup, str]: ...
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str: ...
 
@@ -279,7 +279,7 @@ class WritebackService:
         if self._mapping_revision(writer, desired_ids) != plan.mapping_revision:
             raise WritebackConflict("writeback mapping changed before immutable vendor payload was captured")
         backup, target_revision = writer.apply_with_backup_by_id(
-            target_id, native_payload, plan.target_revision, plan.mapping_revision,
+            target_id, native_payload, desired_ids, plan.target_revision, plan.mapping_revision,
         )
         return WritebackApplyResult(vendor, target_id, plan.target_name, True, False,
             added=plan.added, removed=plan.removed, backup_id=backup.backup_id,

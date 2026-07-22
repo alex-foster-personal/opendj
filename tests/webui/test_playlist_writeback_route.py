@@ -29,7 +29,7 @@ class _Writer:
     def read_members_by_id(self, playlist_id):
         assert playlist_id == "native-1"
         return list(self.members)
-    def apply_with_backup_by_id(self, playlist_id, desired_members, expected, _mapping_revision):
+    def apply_with_backup_by_id(self, playlist_id, desired_members, _stable_members, expected, _mapping_revision):
         current = self.read_members_by_id(playlist_id)
         revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if revision != expected:

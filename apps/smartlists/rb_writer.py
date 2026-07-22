@@ -288,7 +288,7 @@ class RBPlaylistWriter:
         return members
 
     def apply_with_backup_by_id(
-        self, playlist_id: str, desired_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
+        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
     ):
         """CAS, WAL-safe backup, and mutation in one Rekordbox transaction."""
         from pyrekordbox.db6 import tables
@@ -308,9 +308,16 @@ class RBPlaylistWriter:
                 actual = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": before}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if actual != expected_target_revision:
                     raise WritebackConflict("rekordbox: target revision changed before transaction")
+                mapping_rows = self.state_conn.execute(
+                    "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? AND stable_id IN (" + ",".join("?" * len(set(stable_members))) + ")",
+                    (self.vendor, *dict.fromkeys(stable_members)),
+                ).fetchall() if stable_members else []
+                mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                if mapping_revision != expected_mapping_revision:
+                    raise WritebackConflict("rekordbox: mapping changed inside vendor transaction")
                 with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
                     backup = WritebackBackup(online_backup(snapshot, "rekordbox"))
-                post_members = list(desired_members)
+                post_members = list(native_members)
                 post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": post_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, post_revision)
                 playlist = self._find_playlist_by_id(playlist_id)
@@ -320,7 +327,7 @@ class RBPlaylistWriter:
                     self.db.delete(song)
                 session.flush()
                 now = datetime.datetime.now()
-                for number, content_id in enumerate(desired_members, start=1):
+                for number, content_id in enumerate(native_members, start=1):
                     self.db.add(tables.DjmdSongPlaylist.create(
                         ID=str(uuid4()), UUID=str(uuid4()), PlaylistID=str(playlist.ID),
                         ContentID=str(content_id), TrackNo=number, created_at=now, updated_at=now,

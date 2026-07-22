@@ -31,7 +31,7 @@ class _FakeVendorWriter:
         return [VendorPlaylist(playlist_id=playlist_id, name=name) for playlist_id, (name, _members) in self.playlists.items()]
     def read_members_by_id(self, playlist_id: str) -> list[str]:
         return list(self.playlists[playlist_id][1])
-    def apply_with_backup_by_id(self, playlist_id: str, desired_members: list[str], expected_target_revision: str, _expected_mapping_revision: str) -> tuple[WritebackBackup, str]:
+    def apply_with_backup_by_id(self, playlist_id: str, desired_members: list[str], _stable_members: list[str], expected_target_revision: str, _expected_mapping_revision: str) -> tuple[WritebackBackup, str]:
         if _revision(playlist_id, self.read_members_by_id(playlist_id)) != expected_target_revision:
             raise WritebackConflict("target revision changed before transaction")
         backup_id = f"backup-{len(self.reversals) + 1}"
