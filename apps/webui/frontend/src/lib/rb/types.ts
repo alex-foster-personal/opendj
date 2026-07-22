@@ -271,6 +271,8 @@ export interface DeckState {
 	loop: LoopState | null;
 	/** Hot-cue bank content (empty slots = letters absent from this array). */
 	hot_cues: HotCue[];
+	/** Server-issued CAS revisions for every A-H slot, including empty slots. */
+	hot_cue_revisions: Record<HotCueSlot, string>;
 	/** Analysis payload once fetched; null while absent. */
 	anlz: AnlzData | null;
 	/** Explicit no-analysis state: the error code (e.g. ANALYSIS_NOT_FOUND)

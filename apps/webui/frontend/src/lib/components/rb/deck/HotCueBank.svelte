@@ -7,6 +7,7 @@
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
 	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
 	// dropdown selector below-left is visual-only (inert).
+	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState, HotCue, HotCueSlot } from '$lib/rb/types';
 
 	let {
@@ -15,13 +16,15 @@
 		onJump,
 		onSave,
 		onDelete,
+		onRestore,
 		inertTip
 	}: {
 		deck: DeckState;
 		pending: boolean;
 		onJump: (ms: number) => Promise<void>;
-		onSave: (slot: HotCueSlot) => Promise<void>;
-		onDelete: (slot: HotCueSlot) => Promise<void>;
+		onSave: (slot: HotCueSlot) => Promise<HotCueMutation>;
+		onDelete: (slot: HotCueSlot) => Promise<HotCueMutation>;
+		onRestore: (slot: HotCueSlot, revision: string, reversalId: string) => Promise<void>;
 		inertTip: string;
 	} = $props();
 
@@ -37,6 +40,7 @@
 	// Local write-round-trip busy state, separate from `pending` (transport
 	// commands) so a save/clear in flight only disables its own slot.
 	let busySlot: HotCueSlot | null = $state(null);
+	let undo: { slot: HotCueSlot; revision: string; reversalId: string } | null = $state(null);
 
 	function fmtMs(ms: number): string {
 		const total = Math.floor(ms / 1000);
@@ -52,7 +56,7 @@
 			if (entry.cue !== null) {
 				await onJump(entry.cue.in_ms);
 			} else {
-				await onSave(entry.slot);
+				setUndo(entry.slot, await onSave(entry.slot));
 			}
 		} finally {
 			busySlot = null;
@@ -64,7 +68,26 @@
 		if (busySlot !== null) return;
 		busySlot = slot;
 		try {
-			await onDelete(slot);
+			setUndo(slot, await onDelete(slot));
+		} finally {
+			busySlot = null;
+		}
+	}
+
+	function setUndo(slot: HotCueSlot, mutation: HotCueMutation): void {
+		if (mutation.reversal === undefined) {
+			throw new Error(`hot cue ${slot}: server omitted reversal token`);
+		}
+		undo = { slot, revision: mutation.revision, reversalId: mutation.reversal.reversal_id };
+	}
+
+	async function undoLastMutation(): Promise<void> {
+		if (undo === null || busySlot !== null) return;
+		const target = undo;
+		busySlot = target.slot;
+		try {
+			await onRestore(target.slot, target.revision, target.reversalId);
+			undo = null;
 		} finally {
 			busySlot = null;
 		}
@@ -111,6 +134,11 @@
 	<button class="rb-lit-button rb-inert dropdown" disabled title={inertTip}>
 		HOT CUE <span class="caret">&#9662;</span>
 	</button>
+	{#if undo !== null}
+		<button class="rb-lit-button undo" disabled={pending || busySlot !== null} onclick={undoLastMutation}>
+			UNDO {undo.slot}
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -201,6 +229,9 @@
 		outline: none;
 	}
 	.dropdown {
+		align-self: flex-start;
+	}
+	.undo {
 		align-self: flex-start;
 	}
 	.caret {

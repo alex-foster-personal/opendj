@@ -70,19 +70,27 @@ async function _fetchJson<T>(path: string): Promise<T> {
 	return (await r.json()) as T;
 }
 
-async function _putJson<T>(path: string, body: unknown): Promise<T> {
+async function _putJson<T>(path: string, body: unknown, ifMatch?: string): Promise<T> {
 	const r = await fetch(`${RB_API_BASE}${path}`, {
 		method: 'PUT',
-		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			Accept: 'application/json',
+			...(ifMatch === undefined ? {} : { 'If-Match': ifMatch })
+		},
 		body: JSON.stringify(body)
 	});
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as T;
 }
 
-async function _deleteRequest(path: string): Promise<void> {
-	const r = await fetch(`${RB_API_BASE}${path}`, { method: 'DELETE' });
+async function _deleteRequest<T>(path: string, ifMatch?: string): Promise<T> {
+	const r = await fetch(`${RB_API_BASE}${path}`, {
+		method: 'DELETE',
+		headers: ifMatch === undefined ? undefined : { 'If-Match': ifMatch }
+	});
 	if (!r.ok) await _throwRbApiError(r);
+	return (await r.json()) as T;
 }
 
 // --------------------------------------------- /anlz vocals (SPIKE-B1)
@@ -369,24 +377,69 @@ export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
 // backend route param type rejects them with 422 before this client is
 // even asked to serialize one.
 
-/** PUT /tracks/{sid}/hot-cues/{slot} - upsert (SAVE always overwrites the
- * slot). ``in_ms`` is sent verbatim; callers quantize to the beatgrid
- * themselves (beat-sync-math.quantizeToNearestBeat) before calling this. */
+export interface HotCueReversal {
+	reversal_id: string;
+}
+
+export interface HotCueMutation {
+	cue: AnlzCue | null;
+	revision: string;
+	reversal?: HotCueReversal;
+}
+
+export interface HotCueSlotState {
+	slot: HotCueSlot;
+	cue: AnlzCue | null;
+	revision: string;
+}
+
+/** GET /tracks/{sid}/hot-cues - all slots, including empty-slot ETags. */
+export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotState[]> {
+	return _fetchJson<HotCueSlotState[]>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues`
+	);
+}
+
+/** CAS-save. The required revision comes from fetchHotCueSlots, and the
+ * response carries a server-authoritative one-time undo token. */
 export async function saveHotCue(
 	stable_id: string,
 	slot: HotCueSlot,
 	in_ms: number,
+	revision: string,
 	comment?: string | null
-): Promise<AnlzCue> {
-	return _putJson<AnlzCue>(
+): Promise<HotCueMutation> {
+	return _putJson<HotCueMutation>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
-		{ in_ms, comment: comment ?? null }
+		{ in_ms, comment: comment ?? null },
+		revision
 	);
 }
 
-/** DELETE /tracks/{sid}/hot-cues/{slot} - clear a slot (idempotent). */
-export async function clearHotCue(stable_id: string, slot: HotCueSlot): Promise<void> {
-	await _deleteRequest(`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`);
+/** CAS-clear with an explicit server-authoritative undo token. */
+export async function clearHotCue(
+	stable_id: string,
+	slot: HotCueSlot,
+	revision: string
+): Promise<HotCueMutation> {
+	return _deleteRequest<HotCueMutation>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}`,
+		revision
+	);
+}
+
+/** Explicitly consume a server-created reversal token to undo one mutation. */
+export async function restoreHotCue(
+	stable_id: string,
+	slot: HotCueSlot,
+	revision: string,
+	reversal_id: string
+): Promise<HotCueMutation> {
+	return _putJson<HotCueMutation>(
+		`/api/v1/tracks/${encodeURIComponent(stable_id)}/hot-cues/${slot}/restore`,
+		{ reversal_id },
+		revision
+	);
 }
 
 /** URL for GET /tracks/{sid}/artwork - use directly as <img src>. The

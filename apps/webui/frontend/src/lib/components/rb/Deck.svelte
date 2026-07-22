@@ -11,18 +11,18 @@
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
 	import {
-		DECK_IDS,
-		deckStates,
-		engine,
-		getDeckState,
+	DECK_IDS,
+	deckStates,
+	getDeckState,
 		parseCamelotKey,
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
-	import { clearHotCue, saveHotCue } from '$lib/rb/api-rb';
+	import type { HotCueMutation } from '$lib/rb/api-rb';
 	import { quantizeToNearestBeat } from '$lib/rb/beat-sync-math';
 	import {
 		performanceCommandStatus,
+		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { pushToast } from '$lib/stores.svelte';
@@ -154,32 +154,64 @@
 	// they go straight to the REST write surface, then refresh the deck's
 	// hot_cues from the backend (rb_vendor.fetch_cues is always live).
 
-	async function saveHotCueAt(slot: HotCueSlot): Promise<void> {
+	async function saveHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {
 		const stableId = deck.stable_id;
-		if (stableId === null) return;
+		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
+		const revision = deck.hot_cue_revisions[slot];
+		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
 		let ms = deck.position_ms;
 		const beats = deck.anlz?.beatgrid.beats ?? [];
 		if (deck.quantize_enabled && beats.length > 0) {
 			ms = Math.round(quantizeToNearestBeat(beats, ms / 1000) * 1000);
 		}
 		try {
-			await saveHotCue(stableId, slot, ms);
-			await engine.refreshHotCues(deckId);
+			const state = await dispatchPerformanceCommand({
+				type: 'hot_cue_save', deck: deckId, slot, in_ms: ms, revision
+			});
+			const reversal = state.decks[deckId].hot_cue_reversal;
+			if (reversal === null) throw new Error(`hot cue ${slot}: dispatcher omitted reversal token`);
+			return { cue: null, revision: reversal.revision, reversal: { reversal_id: reversal.reversal_id } };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			pushToast(`Hot cue ${slot} save failed - ${message}`, 'error');
+			throw error;
 		}
 	}
 
-	async function clearHotCueAt(slot: HotCueSlot): Promise<void> {
+	async function clearHotCueAt(slot: HotCueSlot): Promise<HotCueMutation> {
 		const stableId = deck.stable_id;
-		if (stableId === null) return;
+		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
+		const revision = deck.hot_cue_revisions[slot];
+		if (!revision) throw new Error(`hot cue ${slot}: slot revision is unavailable`);
 		try {
-			await clearHotCue(stableId, slot);
-			await engine.refreshHotCues(deckId);
+			const state = await dispatchPerformanceCommand({
+				type: 'hot_cue_clear', deck: deckId, slot, revision
+			});
+			const reversal = state.decks[deckId].hot_cue_reversal;
+			if (reversal === null) throw new Error(`hot cue ${slot}: dispatcher omitted reversal token`);
+			return { cue: null, revision: reversal.revision, reversal: { reversal_id: reversal.reversal_id } };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			pushToast(`Hot cue ${slot} clear failed - ${message}`, 'error');
+			throw error;
+		}
+	}
+
+	async function restoreHotCueAt(
+		slot: HotCueSlot,
+		revision: string,
+		reversalId: string
+	): Promise<void> {
+		const stableId = deck.stable_id;
+		if (stableId === null) throw new Error(`hot cue ${slot}: deck is not loaded`);
+		try {
+			await dispatchPerformanceCommand({
+				type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`Hot cue ${slot} restore failed - ${message}`, 'error');
+			throw error;
 		}
 	}
 
@@ -244,6 +276,7 @@
 				onJump={seekTo}
 				onSave={saveHotCueAt}
 				onDelete={clearHotCueAt}
+				onRestore={restoreHotCueAt}
 				inertTip={INERT_TIP}
 			/>
 		</div>

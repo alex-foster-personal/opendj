@@ -1289,6 +1289,16 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 	};
 	globalThis.fetch = async (input) => {
 		const url = String(input);
+		if (url.endsWith('/hot-cues')) {
+			return new Response(
+				JSON.stringify(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({
+					slot,
+					cue: null,
+					revision: `empty-${slot}`
+				}))),
+				{ status: 200, headers: { 'content-type': 'application/json' } }
+			);
+		}
 		if (url.endsWith('/anlz?points=2400')) {
 			return new Response(
 				JSON.stringify({
