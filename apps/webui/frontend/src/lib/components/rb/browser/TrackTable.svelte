@@ -35,12 +35,16 @@
 		emptyMessage,
 		restoreKey,
 		scrollTop,
+		removable = false,
+		reorderable = false,
 		onscrollcursor,
 		onsort,
 		onselectrow,
 		onloadrow,
 		onrate,
-		onrowvisible
+		onrowvisible,
+		onremoverow,
+		onreorder
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -58,6 +62,13 @@
 		restoreKey: string | number;
 		/** Pane's persisted scroll cursor (PaneStore.scroll_top). */
 		scrollTop: number;
+		/** add-remove-reorder-tracks: true when the pane is a real playlist
+		 * (not All Tracks / blank) - shows the per-row remove control. */
+		removable?: boolean;
+		/** True when removable AND the pane is in its natural membership
+		 * order (no client sort/search) - drag handles only render then,
+		 * since row.order would otherwise not match the visual position. */
+		reorderable?: boolean;
 		/** Reports the live table-wrap scrollTop back to the pane store. */
 		onscrollcursor: (top: number) => void;
 		onsort: (key: SortKey) => void;
@@ -66,6 +77,10 @@
 		onloadrow: (row: BrowserRow, deck: DeckId | null) => void;
 		onrate: (row: BrowserRow, next: number) => void;
 		onrowvisible: (row: BrowserRow) => void;
+		/** Remove this row's membership position from the playlist. */
+		onremoverow?: (row: BrowserRow) => void;
+		/** Move the track at `fromOrder` (1-based) to `toOrder`'s slot. */
+		onreorder?: (fromOrder: number, toOrder: number) => void;
 	} = $props();
 
 	const rows = $derived(provider.rows);
@@ -139,6 +154,32 @@
 
 	function _hideBrokenImg(event: Event): void {
 		(event.currentTarget as HTMLImageElement).style.display = 'none';
+	}
+
+	// ----------------------------------------- drag-to-reorder (native DnD)
+	// Grip-initiated only (not the whole row): the row's own click/dblclick
+	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
+	// rune - it only matters for the lifetime of one drag gesture.
+	let _dragSourceOrder: number | null = null;
+
+	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
+		_dragSourceOrder = row.order;
+		event.dataTransfer?.setData('text/plain', String(row.order));
+		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+	}
+
+	function onRowDragOver(event: DragEvent): void {
+		if (_dragSourceOrder === null) return;
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+	}
+
+	function onRowDrop(event: DragEvent, row: BrowserRow): void {
+		event.preventDefault();
+		const from = _dragSourceOrder;
+		_dragSourceOrder = null;
+		if (from === null || from === row.order) return;
+		onreorder?.(from, row.order);
 	}
 </script>
 
@@ -215,6 +256,8 @@
 						class:broken={!row.file_exists}
 						onclick={(event) => onselectrow(row, event)}
 						ondblclick={() => onloadrow(row, null)}
+						ondragover={onRowDragOver}
+						ondrop={(e) => onRowDrop(e, row)}
 					>
 						<td class="c-funnel"></td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
@@ -240,7 +283,22 @@
 								<span class="missing" title="audio file missing on disk (broken link)">!</span>
 							{/if}
 						</td>
-						<td class="c-order">{row.order}</td>
+						<td class="c-order">
+							{#if reorderable}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<span
+									class="grip"
+									draggable="true"
+									title="drag to reorder"
+									aria-label="drag to reorder"
+									ondragstart={(e) => onGripDragStart(e, row)}
+									onclick={(e) => e.stopPropagation()}
+								>
+									&#8942;&#8942;
+								</span>
+							{/if}
+							{row.order}
+						</td>
 						<td class="c-preview">
 							<PreviewStrip
 								strip={row.strip}
@@ -261,6 +319,19 @@
 										{d}
 									</button>
 								{/each}
+								{#if removable}
+									<button
+										class="remove-btn"
+										title="remove from playlist"
+										onclick={(e) => {
+											e.stopPropagation();
+											onremoverow?.(row);
+										}}
+										ondblclick={(e) => e.stopPropagation()}
+									>
+										&times;
+									</button>
+								{/if}
 							</span>
 						</td>
 						<td class="c-art">
@@ -395,6 +466,16 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--rb-text-dim);
 	}
+	.c-order .grip {
+		margin-right: 2px;
+		font-size: 8px;
+		letter-spacing: -2px;
+		color: var(--rb-text-dim);
+		cursor: grab;
+	}
+	.c-order .grip:hover {
+		color: var(--rb-text);
+	}
 	.c-key {
 		color: var(--rb-text-dim);
 	}
@@ -456,6 +537,15 @@
 	}
 	.deck-btns button:hover {
 		background: var(--rb-accent);
+		color: #fff;
+	}
+	.deck-btns button.remove-btn {
+		color: var(--rb-red);
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.deck-btns button.remove-btn:hover {
+		background: var(--rb-red);
 		color: #fff;
 	}
 

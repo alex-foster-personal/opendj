@@ -172,6 +172,10 @@ export class PaneStore {
 	search_results = $state<BrowserRow[]>([]);
 	searching = $state(false);
 	search_total = $state(0);
+	/** Playlist-level ETag from the load's GET (add-remove-reorder-tracks
+	 * node) - '' for the All Tracks / blank pane, which have no single
+	 * playlist row to CAS against. Required If-Match for the next mutation. */
+	etag = $state('');
 
 	/** Monotonic load token - deliberately NOT reactive. */
 	#load_seq = 0;
@@ -189,6 +193,7 @@ export class PaneStore {
 		this.selected_ids = [];
 		this.truncated = false;
 		this.scroll_top = 0;
+		this.etag = '';
 		return this.#load_seq;
 	}
 
@@ -198,12 +203,14 @@ export class PaneStore {
 	}
 
 	/** Publish rows for load `seq`. Stale tokens are a full no-op
-	 * (the newer load owns the pane) - returns whether it applied. */
-	completeLoad(seq: number, rows: BrowserRow[], truncated: boolean): boolean {
+	 * (the newer load owns the pane) - returns whether it applied.
+	 * `etag` defaults to '' (All Tracks / blank pane loads omit it). */
+	completeLoad(seq: number, rows: BrowserRow[], truncated: boolean, etag = ''): boolean {
 		if (!this.isCurrentLoad(seq)) return false;
 		this.rows = rows;
 		this.truncated = truncated;
 		this.loading = false;
+		this.etag = etag;
 		return true;
 	}
 
@@ -256,6 +263,19 @@ export class PaneStore {
 
 export function createPaneStore(): PaneStore {
 	return new PaneStore();
+}
+
+/** A membership replacement must be built from the complete playlist. The
+ * browser deliberately caps rendered rows at 500, so a truncated pane must
+ * remain read-only until a full-membership write path exists. */
+export function canMutatePlaylist(
+	pane: Pick<PaneStore, 'playlist_id' | 'etag' | 'truncated' | 'whole_collection'>
+): boolean {
+	return pane.playlist_id !== null
+		&& pane.playlist_id !== 'all'
+		&& pane.etag !== ''
+		&& !pane.truncated
+		&& !pane.whole_collection;
 }
 
 // -------------------------------------------- client search + sort pipeline
