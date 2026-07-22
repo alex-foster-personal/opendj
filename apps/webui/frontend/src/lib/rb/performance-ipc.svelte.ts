@@ -12,6 +12,9 @@
  *     [if] master/follower commands overlap [then] their engine writes serialize
  *   ✔︎ Continuous mixer controls execute immediately and round-trip in query().
  *     [if] an agent moves EQ [then] the visible UI and IPC snapshot both update
+ *   ✔︎ Preset phases form one barrier across every deck and sync coordination.
+ *     [if] a preset is claimed while deck work is active [then] it waits for
+ *       every prior scope and no later command can overlap it
  */
 
 import { pushToast } from '$lib/stores.svelte';
@@ -33,8 +36,10 @@ import type {
 	DeckId,
 	EqBand,
 	LoopState,
+	MixerChannelState,
 	SyncMode
 } from '$lib/rb/types';
+import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
 
 export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string }
@@ -81,6 +86,7 @@ export interface PerformanceDeckSnapshot {
 	sync_error: string | null;
 	processor_error: string | null;
 	loop: LoopState | null;
+	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
 	command_error: string | null;
 	command_pending: boolean;
@@ -95,20 +101,30 @@ export interface PerformanceState {
 	mixer: {
 		crossfader: number;
 		master: number;
-		channels: Record<
-			DeckId,
-			{
-				deck_id: DeckId;
-				trim: number;
-				eq_low: number;
-				eq_mid: number;
-				eq_high: number;
-				fader: number;
-				assign: CrossfaderAssign;
-			}
-		>;
+		channels: Record<DeckId, MixerChannelState>;
 	};
+	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
+}
+
+export type PerformancePresetLifecyclePhase =
+	| 'idle'
+	| 'queued'
+	| PerformancePresetPhase
+	| 'ready'
+	| 'error';
+
+export interface PerformancePresetLifecycleSnapshot {
+	id: string | null;
+	phase: PerformancePresetLifecyclePhase;
+	active: boolean;
+	error: string | null;
+}
+
+export interface PerformancePresetTransactionDriver {
+	dispatch(command: PerformanceCommand): Promise<PerformanceState>;
+	query(): PerformanceState;
+	setPhase(phase: PerformancePresetPhase): void;
 }
 
 export interface PerformanceBrowserIpc {
@@ -132,8 +148,20 @@ export const performanceCommandStatus: {
 	queued: 0
 });
 
+export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $state({
+	id: null,
+	phase: 'idle',
+	active: false,
+	error: null
+});
+
+let _presetClaim: { id: string } | null = null;
 type CommandScope = DeckId | 'sync';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
+export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
+	...DECK_IDS,
+	'sync'
+];
 
 declare global {
 	interface Window {
@@ -296,6 +324,12 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error,
 		loop: deck.loop === null ? null : { ...deck.loop },
+		beatgrid:
+			deck.anlz?.beatgrid.beats.map((beat) => ({
+				n: beat.n,
+				bpm: beat.bpm,
+				time_ms: beat.t * 1000
+			})) ?? [],
 		beatgrid_ms: deck.anlz?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [],
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0
@@ -328,6 +362,7 @@ export function queryPerformanceState(): PerformanceState {
 				4: { ...mixerState.channels[4] }
 			}
 		},
+		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error
 	};
 }
@@ -343,8 +378,6 @@ export function performanceCommandQueueScopes(
 ): readonly CommandScope[] | null {
 	const deck = _commandDeck(command);
 	if (
-		command.type === 'pitch_range' ||
-		command.type === 'quantize' ||
 		command.type === 'trim' ||
 		command.type === 'eq' ||
 		command.type === 'fader' ||
@@ -427,6 +460,162 @@ function _persistCommandError(deck: DeckId | null, error: unknown): void {
 	pushToast(`Performance command failed - ${messageText}`, 'error');
 }
 
+function _assertPresetId(id: string): void {
+	if (typeof id !== 'string' || id.trim() === '') {
+		throw new TypeError('performance preset transaction id must be a non-empty string');
+	}
+}
+
+function _setPresetPhase(id: string, phase: PerformancePresetPhase): void {
+	if (_presetClaim?.id !== id) {
+		throw new Error(`performance preset ${id} does not own the lifecycle lock`);
+	}
+	performancePresetLifecycle.phase = phase;
+}
+
+function _releasePreset(id: string, phase: 'idle' | 'ready' | 'error', error: string | null): void {
+	if (_presetClaim?.id !== id) {
+		throw new Error(`performance preset ${id} cannot release an unowned lifecycle lock`);
+	}
+	_presetClaim = null;
+	performancePresetLifecycle.phase = phase;
+	performancePresetLifecycle.active = false;
+	performancePresetLifecycle.error = error;
+	if (phase === 'idle') performancePresetLifecycle.id = null;
+}
+
+async function _dispatchWithinPreset(command: PerformanceCommand): Promise<PerformanceState> {
+	const deck = _commandDeck(command);
+	if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
+	try {
+		await _execute(command);
+	} catch (error) {
+		_persistCommandError(deck, error);
+		throw error;
+	}
+	return queryPerformanceState();
+}
+
+function _enqueuePresetPhase<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	performanceCommandStatus.queued += 1;
+	for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
+	const run = async (): Promise<T> => {
+		performanceCommandStatus.queued -= 1;
+		performanceCommandStatus.active += 1;
+		performanceCommandStatus.last_error = null;
+		for (const deck of DECK_IDS) performanceCommandStatus.deck_errors[deck] = null;
+		try {
+			return await work({
+				dispatch: _dispatchWithinPreset,
+				query: queryPerformanceState,
+				setPhase: (phase) => _setPresetPhase(id, phase)
+			});
+		} finally {
+			performanceCommandStatus.active -= 1;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+		}
+	};
+	return _commandScheduler.run(PERFORMANCE_PRESET_COMMAND_SCOPES, run);
+}
+
+function _recordPresetFailure(id: string, error: unknown): void {
+	const message = _errorMessage(error);
+	if (performanceCommandStatus.last_error !== message) _persistCommandError(null, error);
+	_releasePreset(id, 'error', message);
+}
+
+export async function preparePerformancePresetTransaction<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	_assertPresetId(id);
+	if (_presetClaim !== null) {
+		throw new Error(
+			`performance preset ${_presetClaim.id} already owns the lifecycle lock at ` +
+				`${performancePresetLifecycle.phase}`
+		);
+	}
+	_presetClaim = { id };
+	performancePresetLifecycle.id = id;
+	performancePresetLifecycle.phase = 'queued';
+	performancePresetLifecycle.active = true;
+	performancePresetLifecycle.error = null;
+	try {
+		const result = await _enqueuePresetPhase(id, work);
+		performancePresetLifecycle.phase = 'awaiting_audio';
+		return result;
+	} catch (error) {
+		_recordPresetFailure(id, error);
+		throw error;
+	}
+}
+
+export async function startPerformancePresetTransaction<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	_assertPresetId(id);
+	if (_presetClaim?.id !== id || performancePresetLifecycle.phase !== 'awaiting_audio') {
+		throw new Error(`performance preset ${id} is not prepared and awaiting audio activation`);
+	}
+	performancePresetLifecycle.phase = 'starting';
+	try {
+		const result = await _enqueuePresetPhase(id, work);
+		const state = queryPerformanceState();
+		if (state.command_pending || state.command_queued !== 0) {
+			throw new Error(`performance preset ${id} start returned before the command queue became idle`);
+		}
+		_releasePreset(id, 'ready', null);
+		return result;
+	} catch (error) {
+		_recordPresetFailure(id, error);
+		throw error;
+	}
+}
+
+export async function stopPerformancePresetTransaction<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	_assertPresetId(id);
+	if (_presetClaim !== null) {
+		throw new Error(
+			`performance preset ${_presetClaim.id} already owns the lifecycle lock at ` +
+				`${performancePresetLifecycle.phase}`
+		);
+	}
+	if (performancePresetLifecycle.id !== id || performancePresetLifecycle.phase !== 'ready') {
+		throw new Error(`performance preset ${id} is not ready for stop cleanup`);
+	}
+	_presetClaim = { id };
+	performancePresetLifecycle.phase = 'queued';
+	performancePresetLifecycle.active = true;
+	performancePresetLifecycle.error = null;
+	try {
+		const result = await _enqueuePresetPhase(id, work);
+		const state = queryPerformanceState();
+		if (state.command_pending || state.command_queued !== 0) {
+			throw new Error(`performance preset ${id} stop returned before the command queue became idle`);
+		}
+		_releasePreset(id, 'idle', null);
+		return result;
+	} catch (error) {
+		_recordPresetFailure(id, error);
+		throw error;
+	}
+}
+
+export function abortPreparedPerformancePreset(id: string, reason: string): void {
+	_assertPresetId(id);
+	if (_presetClaim?.id !== id || performancePresetLifecycle.phase !== 'awaiting_audio') return;
+	const error = new Error(`performance preset ${id} aborted: ${reason}`);
+	_persistCommandError(null, error);
+	_releasePreset(id, 'error', _errorMessage(error));
+}
+
 async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 	let command: PerformanceCommand;
 	try {
@@ -436,6 +625,14 @@ async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (_presetClaim !== null) {
+		const error = new Error(
+			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
+				`command ${command.type} rejected`
+		);
+		_persistCommandError(deck, error);
+		throw error;
+	}
 	const scopes = performanceCommandQueueScopes(command);
 	if (scopes === null) {
 		performanceCommandStatus.last_error = null;

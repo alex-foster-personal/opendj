@@ -8,8 +8,8 @@
 	 * active/blue statically), LINK, PAD/MIDI dim labels, info icon,
 	 * gear, refresh arrow. The yellow Free badge is static chrome.
 	 *
-	 * The live slider dispatches through the same browser IPC command used by
-	 * automation and reads the engine-owned mixer state back.
+	 * Master volume renders the shared mixer read model and dispatches through
+	 * the same typed command path used by browser IPC and presets.
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
@@ -30,7 +30,6 @@
 		{ x: 12.2, half: 0.65 }
 	];
 
-	const master = $derived(mixerState.master);
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
@@ -78,10 +77,10 @@
 	function handleMasterKeyDown(e: KeyboardEvent): void {
 		if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
 			e.preventDefault();
-			_setMaster(_clamp01(master + 0.02));
+			_setMaster(_clamp01(mixerState.master + 0.02));
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
 			e.preventDefault();
-			_setMaster(_clamp01(master - 0.02));
+			_setMaster(_clamp01(mixerState.master - 0.02));
 		}
 	}
 </script>
@@ -213,7 +212,7 @@
 		aria-orientation="horizontal"
 		aria-valuemin={0}
 		aria-valuemax={1}
-		aria-valuenow={master}
+		aria-valuenow={mixerState.master}
 		tabindex="0"
 		onpointerdown={handleMasterDown}
 		onpointermove={handleMasterMove}
@@ -221,8 +220,8 @@
 		onkeydown={handleMasterKeyDown}
 	>
 		<div class="master-track"></div>
-		<div class="master-fill" style={`width: ${master * 100}%;`}></div>
-		<div class="master-thumb" style={`left: calc(${master * 100}% - 4px);`}></div>
+		<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 	</div>
 
 	<!-- clock: REAL, local time HH:MM -->

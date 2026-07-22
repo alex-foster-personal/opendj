@@ -428,7 +428,7 @@ test('revisioned natural-end stop retires the active schedule before replay curs
 	assert.equal(replayCursor.audible, false);
 });
 
-test('zero output timestamp preserves the frozen cursor and pending start', () => {
+test('zero context output timestamps preserve the frozen cursor and pending start', () => {
 	const timeline = audio.createPresentedTransportTimeline(0.5);
 	audio.setPausedTransportTimelineCursor(timeline, 0.75, 10);
 	audio.acknowledgePresentedTransportSchedule(timeline, {
@@ -452,6 +452,44 @@ test('zero output timestamp preserves the frozen cursor and pending start', () =
 	assert.equal(observation.audible, false);
 	assert.equal(observation.transport_pending, true);
 	assert.equal(timeline.presented_revision, 0);
+
+	const warmupObservation = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 0, performanceTime: 4123.5 },
+		10
+	);
+	assert.equal(warmupObservation.accepted, false);
+	assert.equal(warmupObservation.output_started, false);
+	assert.equal(warmupObservation.presentation_context_time_s, null);
+	assert.equal(warmupObservation.position_sec, 0.75);
+	assert.equal(warmupObservation.audible, false);
+	assert.equal(warmupObservation.transport_pending, true);
+	assert.equal(timeline.presented_revision, 0);
+});
+
+test('positive context output timestamp presents even before performance correlation is available', () => {
+	const timeline = audio.createPresentedTransportTimeline(0.5);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 1,
+		startPositionSec: 0.5,
+		tempoRatio: 1
+	});
+
+	const observation = audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 1.25, performanceTime: 0 },
+		10
+	);
+	assert.equal(observation.accepted, true);
+	assert.equal(observation.output_started, true);
+	assert.equal(observation.presentation_context_time_s, 1.25);
+	assert.equal(observation.position_sec, 0.75);
+	assert.equal(observation.audible, true);
+	assert.equal(observation.transport_pending, false);
+	assert.equal(observation.presented_revision, 1);
 });
 
 test('stale output observations and late old revisions never rewind presented state', () => {
@@ -496,13 +534,15 @@ test('stale output observations and late old revisions never rewind presented st
 	assert.equal(regressingContext.accepted, false);
 	assert.equal(regressingContext.position_sec, 3);
 	assert.equal(regressingContext.presented_revision, 2);
-	const regressingPerformance = audio.observePresentedTransportTimeline(
+	const laterContextWithResetCorrelation = audio.observePresentedTransportTimeline(
 		timeline,
-		{ contextTime: 4, performanceTime: 2500 },
+		{ contextTime: 4, performanceTime: 0 },
 		20
 	);
-	assert.equal(regressingPerformance.accepted, false);
-	assert.equal(regressingPerformance.position_sec, 3);
+	assert.equal(laterContextWithResetCorrelation.accepted, true);
+	assert.equal(laterContextWithResetCorrelation.output_started, true);
+	assert.equal(laterContextWithResetCorrelation.position_sec, 4);
+	assert.equal(laterContextWithResetCorrelation.presented_revision, 2);
 	assert.throws(
 		() =>
 			audio.observePresentedTransportTimeline(
@@ -511,15 +551,6 @@ test('stale output observations and late old revisions never rewind presented st
 				20
 			),
 		/output timestamp/i
-	);
-	assert.throws(
-		() =>
-			audio.observePresentedTransportTimeline(
-				timeline,
-				{ contextTime: 0, performanceTime: 4000 },
-				20
-			),
-		/zero timestamp/i
 	);
 });
 
