@@ -5,11 +5,23 @@ POST /api/v1/voice/probe, the destructive-intent block, the grammar-miss
 response, and the 503 voice_probe_unavailable fallback when apps/voice
 cannot be imported.
 """
+
 from __future__ import annotations
 
 import pytest
 
+from apps.voice import settings
 from apps.webui.server.routes import voice_probe
+
+
+@pytest.fixture(autouse=True)
+def _isolated_voice_settings(tmp_path, monkeypatch):
+    settings_path = tmp_path / "voice-settings.sqlite"
+    monkeypatch.setattr(
+        voice_probe,
+        "_make_settings_store",
+        lambda: settings.SettingsStore(path=settings_path),
+    )
 
 
 def test_search_intent_dispatches_and_reports_result(client):
@@ -38,6 +50,44 @@ def test_advance_queue_intent(client):
     body = r.json()
     assert body["intent"] == "ADVANCE_QUEUE"
     assert body["blocked"] is False
+
+
+def test_mute_persists_across_probe_requests(client):
+    muted = client.post("/api/v1/voice/probe", json={"text": "mute voice"})
+    blocked = client.post("/api/v1/voice/probe", json={"text": "find daft punk"})
+
+    assert muted.status_code == 200
+    assert muted.json()["reply"] == "muted"
+    assert blocked.status_code == 200
+    assert blocked.json()["reply"] == "muted"
+
+
+def test_unmute_clears_persisted_probe_state(client):
+    client.post("/api/v1/voice/probe", json={"text": "mute voice"})
+
+    unmuted = client.post("/api/v1/voice/probe", json={"text": "unmute voice"})
+    search = client.post("/api/v1/voice/probe", json={"text": "find daft punk"})
+
+    assert unmuted.json()["reply"] == "unmuted"
+    assert search.json()["reply"] == "search:daft punk"
+
+
+def test_mute_bypasses_persisted_debounce(client):
+    search = client.post("/api/v1/voice/probe", json={"text": "find daft punk"})
+    muted = client.post("/api/v1/voice/probe", json={"text": "mute voice"})
+
+    assert search.json()["reply"] == "search:daft punk"
+    assert muted.json()["reply"] == "muted"
+
+
+def test_debounce_persists_across_probe_requests(client, monkeypatch):
+    monkeypatch.setenv("VOICE_DEBOUNCE_S", "60")
+
+    first = client.post("/api/v1/voice/probe", json={"text": "find daft punk"})
+    second = client.post("/api/v1/voice/probe", json={"text": "next track"})
+
+    assert first.json()["reply"] == "search:daft punk"
+    assert second.json()["reply"] == "debounced"
 
 
 @pytest.mark.parametrize(

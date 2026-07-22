@@ -7,8 +7,10 @@ daemon. Destructive intents (SAVE_CUE, RATE_TRACK) are never dispatched
 from this endpoint - they are reported blocked instead, matching the
 "probe, no mic" contract described in apps/voice/README.md.
 """
+
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from fastapi import APIRouter
@@ -18,6 +20,7 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/voice", tags=["voice"])
 
 DESTRUCTIVE_INTENTS: frozenset[str] = frozenset({"SAVE_CUE", "RATE_TRACK"})
+_VOICE_STATE_LOCK = threading.Lock()
 
 
 class VoiceProbeRequest(BaseModel):
@@ -45,6 +48,12 @@ def _import_voice_stack():
     return grammar, actions, bus, ctx_mod, tts
 
 
+def _make_settings_store():
+    from apps.voice import settings
+
+    return settings.SettingsStore()
+
+
 @router.post("/probe", response_model=VoiceProbeResponse)
 def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
     try:
@@ -63,7 +72,9 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
 
     intent = grammar.parse(body.text)
     if intent is None:
-        return VoiceProbeResponse(transcript=body.text, intent=None, reason="grammar_miss")
+        return VoiceProbeResponse(
+            transcript=body.text, intent=None, reason="grammar_miss"
+        )
 
     if intent.kind in DESTRUCTIVE_INTENTS:
         return VoiceProbeResponse(
@@ -77,13 +88,19 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
             ),
         )
 
-    # Fresh, disposable context per request: stub bus (JSONL, not the
-    # shared state DB) + a recording TTS double, so probing never writes
-    # to production state or shells out to a real TTS backend.
-    event_bus = bus.make_bus(force_stub=True)
-    ctx = ctx_mod.VoiceContext.from_env(event_bus=event_bus, tts_engine=tts.RecordingTts())
-    registry = actions.default_registry()
-    response = registry.dispatch(intent, ctx)
+    # The event bus and TTS remain side-effect-free probe adapters, while the
+    # existing settings store carries mute/debounce safety state across typed
+    # and mic requests. Serialize the load-dispatch-save transaction so two
+    # local requests cannot both bypass the same debounce window.
+    with _VOICE_STATE_LOCK:
+        event_bus = bus.make_bus(force_stub=True)
+        ctx = ctx_mod.VoiceContext.from_env(
+            event_bus=event_bus,
+            tts_engine=tts.RecordingTts(),
+            settings_store=_make_settings_store(),
+        )
+        registry = actions.default_registry()
+        response = registry.dispatch(intent, ctx)
 
     return VoiceProbeResponse(
         transcript=body.text,

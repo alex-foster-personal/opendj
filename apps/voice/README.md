@@ -165,10 +165,9 @@ See `apps/voice/MODELS.md` for checksums.
 - **Phase 12 transition schema not finalised.** `SAVE_CUE` reads a
   `transition` event kind from the bus; if Phase 12 ships a
   different key, a compatibility shim will be needed.
-- **Probe state is request-local.** The inherited text-command endpoint creates
-  a fresh voice context for each request, so mute and debounce state are not
-  durable across mic submissions. The parity integrator must move those rules
-  into the shared command service before advertising persistent voice mute.
+- **Mute and debounce share durable state.** Typed and mic probe requests load
+  `mute_until` and `last_dispatch_at` from the voice settings store. Mute,
+  unmute, and successful dispatches write through before the request returns.
 
 ## Files
 

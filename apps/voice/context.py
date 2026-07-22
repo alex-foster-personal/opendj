@@ -4,6 +4,7 @@ Holds mute state, debounce timers, the active event bus + TTS engine,
 and the destructive-mode flag. Instantiated at daemon startup and
 threaded through every handler call.
 """
+
 from __future__ import annotations
 
 import os
@@ -12,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.voice import bus as bus_mod
+from apps.voice import settings as settings_mod
 from apps.voice import tts as tts_mod
 
 
@@ -32,6 +34,7 @@ class VoiceContext:
     debounce_s: float = DEFAULT_DEBOUNCE_S
     mute_duration_s: float = DEFAULT_MUTE_DURATION_S
     settings: dict[str, Any] = field(default_factory=dict)
+    settings_store: settings_mod.SettingsStore | None = None
 
     @classmethod
     def from_env(
@@ -39,6 +42,7 @@ class VoiceContext:
         env: dict[str, str] | None = None,
         event_bus: Any | None = None,
         tts_engine: Any | None = None,
+        settings_store: settings_mod.SettingsStore | None = None,
     ) -> "VoiceContext":
         env = env if env is not None else dict(os.environ)
         bus_impl = event_bus if event_bus is not None else bus_mod.make_bus()
@@ -63,23 +67,43 @@ class VoiceContext:
             event_bus=bus_impl,
             tts_engine=tts_impl,
             destructive=destructive_flag,
+            mute_until=(
+                settings_mod.load_mute_until(settings_store)
+                if settings_store is not None
+                else None
+            ),
+            last_dispatch_at=(
+                settings_mod.load_last_dispatch_at(settings_store)
+                if settings_store is not None
+                else None
+            ),
             debounce_s=debounce,
             mute_duration_s=mute_duration,
+            settings_store=settings_store,
         )
 
     def is_muted(self, now: float | None = None) -> bool:
         if self.mute_until is None:
             return False
         now = now if now is not None else time.time()
-        return now < self.mute_until
+        if now < self.mute_until:
+            return True
+        self.mute_until = None
+        if self.settings_store is not None:
+            settings_mod.save_mute_until(self.settings_store, None)
+        return False
 
     def mute(self, now: float | None = None) -> float:
         now = now if now is not None else time.time()
         self.mute_until = now + self.mute_duration_s
+        if self.settings_store is not None:
+            settings_mod.save_mute_until(self.settings_store, self.mute_until)
         return self.mute_until
 
     def unmute(self) -> None:
         self.mute_until = None
+        if self.settings_store is not None:
+            settings_mod.save_mute_until(self.settings_store, None)
 
     def debounced(self, now: float | None = None) -> bool:
         if self.last_dispatch_at is None:
@@ -89,3 +113,13 @@ class VoiceContext:
 
     def mark_dispatch(self, now: float | None = None) -> None:
         self.last_dispatch_at = now if now is not None else time.time()
+        if self.settings_store is not None:
+            settings_mod.save_last_dispatch_at(
+                self.settings_store,
+                self.last_dispatch_at,
+            )
+
+    def clear_dispatch(self) -> None:
+        self.last_dispatch_at = None
+        if self.settings_store is not None:
+            settings_mod.save_last_dispatch_at(self.settings_store, None)

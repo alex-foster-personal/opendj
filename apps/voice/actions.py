@@ -8,6 +8,7 @@ debounce / destructive mode), (b) publishes an event on the bus, and
 returns True. Plan 3 wires the confirmation loop; Plan 2 always takes
 the ``dry_run: true`` branch.
 """
+
 from __future__ import annotations
 
 import time
@@ -30,6 +31,7 @@ class Response:
 
 
 Handler = Callable[[Intent, VoiceContext], Response]
+DEBOUNCE_EXEMPT_INTENTS: frozenset[str] = frozenset({"MUTE_VOICE", "UNMUTE_VOICE"})
 
 
 def _publish(
@@ -77,7 +79,9 @@ def handle_search(intent: Intent, ctx: VoiceContext) -> Response:
         slots={"query": query},
         transcript=intent.raw_transcript,
         confidence=intent.confidence,
-        results=[{"stable_id": r.get("stable_id"), "title": r.get("title")} for r in results],
+        results=[
+            {"stable_id": r.get("stable_id"), "title": r.get("title")} for r in results
+        ],
     )
     _speak(ctx, f"searching for {query}")
     ctx.mark_dispatch()
@@ -160,6 +164,7 @@ def handle_mute_voice(intent: Intent, ctx: VoiceContext) -> Response:
 
 def handle_unmute_voice(intent: Intent, ctx: VoiceContext) -> Response:
     ctx.unmute()
+    ctx.clear_dispatch()
     _speak(ctx, "voice active")
     eid = _publish(
         ctx,
@@ -167,7 +172,6 @@ def handle_unmute_voice(intent: Intent, ctx: VoiceContext) -> Response:
         slots={},
         transcript=intent.raw_transcript,
     )
-    ctx.mark_dispatch()
     return Response(reply="unmuted", published=True, event_id=eid)
 
 
@@ -182,7 +186,9 @@ def _latest_deck_state(ctx: VoiceContext) -> dict[str, Any] | None:
     return recent[-1] if recent else None
 
 
-def _latest_transition(ctx: VoiceContext, window_s: int = TRANSITION_RECENT_WINDOW_S) -> dict[str, Any] | None:
+def _latest_transition(
+    ctx: VoiceContext, window_s: int = TRANSITION_RECENT_WINDOW_S
+) -> dict[str, Any] | None:
     recent = ctx.event_bus.recent("transition", limit=1)
     if not recent:
         return None
@@ -339,8 +345,10 @@ class Registry:
         # Exceptions: UNMUTE_VOICE must work while muted.
         if ctx.is_muted() and intent.kind != "UNMUTE_VOICE":
             return Response(reply="muted", published=False, meta={"muted": True})
-        if ctx.debounced():
-            return Response(reply="debounced", published=False, meta={"debounced": True})
+        if intent.kind not in DEBOUNCE_EXEMPT_INTENTS and ctx.debounced():
+            return Response(
+                reply="debounced", published=False, meta={"debounced": True}
+            )
         handler = self.handlers.get(intent.kind)
         if handler is None:
             return Response(reply=f"no_handler:{intent.kind}", published=False)

@@ -1,4 +1,5 @@
 """Unit tests for apps.voice.settings (VOICE-01)."""
+
 from __future__ import annotations
 
 import pytest
@@ -71,6 +72,13 @@ def test_load_and_save_mute_until_helpers(tmp_path):
     assert settings.load_mute_until(s) == 1234.5
     settings.save_mute_until(s, None)
     assert settings.load_mute_until(s) is None
+
+
+def test_load_and_save_last_dispatch_at_helpers(tmp_path):
+    store = settings.SettingsStore(path=tmp_path / "voice.sqlite")
+    assert settings.load_last_dispatch_at(store) is None
+    settings.save_last_dispatch_at(store, 1234.5)
+    assert settings.load_last_dispatch_at(store) == 1234.5
 
 
 def test_malformed_float_falls_back(tmp_path):

@@ -9,6 +9,7 @@ We write to ``data/voice/settings.sqlite`` by default. If the Phase 5
 state layer ships a shared SQLite handle later, we can flip to that
 without changing the public API.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -18,9 +19,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-_DEFAULT_DB = (
-    Path(__file__).resolve().parents[2] / "data" / "voice" / "settings.sqlite"
-)
+_DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "voice" / "settings.sqlite"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
@@ -107,3 +106,18 @@ def save_mute_until(store: SettingsStore, mute_until: float | None) -> None:
         store.delete("mute_until")
     else:
         store.set("mute_until", float(mute_until))
+
+
+def load_last_dispatch_at(store: SettingsStore) -> float | None:
+    """Return the persisted last-dispatch epoch seconds, or ``None``."""
+    return store.get_float("last_dispatch_at")
+
+
+def save_last_dispatch_at(
+    store: SettingsStore,
+    last_dispatch_at: float | None,
+) -> None:
+    if last_dispatch_at is None:
+        store.delete("last_dispatch_at")
+    else:
+        store.set("last_dispatch_at", float(last_dispatch_at))
