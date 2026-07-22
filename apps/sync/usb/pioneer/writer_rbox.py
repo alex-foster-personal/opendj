@@ -234,8 +234,11 @@ def write_onelibrary(
     if not template.is_file():
         raise OneLibraryWriteError(f"Template OneLibrary not found: {template}")
     if output.exists() and not overwrite:
+        raise OneLibraryWriteError(f"Output path exists and overwrite=False: {output}")
+
+    if any(part == "fixtures" for part in output.parts) and "tests" in output.parts:
         raise OneLibraryWriteError(
-            f"Output path exists and overwrite=False: {output}"
+            f"refusing output_path under tests/fixtures: {output}"
         )
 
     # --- Fixture-safety guards (defense-in-depth) --------------------

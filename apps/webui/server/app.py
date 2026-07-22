@@ -39,6 +39,7 @@ from .routes import settings as settings_routes
 from .routes import smartlists as smartlists_routes
 from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
+from .routes import usb_export as usb_export_routes
 from .routes import voice_probe as voice_probe_routes
 
 log = logging.getLogger(__name__)
@@ -158,6 +159,7 @@ def create_app(
     app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
+    app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)
 
