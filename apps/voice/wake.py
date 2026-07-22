@@ -8,6 +8,7 @@ The real backends are imported lazily so this module loads on machines
 where the wheels are not installed. Unit tests use the ``StubBackend``
 below.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,6 +30,7 @@ class WakeWord(Protocol):
     """
 
     threshold: float
+    frame_samples: int
 
     def detect(self, frame: bytes) -> float:  # pragma: no cover - protocol
         ...
@@ -49,6 +51,7 @@ class StubBackend:
     always: bool = False
     threshold: float = DEFAULT_WAKE_THRESHOLD
     _fired: bool = False
+    frame_samples: int = 480
 
     def detect(self, frame: bytes) -> float:
         if self.always:
@@ -69,6 +72,8 @@ class OpenWakeWordBackend:
     bundled at ``apps/voice/models/hey_dj.onnx`` when available; until we
     ship that model we allow ``VOICE_WAKE_MODEL_PATH`` to override.
     """
+
+    frame_samples: int = 1_280
 
     def __init__(
         self,
@@ -118,6 +123,8 @@ class PorcupineBackend:
     file. Raises a clear message if either is missing.
     """
 
+    frame_samples: int = 512
+
     def __init__(
         self,
         keyword_path: str | None = None,
@@ -140,15 +147,12 @@ class PorcupineBackend:
 
         kp = keyword_path or os.environ.get("VOICE_WAKE_KEYWORD_PATH")
         if kp:
-            self._porcupine = pvporcupine.create(
-                access_key=key, keyword_paths=[kp]
-            )
+            self._porcupine = pvporcupine.create(access_key=key, keyword_paths=[kp])
         else:
             # Porcupine ships a few prebuilt keywords; "computer" is a
             # decent fallback for smoke-testing.
-            self._porcupine = pvporcupine.create(
-                access_key=key, keywords=["computer"]
-            )
+            self._porcupine = pvporcupine.create(access_key=key, keywords=["computer"])
+        self.frame_samples = int(self._porcupine.frame_length)
         self.threshold = threshold
 
     def detect(self, frame: bytes) -> float:  # pragma: no cover - needs wheel
@@ -178,12 +182,18 @@ def make_backend(env: dict[str, str] | None = None) -> WakeWord:
     if backend == "stub":
         return StubBackend(confidence=1.0, always=False, threshold=threshold)
     if backend == "porcupine":
-        return PorcupineBackend(threshold=threshold)
+        return PorcupineBackend(
+            keyword_path=env.get("VOICE_WAKE_KEYWORD_PATH"),
+            access_key=env.get("PICOVOICE_ACCESS_KEY"),
+            threshold=threshold,
+        )
     if backend == "openwakeword":
-        return OpenWakeWordBackend(threshold=threshold)
+        return OpenWakeWordBackend(
+            model_path=env.get("VOICE_WAKE_MODEL_PATH"),
+            threshold=threshold,
+        )
     raise ValueError(
-        f"Unknown WAKE_BACKEND={backend!r}; expected one of "
-        "openwakeword/porcupine/stub"
+        f"Unknown WAKE_BACKEND={backend!r}; expected one of openwakeword/porcupine/stub"
     )
 
 
