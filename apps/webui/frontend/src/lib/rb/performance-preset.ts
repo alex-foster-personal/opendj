@@ -5,6 +5,11 @@
  * ready while transport is stopped before any deck configuration or playback
  * command is emitted. Commands use the same typed dispatcher as the UI and
  * browser IPC, so a route preload cannot create a private control path.
+ *
+ * The output stays hard-muted while individual transports are staged. One
+ * same-ratio master tempo command then makes the engine reschedule the master
+ * and every synced follower at a shared horizon. Requested volume is restored
+ * only after that common revision reaches the audio output.
  */
 
 import type {
@@ -18,6 +23,7 @@ const LOOP_BOUNDARY_TOLERANCE_MS = 0.01;
 const DEFAULT_AUTOPLAY_PROBE_TIMEOUT_MS = 750;
 const DEFAULT_PRESENTATION_TIMEOUT_MS = 30_000;
 const DEFAULT_STOP_TIMEOUT_MS = 30_000;
+const MUTED_MASTER_VOLUME = 0;
 
 export type PerformancePresetPhase =
 	| 'loading'
@@ -75,6 +81,8 @@ export interface PerformancePresetPlan {
 	load: readonly PerformanceCommand[];
 	configure: readonly PerformanceCommand[];
 	start: readonly PerformanceCommand[];
+	synchronize: PerformanceCommand;
+	unmute: PerformanceCommand;
 }
 
 export class PerformancePresetPendingError extends Error {
@@ -333,9 +341,10 @@ export function buildPerformancePresetPlan(preset: PerformancePreset): Performan
 	if (playbackDecks.some((deck) => deck === undefined)) {
 		throw new Error(`validated preset has no master deck definition`);
 	}
+	const master = playbackDecks[0]!;
 	return {
 		load: [
-			{ type: 'master_volume', value: 0 },
+			{ type: 'master_volume', value: MUTED_MASTER_VOLUME },
 			...decks.map((definition) => ({
 				type: 'load' as const,
 				deck: definition.deck,
@@ -348,19 +357,26 @@ export function buildPerformancePresetPlan(preset: PerformancePreset): Performan
 				_mixerChannelCommands(deck, preset.mixer.channels[deck])
 			),
 			{ type: 'crossfader', value: preset.mixer.crossfader },
-			{ type: 'master', deck: preset.master_deck },
-			{ type: 'master_volume', value: preset.mixer.master }
+			{ type: 'master', deck: preset.master_deck }
 		],
 		start: playbackDecks.map((definition) => ({
 				type: 'play' as const,
 				deck: definition!.deck,
 				playing: true
-			}))
+			})),
+		synchronize: { type: 'tempo', deck: master.deck, ratio: master.tempo_ratio },
+		unmute: { type: 'master_volume', value: preset.mixer.master }
 	};
 }
 
 function _sameNumber(actual: number, expected: number): boolean {
 	return Math.abs(actual - expected) <= LOOP_BOUNDARY_TOLERANCE_MS;
+}
+
+function _assertPresetOutputMuted(state: PerformanceState): void {
+	if (!_sameNumber(state.mixer.master, MUTED_MASTER_VOLUME)) {
+		throw new Error(`performance preset output must stay hard-muted before shared presentation`);
+	}
 }
 
 function _assertPresetDeckStaticState(
@@ -407,8 +423,12 @@ function _assertPresetDeckStaticState(
 	}
 }
 
-function _assertPresetMixer(preset: PerformancePreset, state: PerformanceState): void {
-	if (!_sameNumber(state.mixer.master, preset.mixer.master)) {
+function _assertPresetMixer(
+	preset: PerformancePreset,
+	state: PerformanceState,
+	expectedMasterVolume: number = preset.mixer.master
+): void {
+	if (!_sameNumber(state.mixer.master, expectedMasterVolume)) {
 		throw new Error(`configured master volume does not match preset`);
 	} else if (!_sameNumber(state.mixer.crossfader, preset.mixer.crossfader)) {
 		throw new Error(`configured crossfader does not match preset`);
@@ -434,7 +454,7 @@ export function assertPerformancePresetConfigured(
 	state: PerformanceState
 ): void {
 	_assertPresetDeckStaticState(preset, state, true);
-	_assertPresetMixer(preset, state);
+	_assertPresetMixer(preset, state, MUTED_MASTER_VOLUME);
 	if (state.master_deck !== preset.master_deck) {
 		throw new Error(`configured master deck does not match preset`);
 	} else if (state.last_error !== null) {
@@ -633,23 +653,50 @@ export async function startPerformancePreset(
 	driver.setPhase('starting');
 	let finalState: PerformanceState | null = null;
 	try {
+		_assertPresetOutputMuted(driver.query());
 		for (const command of plan.start) {
 			if (command.type !== 'play' || !command.playing) {
 				throw new Error(`performance preset start plan contains a non-start command`);
 			}
+			_assertPresetOutputMuted(driver.query());
 			assertCurrent();
 			finalState = await driver.dispatch(command);
 			assertCurrent();
+			_assertPresetOutputMuted(driver.query());
 		}
 		if (finalState === null) throw new Error(`performance preset emitted no playback commands`);
+		assertCurrent();
+		await driver.dispatch(plan.synchronize);
+		assertCurrent();
+		_assertPresetOutputMuted(driver.query());
+		const mutedPreset: PerformancePreset = {
+			...preset,
+			mixer: { ...preset.mixer, master: MUTED_MASTER_VOLUME }
+		};
+		await waitForPerformancePresetPresented(mutedPreset, driver.query, assertCurrent);
+		assertCurrent();
+		finalState = await driver.dispatch(plan.unmute);
+		assertCurrent();
 		return await waitForPerformancePresetPresented(preset, driver.query, assertCurrent);
 	} catch (startError) {
+		const rollbackErrors: unknown[] = [];
+		try {
+			if (!_sameNumber(driver.query().mixer.master, MUTED_MASTER_VOLUME)) {
+				await driver.dispatch({ type: 'master_volume', value: MUTED_MASTER_VOLUME });
+			}
+			_assertPresetOutputMuted(driver.query());
+		} catch (muteError) {
+			rollbackErrors.push(muteError);
+		}
 		try {
 			await _stopPerformancePresetDecks(preset, driver);
-		} catch (rollbackError) {
+		} catch (stopError) {
+			rollbackErrors.push(stopError);
+		}
+		if (rollbackErrors.length > 0) {
 			throw new AggregateError(
-				[startError, rollbackError],
-				`performance preset start failed and its full-stop rollback failed`,
+				[startError, ...rollbackErrors],
+				`performance preset start failed and its mute/full-stop rollback failed`,
 				{ cause: startError }
 			);
 		}
