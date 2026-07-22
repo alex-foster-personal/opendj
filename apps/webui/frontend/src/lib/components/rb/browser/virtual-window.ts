@@ -92,10 +92,22 @@ export async function fetchAllPages<T>(
 	opts: { maxPages?: number } = {}
 ): Promise<T[]> {
 	const maxPages = opts.maxPages ?? 20000;
+	if (!Number.isSafeInteger(maxPages) || maxPages <= 0) {
+		throw new Error(`fetchAllPages: maxPages must be a positive integer, got ${maxPages}`);
+	}
 	const out: T[] = [];
 	let cursor: string | undefined;
 	let pages = 0;
+	const seenCursors = new Set<string>();
 	for (;;) {
+		if (cursor !== undefined) {
+			if (seenCursors.has(cursor)) {
+				throw new Error(
+					`fetchAllPages: repeated cursor ${JSON.stringify(cursor)} - likely a pagination bug`
+				);
+			}
+			seenCursors.add(cursor);
+		}
 		const page = await fetchPage(cursor);
 		out.push(...page.items);
 		pages += 1;

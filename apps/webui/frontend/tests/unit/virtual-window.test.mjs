@@ -169,10 +169,28 @@ test('fetchAllPages: an empty result set is a zero-length array, not an error', 
 });
 
 test('fetchAllPages: exceeding the safety ceiling fails loudly instead of truncating silently', async () => {
+	let calls = 0;
 	await assert.rejects(
-		() => mod.fetchAllPages(async () => _page([1], 'always-more'), { maxPages: 3 }),
+		() =>
+			mod.fetchAllPages(async () => {
+				calls += 1;
+				return _page([1], `cursor-${calls}`);
+			}, { maxPages: 3 }),
 		/exceeded 3 pages/
 	);
+});
+
+test('fetchAllPages: a repeated cursor fails before it can amplify requests and memory', async () => {
+	let calls = 0;
+	await assert.rejects(
+		() =>
+			mod.fetchAllPages(async () => {
+				calls += 1;
+				return _page([calls], 'stuck-cursor');
+			}),
+		/repeated cursor/
+	);
+	assert.equal(calls, 2);
 });
 
 test('fetchAllPages: a real library exactly N * pageSize long does not falsely trip the ceiling', async () => {
