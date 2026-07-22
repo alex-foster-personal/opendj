@@ -7,7 +7,7 @@
 	 * matrices (real) either side of the horizontal crossfader (real).
 	 *
 	 * Engine wiring: controls render the shared mixer read model and issue
-	 * changes through the same serialized command dispatcher as browser IPC.
+	 * changes through the same typed command dispatcher as browser IPC.
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */

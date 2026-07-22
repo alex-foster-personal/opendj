@@ -28,9 +28,7 @@
 
 	const deck: DeckState = $derived(getDeckState(deckId));
 	const pitchRange: PitchRange = $derived(pitchRanges[deckId]);
-	const pending: boolean = $derived(
-		performanceCommandStatus.active || performanceCommandStatus.queued > 0
-	);
+	const pending: boolean = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
 	const controlError: string | null = $derived(
 		performanceCommandStatus.deck_errors[deckId] ?? deck.sync_error ?? deck.processor_error
 	);

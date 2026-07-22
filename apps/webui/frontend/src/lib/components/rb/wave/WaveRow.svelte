@@ -22,9 +22,7 @@
 	const { deckId }: { deckId: DeckId } = $props();
 
 	const deck = $derived(getDeckState(deckId));
-	const commandPending = $derived(
-		performanceCommandStatus.active || performanceCommandStatus.queued > 0
-	);
+	const commandPending = $derived(performanceCommandStatus.deck_pending[deckId] > 0);
 
 	// ---- anlz source: prefer the engine-populated payload; else our own
 	// cached /anlz fetch keyed by the deck's stable_id (deck-load event).
