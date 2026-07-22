@@ -56,8 +56,10 @@ def filter_candidates(
         if cand.stable_id == current_stable_id:
             trace.dropped_current += 1
             continue
-        # BPM window
-        if bpm_cur is not None and cand.bpm is not None and bpm_cur > 0:
+        # BPM window. bpm <= 0 means "unknown" in real libraries (matches
+        # apps.shared.harmonic.bpm_compatibility); skip the window check
+        # instead of dividing by zero - ranking scores those 0.0 anyway.
+        if bpm_cur is not None and cand.bpm is not None and bpm_cur > 0 and cand.bpm > 0:
             delta_pct = (max(bpm_cur, cand.bpm) / min(bpm_cur, cand.bpm) - 1.0) * 100.0
             if delta_pct > bpm_window_pct:
                 trace.dropped_bpm += 1

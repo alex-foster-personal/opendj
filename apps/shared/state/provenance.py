@@ -35,6 +35,11 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         "beatgrid",
         "beatgrid_anchors",
         "tempo_segments",
+        # webui-editable annotations (PATCH /tracks/{stable_id}). The webui
+        # daemon persists these through StateWriter.set_field with
+        # source='webui', confidence=1.0 so edits survive restart.
+        "notes",
+        "tags",
     }
 )
 

@@ -35,13 +35,19 @@
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import { setHideBrokenLinks, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import IconRail from './browser/IconRail.svelte';
 	import PaneTabs from './browser/PaneTabs.svelte';
 	import type { PaneTabInfo } from './browser/PaneTabs.svelte';
+	import {
+		createPaneStore,
+		makeClientRowProvider,
+		visibleRowsOf
+	} from './browser/pane-contract.svelte';
+	import type { BrowserRow, PaneStore, SortKey } from './browser/pane-contract.svelte';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
-	import type { BrowserRow, SortKey } from './browser/TrackTable.svelte';
 	import { getAnlzEntry } from './wave/anlz-cache.svelte';
 
 	// No virtualization at v1: the existing VirtualTable is library-page
@@ -50,37 +56,16 @@
 	const MAX_ROWS = 500;
 	const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 
-	interface PaneState {
-		playlist_id: string | null;
-		title: string;
-		rows: BrowserRow[];
-		loading: boolean;
-		error: string | null;
-		search: string;
-		selected_id: string | null;
-		sort_key: SortKey | null;
-		sort_dir: 1 | -1;
-		truncated: boolean;
-		load_seq: number;
-	}
-
-	function _blankPane(): PaneState {
-		return {
-			playlist_id: null,
-			title: 'blank list',
-			rows: [],
-			loading: false,
-			error: null,
-			search: '',
-			selected_id: null,
-			sort_key: null,
-			sort_dir: 1,
-			truncated: false,
-			load_seq: 0
-		};
-	}
-
-	let panes = $state<PaneState[]>([_blankPane(), _blankPane(), _blankPane(), _blankPane()]);
+	// Pane state lives in the typed contract (pane-contract.svelte.ts):
+	// 4 independent PaneStore instances - selection, search, sort, and
+	// scroll cursor per pane survive tab switches. Only the active pane
+	// is mounted (one TrackTable) - a deliberate perf choice, kept.
+	const panes: PaneStore[] = [
+		createPaneStore(),
+		createPaneStore(),
+		createPaneStore(),
+		createPaneStore()
+	];
 	let activePane = $state(0);
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
 	let allTracksCount = $state<number | null>(null);
@@ -146,12 +131,13 @@
 			})
 		)
 	);
-	const visibleRows = $derived(
-		_sort(
-			_filter(pane.rows, pane.search, uiPrefs.hide_broken_links),
-			pane.sort_key,
-			pane.sort_dir
-		)
+	const visibleRows = $derived(visibleRowsOf(pane, uiPrefs.hide_broken_links));
+	// Read contract handed to TrackTable (getters stay reactive through
+	// visibleRows/pane). The virtualization lane replaces THIS provider,
+	// not TrackTable's props.
+	const provider = makeClientRowProvider(
+		() => visibleRows,
+		() => pane.truncated
 	);
 	const emptyMessage = $derived.by((): string | null => {
 		if (pane.loading) return 'loading...';
@@ -185,28 +171,19 @@
 		void _loadPane(panes[activePane], node);
 	}
 
-	async function _loadPane(p: PaneState, node: PlaylistNode): Promise<void> {
-		const seq = ++p.load_seq; // stale-response guard for rapid re-selection
-		p.playlist_id = node.playlist_id;
-		p.title = node.name;
-		p.rows = [];
-		p.loading = true;
-		p.error = null;
-		p.selected_id = null;
-		p.truncated = false;
+	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
+		// beginLoad returns the stale-response token for rapid re-selection;
+		// completeLoad/failLoad no-op when a newer load superseded this one.
+		const seq = p.beginLoad(node.playlist_id, node.name);
 		try {
 			const result =
 				node.kind === 'all_tracks'
 					? await _fetchAllRows()
 					: await _fetchPlaylistRows(node.playlist_id);
-			if (p.load_seq !== seq) return; // superseded by a newer selection
-			p.rows = result.rows;
-			p.truncated = result.truncated;
+			p.completeLoad(seq, result.rows, result.truncated);
 		} catch (exc) {
-			if (p.load_seq === seq) p.error = String(exc);
+			p.failLoad(seq, String(exc));
 			pushToast(`playlist load failed: ${String(exc)}`, 'error');
-		} finally {
-			if (p.load_seq === seq) p.loading = false;
 		}
 	}
 
@@ -376,63 +353,19 @@
 	}
 
 	// ---------------------------------------------- client sort + search
-
-	function _filter(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
-		// FR-1: hide-broken applies before search so both compose.
-		const base = hideBroken ? rows.filter((r) => r.file_exists) : rows;
-		const q = query.trim().toLowerCase();
-		if (q === '') return base;
-		return base.filter((r) =>
-			[r.title, r.artist, r.comments, r.key, r.genre ?? r.rb_meta?.genre ?? null].some(
-				(field) => field !== null && field.toLowerCase().includes(q)
-			)
-		);
-	}
-
-	function _sortVal(row: BrowserRow, key: SortKey): string | number | null {
-		if (key === 'order') return row.order;
-		else if (key === 'title') return row.title;
-		else if (key === 'artist') return row.artist;
-		else if (key === 'key') return row.key;
-		else if (key === 'bpm') return row.bpm;
-		else if (key === 'rating') return row.rating;
-		else if (key === 'comments') return row.comments;
-		else if (key === 'time') return row.duration_ms;
-		else return row.genre ?? row.rb_meta?.genre ?? null;
-	}
-
-	function _sort(rows: BrowserRow[], key: SortKey | null, dir: 1 | -1): BrowserRow[] {
-		if (key === null) return rows;
-		return rows.slice().sort((a, b) => {
-			const av = _sortVal(a, key);
-			const bv = _sortVal(b, key);
-			if (av === null && bv === null) return 0;
-			else if (av === null) return 1; // nulls always last
-			else if (bv === null) return -1;
-			const base =
-				typeof av === 'string' && typeof bv === 'string'
-					? av.localeCompare(bv)
-					: (av as number) - (bv as number);
-			return base * dir;
-		});
-	}
+	// The filter/sort pipeline itself lives in the pane contract
+	// (filterRows/sortRows/visibleRowsOf) - lane members extend it there.
 
 	function sortBy(key: SortKey): void {
-		const p = panes[activePane];
-		if (p.sort_key === key) {
-			p.sort_dir = p.sort_dir === 1 ? -1 : 1;
-		} else {
-			p.sort_key = key;
-			p.sort_dir = 1;
-		}
+		panes[activePane].toggleSort(key);
 	}
 
 	function selectRow(row: BrowserRow): void {
-		panes[activePane].selected_id = row.stable_id;
+		panes[activePane].select(row.stable_id);
 	}
 
 	function setSearch(next: string): void {
-		panes[activePane].search = next;
+		panes[activePane].setSearch(next);
 	}
 </script>
 
@@ -517,20 +450,25 @@
 			</div>
 		</div>
 		<TrackTable
-			rows={visibleRows}
+			{provider}
 			selectedId={pane.selected_id}
 			{loadedIds}
 			{vocalsById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
-			truncated={pane.truncated}
 			{emptyMessage}
+			restoreKey={activePane}
+			scrollTop={pane.scroll_top}
+			onscrollcursor={(top) => panes[activePane].rememberScroll(top)}
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
 			onrate={rateRow}
 			onrowvisible={rowVisible}
 		/>
+		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track
+		     (recommended mount point, see SuggestNextStrip.svelte). -->
+		<SuggestNextStrip stableId={decks[1].stable_id} />
 	</div>
 	<div class="bottom-bar">
 		<button

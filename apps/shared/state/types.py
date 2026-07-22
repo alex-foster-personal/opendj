@@ -19,6 +19,7 @@ Source = typing.Literal[
     "open-dj-tool",
     "manual",
     "inferred",
+    "webui",
 ]
 
 # Mirror of the CHECK constraint in schema.py. Kept in sync by test.
