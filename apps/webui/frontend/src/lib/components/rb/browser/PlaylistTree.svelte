@@ -41,6 +41,15 @@
 	} = $props();
 
 	let mode = $state<'tree' | 'column'>('tree');
+	// ColumnBrowser mounts lazily on first activation (its onMount walks
+	// every /tracks cursor page - no point paying that for users who never
+	// open Column View) but then STAYS mounted (visibility toggled via CSS
+	// below, not {#if}/{:else}) so switching back to Tree View and back
+	// doesn't re-trigger the full-library fetch every time.
+	let columnMounted = $state(false);
+	$effect(() => {
+		if (mode === 'column') columnMounted = true;
+	});
 	let playlistsOpen = $state(true);
 	let smartlistsOpen = $state(true);
 	// Smartlists are self-fetched here (LANE smartlists-router) so this
@@ -92,12 +101,12 @@
 			Column View
 		</button>
 	</div>
-	{#if mode === 'column'}
-		<div class="tree-scroll column-mode">
+	{#if columnMounted}
+		<div class="tree-scroll column-mode" class:hidden={mode !== 'column'}>
 			<ColumnBrowser selectedId={trackSelectedId} {onselecttrack} {onloadtrack} />
 		</div>
-	{:else}
-	<div class="tree-scroll">
+	{/if}
+	<div class="tree-scroll" class:hidden={mode === 'column'}>
 		<div
 			class="row"
 			class:selected={selectedId === 'all'}
@@ -206,7 +215,6 @@
 			{/if}
 		{/if}
 	</div>
-	{/if}
 </div>
 
 <style>
@@ -250,6 +258,13 @@
 		/* ColumnBrowser owns its own column padding/scroll regions. */
 		padding: 0;
 		overflow: hidden;
+	}
+	/* Both tree-scroll blocks stay mounted once ColumnBrowser has first
+	 * activated (see columnMounted) - toggling visibility this way instead
+	 * of {#if}/{:else} keeps ColumnBrowser's fetched rows/selection alive
+	 * across repeated view switches. */
+	.tree-scroll.hidden {
+		display: none;
 	}
 	.row {
 		display: flex;
