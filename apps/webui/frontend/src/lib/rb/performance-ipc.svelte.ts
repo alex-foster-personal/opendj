@@ -24,8 +24,10 @@ import type {
 	DeckId,
 	EqBand,
 	LoopState,
+	MixerChannelState,
 	SyncMode
 } from '$lib/rb/types';
+import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
 
 export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string }
@@ -72,6 +74,7 @@ export interface PerformanceDeckSnapshot {
 	sync_error: string | null;
 	processor_error: string | null;
 	loop: LoopState | null;
+	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
 	command_error: string | null;
 	command_pending: boolean;
@@ -86,8 +89,30 @@ export interface PerformanceState {
 	mixer: {
 		crossfader: number;
 		master: number;
+		channels: Record<DeckId, MixerChannelState>;
 	};
+	preset: PerformancePresetLifecycleSnapshot;
 	last_error: string | null;
+}
+
+export type PerformancePresetLifecyclePhase =
+	| 'idle'
+	| 'queued'
+	| PerformancePresetPhase
+	| 'ready'
+	| 'error';
+
+export interface PerformancePresetLifecycleSnapshot {
+	id: string | null;
+	phase: PerformancePresetLifecyclePhase;
+	active: boolean;
+	error: string | null;
+}
+
+export interface PerformancePresetTransactionDriver {
+	dispatch(command: PerformanceCommand): Promise<PerformanceState>;
+	query(): PerformanceState;
+	setPhase(phase: PerformancePresetPhase): void;
 }
 
 export interface PerformanceBrowserIpc {
@@ -111,7 +136,15 @@ export const performanceCommandStatus: {
 	queued: 0
 });
 
+export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $state({
+	id: null,
+	phase: 'idle',
+	active: false,
+	error: null
+});
+
 let _commandQueue: Promise<void> = Promise.resolve();
+let _presetClaim: { id: string } | null = null;
 
 declare global {
 	interface Window {
@@ -274,6 +307,12 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error,
 		loop: deck.loop === null ? null : { ...deck.loop },
+		beatgrid:
+			deck.anlz?.beatgrid.beats.map((beat) => ({
+				n: beat.n,
+				bpm: beat.bpm,
+				time_ms: beat.t * 1000
+			})) ?? [],
 		beatgrid_ms: deck.anlz?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [],
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0
@@ -296,7 +335,17 @@ export function queryPerformanceState(): PerformanceState {
 			3: _deckSnapshot(3),
 			4: _deckSnapshot(4)
 		},
-		mixer: { crossfader: mixerState.crossfader, master: mixerState.master },
+		mixer: {
+			crossfader: mixerState.crossfader,
+			master: mixerState.master,
+			channels: {
+				1: { ...mixerState.channels[1] },
+				2: { ...mixerState.channels[2] },
+				3: { ...mixerState.channels[3] },
+				4: { ...mixerState.channels[4] }
+			}
+		},
+		preset: { ...performancePresetLifecycle },
 		last_error: performanceCommandStatus.last_error
 	};
 }
@@ -364,6 +413,134 @@ function _persistCommandError(deck: DeckId | null, error: unknown): void {
 	pushToast(`Performance command failed - ${messageText}`, 'error');
 }
 
+function _assertPresetId(id: string): void {
+	if (typeof id !== 'string' || id.trim() === '') {
+		throw new TypeError('performance preset transaction id must be a non-empty string');
+	}
+}
+
+function _setPresetPhase(id: string, phase: PerformancePresetPhase): void {
+	if (_presetClaim?.id !== id) {
+		throw new Error(`performance preset ${id} does not own the lifecycle lock`);
+	}
+	performancePresetLifecycle.phase = phase;
+}
+
+function _releasePreset(id: string, phase: 'ready' | 'error', error: string | null): void {
+	if (_presetClaim?.id !== id) {
+		throw new Error(`performance preset ${id} cannot release an unowned lifecycle lock`);
+	}
+	_presetClaim = null;
+	performancePresetLifecycle.phase = phase;
+	performancePresetLifecycle.active = false;
+	performancePresetLifecycle.error = error;
+}
+
+async function _dispatchWithinPreset(command: PerformanceCommand): Promise<PerformanceState> {
+	const deck = _commandDeck(command);
+	if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
+	try {
+		await _execute(command);
+	} catch (error) {
+		_persistCommandError(deck, error);
+		throw error;
+	}
+	return queryPerformanceState();
+}
+
+function _enqueuePresetPhase<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	performanceCommandStatus.queued += 1;
+	for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] += 1;
+	const run = async (): Promise<T> => {
+		performanceCommandStatus.queued -= 1;
+		performanceCommandStatus.active = true;
+		performanceCommandStatus.last_error = null;
+		for (const deck of DECK_IDS) performanceCommandStatus.deck_errors[deck] = null;
+		try {
+			return await work({
+				dispatch: _dispatchWithinPreset,
+				query: queryPerformanceState,
+				setPhase: (phase) => _setPresetPhase(id, phase)
+			});
+		} finally {
+			performanceCommandStatus.active = false;
+			for (const deck of DECK_IDS) performanceCommandStatus.deck_pending[deck] -= 1;
+		}
+	};
+	const scheduled = _commandQueue.then(run);
+	_commandQueue = scheduled.then(
+		() => undefined,
+		() => undefined
+	);
+	return scheduled;
+}
+
+function _recordPresetFailure(id: string, error: unknown): void {
+	const message = _errorMessage(error);
+	if (performanceCommandStatus.last_error !== message) _persistCommandError(null, error);
+	_releasePreset(id, 'error', message);
+}
+
+export async function preparePerformancePresetTransaction<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	_assertPresetId(id);
+	if (_presetClaim !== null) {
+		throw new Error(
+			`performance preset ${_presetClaim.id} already owns the lifecycle lock at ` +
+				`${performancePresetLifecycle.phase}`
+		);
+	}
+	_presetClaim = { id };
+	performancePresetLifecycle.id = id;
+	performancePresetLifecycle.phase = 'queued';
+	performancePresetLifecycle.active = true;
+	performancePresetLifecycle.error = null;
+	try {
+		const result = await _enqueuePresetPhase(id, work);
+		performancePresetLifecycle.phase = 'awaiting_audio';
+		return result;
+	} catch (error) {
+		_recordPresetFailure(id, error);
+		throw error;
+	}
+}
+
+export async function startPerformancePresetTransaction<T>(
+	id: string,
+	work: (driver: PerformancePresetTransactionDriver) => Promise<T>
+): Promise<T> {
+	_assertPresetId(id);
+	if (_presetClaim?.id !== id || performancePresetLifecycle.phase !== 'awaiting_audio') {
+		throw new Error(`performance preset ${id} is not prepared and awaiting audio activation`);
+	}
+	performancePresetLifecycle.phase = 'starting';
+	try {
+		const result = await _enqueuePresetPhase(id, work);
+		const state = queryPerformanceState();
+		if (state.command_pending || state.command_queued !== 0) {
+			throw new Error(`performance preset ${id} start returned before the command queue became idle`);
+		}
+		_releasePreset(id, 'ready', null);
+		return result;
+	} catch (error) {
+		_recordPresetFailure(id, error);
+		throw error;
+	}
+}
+
+export function abortPreparedPerformancePreset(id: string, reason: string): void {
+	_assertPresetId(id);
+	if (_presetClaim?.id !== id || performancePresetLifecycle.phase !== 'awaiting_audio') return;
+	const error = new Error(`performance preset ${id} aborted: ${reason}`);
+	_persistCommandError(null, error);
+	_releasePreset(id, 'error', _errorMessage(error));
+}
+
 async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 	let command: PerformanceCommand;
 	try {
@@ -373,6 +550,14 @@ async function _dispatchUnknown(message: unknown): Promise<PerformanceState> {
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (_presetClaim !== null) {
+		const error = new Error(
+			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
+				`command ${command.type} rejected`
+		);
+		_persistCommandError(deck, error);
+		throw error;
+	}
 	performanceCommandStatus.queued += 1;
 	if (deck !== null) performanceCommandStatus.deck_pending[deck] += 1;
 

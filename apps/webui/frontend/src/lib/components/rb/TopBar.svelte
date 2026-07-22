@@ -8,20 +8,11 @@
 	 * active/blue statically), LINK, PAD/MIDI dim labels, info icon,
 	 * gear, refresh arrow. The yellow Free badge is static chrome.
 	 *
-	 * CONTRACT GAP (escalate): the AudioEngine interface in types.ts has
-	 * no master-gain setter even though MixerState.master and
-	 * COMPONENT-MAP 1.1 route this slider to the engine's master
-	 * GainNode. This file assumes the engine implementation exposes
-	 * `setMaster(value: number): void` beyond the interface; the cast
-	 * below fails loudly at runtime if it does not (fail-fast, no
-	 * silent fallback).
+	 * Master volume renders the shared mixer read model and dispatches through
+	 * the same typed command path used by browser IPC and presets.
 	 */
-	import { engine } from '$lib/rb/audio-engine.svelte';
-	import type { AudioEngine } from '$lib/rb/types';
-
-	interface MasterCapableEngine extends AudioEngine {
-		setMaster(value: number): void;
-	}
+	import { mixerState } from '$lib/rb/audio-engine.svelte';
+	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
@@ -39,7 +30,6 @@
 		{ x: 12.2, half: 0.65 }
 	];
 
-	let master = $state(1);
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
 
@@ -59,8 +49,7 @@
 	}
 
 	function _setMaster(value: number): void {
-		master = value;
-		(engine as MasterCapableEngine).setMaster(value);
+		void runPerformanceCommandFromUi({ type: 'master_volume', value });
 	}
 
 	function _masterFromEvent(e: PointerEvent): number {
@@ -88,10 +77,10 @@
 	function handleMasterKeyDown(e: KeyboardEvent): void {
 		if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
 			e.preventDefault();
-			_setMaster(_clamp01(master + 0.02));
+			_setMaster(_clamp01(mixerState.master + 0.02));
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
 			e.preventDefault();
-			_setMaster(_clamp01(master - 0.02));
+			_setMaster(_clamp01(mixerState.master - 0.02));
 		}
 	}
 </script>
@@ -223,7 +212,7 @@
 		aria-orientation="horizontal"
 		aria-valuemin={0}
 		aria-valuemax={1}
-		aria-valuenow={master}
+		aria-valuenow={mixerState.master}
 		tabindex="0"
 		onpointerdown={handleMasterDown}
 		onpointermove={handleMasterMove}
@@ -231,8 +220,8 @@
 		onkeydown={handleMasterKeyDown}
 	>
 		<div class="master-track"></div>
-		<div class="master-fill" style={`width: ${master * 100}%;`}></div>
-		<div class="master-thumb" style={`left: calc(${master * 100}% - 4px);`}></div>
+		<div class="master-fill" style={`width: ${mixerState.master * 100}%;`}></div>
+		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 	</div>
 
 	<!-- clock: REAL, local time HH:MM -->

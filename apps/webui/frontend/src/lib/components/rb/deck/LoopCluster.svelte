@@ -26,6 +26,16 @@
 
 	let beatLength: number = $state(4);
 
+	$effect(() => {
+		if (
+			deck.loop !== null &&
+			deck.loop.beat_length !== null &&
+			beatLength !== deck.loop.beat_length
+		) {
+			beatLength = deck.loop.beat_length;
+		}
+	});
+
 	const engaged: boolean = $derived(deck.loop !== null && deck.loop.engaged);
 	const gridBeatCount: number = $derived(deck.anlz?.beatgrid.beats.length ?? 0);
 	const canToggle: boolean = $derived(
