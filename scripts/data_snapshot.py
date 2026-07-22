@@ -38,7 +38,7 @@ import sqlite3
 import sys
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 # Members bundled into the tar, relative to --data-dir. No audio bytes ever
 # (those ship per-batch, out of band).
@@ -81,6 +81,23 @@ def _generated_path_map_json(roots: list[str]) -> bytes:
     return json.dumps(payload, indent=2).encode("utf-8")
 
 
+def _vocal_cache_files(vocal_cache_dir: Path) -> list[Path]:
+    """Return contract-valid vocal cache entries, rejecting anything else.
+
+    A snapshot must not become a covert transport for audio bytes, tokens,
+    or arbitrary files dropped into the cache directory.  The cache contract
+    is flat ``{stable_id}.json`` files only.
+    """
+    files: list[Path] = []
+    for entry in sorted(vocal_cache_dir.iterdir()):
+        if entry.is_symlink() or not entry.is_file() or entry.suffix != ".json":
+            raise ValueError(
+                f"vocal cache contains unsupported member {entry}; only regular .json files may be packed"
+            )
+        files.append(entry)
+    return files
+
+
 def pack(data_dir: Path, out: Path) -> dict[str, Any]:
     """Bundle state.db + master.plain.db + vocal-cache into ``out``.
 
@@ -111,8 +128,11 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
         )
 
         if vocal_cache_dir.is_dir():
-            tar.add(vocal_cache_dir, arcname=VOCAL_CACHE_MEMBER)
-            cache_bytes = sum(f.stat().st_size for f in vocal_cache_dir.rglob("*") if f.is_file())
+            cache_files = _vocal_cache_files(vocal_cache_dir)
+            tar.add(vocal_cache_dir, arcname=VOCAL_CACHE_MEMBER, recursive=False)
+            for cache_file in cache_files:
+                tar.add(cache_file, arcname=f"{VOCAL_CACHE_MEMBER}/{cache_file.name}")
+            cache_bytes = sum(cache_file.stat().st_size for cache_file in cache_files)
             members.append({"member": VOCAL_CACHE_MEMBER, "bytes": cache_bytes})
         # else: vocal cache is optional (worker output; may not exist yet).
 
@@ -128,6 +148,61 @@ def pack(data_dir: Path, out: Path) -> dict[str, Any]:
     }
 
 
+def _validated_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    """Return the exact snapshot schema, rejecting traversal and payloads.
+
+    This replaces ``extractall(filter='data')``, which is unavailable on the
+    project's supported Python 3.11.  Whitelisting the small schema also
+    makes secret or audio injection impossible even when a supplied tar has
+    harmless-looking member names.
+    """
+    members = tar.getmembers()
+    seen: set[str] = set()
+    required: dict[str, tarfile.TarInfo] = {}
+    for member in members:
+        name = member.name
+        if name in seen:
+            raise ValueError(f"snapshot contains duplicate member: {name}")
+        seen.add(name)
+        if name in REQUIRED_MEMBERS:
+            if not member.isfile():
+                raise ValueError(f"required snapshot member must be a regular file: {name}")
+            required[name] = member
+        elif name == PATH_MAP_MEMBER:
+            if not member.isfile():
+                raise ValueError(f"path map must be a regular file: {name}")
+        elif name == VOCAL_CACHE_MEMBER:
+            if not member.isdir():
+                raise ValueError(f"vocal cache root must be a directory: {name}")
+        elif name.startswith(f"{VOCAL_CACHE_MEMBER}/"):
+            filename = name.removeprefix(f"{VOCAL_CACHE_MEMBER}/")
+            if "/" in filename or "\\\\" in filename or not filename.endswith(".json"):
+                raise ValueError(f"unsupported vocal cache member: {name}")
+            if not member.isfile():
+                raise ValueError(f"vocal cache member must be a regular file: {name}")
+        else:
+            raise ValueError(f"unsupported snapshot member: {name}")
+
+    missing = [name for name in REQUIRED_MEMBERS if name not in required]
+    if missing:
+        raise ValueError(f"snapshot is missing required members: {missing}")
+    return members
+
+
+def _extract_regular_file(member: tarfile.TarInfo, source: BinaryIO, dest: Path) -> None:
+    """Write one validated member below ``dest`` without following escape paths."""
+    root = dest.resolve()
+    target = (dest / member.name).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"snapshot member escapes destination: {member.name}") from exc
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("wb") as out:
+        while chunk := source.read(1024 * 1024):
+            out.write(chunk)
+
+
 def unpack(snapshot: Path, dest: Path) -> dict[str, Any]:
     """Extract ``snapshot`` into ``dest``.
 
@@ -139,15 +214,24 @@ def unpack(snapshot: Path, dest: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"snapshot not found: {snapshot}")
 
     with tarfile.open(snapshot, "r") as tar:
-        names = set(tar.getnames())
-        missing = [m for m in REQUIRED_MEMBERS if m not in names]
-        if missing:
-            raise ValueError(f"snapshot {snapshot} is missing required members: {missing}")
-
         dest.mkdir(parents=True, exist_ok=True)
-        tar.extractall(dest, filter="data")
+        members = _validated_members(tar)
+        for member in members:
+            if member.isdir():
+                target = (dest / member.name).resolve()
+                try:
+                    target.relative_to(dest.resolve())
+                except ValueError as exc:
+                    raise ValueError(f"snapshot member escapes destination: {member.name}") from exc
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            source = tar.extractfile(member)
+            if source is None:
+                raise ValueError(f"cannot read snapshot member: {member.name}")
+            with source:
+                _extract_regular_file(member, source, dest)
 
-    return {"dest": str(dest), "members": sorted(names)}
+    return {"dest": str(dest), "members": sorted(member.name for member in members)}
 
 
 def _cmd_pack(args: argparse.Namespace) -> int:

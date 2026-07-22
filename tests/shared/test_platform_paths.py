@@ -135,6 +135,36 @@ def test_load_path_map_raises_on_entry_missing_keys(
         pp.load_path_map()
 
 
+def test_load_path_map_rejects_empty_destination(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    map_file = tmp_path / "incomplete-map.json"
+    map_file.write_text(
+        json.dumps({"entries": [{"from": "/Users/dev", "to": ""}]}), encoding="utf-8"
+    )
+    monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
+    with pytest.raises(ValueError, match="empty"):
+        pp.load_path_map()
+
+
+def test_load_path_map_preserves_windows_drive_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    map_file = tmp_path / "drive-root.json"
+    map_file.write_text(
+        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/"}]}), encoding="utf-8"
+    )
+    monkeypatch.setenv("MDT_PATH_MAP", str(map_file))
+    assert pp.load_path_map().entries == (("/Users/dev", "D:/"),)
+
+
+def test_load_path_map_uses_mdt_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    data_dir = tmp_path / "snapshot-data"
+    data_dir.mkdir()
+    (data_dir / "path-map.json").write_text(
+        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/music"}]}), encoding="utf-8"
+    )
+    monkeypatch.delenv("MDT_PATH_MAP", raising=False)
+    monkeypatch.setattr(pp, "DATA_DIR", data_dir)
+    assert pp.load_path_map().entries == (("/Users/dev", "D:/music"),)
+
+
 def test_example_path_map_file_is_valid_and_loadable(monkeypatch: pytest.MonkeyPatch) -> None:
     example = pp.PROJECT_ROOT / "apps" / "shared" / "path_map.example.json"
     assert example.is_file()
@@ -221,6 +251,25 @@ def test_resolve_library_path_longest_prefix_wins_on_simulated_win32(
     result = pp.resolve_library_path("/Users/dev/Music/a.wav", path_map=path_map)
     assert result.resolved == Path("D:/lib/a.wav")
     assert result.reason == "path-map"
+
+
+def test_resolve_library_path_does_not_match_a_non_boundary_prefix_on_win32(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pp, "IS_DARWIN", False)
+    monkeypatch.setattr(pp, "IS_WINDOWS", True)
+    result = pp.resolve_library_path(
+        "/Users/dev/Music-backup/a.wav",
+        path_map=pp.PathMap(entries=(("/Users/dev/Music", "D:/library"),)),
+    )
+    assert result.resolved is None
+    assert result.reason.startswith("unmapped")
+
+
+def test_resolve_library_path_rejects_share_path_traversal() -> None:
+    result = pp.resolve_library_path("/PIONEER/../../secret.wav", path_map=pp.PathMap(entries=()))
+    assert result.resolved is None
+    assert result.reason == "unsafe:share-path"
 
 
 def test_resolve_library_path_foreign_absolute_on_simulated_darwin(

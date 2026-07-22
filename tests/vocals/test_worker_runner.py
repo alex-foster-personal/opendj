@@ -147,6 +147,30 @@ def test_process_one_failure_moves_to_failed_dir_and_logs(tmp_path: Path) -> Non
     assert "boom: worker exploded" in log_text
 
 
+def test_process_one_never_overwrites_an_existing_same_stem_result(tmp_path: Path) -> None:
+    inbox = tmp_path / "inbox"
+    outbox = tmp_path / "outbox"
+    logs = tmp_path / "logs"
+    audio = _make_inbox_file(inbox, "track.wav")
+    outbox.mkdir()
+    existing = outbox / "track.json"
+    existing.write_text('{"existing": true}', encoding="utf-8")
+
+    calls: list[Path] = []
+    ok = runner.process_one(
+        audio,
+        outbox,
+        logs,
+        "cpu",
+        run_worker_fn=lambda path: calls.append(path) or _worker_result(),
+    )
+
+    assert ok is False
+    assert calls == []
+    assert existing.read_text(encoding="utf-8") == '{"existing": true}'
+    assert (inbox / "failed" / "track.wav").is_file()
+
+
 # ----- run_once: STOP sentinel + GPU gate control flow -----------------------------
 
 def test_run_once_stop_sentinel_skips_before_processing(tmp_path: Path) -> None:

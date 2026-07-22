@@ -33,7 +33,7 @@ HOME: Path = Path.home()
 # This file lives at ``<project>/apps/shared/platform_paths.py`` ->
 # parents[2] is the project root.
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
-DATA_DIR: Path = PROJECT_ROOT / "data"
+DATA_DIR: Path = Path(os.environ.get("MDT_DATA_DIR", PROJECT_ROOT / "data"))
 
 
 def rekordbox_app_dir() -> Path:
@@ -121,6 +121,13 @@ class MappedPath:
 _EMPTY_PATH_MAP: PathMap = PathMap(entries=())
 
 
+def _normalise_map_prefix(path: str) -> str:
+    """Trim a non-root map separator without turning a drive root relative."""
+    if path == "/" or (len(path) == 3 and path[1] == ":" and path[2] in "/\\\\"):
+        return path
+    return path.rstrip("/\\\\")
+
+
 def load_path_map() -> PathMap:
     """Load the active :class:`PathMap`.
 
@@ -161,7 +168,21 @@ def load_path_map() -> PathMap:
             raise ValueError(
                 f"path map {map_path} entry must be an object with 'from' and 'to' keys, got {item!r}"
             )
-        entries.append((str(item["from"]), str(item["to"])))
+        from_prefix = item["from"]
+        to_prefix = item["to"]
+        if not isinstance(from_prefix, str) or not isinstance(to_prefix, str):
+            raise ValueError(f"path map {map_path} entries must contain string paths")
+        if not from_prefix or not to_prefix:
+            raise ValueError(f"path map {map_path} entries must not contain empty paths")
+        if not _is_any_absolute(from_prefix) or not _is_any_absolute(to_prefix):
+            raise ValueError(f"path map {map_path} entries must use absolute paths")
+        if _has_parent_reference(from_prefix) or _has_parent_reference(to_prefix):
+            raise ValueError(f"path map {map_path} entries must not contain '..' segments")
+        normalised_from = _normalise_map_prefix(from_prefix)
+        normalised_to = _normalise_map_prefix(to_prefix)
+        if not _is_any_absolute(normalised_from) or not _is_any_absolute(normalised_to):
+            raise ValueError(f"path map {map_path} entries must use absolute paths")
+        entries.append((normalised_from, normalised_to))
 
     entries.sort(key=lambda pair: len(pair[0]), reverse=True)
     return PathMap(entries=tuple(entries))
@@ -185,6 +206,36 @@ def _is_foreign_absolute(path: str) -> bool:
         if len(path) >= 2 and path[1] == ":" and path[0].isalpha():
             return True
         return False
+
+
+def _is_any_absolute(path: str) -> bool:
+    """Return whether ``path`` is absolute in either supported syntax."""
+    return (
+        path.startswith("/")
+        or path.startswith("\\\\")
+        or (len(path) >= 2 and path[1] == ":" and path[0].isalpha())
+    )
+
+
+def _has_parent_reference(path: str) -> bool:
+    """Reject lexical traversal before it reaches a filesystem operation."""
+    return ".." in path.replace("\\\\", "/").split("/")
+
+
+def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
+    """Return a boundary-safe mapped suffix, or ``None`` when no match.
+
+    Plain ``startswith`` maps ``/Users/dj/Music-old`` through a
+    ``/Users/dj/Music`` rule.  That is not a prefix containment relation.
+    """
+    if folder_path == from_prefix:
+        return ""
+    if not folder_path.startswith(from_prefix):
+        return None
+    suffix = folder_path[len(from_prefix):]
+    if not suffix.startswith(("/", "\\\\")) or _has_parent_reference(suffix):
+        return None
+    return suffix
 
 
 def _is_native_absolute(path: str) -> bool:
@@ -226,6 +277,13 @@ def resolve_library_path(
         return MappedPath(original=folder_path, resolved=None, mapped=False, reason="streaming")
 
     if folder_path.startswith("/PIONEER/"):
+        if _has_parent_reference(folder_path):
+            return MappedPath(
+                original=folder_path,
+                resolved=None,
+                mapped=False,
+                reason="unsafe:share-path",
+            )
         resolved = SHARE_ROOT / folder_path.lstrip("/")
         return MappedPath(original=folder_path, resolved=resolved, mapped=True, reason="share")
 
@@ -236,8 +294,9 @@ def resolve_library_path(
 
     if _is_foreign_absolute(folder_path):
         for from_prefix, to_prefix in path_map.entries:
-            if folder_path.startswith(from_prefix):
-                rewritten = to_prefix + folder_path[len(from_prefix) :]
+            suffix = _path_map_suffix(folder_path, from_prefix)
+            if suffix is not None:
+                rewritten = to_prefix + suffix
                 return MappedPath(
                     original=folder_path,
                     resolved=Path(rewritten),

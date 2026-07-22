@@ -125,6 +125,29 @@ def _stop_path(inbox: Path) -> Path:
     return inbox.parent / STOP_SENTINEL_NAME
 
 
+def _failed_destination(audio_path: Path) -> Path:
+    """Return a non-clobbering failed-file destination."""
+    failed_dir = audio_path.parent / FAILED_SUBDIR_NAME
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    candidate = failed_dir / audio_path.name
+    index = 1
+    while candidate.exists():
+        candidate = failed_dir / f"{audio_path.stem}.{index}{audio_path.suffix}"
+        index += 1
+    return candidate
+
+
+def _move_to_failed(audio_path: Path, logs_dir: Path, error: Exception) -> bool:
+    """Quarantine a failed input without allowing a name collision to wedge the loop."""
+    try:
+        shutil.move(str(audio_path), str(_failed_destination(audio_path)))
+    except OSError as move_error:
+        _log(logs_dir, f"failed: {audio_path.name}: {error}; quarantine failed: {move_error}")
+        return False
+    _log(logs_dir, f"failed: {audio_path.name}: {error}")
+    return False
+
+
 # ----- per-file processing -------------------------------------------------------
 
 def process_one(
@@ -138,17 +161,29 @@ def process_one(
     """Run the worker on one file; True on success. Never raises -- a
     worker failure is logged and the file moved to inbox/failed/ so a
     single bad track never wedges the farm-out loop."""
+    result_path = outbox / f"{audio_path.stem}.json"
+    if result_path.exists():
+        return _move_to_failed(
+            audio_path,
+            logs_dir,
+            FileExistsError(f"result already exists and will not be overwritten: {result_path}"),
+        )
+
     os.environ["MDT_VOCAL_WORKER_DEVICE"] = device
     try:
         result = run_worker_fn(audio_path)
     except Exception as exc:
-        failed_dir = audio_path.parent / FAILED_SUBDIR_NAME
-        failed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(audio_path), str(failed_dir / audio_path.name))
-        _log(logs_dir, f"failed: {audio_path.name}: {exc}")
-        return False
+        return _move_to_failed(audio_path, logs_dir, exc)
 
+    if not isinstance(result, dict):
+        return _move_to_failed(audio_path, logs_dir, ValueError("worker returned a non-object JSON payload"))
     outbox.mkdir(parents=True, exist_ok=True)
+    if result_path.exists():
+        return _move_to_failed(
+            audio_path,
+            logs_dir,
+            FileExistsError(f"result already exists and will not be overwritten: {result_path}"),
+        )
     wrapped: dict[str, Any] = {
         **result,
         "worker": {
@@ -157,9 +192,11 @@ def process_one(
             "device_used": result.get("device", device),
         },
     }
-    (outbox / f"{audio_path.stem}.json").write_text(
-        json.dumps(wrapped, indent=1), encoding="utf-8"
-    )
+    try:
+        with result_path.open("x", encoding="utf-8") as result_file:
+            json.dump(wrapped, result_file, indent=1)
+    except OSError as exc:
+        return _move_to_failed(audio_path, logs_dir, exc)
     audio_path.unlink()
     _log(logs_dir, f"done: {audio_path.stem}")
     return True

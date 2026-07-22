@@ -146,6 +146,33 @@ def test_unpack_raises_when_required_member_missing(tmp_path: Path) -> None:
         data_snapshot.unpack(incomplete_tar, tmp_path / "dest")
 
 
+def test_pack_rejects_non_cache_payloads(tmp_path: Path) -> None:
+    data_dir = _make_data_dir(tmp_path)
+    (data_dir / "state" / "vocal-cache" / "secret.env").write_text("token=secret")
+    with pytest.raises(ValueError, match="only regular .json"):
+        data_snapshot.pack(data_dir, tmp_path / "out.tar")
+
+
+def test_unpack_rejects_unexpected_and_traversal_members(tmp_path: Path) -> None:
+    snapshot = tmp_path / "hostile.tar"
+    with tarfile.open(snapshot, "w") as tar:
+        for name in data_snapshot.REQUIRED_MEMBERS:
+            info = tarfile.TarInfo(name=name)
+            info.size = 2
+            tar.addfile(info, io.BytesIO(b"db"))
+        secret = tarfile.TarInfo(name="state/vocal-cache/secret.env")
+        secret.size = 5
+        tar.addfile(secret, io.BytesIO(b"token"))
+        escape = tarfile.TarInfo(name="../../outside")
+        escape.size = 4
+        tar.addfile(escape, io.BytesIO(b"nope"))
+
+    dest = tmp_path / "dest"
+    with pytest.raises(ValueError, match="unsupported"):
+        data_snapshot.unpack(snapshot, dest)
+    assert not (tmp_path / "outside").exists()
+
+
 def test_cli_pack_and_unpack_json_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     data_dir = _make_data_dir(tmp_path)
     out = tmp_path / "snapshot.tar"
