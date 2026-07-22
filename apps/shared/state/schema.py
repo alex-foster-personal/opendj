@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -153,9 +153,41 @@ _V2: list[str] = [
     "ON track_field_history(stable_id, field_name, superseded_at)",
 ]
 
+# --- migration 2 -> 3: allow 'webui' as a track_fields source --------------
+# The webui daemon persists PATCH /tracks/{stable_id} edits (rating / notes /
+# tags) through StateWriter with source='webui'. The v1 CHECK constraint
+# predates that writer, so rebuild track_fields with the widened source list
+# (SQLite cannot ALTER a CHECK in place). Existing rows are preserved.
+# Mirror of apps.shared.state.types.SOURCES -- kept in sync by test.
+_V3: list[str] = [
+    """
+    CREATE TABLE track_fields_v3 (
+        stable_id    TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        field_name   TEXT NOT NULL,
+        value_json   TEXT NOT NULL,
+        source       TEXT NOT NULL CHECK (source IN
+                       ('mik','rekordbox','djay','serato','traktor',
+                        'open-dj-tool','manual','inferred','webui')),
+        confidence   REAL CHECK (confidence IS NULL OR
+                                 (confidence >= 0 AND confidence <= 1)),
+        modified_at  TEXT NOT NULL,
+        PRIMARY KEY (stable_id, field_name)
+    )
+    """,
+    """
+    INSERT INTO track_fields_v3(
+        stable_id, field_name, value_json, source, confidence, modified_at
+    )
+    SELECT stable_id, field_name, value_json, source, confidence, modified_at
+    FROM track_fields
+    """,
+    "DROP TABLE track_fields",
+    "ALTER TABLE track_fields_v3 RENAME TO track_fields",
+]
+
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:

@@ -370,7 +370,12 @@ class StateWriter:
     def set_playlist_memberships(
         self, playlist_id: str, stable_ids: list[str]
     ) -> None:
-        """Full-replace playlist memberships. Positions become 0..N-1."""
+        """Full-replace playlist memberships. Positions become 0..N-1.
+
+        Also bumps ``playlists.updated_at`` so row-version etags derived
+        from it (webui optimistic concurrency) observe membership-only
+        changes, not just renames.
+        """
         now = self._now_iso()
         with self._tx() as conn:
             conn.execute(
@@ -383,6 +388,10 @@ class StateWriter:
                     "VALUES (?, ?, ?)",
                     (playlist_id, sid, position),
                 )
+            conn.execute(
+                "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
+                (now, playlist_id),
+            )
             ev = self._append_event(
                 kind="playlist.memberships.set",
                 stable_id=None,
@@ -393,6 +402,44 @@ class StateWriter:
                 ts=now,
             )
             self.bus.publish(ev)
+
+    def delete_playlist(self, playlist_id: str) -> bool:
+        """Delete a playlist and its memberships. Returns True when a row existed.
+
+        Memberships are deleted explicitly (not via FK cascade) so the
+        behaviour does not depend on the connection's ``foreign_keys``
+        PRAGMA. Appends one ``playlist.delete`` event on success.
+        """
+        now = self._now_iso()
+        with self._tx() as conn:
+            existing = conn.execute(
+                "SELECT name, vendor, vendor_pl_id FROM playlists "
+                "WHERE playlist_id = ?",
+                (playlist_id,),
+            ).fetchone()
+            if existing is None:
+                return False
+            conn.execute(
+                "DELETE FROM playlist_memberships WHERE playlist_id = ?",
+                (playlist_id,),
+            )
+            conn.execute(
+                "DELETE FROM playlists WHERE playlist_id = ?",
+                (playlist_id,),
+            )
+            ev = self._append_event(
+                kind="playlist.delete",
+                stable_id=None,
+                payload={
+                    "playlist_id": playlist_id,
+                    "name": existing[0],
+                    "vendor": existing[1],
+                    "vendor_pl_id": existing[2],
+                },
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return True
 
     # --- adapters ---------------------------------------------------
 

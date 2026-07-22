@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 import os
 import socket
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,13 +23,18 @@ from starlette.types import Scope
 from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
+from .routes import analysis as analysis_routes
+from .routes import copilot as copilot_routes
 from .routes import health as health_routes
 from .routes import pairings as pairings_routes
+from .routes import playlist_write as playlist_write_routes
 from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
+from .routes import reconcile as reconcile_routes
 from .routes import settings as settings_routes
+from .routes import smartlists as smartlists_routes
 from .routes import tracks as tracks_routes
 from .routes import voice_probe as voice_probe_routes
 
@@ -70,9 +76,18 @@ def create_app(
     mount_frontend: bool = True,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        # playlist_write builds its PlaylistStore lazily from
+        # app.state.state_db_path; release its sqlite handle on shutdown.
+        playlist_write_routes.close_store(app)
+
     app = FastAPI(
         title="music-dj-tools webui",
         version=version,
+        lifespan=_lifespan,
         description=(
             "Local-first web UI for music-dj-tools. Binds to 127.0.0.1 by "
             "default (D5 / CAT-05b). Override via MUSIC_DJ_BIND_HOST."
@@ -128,10 +143,15 @@ def create_app(
     api_prefix = "/api/v1"
     app.include_router(tracks_routes.router, prefix=api_prefix)
     app.include_router(playlists_routes.router, prefix=api_prefix)
+    app.include_router(playlist_write_routes.router, prefix=api_prefix)
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)
+    app.include_router(smartlists_routes.router, prefix=api_prefix)
+    app.include_router(reconcile_routes.router, prefix=api_prefix)
+    app.include_router(copilot_routes.router, prefix=api_prefix)
+    app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
