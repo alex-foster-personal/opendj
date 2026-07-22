@@ -128,8 +128,13 @@ def test_reversal_script_restores_original(tmp_path: Path) -> None:
     # Execute the reversal script via shell.
     import subprocess
 
-    if shutil.which("bash") is None:
-        pytest.skip("bash unavailable; cannot execute the generated reversal script")
+    # Windows ships a stub System32\bash.exe that fails without WSL, so
+    # "on PATH" is not enough -- require a bash that actually runs.
+    bash = shutil.which("bash")
+    if bash is None or subprocess.run(
+        [bash, "-c", "true"], capture_output=True, check=False
+    ).returncode != 0:
+        pytest.skip("functional bash unavailable; cannot execute the reversal script")
     rc = subprocess.run(
         ["bash", res["reversal"]], capture_output=True, text=True, check=False
     )
