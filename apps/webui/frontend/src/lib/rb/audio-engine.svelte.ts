@@ -140,6 +140,7 @@ const SYNC_SCHEDULE_SAFETY_S = 0.1;
 const ANALYSER_FFT_SIZE = 4096;
 const CONTEXT_WAIT_POLL_MS = 25;
 const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
+const HEADPHONE_OPERATION_TIMEOUT_MS = 5_000;
 
 // ------------------------------------------------------------ rune stores
 
@@ -403,6 +404,7 @@ interface _HeadphoneNodes {
 	element: HTMLAudioElement;
 }
 let _headphoneNodes: _HeadphoneNodes | null = null;
+let _headphoneGeneration = 0;
 let _rafId: number | null = null;
 let _masterDeck: DeckId | null = null;
 const _rt: Record<DeckId, _DeckRuntime> = {
@@ -531,6 +533,52 @@ export function assertHeadphoneOutputSelection(
 	}
 }
 
+export function headphoneSelectionStages(): readonly string[] {
+	return ['setSinkId', 'attachStream', 'play', 'publish'];
+}
+
+export function headphoneOwnershipIsCurrent(
+	operationGeneration: number,
+	currentGeneration: number,
+	nodesOwned: boolean
+): boolean {
+	return (
+		Number.isInteger(operationGeneration) &&
+		Number.isInteger(currentGeneration) &&
+		operationGeneration === currentGeneration &&
+		nodesOwned
+	);
+}
+
+export function assertHeadphoneOwnership(
+	operationGeneration: number,
+	currentGeneration: number,
+	nodesOwned: boolean
+): void {
+	if (!headphoneOwnershipIsCurrent(operationGeneration, currentGeneration, nodesOwned)) {
+		throw new Error('stale headphone operation cannot publish state after disposal');
+	}
+}
+
+export async function withHeadphoneOperationTimeout<T>(
+	operation: string,
+	promise: Promise<T>,
+	timeoutMs = HEADPHONE_OPERATION_TIMEOUT_MS
+): Promise<T> {
+	if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+		throw new RangeError(`headphone ${operation} timeout must be a positive integer, got ${timeoutMs}`);
+	}
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	const timeout = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(() => reject(new Error(`headphone ${operation} timed out after ${timeoutMs}ms`)), timeoutMs);
+	});
+	try {
+		return await Promise.race([promise, timeout]);
+	} finally {
+		if (timeoutId !== null) clearTimeout(timeoutId);
+	}
+}
+
 function _applyHeadphoneMix(): void {
 	const nodes = _headphoneNodes;
 	if (nodes === null) return;
@@ -544,6 +592,10 @@ function _headphoneError(operation: string, error: unknown): Error {
 	const message = error instanceof Error ? error.message : String(error);
 	mixerState.headphones.error = `${operation}: ${message}`;
 	return new Error(mixerState.headphones.error, { cause: error });
+}
+
+function _assertCurrentHeadphoneOperation(generation: number, nodes: _HeadphoneNodes | null): void {
+	assertHeadphoneOwnership(generation, _headphoneGeneration, nodes === null || nodes === _headphoneNodes);
 }
 
 function _requireHeadphoneDeviceApi(): MediaDevices {
@@ -572,8 +624,6 @@ function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _He
 	const level = context.createGain();
 	const destination = context.createMediaStreamDestination();
 	const element = new Audio();
-	element.autoplay = true;
-	element.srcObject = destination.stream;
 	cueSum.connect(cueMix);
 	masterGain.connect(masterMonitor);
 	masterMonitor.connect(masterMix);
@@ -2598,6 +2648,7 @@ class RbAudioEngine implements AudioEngine {
 			if (processor !== null) processors.push(processor);
 			if (rt.nodes !== null) nodes.push(...Object.values(rt.nodes));
 		}
+		_headphoneGeneration += 1;
 		_disposeHeadphoneGraph();
 		const closing = disposeAudioResources({
 			rafId: _rafId,
@@ -3317,10 +3368,16 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async refreshHeadphoneOutputs(): Promise<void> {
+		const generation = _headphoneGeneration;
 		let devices: MediaDeviceInfo[];
 		try {
-			devices = await _requireHeadphoneDeviceApi().enumerateDevices();
+			devices = await withHeadphoneOperationTimeout(
+				'enumerateDevices',
+				_requireHeadphoneDeviceApi().enumerateDevices()
+			);
+			_assertCurrentHeadphoneOperation(generation, null);
 		} catch (error) {
+			_assertCurrentHeadphoneOperation(generation, null);
 			throw _headphoneError('headphone output enumeration failed', error);
 		}
 		mixerState.headphones.outputs = devices
@@ -3330,18 +3387,29 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async selectHeadphoneOutput(deviceId: string): Promise<void> {
+		const generation = _headphoneGeneration;
+		let nodes: _HeadphoneNodes | null = null;
 		try {
 			_requireHeadphoneDeviceApi();
 			assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
 			const context = _ensureGraph();
 			if (_masterGain === null) throw new Error('headphone monitor master gain is missing');
-			const nodes = _ensureHeadphoneGraph(context, _masterGain);
-			await nodes.element.setSinkId(deviceId);
-			await nodes.element.play();
+			nodes = _ensureHeadphoneGraph(context, _masterGain);
+			await withHeadphoneOperationTimeout('setSinkId', nodes.element.setSinkId(deviceId));
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			nodes.element.srcObject = nodes.destination.stream;
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			await withHeadphoneOperationTimeout('play', nodes.element.play());
+			_assertCurrentHeadphoneOperation(generation, nodes);
 			mixerState.headphones.selected_output_device_id = deviceId;
 			mixerState.headphones.active = true;
 			mixerState.headphones.error = null;
 		} catch (error) {
+			_assertCurrentHeadphoneOperation(generation, nodes);
+			if (nodes !== null) {
+				nodes.element.pause();
+				nodes.element.srcObject = null;
+			}
 			throw _headphoneError('headphone output selection failed', error);
 		}
 	}

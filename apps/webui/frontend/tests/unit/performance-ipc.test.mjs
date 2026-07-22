@@ -10,7 +10,7 @@ before(async () => {
 });
 
 test('queue scopes isolate deck loads and coordinate only sync-sensitive commands', () => {
-	assert.deepEqual(ipc.PERFORMANCE_PRESET_COMMAND_SCOPES, [1, 2, 3, 4, 'sync']);
+	assert.deepEqual(ipc.PERFORMANCE_PRESET_COMMAND_SCOPES, [1, 2, 3, 4, 'sync', 'headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'load', deck: 1, stable_id: 'a' }), [
 		1
 	]);
@@ -42,7 +42,8 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_sync', deck: 4 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'channel_cue', deck: 4, enabled: true }), [4]);
-	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['sync']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_outputs_refresh' }), ['headphone']);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_output_select', device_id: 'usb' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'key_nudge', deck: 4, semitones: -1 }), [4, 'sync']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'slip', deck: 4, enabled: true }), [4]);
 	assert.equal(ipc.performanceCommandQueueScopes({ type: 'trim', deck: 2, value: 0.7 }), null);

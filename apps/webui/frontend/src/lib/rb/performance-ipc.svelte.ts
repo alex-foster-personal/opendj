@@ -184,14 +184,15 @@ export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $s
 });
 
 let _presetClaim: { id: string } | null = null;
-type CommandScope = DeckId | 'sync';
+type CommandScope = DeckId | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
 export const PERFORMANCE_PRESET_COMMAND_SCOPES: readonly CommandScope[] = [
 	...DECK_IDS,
-	'sync'
+	'sync',
+	'headphone'
 ];
 
 declare global {
@@ -456,7 +457,7 @@ export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
 	if (command.type === 'headphone_outputs_refresh' || command.type === 'headphone_output_select') {
-		return ['sync'];
+		return ['headphone'];
 	}
 	const deck = _commandDeck(command);
 	if (command.type === 'channel_cue') {

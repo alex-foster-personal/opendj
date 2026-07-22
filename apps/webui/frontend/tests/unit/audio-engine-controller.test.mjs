@@ -177,6 +177,22 @@ test('headphone cue/master mix uses equal-power gains and validates serializable
 	);
 });
 
+test('headphone selection declares sink, stream attach, play, then publish and rejects stale ownership', async () => {
+	assert.deepEqual(audio.headphoneSelectionStages(), ['setSinkId', 'attachStream', 'play', 'publish']);
+	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, true), true);
+	assert.equal(audio.headphoneOwnershipIsCurrent(4, 5, true), false);
+	assert.equal(audio.headphoneOwnershipIsCurrent(4, 4, false), false);
+	assert.throws(() => audio.assertHeadphoneOwnership(4, 5, true), /stale headphone operation/i);
+	await assert.rejects(
+		audio.withHeadphoneOperationTimeout('enumerateDevices', new Promise(() => {}), 1),
+		/enumerateDevices timed out/i
+	);
+	assert.equal(
+		await audio.withHeadphoneOperationTimeout('setSinkId', Promise.resolve('accepted'), 20),
+		'accepted'
+	);
+});
+
 test('paused tempo and Master Tempo settings persist into the next requested Signalsmith play', () => {
 	const afterTempo = audio.applyPausedDeckControlSettings(
 		{ tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 2 },
