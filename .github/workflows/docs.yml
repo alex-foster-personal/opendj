@@ -2,9 +2,9 @@ name: Build docs
 
 on:
   push:
-    branches: [master]
+    branches: [af--rekordbox-parity-ui]
   pull_request:
-    branches: [master]
+    branches: [af--rekordbox-parity-ui]
 
 permissions:
   contents: read
@@ -30,7 +30,7 @@ jobs:
       - name: Build site (strict)
         run: mkdocs build --strict
       - name: Upload pages artifact
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/af--rekordbox-parity-ui'
         # SHA-pinned to the v3 tag commit (resolved 2026-04-17).
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
         with:
@@ -40,8 +40,9 @@ jobs:
     needs: build
     # Deploy is best-effort: GitHub Pages may not be enabled at the repo level
     # yet (actions/deploy-pages returns 404 until Settings -> Pages is turned on).
-    # Strict mkdocs build above is the CI gate; deploy failing must not block master.
-    if: github.ref == 'refs/heads/master'
+    # Strict mkdocs build above is the CI gate; deploy failing must not block
+    # the integration branch.
+    if: github.ref == 'refs/heads/af--rekordbox-parity-ui'
     continue-on-error: true
     environment:
       name: github-pages
