@@ -4,11 +4,33 @@ Ties to INFRA-02 (shared modules usable across apps).
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from apps.shared import paths
+
+
+@pytest.mark.requirement("INFRA-02")
+def test_parse_music_roots_strips_entries_and_expands_user_home() -> None:
+    """Configured roots are whitespace-normalized and support ``~`` paths."""
+    configured_roots = f"  ~/Music  {os.pathsep} /Volumes/DJ Library "
+
+    assert paths._parse_music_roots(configured_roots) == [
+        Path("~/Music").expanduser(),
+        Path("/Volumes/DJ Library"),
+    ]
+
+
+@pytest.mark.requirement("INFRA-02")
+@pytest.mark.parametrize("configured_roots", ["", "   ", os.pathsep])
+def test_parse_music_roots_rejects_configurations_without_usable_entries(
+    configured_roots: str,
+) -> None:
+    """A present but unusable override fails before a zero-root scan can run."""
+    with pytest.raises(ValueError, match="MDT_MUSIC_ROOTS"):
+        paths._parse_music_roots(configured_roots)
 
 
 @pytest.mark.requirement("INFRA-02")
