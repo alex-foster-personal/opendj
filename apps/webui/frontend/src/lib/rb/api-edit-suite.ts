@@ -138,4 +138,3 @@ export async function renameMyTag(old_name: string, new_name: string): Promise<{
 export async function deleteMyTag(name: string): Promise<{ tracks_updated: number }> {
 	return _postJson('/api/v1/mytags/delete', { name });
 }
-
