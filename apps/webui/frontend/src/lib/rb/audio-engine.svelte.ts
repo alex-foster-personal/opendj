@@ -9,7 +9,8 @@
  *   crossfader gain -> master gain -> destination
  *
  * Requirements (mini-PRD):
- *   ✔︎ load(): fetch audio via api-rb -> decodeAudioData -> per-deck chain;
+ *   ✔︎ ✅ 🎯 load(): fetch audio and required analysis via api-rb ->
+ *     decodeAudioData -> per-deck chain;
  *     backend 404 (AUDIO_FILE_MISSING etc) -> pushToast + deckLoadErrors set
  *     + reject. Never a silent fallback.
  *     [if] load() of a stable_id whose file is missing [then] toast shown,
@@ -17,6 +18,8 @@
  *     [if] load() succeeds [then] DeckState title/bpm/key/duration populated
  *     [if] a second load() starts before the first resolves [then] the stale
  *       result never clobbers the newer one ⛔️
+ *     [if] required analysis retrieval fails [then] load rejects and no
+ *       unusable deck candidate is published ⛔️
  *   ✔︎ Reactive transport: position_ms advances via rAF clock math while
  *     playing; remaining time derivable from duration_ms - position_ms;
  *     deckEffectiveBpm() = bpm * pitch.
@@ -1966,16 +1969,17 @@ class RbAudioEngine implements AudioEngine {
 		let track: Track | null = null;
 		let buffer: AudioBuffer | null = null;
 		let anlz: DeckState['anlz'] = null;
-		let anlzError: string | null = null;
 		let latencySec = 0;
 		let processor: StretchDeckProcessor | null = null;
 		try {
-			const ctx = _ensureGraph();
-			const [trackRes, audioBytes] = await Promise.all([
+			const [trackRes, audioBytes, requiredAnlz] = await Promise.all([
 				getTrack(stable_id),
-				fetchAudioArrayBuffer(stable_id)
+				fetchAudioArrayBuffer(stable_id),
+				fetchAnlz(stable_id)
 			]);
+			const ctx = _ensureGraph();
 			track = trackRes.track;
+			anlz = requiredAnlz;
 			buffer = await ctx.decodeAudioData(audioBytes);
 			processor = await StretchDeckProcessor.create(ctx, {
 				onProcessorError: (error) => {
@@ -1984,15 +1988,6 @@ class RbAudioEngine implements AudioEngine {
 			});
 			await processor.load(buffer);
 			latencySec = await processor.latencySec();
-			try {
-				anlz = await fetchAnlz(stable_id);
-			} catch (error) {
-				if (error instanceof RbApiError) {
-					anlzError = error.code;
-				} else {
-					throw error;
-				}
-			}
 		} catch (exc) {
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
@@ -2003,12 +1998,13 @@ class RbAudioEngine implements AudioEngine {
 			pushToast(`Deck ${deck} load failed - ${msg}`, 'error');
 			throw exc;
 		}
-		if (processor === null || track === null || buffer === null) {
+		if (processor === null || track === null || buffer === null || anlz === null) {
 			throw new Error('load: candidate deck transaction is incomplete');
 		}
 		const candidateProcessor = processor;
 		const candidateTrack = track;
 		const candidateBuffer = buffer;
+		const candidateAnlz = anlz;
 		await _withDeckSwap(rt, async () => {
 			// Winner check through state publication is one synchronous JS turn.
 			// Do not insert an await before rt.processor receives the candidate.
@@ -2061,14 +2057,12 @@ class RbAudioEngine implements AudioEngine {
 			// The decoded buffer is the audio actually scheduled. Metadata can
 			// differ, so it must not define waveform bounds or transport truth.
 			st.duration_ms = decodedTransportDurationMs(candidateBuffer.duration);
-			st.anlz = anlz;
-			st.anlz_error = anlzError;
+			st.anlz = candidateAnlz;
+			st.anlz_error = null;
 			st.processor_error = null;
 			st.sync_error = null;
-			if (anlz !== null) {
-				st.hot_cues = _hotCuesFrom(anlz.cues);
-				st.loop = _displayLoopFrom(anlz.cues);
-			}
+			st.hot_cues = _hotCuesFrom(candidateAnlz.cues);
+			st.loop = _displayLoopFrom(candidateAnlz.cues);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			if (incumbentProcessor !== null) {

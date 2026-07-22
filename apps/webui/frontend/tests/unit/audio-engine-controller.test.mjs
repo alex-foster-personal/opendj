@@ -793,6 +793,50 @@ test('load-state invariant rejects playable-looking ghost decks', () => {
 	);
 });
 
+test('analysis retrieval failure rejects before an unusable deck candidate can publish', async () => {
+	const originalFetch = globalThis.fetch;
+	const originalSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = (_callback, delay) => {
+		assert.equal(delay, 5_000, 'only the toast expiry timer is expected');
+		return 0;
+	};
+	globalThis.fetch = async (input) => {
+		const url = String(input);
+		if (url.endsWith('/anlz?points=2400')) {
+			return new Response(
+				JSON.stringify({
+					detail: { code: 'ANALYSIS_NOT_FOUND', message: 'track has no analysis' }
+				}),
+				{ status: 404, headers: { 'content-type': 'application/json' } }
+			);
+		}
+		if (url.endsWith('/audio')) return new Response(new Uint8Array([1, 2, 3]));
+		if (url.endsWith('/tracks/no-analysis')) {
+			return new Response(JSON.stringify({ stable_id: 'no-analysis' }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			});
+		}
+		throw new Error(`unexpected request ${url}`);
+	};
+
+	try {
+		await assert.rejects(
+			audio.engine.load(1, 'no-analysis'),
+			(error) =>
+				error?.name === 'RbApiError' &&
+				error.code === 'ANALYSIS_NOT_FOUND' &&
+				/track has no analysis/.test(error.message)
+		);
+		assert.equal(audio.getDeckState(1).stable_id, null);
+		assert.equal(audio.getDeckState(1).anlz, null);
+		assert.match(audio.deckLoadErrors[1], /ANALYSIS_NOT_FOUND/);
+	} finally {
+		globalThis.fetch = originalFetch;
+		globalThis.setTimeout = originalSetTimeout;
+	}
+});
+
 test('deck replacement requires a fully presented stop before candidate preparation', () => {
 	const stopped = {
 		playing: false,
