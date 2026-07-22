@@ -6,6 +6,7 @@ SYNC-02 (matching builds on track/playlist iteration).
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,30 @@ def test_is_streaming_path_classifies_uris_and_paths(value: str | None, expected
 
 
 # ------------------------------------------------------------------ iter_tracks
+
+
+@pytest.mark.requirement("RECON-01")
+def test_iter_tracks_preserves_zero_duration() -> None:
+    """A present zero is distinct from an absent Rekordbox duration."""
+    row = SimpleNamespace(
+        ID="zero-duration",
+        Title="Placeholder",
+        Artist=None,
+        Album=None,
+        Genre=None,
+        FolderPath="/tmp/placeholder.mp3",
+        BPM=None,
+        Length=0,
+        ISRC=None,
+        Rating=None,
+        FileSize=None,
+        DateCreated=None,
+    )
+    db = SimpleNamespace(get_content=lambda: [row])
+
+    [track] = list(rekordbox_db.iter_tracks(db))
+
+    assert track.duration_s == 0.0
 
 
 @pytest.mark.requirement("RECON-01")

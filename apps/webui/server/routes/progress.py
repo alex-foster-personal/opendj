@@ -17,9 +17,13 @@ Acceptance:
        missing/spiked) [then ⛔️] 422
   [if] PATCH sha malformed or unresolvable in repo [then ⛔️] 422
   [if] PATCH unknown node id [then ⛔️] 404
+  [if] PATCH omits If-Match [then ⛔️] 428 without writing
+  [if] PATCH presents a stale ledger ETag [then ⛔️] 409 without writing
+  [if] another host owns the write lock [then ⛔️] 503 without writing
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
@@ -30,8 +34,11 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict
+
+from ..backend import StateBackend
+from ..deps import get_write_state
 
 router = APIRouter(prefix="/progress", tags=["progress"])
 
@@ -65,12 +72,29 @@ NODE_SCHEMA: dict[str, str] = {
     "notes": "string or null",
 }
 PATCH_RULES: list[str] = [
+    "PATCH requires If-Match with the current ETag returned by GET /progress",
     "status changes MUST include commits_append unless the new status is "
     "missing or spiked",
     "every sha must match ^[0-9a-f]{7,40}$ and resolve via git cat-file -e",
     "the API bumps meta.updated but never git-commits; agents own their "
     "commits",
 ]
+
+_ETAG_RESPONSE_HEADER: dict[str, dict[str, Any]] = {
+    "ETag": {
+        "description": "Strong validator for the exact progress ledger bytes",
+        "schema": {"type": "string"},
+    },
+}
+_PATCH_RESPONSES: dict[int, dict[str, Any]] = {
+    200: {"headers": _ETAG_RESPONSE_HEADER},
+    409: {
+        "description": "If-Match is stale; refresh the ledger before retrying",
+        "headers": _ETAG_RESPONSE_HEADER,
+    },
+    428: {"description": "If-Match header is required for every progress write"},
+    503: {"description": "Writes are disabled because the cloud lock is unavailable or held by a peer"},
+}
 
 
 # ----- pydantic models (inline per router convention) -------------------------
@@ -137,6 +161,12 @@ def _load_tree() -> dict[str, Any]:
                     f"node {node['id']} has unknown status {node['status']!r}",
                 )
     return tree
+
+
+def _file_etag() -> str:
+    """Strong validator for the exact canonical-ledger bytes on disk."""
+    digest = hashlib.sha256(PROGRESS_FILE.read_bytes()).hexdigest()
+    return f'"{digest}"'
 
 
 def _header_comment_lines(text: str) -> list[str]:
@@ -243,10 +273,11 @@ def _now_iso() -> str:
 
 # ----- routes -----------------------------------------------------------------
 
-@router.get("")
-def get_progress() -> dict[str, Any]:
+@router.get("", responses={200: {"headers": _ETAG_RESPONSE_HEADER}})
+def get_progress(response: Response) -> dict[str, Any]:
     """Full parsed tree + ledger-file git provenance + per-area rollups."""
     tree = _load_tree()
+    response.headers["ETag"] = _file_etag()
     rollups = {
         area["id"]: _rollup(area["nodes"]) for area in tree["areas"]
     }
@@ -271,9 +302,25 @@ def get_progress_schema() -> dict[str, Any]:
     }
 
 
-@router.patch("/nodes/{node_id}", response_model=NodePatchOut)
-def patch_progress_node(node_id: str, patch: NodePatch) -> NodePatchOut:
+@router.patch(
+    "/nodes/{node_id}",
+    response_model=NodePatchOut,
+    responses=_PATCH_RESPONSES,
+)
+def patch_progress_node(
+    node_id: str,
+    patch: NodePatch,
+    response: Response,
+    if_match: Optional[str] = Header(None, alias="If-Match"),
+    _backend: StateBackend = Depends(get_write_state),
+) -> NodePatchOut:
     """Guarded partial update of one node; atomic YAML rewrite, no git commit."""
+    if if_match is None:
+        raise _http_error(
+            status.HTTP_428_PRECONDITION_REQUIRED,
+            "precondition_required",
+            "PATCH /progress/nodes/{node_id} requires If-Match header",
+        )
     fields_set = patch.model_dump(exclude_none=True)
     if not fields_set:
         raise _http_error(
@@ -281,10 +328,21 @@ def patch_progress_node(node_id: str, patch: NodePatch) -> NodePatchOut:
             "provide at least one of status/note/commits_append/"
             "tests_append/verified",
         )
-    for commit in patch.commits_append or []:
-        _require_resolvable_sha(commit.sha)
-
     with _WRITE_LOCK:
+        current_etag = _file_etag()
+        if if_match != current_etag:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "conflict",
+                    "message": "If-Match does not match the current progress ledger ETag",
+                    "etag": current_etag,
+                },
+                headers={"ETag": current_etag},
+            )
+        for commit in patch.commits_append or []:
+            _require_resolvable_sha(commit.sha)
+
         tree = _load_tree()
         node = _find_node(tree, node_id)
 
@@ -320,5 +378,6 @@ def patch_progress_node(node_id: str, patch: NodePatch) -> NodePatchOut:
 
         tree["meta"]["updated"] = _now_iso()
         _dump_tree_atomic(tree)
+        response.headers["ETag"] = _file_etag()
 
     return NodePatchOut(node=node, meta_updated=tree["meta"]["updated"])

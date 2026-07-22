@@ -14,6 +14,8 @@
  *   ✔︎ Fail explicitly on creation/command timeout or processor failure.
  *     [if] the worklet does not acknowledge [then] the caller receives a
  *       typed timeout error and no alternate audio path is selected
+ *     [if] a timeout or processor error becomes terminal [then] later
+ *       commands reject before invoking the worklet
  *   ✔︎ Transfer copied mono/stereo PCM into the processor.
  *     [if] decoded audio has more than two channels [then] loading rejects
  */
@@ -233,6 +235,7 @@ export function stretchProcessorError(event: Event): StretchProcessorError {
 export interface StretchAdapterOptions {
 	onInputTime?: (inputTimeSec: number) => void;
 	onProcessorError: (error: StretchProcessorError) => void;
+	commandTimeoutMs?: number;
 }
 
 /** One terminal-failure-aware worklet instance for one deck. */
@@ -240,6 +243,7 @@ export class StretchDeckProcessor {
 	readonly #context: AudioContext;
 	readonly #gate = new StretchCommandGate();
 	readonly #node: SignalsmithStretchNode;
+	readonly #commandTimeoutMs: number;
 	#loadedDurationSec = 0;
 	#loadedSampleRateHz = 0;
 
@@ -250,6 +254,12 @@ export class StretchDeckProcessor {
 	) {
 		this.#context = context;
 		this.#node = node;
+		this.#commandTimeoutMs = options.commandTimeoutMs ?? STRETCH_COMMAND_TIMEOUT_MS;
+		if (!Number.isFinite(this.#commandTimeoutMs) || this.#commandTimeoutMs <= 0) {
+			throw new RangeError(
+				`commandTimeoutMs must be a finite positive number, got ${this.#commandTimeoutMs}`
+			);
+		}
 		this.#node.addEventListener('processorerror', (event) => {
 			const error = stretchProcessorError(event);
 			this.#gate.poison(error);
@@ -343,6 +353,6 @@ export class StretchDeckProcessor {
 	}
 
 	async #command<T>(command: () => Promise<T>, operation: string): Promise<T> {
-		return this.#gate.run(operation, command);
+		return this.#gate.run(operation, command, this.#commandTimeoutMs);
 	}
 }
