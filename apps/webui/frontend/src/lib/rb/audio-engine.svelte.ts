@@ -700,6 +700,51 @@ export function composeStretchSemitones(
 	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
 }
 
+export interface DeckControlSettings {
+	tempoRatio: number;
+	masterTempoEnabled: boolean;
+	keyShiftSemitones: number;
+}
+
+export interface PausedDeckControlUpdate {
+	tempoRatio?: number;
+	masterTempoEnabled?: boolean;
+	keyShiftSemitones?: number;
+}
+
+/** Paused controls are the desired DSP settings for the next schedule. Keep
+ * them separate from DeckState's output-presented read model. */
+export function applyPausedDeckControlSettings(
+	current: DeckControlSettings,
+	update: PausedDeckControlUpdate
+): DeckControlSettings {
+	if (!Number.isFinite(current.tempoRatio) || current.tempoRatio <= 0) {
+		throw new RangeError(`control tempo ratio must be finite and positive, got ${current.tempoRatio}`);
+	}
+	if (typeof current.masterTempoEnabled !== 'boolean') {
+		throw new TypeError('control Master Tempo must be boolean');
+	}
+	_assertKeyShift(current.keyShiftSemitones);
+	if (
+		update.tempoRatio !== undefined &&
+		(!Number.isFinite(update.tempoRatio) || update.tempoRatio <= 0)
+	) {
+		throw new RangeError(`updated tempo ratio must be finite and positive, got ${update.tempoRatio}`);
+	}
+	if (
+		update.masterTempoEnabled !== undefined &&
+		typeof update.masterTempoEnabled !== 'boolean'
+	) {
+		throw new TypeError('updated Master Tempo must be boolean');
+	}
+	if (update.keyShiftSemitones !== undefined) _assertKeyShift(update.keyShiftSemitones);
+	return {
+		tempoRatio: update.tempoRatio ?? current.tempoRatio,
+		masterTempoEnabled: update.masterTempoEnabled ?? current.masterTempoEnabled,
+		keyShiftSemitones: update.keyShiftSemitones ?? current.keyShiftSemitones
+	};
+}
+
 export function quantizedPositionMs(
 	beats: readonly AnlzBeat[],
 	positionMs: number,
@@ -1170,6 +1215,26 @@ export function presentedKeyShiftSemitonesAt(
 	}
 	const schedule = _effectivePresentedScheduleAt(timeline, contextTime);
 	return schedule?.keyShiftSemitones ?? null;
+}
+
+/** KEY SYNC derives harmonic offsets from the acknowledged output clock only.
+ * Render/control time may be ahead of the listener and must never leak here. */
+export function presentedEffectiveAudibleSemitones(
+	timeline: PresentedTransportTimeline
+): number {
+	const presentedAt = timeline.last_presentation_context_time_s;
+	if (presentedAt === null) {
+		throw new Error('KEY SYNC requires output presentation truth before deriving effective offsets');
+	}
+	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
+	if (schedule === null) {
+		throw new Error('KEY SYNC requires an output-presented schedule before deriving effective offsets');
+	}
+	return composeStretchSemitones(
+		schedule.tempoRatio,
+		schedule.masterTempoEnabled ?? true,
+		schedule.keyShiftSemitones ?? 0
+	);
 }
 
 export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
@@ -1722,15 +1787,52 @@ async function _scheduleDeckSerial(
 	return scheduledInputSec;
 }
 
+function _applyPausedDeckControlSettings(
+	st: DeckState,
+	rt: _DeckRuntime,
+	update: PausedDeckControlUpdate
+): DeckControlSettings {
+	const next = applyPausedDeckControlSettings(
+		{
+			tempoRatio: rt.controlTempoRatio,
+			masterTempoEnabled: rt.controlMasterTempoEnabled,
+			keyShiftSemitones: rt.controlKeyShiftSemitones
+		},
+		update
+	);
+	rt.controlTempoRatio = next.tempoRatio;
+	rt.controlMasterTempoEnabled = next.masterTempoEnabled;
+	rt.controlKeyShiftSemitones = next.keyShiftSemitones;
+	st.pitch = next.tempoRatio;
+	st.master_tempo_enabled = next.masterTempoEnabled;
+	return next;
+}
+
 /** Apply a validated key transposition through the same revisioned Signalsmith
  * schedule path as tempo and Master Tempo. A paused deck stores the next DSP
  * value; a live deck preserves its presented transport projection. */
 async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promise<void> {
 	const { st, rt } = _requireLoaded(deck, 'set key shift');
 	_assertKeyShift(keyShiftSemitones);
-	if (!st.playing) {
-		st.key_shift_semitones = keyShiftSemitones;
-		rt.controlKeyShiftSemitones = keyShiftSemitones;
+	const plan = planKeyShiftMutation(
+		{
+			playing: st.playing,
+			audible: st.audible,
+			controlActive: rt.controlActive,
+			pendingScheduleCount: rt.pending.length,
+			scheduleIntentCount: rt.scheduleIntentCount
+		},
+		rt.desiredActive,
+		keyShiftSemitones
+	);
+	if (plan.kind === 'immediate') {
+		if (plan.publishedKeyShiftSemitones === null) {
+			throw new Error('immediate key shift plan omitted its public value');
+		}
+		st.key_shift_semitones = plan.publishedKeyShiftSemitones;
+		_applyPausedDeckControlSettings(st, rt, {
+			keyShiftSemitones: plan.publishedKeyShiftSemitones
+		});
 		return;
 	}
 	if (_ctx === null) throw new Error('set key shift: audio graph not initialised');
@@ -1738,12 +1840,44 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 		deck,
 		_futureScheduleTime(deck),
 		(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
-		true,
+		plan.active,
 		undefined,
 		undefined,
 		undefined,
 		keyShiftSemitones
 	);
+}
+
+export interface KeyShiftMutationPlan {
+	kind: 'immediate' | 'scheduled';
+	active: boolean;
+	publishedKeyShiftSemitones: number | null;
+}
+
+/** A stop acknowledged by the processor can remain audible at the output.
+ * Key changes must join that revisioned schedule instead of publishing ahead
+ * of the listener. */
+export function planKeyShiftMutation(
+	activity: TransportMutationActivity,
+	desiredActive: boolean,
+	requestedKeyShiftSemitones: number
+): KeyShiftMutationPlan {
+	if (typeof desiredActive !== 'boolean') {
+		throw new TypeError('key shift desired active must be boolean');
+	}
+	_assertKeyShift(requestedKeyShiftSemitones);
+	if (transportNeedsScheduledMutation(activity)) {
+		return {
+			kind: 'scheduled',
+			active: desiredActive,
+			publishedKeyShiftSemitones: null
+		};
+	}
+	return {
+		kind: 'immediate',
+		active: false,
+		publishedKeyShiftSemitones: requestedKeyShiftSemitones
+	};
 }
 
 function _desiredKeyShiftSemitones(deck: DeckId): number {
@@ -1752,13 +1886,7 @@ function _desiredKeyShiftSemitones(deck: DeckId): number {
 }
 
 function _effectiveAudibleSemitones(deck: DeckId): number {
-	if (_ctx === null) throw new Error('KEY SYNC requires an AudioContext for an active deck');
-	const segment = _controlSegmentAt(_rt[deck], _ctx.currentTime);
-	return composeStretchSemitones(
-		segment.tempoRatio,
-		segment.masterTempoEnabled ?? true,
-		segment.keyShiftSemitones ?? 0
-	);
+	return presentedEffectiveAudibleSemitones(_rt[deck].presentation);
 }
 
 function _clearSlip(deck: DeckId): void {
@@ -2605,7 +2733,7 @@ class RbAudioEngine implements AudioEngine {
 	}
 
 	async setTempoRatio(deck: DeckId, ratio: number): Promise<void> {
-		const { st } = _requireLoaded(deck, 'setTempoRatio');
+		const { st, rt } = _requireLoaded(deck, 'setTempoRatio');
 		if (!Number.isFinite(ratio) || ratio <= 0) {
 			throw new RangeError(`setTempoRatio: ratio must be > 0, got ${ratio}`);
 		}
@@ -2648,7 +2776,7 @@ class RbAudioEngine implements AudioEngine {
 				);
 			}
 		} else {
-			st.pitch = ratio;
+			_applyPausedDeckControlSettings(st, rt, { tempoRatio: ratio });
 		}
 	}
 
@@ -2774,7 +2902,7 @@ class RbAudioEngine implements AudioEngine {
 		if (typeof enabled !== 'boolean') throw new TypeError('setMasterTempo: enabled must be boolean');
 		const st = deckStates[deck];
 		if (!st.playing) {
-			st.master_tempo_enabled = enabled;
+			_applyPausedDeckControlSettings(st, _rt[deck], { masterTempoEnabled: enabled });
 			return;
 		}
 		if (_ctx === null) throw new Error('setMasterTempo: audio graph not initialised');

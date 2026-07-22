@@ -159,6 +159,32 @@ test('Master Tempo preserves pitch while the disabled mode follows playback rate
 	assert.throws(() => audio.masterTempoSemitones(0, true), /tempo ratio/i);
 });
 
+test('paused tempo and Master Tempo settings persist into the next requested Signalsmith play', () => {
+	const afterTempo = audio.applyPausedDeckControlSettings(
+		{ tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 2 },
+		{ tempoRatio: 1.08 }
+	);
+	const afterMasterTempo = audio.applyPausedDeckControlSettings(afterTempo, {
+		masterTempoEnabled: false
+	});
+
+	assert.deepEqual(afterMasterTempo, {
+		tempoRatio: 1.08,
+		masterTempoEnabled: false,
+		keyShiftSemitones: 2
+	});
+	const nextPlay = audio.stretchScheduleChange(
+		0,
+		true,
+		afterMasterTempo.tempoRatio,
+		afterMasterTempo.masterTempoEnabled,
+		afterMasterTempo.keyShiftSemitones,
+		null
+	);
+	assert.equal(nextPlay.rate, 1.08);
+	assert.ok(Math.abs(nextPlay.semitones - (12 * Math.log2(1.08) + 2)) < 1e-12);
+});
+
 test('arming SLIP alone does not alter the paused transport read model', async () => {
 	const before = { ...audio.getDeckState(1) };
 	await audio.engine.setSlip(1, true);
@@ -242,6 +268,45 @@ test('key shift state remains on its presented revision until output crosses its
 	// Existing output-clock evaluation still owns publication, not command time.
 	audio.observePresentedTransportTimeline(timeline, { contextTime: 15, performanceTime: 15_000 }, 60);
 	assert.equal(audio.presentedKeyShiftSemitonesAt(timeline, 15), 0);
+});
+
+test('KEY SYNC reads effective offsets from the last output-presented schedule only', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 4,
+		startPositionSec: 0,
+		tempoRatio: 1.1,
+		masterTempoEnabled: false,
+		keyShiftSemitones: 2
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 6,
+		tempoRatio: 0.9,
+		masterTempoEnabled: false,
+		keyShiftSemitones: -1
+	});
+	audio.observePresentedTransportTimeline(
+		timeline,
+		{ contextTime: 5, performanceTime: 5_000 },
+		60
+	);
+
+	assert.ok(
+		Math.abs(audio.presentedEffectiveAudibleSemitones(timeline) - (12 * Math.log2(1.1) + 2)) <
+			1e-12,
+		'the unpresented revision at contextTime 10 must not affect KEY SYNC'
+	);
+	assert.throws(
+		() => audio.presentedEffectiveAudibleSemitones(audio.createPresentedTransportTimeline(0)),
+		/presentation truth/i
+	);
 });
 
 test('legacy Key Sync helper remains a zero-offset convenience wrapper', () => {
@@ -748,6 +813,40 @@ test('pending pause transport mutations stay scheduled instead of touching the f
 				scheduleIntentCount: 0
 			}),
 		/pendingScheduleCount/i
+	);
+});
+
+test('KEY nudge keeps an acknowledged pending stop on the scheduled output path', () => {
+	const pendingStop = audio.planKeyShiftMutation(
+		{
+			playing: false,
+			audible: true,
+			controlActive: true,
+			pendingScheduleCount: 1,
+			scheduleIntentCount: 0
+		},
+		false,
+		3
+	);
+	assert.deepEqual(pendingStop, {
+		kind: 'scheduled',
+		active: false,
+		publishedKeyShiftSemitones: null
+	});
+
+	assert.deepEqual(
+		audio.planKeyShiftMutation(
+			{
+				playing: false,
+				audible: false,
+				controlActive: false,
+				pendingScheduleCount: 0,
+				scheduleIntentCount: 0
+			},
+			false,
+			3
+		),
+		{ kind: 'immediate', active: false, publishedKeyShiftSemitones: 3 }
 	);
 });
 
