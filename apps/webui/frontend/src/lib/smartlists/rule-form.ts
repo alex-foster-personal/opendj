@@ -41,8 +41,8 @@ export interface FormPredicate {
 	/** 'between' op, lower/upper bound. */
 	valueLo: string;
 	valueHi: string;
-	/** 'in' op, comma-separated raw text. */
-	valueList: string;
+	/** 'in' op, one editable value per array entry. */
+	valueList: string[];
 }
 
 export interface FormGroup {
@@ -95,7 +95,7 @@ export function createEmptyPredicate(field: FieldName = ALLOWED_FIELDS[0]): Form
 		value: '',
 		valueLo: '',
 		valueHi: '',
-		valueList: ''
+		valueList: []
 	};
 }
 
@@ -106,6 +106,16 @@ export function createEmptyGroup(op: LogicalOp = 'and'): FormGroup {
 		op,
 		children: op === 'not' ? [createEmptyPredicate()] : []
 	};
+}
+
+/** Change a group's operator only when the existing children remain valid.
+ * Returns an explicit error instead of dropping children during a NOT change. */
+export function changeGroupOp(group: FormGroup, nextOp: LogicalOp): string | null {
+	if (nextOp === 'not' && group.children.length !== 1) {
+		return "cannot change to 'not': NOT requires exactly one child; remove children first";
+	}
+	group.op = nextOp;
+	return null;
 }
 
 /** Convert a validated (or freshly loaded) rule AST into an editable form tree. */
@@ -126,7 +136,7 @@ export function astToForm(rule: RuleAst): FormNode {
 		form.valueLo = stringifyAstScalar(lo);
 		form.valueHi = stringifyAstScalar(hi);
 	} else if (predicate.op === 'in') {
-		form.valueList = (predicate.value as unknown[]).map(stringifyAstScalar).join(', ');
+		form.valueList = (predicate.value as unknown[]).map(stringifyAstScalar);
 	} else {
 		form.value = stringifyAstScalar(predicate.value);
 	}
@@ -135,6 +145,9 @@ export function astToForm(rule: RuleAst): FormNode {
 
 function parseScalar(raw: string, field: FieldName, path: string): unknown {
 	const fieldType = FIELD_TYPES[field];
+	if (fieldType === 'string' || fieldType === 'list') {
+		return raw;
+	}
 	const trimmed = raw.trim();
 	if (trimmed === '') {
 		throw new Error(`${path}: value must not be empty`);
@@ -160,15 +173,11 @@ function parseScalar(raw: string, field: FieldName, path: string): unknown {
 	return trimmed;
 }
 
-function parseList(raw: string, field: FieldName, path: string): unknown[] {
-	const items = raw
-		.split(',')
-		.map((s) => s.trim())
-		.filter((s) => s.length > 0);
-	if (items.length === 0) {
-		throw new Error(`${path}: expected at least one comma-separated value`);
+function parseList(raw: readonly string[], field: FieldName, path: string): unknown[] {
+	if (raw.length === 0) {
+		throw new Error(`${path}: expected at least one value`);
 	}
-	return items.map((item, i) => parseScalar(item, field, `${path}[${i}]`));
+	return raw.map((item, i) => parseScalar(item, field, `${path}[${i}]`));
 }
 
 /** Convert an editable form tree back into a rule AST. Throws with a

@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { LOGICAL_OPS } from '$lib/smartlists/rule-schema';
-	import { createEmptyGroup, createEmptyPredicate, validateNodeOwn, type FormGroup, type FormNode } from '$lib/smartlists/rule-form';
+	import { changeGroupOp, createEmptyGroup, createEmptyPredicate, validateNodeOwn, type FormGroup, type FormNode } from '$lib/smartlists/rule-form';
 	import RuleGroup from './RuleGroup.svelte';
 	import RulePredicate from './RulePredicate.svelte';
 
 	let { group, onRemove }: { group: FormGroup; onRemove?: () => void } = $props();
 
 	const errors = $derived(validateNodeOwn(group));
+	let opTransitionError = $state<string | null>(null);
 
-	function onOpChange(): void {
-		if (group.op === 'not' && group.children.length > 1) {
-			group.children = group.children.slice(0, 1);
-		}
+	function onOpChange(event: Event): void {
+		const select = event.currentTarget as HTMLSelectElement;
+		const nextOp = select.value as FormGroup['op'];
+		opTransitionError = changeGroupOp(group, nextOp);
+		if (opTransitionError) select.value = group.op;
 	}
 
 	function addPredicate(): void {
@@ -29,7 +31,7 @@
 
 <div class="rule-group">
 	<div class="rule-group-header">
-		<select bind:value={group.op} onchange={onOpChange} aria-label="Logical operator">
+		<select value={group.op} onchange={onOpChange} aria-label="Logical operator">
 			{#each LOGICAL_OPS as op (op)}
 				<option value={op}>{op.toUpperCase()}</option>
 			{/each}
@@ -45,6 +47,9 @@
 				<li>{error.message}</li>
 			{/each}
 		</ul>
+	{/if}
+	{#if opTransitionError}
+		<p class="group-transition-error" role="alert">{opTransitionError}</p>
 	{/if}
 
 	<div class="rule-group-children">
@@ -94,6 +99,11 @@
 	.group-errors {
 		margin: 0 0 0.4rem 0;
 		padding-left: 1.2rem;
+		color: var(--danger);
+		font-size: 0.8rem;
+	}
+	.group-transition-error {
+		margin: 0 0 0.4rem 0;
 		color: var(--danger);
 		font-size: 0.8rem;
 	}

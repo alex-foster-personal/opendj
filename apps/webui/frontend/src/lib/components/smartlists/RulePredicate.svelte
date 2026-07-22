@@ -13,6 +13,14 @@
 		}
 	}
 
+	function addListValue(): void {
+		predicate.valueList.push('');
+	}
+
+	function removeListValue(index: number): void {
+		predicate.valueList.splice(index, 1);
+	}
+
 	const valueInputType = $derived(FIELD_TYPES[predicate.field] === 'number' ? 'number' : 'text');
 </script>
 
@@ -34,7 +42,15 @@
 		<span class="and-label">and</span>
 		<input type={valueInputType} bind:value={predicate.valueHi} placeholder="upper bound" aria-label="Upper bound" />
 	{:else if predicate.op === 'in'}
-		<input type="text" bind:value={predicate.valueList} placeholder="comma, separated, values" aria-label="Values" />
+		<div class="value-list" aria-label="Values">
+			{#each predicate.valueList as _value, index (index)}
+				<div class="value-list-row">
+					<input type="text" bind:value={predicate.valueList[index]} placeholder="value" aria-label={`Value ${index + 1}`} />
+					<button type="button" onclick={() => removeListValue(index)} aria-label={`Remove value ${index + 1}`}>&times;</button>
+				</div>
+			{/each}
+			<button type="button" onclick={addListValue}>+ value</button>
+		</div>
 	{:else}
 		<input type={valueInputType} bind:value={predicate.value} placeholder="value" aria-label="Value" />
 	{/if}
@@ -65,6 +81,14 @@
 	}
 	.and-label {
 		color: var(--muted);
+	}
+	.value-list, .value-list-row {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
+	.value-list {
+		flex-direction: column;
 	}
 	.hint {
 		color: var(--muted);

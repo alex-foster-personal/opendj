@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { getSmartlistTracks, listSmartlists, type SmartlistOut, type SmartlistTrackOut } from '$lib/api';
+	import { getSmartlistTracks, listSmartlists, updateSmartlist, type SmartlistOut, type SmartlistTrackOut } from '$lib/api';
 	import {
 		astToForm,
 		createEmptyGroup,
@@ -22,6 +22,8 @@
 	let orderBy = $state('added_date desc');
 	let tracks = $state<SmartlistTrackOut[]>([]);
 	let tracksError = $state<string | null>(null);
+	let saving = $state(false);
+	let saveError = $state<string | null>(null);
 
 	const errors = $derived(formRoot ? validateForm(formRoot) : []);
 	const astResult = $derived.by(() => {
@@ -38,6 +40,36 @@
 		const group = createEmptyGroup('and');
 		group.children = [formRoot];
 		formRoot = group;
+	}
+
+	async function save(): Promise<void> {
+		if (!smartlist || !astResult?.ok) {
+			saveError = 'Fix rule validation errors before saving.';
+			return;
+		}
+		saving = true;
+		saveError = null;
+		try {
+			const saved = await updateSmartlist(smartlist.id, {
+				rule: astResult.ast,
+				order_by: orderBy
+			});
+			smartlist = saved;
+			orderBy = saved.order_by;
+			formRoot = astToForm(saved.rule);
+			pushToast('Smartlist saved.');
+			try {
+				tracks = await getSmartlistTracks(saved.id);
+				tracksError = null;
+			} catch (exc) {
+				tracksError = `${exc}`;
+				pushToast('Smartlist saved, but its track preview could not refresh.', 'error');
+			}
+		} catch (exc) {
+			saveError = `${exc}`;
+		} finally {
+			saving = false;
+		}
 	}
 
 	onMount(async () => {
@@ -116,7 +148,12 @@
 	{/if}
 
 	<div class="save-row">
-		<button class="primary" disabled title="write path pending">Save</button>
+		<button class="primary" onclick={save} disabled={saving || !astResult?.ok}>
+			{saving ? 'Saving...' : 'Save'}
+		</button>
+		{#if saveError}
+			<p class="save-error" role="alert">Save failed: {saveError}</p>
+		{/if}
 	</div>
 
 	<h3>Currently matching tracks</h3>
@@ -159,6 +196,9 @@
 	}
 	.save-row {
 		margin: 1rem 0;
+	}
+	.save-error {
+		color: var(--danger);
 	}
 	.validation-summary {
 		margin: 0.5rem 0;

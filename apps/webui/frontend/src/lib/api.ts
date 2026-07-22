@@ -334,6 +334,24 @@ export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[
 	return body.tracks;
 }
 
+/** Replace a smartlist rule through the same HTTP apply path as the editor.
+ * The returned object is server-persisted readback, never an optimistic copy. */
+export async function updateSmartlist(
+	id: string,
+	body: { rule: RuleAst; order_by?: string }
+): Promise<SmartlistOut> {
+	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}`, {
+		method: 'PUT',
+		body: JSON.stringify(body)
+	});
+	if (!r.ok) {
+		const payload = (await r.json()) as { detail?: { message?: string } | string };
+		const detail = typeof payload.detail === 'object' ? payload.detail?.message : payload.detail;
+		throw new Error(detail ?? `PUT smartlist failed: ${r.status}`);
+	}
+	return r.json();
+}
+
 export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
 	const r = await request('/api/v1/health');
 	return {
