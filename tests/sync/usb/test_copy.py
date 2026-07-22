@@ -10,6 +10,9 @@ from apps.sync.usb.copy import copy_one, delete_one, rename_one
 from apps.sync.usb.diff import Op
 from apps.sync.usb.profile import load_from_string
 
+# Pioneer USB actuator flow stays Mac-side (PLAN: skip cleanly off-Mac).
+pytestmark = pytest.mark.requires_darwin
+
 
 def _profile(policy: str = "canonical-wins"):
     return load_from_string(

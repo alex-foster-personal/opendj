@@ -57,16 +57,28 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared.paths import DATA_DIR, STATE_DB
+from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
+from apps.shared import platform_paths
+from apps.shared.platform_paths import MappedPath, resolve_library_path
 from apps.vocals import cache as vocal_cache
 
 log = logging.getLogger(__name__)
 
+# MDT_DATA_DIR: explicit override so a backend run against an unpacked
+# scripts/data_snapshot.py pack (e.g. on a Windows box, or any Mac dev dir
+# other than the default) never touches apps.shared.paths' hardcoded layout.
+# Read once at import; every constant below is rederived from the SAME
+# DATA_DIR so there is one source of truth. Constant NAMES are unchanged.
+_MDT_DATA_DIR_ENV: Optional[str] = os.environ.get("MDT_DATA_DIR")
+DATA_DIR: Path = Path(_MDT_DATA_DIR_ENV) if _MDT_DATA_DIR_ENV else _PATHS_DATA_DIR
+
 MASTER_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
-SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 ANLZ_CACHE_DIR: Path = DATA_DIR / "state" / "anlz-cache"
 # demucs gap-fill cache written by ``python -m apps.vocals`` (SPIKE-B2).
 VOCAL_CACHE_DIR: Path = vocal_cache.cache_dir(DATA_DIR)
+# Matches apps.shared.paths' STATE_DIR/STATE_DB formula exactly, so this
+# equals the default STATE_DB when MDT_DATA_DIR is unset.
+STATE_DB: Path = DATA_DIR / "state" / "state.db"
 
 AUDIO_MEDIA_TYPES: dict[str, str] = {
     ".mp3": "audio/mpeg",
@@ -237,14 +249,70 @@ def resolve_content(stable_id: str) -> RbContent:
 
 
 def resolve_share_path(path: str) -> Path:
-    """RECON-DATA.md section 1: /PIONEER/ paths are share-relative."""
-    if path.startswith("/PIONEER/"):
-        root = SHARE_ROOT.resolve()
-        resolved = (root / path.lstrip("/")).resolve()
-        if not resolved.is_relative_to(root):
-            raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
-        return resolved
+    """Backward-compat alias over :func:`resolve_asset_path`.
+
+    Kept ONLY for the legacy non-owned call sites that still expect a bare
+    ``Path`` back (``apps/webui/server/routes/rb_assets.py``,
+    ``tests/test_rb_assets.py``) -- new code in this module calls
+    :func:`resolve_asset_path` directly so it can see the explicit
+    unmapped state. Mirrors the pre-portability behaviour when the shared
+    resolver reports "unmapped" by falling back to ``Path(path)`` verbatim
+    (never existing -- every caller already guards with ``.is_file()``).
+    """
+    mapped = resolve_asset_path(path)
+    if mapped.resolved is not None:
+        return mapped.resolved
+    if mapped.reason.startswith("unsafe:"):
+        raise ValueError(f"unsafe rekordbox asset path: {path!r}")
     return Path(path)
+
+
+def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
+    """Resolve an asset candidate and reject a share-root symlink escape.
+
+    ``/PIONEER`` records are constrained to the platform-bound share root.
+    Lexical traversal is rejected by ``platform_paths``; resolving here also
+    closes the filesystem-level escape through a symlink in that tree. Native
+    and configured path-map targets remain intentionally unconstrained: their
+    roots are user-configured library locations, not Rekordbox's share tree.
+    """
+    try:
+        resolved = candidate.resolve(strict=False)
+    except OSError:
+        return MappedPath(
+            original=mapped.original,
+            resolved=None,
+            mapped=False,
+            reason="unsafe:resolution-error",
+        )
+    if mapped.reason == "share":
+        root = platform_paths.SHARE_ROOT.resolve()
+        if not resolved.is_relative_to(root):
+            return MappedPath(
+                original=mapped.original,
+                resolved=None,
+                mapped=False,
+                reason="unsafe:share-symlink",
+            )
+    return MappedPath(
+        original=mapped.original,
+        resolved=resolved,
+        mapped=mapped.mapped,
+        reason=mapped.reason,
+    )
+
+
+def resolve_asset_path(path: str) -> MappedPath:
+    """Map one vendor asset path and enforce symlink-aware containment."""
+    mapped = resolve_library_path(path)
+    if mapped.resolved is None:
+        return mapped
+    return _contained_asset_path(mapped, mapped.resolved)
+
+
+def _asset_sibling(mapped: MappedPath, candidate: Path) -> MappedPath:
+    """Contain a derived sibling of an already-mapped vendor asset path."""
+    return _contained_asset_path(mapped, candidate)
 
 
 def is_streaming_path(folder_path: Optional[str]) -> bool:
@@ -266,7 +334,15 @@ def audio_file(content: RbContent) -> tuple[Path, str]:
             f"track {content.stable_id} is a streaming row "
             f"({content.folder_path.split(':', 1)[0]}:) with no local file",
         )
-    path = resolve_share_path(content.folder_path)
+    mapped = resolve_asset_path(content.folder_path)
+    if mapped.resolved is None:
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"audio file for track {content.stable_id} could not be "
+            f"resolved on this platform ({mapped.reason}): "
+            f"{content.folder_path}",
+        )
+    path = mapped.resolved
     if not path.is_file():
         raise not_found(
             "AUDIO_FILE_MISSING",
@@ -301,7 +377,24 @@ def artwork_file(content: RbContent, size: str) -> Path:
             f"track {content.stable_id} has no ImagePath in rekordbox",
         )
     # ImagePath points at .../artwork.jpg; siblings artwork_s / artwork_m.
-    path = resolve_share_path(content.image_path).parent / ARTWORK_FILENAMES[size]
+    mapped = resolve_asset_path(content.image_path)
+    if mapped.resolved is None:
+        raise not_found(
+            "ARTWORK_NOT_FOUND",
+            f"artwork ImagePath for track {content.stable_id} could not be "
+            f"resolved on this platform ({mapped.reason}): "
+            f"{content.image_path}",
+        )
+    derived = _asset_sibling(
+        mapped, mapped.resolved.parent / ARTWORK_FILENAMES[size]
+    )
+    if derived.resolved is None:
+        raise not_found(
+            "ARTWORK_NOT_FOUND",
+            f"artwork file for track {content.stable_id} is unsafe "
+            f"({derived.reason}): {content.image_path}",
+        )
+    path = derived.resolved
     if not path.is_file():
         raise not_found(
             "ARTWORK_NOT_FOUND",
@@ -317,7 +410,15 @@ def anlz_dir(content: RbContent) -> Path:
             "ANALYSIS_NOT_FOUND",
             f"track {content.stable_id} has no AnalysisDataPath in rekordbox",
         )
-    dat = resolve_share_path(content.analysis_data_path)
+    mapped = resolve_asset_path(content.analysis_data_path)
+    if mapped.resolved is None:
+        raise not_found(
+            "ANALYSIS_NOT_FOUND",
+            f"AnalysisDataPath for track {content.stable_id} could not be "
+            f"resolved on this platform ({mapped.reason}): "
+            f"{content.analysis_data_path}",
+        )
+    dat = mapped.resolved
     if not dat.is_file():
         raise not_found(
             "ANALYSIS_NOT_FOUND",
@@ -445,9 +546,15 @@ def preview_strip(
     """
     if not analysis_data_path:
         return None, None
-    dat = resolve_share_path(analysis_data_path)
+    mapped = resolve_asset_path(analysis_data_path)
+    if mapped.resolved is None:
+        return None, None  # unmapped on this platform: a real "no analysis" state
+    dat = mapped.resolved
     for suffix, reader in _PREVIEW_SOURCES:
-        source = dat.with_suffix(suffix)
+        derived = _asset_sibling(mapped, dat.with_suffix(suffix))
+        if derived.resolved is None:
+            return None, None
+        source = derived.resolved
         if not source.is_file():
             continue
         mtime = source.stat().st_mtime
@@ -565,9 +672,12 @@ def demucs_vocals_payload(content: RbContent) -> Optional[dict[str, Any]]:
     """
     if content.folder_path is None or is_streaming_path(content.folder_path):
         return None
+    mapped = resolve_asset_path(content.folder_path)
+    if mapped.resolved is None:
+        return None  # unmapped on this platform: audio is not locatable
     entry = vocal_cache.load_valid_entry(
         VOCAL_CACHE_DIR / f"{content.stable_id}.json",
-        resolve_share_path(content.folder_path),
+        mapped.resolved,
     )
     if entry is None:
         return None
@@ -784,7 +894,8 @@ def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
             else:
                 stale.append(path)
     for path in stale:
-        out[path] = resolve_share_path(path).is_file()
+        mapped = resolve_asset_path(path)
+        out[path] = mapped.resolved is not None and mapped.resolved.is_file()
     if stale:
         with _FILE_EXISTS_LOCK:
             for path in stale:
@@ -1041,10 +1152,21 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     the live ``djmdCue`` rows because they can change without touching ANLZ files.
     """
     directory = anlz_dir(content)
-    # anlz_dir() enforced a non-None AnalysisDataPath pointing at the .DAT;
-    # the .2EX sibling (PVDI carrier) shares its stem.
+    # anlz_dir() already resolved + verified AnalysisDataPath (mapped and
+    # on disk); the .2EX sibling (PVDI carrier) shares its stem.
     assert content.analysis_data_path is not None
-    twoex_path = resolve_share_path(content.analysis_data_path).with_suffix(".2EX")
+    mapped_adp = resolve_asset_path(content.analysis_data_path)
+    assert mapped_adp.resolved is not None  # anlz_dir() would have 404'd
+    mapped_twoex = _asset_sibling(
+        mapped_adp, mapped_adp.resolved.with_suffix(".2EX")
+    )
+    if mapped_twoex.resolved is None:
+        raise not_found(
+            "ANALYSIS_NOT_FOUND",
+            f".2EX file for track {content.stable_id} is unsafe "
+            f"({mapped_twoex.reason}): {content.analysis_data_path}",
+        )
+    twoex_path = mapped_twoex.resolved
     anlz_mtime = _anlz_mtime(directory)
     cached = _load_cached_payload(content.stable_id, anlz_mtime, points)
     if cached is not None:
@@ -1634,7 +1756,6 @@ __all__ = [
     "PREVIEW_COLUMNS",
     "RbContent",
     "RbRowMeta",
-    "SHARE_ROOT",
     "STREAMING_PREFIXES",
     "VOCAL_CACHE_DIR",
     "VOCAL_INTENSITY_MIN",

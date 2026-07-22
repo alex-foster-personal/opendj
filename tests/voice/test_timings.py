@@ -58,7 +58,8 @@ class TestBudgetWarning:
 class TestDefaultLogPath:
     def test_env_override(self):
         p = timings.default_log_path(env={"VOICE_TIMINGS_LOG": "/tmp/custom.log"})
-        assert str(p) == "/tmp/custom.log"
+        # Path() normalises separators per-OS; compare Paths, not strings.
+        assert p == Path("/tmp/custom.log")
 
     def test_default_points_at_data_voice(self):
         p = timings.default_log_path(env={})

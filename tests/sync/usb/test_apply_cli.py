@@ -10,6 +10,9 @@ from apps.sync.usb import apply as apply_mod
 from apps.sync.usb import plan as plan_mod
 from apps.sync.usb.state import CanonicalTrack
 
+# Pioneer USB actuator flow stays Mac-side (PLAN: skip cleanly off-Mac).
+pytestmark = pytest.mark.requires_darwin
+
 
 def _canon_from_source_tree(make_track) -> list[CanonicalTrack]:
     return [

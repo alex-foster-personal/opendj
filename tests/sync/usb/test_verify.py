@@ -9,8 +9,10 @@ import pytest
 from apps.sync.usb import apply as apply_mod
 from apps.sync.usb import verify as verify_mod
 from apps.sync.usb.profile import load_from_string
-from apps.sync.usb.state import CanonicalTrack
 from apps.sync.usb.verify import FileStatus, plan_from_verify, verify_drive
+
+# Pioneer USB actuator flow stays Mac-side (PLAN: skip cleanly off-Mac).
+pytestmark = pytest.mark.requires_darwin
 
 
 def _profile():

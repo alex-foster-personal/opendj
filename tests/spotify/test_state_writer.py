@@ -262,8 +262,10 @@ def test_emit_reversal_script_is_self_contained(tmp_path: Path) -> None:
     script = emit_reversal_script(backup, target, out_dir=tmp_path)
     text = script.read_text()
     assert "apps.spotify" not in text
-    assert str(backup) in text
-    assert str(target) in text
+    # The generator embeds paths via {str(path)!r}; on Windows the repr
+    # doubles backslashes, so match the repr form, not the bare str.
+    assert repr(str(backup)) in text
+    assert repr(str(target)) in text
 
 
 @pytest.mark.requirement("CAT-01")

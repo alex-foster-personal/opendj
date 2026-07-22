@@ -5,6 +5,8 @@ Ties to INFRA-02 (shared modules usable across apps).
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -116,3 +118,70 @@ def test_live_db_gate_is_skipped_without_flag() -> None:
     ``scripts/pytest_reqs_plugin.py`` is broken.
     """
     assert paths.REKORDBOX_LIVE_DB.exists(), "would only pass when --live-db given"
+
+
+@pytest.mark.requirement("INFRA-02")
+def test_paths_reexports_every_previously_public_name() -> None:
+    """Windows-portability refactor moved OS-branching into platform_paths;
+
+    every name paths.py exported before that refactor must still resolve
+    here so no consumer's ``from apps.shared.paths import ...`` breaks.
+    """
+    expected_names = (
+        "HOME",
+        "PROJECT_ROOT",
+        "DATA_DIR",
+        "STATE_DIR",
+        "STATE_DB",
+        "REKORDBOX_LIVE_DB",
+        "REKORDBOX_WORKING_DB",
+        "DJAY_LIVE_DB",
+        "DJAY_WORKING_DB",
+        "MUSIC_ROOTS",
+        "AUDIO_EXTENSIONS",
+        "copy_live_dbs",
+        "DEDUP_DIR",
+        "DEDUP_FALLBACK_DB",
+        "DEDUP_CLUSTERS_CSV",
+        "DEDUP_MANUAL_REVIEW_CSV",
+        "DEDUP_REWRITE_PLAN_CSV",
+        "DEDUP_REWRITE_SUMMARY_MD",
+        "DEDUP_ARCHIVE_ROOT",
+        "TAGS_DIR",
+        "TAGS_BACKUPS_DIR",
+        "TAGS_UNIFIED_PREVIEW_CSV",
+        "TAGS_REVERSAL_DIR",
+    )
+    for name in expected_names:
+        assert hasattr(paths, name), f"apps.shared.paths lost export: {name}"
+
+
+@pytest.mark.requirement("INFRA-02")
+def test_music_roots_is_nonempty_list_of_paths() -> None:
+    """MUSIC_ROOTS (PR #133 logic, re-exported from platform_paths) is usable."""
+    assert isinstance(paths.MUSIC_ROOTS, list)
+    assert paths.MUSIC_ROOTS
+    for root in paths.MUSIC_ROOTS:
+        assert isinstance(root, Path)
+
+
+@pytest.mark.requirement("INFRA-02")
+def test_music_roots_respects_mdt_music_roots_env() -> None:
+    """MDT_MUSIC_ROOTS (os.pathsep-split) overrides the default ``~/Music``.
+
+    MUSIC_ROOTS is a module-level constant computed once at import (PR #133
+    logic), so we exercise this in a fresh subprocess rather than mutating
+    the already-imported, process-wide ``apps.shared.platform_paths`` module
+    (which would leak into other tests via the shared ``sys.modules`` entry).
+    """
+    env = dict(os.environ)
+    env["MDT_MUSIC_ROOTS"] = f"/tmp/a{os.pathsep}/tmp/b"
+    proc = subprocess.run(
+        [sys.executable, "-c", "from apps.shared.paths import MUSIC_ROOTS; print(MUSIC_ROOTS)"],
+        cwd=paths.PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert proc.stdout.strip() == str([Path("/tmp/a"), Path("/tmp/b")])

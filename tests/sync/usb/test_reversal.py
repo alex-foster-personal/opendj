@@ -9,6 +9,9 @@ from apps.sync.usb.copy import CopyResult
 from apps.sync.usb.diff import Op
 from apps.sync.usb.reversal import ReversalLog, verify_syntax
 
+# Pioneer USB actuator flow stays Mac-side (PLAN: skip cleanly off-Mac).
+pytestmark = pytest.mark.requires_darwin
+
 
 def _op(kind: str, dst: Path, src: Path | None = None) -> Op:
     return Op(

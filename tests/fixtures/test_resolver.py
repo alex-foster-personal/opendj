@@ -166,7 +166,10 @@ def test_symlink_resolves(stub_fixtures_root: Path, tmp_path: Path) -> None:
     (target / "hello.txt").write_text("hello", encoding="utf-8")
 
     link = stub_fixtures_root / "sym-fixture"
-    link.symlink_to(target)
+    try:
+        link.symlink_to(target)
+    except OSError as exc:  # win32: symlinks need admin/dev-mode privilege
+        pytest.skip(f"symlinks unavailable on this platform/user: {exc}")
 
     resolved = fixture_path("sym-fixture")
     assert resolved == target.resolve()

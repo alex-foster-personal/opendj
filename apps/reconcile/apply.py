@@ -283,7 +283,7 @@ def _write_reversal_script(
 Restores the original FolderPath values for the IDs below. If this script
 itself fails, you can always fall back to:
 
-    cp "{backup}" "{paths.REKORDBOX_LIVE_DB}"
+    cp "{backup.as_posix()}" "{paths.REKORDBOX_LIVE_DB.as_posix()}"
 """
 from __future__ import annotations
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from apps.shared import platform_paths as pp
 from apps.webui.server import rb_vendor
 
 
@@ -23,6 +24,7 @@ def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> N
         "stable_id": "track-1",
         "waveform": {"kind": "tri"},
         "cues": [{"comment": "obsolete"}],
+        "vocals": {"status": "not_analyzed"},
     }
     live_cues = [{"comment": "current"}]
     content = rb_vendor.RbContent(
@@ -39,8 +41,13 @@ def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> N
     monkeypatch.setattr(rb_vendor, "anlz_dir", lambda _content: tmp_path)
     monkeypatch.setattr(
         rb_vendor,
-        "resolve_share_path",
-        lambda _analysis_path: tmp_path / "ANLZ0000.DAT",
+        "resolve_asset_path",
+        lambda analysis_path: pp.MappedPath(
+            original=analysis_path,
+            resolved=tmp_path / "ANLZ0000.DAT",
+            mapped=True,
+            reason="native",
+        ),
     )
     monkeypatch.setattr(rb_vendor, "_anlz_mtime", lambda _directory: 1.0)
     monkeypatch.setattr(

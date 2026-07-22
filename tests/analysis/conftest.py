@@ -9,9 +9,10 @@ import math
 import subprocess
 from pathlib import Path
 
-import numpy as np
 import pytest
-import soundfile as sf
+
+np = pytest.importorskip("numpy")
+sf = pytest.importorskip("soundfile")
 
 SR = 44100
 

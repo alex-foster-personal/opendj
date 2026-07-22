@@ -4,28 +4,58 @@ Central module for every file/path constant used across the codebase so we
 never sprinkle hard-coded paths around. Also exposes `copy_live_dbs()` which
 snapshots the live Rekordbox + djay databases into ``data/`` for safe,
 read-only analysis.
+
+Every OS-branching decision (rekordbox app dir, MUSIC_ROOTS, the Mac<->
+Windows path map) lives in :mod:`apps.shared.platform_paths`; this module
+imports those values and re-exports them so existing
+``from apps.shared.paths import ...`` call sites keep working unchanged.
 """
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
-HOME: Path = Path.home()
+from apps.shared.platform_paths import (
+    DJAY_LIVE_DB,
+    HOME,
+    MUSIC_ROOTS,
+    PROJECT_ROOT,
+    REKORDBOX_LIVE_DB,
+    _parse_music_roots,
+)
 
-# Project root is the directory that contains ``apps/``. This file lives at
-# ``<project>/apps/shared/paths.py`` → parents[2] is the project root.
-PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+__all__ = [
+    "HOME",
+    "PROJECT_ROOT",
+    "DATA_DIR",
+    "REKORDBOX_LIVE_DB",
+    "REKORDBOX_WORKING_DB",
+    "DJAY_LIVE_DB",
+    "DJAY_WORKING_DB",
+    "STATE_DIR",
+    "STATE_DB",
+    "MUSIC_ROOTS",
+    "DEDUP_DIR",
+    "DEDUP_FALLBACK_DB",
+    "DEDUP_CLUSTERS_CSV",
+    "DEDUP_MANUAL_REVIEW_CSV",
+    "DEDUP_REWRITE_PLAN_CSV",
+    "DEDUP_REWRITE_SUMMARY_MD",
+    "DEDUP_ARCHIVE_ROOT",
+    "TAGS_DIR",
+    "TAGS_BACKUPS_DIR",
+    "TAGS_UNIFIED_PREVIEW_CSV",
+    "TAGS_REVERSAL_DIR",
+    "AUDIO_EXTENSIONS",
+    "copy_live_dbs",
+]
+
 DATA_DIR: Path = PROJECT_ROOT / "data"
 
 # ----- Rekordbox ---------------------------------------------------------
-REKORDBOX_LIVE_DB: Path = HOME / "Library" / "Pioneer" / "rekordbox" / "master.db"
 REKORDBOX_WORKING_DB: Path = DATA_DIR / "master.db.copy"
 
 # ----- djay Pro ----------------------------------------------------------
-DJAY_LIVE_DB: Path = (
-    HOME / "Music" / "djay" / "djay Media Library.djayMediaLibrary" / "MediaLibrary.db"
-)
 DJAY_WORKING_DB: Path = DATA_DIR / "djay_MediaLibrary.db.copy"
 
 # ----- Shared-state layer (Phase 5) --------------------------------------
@@ -33,29 +63,6 @@ DJAY_WORKING_DB: Path = DATA_DIR / "djay_MediaLibrary.db.copy"
 # Always gitignored under ``data/``. Phase 11 (Litestream) may relocate.
 STATE_DIR: Path = DATA_DIR / "state"
 STATE_DB: Path = STATE_DIR / "state.db"
-
-# ----- Filesystem music library -----------------------------------------
-# We scan the whole ``~/Music`` tree so comparison catches files outside the
-# curated "Manual Library" subfolder too. Derive from HOME so the scan works
-# on any machine/user. Override with MDT_MUSIC_ROOTS when the library lives
-# elsewhere.
-def _parse_music_roots(configured_roots: str) -> list[Path]:
-    """Parse a configured, path-separator-delimited music-root list."""
-    roots = [
-        Path(entry.strip()).expanduser()
-        for entry in configured_roots.split(os.pathsep)
-        if entry.strip()
-    ]
-    if not roots:
-        raise ValueError("MDT_MUSIC_ROOTS is configured but contains no usable paths.")
-    return roots
-
-
-MUSIC_ROOTS: list[Path] = (
-    _parse_music_roots(os.environ["MDT_MUSIC_ROOTS"])
-    if "MDT_MUSIC_ROOTS" in os.environ
-    else [HOME / "Music"]
-)
 
 # ----- Phase 7 dedup + tag unification ----------------------------------
 # Fallback SQLite store used when the Phase 5 shared-state DB is not yet

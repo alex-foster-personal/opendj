@@ -29,6 +29,16 @@ Requirements (mini-PRD):
     [if] cache valid and no --force [then] no worker run, prints cached
   ✔︎ ✅ --data-dir overrides the repo-default data/ root everywhere
     (worktrees pass the primary checkout's data dir explicitly).
+  ✔︎ ✅ Windows portability: FolderPath/.2EX resolution goes through the
+    shared apps.shared.platform_paths.resolve_library_path resolver (never
+    a local /PIONEER/-only shim), so an unmapped foreign-absolute path
+    (e.g. a Mac path read on Windows) is an explicit missing state, never
+    a fabricated Path; the worker subprocess honours MDT_VOCAL_WORKER_PYTHON
+    (bench-env interpreter override) and MDT_VOCAL_WORKER_DEVICE.
+    [if] a FolderPath is foreign-absolute with no path-map entry [then]
+    audio_on_disk stays False (classification unchanged, falls to missing)
+    [if] MDT_VOCAL_WORKER_PYTHON is set [then] run_worker invokes it
+    directly, never ``uv run``
   → per-night budget (--max-minutes) - PARITY-TODO follow-up, not here.
 
 Exact command lines:
@@ -59,6 +69,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
 from apps.shared.paths import DATA_DIR
+from apps.shared.platform_paths import PathMap, MappedPath, load_path_map, resolve_library_path
 from apps.vocals import cache as vcache
 
 # ----- CFG ---------------------------------------------------------------------
@@ -69,8 +80,6 @@ LOCK_LEASE_S: float = 30
 LOCK_HEARTBEAT_S: float = 5
 WORKER_TERMINATE_GRACE_S: float = 2
 _WINDOWS: bool = os.name == "nt"
-SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
-STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
 WORKER_SCRIPT: Path = Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
 _SQL_CHUNK: int = 500                  # keep IN (...) under SQLite's var cap
 
@@ -140,15 +149,23 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     return conn
 
 
+def _resolve(path: str, *, path_map: PathMap) -> Optional[Path]:
+    """Resolve a state.db/rekordbox path via the shared platform resolver.
+
+    ``None`` is the load-bearing "unmapped" state (a foreign-absolute path,
+    e.g. a Mac FolderPath read on Windows with no path-map entry, or a
+    streaming URI) -- never a fabricated ``Path`` that happens not to
+    exist. Windows portability plan section 3.1."""
+    mapped: MappedPath = resolve_library_path(path, path_map=path_map)
+    return mapped.resolved
+
+
 def _resolve_share_path(path: str) -> Path:
-    """RECON-DATA.md section 1: /PIONEER/ paths are share-relative."""
-    if path.startswith("/PIONEER/"):
-        root = SHARE_ROOT.resolve()
-        resolved = (root / path.lstrip("/")).resolve()
-        if not resolved.is_relative_to(root):
-            raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
-        return resolved
-    return Path(path)
+    """Resolve a local path, rejecting unsafe or unmapped source paths."""
+    mapped = resolve_library_path(path)
+    if mapped.resolved is None:
+        raise ValueError(mapped.reason)
+    return mapped.resolved
 
 
 def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
@@ -160,6 +177,7 @@ def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
 
 def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
     """All rekordbox-mapped tracks (optionally one playlist's members)."""
+    path_map = load_path_map(ctx.data_dir)
     state = _open_ro(ctx.state_db, "STATE_DB")
     try:
         if playlist is not None:
@@ -224,9 +242,9 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
         stable_id, state_title = by_vendor[str(vendor_id)]
         audio: Optional[Path] = None
         on_disk = False
-        if folder_path and not str(folder_path).startswith(STREAMING_PREFIXES):
-            audio = _resolve_share_path(str(folder_path))
-            on_disk = audio.is_file()
+        if folder_path:
+            audio = _resolve(str(folder_path), path_map=path_map)
+            on_disk = audio is not None and audio.is_file()
         tracks.append(VocalTrack(
             stable_id=stable_id,
             vendor_id=str(vendor_id),
@@ -269,10 +287,13 @@ def pvdi_present(path_2ex: Path) -> bool:
 def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
     """Assign each track exactly one category (pvdi wins over everything:
     an analyzed track is covered even if its audio has since moved)."""
+    path_map = load_path_map(ctx.data_dir)
     for tr in tracks:
         twoex: Optional[Path] = None
         if tr.analysis_data_path is not None:
-            twoex = _resolve_share_path(tr.analysis_data_path).with_suffix(".2EX")
+            resolved_adp = _resolve(tr.analysis_data_path, path_map=path_map)
+            if resolved_adp is not None:
+                twoex = resolved_adp.with_suffix(".2EX")
         if twoex is not None and twoex.is_file() and pvdi_present(twoex):
             tr.category = CATEGORY_PVDI
             continue
@@ -336,7 +357,25 @@ def order_todo(
 # ----- worker invocation --------------------------------------------------------------
 
 def _worker_command(audio_path: Path) -> list[str]:
-    return ["uv", "run", "--script", str(WORKER_SCRIPT), str(audio_path)]
+    device = os.environ.get("MDT_VOCAL_WORKER_DEVICE", "auto")
+    override_python = os.environ.get("MDT_VOCAL_WORKER_PYTHON")
+    if override_python:
+        return [
+            override_python,
+            str(WORKER_SCRIPT),
+            "--device",
+            device,
+            str(audio_path),
+        ]
+    return [
+        "uv",
+        "run",
+        "--script",
+        str(WORKER_SCRIPT),
+        "--device",
+        device,
+        str(audio_path),
+    ]
 
 
 def _posix_process_group_exists(process_group_id: int) -> bool:
@@ -412,8 +451,7 @@ def _terminate_worker_tree(proc: subprocess.Popen[str]) -> None:
 
 
 def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
-    """Run the PEP 723 demucs worker via ``uv run`` and parse its stdout
-    JSON. Worker logs pass through on stderr; a non-zero exit raises."""
+    """Run the demucs worker with a deadline and parse its stdout JSON."""
     if timeout_s <= 0:
         raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
     process_kwargs: dict[str, Any] = {}

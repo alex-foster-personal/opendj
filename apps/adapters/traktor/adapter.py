@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from apps.open_dj import (
     AdapterReport,
@@ -335,9 +335,14 @@ def _split_location(file_path: str) -> tuple[str, str, str]:
     reverse-engineer the original volume; we use an empty volume and a
     trailing-slash-colon directory. Good enough for synthetic fixtures.
     """
-    p = Path(file_path)
     if not file_path:
         return ("", "", "")
+    # PurePosixPath, never Path: on Windows ``Path("/a/b").parent`` comes
+    # back with backslashes, desyncing the write-side DIR encoding from the
+    # read-side reconstruction and breaking the stable-id round-trip.
+    # open-dj file_path strings are posix-style by contract; normalise any
+    # stray backslashes first so both platforms hash identical locations.
+    p = PurePosixPath(file_path.replace("\\", "/"))
     parent = str(p.parent)
     name = p.name
     if parent and parent != ".":

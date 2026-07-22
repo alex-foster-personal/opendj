@@ -35,6 +35,13 @@ Requirements (mini-PRD):
     [if] `import vocal_region_worker` needs torch [then ⛔️]
   ✔︎ ✅ fail fast: missing file / ffmpeg / weird audio raises, no fallbacks
     [if] audio path does not exist [then ⛔️] non-zero exit + stderr reason
+  ✔︎ ✅ WAV inputs decode via soundfile, never ffmpeg (Windows portability:
+    ffmpeg is not guaranteed on PATH). Non-WAV inputs still need ffmpeg on
+    PATH (optionally via MDT_FFMPEG) and fail fast, naming remedies, when
+    it is absent - never a silent wrong decode.
+    [if] audio_path.suffix is .wav [then] no ffmpeg subprocess is spawned
+    [if] non-WAV input and ffmpeg is absent and MDT_FFMPEG unset [then ⛔️]
+    RuntimeError names the file + MDT_FFMPEG + pre-transcode remedy
 
 Run standalone:  uv run scripts/vocal_region_worker.py <audio-file>
 Invoked by:      python -m apps.vocals trickle --live  (subprocess)
@@ -50,6 +57,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -200,9 +209,68 @@ def _separate_vocals(model: Any, wav: Any, device: str) -> Any:
     return vocals * ref.std() + ref.mean()
 
 
+def _read_wav_fastpath(audio_path: Path, model: Any) -> tuple[int, float, Any]:
+    """WAV fast-path (Windows portability: bypasses demucs.audio.AudioFile
+    and ffmpeg entirely). soundfile reads the native tensor, torchaudio
+    resamples to the model's rate; source_sr/source_duration_s come from
+    soundfile's own header info, mirroring what ffprobe gave the non-WAV
+    path."""
+    import soundfile as sf
+    import torch
+    import torchaudio
+    from demucs.audio import convert_audio_channels
+
+    info = sf.info(str(audio_path))
+    source_sr = int(info.samplerate)
+    source_duration_s = float(info.frames) / source_sr
+
+    data, read_sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
+    if int(read_sr) != source_sr:
+        raise RuntimeError(
+            f"soundfile samplerate mismatch reading {audio_path}: "
+            f"info reports {source_sr} Hz but read() returned {read_sr} Hz"
+        )
+    wav = torch.from_numpy(data.T).contiguous()  # (channels, samples) @ source_sr
+    wav = convert_audio_channels(wav, model.audio_channels)
+    wav = torchaudio.functional.resample(wav, source_sr, model.samplerate)
+    return source_sr, source_duration_s, wav
+
+
+def _read_via_ffmpeg(audio_path: Path, model: Any) -> tuple[int, float, Any]:
+    """Non-WAV decode via demucs.audio.AudioFile (shells to ffmpeg/ffprobe).
+
+    A decoder must be reachable first: MDT_FFMPEG (path to the ffmpeg
+    executable, e.g. a D:/tools/ffmpeg drop's bin/ffmpeg.exe) is prepended
+    onto PATH when set. Still missing -> fail fast naming the file and the
+    remedies; never fall back to a wrong decode."""
+    from demucs.audio import AudioFile
+
+    ffmpeg_override = os.environ.get("MDT_FFMPEG")
+    if ffmpeg_override:
+        os.environ["PATH"] = os.pathsep.join(
+            [str(Path(ffmpeg_override).parent), os.environ.get("PATH", "")]
+        )
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            f"ffmpeg not found on PATH; cannot decode non-WAV input "
+            f"{audio_path}. Fix one of: (1) set MDT_FFMPEG to the ffmpeg "
+            f"executable path (e.g. a D:/tools/ffmpeg drop's "
+            f"bin/ffmpeg.exe); (2) pre-transcode this file to WAV on the "
+            f"Mac and re-run the worker there (WAV inputs bypass ffmpeg "
+            f"entirely via the soundfile fast-path)."
+        )
+
+    af = AudioFile(audio_path)
+    source_sr = int(af.samplerate())
+    source_duration_s = float(af.duration)
+    wav = af.read(
+        streams=0, samplerate=model.samplerate, channels=model.audio_channels
+    )
+    return source_sr, source_duration_s, wav
+
+
 def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
     import torch
-    from demucs.audio import AudioFile
     from demucs.pretrained import get_model
 
     if not audio_path.is_file():
@@ -223,12 +291,10 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
     load_s = time.perf_counter() - t0
     _log(f"model={MODEL_NAME} device={device} load={load_s:.1f}s")
 
-    af = AudioFile(audio_path)
-    source_sr = int(af.samplerate())
-    source_duration_s = float(af.duration)
-    wav = af.read(
-        streams=0, samplerate=model.samplerate, channels=model.audio_channels
-    )
+    if audio_path.suffix.lower() == ".wav":
+        source_sr, source_duration_s, wav = _read_wav_fastpath(audio_path, model)
+    else:
+        source_sr, source_duration_s, wav = _read_via_ffmpeg(audio_path, model)
 
     # Drift trap guard (NOTE-musicbot-alignment-learnings): region seconds
     # are computed on the resampled 44.1k tensor; that is only the source

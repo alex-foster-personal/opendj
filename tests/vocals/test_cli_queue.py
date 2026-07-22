@@ -481,11 +481,13 @@ def test_worker_timeout_reaps_descendant_before_claim_release(
 def test_pioneer_path_cannot_escape_share_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from apps.shared import platform_paths
     from apps.vocals import cli as vcli
+
     root = tmp_path / "share"
     root.mkdir()
-    monkeypatch.setattr(vcli, "SHARE_ROOT", root)
-    with pytest.raises(ValueError, match="escapes"):
+    monkeypatch.setattr(platform_paths, "SHARE_ROOT", root)
+    with pytest.raises(ValueError, match="unsafe:share-path"):
         vcli._resolve_share_path("/PIONEER/../../outside.mp3")
 
 

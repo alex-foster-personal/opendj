@@ -8,9 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from apps.dedup import schema as dedup_schema
 from apps.shared.tag_writer import TagRead, read_tags
 from apps.tags import apply as tags_apply
+
+# tag write path needs the tags extra; skip (never fail) when absent.
+pytestmark = pytest.mark.requires_mutagen
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
@@ -126,6 +128,13 @@ def test_reversal_script_restores_original(tmp_path: Path) -> None:
     # Execute the reversal script via shell.
     import subprocess
 
+    # Windows ships a stub System32\bash.exe that fails without WSL, so
+    # "on PATH" is not enough -- require a bash that actually runs.
+    bash = shutil.which("bash")
+    if bash is None or subprocess.run(
+        [bash, "-c", "true"], capture_output=True, check=False
+    ).returncode != 0:
+        pytest.skip("functional bash unavailable; cannot execute the reversal script")
     rc = subprocess.run(
         ["bash", res["reversal"]], capture_output=True, text=True, check=False
     )
