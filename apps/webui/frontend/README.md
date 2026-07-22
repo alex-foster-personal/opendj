@@ -6,7 +6,7 @@ daemon at `http://127.0.0.1:8585`.
 ## Quickstart
 
 ```bash
-# Node 20 LTS.
+# Node 22.14 or newer.
 nvm use   # (fnm use) picks up .nvmrc
 pnpm install
 pnpm dev

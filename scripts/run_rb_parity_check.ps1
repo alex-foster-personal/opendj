@@ -5,11 +5,13 @@ Windows-native Rekordbox parity stabilization gate.
 .DESCRIPTION
 Requirements:
   [DONE] Bootstrap the Python 3.11 .venv through uv when absent.
+  [DONE] Reject Node runtimes below pnpm 11.9's minimum supported version.
   [DONE] Install the frozen pnpm workspace before frontend verification.
   [DONE] Run the focused Python, frontend unit, Svelte, and optional build gates.
 
 Acceptance:
   [if] any child command exits nonzero [then STOP] this script exits nonzero immediately.
+  [if] Node is older than 22.14.0 [then STOP] this script fails before dependency installation.
   [if] pytest runs on Windows [then PASS] temp files stay inside the workspace and the tracked coverage matrix is not rewritten.
   [if] -Final is supplied [then PASS] the production frontend build completes after all faster gates.
 #>
@@ -53,6 +55,13 @@ foreach ($Tool in @("uv", "node", "pnpm")) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) {
         throw "Required tool is unavailable on PATH: $Tool"
     }
+}
+
+$MinimumNodeVersion = [version]"22.14.0"
+$NodeVersionText = (& node --version).Trim().TrimStart("v")
+$NodeVersion = [version]$NodeVersionText
+if ($NodeVersion -lt $MinimumNodeVersion) {
+    throw "Node $MinimumNodeVersion or newer is required by pnpm 11.9; found $NodeVersion."
 }
 
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
