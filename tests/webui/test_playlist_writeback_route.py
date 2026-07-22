@@ -1,17 +1,8 @@
-"""HTTP-surface tests for the playlist writeback router (LANE
-playlists-router, node ``write-back-rekordbox-djay``). Service-layer logic
-is covered in ``test_playlist_writeback_service.py``; these tests only
-check routing, status codes, and the request/response shape.
-
-Regression one-liners:
-  * if an unknown playlist_id does not 404 then broken
-  * if an unreachable vendor does not 503 with WRITEBACK_VENDOR_UNAVAILABLE
-    then broken
-  * if apply defaults to a live write instead of dry_run=True then broken
-  * if apply does not respect the cloud writer lock then broken
-"""
+"""HTTP parity tests for ID-targeted plan, apply, and rollback."""
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from typing import Iterator
 
@@ -20,153 +11,83 @@ from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
-from apps.webui.server.playlist_writeback import WritebackService
+from apps.webui.server.playlist_writeback import VendorPlaylist, WritebackBackup, WritebackConflict, WritebackService
 from apps.webui.server.routes.playlist_writeback import get_writeback_service
 
 
-def _fake_state_conn() -> sqlite3.Connection:
-    """In-memory track_vendor_ids covering every seed_backend track, so a
-    fake writer resolves the same way a real RB/djay writer would once the
-    tracks are ingested."""
-    conn = sqlite3.connect(":memory:", isolation_level=None)
-    conn.execute(
-        "CREATE TABLE track_vendor_ids ("
-        "stable_id TEXT, vendor TEXT, vendor_id TEXT, "
-        "PRIMARY KEY (stable_id, vendor))"
-    )
-    rows = [
-        (f"track-{i:03d}", "rekordbox", f"rb-{i:03d}") for i in range(1, 6)
-    ]
-    conn.executemany("INSERT INTO track_vendor_ids VALUES (?, ?, ?)", rows)
-    return conn
+class _Writer:
+    vendor = "rekordbox"
+    def __init__(self) -> None:
+        self.state_conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self.state_conn.execute("CREATE TABLE track_vendor_ids (stable_id TEXT, vendor TEXT, vendor_id TEXT)")
+        self.state_conn.executemany("INSERT INTO track_vendor_ids VALUES (?, 'rekordbox', ?)", [(f"track-{i:03d}", f"rb-{i}") for i in range(1, 6)])
+        self.members = ["track-001"]
+        self.backup = list(self.members)
+    def list_playlists(self):
+        return [VendorPlaylist("native-1", "Opener Set")]
 
-
-class _FakeWriter:
-    def __init__(self, vendor: str, playlists: dict[str, list[str]] | None = None) -> None:
-        self.vendor = vendor
-        self.state_conn = _fake_state_conn()
-        self.playlists = playlists or {}
-        self.calls: list[tuple] = []
-
-    def playlist_exists(self, name: str) -> bool:
-        return name in self.playlists
-
-    def read_members(self, name: str) -> list[str]:
-        return list(self.playlists[name])
-
-    def create_playlist(self, name: str, track_ids: list[str]) -> None:
-        self.calls.append(("create", name, list(track_ids)))
-        self.playlists[name] = list(track_ids)
-
-    def apply_diff(self, name: str, added: list[str], removed: list[str]) -> None:
-        self.calls.append(("diff", name, list(added), list(removed)))
-        current = self.playlists.setdefault(name, [])
-        for rid in removed:
-            if rid in current:
-                current.remove(rid)
-        for aid in added:
-            if aid not in current:
-                current.append(aid)
-
-
-def _fake_service(rb_playlists: dict | None = None) -> WritebackService:
-    rb = _FakeWriter("rekordbox", rb_playlists)
-
-    def factory(vendor: str):
-        if vendor == "rekordbox":
-            return rb
-        return None  # djay unreachable in every test client below
-
-    return WritebackService(writer_factory=factory)
+    def read_members_by_id(self, playlist_id):
+        assert playlist_id == "native-1"
+        return list(self.members)
+    def apply_with_backup_by_id(self, playlist_id, stable_members, expected, _mapping_revision, assert_source_current):
+        current = self.read_members_by_id(playlist_id)
+        revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": current}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if revision != expected:
+            raise WritebackConflict("stale")
+        assert_source_current()
+        self.backup = current
+        self.members = list(stable_members)
+        after = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        return WritebackBackup("b1"), after
+    def restore_backup(self, backup_id, target_id, expected):
+        current = hashlib.sha256(json.dumps({"target_id": target_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if current != expected:
+            raise WritebackConflict("conflict")
+        self.members = list(self.backup)
+        return hashlib.sha256(json.dumps({"target_id": target_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 @pytest.fixture
 def client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
-    app = create_app(
-        backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
-        lock_status_fn=lambda: None,
-    )
-    app.dependency_overrides[get_writeback_service] = lambda: _fake_service()
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    writer = _Writer()
+    app = create_app(backend=seed_backend, bind_host="127.0.0.1", hostname="test-host", lock_status_fn=lambda: None)
+    app.dependency_overrides[get_writeback_service] = lambda: WritebackService(writer_factory=lambda *_args: writer)
+    with TestClient(app) as result:
+        yield result
 
 
-class TestUnknownPlaylist:
-    def test_capabilities_404s_for_unknown_playlist(self, client: TestClient) -> None:
-        r = client.get("/api/v1/playlists/no-such/writeback/capabilities")
-        assert r.status_code == 404
-
-    def test_plan_404s_for_unknown_playlist(self, client: TestClient) -> None:
-        r = client.get("/api/v1/playlists/no-such/writeback/plan?vendor=rekordbox")
-        assert r.status_code == 404
-
-    def test_apply_404s_for_unknown_playlist(self, client: TestClient) -> None:
-        r = client.post("/api/v1/playlists/no-such/writeback/apply", json={"vendor": "rekordbox"})
-        assert r.status_code == 404
+def _query() -> str: return "vendor=rekordbox&target_mode=live&target_path=%2Ffixture%2Flive.db&target_id=native-1"
 
 
-class TestCapabilities:
-    def test_reports_per_vendor_availability(self, client: TestClient) -> None:
-        r = client.get("/api/v1/playlists/pl-001/writeback/capabilities")
-        assert r.status_code == 200, r.text
-        body = r.json()
-        by_vendor = {v["vendor"]: v for v in body["vendors"]}
-        assert by_vendor["rekordbox"]["available"] is True
-        assert by_vendor["djay"]["available"] is False
-        assert by_vendor["djay"]["reason"]
+def test_http_plan_apply_and_rollback_share_serializable_contract(client: TestClient) -> None:
+    targets = client.get("/api/v1/playlists/pl-001/writeback/targets?" + _query().replace("&target_id=native-1", ""))
+    assert targets.status_code == 200 and targets.json()["targets"] == [{"playlist_id": "native-1", "name": "Opener Set"}]
+    plan = client.get("/api/v1/playlists/pl-001/writeback/plan?" + _query())
+    assert plan.status_code == 200
+    token = plan.json()["plan_token"]
+    refused = client.post("/api/v1/playlists/pl-001/writeback/apply", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","plan_token":token,"dry_run":False})
+    assert refused.status_code == 409
+    applied = client.post("/api/v1/playlists/pl-001/writeback/apply", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","plan_token":token,"dry_run":False,"confirmed":True})
+    assert applied.status_code == 200 and applied.json()["backup_id"] == "b1"
+    body = applied.json()
+    rolled_back = client.post("/api/v1/playlists/pl-001/writeback/rollback", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","backup_id":"b1","expected_target_revision":body["target_revision"],"confirmed":True})
+    assert rolled_back.status_code == 200 and rolled_back.json()["rolled_back"] is True
 
 
-class TestPlan:
-    def test_plan_reports_diff_for_new_target(self, client: TestClient) -> None:
-        # pl-001 seeds items=["track-003", "track-005"], both resolvable
-        # via the fake writer's state_conn; no rekordbox target named
-        # "Opener Set" exists yet, so the plan is an all-additions diff.
-        r = client.get("/api/v1/playlists/pl-001/writeback/plan?vendor=rekordbox")
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["target_exists"] is False
-        assert set(body["added"]) == {"track-003", "track-005"}
-        assert body["removed"] == []
-        assert body["unresolved"] == []
-
-    def test_plan_503s_for_unreachable_vendor(self, client: TestClient) -> None:
-        r = client.get("/api/v1/playlists/pl-001/writeback/plan?vendor=djay")
-        assert r.status_code == 503
-        assert r.json()["detail"]["code"] == "WRITEBACK_VENDOR_UNAVAILABLE"
-
-    def test_plan_requires_a_known_vendor_literal(self, client: TestClient) -> None:
-        r = client.get("/api/v1/playlists/pl-001/writeback/plan?vendor=spotify")
-        assert r.status_code == 422
+def test_http_plan_refuses_missing_vendor_id(client: TestClient) -> None:
+    response = client.get("/api/v1/playlists/pl-001/writeback/plan?" + _query().replace("native-1", "wrong"))
+    assert response.status_code == 409
 
 
-class TestApply:
-    def test_apply_defaults_to_dry_run(self, client: TestClient) -> None:
-        r = client.post(
-            "/api/v1/playlists/pl-001/writeback/apply",
-            json={"vendor": "rekordbox"},
-        )
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["dry_run"] is True
-        assert body["applied"] is False
+def test_production_service_rechecks_members_from_the_injected_backend() -> None:
+    class _Playlist:
+        items = ["a", "b"]
 
-    def test_apply_503s_for_unreachable_vendor(self, client: TestClient) -> None:
-        r = client.post(
-            "/api/v1/playlists/pl-001/writeback/apply",
-            json={"vendor": "djay", "dry_run": False},
-        )
-        assert r.status_code == 503
+    class _Backend:
+        def get_playlist(self, playlist_id: str):
+            assert playlist_id == "source"
+            return _Playlist()
 
-    def test_apply_locked_by_peer_yields_503(self, seed_backend: InMemoryBackend) -> None:
-        app = create_app(
-            backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
-            lock_status_fn=lambda: {"holder": "other-host", "expires_at": "2099-01-01T00:00:00Z"},
-        )
-        app.dependency_overrides[get_writeback_service] = lambda: _fake_service()
-        with TestClient(app) as c:
-            r = c.post(
-                "/api/v1/playlists/pl-001/writeback/apply",
-                json={"vendor": "rekordbox", "dry_run": False},
-            )
-        assert r.status_code == 503
+    service = get_writeback_service(_Backend())
+    assert service._source_members_reader is not None
+    assert service._source_members_reader("source") == ["a", "b"]

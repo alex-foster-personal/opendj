@@ -1,38 +1,4 @@
-"""Playlist writeback endpoints -- LANE playlists-router, node
-``write-back-rekordbox-djay``.
-
-Pushes a webui-canonical playlist's membership into rekordbox / djay.
-Business logic lives in :mod:`..playlist_writeback` (service layer, unit
-tested without an HTTP client); this module is the thin FastAPI surface.
-
-  * ``GET  /api/v1/playlists/{id}/writeback/capabilities``
-    -> per-vendor ``{available, reason}``. Never fabricates availability --
-    a vendor whose database can't be reached is reported unavailable with
-    an explicit reason, not silently omitted.
-  * ``GET  /api/v1/playlists/{id}/writeback/plan?vendor=rekordbox|djay``
-    -> dry diff preview: ``added``/``removed``/``unresolved`` stable_ids
-    plus whether the target playlist already exists. Read-only; never
-    mutates the vendor database.
-  * ``POST /api/v1/playlists/{id}/writeback/apply``
-    body ``{vendor, dry_run=true, force_adopt=false}`` -> same shape as
-    plan plus ``applied``/``error``. ``dry_run`` defaults true (rail 4 of
-    the reused six-rail pattern); a live apply against an already-existing
-    target additionally requires ``force_adopt=true`` (see the service
-    module docstring for why).
-
-Error contract mirrors the rest of the daemon
-(``{"detail": {code, message}}``):
-
-  * 404 (via the shared ``NotFoundError`` handler) -- unknown playlist_id.
-  * 503 ``WRITEBACK_VENDOR_UNAVAILABLE`` -- the vendor's database isn't
-    reachable (no master.plain.db / djay MediaLibrary.db copy on disk).
-    ``apply`` is additionally gated behind ``get_write_state`` so a peer
-    holding the cloud writer lock blocks it exactly like any other write.
-
-NOTE for the wave integrator: wire with
-``app.include_router(playlist_writeback_routes.router, prefix=api_prefix)``
-in apps/webui/server/app.py (hotspot -- not edited here).
-"""
+"""HTTP contract for fail-closed vendor playlist writeback."""
 from __future__ import annotations
 
 from typing import Literal, Optional
@@ -43,25 +9,19 @@ from pydantic import BaseModel
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
 from ..playlist_writeback import (
-    VENDORS,
-    WritebackApplyResult,
-    WritebackCapability,
-    WritebackPlan,
-    WritebackService,
-    WritebackUnavailable,
+    VENDORS, WritebackConflict, WritebackService, WritebackUnavailable,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlist-writeback"])
-
 VendorLiteral = Literal["rekordbox", "djay"]
-
-
-# ----------------------------------------------------------- schemas
+TargetModeLiteral = Literal["live"]
 
 
 class VendorCapabilityOut(BaseModel):
     vendor: str
     available: bool
+    target_mode: TargetModeLiteral
+    target_path: Optional[str] = None
     reason: Optional[str] = None
 
 
@@ -70,11 +30,30 @@ class WritebackCapabilitiesOut(BaseModel):
     vendors: list[VendorCapabilityOut]
 
 
+class WritebackTargetOut(BaseModel):
+    playlist_id: str
+    name: str
+
+
+class WritebackTargetsOut(BaseModel):
+    vendor: VendorLiteral
+    target_mode: TargetModeLiteral
+    target_path: str
+    targets: list[WritebackTargetOut]
+
+
 class WritebackPlanOut(BaseModel):
     playlist_id: str
-    vendor: str
-    playlist_name: str
-    target_exists: bool
+    vendor: VendorLiteral
+    target_mode: TargetModeLiteral
+    target_path: str
+    target_id: str
+    target_name: str
+    source_revision: str
+    target_revision: str
+    mapping_revision: str
+    ordered_match: bool
+    plan_token: str
     added: list[str]
     removed: list[str]
     unresolved: list[str]
@@ -83,133 +62,130 @@ class WritebackPlanOut(BaseModel):
 
 class WritebackApplyIn(BaseModel):
     vendor: VendorLiteral
+    target_mode: TargetModeLiteral
+    target_path: str
+    target_id: str
+    plan_token: str
     dry_run: bool = True
-    force_adopt: bool = False
+    confirmed: bool = False
 
 
 class WritebackApplyOut(BaseModel):
     playlist_id: str
-    vendor: str
-    playlist_name: str
+    vendor: VendorLiteral
+    target_id: str
+    target_name: str
     applied: bool
     dry_run: bool
     added: list[str]
     removed: list[str]
+    backup_id: Optional[str] = None
+    target_revision: Optional[str] = None
     error: Optional[str] = None
 
 
-# ----------------------------------------------------------- service dependency
+class WritebackRollbackIn(BaseModel):
+    vendor: VendorLiteral
+    target_mode: TargetModeLiteral
+    target_path: str
+    target_id: str
+    backup_id: str
+    expected_target_revision: str
+    confirmed: bool = False
 
 
-def get_writeback_service(
-    backend: StateBackend = Depends(get_read_state),  # noqa: ARG001 - forces read-state resolution first
-) -> WritebackService:
-    # Stateless (see ..playlist_writeback docstring): a fresh instance per
-    # request is cheap and side-steps any app.state lifecycle wiring; tests
-    # override this dependency directly with a service built from a fake
-    # writer_factory.
-    return WritebackService()
+class WritebackRollbackOut(BaseModel):
+    playlist_id: str
+    vendor: VendorLiteral
+    target_id: str
+    backup_id: str
+    rolled_back: bool
+    target_revision: str
 
 
-def _capability_out(cap: WritebackCapability) -> VendorCapabilityOut:
-    return VendorCapabilityOut(vendor=cap.vendor, available=cap.available, reason=cap.reason)
-
-
-def _plan_out(playlist_id: str, plan: WritebackPlan) -> WritebackPlanOut:
-    return WritebackPlanOut(
-        playlist_id=playlist_id,
-        vendor=plan.vendor,
-        playlist_name=plan.playlist_name,
-        target_exists=plan.target_exists,
-        added=plan.added,
-        removed=plan.removed,
-        unresolved=plan.unresolved,
-        is_noop=plan.is_noop,
-    )
-
-
-def _apply_out(playlist_id: str, result: WritebackApplyResult) -> WritebackApplyOut:
-    return WritebackApplyOut(
-        playlist_id=playlist_id,
-        vendor=result.vendor,
-        playlist_name=result.playlist_name,
-        applied=result.applied,
-        dry_run=result.dry_run,
-        added=result.added,
-        removed=result.removed,
-        error=result.error,
-    )
+def get_writeback_service(backend: StateBackend = Depends(get_read_state)) -> WritebackService:  # noqa: ARG001
+    return WritebackService(source_members_reader=lambda playlist_id: list(backend.get_playlist(playlist_id).items))
 
 
 def _unavailable(exc: WritebackUnavailable) -> HTTPException:
-    return HTTPException(status_code=503, detail={
-        "code": "WRITEBACK_VENDOR_UNAVAILABLE",
-        "message": str(exc),
-    })
+    return HTTPException(status_code=503, detail={"code": "WRITEBACK_VENDOR_UNAVAILABLE", "message": str(exc)})
 
 
-# ----------------------------------------------------------- endpoints
+def _conflict(exc: WritebackConflict) -> HTTPException:
+    return HTTPException(status_code=409, detail={"code": "WRITEBACK_PLAN_CONFLICT", "message": str(exc)})
 
 
-@router.get(
-    "/{playlist_id}/writeback/capabilities",
-    response_model=WritebackCapabilitiesOut,
-)
+@router.get("/{playlist_id}/writeback/capabilities", response_model=WritebackCapabilitiesOut)
 def get_writeback_capabilities(
-    playlist_id: str,
-    backend: StateBackend = Depends(get_read_state),
+    playlist_id: str, backend: StateBackend = Depends(get_read_state),
     service: WritebackService = Depends(get_writeback_service),
 ) -> WritebackCapabilitiesOut:
-    backend.get_playlist(playlist_id)  # 404 via the shared NotFoundError handler
-    caps = [service.capability(v) for v in VENDORS]
-    return WritebackCapabilitiesOut(
-        playlist_id=playlist_id,
-        vendors=[_capability_out(c) for c in caps],
-    )
+    backend.get_playlist(playlist_id)
+    return WritebackCapabilitiesOut(playlist_id=playlist_id, vendors=[VendorCapabilityOut(**cap.__dict__) for cap in (service.capability(v) for v in VENDORS)])
+
+
+@router.get("/{playlist_id}/writeback/targets", response_model=WritebackTargetsOut)
+def get_writeback_targets(
+    playlist_id: str, vendor: VendorLiteral = Query(...), target_mode: TargetModeLiteral = Query(...),
+    target_path: str = Query(...), backend: StateBackend = Depends(get_read_state),
+    service: WritebackService = Depends(get_writeback_service),
+) -> WritebackTargetsOut:
+    backend.get_playlist(playlist_id)
+    try:
+        targets = service.targets(vendor=vendor, target_mode=target_mode, target_path=target_path)
+    except WritebackUnavailable as exc:
+        raise _unavailable(exc) from exc
+    return WritebackTargetsOut(vendor=vendor, target_mode=target_mode, target_path=target_path,
+        targets=[WritebackTargetOut(playlist_id=t.playlist_id, name=t.name) for t in targets])
 
 
 @router.get("/{playlist_id}/writeback/plan", response_model=WritebackPlanOut)
 def get_writeback_plan(
-    playlist_id: str,
-    vendor: VendorLiteral = Query(...),
-    backend: StateBackend = Depends(get_read_state),
-    service: WritebackService = Depends(get_writeback_service),
+    playlist_id: str, vendor: VendorLiteral = Query(...), target_mode: TargetModeLiteral = Query(...),
+    target_path: str = Query(...), target_id: str = Query(...),
+    backend: StateBackend = Depends(get_read_state), service: WritebackService = Depends(get_writeback_service),
 ) -> WritebackPlanOut:
     playlist = backend.get_playlist(playlist_id)
     try:
-        plan = service.plan(
-            vendor=vendor, playlist_name=playlist.name,
-            desired_ids=list(playlist.items),
-        )
+        plan = service.plan(vendor=vendor, source_playlist_id=playlist_id, desired_ids=list(playlist.items),
+            target_mode=target_mode, target_path=target_path, target_id=target_id)
     except WritebackUnavailable as exc:
         raise _unavailable(exc) from exc
-    return _plan_out(playlist_id, plan)
+    except WritebackConflict as exc:
+        raise _conflict(exc) from exc
+    return WritebackPlanOut(playlist_id=playlist_id, **plan.__dict__, is_noop=plan.is_noop)
 
 
 @router.post("/{playlist_id}/writeback/apply", response_model=WritebackApplyOut)
 def apply_writeback(
-    playlist_id: str,
-    body: WritebackApplyIn,
-    backend: StateBackend = Depends(get_write_state),
+    playlist_id: str, body: WritebackApplyIn, backend: StateBackend = Depends(get_write_state),
     service: WritebackService = Depends(get_writeback_service),
 ) -> WritebackApplyOut:
     playlist = backend.get_playlist(playlist_id)
     try:
-        result = service.apply(
-            vendor=body.vendor, playlist_name=playlist.name,
-            desired_ids=list(playlist.items), dry_run=body.dry_run,
-            force_adopt=body.force_adopt,
-        )
+        result = service.apply(vendor=body.vendor, source_playlist_id=playlist_id, desired_ids=list(playlist.items),
+            target_mode=body.target_mode, target_path=body.target_path, target_id=body.target_id,
+            plan_token=body.plan_token, dry_run=body.dry_run, confirmed=body.confirmed)
     except WritebackUnavailable as exc:
         raise _unavailable(exc) from exc
-    return _apply_out(playlist_id, result)
+    except WritebackConflict as exc:
+        raise _conflict(exc) from exc
+    return WritebackApplyOut(playlist_id=playlist_id, **result.__dict__)
 
 
-__all__ = [
-    "WritebackApplyIn",
-    "WritebackApplyOut",
-    "WritebackCapabilitiesOut",
-    "WritebackPlanOut",
-    "get_writeback_service",
-    "router",
-]
+@router.post("/{playlist_id}/writeback/rollback", response_model=WritebackRollbackOut)
+def rollback_writeback(
+    playlist_id: str, body: WritebackRollbackIn, backend: StateBackend = Depends(get_write_state),
+    service: WritebackService = Depends(get_writeback_service),
+) -> WritebackRollbackOut:
+    backend.get_playlist(playlist_id)
+    try:
+        result = service.rollback(**body.model_dump())
+    except WritebackUnavailable as exc:
+        raise _unavailable(exc) from exc
+    except WritebackConflict as exc:
+        raise _conflict(exc) from exc
+    return WritebackRollbackOut(playlist_id=playlist_id, **result.__dict__)
+
+
+__all__ = ["get_writeback_service", "router"]

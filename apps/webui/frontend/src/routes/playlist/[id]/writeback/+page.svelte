@@ -5,174 +5,185 @@
 		applyWriteback,
 		getWritebackCapabilities,
 		getWritebackPlan,
+		getWritebackTargets,
+		rollbackWriteback,
 		type VendorCapability,
 		type WritebackApplyResult,
 		type WritebackPlan,
+		type WritebackTarget,
 		type WritebackVendor
 	} from '$lib/rb/api-writeback';
 	import { RbApiError } from '$lib/rb/api-rb';
+	import {
+		canRollbackWriteback,
+		planMatchesSelection,
+		WritebackRequestGate,
+		writebackPlanMutation,
+		type WritebackSelection
+	} from '$lib/rb/writeback-selection';
 
 	let playlistId = $state('');
 	let capabilities = $state<VendorCapability[] | null>(null);
 	let selectedVendor = $state<WritebackVendor | null>(null);
+	let targets = $state<WritebackTarget[]>([]);
+	let targetId = $state('');
 	let plan = $state<WritebackPlan | null>(null);
 	let applyResult = $state<WritebackApplyResult | null>(null);
-	let forceAdopt = $state(false);
+	let confirmed = $state(false);
+	let rollbackConfirmed = $state(false);
 	let error = $state<string | null>(null);
 	let loading = $state(false);
+	const requestGate = new WritebackRequestGate();
 
-	onMount(async () => {
-		const id = $page.params.id;
-		if (id === undefined) throw new Error('playlist route param "id" missing');
-		playlistId = id;
-		await refreshCapabilities();
+	onMount(() => {
+		playlistId = $page.params.id ?? '';
+		if (!playlistId) throw new Error('playlist route param "id" missing');
+		void refreshCapabilities();
+		return () => requestGate.invalidate();
 	});
 
-	async function refreshCapabilities() {
-		error = null;
-		try {
-			const caps = await getWritebackCapabilities(playlistId);
-			capabilities = caps.vendors;
-			const firstAvailable = caps.vendors.find((v) => v.available);
-			if (firstAvailable) {
-				selectedVendor = firstAvailable.vendor as WritebackVendor;
-				await refreshPlan();
-			}
-		} catch (e) {
-			error = e instanceof RbApiError ? e.message : String(e);
-		}
+	function selectedCapability(): VendorCapability | undefined {
+		return capabilities?.find((capability) => capability.vendor === selectedVendor);
 	}
 
-	async function refreshPlan() {
-		if (!selectedVendor) return;
-		error = null;
-		applyResult = null;
+	function selection(): WritebackSelection | null {
+		const capability = selectedCapability();
+		if (!selectedVendor || !capability?.target_path) return null;
+		return {
+			vendor: selectedVendor,
+			target_mode: capability.target_mode,
+			target_path: capability.target_path,
+			target_id: targetId
+		};
+	}
+
+	function clearPlan(clearResult = true): void {
+		plan = null;
+		if (clearResult) applyResult = null;
+		confirmed = false;
+		rollbackConfirmed = false;
+	}
+
+	function message(cause: unknown): string {
+		return cause instanceof RbApiError ? cause.message : String(cause);
+	}
+
+	async function refreshCapabilities(): Promise<void> {
+		const ticket = requestGate.capture({ vendor: '', target_mode: '', target_path: '', target_id: '' });
 		loading = true;
 		try {
-			plan = await getWritebackPlan(playlistId, selectedVendor);
-		} catch (e) {
-			plan = null;
-			error = e instanceof RbApiError ? e.message : String(e);
+			const next = await getWritebackCapabilities(playlistId);
+			if (!requestGate.isCurrent(ticket, { vendor: '', target_mode: '', target_path: '', target_id: '' })) return;
+			capabilities = next.vendors;
+			selectedVendor = next.vendors.find((capability) => capability.available)?.vendor ?? null;
+			targetId = '';
+			clearPlan();
+			await refreshTargets();
+		} catch (cause) {
+			if (requestGate.isCurrent(ticket, { vendor: '', target_mode: '', target_path: '', target_id: '' })) error = message(cause);
 		} finally {
-			loading = false;
+			if (requestGate.isCurrent(ticket, { vendor: '', target_mode: '', target_path: '', target_id: '' })) loading = false;
 		}
 	}
 
-	async function onVendorChange(vendor: WritebackVendor) {
+	async function refreshTargets(): Promise<void> {
+		clearPlan();
+		targetId = '';
+		const selected = selection();
+		if (selected === null) return;
+		const ticket = requestGate.capture(selected);
+		loading = true;
+		error = null;
+		try {
+			const next = await getWritebackTargets(playlistId, selected.vendor as WritebackVendor, selected.target_mode as 'live', selected.target_path);
+			if (!requestGate.isCurrent(ticket, selection())) return;
+			targets = next.targets;
+		} catch (cause) {
+			if (requestGate.isCurrent(ticket, selection())) error = message(cause);
+		} finally {
+			if (requestGate.isCurrent(ticket, selection())) loading = false;
+		}
+	}
+
+	async function refreshPlan(preserveResult = false): Promise<void> {
+		clearPlan(!preserveResult);
+		const selected = selection();
+		if (selected === null || !selected.target_id) return;
+		const ticket = requestGate.capture(selected);
+		loading = true;
+		error = null;
+		try {
+			const next = await getWritebackPlan(playlistId, selected.vendor as WritebackVendor, selected.target_mode as 'live', selected.target_path, selected.target_id);
+			if (!requestGate.isCurrent(ticket, selection())) return;
+			plan = next;
+		} catch (cause) {
+			if (requestGate.isCurrent(ticket, selection())) error = message(cause);
+		} finally {
+			if (requestGate.isCurrent(ticket, selection())) loading = false;
+		}
+	}
+
+	function changeVendor(vendor: WritebackVendor): void {
 		selectedVendor = vendor;
-		forceAdopt = false;
-		await refreshPlan();
+		void refreshTargets();
 	}
 
-	async function onApply() {
-		if (!selectedVendor) return;
+	function changeTarget(): void {
+		void refreshPlan();
+	}
+
+	async function onApply(): Promise<void> {
+		const selected = selection();
+		const activePlan = plan;
+		if (selected === null || !confirmed || activePlan === null || !planMatchesSelection(activePlan, selected)) {
+			error = 'The reviewed plan no longer matches the selected native target. Review a new plan before applying.';
+			confirmed = false;
+			return;
+		}
+		const ticket = requestGate.capture(selected);
+		loading = true;
 		error = null;
+		try {
+			const result = await applyWriteback(playlistId, activePlan);
+			if (!requestGate.isCurrent(ticket, selection())) return;
+			applyResult = result;
+			await refreshPlan(true);
+		} catch (cause) {
+			if (requestGate.isCurrent(ticket, selection())) error = message(cause);
+		} finally {
+			if (requestGate.isCurrent(ticket, selection())) loading = false;
+		}
+	}
+
+	async function onRollback(): Promise<void> {
+		const selected = selection();
+		const activePlan = plan;
+		const activeResult = applyResult;
+		if (selected === null || activePlan === null || activeResult === null || !canRollbackWriteback(rollbackConfirmed, activePlan, activeResult, selected)) {
+			error = rollbackConfirmed
+				? 'The rollback evidence no longer matches the selected native target.'
+				: 'Confirm rollback of this exact native playlist before restoring it.';
+			return;
+		}
+		const ticket = requestGate.capture(selected);
 		loading = true;
 		try {
-			applyResult = await applyWriteback(playlistId, selectedVendor, {
-				dry_run: false,
-				force_adopt: forceAdopt
-			});
-			if (applyResult.applied) await refreshPlan();
-		} catch (e) {
-			error = e instanceof RbApiError ? e.message : String(e);
+			await rollbackWriteback(playlistId, activeResult, activePlan);
+			if (!requestGate.isCurrent(ticket, selection())) return;
+			applyResult = null;
+			await refreshPlan(true);
+		} catch (cause) {
+			if (requestGate.isCurrent(ticket, selection())) error = message(cause);
 		} finally {
-			loading = false;
+			if (requestGate.isCurrent(ticket, selection())) loading = false;
 		}
 	}
 </script>
 
-<a href={`/playlist/${playlistId}`}>&larr; back</a>
-<h2>Write back to rekordbox / djay</h2>
-
-{#if error}
-	<p style="color: var(--error, #c0392b);">{error}</p>
-{/if}
-
-{#if capabilities}
-	<div class="vendor-picker">
-		{#each capabilities as cap (cap.vendor)}
-			<label>
-				<input
-					type="radio"
-					name="vendor"
-					value={cap.vendor}
-					disabled={!cap.available}
-					checked={selectedVendor === cap.vendor}
-					onchange={() => onVendorChange(cap.vendor as WritebackVendor)}
-				/>
-				{cap.vendor}
-				{#if !cap.available}<span class="reason"> ({cap.reason})</span>{/if}
-			</label>
-		{/each}
-	</div>
-{:else}
-	<p>Loading capabilities...</p>
-{/if}
-
-{#if loading}
-	<p>Working...</p>
-{:else if plan}
-	<h3>Plan: {plan.playlist_name} -&gt; {plan.vendor}</h3>
-	<p>Target playlist {plan.target_exists ? 'already exists' : 'does not exist yet'}.</p>
-	{#if plan.is_noop}
-		<p>No changes -- target already matches.</p>
-	{:else}
-		<div class="diff-columns">
-			<div>
-				<h4>Add ({plan.added.length})</h4>
-				<ul>{#each plan.added as sid}<li>{sid}</li>{/each}</ul>
-			</div>
-			<div>
-				<h4>Remove ({plan.removed.length})</h4>
-				<ul>{#each plan.removed as sid}<li>{sid}</li>{/each}</ul>
-			</div>
-		</div>
-	{/if}
-	{#if plan.unresolved.length > 0}
-		<p class="warn">
-			{plan.unresolved.length} track(s) have no {plan.vendor} mapping and will not be written:
-			{plan.unresolved.join(', ')}
-		</p>
-	{/if}
-	{#if plan.target_exists}
-		<label>
-			<input type="checkbox" bind:checked={forceAdopt} />
-			I reviewed the plan above -- write into the existing {plan.vendor} playlist
-		</label>
-	{/if}
-	<button
-		onclick={onApply}
-		disabled={plan.is_noop || (plan.target_exists && !forceAdopt) || plan.unresolved.length > 0}
-	>
-		Apply to {plan.vendor}
-	</button>
-{/if}
-
-{#if applyResult}
-	<h3>Result</h3>
-	{#if applyResult.applied}
-		<p>Applied: +{applyResult.added.length} / -{applyResult.removed.length}</p>
-	{:else}
-		<p class="warn">Not applied: {applyResult.error}</p>
-	{/if}
-{/if}
-
-<style>
-	.vendor-picker {
-		display: flex;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-	.reason {
-		color: var(--muted);
-	}
-	.diff-columns {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 1rem;
-	}
-	.warn {
-		color: var(--error, #c0392b);
-	}
-</style>
+<a href={`/playlist/${playlistId}`}>&larr; back</a><h2>Write back to rekordbox / djay</h2>
+{#if error}<p class="warn">{error}</p>{/if}
+{#if capabilities}<div class="vendor-picker">{#each capabilities as cap (cap.vendor)}<label><input type="radio" name="vendor" value={cap.vendor} disabled={!cap.available || loading} checked={selectedVendor === cap.vendor} onchange={() => changeVendor(cap.vendor)} /> {cap.vendor}{#if !cap.available}<span class="reason"> ({cap.reason})</span>{/if}</label>{/each}</div>{/if}
+{#if selectedVendor}<label>Vendor playlist <select bind:value={targetId} disabled={loading} onchange={changeTarget}><option value="">Choose an exact vendor playlist</option>{#each targets as target (target.playlist_id)}<option value={target.playlist_id}>{target.name} ({target.playlist_id})</option>{/each}</select></label>{/if}
+{#if loading}<p>Working...</p>{:else if plan}<h3>Plan: {plan.target_name} -&gt; {plan.vendor}</h3><p>Target ID: <code>{plan.target_id}</code></p><p>Plan token: <code>{plan.plan_token}</code></p>{#if plan.is_noop}<p>No changes -- target already matches.</p>{:else if writebackPlanMutation(plan) === 'reorder'}<p class="warn">Membership is unchanged, but this live write will reorder the native playlist to the exact source order.</p>{:else}<p>Add {plan.added.length}, remove {plan.removed.length}.</p>{/if}{#if plan.unresolved.length}<p class="warn">Unmapped tracks block this apply: {plan.unresolved.join(', ')}</p>{/if}<label><input type="checkbox" bind:checked={confirmed} disabled={loading} /> I confirm this exact native playlist and revision</label><button onclick={onApply} disabled={loading || !confirmed || plan.is_noop || plan.unresolved.length > 0}>Apply to {plan.vendor}</button>{/if}
+{#if applyResult}<h3>Result</h3>{#if applyResult.applied}<p>Applied: +{applyResult.added.length} / -{applyResult.removed.length}; backup: <code>{applyResult.backup_id}</code></p><label><input type="checkbox" bind:checked={rollbackConfirmed} disabled={loading} /> I confirm rollback of this exact native playlist</label><button onclick={onRollback} disabled={loading || !rollbackConfirmed}>Rollback this write</button>{:else}<p class="warn">Not applied: {applyResult.error}</p>{/if}{/if}
+<style>.vendor-picker { display:flex; gap:1rem; margin-bottom:1rem; }.reason { color:var(--muted); }.warn { color:var(--error, #c0392b); } select { margin-left:.5rem; }</style>
