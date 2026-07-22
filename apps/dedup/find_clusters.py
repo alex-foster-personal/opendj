@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -249,17 +248,19 @@ def run_find_clusters(
             winner, rationale = _pick_canonical(members)
             winner_path = str(winner.fp.path)
             canonical_sid = _stable_id_from_row(conn, winner_path)
+            oversized_cluster = len(members) > max_cluster_size
 
             # Write cluster header row.
             cur = conn.execute(
                 "INSERT INTO duplicate_clusters "
-                "(canonical_stable_id, canonical_path, rationale) "
-                "VALUES (?, ?, ?)",
-                (canonical_sid, winner_path, rationale),
+                "(canonical_stable_id, canonical_path, rationale, "
+                " flagged_manual_review) "
+                "VALUES (?, ?, ?, ?)",
+                (canonical_sid, winner_path, rationale, int(oversized_cluster)),
             )
             cluster_id = cur.lastrowid or 0
 
-            flagged = len(members) > max_cluster_size
+            flagged_manual_review = oversized_cluster
             alias_paths: list[str] = []
             alias_sids: list[str] = []
             sims: list[float] = []
@@ -294,10 +295,11 @@ def run_find_clusters(
                 alias_sids.append(asid)
                 sims.append(sim)
                 # Manual-review trigger: duration delta > threshold_s.
-                if dur_delta > duration_delta_s or flagged:
+                if dur_delta > duration_delta_s or oversized_cluster:
+                    flagged_manual_review = True
                     reason = (
                         "max_cluster"
-                        if flagged
+                        if oversized_cluster
                         else f"duration_delta={dur_delta:.2f}s"
                     )
                     m.writerow(
@@ -311,6 +313,12 @@ def run_find_clusters(
                         ]
                     )
 
+            conn.execute(
+                "UPDATE duplicate_clusters SET flagged_manual_review = ? "
+                "WHERE cluster_id = ?",
+                (int(flagged_manual_review), cluster_id),
+            )
+
             outcomes.append(
                 ClusterOutcome(
                     cluster_id=cluster_id,
@@ -320,7 +328,7 @@ def run_find_clusters(
                     alias_stable_ids=alias_sids,
                     similarities=sims,
                     rationale=rationale,
-                    flagged_manual_review=flagged,
+                    flagged_manual_review=flagged_manual_review,
                 )
             )
 

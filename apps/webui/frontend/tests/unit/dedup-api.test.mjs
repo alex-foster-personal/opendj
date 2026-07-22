@@ -146,3 +146,30 @@ test('response validation rejects an ETag/body revision mismatch', async () => {
 
 	await assert.rejects(dedupApi.fetchDedupClusters(), /dedup: response revision does not match ETag/);
 });
+
+test('decision response cannot claim that irreversible apply already ran', async () => {
+	globalThis.fetch = async () =>
+		new Response(
+			JSON.stringify({
+				cluster_id: 7,
+				cluster_key: CLUSTER_KEY,
+				survivor: 'track-canon',
+				action: 'merge',
+				decided_at: '2026-07-22T12:00:00.000000Z',
+				pending_apply: false,
+				revision: NEXT_REVISION
+			}),
+			{ status: 200, headers: { 'content-type': 'application/json', etag: NEXT_REVISION } }
+		);
+
+	await assert.rejects(
+		dedupApi.postDedupDecision(
+			7,
+			CLUSTER_KEY,
+			'track-canon',
+			'merge',
+			INITIAL_REVISION
+		),
+		/dedup: decision response must remain pending apply/
+	);
+});

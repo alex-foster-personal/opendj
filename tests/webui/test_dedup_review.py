@@ -183,6 +183,25 @@ def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
     assert r.headers["etag"] == r.json()["revision"]
 
 
+def test_clusters_surface_persisted_manual_review_warning(
+    app_client, dedup_db: Path,
+) -> None:
+    _seed_cluster_db(
+        dedup_db, cluster_id=1,
+        canonical_sid="track-canon", canonical_path="/music/canon.flac",
+        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+    )
+    with sqlite3.connect(dedup_db) as connection:
+        connection.execute(
+            "UPDATE duplicate_clusters SET flagged_manual_review = 1"
+        )
+
+    response = app_client.get("/api/v1/dedup/clusters")
+
+    assert response.status_code == 200
+    assert response.json()["clusters"][0]["flagged_manual_review"] is True
+
+
 def test_decision_round_trip(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
         dedup_db, cluster_id=7,
@@ -396,15 +415,22 @@ def test_rebuilt_cluster_id_does_not_inherit_stale_decision(
     assert stale.status_code == 409
 
 
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        b'{"schema_version": 1, "decisions": ',
+        b'{"decisions": {}}',
+    ],
+    ids=["truncated-json", "missing-schema-version"],
+)
 def test_corrupt_decision_store_fails_without_overwrite(
-    app_client, dedup_db: Path,
+    app_client, dedup_db: Path, corrupt: bytes,
 ) -> None:
     _seed_cluster_db(
         dedup_db, cluster_id=1,
         canonical_sid="track-canon", canonical_path="/music/canon.flac",
         alias_sid="track-alias", alias_path="/music/alias-128.mp3",
     )
-    corrupt = b'{"schema_version": 1, "decisions": '
     dedup_review.DECISIONS_FILE.write_bytes(corrupt)
 
     response = app_client.get("/api/v1/dedup/clusters")

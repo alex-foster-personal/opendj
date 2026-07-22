@@ -2,8 +2,8 @@
  * Types for the /dedup review UI.
  *
  * Mirrors GET/POST /api/v1/dedup/clusters (duplicate-review-merge).
- * Everything for this route is co-located here: this dir must NOT import
- * from $lib/api.ts or $lib/rb/* (those are owned by concurrent workflows).
+ * Cluster identity is independent from the display-only SQLite cluster id.
+ * Every decision write is bound to cluster_key and the response revision.
  */
 
 export type DecisionAction = 'merge' | 'keep-all' | 'skip';
@@ -23,6 +23,7 @@ export interface ClusterMember {
 }
 
 export interface Decision {
+	cluster_key: string;
 	survivor: string;
 	action: DecisionAction;
 	decided_at: string;
@@ -30,6 +31,7 @@ export interface Decision {
 
 export interface Cluster {
 	cluster_id: number;
+	cluster_key: string;
 	survivor_stable_id: string;
 	rationale: string | null;
 	flagged_manual_review: boolean;
@@ -40,12 +42,15 @@ export interface Cluster {
 export interface ClustersResponse {
 	clusters: Cluster[];
 	note: string | null;
+	revision: string;
 }
 
 export interface DecisionRecord {
 	cluster_id: number;
+	cluster_key: string;
 	survivor: string;
 	action: DecisionAction;
 	decided_at: string;
 	pending_apply: boolean;
+	revision: string;
 }
