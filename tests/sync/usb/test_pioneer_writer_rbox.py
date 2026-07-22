@@ -260,6 +260,19 @@ def test_overwrite_false_raises(
         )
 
 
+def test_fixture_output_path_is_refused(fixture_onelibrary: Path) -> None:
+    """Neither side of a low-level writer call may target fixtures."""
+    fixture_output = FIXTURE_ONELIBRARY.parent / "new-exportLibrary.db"
+
+    with pytest.raises(OneLibraryWriteError, match="output_path.*tests/fixtures"):
+        write_onelibrary(
+            template_path=fixture_onelibrary,
+            output_path=fixture_output,
+        )
+
+    assert not fixture_output.exists()
+
+
 def test_missing_template_raises(
     tmp_path: Path, scratch_onelibrary: Path
 ) -> None:

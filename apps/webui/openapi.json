@@ -1,6 +1,23 @@
 {
   "components": {
     "schemas": {
+      "ApplyRequest": {
+        "properties": {
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanModel"
+          }
+        },
+        "required": [
+          "plan",
+          "confirmation"
+        ],
+        "title": "ApplyRequest",
+        "type": "object"
+      },
       "AutoCueOut": {
         "description": "One PROPOSED cue. ``kind`` is intro|drop|break|outro|'' (unlabelled).",
         "properties": {
@@ -1049,6 +1066,112 @@
         "title": "PairingOut",
         "type": "object"
       },
+      "PlanModel": {
+        "properties": {
+          "authorization_id": {
+            "title": "Authorization Id",
+            "type": "string"
+          },
+          "output_relative_path": {
+            "title": "Output Relative Path",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistModel"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "target_root": {
+            "title": "Target Root",
+            "type": "string"
+          },
+          "template_path": {
+            "title": "Template Path",
+            "type": "string"
+          },
+          "template_sha256": {
+            "title": "Template Sha256",
+            "type": "string"
+          },
+          "track_updates": {
+            "items": {
+              "$ref": "#/components/schemas/TrackUpdateModel"
+            },
+            "title": "Track Updates",
+            "type": "array"
+          },
+          "volume_label": {
+            "title": "Volume Label",
+            "type": "string"
+          },
+          "volume_uuid": {
+            "title": "Volume Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "schema_version",
+          "scope",
+          "template_path",
+          "template_sha256",
+          "target_root",
+          "volume_label",
+          "volume_uuid",
+          "authorization_id",
+          "output_relative_path",
+          "playlists",
+          "track_updates"
+        ],
+        "title": "PlanModel",
+        "type": "object"
+      },
+      "PlanRequest": {
+        "properties": {
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistModel"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "target_root": {
+            "title": "Target Root",
+            "type": "string"
+          },
+          "template_path": {
+            "title": "Template Path",
+            "type": "string"
+          },
+          "track_updates": {
+            "items": {
+              "$ref": "#/components/schemas/TrackUpdateModel"
+            },
+            "title": "Track Updates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "template_path",
+          "target_root"
+        ],
+        "title": "PlanRequest",
+        "type": "object"
+      },
       "PlaylistBrokenSummary": {
         "properties": {
           "broken_count": {
@@ -1196,6 +1319,37 @@
           }
         },
         "title": "PlaylistDuplicateIn",
+        "type": "object"
+      },
+      "PlaylistModel": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "track_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PlaylistModel",
         "type": "object"
       },
       "PlaylistRenameIn": {
@@ -1496,6 +1650,114 @@
           "cue_count"
         ],
         "title": "RbMetaOut",
+        "type": "object"
+      },
+      "ReadbackModel": {
+        "properties": {
+          "output_relative_path": {
+            "title": "Output Relative Path",
+            "type": "string"
+          },
+          "output_sha256": {
+            "title": "Output Sha256",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "playlists": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "track_updates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Track Updates",
+            "type": "array"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "volume_uuid": {
+            "title": "Volume Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "volume_uuid",
+          "output_relative_path",
+          "output_sha256",
+          "playlists",
+          "track_updates",
+          "verified"
+        ],
+        "title": "ReadbackModel",
+        "type": "object"
+      },
+      "ReadbackRequest": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/PlanModel"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/ReceiptModel"
+          }
+        },
+        "required": [
+          "plan",
+          "receipt"
+        ],
+        "title": "ReadbackRequest",
+        "type": "object"
+      },
+      "ReceiptModel": {
+        "properties": {
+          "output_relative_path": {
+            "title": "Output Relative Path",
+            "type": "string"
+          },
+          "output_sha256": {
+            "title": "Output Sha256",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "playlist_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Playlist Ids",
+            "type": "array"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "volume_uuid": {
+            "title": "Volume Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "volume_uuid",
+          "output_relative_path",
+          "output_sha256",
+          "playlist_ids",
+          "verified"
+        ],
+        "title": "ReceiptModel",
         "type": "object"
       },
       "ReconcileSummary": {
@@ -2579,6 +2841,74 @@
           "is_streaming"
         ],
         "title": "TrackRowOut",
+        "type": "object"
+      },
+      "TrackUpdateModel": {
+        "properties": {
+          "bpmx100": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpmx100"
+          },
+          "color_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Id"
+          },
+          "dj_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dj Comment"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "TrackUpdateModel",
         "type": "object"
       },
       "TracksPage": {
@@ -4889,6 +5219,129 @@
         "summary": "Get Stem File",
         "tags": [
           "stems"
+        ]
+      }
+    },
+    "/api/v1/usb-export/apply": {
+      "post": {
+        "operationId": "apply_export_api_v1_usb_export_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceiptModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Export",
+        "tags": [
+          "usb-export"
+        ]
+      }
+    },
+    "/api/v1/usb-export/plan": {
+      "post": {
+        "operationId": "plan_export_api_v1_usb_export_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Export",
+        "tags": [
+          "usb-export"
+        ]
+      }
+    },
+    "/api/v1/usb-export/readback": {
+      "post": {
+        "operationId": "readback_export_api_v1_usb_export_readback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadbackModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Readback Export",
+        "tags": [
+          "usb-export"
         ]
       }
     },
