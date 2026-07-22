@@ -48,6 +48,11 @@
 				{:else}
 					<span>lock: free</span>
 				{/if}
+				{#if health.data.syncthing}
+					<span>sync: {health.data.syncthing.peers_connected} peers - {health.data.syncthing.folder_state}</span>
+				{:else}
+					<span title="not implemented - see PARITY-TODO (syncthing not configured)">sync: n/a</span>
+				{/if}
 				<span>bind: {health.data.bind_host}</span>
 			{:else}
 				<span>Connecting to daemon at :8585...</span>
