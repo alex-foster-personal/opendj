@@ -2,9 +2,11 @@
 	// Build unit: deck (COMPONENT-MAP 1.3, SCREENSHOT-SPEC 3).
 	// REAL: header meta + artwork, strip overview waveform click-to-seek,
 	// hot-cue bank jumps, INT beat-loop cluster, CUE + play/pause transport,
-	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts + position tick.
-	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown, grid-adjust stacks, AU, MA, pitch range.
-	// Stems are live only for validated real Demucs artifacts.
+	// Q, BEAT SYNC, MASTER, MT, KEY SYNC, key nudge, SLIP, jog readouts +
+	// position tick, pitch fader + 8/16/WIDE range switcher. Stems are live
+	// only for validated real Demucs artifacts.
+	// INERT (tooltip 'not implemented - see PARITY-TODO'): HOT CUE dropdown,
+	// grid-adjust stacks, AU, MA.
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
@@ -29,6 +31,7 @@
 	import HotCueBank from './deck/HotCueBank.svelte';
 	import JogDial from './deck/JogDial.svelte';
 	import LoopCluster from './deck/LoopCluster.svelte';
+	import PitchFader from './deck/PitchFader.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
 	import TransportCluster from './deck/TransportCluster.svelte';
@@ -179,6 +182,20 @@
 			pushToast(`Hot cue ${slot} clear failed - ${message}`, 'error');
 		}
 	}
+
+	async function setTempo(ratio: number): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'tempo', deck: deckId, ratio });
+	}
+
+	// setPitchRange throws if the current pitch no longer fits the target
+	// range (engine contract: explicit reset, never a silent clamp) - reset
+	// to 0% first so the range switch always succeeds visibly.
+	async function setPitchRangeUi(range: PitchRange): Promise<void> {
+		if (range !== pitchRange && Math.abs(deck.pitch - 1) * 100 > range + 1e-9) {
+			await runPerformanceCommandFromUi({ type: 'tempo', deck: deckId, ratio: 1 });
+		}
+		await runPerformanceCommandFromUi({ type: 'pitch_range', deck: deckId, range });
+	}
 </script>
 
 <section class="rb-deck rb-panel" data-deck={deckId} data-command-pending={pending}>
@@ -248,6 +265,14 @@
 			onMasterTempo={toggleMasterTempo}
 			onSlip={toggleSlip}
 			inertTip={INERT_TIP}
+		/>
+
+		<PitchFader
+			{deck}
+			{pitchRange}
+			{pending}
+			onTempoChange={setTempo}
+			onRangeChange={setPitchRangeUi}
 		/>
 	</div>
 
