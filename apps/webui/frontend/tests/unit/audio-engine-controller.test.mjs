@@ -175,6 +175,42 @@ test('headphone cue/master mix uses equal-power gains and validates serializable
 		() => audio.assertHeadphoneOutputSelection('missing', [{ id: 'usb-headphones', label: '' }]),
 		/enumerated headphone output/i
 	);
+	assert.deepEqual(
+		audio.mergeHeadphoneOutput([{ id: 'default', label: 'Default' }], {
+			deviceId: 'usb-headphones',
+			label: 'USB Headphones'
+		}),
+		[
+			{ id: 'default', label: 'Default' },
+			{ id: 'usb-headphones', label: 'USB Headphones' }
+		]
+	);
+	assert.deepEqual(
+		audio.mergeHeadphoneOutput([{ id: 'usb-headphones', label: '' }], {
+			deviceId: 'usb-headphones',
+			label: 'USB Headphones'
+		}),
+		[{ id: 'usb-headphones', label: 'USB Headphones' }]
+	);
+});
+
+test('headphone output refresh fails closed when browser device IDs rotate', () => {
+	assert.deepEqual(
+		audio.reconcileHeadphoneOutputRefresh(
+			true,
+			'rotated-device-id',
+			[{ id: 'current-device-id', label: 'USB Headphones' }]
+		),
+		{ active: false, selected_output_device_id: null }
+	);
+	assert.deepEqual(
+		audio.reconcileHeadphoneOutputRefresh(
+			true,
+			'current-device-id',
+			[{ id: 'current-device-id', label: 'USB Headphones' }]
+		),
+		{ active: true, selected_output_device_id: 'current-device-id' }
+	);
 });
 
 test('headphone selection declares sink, stream attach, play, then publish and rejects stale ownership', async () => {
@@ -482,6 +518,91 @@ test('Slip hidden playhead advances linearly from its acknowledged loop schedule
 	);
 });
 
+test('SLIP activation carries acknowledged future tempo boundaries through loop release without duplicates', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: { in_ms: 10_000, out_ms: 12_000, engaged: true, beat_length: 4 },
+		startContextTime: 10,
+		startPositionSec: 10,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 0
+	});
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: { in_ms: 10_000, out_ms: 12_000, engaged: true, beat_length: 4 },
+		startContextTime: 15,
+		startPositionSec: 15,
+		tempoRatio: 2,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 0
+	});
+	// A same-boundary supersession must replace, rather than double-apply, the prior rate.
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 3,
+		active: true,
+		loop: { in_ms: 10_000, out_ms: 12_000, engaged: true, beat_length: 4 },
+		startContextTime: 15,
+		startPositionSec: 15,
+		tempoRatio: 1.5,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 0
+	});
+	audio.observePresentedTransportTimeline(timeline, { contextTime: 11, performanceTime: 11_000 }, 120);
+	const anchor = audio.presentedSlipAnchor(timeline, 120);
+	const boundaries = audio.slipTempoBoundariesAfterAnchor(timeline, anchor);
+	assert.deepEqual(boundaries, [{ startContextTime: 15, tempoRatio: 1.5 }]);
+	assert.equal(
+		audio.slipHiddenPositionWithTempoBoundaries(anchor, boundaries, 17),
+		18,
+		'loop release at 17s resumes 4s at the old rate plus 2s at 1.5x'
+	);
+});
+
+test('KEY SYNC uses the same presented manual-shift baseline for pending desired state', () => {
+	const timeline = audio.createPresentedTransportTimeline(0);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 1,
+		active: true,
+		loop: null,
+		startContextTime: 10,
+		startPositionSec: 0,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 0
+	});
+	audio.observePresentedTransportTimeline(timeline, { contextTime: 11, performanceTime: 11_000 }, 60);
+	audio.acknowledgePresentedTransportSchedule(timeline, {
+		revision: 2,
+		active: true,
+		loop: null,
+		startContextTime: 15,
+		startPositionSec: 5,
+		tempoRatio: 1,
+		masterTempoEnabled: true,
+		keyShiftSemitones: 1
+	});
+	const source = {
+		audible: true,
+		transportPending: true,
+		pendingMutation: true,
+		control: { tempoRatio: 1, masterTempoEnabled: true, keyShiftSemitones: 1 },
+		presentation: timeline
+	};
+	const baseline = audio.keySyncManualShiftBaseline(source);
+	const target = audio.deriveKeySyncTargetManualShift(
+		'8A',
+		'10A',
+		audio.keySyncEffectiveAudibleSemitones(source),
+		0,
+		baseline
+	);
+	assert.equal(baseline, 0);
+	assert.equal(target, 2, 'the second unpresented command must not compound the pending +1 into +3');
+});
 test('Slip activation is limited to playing decks with SLIP enabled', () => {
 	assert.equal(audio.shouldActivateSlip(true, true), true);
 	assert.equal(audio.shouldActivateSlip(false, true), false);

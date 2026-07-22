@@ -94,6 +94,30 @@ test('empty and duplicate scopes fail fast before any command executes', async (
 	assert.equal(calls, 0);
 });
 
+test('gesture work claims an idle scope synchronously and rejects a busy scope without queuing', async () => {
+	const scheduler = new ScopedCommandScheduler();
+	const gate = deferred();
+	const regular = scheduler.run(['headphone'], async () => gate.promise);
+	let invoked = false;
+	assert.throws(
+		() => scheduler.runImmediatelyIfIdle('headphone', () => {
+			invoked = true;
+			return Promise.resolve();
+		}),
+		/headphone.*busy/i
+	);
+	assert.equal(invoked, false);
+	gate.resolve();
+	await regular;
+
+	const acquired = scheduler.runImmediatelyIfIdle('headphone', () => {
+		invoked = true;
+		return Promise.resolve('acquired');
+	});
+	assert.equal(invoked, true);
+	assert.equal(await acquired, 'acquired');
+});
+
 test('session invalidation rejects queued load and play before execution without blocking new work', async () => {
 	const scheduler = new ScopedCommandScheduler();
 	const predecessorGate = deferred();

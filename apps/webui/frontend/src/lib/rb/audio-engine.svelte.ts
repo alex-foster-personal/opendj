@@ -341,6 +341,12 @@ export interface SlipAnchor {
 	durationSec: number;
 }
 
+/** Acknowledged future rate change for SLIP's hidden, non-looping timeline. */
+export interface SlipTempoBoundary {
+	startContextTime: number;
+	tempoRatio: number;
+}
+
 interface _DeckRuntime {
 	processor: _DeckProcessor | null;
 	durationSec: number;
@@ -365,6 +371,7 @@ interface _DeckRuntime {
 	scheduleTail: Promise<void>;
 	swapTail: Promise<void>;
 	slipAnchor: SlipAnchor | null;
+	slipTempoBoundaries: SlipTempoBoundary[];
 }
 
 function _emptyRuntime(): _DeckRuntime {
@@ -388,7 +395,8 @@ function _emptyRuntime(): _DeckRuntime {
 		scheduleIntentCount: 0,
 		scheduleTail: Promise.resolve(),
 		swapTail: Promise.resolve(),
-		slipAnchor: null
+		slipAnchor: null,
+		slipTempoBoundaries: []
 	};
 }
 
@@ -533,6 +541,40 @@ export function assertHeadphoneOutputSelection(
 	}
 }
 
+/** Merge a browser-authorized output into the serializable read model. */
+export function mergeHeadphoneOutput(
+	outputs: readonly HeadphoneOutputDevice[],
+	device: Pick<MediaDeviceInfo, 'deviceId' | 'label'>
+): HeadphoneOutputDevice[] {
+	if (typeof device.deviceId !== 'string' || device.deviceId.trim() === '') {
+		throw new TypeError('acquired headphone output device id must be a non-empty string');
+	}
+	if (typeof device.label !== 'string') {
+		throw new TypeError('acquired headphone output label must be a string');
+	}
+	const next = { id: device.deviceId, label: device.label };
+	return outputs.some((output) => output.id === next.id)
+		? outputs.map((output) => (output.id === next.id ? next : { ...output }))
+		: [...outputs.map((output) => ({ ...output })), next];
+}
+
+/** Browsers may rotate opaque output IDs when device permission changes. An
+ * unenumerated sink is no longer trustworthy, so stop reporting it as live. */
+export function reconcileHeadphoneOutputRefresh(
+	active: boolean,
+	selectedOutputDeviceId: string | null,
+	outputs: readonly HeadphoneOutputDevice[]
+): { active: boolean; selected_output_device_id: string | null } {
+	if (typeof active !== 'boolean') throw new TypeError('headphone active state must be boolean');
+	if (selectedOutputDeviceId !== null && typeof selectedOutputDeviceId !== 'string') {
+		throw new TypeError('selected headphone output device id must be a string or null');
+	}
+	if (selectedOutputDeviceId === null || outputs.some((output) => output.id === selectedOutputDeviceId)) {
+		return { active, selected_output_device_id: selectedOutputDeviceId };
+	}
+	return { active: false, selected_output_device_id: null };
+}
+
 export function headphoneSelectionStages(): readonly string[] {
 	return ['setSinkId', 'attachStream', 'play', 'publish'];
 }
@@ -637,6 +679,21 @@ function _requireHeadphoneDeviceApi(): MediaDevices {
 	}
 	mixerState.headphones.supported = true;
 	return navigator.mediaDevices;
+}
+
+interface _OutputSelectableMediaDevices extends MediaDevices {
+	selectAudioOutput(): Promise<MediaDeviceInfo>;
+}
+
+function _requireHeadphoneOutputAcquisitionApi(): _OutputSelectableMediaDevices {
+	const mediaDevices = _requireHeadphoneDeviceApi();
+	if (typeof (mediaDevices as Partial<_OutputSelectableMediaDevices>).selectAudioOutput !== 'function') {
+		throw _headphoneError(
+			'headphone output acquisition unsupported',
+			'navigator.mediaDevices.selectAudioOutput is unavailable'
+		);
+	}
+	return mediaDevices as _OutputSelectableMediaDevices;
 }
 
 function _ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode): _HeadphoneNodes {
@@ -880,6 +937,27 @@ export function deriveKeySyncNudge(
 		throw new RangeError('KEY SYNC cannot apply a compatible nudge within -12..12 manual semitones');
 	}
 	return bestNudge;
+}
+
+/** Convert a listener-facing KEY SYNC nudge to the absolute manual schedule value. */
+export function deriveKeySyncTargetManualShift(
+	deckKey: string | null,
+	masterKey: string | null,
+	deckEffectiveAudibleSemitones: number,
+	masterEffectiveAudibleSemitones: number,
+	presentedManualShiftSemitones: number
+): number {
+	_assertKeyShift(presentedManualShiftSemitones);
+	const nudge = deriveKeySyncNudge(
+		deckKey,
+		masterKey,
+		deckEffectiveAudibleSemitones,
+		masterEffectiveAudibleSemitones,
+		presentedManualShiftSemitones
+	);
+	const target = presentedManualShiftSemitones + nudge;
+	_assertKeyShift(target);
+	return target;
 }
 
 /** Legacy zero-offset convenience wrapper, returning the final manual shift. */
@@ -1480,6 +1558,31 @@ export function keySyncEffectiveAudibleSemitones(
 	return presentedEffectiveAudibleSemitones(source.presentation);
 }
 
+/** The manual baseline for a live command must match the output-presented
+ * effective pitch baseline, never a newer desired control schedule. */
+export function keySyncManualShiftBaseline(source: KeySyncEffectiveOffsetSource): number {
+	const quiescent =
+		!source.audible &&
+		!source.transportPending &&
+		!source.pendingMutation &&
+		!source.presentation.presented_active &&
+		source.presentation.desired_revision === source.presentation.presented_revision;
+	if (quiescent) {
+		_assertKeyShift(source.control.keyShiftSemitones);
+		return source.control.keyShiftSemitones;
+	}
+	const presentedAt = source.presentation.last_presentation_context_time_s;
+	if (presentedAt === null) {
+		throw new Error('KEY SYNC requires output presentation truth before deriving its manual baseline');
+	}
+	const baseline = presentedKeyShiftSemitonesAt(source.presentation, presentedAt);
+	if (baseline === null) {
+		throw new Error('KEY SYNC requires an output-presented schedule before deriving its manual baseline');
+	}
+	_assertKeyShift(baseline);
+	return baseline;
+}
+
 export function shouldActivateSlip(playing: boolean, slipEnabled: boolean): boolean {
 	if (typeof playing !== 'boolean' || typeof slipEnabled !== 'boolean') {
 		throw new TypeError('SLIP activation inputs must be boolean');
@@ -1510,6 +1613,97 @@ export function slipHiddenPositionSec(anchor: SlipAnchor, contextTime: number): 
 	}
 	const elapsed = Math.max(0, contextTime - validAnchor.startContextTime);
 	return Math.min(validAnchor.durationSec, validAnchor.startPositionSec + elapsed * validAnchor.tempoRatio);
+}
+
+/** Re-anchor hidden SLIP transport at an acknowledged rate boundary. */
+export function rebaseSlipAnchor(
+	anchor: SlipAnchor,
+	effectiveWhen: number,
+	tempoRatio: number
+): SlipAnchor {
+	if (!Number.isFinite(effectiveWhen) || effectiveWhen < 0) {
+		throw new RangeError(`SLIP rebase time must be finite and non-negative, got ${effectiveWhen}`);
+	}
+	return createSlipAnchor({
+		startContextTime: effectiveWhen,
+		startPositionSec: slipHiddenPositionSec(anchor, effectiveWhen),
+		tempoRatio,
+		durationSec: anchor.durationSec
+	});
+}
+
+/** Integrate hidden SLIP time through its accepted presentation-rate boundaries. */
+export function slipHiddenPositionWithTempoBoundaries(
+	anchor: SlipAnchor,
+	boundaries: readonly SlipTempoBoundary[],
+	contextTime: number
+): number {
+	if (!Number.isFinite(contextTime) || contextTime < 0) {
+		throw new RangeError(`SLIP context time must be finite and non-negative, got ${contextTime}`);
+	}
+	let segment = createSlipAnchor(anchor);
+	for (const boundary of boundaries) {
+		if (!Number.isFinite(boundary.startContextTime) || boundary.startContextTime < segment.startContextTime) {
+			throw new RangeError('SLIP tempo boundaries must be ordered after the anchor');
+		}
+		if (!Number.isFinite(boundary.tempoRatio) || boundary.tempoRatio <= 0) {
+			throw new RangeError('SLIP tempo boundary ratio must be finite and positive');
+		}
+		if (boundary.startContextTime > contextTime) break;
+		segment = rebaseSlipAnchor(segment, boundary.startContextTime, boundary.tempoRatio);
+	}
+	return slipHiddenPositionSec(segment, contextTime);
+}
+
+/** Retain accepted, effective future presentation schedules after a SLIP anchor. */
+export function slipTempoBoundariesAfterAnchor(
+	timeline: PresentedTransportTimeline,
+	anchor: SlipAnchor
+): SlipTempoBoundary[] {
+	const validAnchor = createSlipAnchor(anchor);
+	const candidates = timeline.schedules
+		.filter(
+			(schedule) =>
+				schedule.supersededByRevision === null &&
+				schedule.active &&
+				schedule.startContextTime > validAnchor.startContextTime
+		)
+		.sort(
+			(left, right) =>
+				left.startContextTime - right.startContextTime || left.revision - right.revision
+		);
+	const boundaries: SlipTempoBoundary[] = [];
+	for (const schedule of candidates) {
+		const previous = boundaries[boundaries.length - 1];
+		if (previous?.startContextTime === schedule.startContextTime) {
+			previous.tempoRatio = schedule.tempoRatio;
+		} else {
+			boundaries.push({ startContextTime: schedule.startContextTime, tempoRatio: schedule.tempoRatio });
+		}
+	}
+	return boundaries;
+}
+
+/** Create a hidden SLIP anchor from the listener-facing engaged loop only. */
+export function presentedSlipAnchor(
+	timeline: PresentedTransportTimeline,
+	durationSec: number
+): SlipAnchor {
+	if (!Number.isFinite(durationSec) || durationSec <= 0) {
+		throw new RangeError(`SLIP duration must be positive and finite, got ${durationSec}`);
+	}
+	const presentedAt = timeline.last_presentation_context_time_s;
+	if (presentedAt === null) throw new Error('SLIP requires output presentation truth before activation');
+	const schedule = _effectivePresentedScheduleAt(timeline, presentedAt);
+	if (schedule === null || !schedule.active || schedule.loop?.engaged !== true) {
+		throw new Error('SLIP requires an output-presented engaged loop before activation');
+	}
+	return createSlipAnchor({
+		startContextTime: presentedAt,
+		startPositionSec: _positionForSegment(schedule, presentedAt, durationSec),
+		tempoRatio: schedule.tempoRatio,
+		durationSec
+	});
 }
 
 export function projectedLoopAwareTransportPosition(input: {
@@ -2013,6 +2207,7 @@ async function _scheduleDeckSerial(
 	st.master_tempo_enabled = scheduledMasterTempoEnabled;
 	st.loop = scheduledLoop === null ? null : { ...scheduledLoop };
 	st.playing = rt.desiredActive;
+	_recordSlipTempoBoundary(rt, effectiveWhen, scheduledTempoRatio);
 	rt.pending = rt.pending.filter((pending) => pending.startContextTime < effectiveWhen);
 	rt.pending.push({
 		active,
@@ -2129,9 +2324,17 @@ function _desiredKeyShiftSemitones(deck: DeckId): number {
 }
 
 function _effectiveAudibleSemitones(deck: DeckId): number {
+	return keySyncEffectiveAudibleSemitones(_keySyncSource(deck));
+}
+
+function _keySyncManualShiftBaseline(deck: DeckId): number {
+	return keySyncManualShiftBaseline(_keySyncSource(deck));
+}
+
+function _keySyncSource(deck: DeckId): KeySyncEffectiveOffsetSource {
 	const st = deckStates[deck];
 	const rt = _rt[deck];
-	return keySyncEffectiveAudibleSemitones({
+	return {
 		audible: st.audible,
 		transportPending: st.transport_pending,
 		pendingMutation: rt.pending.length > 0 || rt.scheduleIntentCount > 0,
@@ -2141,7 +2344,7 @@ function _effectiveAudibleSemitones(deck: DeckId): number {
 			keyShiftSemitones: rt.controlKeyShiftSemitones
 		},
 		presentation: rt.presentation
-	});
+	};
 }
 
 function _clearSlip(deck: DeckId): void {
@@ -2149,16 +2352,35 @@ function _clearSlip(deck: DeckId): void {
 	st.slip_active = false;
 	st.slip_position_ms = null;
 	_rt[deck].slipAnchor = null;
+	_rt[deck].slipTempoBoundaries = [];
 }
 
-function _activateSlip(deck: DeckId, anchor: SlipAnchor): void {
+function _slipHiddenPositionAt(rt: _DeckRuntime, contextTime: number): number {
+	if (rt.slipAnchor === null) throw new Error('SLIP hidden position requires an active anchor');
+	return slipHiddenPositionWithTempoBoundaries(rt.slipAnchor, rt.slipTempoBoundaries, contextTime);
+}
+
+function _recordSlipTempoBoundary(rt: _DeckRuntime, effectiveWhen: number, tempoRatio: number): void {
+	if (rt.slipAnchor === null) return;
+	rt.slipTempoBoundaries = rt.slipTempoBoundaries.filter(
+		(boundary) => boundary.startContextTime < effectiveWhen
+	);
+	rt.slipTempoBoundaries.push({ startContextTime: effectiveWhen, tempoRatio });
+}
+
+function _activateSlip(
+	deck: DeckId,
+	anchor: SlipAnchor,
+	boundaries: readonly SlipTempoBoundary[] = []
+): void {
 	const { st, rt } = _requireLoaded(deck, 'activate SLIP');
 	if (!shouldActivateSlip(st.playing, st.slip_enabled)) {
 		throw new Error('SLIP can only activate on a playing deck with SLIP enabled');
 	}
 	rt.slipAnchor = createSlipAnchor(anchor);
+	rt.slipTempoBoundaries = boundaries.map((boundary) => ({ ...boundary }));
 	st.slip_active = true;
-	st.slip_position_ms = slipHiddenPositionSec(rt.slipAnchor, _ctx?.currentTime ?? anchor.startContextTime) * 1000;
+	st.slip_position_ms = rt.slipAnchor.startPositionSec * 1000;
 }
 
 function _updateSlipPosition(deck: DeckId): void {
@@ -2169,8 +2391,9 @@ function _updateSlipPosition(deck: DeckId): void {
 		_clearSlip(deck);
 		return;
 	}
-	if (_ctx === null) throw new Error('SLIP active without an AudioContext');
-	st.slip_position_ms = slipHiddenPositionSec(anchor, _ctx.currentTime) * 1000;
+	const presentedAt = _rt[deck].presentation.last_presentation_context_time_s;
+	if (presentedAt === null) return;
+	st.slip_position_ms = _slipHiddenPositionAt(_rt[deck], presentedAt) * 1000;
 }
 
 /** Resume an active SLIP loop through the same acknowledged processor and
@@ -2184,7 +2407,7 @@ async function _resumeSlip(deck: DeckId): Promise<void> {
 	await _scheduleDeck(
 		deck,
 		_futureScheduleTime(deck),
-		(effectiveWhen) => slipHiddenPositionSec(anchor, effectiveWhen),
+		(effectiveWhen) => _slipHiddenPositionAt(rt, effectiveWhen),
 		true,
 		undefined,
 		undefined,
@@ -2413,6 +2636,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.slip_position_ms = null;
 	st.loop = null;
 	_rt[st.deck_id].slipAnchor = null;
+	_rt[st.deck_id].slipTempoBoundaries = [];
 	st.hot_cues = [];
 	st.anlz = null;
 	st.anlz_error = null;
@@ -3194,7 +3418,21 @@ class RbAudioEngine implements AudioEngine {
 		if (typeof enabled !== 'boolean') throw new TypeError('setSlip: enabled must be boolean');
 		const st = deckStates[deck];
 		if (enabled) {
-			// Arming SLIP is state-only. It never schedules or publishes a transport change.
+			if (st.playing && !st.slip_active) {
+				const { rt } = _requireLoaded(deck, 'setSlip');
+				const presentedAt = rt.presentation.last_presentation_context_time_s;
+				if (presentedAt === null) {
+					throw new Error('SLIP requires output presentation truth before live activation');
+				}
+				const schedule = _effectivePresentedScheduleAt(rt.presentation, presentedAt);
+				if (schedule?.loop?.engaged === true) {
+					const anchor = presentedSlipAnchor(rt.presentation, rt.durationSec);
+					st.slip_enabled = true;
+					_activateSlip(deck, anchor, slipTempoBoundariesAfterAnchor(rt.presentation, anchor));
+					return;
+				}
+			}
+			// Arming SLIP outside a presented engaged loop is state-only.
 			st.slip_enabled = true;
 			return;
 		}
@@ -3216,15 +3454,15 @@ class RbAudioEngine implements AudioEngine {
 		if (masterDeck === null) throw new Error('KEY SYNC requires an elected loaded master deck');
 		if (masterDeck === deck) throw new Error('KEY SYNC cannot be applied to the selected master deck');
 		const { st: master } = _requireLoaded(masterDeck, 'KEY SYNC master');
-		const deckManualShiftSemitones = _desiredKeyShiftSemitones(deck);
-		const nudge = deriveKeySyncNudge(
+		const deckManualShiftSemitones = _keySyncManualShiftBaseline(deck);
+		const targetManualShiftSemitones = deriveKeySyncTargetManualShift(
 			st.key,
 			master.key,
 			_effectiveAudibleSemitones(deck),
 			_effectiveAudibleSemitones(masterDeck),
 			deckManualShiftSemitones
 		);
-		await _setDeckKeyShift(deck, deckManualShiftSemitones + nudge);
+		await _setDeckKeyShift(deck, targetManualShiftSemitones);
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {
@@ -3430,7 +3668,37 @@ class RbAudioEngine implements AudioEngine {
 		mixerState.headphones.outputs = devices
 			.filter((device) => device.kind === 'audiooutput')
 			.map((device) => ({ id: device.deviceId, label: device.label }));
+		const reconciled = reconcileHeadphoneOutputRefresh(
+			mixerState.headphones.active,
+			mixerState.headphones.selected_output_device_id,
+			mixerState.headphones.outputs
+		);
+		if (reconciled.selected_output_device_id === null && mixerState.headphones.selected_output_device_id !== null) {
+			const currentElement = _headphoneNodes?.element;
+			if (currentElement !== undefined) _detachHeadphoneElement(currentElement);
+		}
+		mixerState.headphones.active = reconciled.active;
+		mixerState.headphones.selected_output_device_id = reconciled.selected_output_device_id;
 		mixerState.headphones.error = null;
+	}
+
+	/** Must be called from a visible user gesture so the browser can open its
+	 * output chooser. This never requests microphone capture. */
+	async acquireHeadphoneOutput(): Promise<void> {
+		const generation = _headphoneGeneration;
+		try {
+			const device = await withHeadphoneOperationTimeout(
+				'selectAudioOutput',
+				_requireHeadphoneOutputAcquisitionApi().selectAudioOutput()
+			);
+			_assertCurrentHeadphoneOperation(generation, null);
+			mixerState.headphones.outputs = mergeHeadphoneOutput(mixerState.headphones.outputs, device);
+			await this.selectHeadphoneOutput(device.deviceId);
+			_assertCurrentHeadphoneOperation(generation, null);
+		} catch (error) {
+			_assertCurrentHeadphoneOperation(generation, null);
+			throw _headphoneError('headphone output acquisition failed', error);
+		}
 	}
 
 	async selectHeadphoneOutput(deviceId: string): Promise<void> {

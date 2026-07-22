@@ -65,6 +65,10 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
 	}
 
+	function acquireHeadphoneOutput(): void {
+		void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
+	}
+
 	function selectHeadphoneOutput(device_id: string): void {
 		void runPerformanceCommandFromUi({ type: 'headphone_output_select', device_id });
 	}
@@ -95,6 +99,7 @@
 				onmix={handleHeadphoneMix}
 				onlevel={handleHeadphoneLevel}
 				onrefresh={refreshHeadphoneOutputs}
+				onacquire={acquireHeadphoneOutput}
 				onselect={selectHeadphoneOutput}
 			/>
 		</div>

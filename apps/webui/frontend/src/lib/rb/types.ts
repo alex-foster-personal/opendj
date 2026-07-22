@@ -475,6 +475,8 @@ export interface AudioEngine {
 	setHeadphoneLevel(value: number): void;
 	/** Enumerate browser audio-output devices for explicit sink selection. */
 	refreshHeadphoneOutputs(): Promise<void>;
+	/** Acquire an output through the browser's user-gesture permission chooser and select it. */
+	acquireHeadphoneOutput(): Promise<void>;
 	/** Route the real monitor element to an explicitly enumerated output device. */
 	selectHeadphoneOutput(deviceId: string): Promise<void>;
 }

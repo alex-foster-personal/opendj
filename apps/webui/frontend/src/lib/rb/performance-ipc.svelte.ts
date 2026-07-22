@@ -81,6 +81,7 @@ export type PerformanceCommand =
 	| { type: 'headphone_mix'; value: number }
 	| { type: 'headphone_level'; value: number }
 	| { type: 'headphone_outputs_refresh' }
+	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string };
 
 export interface PerformanceDeckSnapshot {
@@ -261,6 +262,10 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		return { type, value: _unit('value', record.value) };
 	}
 	if (type === 'headphone_outputs_refresh') {
+		_exactKeys(record, ['type']);
+		return { type };
+	}
+	if (type === 'headphone_output_acquire') {
 		_exactKeys(record, ['type']);
 		return { type };
 	}
@@ -456,7 +461,11 @@ function _commandDeck(command: PerformanceCommand): DeckId | null {
 export function performanceCommandQueueScopes(
 	command: PerformanceCommand
 ): readonly CommandScope[] | null {
-	if (command.type === 'headphone_outputs_refresh' || command.type === 'headphone_output_select') {
+	if (
+		command.type === 'headphone_outputs_refresh' ||
+		command.type === 'headphone_output_acquire' ||
+		command.type === 'headphone_output_select'
+	) {
 		return ['headphone'];
 	}
 	const deck = _commandDeck(command);
@@ -556,6 +565,8 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		engine.setHeadphoneLevel(command.value);
 	} else if (command.type === 'headphone_outputs_refresh') {
 		await engine.refreshHeadphoneOutputs();
+	} else if (command.type === 'headphone_output_acquire') {
+		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
 	} else {
@@ -813,6 +824,24 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	const scopes = performanceCommandQueueScopes(command);
+	if (command.type === 'headphone_output_acquire') {
+		performanceCommandStatus.active += 1;
+		performanceCommandStatus.last_error = null;
+		try {
+			const acquired = _commandScheduler.runImmediatelyIfIdle('headphone', async () => {
+				_assertCommandSession(commandGeneration);
+				await _execute(command);
+			});
+			await acquired;
+			_assertCommandSession(commandGeneration);
+			return queryPerformanceState();
+		} catch (error) {
+			if (_commandSessionIsCurrent(commandGeneration)) _persistCommandError(null, error);
+			throw error;
+		} finally {
+			if (_commandSessionIsCurrent(commandGeneration)) performanceCommandStatus.active -= 1;
+		}
+	}
 	if (scopes === null) {
 		performanceCommandStatus.last_error = null;
 		if (deck !== null) performanceCommandStatus.deck_errors[deck] = null;
