@@ -20,6 +20,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
+from apps.sets.api import router as sets_router
+
 from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
@@ -155,6 +157,7 @@ def create_app(
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
+    app.include_router(sets_router)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):
         app.mount("/", _SpaStaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True),
