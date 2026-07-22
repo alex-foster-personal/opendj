@@ -73,12 +73,13 @@ import { pushToast } from '$lib/stores.svelte';
 import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
+	fetchHotCueSlots,
 	fetchStemAudioArrayBuffers,
 	getTrack,
 	probeStemArtifact,
 	RbApiError
 } from '$lib/rb/api-rb';
-import type { DemucsStemPart, Track } from '$lib/rb/api-rb';
+import type { DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	computeFollowerSyncPlan,
 	quantizeToNearestBeat,
@@ -108,6 +109,7 @@ import type {
 	HeadphoneOutputDevice,
 	HeadphoneState,
 	HotCue,
+	HotCueSlot,
 	LoopState,
 	MixerChannelState,
 	MixerState,
@@ -172,10 +174,27 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		stems: unavailableStemDeckState(),
 		loop: null,
 		hot_cues: [],
+		hot_cue_revisions: _emptyHotCueRevisions(),
 		anlz: null,
 		anlz_error: null,
 		is_master: false
 	};
+}
+
+function _emptyHotCueRevisions(): Record<HotCueSlot, string> {
+	return {
+		A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: ''
+	};
+}
+
+function _hotCueRevisionsFrom(slots: HotCueSlotState[]): Record<HotCueSlot, string> {
+	const revisions = _emptyHotCueRevisions();
+	for (const slot of slots) revisions[slot.slot] = slot.revision;
+	return revisions;
+}
+
+function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
+	return _hotCuesFrom(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
 }
 
 function _defaultChannel(deck_id: DeckId): MixerChannelState {
@@ -2941,19 +2960,22 @@ class RbAudioEngine implements AudioEngine {
 		let track: Track | null = null;
 		let buffer: AudioBuffer | null = null;
 		let anlz: DeckState['anlz'] = null;
+		let hotCueSlots: HotCueSlotState[] | null = null;
 		let latencySec = 0;
 		let processor: _DeckProcessor | null = null;
 		let candidateStemState: StemDeckState = unavailableStemDeckState();
 		try {
-			const [trackRes, audioBytes, requiredAnlz] = await Promise.all([
+			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] = await Promise.all([
 				getTrack(stable_id),
 				fetchAudioArrayBuffer(stable_id),
-				fetchAnlz(stable_id)
+				fetchAnlz(stable_id),
+				fetchHotCueSlots(stable_id)
 			]);
 			const stemProbe = await probeStemArtifact(stable_id);
 			const ctx = _ensureGraph();
 			track = trackRes.track;
 			anlz = requiredAnlz;
+			hotCueSlots = requiredHotCueSlots;
 			buffer = await ctx.decodeAudioData(audioBytes);
 			const processorOptions = {
 				onProcessorError: (error: unknown) => {
@@ -3005,7 +3027,10 @@ class RbAudioEngine implements AudioEngine {
 			pushToast(`Deck ${deck} load failed - ${msg}`, 'error');
 			throw exc;
 		}
-		if (processor === null || track === null || buffer === null || anlz === null) {
+		if (
+			processor === null || track === null || buffer === null || anlz === null ||
+			hotCueSlots === null
+		) {
 			throw new Error('load: candidate deck transaction is incomplete');
 		}
 		const candidateProcessor = processor;
@@ -3071,7 +3096,8 @@ class RbAudioEngine implements AudioEngine {
 			st.processor_error = null;
 			st.sync_error = null;
 			st.stems = candidateStemState;
-			st.hot_cues = _hotCuesFrom(candidateAnlz.cues);
+			st.hot_cues = _hotCuesFromSlots(hotCueSlots);
+			st.hot_cue_revisions = _hotCueRevisionsFrom(hotCueSlots);
 			st.loop = _displayLoopFrom(candidateAnlz.cues);
 			if (replacingMaster) _electPlayingMaster();
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
@@ -3095,10 +3121,11 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'refreshHotCues');
 		const stableId = st.stable_id;
 		if (stableId === null) throw new Error('refreshHotCues: deck has no stable_id');
-		const fresh = await fetchAnlz(stableId);
+		const [fresh, slots] = await Promise.all([fetchAnlz(stableId), fetchHotCueSlots(stableId)]);
 		if (st.stable_id !== stableId) return; // deck was swapped mid-request
 		st.anlz = fresh;
-		st.hot_cues = _hotCuesFrom(fresh.cues);
+		st.hot_cues = _hotCuesFromSlots(slots);
+		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 		st.loop = _displayLoopFrom(fresh.cues);
 	}
 

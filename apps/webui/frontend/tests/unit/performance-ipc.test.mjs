@@ -91,6 +91,108 @@ test('SLIP validates through IPC and exposes its inactive read state', async () 
 	}
 });
 
+test('hot-cue controls are strict IPC commands with serializable slot state', async () => {
+	globalThis.window = {};
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const initial = ipc.queryPerformanceState().decks[1];
+		assert.equal(initial.hot_cue_slots.length, 8);
+		assert.deepEqual(initial.hot_cue_slots.map((slot) => slot.slot), ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+		assert.ok(initial.hot_cue_slots.every((slot) => typeof slot.revision === 'string'));
+		assert.equal(initial.hot_cue_reversal, null);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'hot_cue_save', deck: 1, slot: 'I', in_ms: 1000, revision: 'etag'
+			}),
+			/hot-cue slot must be A through H/i
+		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'etag', reversal_id: 'token', extra: true
+			}),
+			/unexpected fields/i
+		);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+	const [deckSource, ipcSource] = await Promise.all([
+		readFile('src/lib/components/rb/Deck.svelte', 'utf8'),
+		readFile('src/lib/rb/performance-ipc.svelte.ts', 'utf8')
+	]);
+	assert.match(deckSource, /type: 'hot_cue_save', deck: deckId, slot, in_ms: ms, revision/);
+	assert.match(deckSource, /type: 'hot_cue_restore', deck: deckId, slot, revision, reversal_id: reversalId/);
+	assert.match(ipcSource, /await saveHotCue\(stableId, command\.slot, command\.in_ms, command\.revision\)/);
+	assert.match(ipcSource, /await restoreHotCue\(stableId, command\.slot, command\.revision, command\.reversal_id\)/);
+});
+
+test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal state', async () => {
+	const originalFetch = globalThis.fetch;
+	const requests = [];
+	let restoreCalls = 0;
+	globalThis.fetch = async (input, init = {}) => {
+		requests.push({ url: String(input), init });
+		if (String(input).endsWith('/restore')) {
+			restoreCalls += 1;
+			if (restoreCalls > 1) {
+				return Response.json(
+					{ detail: { code: 'HOT_CUE_REVERSAL_CONSUMED', message: 'already used' } },
+					{ status: 409 }
+				);
+			}
+			return Response.json({ cue: null, revision: 'restore-revision' });
+		}
+		if (init.method === 'DELETE') {
+			return Response.json({
+				cue: null,
+				revision: 'clear-revision',
+				reversal: { reversal_id: 'clear-token' }
+			});
+		}
+		return Response.json({
+			cue: { slot: 'A', revision: 'save-revision' },
+			revision: 'save-revision',
+			reversal: { reversal_id: 'save-token' }
+		});
+	};
+	globalThis.window = {};
+	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
+		stableId: () => 'loaded-track',
+		refresh: async () => {}
+	});
+	const uninstall = ipc.installPerformanceBrowserIpc();
+	try {
+		const saved = await window.musicDjToolsPerformance.dispatch({
+			type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'empty-revision'
+		});
+		assert.deepEqual(saved.decks[1].hot_cue_reversal, {
+			slot: 'A', revision: 'save-revision', reversal_id: 'save-token'
+		});
+		await window.musicDjToolsPerformance.dispatch({
+			type: 'hot_cue_clear', deck: 1, slot: 'A', revision: 'save-revision'
+		});
+		const restored = await window.musicDjToolsPerformance.dispatch({
+			type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'clear-revision', reversal_id: 'clear-token'
+		});
+		assert.equal(restored.decks[1].hot_cue_reversal, null);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({
+				type: 'hot_cue_restore', deck: 1, slot: 'A', revision: 'clear-revision', reversal_id: 'clear-token'
+			}),
+			/HOT_CUE_REVERSAL_CONSUMED/i
+		);
+		assert.equal(requests[0].init.headers['If-Match'], 'empty-revision');
+		assert.equal(requests[1].init.headers['If-Match'], 'save-revision');
+		assert.equal(requests[2].init.headers['If-Match'], 'clear-revision');
+		assert.equal(requests[3].init.headers['If-Match'], 'clear-revision');
+	} finally {
+		uninstall();
+		resetDriver();
+		delete globalThis.window;
+		globalThis.fetch = originalFetch;
+	}
+});
+
 test('deck header key controls dispatch only through the typed performance dispatcher', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const headerSource = await readFile('src/lib/components/rb/deck/DeckHeader.svelte', 'utf8');

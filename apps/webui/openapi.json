@@ -65,6 +65,10 @@
             ],
             "title": "Out Ms"
           },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
           "slot": {
             "enum": [
               "A",
@@ -89,7 +93,8 @@
           "active_loop",
           "beat_loop_size",
           "color_table_index",
-          "comment"
+          "comment",
+          "revision"
         ],
         "title": "AnlzCueOut",
         "type": "object"
@@ -1378,6 +1383,68 @@
         "title": "HealthSyncthing",
         "type": "object"
       },
+      "HotCueMutationOut": {
+        "properties": {
+          "cue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnlzCueOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reversal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HotCueReversalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cue",
+          "revision"
+        ],
+        "title": "HotCueMutationOut",
+        "type": "object"
+      },
+      "HotCueRestoreIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reversal_id": {
+            "minLength": 1,
+            "title": "Reversal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reversal_id"
+        ],
+        "title": "HotCueRestoreIn",
+        "type": "object"
+      },
+      "HotCueReversalOut": {
+        "properties": {
+          "reversal_id": {
+            "title": "Reversal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reversal_id"
+        ],
+        "title": "HotCueReversalOut",
+        "type": "object"
+      },
       "HotCueSaveIn": {
         "properties": {
           "color_table_index": {
@@ -1414,6 +1481,45 @@
           "in_ms"
         ],
         "title": "HotCueSaveIn",
+        "type": "object"
+      },
+      "HotCueSlotOut": {
+        "properties": {
+          "cue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnlzCueOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "slot": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E",
+              "F",
+              "G",
+              "H"
+            ],
+            "title": "Slot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slot",
+          "cue",
+          "revision"
+        ],
+        "title": "HotCueSlotOut",
         "type": "object"
       },
       "LabelRequest": {
@@ -8199,6 +8305,52 @@
         ]
       }
     },
+    "/api/v1/tracks/{stable_id}/hot-cues": {
+      "get": {
+        "operationId": "list_hot_cue_slots_api_v1_tracks__stable_id__hot_cues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HotCueSlotOut"
+                  },
+                  "title": "Response List Hot Cue Slots Api V1 Tracks  Stable Id  Hot Cues Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Hot Cue Slots",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}/hot-cues/{slot}": {
       "delete": {
         "operationId": "clear_hot_cue_api_v1_tracks__stable_id__hot_cues__slot__delete",
@@ -8230,21 +8382,36 @@
               "title": "Slot",
               "type": "string"
             }
+          },
+          {
+            "description": "Current slot revision returned by GET /tracks/{stable_id}/hot-cues",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/HotCueMutationOut"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Slot revision, reversal scope, or reversal state is stale"
+          },
+          "422": {
+            "description": "Invalid cue position or restore token body"
+          },
+          "428": {
+            "description": "If-Match is required for every hot-cue mutation"
           }
         },
         "summary": "Clear Hot Cue",
@@ -8282,6 +8449,15 @@
               "title": "Slot",
               "type": "string"
             }
+          },
+          {
+            "description": "Current slot revision returned by GET /tracks/{stable_id}/hot-cues",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -8299,24 +8475,102 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AnlzCueOut"
+                  "$ref": "#/components/schemas/HotCueMutationOut"
                 }
               }
             },
             "description": "Successful Response"
           },
+          "409": {
+            "description": "Slot revision, reversal scope, or reversal state is stale"
+          },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "Invalid cue position or restore token body"
+          },
+          "428": {
+            "description": "If-Match is required for every hot-cue mutation"
           }
         },
         "summary": "Save Hot Cue",
+        "tags": [
+          "rb-hot-cues"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/hot-cues/{slot}/restore": {
+      "put": {
+        "operationId": "restore_hot_cue_api_v1_tracks__stable_id__hot_cues__slot__restore_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H"
+              ],
+              "title": "Slot",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Current slot revision returned by GET /tracks/{stable_id}/hot-cues",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HotCueRestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotCueMutationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Slot revision, reversal scope, or reversal state is stale"
+          },
+          "422": {
+            "description": "Invalid cue position or restore token body"
+          },
+          "428": {
+            "description": "If-Match is required for every hot-cue mutation"
+          }
+        },
+        "summary": "Restore Hot Cue",
         "tags": [
           "rb-hot-cues"
         ]

@@ -23,6 +23,7 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
+import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import {
 	DECK_IDS,
 	deckEffectiveBpm,
@@ -44,6 +45,8 @@ import type {
 	DeckId,
 	EqBand,
 	HeadphoneState,
+	HotCue,
+	HotCueSlot,
 	LoopState,
 	MixerChannelState,
 	StemControl,
@@ -82,7 +85,10 @@ export type PerformanceCommand =
 	| { type: 'headphone_level'; value: number }
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
-	| { type: 'headphone_output_select'; device_id: string };
+	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string }
+	| { type: 'hot_cue_clear'; deck: DeckId; slot: HotCueSlot; revision: string }
+	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string };
 
 export interface PerformanceDeckSnapshot {
 	deck_id: DeckId;
@@ -116,6 +122,8 @@ export interface PerformanceDeckSnapshot {
 	loop: LoopState | null;
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
 	beatgrid_ms: number[];
+	hot_cue_slots: Array<{ slot: HotCueSlot; cue: HotCue | null; revision: string }>;
+	hot_cue_reversal: { slot: HotCueSlot; revision: string; reversal_id: string } | null;
 	command_error: string | null;
 	command_pending: boolean;
 }
@@ -184,6 +192,30 @@ export const performancePresetLifecycle: PerformancePresetLifecycleSnapshot = $s
 	error: null
 });
 
+const hotCueReversals: Record<DeckId, { slot: HotCueSlot; revision: string; reversal_id: string } | null> =
+	$state({ 1: null, 2: null, 3: null, 4: null });
+
+export interface PerformanceHotCueDriver {
+	stableId(deck: DeckId): string | null;
+	refresh(deck: DeckId): Promise<void>;
+}
+
+const _defaultHotCueDriver: PerformanceHotCueDriver = {
+	stableId: (deck) => getDeckState(deck).stable_id,
+	refresh: (deck) => engine.refreshHotCues(deck)
+};
+let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
+
+/** Narrow test seam for exercising the public IPC command protocol without
+ * initializing Web Audio. Production always uses the engine-owned driver. */
+export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueDriver): () => void {
+	const previous = _hotCueDriver;
+	_hotCueDriver = driver;
+	return () => {
+		_hotCueDriver = previous;
+	};
+}
+
 let _presetClaim: { id: string } | null = null;
 type CommandScope = DeckId | 'sync' | 'headphone';
 const _commandScheduler = new ScopedCommandScheduler<CommandScope>();
@@ -249,6 +281,21 @@ function _unit(name: string, value: unknown): number {
 function _stem(value: unknown): StemControl {
 	if (value !== 'vocal' && value !== 'instrumental' && value !== 'drums') {
 		throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(value)}`);
+	}
+	return value;
+}
+
+function _hotCueSlot(value: unknown): HotCueSlot {
+	if (value !== 'A' && value !== 'B' && value !== 'C' && value !== 'D' &&
+		value !== 'E' && value !== 'F' && value !== 'G' && value !== 'H') {
+		throw new TypeError(`hot-cue slot must be A through H; got ${String(value)}`);
+	}
+	return value;
+}
+
+function _revision(name: string, value: unknown): string {
+	if (typeof value !== 'string' || value.length === 0) {
+		throw new TypeError(`${name} must be a non-empty revision`);
 	}
 	return value;
 }
@@ -359,6 +406,23 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError(`assign must be A, B, or THRU; got ${String(record.assign)}`);
 		}
 		return { type, deck, assign: record.assign };
+	} else if (type === 'hot_cue_save') {
+		_exactKeys(record, ['type', 'deck', 'slot', 'in_ms', 'revision']);
+		const in_ms = _finite('in_ms', record.in_ms);
+		if (!Number.isInteger(in_ms) || in_ms < 0) throw new RangeError('in_ms must be a non-negative integer');
+		return { type, deck, slot: _hotCueSlot(record.slot), in_ms, revision: _revision('revision', record.revision) };
+	} else if (type === 'hot_cue_clear') {
+		_exactKeys(record, ['type', 'deck', 'slot', 'revision']);
+		return { type, deck, slot: _hotCueSlot(record.slot), revision: _revision('revision', record.revision) };
+	} else if (type === 'hot_cue_restore') {
+		_exactKeys(record, ['type', 'deck', 'slot', 'revision', 'reversal_id']);
+		return {
+			type,
+			deck,
+			slot: _hotCueSlot(record.slot),
+			revision: _revision('revision', record.revision),
+			reversal_id: _revision('reversal_id', record.reversal_id)
+		};
 	}
 	throw new TypeError(`unknown performance command type: ${type}`);
 }
@@ -412,6 +476,12 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 				time_ms: beat.t * 1000
 			})) ?? [],
 		beatgrid_ms: deck.anlz?.beatgrid.beats.map((beat) => beat.t * 1000) ?? [],
+		hot_cue_slots: (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as HotCueSlot[]).map((slot) => ({
+			slot,
+			cue: deck.hot_cues.find((cue) => cue.slot === slot) ?? null,
+			revision: deck.hot_cue_revisions[slot]
+		})),
+		hot_cue_reversal: hotCueReversals[deckId],
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0
 	};
@@ -510,6 +580,7 @@ function _errorMessage(error: unknown): string {
 async function _execute(command: PerformanceCommand): Promise<void> {
 	if (command.type === 'load') {
 		await engine.load(command.deck, command.stable_id);
+		hotCueReversals[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) await engine.play(command.deck);
 		else await engine.pause(command.deck);
@@ -569,6 +640,34 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'hot_cue_save') {
+		const stableId = _hotCueDriver.stableId(command.deck);
+		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
+		const result = await saveHotCue(stableId, command.slot, command.in_ms, command.revision);
+		if (result.reversal === undefined) throw new Error(`hot cue ${command.slot}: server omitted reversal token`);
+		hotCueReversals[command.deck] = {
+			slot: command.slot,
+			revision: result.revision,
+			reversal_id: result.reversal.reversal_id
+		};
+		await _hotCueDriver.refresh(command.deck);
+	} else if (command.type === 'hot_cue_clear') {
+		const stableId = _hotCueDriver.stableId(command.deck);
+		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
+		const result = await clearHotCue(stableId, command.slot, command.revision);
+		if (result.reversal === undefined) throw new Error(`hot cue ${command.slot}: server omitted reversal token`);
+		hotCueReversals[command.deck] = {
+			slot: command.slot,
+			revision: result.revision,
+			reversal_id: result.reversal.reversal_id
+		};
+		await _hotCueDriver.refresh(command.deck);
+	} else if (command.type === 'hot_cue_restore') {
+		const stableId = _hotCueDriver.stableId(command.deck);
+		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
+		await restoreHotCue(stableId, command.slot, command.revision, command.reversal_id);
+		hotCueReversals[command.deck] = null;
+		await _hotCueDriver.refresh(command.deck);
 	} else {
 		const _exhaustive: never = command;
 		throw new Error(`Unhandled performance command: ${JSON.stringify(_exhaustive)}`);

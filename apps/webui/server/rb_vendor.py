@@ -40,6 +40,7 @@ Fail-fast: every unresolved step raises an explicit HTTPException with a
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -589,8 +590,9 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
     master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
     try:
         rows = master.execute(
-            "SELECT Kind, InMsec, OutMsec, ActiveLoop, BeatLoopSize, "
-            "       ColorTableIndex, Comment "
+            "SELECT ID, Kind, InMsec, InFrame, InMpegFrame, InMpegAbs, "
+            "       OutMsec, OutFrame, ActiveLoop, BeatLoopSize, "
+            "       ColorTableIndex, Comment, updated_at "
             "FROM djmdCue WHERE ContentID = ? AND rb_local_deleted = 0",
             (vendor_id,),
         ).fetchall()
@@ -598,9 +600,17 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
         master.close()
 
     cues: list[dict[str, Any]] = []
-    for kind_i, in_ms, out_ms, active_loop, loop_size, color_idx, comment in rows:
+    for row in rows:
+        snapshot = _cue_snapshot_from_row(row)
+        kind_i = snapshot["kind"]
         if kind_i is None or not 0 <= int(kind_i) <= 8:
             continue  # Kind 9-11 excluded v1: slot mapping unverified (PARITY-TODO)
+        in_ms = snapshot["in_ms"]
+        out_ms = snapshot["out_ms"]
+        active_loop = snapshot["active_loop"]
+        loop_size = snapshot["beat_loop_size"]
+        color_idx = snapshot["color_table_index"]
+        comment = snapshot["comment"]
         is_loop = bool(out_ms and int(out_ms) > 0)
         if int(kind_i) == 0:
             kind = "loop" if is_loop else "memory"
@@ -1103,51 +1113,342 @@ def _open_rw(path: Path, label: str) -> sqlite3.Connection:
     return sqlite3.connect(str(path))
 
 
+_CUE_SNAPSHOT_COLUMNS = (
+    "ID, Kind, InMsec, InFrame, InMpegFrame, InMpegAbs, OutMsec, OutFrame, "
+    "ActiveLoop, BeatLoopSize, ColorTableIndex, Comment, updated_at"
+)
+
+
+def _cue_snapshot_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Serialize every destructive hot-cue field needed for an exact undo."""
+    (
+        cue_id, kind, in_ms, in_frame, in_mpeg_frame, in_mpeg_abs, out_ms,
+        out_frame, active_loop, beat_loop_size, color_table_index, comment,
+        updated_at,
+    ) = row
+    return {
+        "id": str(cue_id),
+        "kind": int(kind) if kind is not None else None,
+        "in_ms": int(in_ms) if in_ms is not None else None,
+        "in_frame": int(in_frame) if in_frame is not None else None,
+        "in_mpeg_frame": int(in_mpeg_frame) if in_mpeg_frame is not None else None,
+        "in_mpeg_abs": int(in_mpeg_abs) if in_mpeg_abs is not None else None,
+        "out_ms": int(out_ms) if out_ms is not None else None,
+        "out_frame": int(out_frame) if out_frame is not None else None,
+        "active_loop": bool(active_loop),
+        "beat_loop_size": int(beat_loop_size) if beat_loop_size is not None else None,
+        "color_table_index": int(color_table_index) if color_table_index is not None else None,
+        "comment": comment or None,
+        "updated_at": str(updated_at) if updated_at is not None else None,
+    }
+
+
+def _cue_revision(
+    vendor_id: str, kind: int, generation: int, snapshot: Optional[Mapping[str, Any]],
+) -> str:
+    """Opaque CAS token bound to track, slot generation, and exact state."""
+    encoded = json.dumps(
+        {"content_id": vendor_id, "kind": kind, "generation": generation, "snapshot": snapshot},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _live_slot_snapshot(
+    conn: sqlite3.Connection, vendor_id: str, kind: int,
+) -> Optional[dict[str, Any]]:
+    rows = conn.execute(
+        f"SELECT {_CUE_SNAPSHOT_COLUMNS} FROM djmdCue "
+        "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
+        (vendor_id, kind),
+    ).fetchall()
+    if len(rows) > 1:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "HOT_CUE_SLOT_CORRUPT",
+                "message": f"slot Kind {kind} has {len(rows)} live cue rows",
+            },
+        )
+    return _cue_snapshot_from_row(rows[0]) if rows else None
+
+
+def _cue_view(slot: str, snapshot: Mapping[str, Any], revision: str) -> dict[str, Any]:
+    out_ms = snapshot["out_ms"]
+    is_loop = bool(out_ms is not None and out_ms > 0)
+    return {
+        "kind": "hot_cue",
+        "slot": slot,
+        "in_ms": snapshot["in_ms"],
+        "out_ms": out_ms if is_loop else None,
+        "is_loop": is_loop,
+        "active_loop": snapshot["active_loop"],
+        "beat_loop_size": snapshot["beat_loop_size"],
+        "color_table_index": snapshot["color_table_index"],
+        "comment": snapshot["comment"],
+        "revision": revision,
+    }
+
+
+def fetch_hot_cue_slots(vendor_id: str) -> list[dict[str, Any]]:
+    """Read all eight slot states, including revisions for empty slots."""
+    master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
+    try:
+        master.execute("BEGIN IMMEDIATE")
+        _ensure_reversal_tables(master)
+        snapshots = {
+            kind: _live_slot_snapshot(master, vendor_id, kind)
+            for kind in range(1, len(HOT_CUE_SLOTS) + 1)
+        }
+        generations = {
+            kind: _slot_generation(master, vendor_id, kind)
+            for kind in range(1, len(HOT_CUE_SLOTS) + 1)
+        }
+        master.commit()
+    except Exception:
+        master.rollback()
+        raise
+    finally:
+        master.close()
+    return [
+        {
+            "slot": slot,
+            "cue": _cue_view(
+                slot,
+                snapshots[kind],
+                _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
+            ) if snapshots[kind] else None,
+            "revision": _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
+        }
+        for kind, slot in enumerate(HOT_CUE_SLOTS, start=1)
+    ]
+
+
+def _require_current_revision(expected_revision: str, current_revision: str) -> None:
+    if not expected_revision:
+        raise HTTPException(
+            status_code=428,
+            detail={
+                "code": "HOT_CUE_REVISION_REQUIRED",
+                "message": "hot-cue mutation requires an If-Match revision",
+            },
+        )
+    if expected_revision != current_revision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "HOT_CUE_REVISION_CONFLICT",
+                "message": "hot-cue slot changed since it was read",
+                "current_revision": current_revision,
+            },
+            headers={"ETag": current_revision},
+        )
+
+
+def _duration_ms(conn: sqlite3.Connection, vendor_id: str) -> int:
+    row = conn.execute(
+        "SELECT Length FROM djmdContent WHERE ID = ? AND rb_local_deleted = 0",
+        (vendor_id,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TRACK_DURATION_UNAVAILABLE",
+                "message": f"track {vendor_id} has no finite rekordbox duration",
+            },
+        )
+    duration_s = row[0]
+    if isinstance(duration_s, bool) or not isinstance(duration_s, int) or duration_s < 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "TRACK_DURATION_UNAVAILABLE",
+                "message": f"track {vendor_id} has invalid rekordbox duration {duration_s!r}",
+            },
+        )
+    return duration_s * 1000
+
+
+def _validate_cue_position(conn: sqlite3.Connection, vendor_id: str, in_ms: int) -> None:
+    if isinstance(in_ms, bool) or not isinstance(in_ms, int):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_CUE_POSITION", "message": "in_ms must be a finite integer"},
+        )
+    duration_ms = _duration_ms(conn, vendor_id)
+    if not 0 <= in_ms <= duration_ms:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_CUE_POSITION",
+                "message": f"in_ms must satisfy 0 <= in_ms <= {duration_ms}, got {in_ms}",
+            },
+        )
+
+
+def _restore_snapshot(
+    conn: sqlite3.Connection,
+    vendor_id: str,
+    kind: int,
+    snapshot: Mapping[str, Any],
+    now: str,
+) -> None:
+    result = conn.execute(
+        "UPDATE djmdCue SET InMsec = ?, InFrame = ?, InMpegFrame = ?, "
+        "InMpegAbs = ?, OutMsec = ?, OutFrame = ?, ActiveLoop = ?, "
+        "BeatLoopSize = ?, ColorTableIndex = ?, Comment = ?, "
+        "rb_local_deleted = 0, updated_at = ? "
+        "WHERE ID = ? AND ContentID = ? AND Kind = ?",
+        (
+            snapshot["in_ms"], snapshot["in_frame"], snapshot["in_mpeg_frame"],
+            snapshot["in_mpeg_abs"], snapshot["out_ms"], snapshot["out_frame"],
+            int(snapshot["active_loop"]), snapshot["beat_loop_size"],
+            snapshot["color_table_index"], snapshot["comment"], now, snapshot["id"],
+            vendor_id, kind,
+        ),
+    )
+    if result.rowcount != 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "HOT_CUE_PREIMAGE_UNRESTORABLE",
+                "message": "the original cue row no longer exists",
+            },
+        )
+
+
+def _ensure_reversal_tables(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS rb_hot_cue_reversal ("
+        "ID TEXT PRIMARY KEY, ContentID TEXT NOT NULL, Kind INTEGER NOT NULL, "
+        "PreimageJson TEXT, PostRevision TEXT NOT NULL, CreatedAt TEXT NOT NULL, "
+        "ConsumedAt TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS rb_hot_cue_slot_revision ("
+        "ContentID TEXT NOT NULL, Kind INTEGER NOT NULL, Generation INTEGER NOT NULL, "
+        "PRIMARY KEY (ContentID, Kind))"
+    )
+
+
+def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
+    _ensure_reversal_tables(conn)
+    conn.execute(
+        "INSERT OR IGNORE INTO rb_hot_cue_slot_revision (ContentID, Kind, Generation) "
+        "VALUES (?, ?, 0)",
+        (vendor_id, kind),
+    )
+    row = conn.execute(
+        "SELECT Generation FROM rb_hot_cue_slot_revision WHERE ContentID = ? AND Kind = ?",
+        (vendor_id, kind),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("hot-cue slot generation was not created")
+    return int(row[0])
+
+
+def _bump_slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
+    generation = _slot_generation(conn, vendor_id, kind)
+    result = conn.execute(
+        "UPDATE rb_hot_cue_slot_revision SET Generation = ? "
+        "WHERE ContentID = ? AND Kind = ? AND Generation = ?",
+        (generation + 1, vendor_id, kind, generation),
+    )
+    if result.rowcount != 1:
+        raise RuntimeError("hot-cue slot generation changed inside an exclusive transaction")
+    return generation + 1
+
+
+def _create_reversal(
+    conn: sqlite3.Connection,
+    vendor_id: str,
+    kind: int,
+    preimage: Optional[Mapping[str, Any]],
+    post_revision: str,
+) -> str:
+    _ensure_reversal_tables(conn)
+    reversal_id = secrets.token_urlsafe(32)
+    conn.execute(
+        "INSERT INTO rb_hot_cue_reversal "
+        "(ID, ContentID, Kind, PreimageJson, PostRevision, CreatedAt, ConsumedAt) "
+        "VALUES (?, ?, ?, ?, ?, ?, NULL)",
+        (
+            reversal_id,
+            vendor_id,
+            kind,
+            json.dumps(preimage, sort_keys=True, separators=(",", ":")) if preimage else None,
+            post_revision,
+            _rb_timestamp(),
+        ),
+    )
+    return reversal_id
+
+
+def _load_reversal(
+    conn: sqlite3.Connection, reversal_id: str, vendor_id: str, kind: int,
+) -> Optional[dict[str, Any]]:
+    _ensure_reversal_tables(conn)
+    row = conn.execute(
+        "SELECT ContentID, Kind, PreimageJson, PostRevision, ConsumedAt "
+        "FROM rb_hot_cue_reversal WHERE ID = ?",
+        (reversal_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "HOT_CUE_REVERSAL_NOT_FOUND", "message": "unknown reversal token"},
+        )
+    content_id, record_kind, preimage_json, post_revision, consumed_at = row
+    if str(content_id) != vendor_id or int(record_kind) != kind:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HOT_CUE_REVERSAL_SCOPE_CONFLICT", "message": "reversal token is bound to another hot-cue slot"},
+        )
+    if consumed_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "HOT_CUE_REVERSAL_CONSUMED", "message": "reversal token was already consumed"},
+        )
+    return {
+        "preimage": json.loads(preimage_json) if preimage_json else None,
+        "post_revision": str(post_revision),
+    }
+
+
 def save_hot_cue(
     vendor_id: str,
     slot: str,
     in_ms: int,
     *,
+    expected_revision: str,
     comment: Optional[str] = None,
     color_table_index: Optional[int] = None,
 ) -> dict[str, Any]:
-    """Upsert the Kind 1-8 djmdCue row for ``slot``.
-
-    SAVE always overwrites whatever already lives in the slot (last SAVE
-    wins -- the "slot conflict" case DEPENDENCY-PATH calls out); this never
-    creates a second row for the same (ContentID, Kind).
-    """
-    if in_ms < 0:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "INVALID_CUE_POSITION",
-                "message": f"in_ms must be >= 0, got {in_ms}",
-            },
-        )
+    """CAS-save a hot cue and return its atomic preimage for one-step undo."""
     kind = _slot_to_kind(slot)
     now = _rb_timestamp()
     master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
     try:
-        # Serialize read-then-upsert with other API processes. The fixture
-        # schema deliberately has no (ContentID, Kind) uniqueness constraint,
-        # so a deferred transaction would let concurrent writers both observe
-        # an empty slot and insert duplicate live rows.
         master.execute("BEGIN IMMEDIATE")
-        existing = master.execute(
-            "SELECT ID FROM djmdCue "
-            "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
-            (vendor_id, kind),
-        ).fetchone()
-        if existing is not None:
-            master.execute(
+        _validate_cue_position(master, vendor_id, in_ms)
+        preimage = _live_slot_snapshot(master, vendor_id, kind)
+        generation = _slot_generation(master, vendor_id, kind)
+        _require_current_revision(
+            expected_revision, _cue_revision(vendor_id, kind, generation, preimage),
+        )
+        if preimage is not None:
+            update = master.execute(
                 "UPDATE djmdCue SET InMsec = ?, InFrame = ?, InMpegFrame = NULL, "
                 "InMpegAbs = NULL, OutMsec = NULL, OutFrame = NULL, "
                 "ActiveLoop = 0, ColorTableIndex = ?, Comment = ?, "
-                "updated_at = ? WHERE ID = ?",
+                "updated_at = ? WHERE ID = ? AND ContentID = ? AND Kind = ?",
                 (in_ms, _msec_to_frame(in_ms), color_table_index, comment,
-                 now, existing[0]),
+                 now, preimage["id"], vendor_id, kind),
             )
+            if update.rowcount != 1:
+                raise RuntimeError("save_hot_cue: scoped cue row disappeared")
         else:
             cue_id = _new_cue_id(master)
             master.execute(
@@ -1160,36 +1461,13 @@ def save_hot_cue(
                 (cue_id, vendor_id, in_ms, _msec_to_frame(in_ms), kind,
                  color_table_index, comment, now, now),
             )
-        master.commit()
-    except Exception:
-        master.rollback()
-        raise
-    finally:
-        master.close()
-    return {
-        "kind": "hot_cue",
-        "slot": slot,
-        "in_ms": in_ms,
-        "out_ms": None,
-        "is_loop": False,
-        "active_loop": False,
-        "beat_loop_size": None,
-        "color_table_index": color_table_index,
-        "comment": comment,
-    }
-
-
-def clear_hot_cue(vendor_id: str, slot: str) -> None:
-    """Soft-delete the Kind 1-8 djmdCue row for ``slot``, if any (a no-op
-    clear on an already-empty slot is not an error -- idempotent DELETE)."""
-    kind = _slot_to_kind(slot)
-    master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
-    try:
-        master.execute("BEGIN IMMEDIATE")
-        master.execute(
-            "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? "
-            "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
-            (_rb_timestamp(), vendor_id, kind),
+        current = _live_slot_snapshot(master, vendor_id, kind)
+        if current is None:
+            raise RuntimeError("save_hot_cue: committed slot disappeared")
+        generation = _bump_slot_generation(master, vendor_id, kind)
+        revision = _cue_revision(vendor_id, kind, generation, current)
+        reversal_id = _create_reversal(
+            master, vendor_id, kind, preimage, revision,
         )
         master.commit()
     except Exception:
@@ -1197,6 +1475,106 @@ def clear_hot_cue(vendor_id: str, slot: str) -> None:
         raise
     finally:
         master.close()
+    return {
+        "cue": _cue_view(slot, current, revision),
+        "reversal": {"reversal_id": reversal_id},
+    }
+
+
+def clear_hot_cue(
+    vendor_id: str, slot: str, *, expected_revision: str,
+) -> dict[str, Any]:
+    """CAS-clear a hot cue and return its atomic preimage for restore."""
+    kind = _slot_to_kind(slot)
+    master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
+    try:
+        master.execute("BEGIN IMMEDIATE")
+        preimage = _live_slot_snapshot(master, vendor_id, kind)
+        generation = _slot_generation(master, vendor_id, kind)
+        _require_current_revision(
+            expected_revision, _cue_revision(vendor_id, kind, generation, preimage),
+        )
+        if preimage is not None:
+            update = master.execute(
+                "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? "
+                "WHERE ID = ? AND ContentID = ? AND Kind = ?",
+                (_rb_timestamp(), preimage["id"], vendor_id, kind),
+            )
+            if update.rowcount != 1:
+                raise RuntimeError("clear_hot_cue: scoped cue row disappeared")
+        current = _live_slot_snapshot(master, vendor_id, kind)
+        generation = _bump_slot_generation(master, vendor_id, kind)
+        revision = _cue_revision(vendor_id, kind, generation, current)
+        reversal_id = _create_reversal(
+            master, vendor_id, kind, preimage, revision,
+        )
+        master.commit()
+    except Exception:
+        master.rollback()
+        raise
+    finally:
+        master.close()
+    return {
+        "cue": None,
+        "revision": revision,
+        "reversal": {"reversal_id": reversal_id},
+    }
+
+
+def restore_hot_cue(
+    vendor_id: str,
+    slot: str,
+    *,
+    expected_revision: str,
+    reversal_id: str,
+) -> dict[str, Any]:
+    """CAS-restore one server-authoritative, single-use reversal token."""
+    kind = _slot_to_kind(slot)
+    master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
+    try:
+        master.execute("BEGIN IMMEDIATE")
+        reversal = _load_reversal(master, reversal_id, vendor_id, kind)
+        current = _live_slot_snapshot(master, vendor_id, kind)
+        generation = _slot_generation(master, vendor_id, kind)
+        revision = _cue_revision(vendor_id, kind, generation, current)
+        _require_current_revision(expected_revision, revision)
+        if reversal["post_revision"] != revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "HOT_CUE_REVERSAL_STALE",
+                    "message": "hot-cue slot changed after the reversible mutation",
+                    "current_revision": revision,
+                },
+            )
+        preimage = reversal["preimage"]
+        if preimage is None:
+            if current is not None:
+                master.execute(
+                    "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? "
+                    "WHERE ID = ? AND ContentID = ? AND Kind = ?",
+                    (_rb_timestamp(), current["id"], vendor_id, kind),
+                )
+        else:
+            _restore_snapshot(master, vendor_id, kind, preimage, _rb_timestamp())
+        master.execute(
+            "UPDATE rb_hot_cue_reversal SET ConsumedAt = ? "
+            "WHERE ID = ? AND ContentID = ? AND Kind = ? AND ConsumedAt IS NULL",
+            (_rb_timestamp(), reversal_id, vendor_id, kind),
+        )
+        restored = _live_slot_snapshot(master, vendor_id, kind)
+        generation = _bump_slot_generation(master, vendor_id, kind)
+        revision = _cue_revision(vendor_id, kind, generation, restored)
+        master.commit()
+    except Exception:
+        master.rollback()
+        raise
+    finally:
+        master.close()
+    return {
+        "cue": _cue_view(slot, restored, revision) if restored else None,
+        "revision": revision,
+    }
 
 
 __all__ = [
@@ -1227,12 +1605,14 @@ __all__ = [
     "clear_hot_cue",
     "count_cues",
     "fetch_cues",
+    "fetch_hot_cue_slots",
     "is_streaming_path",
     "not_found",
     "preview_strip",
     "read_pvdi",
     "resolve_content",
     "resolve_share_path",
+    "restore_hot_cue",
     "save_hot_cue",
     "vocals_payload",
 ]
