@@ -145,13 +145,14 @@ def test_real_inspector_refuses_non_macos_without_writing(
     assert list(target.iterdir()) == []
 
 
+@pytest.mark.parametrize("platform", ["linux", "win32"])
 def test_exclusive_promotion_refuses_non_macos_without_moving_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str
 ) -> None:
     source = tmp_path / "source.part"
     destination = tmp_path / "exportLibrary.db"
     source.write_bytes(b"transaction")
-    monkeypatch.setattr(workflow.sys, "platform", "linux")
+    monkeypatch.setattr(workflow.sys, "platform", platform)
 
     with pytest.raises(workflow.UsbExportError, match="macOS only") as exc_info:
         workflow._rename_exclusive(source, destination)
