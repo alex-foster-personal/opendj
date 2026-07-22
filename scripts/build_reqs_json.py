@@ -237,7 +237,9 @@ def _build_payload() -> dict:
     # Render source as a repo-relative path when possible, absolute otherwise
     # (so tests can monkeypatch SOURCE outside the repo root without crashing).
     try:
-        source_str = str(SOURCE.relative_to(REPO_ROOT))
+        # as_posix(): the serialized source key must be platform-stable so
+        # reqs.json round-trips identically on Windows checkouts.
+        source_str = SOURCE.relative_to(REPO_ROOT).as_posix()
     except ValueError:
         source_str = str(SOURCE)
 
