@@ -329,12 +329,13 @@ function _drawVocals(
 	pxPerS: number,
 	w: number
 ): void {
-	// Three mandatory states (SPIKE-B1): only status 'rekordbox' draws
-	// bars; no_vocals / not_analyzed draw NOTHING here (WaveRow surfaces
+	// Four mandatory states (SPIKE-B1/B2): 'rekordbox' and 'demucs' draw
+	// bars identically (demucs intensity is confidence on the same 1..4
+	// ramp); no_vocals / not_analyzed draw NOTHING here (WaveRow surfaces
 	// them as tooltips). vocalsOf throws on a malformed payload - a
 	// contract breach must never render as 'no vocals'.
 	const vocals = vocalsOf(anlz);
-	if (vocals.status !== 'rekordbox') return;
+	if (vocals.status !== 'rekordbox' && vocals.status !== 'demucs') return;
 	ctx.fillStyle = VOCAL_BLUE;
 	for (const region of vocals.regions) {
 		const x0 = Math.max(0, (region.start_s - tLeft) * pxPerS);

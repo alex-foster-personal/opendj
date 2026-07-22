@@ -68,14 +68,16 @@
 		paintAnlz !== null ? barsToNextCueLabel(paintAnlz, deck.position_ms) : null
 	);
 
-	// Vocal state tooltip (SPIKE-B1 three mandatory states): bars are
-	// painted by render.ts only for status 'rekordbox'; the two barless
-	// states get an explicit tooltip so absence is never ambiguous.
+	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): bars are
+	// painted by render.ts for 'rekordbox' and 'demucs'; the barless
+	// states get an explicit tooltip so absence is never ambiguous, and
+	// demucs bars declare their non-rekordbox provenance.
 	const vocalsTitle = $derived.by((): string | null => {
 		if (anlzData === null) return null;
 		const v = vocalsOf(anlzData);
 		if (v.status === 'no_vocals') return 'no vocals detected';
 		else if (v.status === 'not_analyzed') return 'vocals not analyzed in rekordbox';
+		else if (v.status === 'demucs') return 'vocals: local detection';
 		else return null; // rekordbox: the blue bars speak for themselves
 	});
 

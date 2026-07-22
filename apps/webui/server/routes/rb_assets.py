@@ -85,7 +85,13 @@ def get_track_anlz(
     ),
     _backend: StateBackend = Depends(get_read_state),
 ) -> JSONResponse:
-    """Waveform (preview + detail) / beatgrid / cues / phrases JSON."""
+    """Waveform (preview + detail) / beatgrid / cues / phrases JSON.
+
+    The ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),
+    ``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection
+    from data/state/vocal-cache, merged when PVDI is absent), and
+    ``not_analyzed`` (NEITHER source exists).
+    """
     content = rb_vendor.resolve_content(stable_id)
     payload = rb_vendor.build_anlz_payload(content, points)
     return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ})
