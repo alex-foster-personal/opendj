@@ -221,6 +221,51 @@ def test_store_cached_payload_allows_concurrent_writers(
     assert list((tmp_path / "anlz-cache").glob("*.tmp")) == []
 
 
+def test_cache_publication_waits_for_concurrent_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Windows reader handle must close before atomic publication starts."""
+    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
+    real_read_text = Path.read_text
+    real_write_text = Path.write_text
+    reader_opened = threading.Event()
+    release_reader = threading.Event()
+    writer_staged = threading.Event()
+
+    def blocking_read_text(self: Path, *args, **kwargs) -> str:
+        with self.open("r", encoding="utf-8") as stream:
+            reader_opened.set()
+            assert release_reader.wait(timeout=5)
+            return stream.read()
+
+    def observed_write_text(self: Path, data: str, *args, **kwargs) -> int:
+        written = real_write_text(self, data, *args, **kwargs)
+        writer_staged.set()
+        return written
+
+    monkeypatch.setattr(Path, "read_text", blocking_read_text)
+    monkeypatch.setattr(Path, "write_text", observed_write_text)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reader = pool.submit(rb_vendor._load_cached_payload, "sid", 111.0, 300)
+        assert reader_opened.wait(timeout=5)
+        writer = pool.submit(
+            rb_vendor._store_cached_payload,
+            "sid",
+            222.0,
+            600,
+            {"marker": "v2"},
+        )
+        assert writer_staged.wait(timeout=5)
+        assert not writer.done(), "publication raced an open cache reader"
+        release_reader.set()
+
+    assert reader.result(timeout=5) == {"marker": "v1"}
+    assert writer.exception(timeout=5) is None
+    monkeypatch.setattr(Path, "read_text", real_read_text)
+    assert rb_vendor._load_cached_payload("sid", 222.0, 600) == {"marker": "v2"}
+
+
 # ----- keep_by_availability ------------------------------------------------------
 
 @pytest.mark.parametrize(

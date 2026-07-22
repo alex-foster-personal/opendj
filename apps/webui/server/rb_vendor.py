@@ -120,6 +120,12 @@ _FILE_EXISTS_CACHE: dict[str, tuple[float, bool]] = {}
 _PREVIEW_LOCK = threading.Lock()
 _PREVIEW_CACHE: dict[str, tuple[str, float, str, int]] = {}
 
+# Windows does not allow os.replace() while another thread has the destination
+# open. Stage writes concurrently, then serialize reads and atomic publication
+# per cache entry so unrelated tracks remain independent.
+_ANLZ_CACHE_LOCKS_GUARD = threading.Lock()
+_ANLZ_CACHE_LOCKS: dict[Path, threading.Lock] = {}
+
 _SQL_CHUNK: int = 500               # keep IN (...) under SQLite's var cap
 
 
@@ -907,17 +913,27 @@ def _cache_path(stable_id: str) -> Path:
     return ANLZ_CACHE_DIR / f"{stable_id}.json"
 
 
+def _cache_lock(path: Path) -> threading.Lock:
+    with _ANLZ_CACHE_LOCKS_GUARD:
+        lock = _ANLZ_CACHE_LOCKS.get(path)
+        if lock is None:
+            lock = threading.Lock()
+            _ANLZ_CACHE_LOCKS[path] = lock
+        return lock
+
+
 def _load_cached_payload(
     stable_id: str, anlz_mtime: float, points: int
 ) -> Optional[dict[str, Any]]:
     path = _cache_path(stable_id)
-    if not path.is_file():
-        return None
-    try:
-        cached = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("anlz cache unreadable, recomputing: %s (%s)", path, exc)
-        return None
+    with _cache_lock(path):
+        if not path.is_file():
+            return None
+        try:
+            cached = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("anlz cache unreadable, recomputing: %s (%s)", path, exc)
+            return None
     if (
         cached.get("schema") == ANLZ_CACHE_SCHEMA
         and cached.get("anlz_mtime") == anlz_mtime
@@ -953,7 +969,8 @@ def _store_cached_payload(
             }),
             encoding="utf-8",
         )
-        os.replace(tmp, path)
+        with _cache_lock(path):
+            os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
