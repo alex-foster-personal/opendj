@@ -17,10 +17,10 @@ Endpoints::
 """
 from __future__ import annotations
 
-import json
+import threading
+from contextlib import asynccontextmanager
 from dataclasses import asdict
-from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, AsyncIterator, Iterable, Literal
 
 from fastapi import APIRouter, HTTPException, Path as FPath, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -28,17 +28,31 @@ from pydantic import BaseModel, Field
 
 from . import paths as sets_paths
 from .audio import (
-    AudioSegmentView,
     PathTraversalError,
     list_segments,
     resolve_segment_path,
 )
 from .classify import CLASS_LIST, read_transitions
 from .label import append_label
+from .recorder_service import RecorderConflict, RecorderService
 from .sessions import get_session, list_sessions, summary_to_dict
 
 
-router = APIRouter(prefix="/api/sets", tags=["sets"])
+@asynccontextmanager
+async def _router_lifespan(app: Any) -> AsyncIterator[None]:
+    if getattr(app.state, "sets_recorder_service", None) is None:
+        app.state.sets_recorder_service = RecorderService()
+    yield
+    service = getattr(app.state, "sets_recorder_service", None)
+    if isinstance(service, RecorderService):
+        service.stop_owned_on_shutdown()
+
+
+router = APIRouter(
+    prefix="/api/sets",
+    tags=["sets"],
+    lifespan=_router_lifespan,
+)
 
 
 _LOCALHOST_HOSTS: frozenset[str] = frozenset(
@@ -69,9 +83,79 @@ class LabelRequest(BaseModel):
     labeler: str = Field(default="web_ui", max_length=64)
 
 
+SourceName = Literal["djay_monitor", "rb_history"]
+_SERVICE_INIT_LOCK = threading.Lock()
+
+
+def _default_sources() -> list[SourceName]:
+    return ["djay_monitor"]
+
+
+class RecorderStartRequest(BaseModel):
+    """Explicit real-capture configuration for the REC button."""
+
+    session_id: str | None = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?$",
+    )
+    ffmpeg_device_idx: int = Field(ge=0)
+    sources: list[SourceName] = Field(default_factory=_default_sources)
+
+
+class RecorderStatus(BaseModel):
+    active: bool
+    session_id: str | None
+    pid: int | None
+
+
+def _recorder_service(request: Request) -> RecorderService:
+    service = getattr(request.app.state, "sets_recorder_service", None)
+    if service is None:
+        with _SERVICE_INIT_LOCK:
+            service = getattr(request.app.state, "sets_recorder_service", None)
+            if service is None:
+                service = RecorderService()
+                request.app.state.sets_recorder_service = service
+    if not isinstance(service, RecorderService):
+        raise RuntimeError("app.state.sets_recorder_service must be RecorderService")
+    return service
+
+
 # ---------------------------------------------------------------------------
 # endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.get("/recorder", response_model=RecorderStatus)
+async def api_recorder_status(request: Request) -> dict[str, Any]:
+    return _recorder_service(request).status()
+
+
+@router.post(
+    "/recorder/start",
+    response_model=RecorderStatus,
+    status_code=201,
+)
+async def api_recorder_start(
+    request: Request,
+    body: RecorderStartRequest,
+) -> dict[str, Any]:
+    try:
+        return _recorder_service(request).start(
+            session_id=body.session_id,
+            ffmpeg_device_idx=body.ffmpeg_device_idx,
+            sources=tuple(body.sources),
+        )
+    except RecorderConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/recorder/{session_id}/stop", response_model=RecorderStatus)
+async def api_recorder_stop(request: Request, session_id: str) -> dict[str, Any]:
+    try:
+        return _recorder_service(request).stop(session_id)
+    except RecorderConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("")
@@ -169,4 +253,9 @@ async def api_audio(
     return FileResponse(str(path), media_type="audio/mpeg", filename=segment)
 
 
-__all__ = ["router", "LabelRequest"]
+__all__ = [
+    "LabelRequest",
+    "RecorderStartRequest",
+    "RecorderStatus",
+    "router",
+]
