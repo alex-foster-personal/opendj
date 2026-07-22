@@ -58,10 +58,9 @@ Provenance: playlists carry no per-field provenance envelope (unlike
 track_fields); provenance is the ``events`` log itself -- every row records
 ``actor`` ("webui" here) plus the vendor identity columns on the playlist.
 
-Concurrency: one store per process, one rw connection, one lock. All public
-methods serialise on that lock, so read-check-write (etag CAS) is race-free
-in-process; cross-host exclusion is the cloud writer lock enforced by the
-``get_write_state`` dependency at the route layer.
+Concurrency: one store per process, one rw connection, one lock. Membership
+replacement also acquires SQLite's cross-process writer lock before loading
+the authoritative row, checking its ETag, or validating requested tracks.
 """
 from __future__ import annotations
 
@@ -220,25 +219,27 @@ class PlaylistStore:
         """Rename; renaming to the current name is a no-op (same etag)."""
         cleaned = self._validated_name(name)
         with self._lock:
-            row = self._load(playlist_id)
-            self._check_etag(row, expected_etag)
-            changed = self._writer.insert_playlist(
-                playlist_id=playlist_id, name=cleaned,
-                vendor=row.vendor, vendor_pl_id=row.vendor_pl_id,
-            )
-            if not changed:
-                return row
-            return self._load(playlist_id)
+            with self._writer.playlist_transaction():
+                row = self._load(playlist_id)
+                self._check_etag(row, expected_etag)
+                changed = self._writer.insert_playlist(
+                    playlist_id=playlist_id, name=cleaned,
+                    vendor=row.vendor, vendor_pl_id=row.vendor_pl_id,
+                )
+                if not changed:
+                    return row
+                return self._load(playlist_id)
 
     def delete_playlist(
         self, playlist_id: str, *, expected_etag: str,
     ) -> None:
         with self._lock:
-            row = self._load(playlist_id)
-            self._check_etag(row, expected_etag)
-            deleted = self._writer.delete_playlist(playlist_id)
-            if not deleted:  # pragma: no cover - guarded by the lock
-                raise NotFoundError(f"playlist not found: {playlist_id}")
+            with self._writer.playlist_transaction():
+                row = self._load(playlist_id)
+                self._check_etag(row, expected_etag)
+                deleted = self._writer.delete_playlist(playlist_id)
+                if not deleted:  # pragma: no cover - guarded by the lock
+                    raise NotFoundError(f"playlist not found: {playlist_id}")
 
     def duplicate_playlist(
         self,
@@ -254,21 +255,22 @@ class PlaylistStore:
         can guarantee they duplicated the version they were looking at.
         """
         with self._lock:
-            source = self._load(playlist_id)
-            if expected_etag is not None:
-                self._check_etag(source, expected_etag)
-            new_name = self._validated_name(
-                name if name is not None else f"{source.name} (copy)"
-            )
-            vendor_pl_id = uuid.uuid4().hex
-            new_id = compute_playlist_id(WEBUI_VENDOR, vendor_pl_id)
-            self._writer.insert_playlist(
-                playlist_id=new_id, name=new_name,
-                vendor=WEBUI_VENDOR, vendor_pl_id=vendor_pl_id,
-            )
-            if source.items:
-                self._writer.set_playlist_memberships(new_id, list(source.items))
-            return self._load(new_id)
+            with self._writer.playlist_transaction():
+                source = self._load(playlist_id)
+                if expected_etag is not None:
+                    self._check_etag(source, expected_etag)
+                new_name = self._validated_name(
+                    name if name is not None else f"{source.name} (copy)"
+                )
+                vendor_pl_id = uuid.uuid4().hex
+                new_id = compute_playlist_id(WEBUI_VENDOR, vendor_pl_id)
+                self._writer.insert_playlist(
+                    playlist_id=new_id, name=new_name,
+                    vendor=WEBUI_VENDOR, vendor_pl_id=vendor_pl_id,
+                )
+                if source.items:
+                    self._writer.set_playlist_memberships(new_id, list(source.items))
+                return self._load(new_id)
 
     def replace_memberships(
         self, playlist_id: str, stable_ids: list[str], *, expected_etag: str,
@@ -279,13 +281,14 @@ class PlaylistStore:
         ``updated_at`` bump, same etag back.
         """
         with self._lock:
-            row = self._load(playlist_id)
-            self._check_etag(row, expected_etag)
-            self._require_known_tracks(stable_ids)
-            if list(row.items) == list(stable_ids):
-                return row
-            self._writer.set_playlist_memberships(playlist_id, list(stable_ids))
-            return self._load(playlist_id)
+            with self._writer.playlist_transaction():
+                row = self._load(playlist_id)
+                self._check_etag(row, expected_etag)
+                self._require_known_tracks(stable_ids)
+                if list(row.items) == list(stable_ids):
+                    return row
+                self._writer.set_playlist_memberships(playlist_id, list(stable_ids))
+                return self._load(playlist_id)
 
     # --- reads (for router symmetry) --------------------------------------
     def get_playlist_row(self, playlist_id: str) -> PlaylistRow:

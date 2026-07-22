@@ -30,6 +30,7 @@ from urllib.parse import quote_plus
 
 from apps.shared.state import db as state_db
 from apps.shared.state import paths as state_paths
+from apps.shared.state.writer import next_playlist_revision
 
 from .client import SpotifyPlaylist, SpotifyTrack
 from .matcher_adapter import MatchResult
@@ -270,24 +271,29 @@ def write_playlist_and_pending(
     """
     ensure_aux_tables(conn)
 
-    prior_snapshot = already_imported_snapshot(conn, playlist.id)
-    if prior_snapshot == playlist.snapshot_id and not force:
-        return WriteSummary(
-            playlist_id=_state_playlist_id(playlist.id),
-            vendor_pl_id=playlist.id,
-            snapshot_id=playlist.snapshot_id,
-            backup_path=backup_path,
-            reversal_script_path=reversal_script_path,
-            matched_written=0,
-            pending_written=0,
-            skipped_existing_snapshot=True,
-        )
-
-    now = datetime.now(timezone.utc).isoformat()
     playlist_id = _state_playlist_id(playlist.id)
 
-    conn.execute("BEGIN")
+    conn.execute("BEGIN IMMEDIATE")
     try:
+        # The snapshot short-circuit is an idempotency precondition, so it
+        # belongs after the writer lock. Two import processes otherwise can
+        # both observe the old snapshot and each rewrite the same playlist.
+        prior_snapshot = already_imported_snapshot(conn, playlist.id)
+        if prior_snapshot == playlist.snapshot_id and not force:
+            conn.execute("COMMIT")
+            return WriteSummary(
+                playlist_id=playlist_id,
+                vendor_pl_id=playlist.id,
+                snapshot_id=playlist.snapshot_id,
+                backup_path=backup_path,
+                reversal_script_path=reversal_script_path,
+                matched_written=0,
+                pending_written=0,
+                skipped_existing_snapshot=True,
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+        revision = next_playlist_revision(conn, playlist_id, now)
         conn.execute(
             """
             INSERT INTO playlists
@@ -297,7 +303,7 @@ def write_playlist_and_pending(
               name = excluded.name,
               updated_at = excluded.updated_at
             """,
-            (playlist_id, playlist.name, VENDOR, playlist.id, now, now),
+            (playlist_id, playlist.name, VENDOR, playlist.id, now, revision),
         )
 
         conn.execute(

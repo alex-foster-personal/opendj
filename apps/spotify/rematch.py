@@ -14,6 +14,8 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from apps.shared.state.writer import immediate_transaction, next_playlist_revision
+
 from .client import SpotifyTrack
 from .matcher_adapter import (
     LocalTrack,
@@ -99,9 +101,8 @@ def rematch_playlist(
     if not live or not resolved_pairs:
         return outcome
 
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute("BEGIN")
-    try:
+    with immediate_transaction(conn):
+        now = datetime.now(timezone.utc).isoformat()
         for pending, _pair, target in resolved_pairs:
             conn.execute(
                 """
@@ -122,10 +123,13 @@ def rematch_playlist(
                 """,
                 (target.stable_id, now, pending.pending_id),
             )
-        conn.execute("COMMIT")
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
+        revision = next_playlist_revision(conn, playlist_id, now)
+        updated = conn.execute(
+            "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
+            (revision, playlist_id),
+        )
+        if updated.rowcount != 1:
+            raise RuntimeError(f"playlist not found during rematch: {playlist_id}")
 
     return outcome
 
