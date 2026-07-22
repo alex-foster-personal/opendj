@@ -13,6 +13,7 @@
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import CommandEntry from './CommandEntry.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
@@ -177,6 +178,10 @@
 	<!-- right cluster -->
 	<span class="dim-label" title={INERT_TITLE}>PAD</span>
 	<span class="dim-label" title={INERT_TITLE}>MIDI</span>
+
+	<!-- text-command entry: closest rekordbox-parity hook for apps/voice
+	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
+	<CommandEntry />
 
 	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="information">
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">

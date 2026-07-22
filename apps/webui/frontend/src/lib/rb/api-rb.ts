@@ -340,3 +340,28 @@ export async function fetchAudioArrayBuffer(stable_id: string): Promise<ArrayBuf
 	if (!r.ok) await _throwRbApiError(r);
 	return r.arrayBuffer();
 }
+
+// --------------------------------------------- voice probe (text-command-entry)
+
+/** POST /voice/probe response shape (apps/webui/server/routes/voice_probe.py). */
+export interface VoiceProbeResult {
+	transcript: string;
+	intent: string | null;
+	slots: Record<string, unknown>;
+	blocked: boolean;
+	reason: string | null;
+	reply: string | null;
+}
+
+/** Text-command entry: sends free text through the apps/voice grammar
+ * parser (no mic, no daemon). Destructive intents (SAVE_CUE, RATE_TRACK)
+ * come back with blocked: true and are never executed server-side. */
+export async function probeVoiceCommand(text: string): Promise<VoiceProbeResult> {
+	const r = await fetch(`${RB_API_BASE}/api/v1/voice/probe`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ text })
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return (await r.json()) as VoiceProbeResult;
+}
