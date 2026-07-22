@@ -20,6 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
+from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
 
 from .backend import (BackendError, ConflictError, InMemoryBackend,
@@ -164,6 +165,7 @@ def create_app(
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)
+    app.include_router(play_analytics_router)
 
     if mount_frontend and FRONTEND_BUILD_DIR.exists() and any(FRONTEND_BUILD_DIR.iterdir()):
         app.mount("/", _SpaStaticFiles(directory=str(FRONTEND_BUILD_DIR), html=True),
