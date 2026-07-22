@@ -162,10 +162,10 @@ def _resolve(path: str, *, path_map: PathMap) -> Optional[Path]:
 
 def _resolve_share_path(path: str) -> Path:
     """Resolve a local path, rejecting unsafe or unmapped source paths."""
-    resolved = _resolve(path)
-    if resolved is None:
-        raise ValueError(f"unsafe or unmapped library path: {path!r}")
-    return resolved
+    mapped = resolve_library_path(path)
+    if mapped.resolved is None:
+        raise ValueError(mapped.reason)
+    return mapped.resolved
 
 
 def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
