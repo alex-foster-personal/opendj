@@ -202,7 +202,6 @@
 			onQuantize={toggleQuantize}
 			onMasterTempo={toggleMasterTempo}
 			onSlip={toggleSlip}
-			onSlip={toggleSlip}
 			inertTip={INERT_TIP}
 		/>
 	</div>
