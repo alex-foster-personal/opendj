@@ -14,10 +14,10 @@
  *   row selection, scroll cursor. One instance per pane; all 4 panes
  *   own independent stores.
  * - RowProvider (+ makeClientRowProvider): the read interface
- *   TrackTable consumes - { rows, total, truncated, fetchWindow }.
- *   Today's client provider materializes everything in memory;
- *   the virtualization lane swaps in a windowed provider without
- *   touching TrackTable's contract.
+ *   TrackTable consumes - { rows, total, truncated, fetchWindow }. The
+ *   client provider materializes the full result set in memory (no more
+ *   500-row fetch cap - BrowserPanel walks every cursor page); TrackTable
+ *   DOM-virtualizes the render on top of it (browser/virtual-window.ts).
  * - filterRows / sortRows / sortValue: the pure client search + sort
  *   pipeline (extracted verbatim from BrowserPanel; the fts-search
  *   lane replaces filterRows' call site, not BrowserPanel internals).
@@ -102,9 +102,11 @@ export interface RowProvider {
 	 * v1 client provider this equals rows.length; a windowed provider
 	 * reports the full server-side count. */
 	readonly total: number;
-	/** True when the SOURCE was capped (v1: 500-row fetch cap) - drives
-	 * the explicit truncation note. Distinct from windowing: a windowed
-	 * provider with full coverage reports truncated = false. */
+	/** True when the SOURCE was capped short of the real result set (e.g.
+	 * a safety ceiling on a pagination loop, see fetchAllPages) - drives
+	 * the explicit truncation note. The client provider walks every page
+	 * (browser-panel.svelte's _fetchAllRows/_fetchPlaylistRows), so this
+	 * is false in the normal case. */
 	readonly truncated: boolean;
 	/** Resolve rows[start .. start+count). v1 slices the in-memory
 	 * array; windowed providers fetch. Fail-fast on negative args. */

@@ -13,17 +13,25 @@
 	// Row states: green title+artist = loaded on a deck; blue full row =
 	// selected; grayed row = audio file missing on disk (FR-1).
 	// Rows arrive via the RowProvider contract (pane-contract.svelte.ts).
-	// No virtualization at v1: the client provider materializes everything
-	// (parent caps fetches at 500 rows, see PARITY-TODO); the virtualization
-	// lane swaps in a windowed provider behind the same interface.
+	// The provider materializes the full result set (parent no longer caps
+	// fetches at 500 rows - track-list-virtualization lane); THIS component
+	// DOM-virtualizes the render: only the scrolled window (+overscan) is
+	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
+	// provider.total.
 	import { untrack } from 'svelte';
 	import { artworkUrl, type Vocals } from '$lib/rb/api-rb';
 	import type { DeckId } from '$lib/rb/types';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import RatingStars from './RatingStars.svelte';
+	import { computeVirtualWindow } from './virtual-window';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
+	// Matches `tbody tr { height: 22px; }` below - window math assumes every
+	// row is exactly this tall (fixed row height is what makes the spacer
+	// approach exact rather than approximate).
+	const ROW_HEIGHT = 22;
+	const OVERSCAN = 10;
 
 	let {
 		provider,
@@ -90,12 +98,46 @@
 	// Restore ONLY when the rendered pane changes (restoreKey): reading
 	// scrollTop through untrack keeps live scrolling from re-triggering.
 	let wrapEl = $state<HTMLDivElement | null>(null);
+	// Live scroll position for window math - distinct from the `scrollTop`
+	// prop (the pane's PERSISTED cursor, only meaningful at restore time).
+	// Starts at 0; the restore $effect below syncs it from the prop before
+	// paint (same tick it sets el.scrollTop), so there is no row-0 flash.
+	let liveScrollTop = $state(0);
+	let viewportHeight = $state(0);
 
 	$effect(() => {
 		void restoreKey; // the one tracked dependency
 		const el = wrapEl;
-		if (el !== null) el.scrollTop = untrack(() => scrollTop);
+		if (el !== null) {
+			const restored = untrack(() => scrollTop);
+			el.scrollTop = restored;
+			liveScrollTop = restored;
+		}
 	});
+
+	// ------------------------------------------------- DOM row virtualization
+	$effect(() => {
+		const el = wrapEl;
+		if (el === null) return;
+		viewportHeight = el.clientHeight;
+		if (typeof ResizeObserver === 'undefined') return; // SSR guard
+		const ro = new ResizeObserver((entries) => {
+			for (const entry of entries) viewportHeight = entry.contentRect.height;
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
+
+	const windowInfo = $derived(
+		computeVirtualWindow({
+			scrollTop: liveScrollTop,
+			viewportHeight,
+			rowHeight: ROW_HEIGHT,
+			rowCount: rows.length,
+			overscan: OVERSCAN
+		})
+	);
+	const visibleRows = $derived(rows.slice(windowInfo.startIndex, windowInfo.endIndex));
 
 	// ------------------------------------------- lazy-hydration observer
 	// One-shot per row element: fetch fires the first time a row scrolls into
@@ -198,7 +240,11 @@
 	<div
 		class="table-wrap"
 		bind:this={wrapEl}
-		onscroll={(e) => onscrollcursor(e.currentTarget.scrollTop)}
+		onscroll={(e) => {
+			const top = e.currentTarget.scrollTop;
+			liveScrollTop = top;
+			onscrollcursor(top);
+		}}
 	>
 		<table>
 			<colgroup>
@@ -245,7 +291,12 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each rows as row (`${row.stable_id}:${row.order}`)}
+				{#if windowInfo.topPad > 0}
+					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
+						<td colspan="13"></td>
+					</tr>
+				{/if}
+				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -361,6 +412,11 @@
 						<td class="c-genre">{row.genre ?? row.rb_meta?.genre ?? ''}</td>
 					</tr>
 				{/each}
+				{#if windowInfo.bottomPad > 0}
+					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
+						<td colspan="13"></td>
+					</tr>
+				{/if}
 			</tbody>
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
@@ -369,7 +425,7 @@
 	</div>
 	{#if provider.truncated}
 		<div class="truncated-note">
-			showing first 500 rows - list truncated (no virtualization at v1, see PARITY-TODO)
+			list truncated - the source fetch hit its safety cap before completing
 		</div>
 	{/if}
 </div>
@@ -447,6 +503,13 @@
 	tbody tr {
 		height: 22px;
 		cursor: default;
+	}
+	/* virtualization spacers stand in for the un-mounted rows above/below
+	 * the current window - zero out padding/border so their inline height
+	 * (set from windowInfo.topPad/bottomPad) stays exact. */
+	.tt-spacer td {
+		padding: 0;
+		border: none;
 	}
 	tbody tr:hover:not(.rb-row-selected) {
 		background: var(--rb-panel-raised);
