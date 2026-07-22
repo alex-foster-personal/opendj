@@ -9,10 +9,20 @@ Regression one-liners:
   - if POST decision accepts a survivor outside the cluster then broken
   - if POST decision on an unknown cluster_id doesn't 404 then broken
   - if GET /dedup/clusters doesn't 200 (not 500) when the db exists but is empty then broken
+  - if a fingerprint-only db makes the review endpoint 500 then broken
+  - if a decision can attach to a rebuilt cluster that reused a numeric id then broken
+  - if a stale decision revision overwrites a newer decision then broken
+  - if a corrupt decision store is silently replaced then broken
+  - if decision writers on separate processes can overlap then broken
+  - if OpenAPI omits the stable cluster key or If-Match contract then broken
 """
 from __future__ import annotations
 
+import multiprocessing
+import sqlite3
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -21,6 +31,26 @@ from apps.webui.server.backend import InMemoryBackend, Track
 from apps.webui.server.routes import dedup_review
 
 pytestmark = pytest.mark.requirement("CAT-05")
+
+
+def _hold_decision_lock(
+    decisions_path: str,
+    ready: Any,
+    start: Any,
+    result: Any,
+) -> None:
+    """Process target proving the decision lock serializes real writers."""
+    dedup_review.DECISIONS_FILE = Path(decisions_path)
+    ready.put(True)
+    start.wait(timeout=5)
+    try:
+        with dedup_review._decision_file_lock():
+            entered = time.monotonic()
+            time.sleep(0.15)
+            leaving = time.monotonic()
+        result.put(("ok", entered, leaving))
+    except BaseException as exc:
+        result.put(("error", type(exc).__name__, str(exc)))
 
 
 def _seed_cluster_db(
@@ -101,6 +131,27 @@ def test_clusters_empty_db_is_200(app_client, dedup_db: Path) -> None:
     assert r.json()["note"] is None
 
 
+def test_clusters_fingerprint_only_db_is_empty_review_state(
+    app_client, dedup_db: Path,
+) -> None:
+    conn = sqlite3.connect(dedup_db)
+    try:
+        conn.execute(
+            "CREATE TABLE fingerprints ("
+            "path TEXT PRIMARY KEY, stable_id TEXT, fingerprint TEXT NOT NULL, "
+            "duration REAL NOT NULL, size INTEGER NOT NULL, mtime REAL NOT NULL)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    response = app_client.get("/api/v1/dedup/clusters")
+
+    assert response.status_code == 200
+    assert response.json()["clusters"] == []
+    assert "find_clusters" in response.json()["note"]
+
+
 def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
     _seed_cluster_db(
         dedup_db, cluster_id=1,
@@ -113,6 +164,7 @@ def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
     assert len(clusters) == 1
     cluster = clusters[0]
     assert cluster["cluster_id"] == 1
+    assert cluster["cluster_key"].startswith("sha256:")
     assert cluster["survivor_stable_id"] == "track-canon"
     assert cluster["rationale"] == "bitrate=320"
     assert cluster["flagged_manual_review"] is False
@@ -128,6 +180,7 @@ def test_clusters_hydrate_members(app_client, dedup_db: Path) -> None:
     # Neither fixture path exists on disk.
     assert by_id["track-canon"]["file_exists"] is False
     assert by_id["track-alias"]["file_exists"] is False
+    assert r.headers["etag"] == r.json()["revision"]
 
 
 def test_decision_round_trip(app_client, dedup_db: Path) -> None:
@@ -136,22 +189,32 @@ def test_decision_round_trip(app_client, dedup_db: Path) -> None:
         canonical_sid="track-canon", canonical_path="/music/canon.flac",
         alias_sid="track-alias", alias_path="/music/alias-128.mp3",
     )
+    cluster_response = app_client.get("/api/v1/dedup/clusters")
+    cluster = cluster_response.json()["clusters"][0]
     r = app_client.post(
         "/api/v1/dedup/clusters/7/decision",
-        json={"survivor": "track-alias", "action": "merge"},
+        headers={"If-Match": cluster_response.headers["etag"]},
+        json={
+            "cluster_key": cluster["cluster_key"],
+            "survivor": "track-alias",
+            "action": "merge",
+        },
     )
     assert r.status_code == 200
     body = r.json()
     assert body["cluster_id"] == 7
+    assert body["cluster_key"] == cluster["cluster_key"]
     assert body["survivor"] == "track-alias"
     assert body["action"] == "merge"
     assert body["pending_apply"] is True
     assert body["decided_at"]
+    assert body["revision"] == r.headers["etag"]
 
     r2 = app_client.get("/api/v1/dedup/clusters")
     decision = r2.json()["clusters"][0]["decision"]
     assert decision["survivor"] == "track-alias"
     assert decision["action"] == "merge"
+    assert decision["cluster_key"] == cluster["cluster_key"]
 
 
 def test_decision_rejects_non_member_survivor(app_client, dedup_db: Path) -> None:
@@ -160,18 +223,30 @@ def test_decision_rejects_non_member_survivor(app_client, dedup_db: Path) -> Non
         canonical_sid="track-canon", canonical_path="/music/canon.flac",
         alias_sid="track-alias", alias_path="/music/alias-128.mp3",
     )
+    current = app_client.get("/api/v1/dedup/clusters")
     r = app_client.post(
         "/api/v1/dedup/clusters/1/decision",
-        json={"survivor": "not-in-cluster", "action": "merge"},
+        headers={"If-Match": current.headers["etag"]},
+        json={
+            "cluster_key": current.json()["clusters"][0]["cluster_key"],
+            "survivor": "not-in-cluster",
+            "action": "merge",
+        },
     )
     assert r.status_code == 422
 
 
 def test_decision_unknown_cluster_404(app_client, dedup_db: Path) -> None:
     dedup_schema.ensure_schema(dedup_db).close()
+    current = app_client.get("/api/v1/dedup/clusters")
     r = app_client.post(
         "/api/v1/dedup/clusters/999/decision",
-        json={"survivor": "track-canon", "action": "skip"},
+        headers={"If-Match": current.headers["etag"]},
+        json={
+            "cluster_key": "sha256:missing",
+            "survivor": "track-canon",
+            "action": "skip",
+        },
     )
     assert r.status_code == 404
 
@@ -179,7 +254,12 @@ def test_decision_unknown_cluster_404(app_client, dedup_db: Path) -> None:
 def test_decision_no_db_404(app_client) -> None:
     r = app_client.post(
         "/api/v1/dedup/clusters/1/decision",
-        json={"survivor": "track-canon", "action": "skip"},
+        headers={"If-Match": '"empty"'},
+        json={
+            "cluster_key": "sha256:missing",
+            "survivor": "track-canon",
+            "action": "skip",
+        },
     )
     assert r.status_code == 404
 
@@ -190,8 +270,186 @@ def test_decision_rejects_bad_action(app_client, dedup_db: Path) -> None:
         canonical_sid="track-canon", canonical_path="/music/canon.flac",
         alias_sid="track-alias", alias_path="/music/alias-128.mp3",
     )
+    current = app_client.get("/api/v1/dedup/clusters")
     r = app_client.post(
         "/api/v1/dedup/clusters/1/decision",
-        json={"survivor": "track-canon", "action": "delete-everything"},
+        headers={"If-Match": current.headers["etag"]},
+        json={
+            "cluster_key": current.json()["clusters"][0]["cluster_key"],
+            "survivor": "track-canon",
+            "action": "delete-everything",
+        },
     )
     assert r.status_code == 422
+
+
+def test_decision_requires_if_match(app_client, dedup_db: Path) -> None:
+    _seed_cluster_db(
+        dedup_db, cluster_id=1,
+        canonical_sid="track-canon", canonical_path="/music/canon.flac",
+        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+    )
+    current = app_client.get("/api/v1/dedup/clusters").json()
+
+    response = app_client.post(
+        "/api/v1/dedup/clusters/1/decision",
+        json={
+            "cluster_key": current["clusters"][0]["cluster_key"],
+            "survivor": "track-canon",
+            "action": "skip",
+        },
+    )
+
+    assert response.status_code == 428
+
+
+def test_stale_revision_cannot_overwrite_decision(app_client, dedup_db: Path) -> None:
+    _seed_cluster_db(
+        dedup_db, cluster_id=1,
+        canonical_sid="track-canon", canonical_path="/music/canon.flac",
+        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+    )
+    current = app_client.get("/api/v1/dedup/clusters")
+    cluster_key = current.json()["clusters"][0]["cluster_key"]
+    stale_revision = current.headers["etag"]
+    first = app_client.post(
+        "/api/v1/dedup/clusters/1/decision",
+        headers={"If-Match": stale_revision},
+        json={
+            "cluster_key": cluster_key,
+            "survivor": "track-canon",
+            "action": "keep-all",
+        },
+    )
+    assert first.status_code == 200
+
+    stale = app_client.post(
+        "/api/v1/dedup/clusters/1/decision",
+        headers={"If-Match": stale_revision},
+        json={
+            "cluster_key": cluster_key,
+            "survivor": "track-alias",
+            "action": "merge",
+        },
+    )
+
+    assert stale.status_code == 409
+    assert stale.headers["etag"] == first.headers["etag"]
+    latest = app_client.get("/api/v1/dedup/clusters").json()["clusters"][0]
+    assert latest["decision"]["action"] == "keep-all"
+    assert latest["decision"]["survivor"] == "track-canon"
+
+
+def test_rebuilt_cluster_id_does_not_inherit_stale_decision(
+    app_client, dedup_db: Path,
+) -> None:
+    _seed_cluster_db(
+        dedup_db, cluster_id=4,
+        canonical_sid="track-canon", canonical_path="/music/canon.flac",
+        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+    )
+    original = app_client.get("/api/v1/dedup/clusters")
+    original_cluster = original.json()["clusters"][0]
+    decided = app_client.post(
+        "/api/v1/dedup/clusters/4/decision",
+        headers={"If-Match": original.headers["etag"]},
+        json={
+            "cluster_key": original_cluster["cluster_key"],
+            "survivor": "track-canon",
+            "action": "merge",
+        },
+    )
+    assert decided.status_code == 200
+
+    conn = sqlite3.connect(dedup_db)
+    try:
+        conn.execute("DELETE FROM track_aliases")
+        conn.execute("DELETE FROM duplicate_clusters")
+        conn.execute(
+            "INSERT INTO duplicate_clusters "
+            "(cluster_id, canonical_stable_id, canonical_path, rationale) "
+            "VALUES (4, 'replacement-canon', '/music/new.flac', 'new')"
+        )
+        conn.execute(
+            "INSERT INTO track_aliases "
+            "(alias_stable_id, alias_path, cluster_id, canonical_stable_id, similarity) "
+            "VALUES ('replacement-alias', '/music/new.mp3', 4, 'replacement-canon', 0.99)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    rebuilt = app_client.get("/api/v1/dedup/clusters")
+    rebuilt_cluster = rebuilt.json()["clusters"][0]
+    assert rebuilt_cluster["cluster_key"] != original_cluster["cluster_key"]
+    assert rebuilt_cluster["decision"] is None
+
+    stale = app_client.post(
+        "/api/v1/dedup/clusters/4/decision",
+        headers={"If-Match": rebuilt.headers["etag"]},
+        json={
+            "cluster_key": original_cluster["cluster_key"],
+            "survivor": "track-canon",
+            "action": "merge",
+        },
+    )
+    assert stale.status_code == 409
+
+
+def test_corrupt_decision_store_fails_without_overwrite(
+    app_client, dedup_db: Path,
+) -> None:
+    _seed_cluster_db(
+        dedup_db, cluster_id=1,
+        canonical_sid="track-canon", canonical_path="/music/canon.flac",
+        alias_sid="track-alias", alias_path="/music/alias-128.mp3",
+    )
+    corrupt = b'{"schema_version": 1, "decisions": '
+    dedup_review.DECISIONS_FILE.write_bytes(corrupt)
+
+    response = app_client.get("/api/v1/dedup/clusters")
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["error"] == "invalid_decision_store"
+    assert dedup_review.DECISIONS_FILE.read_bytes() == corrupt
+
+
+def test_decision_file_lock_serializes_processes(tmp_path: Path) -> None:
+    context = multiprocessing.get_context("spawn")
+    ready = context.Queue()
+    start = context.Event()
+    result = context.Queue()
+    decisions_path = str(tmp_path / "review-decisions.json")
+    processes = [
+        context.Process(
+            target=_hold_decision_lock,
+            args=(decisions_path, ready, start, result),
+        )
+        for _ in range(2)
+    ]
+    for process in processes:
+        process.start()
+    for _ in processes:
+        assert ready.get(timeout=5) is True
+    start.set()
+    for process in processes:
+        process.join(timeout=5)
+        assert process.exitcode == 0
+
+    intervals = [result.get(timeout=2) for _ in processes]
+    assert all(interval[0] == "ok" for interval in intervals), intervals
+    first, second = sorted(intervals, key=lambda interval: interval[1])
+    assert first[2] <= second[1]
+
+
+def test_openapi_documents_dedup_cas_contract(app_client) -> None:
+    operation = app_client.app.openapi()["paths"][
+        "/api/v1/dedup/clusters/{cluster_id}/decision"
+    ]["post"]
+    if_match = next(
+        parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header" and parameter["name"] == "If-Match"
+    )
+    assert if_match["required"] is True
+    assert {"200", "409", "428"} <= set(operation["responses"])
