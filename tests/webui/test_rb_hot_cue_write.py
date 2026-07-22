@@ -251,8 +251,9 @@ def test_restore_reinstates_overwritten_loop_preimage(master_db: Path) -> None:
     conn = sqlite3.connect(str(master_db))
     try:
         conn.execute(
-            "UPDATE djmdCue SET OutMsec = 2_000, OutFrame = 882, ActiveLoop = 1, "
-            "BeatLoopSize = 4 WHERE ContentID = ?", (VENDOR_ID,),
+            "UPDATE djmdCue SET OutMsec = ?, OutFrame = ?, ActiveLoop = ?, "
+            "BeatLoopSize = ? WHERE ContentID = ?",
+            (2_000, 882, 1, 4, VENDOR_ID),
         )
         conn.commit()
     finally:
