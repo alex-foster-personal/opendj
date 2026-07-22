@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Iterator
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from apps.shared import paths as shared_paths
@@ -130,6 +131,28 @@ def _swap_candidate_after_scan(
         return found
 
     monkeypatch.setattr(locate, "find_candidates", _swap)
+
+
+def _swap_candidate_after_mutation_guard_opens(
+    monkeypatch: pytest.MonkeyPatch, candidate: Path,
+) -> None:
+    """Replace the pathname after the mutation-boundary FD has opened."""
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    original_open = relocate_routes._open_candidate_file
+    opens = 0
+
+    def _open_then_swap(*args: object, **kwargs: object):
+        nonlocal opens
+        checked, descriptor = original_open(*args, **kwargs)
+        opens += 1
+        if opens == 2:
+            replacement = candidate.with_suffix(".guard-replacement")
+            replacement.write_bytes(b"replacement after guard open")
+            replacement.replace(candidate)
+        return checked, descriptor
+
+    monkeypatch.setattr(relocate_routes, "_open_candidate_file", _open_then_swap)
 
 
 # ------------------------------------------------------------------ candidates
@@ -311,6 +334,43 @@ def test_apply_rejects_final_component_symlink(
 
 
 @pytest.mark.requirement("RECON-04")
+def test_candidate_guard_closes_fd_when_music_root_resolution_is_denied(
+    library: dict[str, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    music_root = library["candidate"].parent
+    original_resolve = Path.resolve
+    original_open = relocate_routes.os.open
+    original_close = relocate_routes.os.close
+    opened: list[int] = []
+    closed: list[int] = []
+
+    def _resolve(path: Path, *args: object, **kwargs: object) -> Path:
+        if path == music_root:
+            raise PermissionError("forced root resolution denial")
+        return original_resolve(path, *args, **kwargs)
+
+    def _open(*args: object, **kwargs: object) -> int:
+        descriptor = original_open(*args, **kwargs)
+        opened.append(descriptor)
+        return descriptor
+
+    def _close(descriptor: int) -> None:
+        closed.append(descriptor)
+        original_close(descriptor)
+
+    monkeypatch.setattr(Path, "resolve", _resolve)
+    monkeypatch.setattr(relocate_routes.os, "open", _open)
+    monkeypatch.setattr(relocate_routes.os, "close", _close)
+    with pytest.raises(HTTPException) as raised:
+        relocate_routes._open_candidate_file(str(library["candidate"]))
+    assert raised.value.detail["code"] == "CANDIDATE_PATH_UNSAFE"
+    assert opened
+    assert closed == opened
+
+
+@pytest.mark.requirement("RECON-04")
 def test_apply_rejects_stale_recorded_path(
     client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
 ) -> None:
@@ -359,6 +419,57 @@ def test_apply_state_rejects_candidate_swap_before_mutation(
     )
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "RELOCATE_CANDIDATE_CHANGED"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_state_rejects_swap_after_guard_open_without_persisting(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _apply_body(library)
+    _swap_candidate_after_mutation_guard_opens(monkeypatch, library["candidate"])
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RELOCATE_CANDIDATE_CHANGED"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_state_postcheck_mismatch_rolls_back_published_update(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A swap after the precheck must undo the state mutation on postcheck."""
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    body = _apply_body(library)
+    original_assert = relocate_routes._assert_candidate_path_identity
+    checks = 0
+
+    def _check_then_swap(*args: object, **kwargs: object) -> None:
+        nonlocal checks
+        original_assert(*args, **kwargs)
+        checks += 1
+        if checks == 1:
+            replacement = library["candidate"].with_suffix(".postcheck-replacement")
+            replacement.write_bytes(b"replacement before postcheck")
+            replacement.replace(library["candidate"])
+
+    monkeypatch.setattr(
+        relocate_routes, "_assert_candidate_path_identity", _check_then_swap,
+    )
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 409
+    assert checks == 1
     assert backend.get_track("t-gone").file_path == str(library["gone"])
 
 
@@ -422,7 +533,64 @@ def test_apply_rekordbox_verify_failure_restores_backup(
 
 
 @pytest.mark.requirement("RECON-04")
-def test_apply_rekordbox_rejects_candidate_swap_before_commit(
+def test_apply_rekordbox_primary_close_failure_restores_committed_backup(
+    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successful commit followed by primary close failure must roll back."""
+    live_db = tmp_path / "master.db"
+    original_db = b"original database bytes"
+    live_db.write_bytes(original_db)
+    content = SimpleNamespace(FolderPath=str(library["gone"]))
+
+    class FakeRekordboxDatabase:
+        opens = 0
+
+        def __init__(self, path: str) -> None:
+            assert path == str(live_db)
+            type(self).opens += 1
+
+        def get_content(self, ID: str):
+            assert ID == "99"
+            return content
+
+        def commit(self) -> None:
+            live_db.write_bytes(b"committed database bytes")
+
+        def close(self) -> None:
+            raise RuntimeError("forced primary close failure")
+
+    monkeypatch.setattr(
+        rb_vendor,
+        "bulk_rb_meta",
+        lambda _: {"t-gone": _vendor_meta("99", library["gone"])},
+    )
+    monkeypatch.setattr(shared_paths, "REKORDBOX_LIVE_DB", live_db)
+    monkeypatch.setattr(shared_paths, "DATA_DIR", tmp_path)
+    monkeypatch.setitem(
+        sys.modules,
+        "pyrekordbox",
+        SimpleNamespace(Rekordbox6Database=FakeRekordboxDatabase),
+    )
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
+    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/v1/relocate/t-gone/apply",
+            json=_apply_body(library, vendor_id="99"),
+            headers={"If-Match": _current_etag(backend, "t-gone")},
+        )
+    assert r.status_code == 500
+    assert r.json()["detail"]["code"] == "RELOCATE_WRITE_ROLLED_BACK"
+    assert FakeRekordboxDatabase.opens == 1
+    assert live_db.read_bytes() == original_db
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rekordbox_postcommit_path_swap_restores_backup(
     backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -442,6 +610,10 @@ def test_apply_rekordbox_rejects_candidate_swap_before_commit(
         def commit(self) -> None:
             nonlocal committed
             committed = True
+            live_db.write_bytes(b"mutated database bytes")
+            replacement = library["candidate"].with_suffix(".commit-replacement")
+            replacement.write_bytes(b"replacement during commit")
+            replacement.replace(library["candidate"])
 
         def close(self) -> None:
             return None
@@ -462,7 +634,64 @@ def test_apply_rekordbox_rejects_candidate_swap_before_commit(
 
     monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
     body = _apply_body(library, vendor_id="99")
-    _swap_candidate_after_scan(monkeypatch, library["candidate"])
+    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/v1/relocate/t-gone/apply",
+            json=body,
+            headers={"If-Match": _current_etag(backend, "t-gone")},
+        )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RELOCATE_CANDIDATE_CHANGED"
+    assert committed
+    assert live_db.read_bytes() == b"original database bytes"
+
+
+@pytest.mark.requirement("RECON-04")
+def test_apply_rekordbox_rejects_swap_after_guard_open_without_commit(
+    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_db = tmp_path / "master.db"
+    original_db = b"original database bytes"
+    live_db.write_bytes(original_db)
+    committed = False
+    content = SimpleNamespace(FolderPath=str(library["gone"]))
+
+    class FakeRekordboxDatabase:
+        def __init__(self, path: str) -> None:
+            assert path == str(live_db)
+
+        def get_content(self, ID: str):
+            assert ID == "99"
+            return content
+
+        def commit(self) -> None:
+            nonlocal committed
+            committed = True
+            live_db.write_bytes(b"mutated database bytes")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        rb_vendor,
+        "bulk_rb_meta",
+        lambda _: {"t-gone": _vendor_meta("99", library["gone"])},
+    )
+    monkeypatch.setattr(shared_paths, "REKORDBOX_LIVE_DB", live_db)
+    monkeypatch.setattr(shared_paths, "DATA_DIR", tmp_path)
+    monkeypatch.setitem(
+        sys.modules,
+        "pyrekordbox",
+        SimpleNamespace(Rekordbox6Database=FakeRekordboxDatabase),
+    )
+    from apps.webui.server.routes import relocate as relocate_routes
+
+    monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
+    body = _apply_body(library, vendor_id="99")
+    _swap_candidate_after_mutation_guard_opens(monkeypatch, library["candidate"])
     app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
                      lock_status_fn=lambda: None, mount_frontend=False)
     with TestClient(app) as client:
@@ -474,6 +703,7 @@ def test_apply_rekordbox_rejects_candidate_swap_before_commit(
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "RELOCATE_CANDIDATE_CHANGED"
     assert not committed
+    assert live_db.read_bytes() == original_db
 
 
 @pytest.mark.requirement("RECON-04")

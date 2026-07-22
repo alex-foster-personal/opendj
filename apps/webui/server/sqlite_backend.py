@@ -44,7 +44,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional, Sequence
+from typing import Any, Callable, Iterator, Optional, Sequence
 
 from apps.shared.state import db as _state_db
 from apps.shared.state.writer import StateWriter
@@ -525,6 +525,7 @@ class SqliteBackend:
     def update_track(
         self, stable_id: str, patch: dict[str, Any], *,
         expected_etag: str, source: Source = "webui",
+        mutation_guard: Callable[[], None] | None = None,
     ) -> Track:
         """Persist a rating / notes / tags patch through ``StateWriter``.
 
@@ -544,6 +545,7 @@ class SqliteBackend:
         try:
             return self.update_tracks(
                 [TrackUpdate(stable_id, patch, expected_etag)], source=source,
+                mutation_guard=mutation_guard,
             )[0]
         except BatchConflictError as exc:
             current = self.get_track(stable_id)
@@ -551,6 +553,7 @@ class SqliteBackend:
 
     def update_tracks(
         self, updates: Sequence[TrackUpdate], *, source: Source = "webui",
+        mutation_guard: Callable[[], None] | None = None,
     ) -> list[Track]:
         """Atomically compare-and-swap and persist every requested update.
 
@@ -607,6 +610,8 @@ class SqliteBackend:
                         raise BackendError("file_path must be a non-empty string")
                     file_paths.append(file_path)
                 now = datetime.now(timezone.utc).isoformat()
+                if mutation_guard is not None:
+                    mutation_guard()
                 with StateWriter(conn, actor="webui") as writer:
                     for current, update, field_writes, file_path in zip(
                         current_rows, updates, writes, file_paths,
@@ -641,6 +646,8 @@ class SqliteBackend:
                                 file_path=file_path,
                                 content_hash=row["content_hash"],
                             )
+                if mutation_guard is not None:
+                    mutation_guard()
                 conn.execute("COMMIT")
             except Exception:
                 if conn.in_transaction:

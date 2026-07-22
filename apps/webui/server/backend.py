@@ -29,7 +29,7 @@ import threading
 from dataclasses import dataclass, field, asdict, replace
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Any, Literal, Protocol, Sequence
+from typing import Any, Callable, Literal, Protocol, Sequence
 
 # --- data models (dict-shaped; pydantic is a view layer) -----------------
 
@@ -209,7 +209,8 @@ class StateBackend(Protocol):
                       source: str | None = None) -> list[Pairing]: ...
     def get_queue(self, kind: QueueKind) -> tuple[list[QueueItem], str | None]: ...
     def update_track(self, stable_id: str, patch: dict[str, Any], *,
-                     expected_etag: str, source: Source = "webui") -> Track: ...
+                     expected_etag: str, source: Source = "webui",
+                     mutation_guard: Callable[[], None] | None = None) -> Track: ...
     def update_tracks(self, updates: Sequence[TrackUpdate], *,
                       source: Source = "webui") -> list[Track]: ...
     def update_tag_members(self, old_name: str, new_name: str | None, *,
@@ -342,17 +343,20 @@ class InMemoryBackend:
             return list(items), note
 
     def update_track(self, stable_id: str, patch: dict[str, Any], *,
-                     expected_etag: str, source: Source = "webui") -> Track:
+                     expected_etag: str, source: Source = "webui",
+                     mutation_guard: Callable[[], None] | None = None) -> Track:
         try:
             return self.update_tracks(
                 [TrackUpdate(stable_id, patch, expected_etag)], source=source,
+                mutation_guard=mutation_guard,
             )[0]
         except BatchConflictError as exc:
             current = self.get_track(stable_id)
             raise ConflictError(current.to_dict(), exc.conflicts[0]["current_etag"]) from exc
 
     def update_tracks(self, updates: Sequence[TrackUpdate], *,
-                      source: Source = "webui") -> list[Track]:
+                      source: Source = "webui",
+                      mutation_guard: Callable[[], None] | None = None) -> list[Track]:
         from .etag import compute_etag, strip_quotes
         with self._mutex:
             stable_ids = [update.stable_id for update in updates]
@@ -410,11 +414,25 @@ class InMemoryBackend:
                                                confidence=1.0, modified_at=now)
                 updated.provenance = prov
                 results.append(updated)
-            for current, updated in zip(current_rows, results):
-                if updated is not current:
-                    self._tracks[updated.stable_id] = updated
-            if any(updated is not current for current, updated in zip(current_rows, results)):
-                self._last_writer = (source, now)
+            changed = any(
+                updated is not current for current, updated in zip(current_rows, results)
+            )
+            previous_last_writer = self._last_writer
+            if mutation_guard is not None:
+                mutation_guard()
+            try:
+                for current, updated in zip(current_rows, results):
+                    if updated is not current:
+                        self._tracks[updated.stable_id] = updated
+                if changed:
+                    self._last_writer = (source, now)
+                if mutation_guard is not None:
+                    mutation_guard()
+            except Exception:
+                for current in current_rows:
+                    self._tracks[current.stable_id] = current
+                self._last_writer = previous_last_writer
+                raise
             return results
 
     def update_tag_members(self, old_name: str, new_name: str | None, *,
