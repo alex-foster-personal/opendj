@@ -10,10 +10,13 @@ so CI on a machine without the library stays green.
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
+from types import ModuleType
 
 import pytest
 
+from apps.audit import library_integrity
 from apps.audit.library_integrity import (
     DEFAULT_THRESHOLD,
     IntegrityReport,
@@ -164,6 +167,29 @@ def test_assert_healthy_rejects_out_of_range_threshold(bad):
 @pytest.mark.parametrize("ok", [0.0, 0.02, 1.0])
 def test_assert_healthy_accepts_boundary_thresholds(ok):
     assert_healthy(IntegrityReport(), threshold=ok)  # empty report: no raise
+
+
+# ----- live snapshot safety ----------------------------------------------
+
+
+def test_live_report_rejects_stale_working_copy_when_live_db_is_missing(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed fresh snapshot must not audit a pre-existing working copy."""
+    from apps.shared import paths
+
+    working_db = tmp_path / "data" / "master.db.copy"
+    working_db.parent.mkdir()
+    working_db.write_bytes(b"stale snapshot")
+    monkeypatch.setattr(paths, "DATA_DIR", working_db.parent)
+    monkeypatch.setattr(paths, "REKORDBOX_LIVE_DB", tmp_path / "missing-master.db")
+    monkeypatch.setattr(paths, "REKORDBOX_WORKING_DB", working_db)
+    fake_rekordbox_db = ModuleType("apps.shared.rekordbox_db")
+    fake_rekordbox_db.open_db = lambda: pytest.fail("must not open a stale working DB")
+    monkeypatch.setitem(sys.modules, "apps.shared.rekordbox_db", fake_rekordbox_db)
+
+    with pytest.raises(FileNotFoundError, match="fresh Rekordbox snapshot"):
+        library_integrity._live_report()
 
 
 # ----- live regression guard (gated) -------------------------------------

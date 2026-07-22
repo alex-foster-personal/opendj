@@ -180,8 +180,14 @@ def assert_healthy(
 def _live_report() -> IntegrityReport:
     from apps.shared import paths, rekordbox_db  # lazy: keep core import-light
 
-    paths.copy_live_dbs()
-    db = rekordbox_db.open_db()
+    copied = paths.copy_live_dbs()
+    snapshot = copied.get("rekordbox")
+    if snapshot is None:
+        raise FileNotFoundError(
+            "Unable to create a fresh Rekordbox snapshot: "
+            f"live DB is missing at {paths.REKORDBOX_LIVE_DB}."
+        )
+    db = rekordbox_db.open_db(snapshot)
     try:
         return check_integrity(rekordbox_db.iter_tracks(db))
     finally:
