@@ -7,10 +7,9 @@ The labels file is append-only JSONL; last row per idx wins.
 from __future__ import annotations
 
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from . import paths as sets_paths
 from .classify import CLASS_LIST, read_transitions
@@ -30,7 +29,7 @@ _KEYMAP: dict[str, str | None] = {
 
 def labels_path(session_id: str, *, sets_root: Path | None = None) -> Path:
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
-    return root / session_id / "labels.jsonl"
+    return sets_paths.session_dir(session_id, root=root) / "labels.jsonl"
 
 
 def read_labels(session_id: str, *, sets_root: Path | None = None) -> dict[int, str]:

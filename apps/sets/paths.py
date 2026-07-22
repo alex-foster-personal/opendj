@@ -17,22 +17,61 @@ the rows over (see Plan 12-01 Open Question 2).
 """
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from apps.shared.paths import DATA_DIR
 
 SETS_DIR: Path = DATA_DIR / "sets"
 SETS_DB: Path = SETS_DIR / "sets.db"
 MODELS_DIR: Path = Path(__file__).resolve().parent / "models"
+_WINDOWS_DISALLOWED_SESSION_CHARS = frozenset('<>:"/\\|?*')
+
+
+class SessionPathError(ValueError):
+    """Raised when a session ID cannot name one contained session directory."""
 
 
 def session_dir(session_id: str, root: Path | None = None) -> Path:
-    """Return the on-disk directory for ``session_id``.
+    """Return the resolved, direct-child directory for ``session_id``.
+
+    Session IDs are filesystem boundary inputs. They must name exactly one
+    direct child of the resolved sets root, with no path separators, absolute
+    paths, traversal segments, or Windows drive prefixes. Existing symlinks
+    that resolve outside the root are also rejected.
 
     ``root`` lets tests inject a tmp dir in place of :data:`SETS_DIR`.
     """
-    base = Path(root) if root is not None else SETS_DIR
-    return base / session_id
+    if not isinstance(session_id, str) or not session_id:
+        raise SessionPathError("session_id must be a non-empty string")
+    if (
+        session_id in {".", ".."}
+        or any(char in _WINDOWS_DISALLOWED_SESSION_CHARS for char in session_id)
+        or any(ord(char) < 32 for char in session_id)
+    ):
+        raise SessionPathError(f"disallowed path syntax in session_id {session_id!r}")
+    windows_path = PureWindowsPath(session_id)
+    if windows_path.drive or windows_path.root:
+        raise SessionPathError(f"absolute path not allowed for session_id {session_id!r}")
+
+    base = (Path(root) if root is not None else SETS_DIR).resolve()
+    candidate = (base / session_id).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError as exc:
+        raise SessionPathError(
+            f"session_id {session_id!r} resolves outside sets root {base}"
+        ) from exc
+    if candidate.parent != base:
+        raise SessionPathError(
+            f"session_id {session_id!r} must resolve to a direct child of {base}"
+        )
+    return candidate
 
 
-__all__ = ["SETS_DIR", "SETS_DB", "MODELS_DIR", "session_dir"]
+__all__ = [
+    "SETS_DIR",
+    "SETS_DB",
+    "MODELS_DIR",
+    "SessionPathError",
+    "session_dir",
+]

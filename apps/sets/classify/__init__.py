@@ -160,7 +160,7 @@ def _resolve_output_path(
     if output_path is not None:
         return Path(output_path)
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
-    return root / session_id / "transitions.jsonl"
+    return sets_paths.session_dir(session_id, root=root) / "transitions.jsonl"
 
 
 def read_transitions(session_id: str, *, sets_root: Path | None = None) -> list[dict[str, Any]]:

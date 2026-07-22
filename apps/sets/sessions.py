@@ -90,7 +90,7 @@ def list_sessions(*, sets_root: Path | None = None) -> list[SessionSummary]:
 def get_session(session_id: str, *, sets_root: Path | None = None) -> Session | None:
     """Return the full :class:`Session` or ``None`` if missing."""
     root = Path(sets_root) if sets_root is not None else sets_paths.SETS_DIR
-    session_dir = root / session_id
+    session_dir = sets_paths.session_dir(session_id, root=root)
     if not (session_dir / "manifest.json").exists():
         return None
     manifest = read_manifest(session_dir)

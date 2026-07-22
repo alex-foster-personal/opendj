@@ -15,10 +15,7 @@ import json
 import logging
 import os
 import re
-import signal
 import threading
-import time
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +25,7 @@ from apps.shared.paths import DJAY_WORKING_DB, REKORDBOX_WORKING_DB
 
 from . import paths as sets_paths
 from .capture import DEFAULT_DEVICE_NAME, CaptureHandle, start_capture
-from .manifest import AudioSegment, Manifest, now_iso, write_manifest
+from .manifest import AudioSegment, Manifest, write_manifest
 from .state import Event, SetsState
 
 logger = logging.getLogger(__name__)
@@ -354,7 +351,7 @@ def _build_recorder(
     config: RecorderConfig,
     started_at: datetime,
 ) -> Recorder:
-    session_dir = sets_root / session_id
+    session_dir = sets_paths.session_dir(session_id, root=sets_root)
     session_dir.mkdir(parents=True, exist_ok=True)
     timeline = TimelineJsonl(session_dir / "timeline.jsonl")
     return Recorder(
@@ -506,7 +503,7 @@ def finalize(
     if row is None:
         raise KeyError(f"no set session {session_id!r}")
     started = datetime.fromisoformat(row.started_at)
-    session_dir = root / session_id
+    session_dir = sets_paths.session_dir(session_id, root=root)
     session_dir.mkdir(parents=True, exist_ok=True)
     timeline = TimelineJsonl(session_dir / "timeline.jsonl")
     # Minimal recorder view so list_segments() / _emit_simple() work.

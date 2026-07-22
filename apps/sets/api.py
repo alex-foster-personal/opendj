@@ -35,7 +35,7 @@ from .audio import (
 from .classify import CLASS_LIST, read_transitions
 from .label import append_label
 from .recorder_service import RecorderConflict, RecorderService
-from .sessions import get_session, list_sessions, summary_to_dict
+from .sessions import Session, get_session, list_sessions, summary_to_dict
 
 
 @asynccontextmanager
@@ -127,6 +127,23 @@ def _recorder_service(request: Request) -> RecorderService:
     return service
 
 
+def _validated_recorder_session_id(service: RecorderService, session_id: str) -> None:
+    try:
+        sets_paths.session_dir(session_id, root=service.sets_root)
+    except sets_paths.SessionPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _session_or_not_found(session_id: str) -> Session:
+    try:
+        session = get_session(session_id)
+    except sets_paths.SessionPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return session
+
+
 # ---------------------------------------------------------------------------
 # endpoints
 # ---------------------------------------------------------------------------
@@ -158,8 +175,10 @@ async def api_recorder_start(
 
 @router.post("/recorder/{session_id}/stop", response_model=RecorderStatus)
 async def api_recorder_stop(request: Request, session_id: str) -> dict[str, Any]:
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
     try:
-        return _recorder_service(request).stop(session_id)
+        return service.stop(session_id)
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -170,8 +189,10 @@ async def api_recorder_recover(
     session_id: str,
     body: RecorderRecoveryRequest,
 ) -> dict[str, Any]:
+    service = _recorder_service(request)
+    _validated_recorder_session_id(service, session_id)
     try:
-        return _recorder_service(request).recover_stale(
+        return service.recover_stale(
             session_id,
             body.expected_pid,
         )
@@ -187,9 +208,7 @@ async def api_list_sessions() -> JSONResponse:
 
 @router.get("/{session_id}")
 async def api_get_session(session_id: str) -> JSONResponse:
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail=f"session {session_id} not found")
+    session = _session_or_not_found(session_id)
     payload: dict[str, Any] = {
         "summary": summary_to_dict(session.summary),
         "manifest": session.manifest,
@@ -200,9 +219,7 @@ async def api_get_session(session_id: str) -> JSONResponse:
 
 @router.get("/{session_id}/timeline")
 async def api_timeline_stream(session_id: str) -> StreamingResponse:
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    _session_or_not_found(session_id)
 
     session_dir = sets_paths.session_dir(session_id)
     jsonl = session_dir / "timeline.jsonl"
@@ -222,9 +239,7 @@ async def api_timeline_stream(session_id: str) -> StreamingResponse:
 
 @router.get("/{session_id}/transitions")
 async def api_transitions(session_id: str) -> JSONResponse:
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    _session_or_not_found(session_id)
     rows = read_transitions(session_id)
     return JSONResponse(rows)
 
@@ -235,9 +250,7 @@ async def api_relabel(
     idx: int,
     body: LabelRequest,
 ) -> JSONResponse:
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    _session_or_not_found(session_id)
     if body.cls not in CLASS_LIST:
         raise HTTPException(
             status_code=400,
@@ -256,9 +269,7 @@ async def api_audio(
     session_id: str,
     segment: str = FPath(..., description="audio_<iso>.mp3"),
 ) -> FileResponse:
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    session = _session_or_not_found(session_id)
     share_state = session.summary.share_state
     if share_state == "private" and not _is_localhost(request):
         raise HTTPException(
