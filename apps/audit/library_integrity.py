@@ -32,7 +32,7 @@ import argparse
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Callable, Iterable, Protocol
 
 __all__ = [
@@ -47,6 +47,11 @@ __all__ = [
 #: Matches a leading POSIX home prefix, tolerating Rekordbox's ``//`` and any
 #: username: ``//Users/dev/Music/x`` -> capture group 1 = ``Music/x``.
 _HOME_PREFIX_RE = re.compile(r"^/{1,2}Users/[^/]+/(.*)$")
+
+#: An explicit Windows home is drive-rooted or UNC. Everything else accepted
+#: here must be an absolute POSIX home, so path rendering never depends on the
+#: operating system running this audit.
+_WINDOWS_HOME_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 
 #: Default invariant ceiling. A healthy library should have ~zero broken links;
 #: 2% tolerates a handful of legitimately-removed files between cleanups.
@@ -70,7 +75,13 @@ def rehome_path(folder_path: str, home: str | None = None) -> str | None:
     m = _HOME_PREFIX_RE.match(folder_path or "")
     if not m:
         return None
-    return str(Path(home) / m.group(1))
+    if home.startswith("/"):
+        return str(PurePosixPath(home) / PurePosixPath(m.group(1)))
+    if _WINDOWS_HOME_RE.match(home):
+        return str(PureWindowsPath(home) / PureWindowsPath(m.group(1)))
+    raise ValueError(
+        f"home must be an absolute POSIX or Windows path, got {home!r}."
+    )
 
 
 @dataclass(slots=True)
