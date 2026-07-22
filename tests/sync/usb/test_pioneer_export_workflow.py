@@ -72,7 +72,14 @@ def test_rbox_dependency_contract_is_pinned_for_ci() -> None:
 
 
 @pytest.fixture
-def disposable_target(tmp_path: Path) -> Path:
+def disposable_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    # Promotion is intentionally supported only on macOS. These tests use a
+    # disposable temp directory and stub the real volume inspector, so run the
+    # promotion contract under its supported platform boundary on every CI OS.
+    monkeypatch.setattr(workflow.sys, "platform", "darwin")
     target = tmp_path / "DISPOSABLE-205"
     target.mkdir()
     (target / workflow.DISPOSABLE_MARKER_NAME).write_text(

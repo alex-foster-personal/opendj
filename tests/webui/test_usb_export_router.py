@@ -35,6 +35,9 @@ FIXTURE_DB = (
 
 @pytest.fixture
 def target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # Exercise the real promotion contract under its supported platform
+    # boundary while the target and volume inspector remain disposable.
+    monkeypatch.setattr(workflow.sys, "platform", "darwin")
     root = tmp_path / "DISPOSABLE-API"
     root.mkdir()
     (root / workflow.DISPOSABLE_MARKER_NAME).write_text(
