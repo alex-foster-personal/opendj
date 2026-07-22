@@ -10,6 +10,7 @@ from this endpoint - they are reported blocked instead, matching the
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Literal
 
 from fastapi import APIRouter
@@ -19,6 +20,7 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/voice", tags=["voice"])
 
 DESTRUCTIVE_INTENTS: frozenset[str] = frozenset({"SAVE_CUE", "RATE_TRACK"})
+_VOICE_STATE_LOCK = threading.Lock()
 
 
 class VoiceProbeRequest(BaseModel):
@@ -46,6 +48,12 @@ def _import_voice_stack():
     from apps.voice import actions, bus, context as ctx_mod, grammar, tts
 
     return grammar, actions, bus, ctx_mod, tts
+
+
+def _make_settings_store():
+    from apps.voice import settings
+
+    return settings.SettingsStore()
 
 
 @router.post("/probe", response_model=VoiceProbeResponse)
@@ -83,17 +91,19 @@ def probe(body: VoiceProbeRequest) -> VoiceProbeResponse | JSONResponse:
             probe_only=True,
         )
 
-    # Fresh, disposable context per request. InMemoryBus is deliberately
-    # different from make_bus(force_stub=True), whose JsonlStubBus persists
-    # transcripts under data/voice/. A probe must never touch disk or shared
-    # state. SEARCH is returned as an explicit client action; every other
-    # non-destructive intent remains an observable, side-effect-free probe.
-    event_bus = bus.InMemoryBus()
-    ctx = ctx_mod.VoiceContext.from_env(
-        event_bus=event_bus, tts_engine=tts.RecordingTts()
-    )
-    registry = actions.default_registry()
-    response = registry.dispatch(intent, ctx)
+    # Command payloads stay disposable: InMemoryBus never writes transcripts
+    # or action events. The settings store persists only mute/debounce safety
+    # state shared by typed and mic requests. Serialize load-dispatch-save so
+    # two local requests cannot both bypass the same debounce window.
+    with _VOICE_STATE_LOCK:
+        event_bus = bus.InMemoryBus()
+        ctx = ctx_mod.VoiceContext.from_env(
+            event_bus=event_bus,
+            tts_engine=tts.RecordingTts(),
+            settings_store=_make_settings_store(),
+        )
+        registry = actions.default_registry()
+        response = registry.dispatch(intent, ctx)
 
     return VoiceProbeResponse(
         transcript=body.text,

@@ -22,8 +22,12 @@ python -m apps.voice say "hello booth"
 # List audio devices (needs PortAudio + sounddevice wheel):
 python -m apps.voice list-devices
 
-# Full daemon (needs whisper.cpp + openWakeWord + PortAudio; see below):
-python -m apps.voice run
+# Validate every real daemon dependency, including mic permission and the
+# shared text-command endpoint, without claiming hardware success early:
+python -m apps.voice.mic_daemon check
+
+# Full agent-readable JSONL daemon (see below):
+python -m apps.voice.mic_daemon run
 ```
 
 ## Intent cheat-sheet
@@ -36,8 +40,8 @@ python -m apps.voice run
 | "next track" / "play the next one"                    | `ADVANCE_QUEUE` | publishes; Phase 13 resolves              |
 | "mute voice commands"                                 | `MUTE_VOICE`    | 30-minute default                         |
 | "unmute voice"                                        | `UNMUTE_VOICE`  | clears mute                               |
-| "save that last transition as cue points"             | `SAVE_CUE`      | destructive; dry-run unless `--enable-destructive` |
-| "rate this 5 stars"                                   | `RATE_TRACK`    | destructive; dry-run unless `--enable-destructive` |
+| "save that last transition as cue points"             | `SAVE_CUE`      | blocked by the shared probe endpoint       |
+| "rate this 5 stars"                                   | `RATE_TRACK`    | blocked by the shared probe endpoint       |
 
 There is a printable one-pager at `apps/voice/CHEATSHEET.md` (Plan 3).
 
@@ -59,6 +63,7 @@ All optional, doppler-sourced where noted.
 | `VOICE_VAD_MODE`            | `2`                 | webrtcvad aggressiveness 0-3              |
 | `VOICE_VAD_TAIL_MS`         | `300`               | silence tail to cut utterances            |
 | `VOICE_INPUT_DEVICE`        | -                   | `sd.default.device[0]` by default         |
+| `VOICE_PROBE_URL`           | `http://127.0.0.1:9415/api/v1/voice/probe` | typed-command parity endpoint |
 | `VOICE_DEBOUNCE_S`          | `2.0`               | ignore repeats within window              |
 | `VOICE_MUTE_DURATION_S`     | `1800`              | 30 minutes                                |
 | `VOICE_ENABLE_DESTRUCTIVE`  | `0`                 | duplicates `--enable-destructive` CLI flag|
@@ -72,15 +77,14 @@ All optional, doppler-sourced where noted.
       -> wake (openwakeword) (wake.py)
       -> vad silence-tail (vad.py)
       -> whisper.cpp HTTP (stt.py)
-      -> regex grammar (grammar.py)
-      -> action bus (bus.py -> apps/shared/state -- Phase 5)
-      -> intent handler (actions.py)
-      -> macOS `say` (tts.py)
+      -> POST /api/v1/voice/probe
+      -> the same validated intent result as typed commands
+      -> JSONL lifecycle + result state for agents
 ```
 
-Every stage is swappable. The action bus falls back to a JSONL stub
-(`data/voice/events.jsonl`) if the shared-state layer from Phase 5 is
-not yet shipped (D6 integration boundary).
+The mic daemon deliberately uses the existing voice probe HTTP route rather
+than copying grammar or dispatch rules. Typed and spoken transcripts therefore
+share intent, slot, destructive-blocking, and reply semantics.
 
 ## Safety rails
 
@@ -90,11 +94,10 @@ the shared-state bus; downstream writers (Phases 2-4) apply the
 Phase 1 safety-rail pattern (backup, pgrep guard, dry-run, post-write
 verify, reversal script) when they drain the queue.
 
-Plan 2 ships the pipeline with `--enable-destructive` off by default.
-Plan 3 wires the verbal yes/no confirmation loop and a microphone
-mute that survives daemon restart. You must pass
-`--enable-destructive` explicitly before any non-dry-run event is
-published.
+The real mic daemon routes every transcript through `/api/v1/voice/probe`,
+which blocks destructive intents. The older direct action-bus path retains its
+separate `--enable-destructive` contract, but is not used by issue #204.
+Destructive commands are unavailable through the issue #204 mic daemon.
 
 ## Install + runtime
 
@@ -107,8 +110,7 @@ Works today on a fresh venv. Covers unit tests, `probe`, `bench`,
 
 Optional wheels + binaries:
 
-1. `pip install openwakeword sounddevice webrtcvad` (declared in
-   `requirements.txt`).
+1. `uv sync --extra voice` plus `brew install portaudio` on macOS.
 2. whisper.cpp:
    - `brew install whisper-cpp` (Sonoma+) **or**
    - build from source with `WHISPER_COREML=1 make` under
@@ -117,7 +119,13 @@ Optional wheels + binaries:
    - `bash ./models/download-ggml-model.sh small.en`
    - `bash ./models/generate-coreml-model.sh small.en`
 4. Start the whisper daemon: `scripts/voice/start-whisper.sh`.
-5. Run: `python -m apps.voice run` (respects the env above).
+5. Start the web API on backend port 9415.
+6. Run `python -m apps.voice.mic_daemon check`; it must emit `ready` and
+   `stopped`, or it exits 2 with a terminal JSON error.
+7. Run `python -m apps.voice.mic_daemon run`. It emits `starting`, `ready`,
+   `wake_detected`, `capturing`, `transcript`, `submitted`, and `stopped`
+   lifecycle records as JSONL. Missing dependencies and runtime audio loss
+   emit `error` and exit 2.
 
 See `apps/voice/MODELS.md` for checksums.
 
@@ -138,7 +146,7 @@ See `apps/voice/MODELS.md` for checksums.
 | `whisper server unreachable`                 | Daemon not running. Start via `scripts/voice/start-whisper.sh`. |
 | Mic warning but no wake-word fires           | Built-in mic picking up ambient noise; plug in headset.        |
 | Intent never fires                           | Grammar is strict. Say exactly one of the phrases in the table. |
-| Destructive action logs "dry_run" but nothing writes | Expected: you did not pass `--enable-destructive`.     |
+| Destructive intent reports `blocked: true`            | Expected: mic and typed probes share the safe endpoint. |
 | Slow responses                               | Whisper cold start. Keep the daemon warm. `base.en` is faster. |
 
 ## Known limitations (Phase 14)
@@ -146,10 +154,10 @@ See `apps/voice/MODELS.md` for checksums.
 - **No LLM fallback.** Grammar is deterministic. Misses go to
   `data/voice/unmatched.log`; if >20% miss-rate in real sets, we ship
   Phase 14.2 with Phi-3-mini (voice-feasibility.md 4.3).
-- **openWakeWord "hey booth" model not yet trained.** Training is a
-  1-hour Colab (voice-feasibility.md 1.2). Phase 14 ships the plumbing
-  and uses the prebuilt stock model for smoke; user trains the booth
-  model before live use.
+- **A real wake model is mandatory.** Set `VOICE_WAKE_MODEL_PATH` for
+  openWakeWord or `VOICE_WAKE_KEYWORD_PATH` for Porcupine. The daemon refuses
+  stock or stub fallback models because they would not prove the configured
+  wake phrase.
 - **Phase 5 state layer partial.** As of Phase 14 ship, Phase 5 only
   ships `schema` / `db` / `ids` / `paths`. The `events` writer is
   stubbed; the voice action bus falls back to JSONL until `events`
@@ -157,6 +165,9 @@ See `apps/voice/MODELS.md` for checksums.
 - **Phase 12 transition schema not finalised.** `SAVE_CUE` reads a
   `transition` event kind from the bus; if Phase 12 ships a
   different key, a compatibility shim will be needed.
+- **Mute and debounce share durable state.** Typed and mic probe requests load
+  `mute_until` and `last_dispatch_at` from the voice settings store. Mute,
+  unmute, and successful dispatches write through before the request returns.
 
 ## Files
 
@@ -173,3 +184,5 @@ See `apps/voice/MODELS.md` for checksums.
 - `actions.py`: dispatch table + 8 handlers.
 - `confirm.py` (Plan 3): verbal yes/no loop.
 - `settings.py` (Plan 3): persistent mute + backend selection.
+- `mic_daemon.py`: real mic lifecycle, local whisper health, shared probe
+  submission, cancellation, and agent-readable JSONL.

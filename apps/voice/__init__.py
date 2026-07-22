@@ -17,6 +17,7 @@ Modules:
   context   -- mute state, debounce, runtime context.
   confirm   -- verbal yes/no confirmation loop (Plan 3).
   settings  -- persistent mute + backend settings (Plan 3).
+  mic_daemon -- real mic to whisper.cpp to shared voice-probe daemon.
 
 All tests are tagged ``@pytest.mark.requirement("VOICE-01")``.
 """
@@ -35,4 +36,5 @@ __all__ = [
     "context",
     "confirm",
     "settings",
+    "mic_daemon",
 ]
