@@ -65,7 +65,21 @@ def test_rehome_uses_windows_home_flavor_for_windows_library():
     )
 
 
-@pytest.mark.parametrize("home", ["Users/dev", r"C:Users\dev"])
+def test_rehome_accepts_absolute_windows_unc_home():
+    assert rehome_path(
+        "/Users/dev/Music/x.mp3", home=r"\\server\share\dev"
+    ) == r"\\server\share\dev\Music\x.mp3"
+
+
+@pytest.mark.parametrize(
+    "home",
+    [
+        "Users/dev",
+        r"C:Users\dev",
+        r"\\server",
+        "\\\\",
+    ],
+)
 def test_rehome_rejects_non_absolute_home(home: str):
     with pytest.raises(ValueError, match="absolute POSIX or Windows"):
         rehome_path("/Users/dev/Music/x.mp3", home=home)

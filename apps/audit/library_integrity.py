@@ -48,11 +48,6 @@ __all__ = [
 #: username: ``//Users/dev/Music/x`` -> capture group 1 = ``Music/x``.
 _HOME_PREFIX_RE = re.compile(r"^/{1,2}Users/[^/]+/(.*)$")
 
-#: An explicit Windows home is drive-rooted or UNC. Everything else accepted
-#: here must be an absolute POSIX home, so path rendering never depends on the
-#: operating system running this audit.
-_WINDOWS_HOME_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
-
 #: Default invariant ceiling. A healthy library should have ~zero broken links;
 #: 2% tolerates a handful of legitimately-removed files between cleanups.
 DEFAULT_THRESHOLD: float = 0.02
@@ -75,10 +70,12 @@ def rehome_path(folder_path: str, home: str | None = None) -> str | None:
     m = _HOME_PREFIX_RE.match(folder_path or "")
     if not m:
         return None
-    if home.startswith("/"):
-        return str(PurePosixPath(home) / PurePosixPath(m.group(1)))
-    if _WINDOWS_HOME_RE.match(home):
-        return str(PureWindowsPath(home) / PureWindowsPath(m.group(1)))
+    posix_home = PurePosixPath(home)
+    if posix_home.is_absolute():
+        return str(posix_home / PurePosixPath(m.group(1)))
+    windows_home = PureWindowsPath(home)
+    if windows_home.is_absolute():
+        return str(windows_home / PureWindowsPath(m.group(1)))
     raise ValueError(
         f"home must be an absolute POSIX or Windows path, got {home!r}."
     )
