@@ -104,7 +104,7 @@ class WritebackRollbackOut(BaseModel):
 
 
 def get_writeback_service(backend: StateBackend = Depends(get_read_state)) -> WritebackService:  # noqa: ARG001
-    return WritebackService()
+    return WritebackService(source_members_reader=lambda playlist_id: list(backend.get_playlist(playlist_id).items))
 
 
 def _unavailable(exc: WritebackUnavailable) -> HTTPException:

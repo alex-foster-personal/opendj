@@ -39,7 +39,8 @@ class VendorPlaylistWriter(Protocol):
     def list_playlists(self) -> list[VendorPlaylist]: ...
     def read_members_by_id(self, playlist_id: str) -> list[str]: ...
     def apply_with_backup_by_id(
-        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
+        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str,
+        expected_mapping_revision: str, assert_source_current: Callable[[], None],
     ) -> tuple[WritebackBackup, str]: ...
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str: ...
 
@@ -159,8 +160,12 @@ def _revision(value: object) -> str:
 
 
 class WritebackService:
-    def __init__(self, *, writer_factory: WriterFactory = default_writer_factory) -> None:
+    def __init__(
+        self, *, writer_factory: WriterFactory = default_writer_factory,
+        source_members_reader: Optional[Callable[[str], list[str]]] = None,
+    ) -> None:
         self._writer_factory = writer_factory
+        self._source_members_reader = source_members_reader
 
     def _writer(
         self, vendor: Vendor, target_mode: TargetMode, target_path: str,
@@ -222,6 +227,15 @@ class WritebackService:
             raise WritebackConflict(f"{writer.vendor}: desired mapping changed before write: {missing[:5]}")
         return [mapping[stable_id] for stable_id in desired_ids]
 
+    def _assert_source_snapshot(self, source_playlist_id: str, expected_source_revision: str) -> None:
+        """Reject a source edit at the vendor mutation boundary when available."""
+        if self._source_members_reader is None:
+            return
+        current = list(self._source_members_reader(source_playlist_id))
+        actual = _revision({"source_playlist_id": source_playlist_id, "members": current})
+        if actual != expected_source_revision:
+            raise WritebackConflict("writeback source changed before vendor transaction")
+
     def targets(self, *, vendor: Vendor, target_mode: TargetMode, target_path: str) -> list[VendorPlaylist]:
         return self._writer(vendor, target_mode, target_path).list_playlists()
 
@@ -280,6 +294,7 @@ class WritebackService:
             raise WritebackConflict("writeback mapping changed before immutable vendor payload was captured")
         backup, target_revision = writer.apply_with_backup_by_id(
             target_id, native_payload, desired_ids, plan.target_revision, plan.mapping_revision,
+            lambda: self._assert_source_snapshot(source_playlist_id, plan.source_revision),
         )
         return WritebackApplyResult(vendor, target_id, plan.target_name, True, False,
             added=plan.added, removed=plan.removed, backup_id=backup.backup_id,

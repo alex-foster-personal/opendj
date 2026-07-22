@@ -288,7 +288,8 @@ class RBPlaylistWriter:
         return members
 
     def apply_with_backup_by_id(
-        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str, expected_mapping_revision: str,
+        self, playlist_id: str, native_members: list[str], stable_members: list[str], expected_target_revision: str,
+        expected_mapping_revision: str, assert_source_current: Callable[[], None],
     ):
         """CAS, WAL-safe backup, and mutation in one Rekordbox transaction."""
         from pyrekordbox.db6 import tables
@@ -315,9 +316,10 @@ class RBPlaylistWriter:
                 mapping_revision = hashlib.sha256(json.dumps(sorted((str(stable_id), str(vendor_id)) for stable_id, vendor_id in mapping_rows), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if mapping_revision != expected_mapping_revision:
                     raise WritebackConflict("rekordbox: mapping changed inside vendor transaction")
+                assert_source_current()
                 with sqlite3.connect(f"file:{self.live_db_path}?mode=ro", uri=True) as snapshot:
                     backup = WritebackBackup(online_backup(snapshot, "rekordbox"))
-                post_members = list(native_members)
+                post_members = list(stable_members)
                 post_revision = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": post_members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 write_reversal("rekordbox", backup.backup_id, self.live_db_path, playlist_id, before, post_revision)
                 playlist = self._find_playlist_by_id(playlist_id)

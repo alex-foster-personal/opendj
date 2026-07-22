@@ -249,5 +249,5 @@ class TestDjayReadMembers:
         monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
         monkeypatch.setattr(writeback_backup, "write_reversal", lambda *_args: (_ for _ in ()).throw(OSError("disk full")))
         with pytest.raises(OSError, match="disk full"):
-            writer.apply_with_backup_by_id(playlist_id, ["dj-uuid-100", "dj-uuid-200"], ["sid-1", "sid-2"], expected, mapping_revision)
+            writer.apply_with_backup_by_id(playlist_id, ["dj-uuid-100", "dj-uuid-200"], ["sid-1", "sid-2"], expected, mapping_revision, lambda: None)
         assert writer.read_members_by_id(playlist_id) == ["sid-1"]
