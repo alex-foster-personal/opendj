@@ -4369,6 +4369,35 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VendorCapabilityOut": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor",
+          "available"
+        ],
+        "title": "VendorCapabilityOut",
+        "type": "object"
+      },
       "VerifiedIn": {
         "additionalProperties": false,
         "properties": {
@@ -4474,6 +4503,171 @@
           "intent"
         ],
         "title": "VoiceProbeResponse",
+        "type": "object"
+      },
+      "WritebackApplyIn": {
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "force_adopt": {
+            "default": false,
+            "title": "Force Adopt",
+            "type": "boolean"
+          },
+          "vendor": {
+            "enum": [
+              "rekordbox",
+              "djay"
+            ],
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor"
+        ],
+        "title": "WritebackApplyIn",
+        "type": "object"
+      },
+      "WritebackApplyOut": {
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "playlist_name": {
+            "title": "Playlist Name",
+            "type": "string"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "vendor",
+          "playlist_name",
+          "applied",
+          "dry_run",
+          "added",
+          "removed"
+        ],
+        "title": "WritebackApplyOut",
+        "type": "object"
+      },
+      "WritebackCapabilitiesOut": {
+        "properties": {
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "vendors": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCapabilityOut"
+            },
+            "title": "Vendors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "vendors"
+        ],
+        "title": "WritebackCapabilitiesOut",
+        "type": "object"
+      },
+      "WritebackPlanOut": {
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "is_noop": {
+            "title": "Is Noop",
+            "type": "boolean"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "playlist_name": {
+            "title": "Playlist Name",
+            "type": "string"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "target_exists": {
+            "title": "Target Exists",
+            "type": "boolean"
+          },
+          "unresolved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "vendor",
+          "playlist_name",
+          "target_exists",
+          "added",
+          "removed",
+          "unresolved",
+          "is_noop"
+        ],
+        "title": "WritebackPlanOut",
         "type": "object"
       }
     }
@@ -6028,6 +6222,155 @@
         "summary": "Replace Playlist Tracks",
         "tags": [
           "playlists-write"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/writeback/apply": {
+      "post": {
+        "operationId": "apply_writeback_api_v1_playlists__playlist_id__writeback_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WritebackApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Writeback",
+        "tags": [
+          "playlist-writeback"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/writeback/capabilities": {
+      "get": {
+        "operationId": "get_writeback_capabilities_api_v1_playlists__playlist_id__writeback_capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackCapabilitiesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Writeback Capabilities",
+        "tags": [
+          "playlist-writeback"
+        ]
+      }
+    },
+    "/api/v1/playlists/{playlist_id}/writeback/plan": {
+      "get": {
+        "operationId": "get_writeback_plan_api_v1_playlists__playlist_id__writeback_plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vendor",
+            "required": true,
+            "schema": {
+              "enum": [
+                "rekordbox",
+                "djay"
+              ],
+              "title": "Vendor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Writeback Plan",
+        "tags": [
+          "playlist-writeback"
         ]
       }
     },
