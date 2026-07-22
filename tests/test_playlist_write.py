@@ -13,6 +13,8 @@ Regression one-liners:
 from __future__ import annotations
 
 import sqlite3
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -23,7 +25,9 @@ from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
+from apps.webui.server.backend import ConflictError
 from apps.webui.server.routes import playlist_write
+from apps.webui.server.playlist_store import PlaylistStore
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 TRACK_IDS: list[str] = ["t-001", "t-002", "t-003", "t-004"]
@@ -296,10 +300,254 @@ def test_put_tracks_allows_duplicate_members(client: TestClient) -> None:
     body, etag = _create(client)
     pid = body["playlist_id"]
     r = client.put(f"/api/v1/playlists/{pid}/tracks",
-                   json={"stable_ids": ["t-001", "t-002", "t-001"]},
+                   json={"stable_ids": ["t-001", "t-001", "t-002"]},
                    headers={"If-Match": etag})
     assert r.status_code == 200, r.text
-    assert r.json()["items"] == ["t-001", "t-002", "t-001"]
+    assert r.json()["items"] == ["t-001", "t-001", "t-002"]
+
+
+def test_two_store_membership_replaces_serialise_before_etag_check(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale full replacement cannot overwrite an independently committed one.
+
+    The first store pauses at membership validation.  Before the fix this was
+    after its ETag read but before its writer SAVEPOINT, so the second store
+    could commit and the stale first replace would win.  The contract now
+    acquires SQLite's writer lock before that validation, causing the second
+    stale request to receive the current state instead.
+    """
+    with PlaylistStore(db_path, bus=FakeEventBus()) as setup:
+        playlist = setup.create_playlist("Race")
+        playlist_id = playlist.playlist_id
+        etag = playlist.etag
+
+    store_a = PlaylistStore(db_path, bus=FakeEventBus())
+    store_b = PlaylistStore(db_path, bus=FakeEventBus())
+    a_at_validation = threading.Event()
+    b_at_validation = threading.Event()
+    release_a = threading.Event()
+    a_result: list[object] = []
+    b_result: list[object] = []
+    original_require_known_tracks = store_a._require_known_tracks
+    original_require_known_tracks_b = store_b._require_known_tracks
+
+    def pause_after_a_has_the_write_contract(stable_ids: list[str]) -> None:
+        a_at_validation.set()
+        assert release_a.wait(timeout=5), "test did not release first writer"
+        original_require_known_tracks(stable_ids)
+
+    monkeypatch.setattr(store_a, "_require_known_tracks", pause_after_a_has_the_write_contract)
+
+    def record_b_validation(stable_ids: list[str]) -> None:
+        b_at_validation.set()
+        original_require_known_tracks_b(stable_ids)
+
+    monkeypatch.setattr(store_b, "_require_known_tracks", record_b_validation)
+
+    def replace_a() -> None:
+        try:
+            a_result.append(
+                store_a.replace_memberships(
+                    playlist_id, ["t-001"], expected_etag=etag,
+                )
+            )
+        except Exception as exc:  # test captures the API-layer conflict
+            a_result.append(exc)
+
+    def replace_b() -> None:
+        try:
+            b_result.append(
+                store_b.replace_memberships(
+                    playlist_id, ["t-002"], expected_etag=etag,
+                )
+            )
+        except Exception as exc:  # test captures the API-layer conflict
+            b_result.append(exc)
+
+    a_thread = threading.Thread(target=replace_a)
+    b_thread = threading.Thread(target=replace_b)
+    try:
+        a_thread.start()
+        assert a_at_validation.wait(timeout=5), "first writer never reached validation"
+        b_thread.start()
+        assert not b_at_validation.wait(timeout=0.5), (
+            "second writer validated state before the first writer released "
+            "the database write lock"
+        )
+        release_a.set()
+        a_thread.join(timeout=5)
+        b_thread.join(timeout=5)
+        assert not a_thread.is_alive(), "first writer did not complete"
+        assert not b_thread.is_alive(), "second writer did not complete"
+        assert len(a_result) == 1
+        assert len(b_result) == 1
+        assert not isinstance(a_result[0], Exception)
+        assert isinstance(b_result[0], ConflictError)
+        assert b_result[0].current["items"] == ["t-001"]
+        assert store_a.get_playlist_row(playlist_id).items == ["t-001"]
+    finally:
+        release_a.set()
+        store_a.close()
+        store_b.close()
+
+
+def test_fixed_clock_never_reuses_a_stale_playlist_revision(db_path: Path) -> None:
+    fixed = datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc)
+    store = PlaylistStore(db_path, bus=FakeEventBus(), clock=lambda: fixed)
+    try:
+        created = store.create_playlist("Fixed clock")
+        first = store.replace_memberships(
+            created.playlist_id, ["t-001"], expected_etag=created.etag,
+        )
+        second = store.replace_memberships(
+            created.playlist_id, ["t-002"], expected_etag=first.etag,
+        )
+
+        assert len({created.etag, first.etag, second.etag}) == 3
+        with pytest.raises(ConflictError):
+            store.replace_memberships(
+                created.playlist_id, ["t-003"], expected_etag=created.etag,
+            )
+    finally:
+        store.close()
+
+
+def test_rename_cannot_precheck_while_membership_replace_holds_lock(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with PlaylistStore(db_path, bus=FakeEventBus()) as setup:
+        playlist = setup.create_playlist("Race")
+        playlist_id = playlist.playlist_id
+        etag = playlist.etag
+
+    store_a = PlaylistStore(db_path, bus=FakeEventBus())
+    store_b = PlaylistStore(db_path, bus=FakeEventBus())
+    a_at_validation = threading.Event()
+    b_at_write = threading.Event()
+    release_a = threading.Event()
+    a_result: list[object] = []
+    b_result: list[object] = []
+    original_a_validation = store_a._require_known_tracks
+    original_b_insert = store_b._writer.insert_playlist
+
+    def pause_a_validation(stable_ids: list[str]) -> None:
+        a_at_validation.set()
+        assert release_a.wait(timeout=5), "test did not release membership replace"
+        original_a_validation(stable_ids)
+
+    def record_b_write(**kwargs: str) -> bool:
+        b_at_write.set()
+        return original_b_insert(**kwargs)
+
+    monkeypatch.setattr(store_a, "_require_known_tracks", pause_a_validation)
+    monkeypatch.setattr(store_b._writer, "insert_playlist", record_b_write)
+
+    def replace_a() -> None:
+        try:
+            a_result.append(store_a.replace_memberships(
+                playlist_id, ["t-001"], expected_etag=etag,
+            ))
+        except Exception as exc:
+            a_result.append(exc)
+
+    def rename_b() -> None:
+        try:
+            b_result.append(store_b.rename_playlist(
+                playlist_id, "Renamed", expected_etag=etag,
+            ))
+        except Exception as exc:
+            b_result.append(exc)
+
+    a_thread = threading.Thread(target=replace_a)
+    b_thread = threading.Thread(target=rename_b)
+    try:
+        a_thread.start()
+        assert a_at_validation.wait(timeout=5), "membership replace did not acquire its lock"
+        b_thread.start()
+        assert not b_at_write.wait(timeout=0.5), "rename prechecked before the lock"
+        release_a.set()
+        a_thread.join(timeout=5)
+        b_thread.join(timeout=5)
+        assert not a_thread.is_alive()
+        assert not b_thread.is_alive()
+        assert not isinstance(a_result[0], Exception)
+        assert isinstance(b_result[0], ConflictError)
+        current = store_a.get_playlist_row(playlist_id)
+        assert current.name == "Race"
+        assert current.items == ["t-001"]
+    finally:
+        release_a.set()
+        store_a.close()
+        store_b.close()
+
+
+def test_delete_cannot_precheck_while_membership_replace_holds_lock(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with PlaylistStore(db_path, bus=FakeEventBus()) as setup:
+        playlist = setup.create_playlist("Race")
+        playlist_id = playlist.playlist_id
+        etag = playlist.etag
+
+    store_a = PlaylistStore(db_path, bus=FakeEventBus())
+    store_b = PlaylistStore(db_path, bus=FakeEventBus())
+    a_at_validation = threading.Event()
+    b_at_write = threading.Event()
+    release_a = threading.Event()
+    a_result: list[object] = []
+    b_result: list[object] = []
+    original_a_validation = store_a._require_known_tracks
+    original_b_delete = store_b._writer.delete_playlist
+
+    def pause_a_validation(stable_ids: list[str]) -> None:
+        a_at_validation.set()
+        assert release_a.wait(timeout=5), "test did not release membership replace"
+        original_a_validation(stable_ids)
+
+    def record_b_write(playlist_id: str) -> bool:
+        b_at_write.set()
+        return original_b_delete(playlist_id)
+
+    monkeypatch.setattr(store_a, "_require_known_tracks", pause_a_validation)
+    monkeypatch.setattr(store_b._writer, "delete_playlist", record_b_write)
+
+    def replace_a() -> None:
+        try:
+            a_result.append(store_a.replace_memberships(
+                playlist_id, ["t-001"], expected_etag=etag,
+            ))
+        except Exception as exc:
+            a_result.append(exc)
+
+    def delete_b() -> None:
+        try:
+            b_result.append(store_b.delete_playlist(playlist_id, expected_etag=etag))
+        except Exception as exc:
+            b_result.append(exc)
+
+    a_thread = threading.Thread(target=replace_a)
+    b_thread = threading.Thread(target=delete_b)
+    try:
+        a_thread.start()
+        assert a_at_validation.wait(timeout=5), "membership replace did not acquire its lock"
+        b_thread.start()
+        assert not b_at_write.wait(timeout=0.5), "delete prechecked before the lock"
+        release_a.set()
+        a_thread.join(timeout=5)
+        b_thread.join(timeout=5)
+        assert not a_thread.is_alive()
+        assert not b_thread.is_alive()
+        assert not isinstance(a_result[0], Exception)
+        assert isinstance(b_result[0], ConflictError)
+        assert store_a.get_playlist_row(playlist_id).items == ["t-001"]
+    finally:
+        release_a.set()
+        store_a.close()
+        store_b.close()
 
 
 # --- provenance / events ---------------------------------------------------

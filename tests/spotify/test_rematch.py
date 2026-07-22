@@ -17,6 +17,8 @@ from apps.spotify.state_writer import (
     fetch_pending_tracks,
     write_playlist_and_pending,
 )
+from apps.webui.server.backend import ConflictError
+from apps.webui.server.playlist_store import PlaylistStore
 
 
 @pytest.fixture
@@ -90,6 +92,29 @@ def test_rematch_live_promotes(state_conn: sqlite3.Connection) -> None:
     resolved = fetch_pending_tracks(state_conn, playlist_id, status="resolved")
     assert len(resolved) == 1
     assert resolved[0].resolved_stable_id == "s1"
+
+
+@pytest.mark.requirement("CAT-01")
+def test_rematch_rotates_playlist_revision_and_rejects_stale_replace(
+    state_conn: sqlite3.Connection,
+) -> None:
+    playlist_id = _seed_unmatched_playlist(state_conn)
+    _insert_track(state_conn, "s1", "USABC2500001", "Hello")
+    db_path = Path(state_conn.execute("PRAGMA database_list").fetchone()[2])
+    store = PlaylistStore(db_path)
+    try:
+        stale_etag = store.get_playlist_row(playlist_id).etag
+        rematch_playlist(state_conn, playlist_id, live=True)
+
+        with pytest.raises(ConflictError) as raised:
+            store.replace_memberships(
+                playlist_id, ["s1", "s1"], expected_etag=stale_etag,
+            )
+
+        assert raised.value.current["items"] == ["s1"]
+        assert raised.value.etag != stale_etag
+    finally:
+        store.close()
 
 
 @pytest.mark.requirement("CAT-01")

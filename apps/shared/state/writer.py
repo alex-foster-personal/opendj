@@ -12,7 +12,7 @@ import itertools
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Iterator
 
 from . import provenance as _prov
@@ -39,6 +39,51 @@ def compute_playlist_id(vendor: str, vendor_pl_id: str) -> str:
     keeping the id deterministic.
     """
     return hashlib.sha1(f"{vendor}:{vendor_pl_id}".encode("utf-8")).hexdigest()
+
+
+@contextmanager
+def immediate_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """Acquire SQLite's writer lock before an authoritative read-modify-write.
+
+    Membership replacement is destructive, so an ETag, member validation, and
+    replacement must all happen after this lock is held.  Nested callers use a
+    SAVEPOINT through :meth:`StateWriter._tx`; this outer primitive fails fast
+    if a caller attempts to upgrade an already-open deferred transaction.
+    """
+    if conn.in_transaction:
+        raise RuntimeError(
+            "immediate transaction requires an idle connection; acquire it "
+            "before reading membership state"
+        )
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    else:
+        conn.execute("COMMIT")
+
+
+def next_playlist_revision(
+    conn: sqlite3.Connection, playlist_id: str, candidate: str,
+) -> str:
+    """Return a revision distinct from the playlist's current ``updated_at``.
+
+    Wall-clock timestamps normally differ at microsecond precision.  A fixed
+    clock used by a deterministic caller must still rotate an ETag, so advance
+    an equal ISO timestamp by one microsecond instead of silently reusing it.
+    """
+    row = conn.execute(
+        "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
+    ).fetchone()
+    if row is None:
+        return candidate
+    previous = datetime.fromisoformat(row[0])
+    requested = datetime.fromisoformat(candidate)
+    if requested > previous:
+        return candidate
+    return _iso(previous + timedelta(microseconds=1))
 
 
 class StateWriter:
@@ -111,6 +156,18 @@ class StateWriter:
             raise
         else:
             self._conn.execute(f"RELEASE SAVEPOINT {name}")
+
+    @contextmanager
+    def playlist_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Lock a playlist mutation before reading its CAS precondition.
+
+        Callers must load the playlist and validate its expected revision while
+        this context is open. Membership replacement also validates every
+        requested stable id here. That sequence is one SQLite write
+        transaction across processes.
+        """
+        with immediate_transaction(self._conn) as conn:
+            yield conn
 
     # --- lifecycle --------------------------------------------------
 
@@ -376,8 +433,9 @@ class StateWriter:
         from it (webui optimistic concurrency) observe membership-only
         changes, not just renames.
         """
-        now = self._now_iso()
-        with self._tx() as conn:
+        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
+        with transaction as conn:
+            now = next_playlist_revision(conn, playlist_id, self._now_iso())
             conn.execute(
                 "DELETE FROM playlist_memberships WHERE playlist_id = ?",
                 (playlist_id,),
@@ -475,4 +533,9 @@ class StateWriter:
             self.bus.publish(ev)
 
 
-__all__ = ["StateWriter", "compute_playlist_id"]
+__all__ = [
+    "StateWriter",
+    "compute_playlist_id",
+    "immediate_transaction",
+    "next_playlist_revision",
+]

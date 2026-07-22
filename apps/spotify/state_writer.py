@@ -30,6 +30,7 @@ from urllib.parse import quote_plus
 
 from apps.shared.state import db as state_db
 from apps.shared.state import paths as state_paths
+from apps.shared.state.writer import next_playlist_revision
 
 from .client import SpotifyPlaylist, SpotifyTrack
 from .matcher_adapter import MatchResult
@@ -286,8 +287,9 @@ def write_playlist_and_pending(
     now = datetime.now(timezone.utc).isoformat()
     playlist_id = _state_playlist_id(playlist.id)
 
-    conn.execute("BEGIN")
+    conn.execute("BEGIN IMMEDIATE")
     try:
+        revision = next_playlist_revision(conn, playlist_id, now)
         conn.execute(
             """
             INSERT INTO playlists
@@ -297,7 +299,7 @@ def write_playlist_and_pending(
               name = excluded.name,
               updated_at = excluded.updated_at
             """,
-            (playlist_id, playlist.name, VENDOR, playlist.id, now, now),
+            (playlist_id, playlist.name, VENDOR, playlist.id, now, revision),
         )
 
         conn.execute(
