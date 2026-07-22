@@ -574,8 +574,9 @@ class SqliteBackend:
                 conflicts: list[dict[str, str]] = []
                 for update in updates:
                     row = conn.execute(
-                        "SELECT stable_id, title, artists_json, album, duration_ms, "
-                        "file_path, created_at, updated_at FROM tracks WHERE stable_id = ?",
+                        "SELECT stable_id, stable_id_tier, title, artists_json, album, isrc, "
+                        "duration_ms, file_path, content_hash, created_at, updated_at "
+                        "FROM tracks WHERE stable_id = ?",
                         (update.stable_id,),
                     ).fetchone()
                     if row is None:
@@ -596,13 +597,49 @@ class SqliteBackend:
                     _field_writes(current, update.patch)
                     for current, update in zip(current_rows, updates)
                 ]
+                file_paths: list[str | None] = []
+                for update in updates:
+                    if "file_path" not in update.patch:
+                        file_paths.append(None)
+                        continue
+                    file_path = update.patch["file_path"]
+                    if not isinstance(file_path, str) or not file_path:
+                        raise BackendError("file_path must be a non-empty string")
+                    file_paths.append(file_path)
                 now = datetime.now(timezone.utc).isoformat()
                 with StateWriter(conn, actor="webui") as writer:
-                    for update, field_writes in zip(updates, writes):
+                    for current, update, field_writes, file_path in zip(
+                        current_rows, updates, writes, file_paths,
+                    ):
                         for field_name, value in field_writes.items():
                             writer.set_field(
                                 update.stable_id, field_name, value,
                                 source=source, modified_at=now, confidence=1.0,
+                            )
+                        if file_path is not None:
+                            row = conn.execute(
+                                "SELECT stable_id_tier, title, artists_json, album, isrc, "
+                                "duration_ms, content_hash FROM tracks WHERE stable_id = ?",
+                                (current.stable_id,),
+                            ).fetchone()
+                            if row is None:
+                                raise NotFoundError(
+                                    f"track not found: {current.stable_id}"
+                                )
+                            writer.upsert_track(
+                                stable_id=current.stable_id,
+                                stable_id_tier=row["stable_id_tier"],
+                                title=row["title"],
+                                artists=(
+                                    json.loads(row["artists_json"])
+                                    if row["artists_json"]
+                                    else []
+                                ),
+                                album=row["album"],
+                                isrc=row["isrc"],
+                                duration_ms=row["duration_ms"],
+                                file_path=file_path,
+                                content_hash=row["content_hash"],
                             )
                 conn.execute("COMMIT")
             except Exception:

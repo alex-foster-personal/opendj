@@ -390,6 +390,13 @@ class InMemoryBackend:
                     updated.notes = update.patch["notes"]
                     prov["notes"] = Provenance(value=updated.notes, source=source,
                                                 confidence=1.0, modified_at=now)
+                if "file_path" in update.patch:
+                    file_path = update.patch["file_path"]
+                    if not isinstance(file_path, str) or not file_path:
+                        raise BackendError("file_path must be a non-empty string")
+                    updated.file_path = file_path
+                    prov["file_path"] = Provenance(value=file_path, source=source,
+                                                    confidence=1.0, modified_at=now)
                 tags = list(updated.tags or [])
                 if update.patch.get("tags_add"):
                     for tag in update.patch["tags_add"]:

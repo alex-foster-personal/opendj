@@ -44,6 +44,7 @@ from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
+from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import smartlists as smartlists_routes
@@ -174,6 +175,7 @@ def create_app(
     app.include_router(smartlists_routes.router, prefix=api_prefix)
     app.include_router(stems_routes.router, prefix=api_prefix)
     app.include_router(reconcile_routes.router, prefix=api_prefix)
+    app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)

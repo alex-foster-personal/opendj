@@ -165,6 +165,57 @@ def test_triple_validation_requires_three_signals(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("RECON-02")
+def test_find_candidates_ranks_multiple_matches(tmp_path: Path) -> None:
+    """relocate-files (RELOC-01) reuses this to show a human a ranked list,
+    not just the CLI's single winner. A triple-validated exact-basename
+    match must outrank a bare fuzzy-basename match, and the count/order
+    must match ``_locate_one``'s own winner."""
+    exact = tmp_path / "track.mp3"
+    exact.write_bytes(b"\x00" * 1000)
+    fuzzy = tmp_path / "sub" / "track_v2.mp3"
+    fuzzy.parent.mkdir()
+    fuzzy.write_bytes(b"\x00" * 1000)
+
+    idx = locate.FsIndex.build([_make_af(exact, size=1000), _make_af(fuzzy, size=1000)])
+    cache = {
+        exact: audio_files.AudioMetadata(title="Test Track", artist="Test Artist",
+                                         duration_s=200.0),
+        fuzzy: None,
+    }
+    row = _row()
+    found = locate.find_candidates(row, idx, cache, limit=5)
+    assert len(found) >= 1
+    assert found[0].path == exact
+    assert found[0].triple_validated
+    # Matches the CLI's own single-best answer.
+    best = locate._locate_one(row, idx, dict(cache))
+    assert best is not None
+    assert found[0].path == best.path
+    assert found[0].confidence == best.confidence
+
+
+@pytest.mark.requirement("RECON-02")
+def test_find_candidates_respects_limit(tmp_path: Path) -> None:
+    exact = tmp_path / "track.mp3"
+    exact.write_bytes(b"\x00")
+    idx = locate.FsIndex.build([_make_af(exact)])
+    cache: dict[Path, audio_files.AudioMetadata | None] = {exact: None}
+    row = _row()
+    found = locate.find_candidates(row, idx, cache, limit=0)
+    assert found == []
+
+
+@pytest.mark.requirement("RECON-02")
+def test_find_candidates_empty_when_no_seed(tmp_path: Path) -> None:
+    cand = tmp_path / "totally-unrelated.mp3"
+    cand.write_bytes(b"\x00")
+    idx = locate.FsIndex.build([_make_af(cand)])
+    cache: dict[Path, audio_files.AudioMetadata | None] = {cand: None}
+    row = _row(basename="track.mp3", original_path="/elsewhere/track.mp3")
+    assert locate.find_candidates(row, idx, cache) == []
+
+
+@pytest.mark.requirement("RECON-02")
 def test_no_candidate_returns_none(tmp_path: Path) -> None:
     """No matching basename, no path-rewrite hit, no fuzzy match → None."""
     cand = tmp_path / "totally-unrelated-1234567.mp3"

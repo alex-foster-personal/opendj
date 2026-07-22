@@ -332,6 +332,31 @@ class TestFallbackPaths:
         # Real persistence: sqlite (not the fallback) carries the edit.
         assert backend.get_track("sid-001").notes == "updated from webui"
 
+    def test_update_track_writes_file_path_via_upsert(
+        self, fresh_state_db: Path,
+    ) -> None:
+        """relocate-files: file_path is a flat ``tracks`` column, not EAV,
+        so it must round-trip through ``StateWriter.upsert_track`` -- the
+        other flat columns (title/artists/album/isrc/duration_ms) must
+        survive unchanged."""
+        from apps.webui.server.etag import compute_etag
+
+        backend = SqliteBackend(fresh_state_db)
+        before = backend.get_track("sid-001")
+        etag = compute_etag(before.stable_id, before.updated_at)
+        updated = backend.update_track(
+            "sid-001", {"file_path": "/music/relocated/midnight.mp3"},
+            expected_etag=etag, source="webui",
+        )
+        assert updated.file_path == "/music/relocated/midnight.mp3"
+        assert updated.title == before.title
+        assert updated.artist == before.artist
+        assert updated.album == before.album
+        assert updated.duration_ms == before.duration_ms
+        # Real persistence: a fresh read reflects the same change.
+        reread = backend.get_track("sid-001")
+        assert reread.file_path == "/music/relocated/midnight.mp3"
+
     def test_update_track_concurrent_updates_no_lost_update(
         self, fresh_state_db: Path,
     ) -> None:
