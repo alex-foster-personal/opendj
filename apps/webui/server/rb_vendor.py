@@ -42,8 +42,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import sqlite3
 import struct
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -928,26 +930,33 @@ def _load_cached_payload(
 def _store_cached_payload(
     stable_id: str, anlz_mtime: float, points: int, payload: dict[str, Any]
 ) -> None:
-    """Persist a cache entry atomically (tmp + rename, like the vocal-cache).
+    """Persist a cache entry atomically through a unique sibling tempfile.
 
     A crash mid-write must never leave a truncated {stable_id}.json behind:
-    the entry lands in a sibling .json.tmp first and only the atomic rename
-    publishes it, so a reader sees the old complete entry or the new one --
-    an orphaned .tmp is inert and gets overwritten by the next store.
+    the entry lands in a unique sibling tempfile first and only ``os.replace``
+    publishes it, so concurrent readers and writers see a complete entry.
     """
     ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _cache_path(stable_id)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(
-        json.dumps({
-            "schema": ANLZ_CACHE_SCHEMA,
-            "anlz_mtime": anlz_mtime,
-            "points": points,
-            "payload": payload,
-        }),
-        encoding="utf-8",
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
     )
-    tmp.replace(path)
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        tmp.write_text(
+            json.dumps({
+                "schema": ANLZ_CACHE_SCHEMA,
+                "anlz_mtime": anlz_mtime,
+                "points": points,
+                "payload": payload,
+            }),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:

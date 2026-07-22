@@ -178,6 +178,7 @@ def test_interrupted_cache_write_never_truncates(
     with pytest.raises(OSError, match="simulated kill"):
         rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
     assert not cache_file.exists()
+    assert list((tmp_path / "anlz-cache").glob("*.tmp")) == []
     assert rb_vendor._load_cached_payload("sid", 111.0, 300) is None
 
     # Prior complete entry, interrupted overwrite: the entry must stay
