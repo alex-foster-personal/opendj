@@ -191,7 +191,12 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
 
     device = device_pref
     if device == "auto":
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
 
     t0 = time.perf_counter()
     model = get_model(MODEL_NAME)
@@ -269,8 +274,9 @@ def main() -> None:
     )
     parser.add_argument("audio", type=Path, help="path to the audio file")
     parser.add_argument(
-        "--device", default="auto", choices=("auto", "cpu", "mps"),
-        help="torch device preference (htdemucs falls back mps->cpu)",
+        "--device", default="auto", choices=("auto", "cpu", "mps", "cuda"),
+        help="torch device preference (auto prefers cuda > mps > cpu; "
+        "htdemucs falls back mps/cuda -> cpu on failure)",
     )
     args = parser.parse_args()
 
