@@ -55,6 +55,8 @@
  *     disconnect processors/nodes, close AudioContext, and reset state.
  *     [if] /performance unmounts while audio is live [then] no sound remains
  *     [if] one disconnect fails [then] every later resource is still silenced ⛔️
+ *     [if] an old schedule rejects after unmount [then] it cannot poison a
+ *       newly mounted route's processor or deck state ⛔️
  *
  * Rune module: this file MUST stay .svelte.ts (rune_outside_svelte
  * otherwise - RECON-FRONTEND 10.1, same bug class as stores.svelte.ts fix).
@@ -401,6 +403,14 @@ export async function disposeAudioResources(
 	}
 	if (failures.length === 1) throw failures[0];
 	if (failures.length > 1) throw new AggregateError(failures, 'multiple audio teardown operations failed');
+}
+
+export function detachProcessorForDisposal<T extends AudioDisconnectable>(owner: {
+	processor: T | null;
+}): T | null {
+	const processor = owner.processor;
+	owner.processor = null;
+	return processor;
 }
 
 // ---------------------------------------------------------------- _helpers
@@ -1894,7 +1904,8 @@ class RbAudioEngine implements AudioEngine {
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			rt.loadToken += 1;
-			if (rt.processor !== null) processors.push(rt.processor);
+			const processor = detachProcessorForDisposal(rt);
+			if (processor !== null) processors.push(processor);
 			if (rt.nodes !== null) nodes.push(...Object.values(rt.nodes));
 		}
 		const closing = disposeAudioResources({

@@ -63,6 +63,14 @@ test('route teardown cancels animation, disconnects every graph resource, and cl
 	]);
 });
 
+test('route teardown detaches old processor ownership before async disposal', () => {
+	const processor = { disconnect() {} };
+	const owner = { processor };
+
+	assert.equal(audio.detachProcessorForDisposal(owner), processor);
+	assert.equal(owner.processor, null);
+});
+
 test('route teardown propagates AudioContext close failures after audio is disconnected', async () => {
 	const calls = [];
 	const failure = new Error('close failed');
