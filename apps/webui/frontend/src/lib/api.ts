@@ -323,13 +323,15 @@ export interface SmartlistTrackOut {
  * documented yet, so the edit route filters the list client-side. */
 export async function listSmartlists(): Promise<SmartlistOut[]> {
 	const r = await request('/api/v1/smartlists');
+	if (!r.ok) throw new Error(`GET smartlists failed: ${r.status}`);
 	return r.json();
 }
 
 export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[]> {
 	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}/tracks`);
 	if (!r.ok) throw new Error(`GET smartlist tracks failed: ${r.status}`);
-	return r.json();
+	const body = (await r.json()) as { tracks: SmartlistTrackOut[] };
+	return body.tracks;
 }
 
 export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
