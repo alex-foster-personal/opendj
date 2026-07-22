@@ -19,13 +19,15 @@ field already wired end-to-end through the state layer for webui edits -
 title/artist/album are identity facts on ``tracks``, not the provenance-
 wrapped write path this feature builds on. See RECON-FEATURES.md).
 """
+
 from __future__ import annotations
 
-import re
+import time
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import regex
 
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_read_state, get_write_state
@@ -37,17 +39,26 @@ FindReplaceField = Literal["notes"]
 FindReplaceMode = Literal["literal", "regex"]
 _MAX_REGEX_PATTERN_CHARS = 256
 _MAX_REGEX_INPUT_CHARS = 10_000
-_NESTED_QUANTIFIER = re.compile(r"\((?:[^()\\]|\\.)*[*+][^()]*\)[*+{]")
-_BACKREFERENCE = re.compile(r"\\[1-9]")
+_MAX_STABLE_IDS = 100
+_REGEX_REQUEST_TIMEOUT_SECONDS = 0.25
+_NESTED_QUANTIFIER = regex.compile(r"\((?:[^()\\]|\\.)*[*+][^()]*\)[*+{]")
+_BACKREFERENCE = regex.compile(r"\\[1-9]")
 
 
 class FindReplaceScope(BaseModel):
     field: FindReplaceField = "notes"
-    stable_ids: list[str] = Field(min_length=1)
+    stable_ids: list[str] = Field(min_length=1, max_length=_MAX_STABLE_IDS)
     find: str = Field(min_length=1)
     replace: str = ""
     mode: FindReplaceMode = "literal"
     case_sensitive: bool = False
+
+    @field_validator("stable_ids")
+    @classmethod
+    def _stable_ids_are_unique(cls, stable_ids: list[str]) -> list[str]:
+        if len(stable_ids) != len(set(stable_ids)):
+            raise ValueError("stable_ids must be unique")
+        return stable_ids
 
 
 class FindReplacePreviewIn(FindReplaceScope):
@@ -83,7 +94,7 @@ class FindReplaceApplyOut(BaseModel):
     results: list[FindReplaceApplyRowOut]
 
 
-def _compile(find: str, mode: FindReplaceMode, case_sensitive: bool) -> re.Pattern[str]:
+def _compile(find: str, mode: FindReplaceMode, case_sensitive: bool) -> regex.Pattern:
     if mode == "regex" and (
         len(find) > _MAX_REGEX_PATTERN_CHARS
         or _NESTED_QUANTIFIER.search(find) is not None
@@ -91,31 +102,67 @@ def _compile(find: str, mode: FindReplaceMode, case_sensitive: bool) -> re.Patte
     ):
         raise HTTPException(
             status_code=422,
-            detail={"error": "unsafe_regex", "message": "regex exceeds the safe complexity policy"},
+            detail={
+                "error": "unsafe_regex",
+                "message": "regex exceeds the safe complexity policy",
+            },
         )
-    pattern = find if mode == "regex" else re.escape(find)
-    flags = 0 if case_sensitive else re.IGNORECASE
+    pattern = find if mode == "regex" else regex.escape(find)
+    flags = 0 if case_sensitive else regex.IGNORECASE
     try:
-        return re.compile(pattern, flags)
-    except re.error as exc:
+        return regex.compile(pattern, flags)
+    except regex.error as exc:
         raise HTTPException(
             status_code=422,
             detail={"error": "invalid_regex", "message": str(exc)},
         ) from exc
 
 
-def _new_value(current: str | None, pattern: re.Pattern[str], replace: str) -> str | None:
+def _new_value(
+    current: str | None,
+    pattern: regex.Pattern,
+    replace: str,
+    mode: FindReplaceMode,
+    regex_deadline: float | None,
+) -> str | None:
     if current is None:
         return None
     if len(current) > _MAX_REGEX_INPUT_CHARS:
         raise HTTPException(
             status_code=422,
-            detail={"error": "input_too_large", "message": "notes value exceeds regex safety limit"},
+            detail={
+                "error": "input_too_large",
+                "message": "notes value exceeds regex safety limit",
+            },
         )
-    return pattern.sub(replace, current)
+    try:
+        if mode == "literal":
+            return pattern.sub(replace, current)
+        if regex_deadline is None:
+            raise RuntimeError("regex substitution requires a request deadline")
+        timeout = regex_deadline - time.monotonic()
+        if timeout <= 0:
+            raise TimeoutError
+        return pattern.sub(replace, current, timeout=timeout)
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unsafe_regex",
+                "message": "regex exceeded the safety time limit",
+            },
+        ) from exc
 
 
-def _get_field(backend: StateBackend, stable_id: str, field: FindReplaceField) -> tuple[object, str, str]:
+def _regex_deadline(mode: FindReplaceMode) -> float | None:
+    if mode == "regex":
+        return time.monotonic() + _REGEX_REQUEST_TIMEOUT_SECONDS
+    return None
+
+
+def _get_field(
+    backend: StateBackend, stable_id: str, field: FindReplaceField
+) -> tuple[object, str, str]:
     """Returns (track, current field value, etag). 404s propagate."""
     try:
         track = backend.get_track(stable_id)
@@ -134,11 +181,14 @@ def preview(
     backend: StateBackend = Depends(get_read_state),
 ) -> FindReplacePreviewOut:
     pattern = _compile(body.find, body.mode, body.case_sensitive)
+    regex_deadline = _regex_deadline(body.mode)
     results: list[FindReplaceRowOut] = []
     match_count = 0
     for stable_id in body.stable_ids:
         _track, current, etag = _get_field(backend, stable_id, body.field)
-        new_value = _new_value(current, pattern, body.replace)
+        new_value = _new_value(
+            current, pattern, body.replace, body.mode, regex_deadline
+        )
         would_change = new_value != current
         if would_change:
             match_count += 1
@@ -167,12 +217,15 @@ def apply(
         )
 
     pattern = _compile(body.find, body.mode, body.case_sensitive)
+    regex_deadline = _regex_deadline(body.mode)
 
     to_apply: list[tuple[str, str]] = []  # (stable_id, new_value)
     skipped_noop: list[str] = []
     for stable_id in body.stable_ids:
-        _track, current, live_etag = _get_field(backend, stable_id, body.field)
-        new_value = _new_value(current, pattern, body.replace)
+        _track, current, _etag = _get_field(backend, stable_id, body.field)
+        new_value = _new_value(
+            current, pattern, body.replace, body.mode, regex_deadline
+        )
         if new_value == current:
             skipped_noop.append(stable_id)
             continue
@@ -182,7 +235,9 @@ def apply(
     updates = [
         TrackUpdate(
             stable_id,
-            {body.field: replacement_by_id[stable_id]} if stable_id in replacement_by_id else {},
+            {body.field: replacement_by_id[stable_id]}
+            if stable_id in replacement_by_id
+            else {},
             body.expected_etags[stable_id],
         )
         for stable_id in body.stable_ids

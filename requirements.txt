@@ -72,5 +72,6 @@ soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
 # production (lazy-imported so tests run without it).
 fastapi>=0.115
 uvicorn[standard]>=0.30
+regex==2026.7.19
 httpx>=0.28,<1
 httpx2>=2.7,<3
