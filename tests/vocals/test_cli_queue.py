@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import struct
+import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
@@ -66,7 +67,7 @@ def _empty_2ex() -> bytes:
 
 def _worker_result() -> dict[str, Any]:
     return {
-        "schema": 1, "source": "demucs-htdemucs", "fps": 2.0,
+        "schema": vcache.VOCAL_CACHE_SCHEMA, "source": "demucs-htdemucs", "fps": 2.0,
         "duration_s": 100.0, "coverage_pct": 50.0,
         "regions": [{"start_s": 0.0, "end_s": 50.0, "confidence": 0.8}],
         "params": {},
@@ -239,7 +240,7 @@ def test_process_one_refuses_audio_changed_mid_analysis(
     classify(ctx, tracks)
     tr = next(t for t in tracks if t.stable_id == "todoB")
 
-    def _worker_that_races(audio_path: Path) -> dict[str, Any]:
+    def _worker_that_races(audio_path: Path, timeout_s: float) -> dict[str, Any]:
         stat = audio_path.stat()
         os.utime(audio_path, (stat.st_atime, stat.st_mtime + 7))
         return _worker_result()
@@ -263,9 +264,40 @@ def test_process_one_records_pre_run_mtime(
     assert tr.audio_path is not None
     pre_mtime = tr.audio_path.stat().st_mtime
 
-    monkeypatch.setattr(vcli, "run_worker", lambda _p: _worker_result())
+    monkeypatch.setattr(vcli, "run_worker", lambda _p, _timeout: _worker_result())
     _wall, entry = vcli._process_one(ctx, tr, "[test]")
     assert entry["audio_mtime"] == pre_mtime
+
+
+def test_run_worker_deadline_raises_and_never_reads_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] worker exceeds deadline [then] CLI fails and subprocess has DEVNULL stdin."""
+    from apps.vocals import cli as vcli
+    audio = tmp_path / "track.mp3"
+    audio.write_bytes(b"audio")
+    seen: dict[str, Any] = {}
+
+    def _timeout(*_args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        raise subprocess.TimeoutExpired("uv", 1.0)
+
+    monkeypatch.setattr(vcli.subprocess, "run", _timeout)
+    with pytest.raises(RuntimeError, match="timed out"):
+        vcli.run_worker(audio, timeout_s=1.0)
+    assert seen["stdin"] is subprocess.DEVNULL
+    assert seen["timeout"] == 1.0
+
+
+def test_pioneer_path_cannot_escape_share_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apps.vocals import cli as vcli
+    root = tmp_path / "share"
+    root.mkdir()
+    monkeypatch.setattr(vcli, "SHARE_ROOT", root)
+    with pytest.raises(ValueError, match="escapes"):
+        vcli._resolve_share_path("/PIONEER/../../outside.mp3")
 
 
 # ----- live-data smoke (skips cleanly without local library data) ---------------------

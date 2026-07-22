@@ -68,8 +68,14 @@ CONFIDENCE_GAIN: float = 2.5  # confidence = min(1, GAIN * max ratio in region)
 DRIFT_ABS_TOL_S: float = 0.5
 DRIFT_REL_TOL: float = 0.005
 
-SCHEMA: int = 1
+SCHEMA: int = 2
 SOURCE: str = "demucs-htdemucs"
+_ACCELERATOR_FAILURE_MARKERS: dict[str, tuple[str, ...]] = {
+    "cuda": ("cuda", "cudnn", "out of memory"),
+    # htdemucs hits the documented MPS output-channel limit before torch's
+    # device name appears in the exception, so retain that precise marker.
+    "mps": ("mps", "metal", "output channels", "not implemented"),
+}
 
 
 # ----- pure region maths (dependency-light; unit-tested via path import) ------
@@ -162,6 +168,19 @@ def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
+def _is_accelerator_failure(device: str, exc: BaseException) -> bool:
+    """Whether this device-layer error is eligible for a CPU retry.
+
+    Audio decoding, model, and programming errors retain their original
+    failure. Retrying every exception on CPU would hide those faults behind a
+    plausible-looking but misleading cache entry.
+    """
+    return any(
+        marker in str(exc).lower()
+        for marker in _ACCELERATOR_FAILURE_MARKERS.get(device, ())
+    )
+
+
 def _rms_envelope(wav: Any, sr: int, hop_s: float) -> list[float]:
     mono = wav.mean(dim=0)
     hop = int(sr * hop_s)
@@ -228,7 +247,7 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
     try:
         vocals = _separate_vocals(model, wav, device)
     except Exception as exc:
-        if device != "cpu":
+        if device != "cpu" and _is_accelerator_failure(device, exc):
             _log(f"[WARN] apply_model on {device} failed ({exc}); retrying cpu")
             device = "cpu"
             vocals = _separate_vocals(model, wav, device)

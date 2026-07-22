@@ -57,6 +57,7 @@ from apps.vocals import cache as vcache
 # ----- CFG ---------------------------------------------------------------------
 DEMUCS_REALTIME_FACTOR: float = 1.36   # SPIKE-B2 measured CPU rate (honest band 0.8-1.4x)
 DEFAULT_TRICKLE_LIMIT: int = 5
+WORKER_TIMEOUT_S: float = 30 * 60
 SHARE_ROOT: Path = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
 STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
 WORKER_SCRIPT: Path = Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
@@ -115,7 +116,11 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
 def _resolve_share_path(path: str) -> Path:
     """RECON-DATA.md section 1: /PIONEER/ paths are share-relative."""
     if path.startswith("/PIONEER/"):
-        return SHARE_ROOT / path.lstrip("/")
+        root = SHARE_ROOT.resolve()
+        resolved = (root / path.lstrip("/")).resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
+        return resolved
     return Path(path)
 
 
@@ -303,11 +308,24 @@ def order_todo(
 
 # ----- worker invocation --------------------------------------------------------------
 
-def run_worker(audio_path: Path) -> dict[str, Any]:
+def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
     """Run the PEP 723 demucs worker via ``uv run`` and parse its stdout
     JSON. Worker logs pass through on stderr; a non-zero exit raises."""
     cmd = ["uv", "run", "--script", str(WORKER_SCRIPT), str(audio_path)]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+    if timeout_s <= 0:
+        raise ValueError(f"worker timeout must be > 0 seconds, got {timeout_s}")
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"vocal_region_worker timed out after {timeout_s}s for {audio_path}"
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
             f"vocal_region_worker failed (exit {proc.returncode}) "
@@ -376,7 +394,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 
 def _process_one(
-    ctx: Ctx, tr: VocalTrack, prefix: str
+    ctx: Ctx, tr: VocalTrack, prefix: str, timeout_s: float = WORKER_TIMEOUT_S
 ) -> tuple[float, dict[str, Any]]:
     """Run the worker for one track and write its cache entry.
 
@@ -388,18 +406,19 @@ def _process_one(
     """
     assert tr.audio_path is not None
     pre_mtime = tr.audio_path.stat().st_mtime
+    pre_signature = vcache.audio_signature(tr.audio_path)
     t0 = time.perf_counter()
-    result = run_worker(tr.audio_path)
-    post_mtime = tr.audio_path.stat().st_mtime
-    if post_mtime != pre_mtime:
+    result = run_worker(tr.audio_path, timeout_s)
+    post_signature = vcache.audio_signature(tr.audio_path)
+    if post_signature != pre_signature:
         raise RuntimeError(
             f"audio file changed during analysis: {tr.audio_path} "
-            f"(mtime {pre_mtime} -> {post_mtime}); regions were computed "
+            f"(source identity changed); regions were computed "
             f"from the old content, refusing to cache them"
         )
     entry = vcache.write_entry(
         vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
-        audio_mtime=pre_mtime,
+        audio_mtime=pre_mtime, source_signature=pre_signature,
     )
     wall_s = time.perf_counter() - t0
     rate = wall_s / tr.length_s if tr.length_s else float("nan")
@@ -467,7 +486,9 @@ def cmd_trickle(args: argparse.Namespace) -> int:
             print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
             continue
         print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
-        wall_s, _entry = _process_one(ctx, tr, f"[{i}/{len(batch)}]")
+        wall_s, _entry = _process_one(
+            ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s
+        )
         completed += 1
         done_audio_s += tr.length_s
         done_wall_s += wall_s
@@ -507,7 +528,7 @@ def cmd_one(args: argparse.Namespace) -> int:
         return 0
     print(f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
           f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}")
-    _process_one(ctx, tr, "[one]")
+    _process_one(ctx, tr, "[one]", args.worker_timeout_s)
     return 0
 
 
@@ -542,6 +563,10 @@ def build_parser() -> argparse.ArgumentParser:
                          help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})")
     trickle.add_argument("--playlist", default=None,
                          help="limit the queue to one playlist name")
+    trickle.add_argument(
+        "--worker-timeout-s", type=float, default=WORKER_TIMEOUT_S,
+        help=f"per-track worker deadline in seconds (default {WORKER_TIMEOUT_S:g})",
+    )
     mode = trickle.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true",
                       help="plan only, no worker runs (the default)")
@@ -555,6 +580,10 @@ def build_parser() -> argparse.ArgumentParser:
     one.add_argument("--stable-id", required=True)
     one.add_argument("--force", action="store_true",
                      help="recompute even when a valid cache entry exists")
+    one.add_argument(
+        "--worker-timeout-s", type=float, default=WORKER_TIMEOUT_S,
+        help=f"worker deadline in seconds (default {WORKER_TIMEOUT_S:g})",
+    )
     one.set_defaults(func=cmd_one)
     return parser
 

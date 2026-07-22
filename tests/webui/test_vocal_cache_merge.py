@@ -61,7 +61,7 @@ def _write_cache(cache_dir: Path, audio: Path) -> dict[str, Any]:
     return vcache.write_entry(
         cache_dir / "sid001.json",
         {
-            "schema": 1, "source": "demucs-htdemucs", "fps": 2.0,
+            "schema": vcache.VOCAL_CACHE_SCHEMA, "source": "demucs-htdemucs", "fps": 2.0,
             "duration_s": 120.0, "coverage_pct": 41.7,
             "regions": [{"start_s": 8.5, "end_s": 57.5, "confidence": 0.84}],
             "params": {"hop_s": 0.5},
@@ -140,3 +140,13 @@ def test_streaming_or_pathless_never_consults_cache(
         _payload({"status": "not_analyzed"}), content
     )
     assert merged["vocals"] == {"status": "not_analyzed"}
+
+
+def test_pioneer_path_cannot_escape_share_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "share"
+    root.mkdir()
+    monkeypatch.setattr(rb_vendor, "SHARE_ROOT", root)
+    with pytest.raises(ValueError, match="escapes"):
+        rb_vendor.resolve_share_path("/PIONEER/../../outside.mp3")

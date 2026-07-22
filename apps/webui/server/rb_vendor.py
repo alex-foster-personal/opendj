@@ -239,7 +239,11 @@ def resolve_content(stable_id: str) -> RbContent:
 def resolve_share_path(path: str) -> Path:
     """RECON-DATA.md section 1: /PIONEER/ paths are share-relative."""
     if path.startswith("/PIONEER/"):
-        return SHARE_ROOT / path.lstrip("/")
+        root = SHARE_ROOT.resolve()
+        resolved = (root / path.lstrip("/")).resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"/PIONEER/ path escapes share root: {path!r}")
+        return resolved
     return Path(path)
 
 

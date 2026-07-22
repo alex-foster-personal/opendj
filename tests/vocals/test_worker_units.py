@@ -120,6 +120,13 @@ def test_confidence_is_gain_times_max_ratio_clipped() -> None:
     assert worker.region_confidence(env_hot, 0.0, 1.5, 0.5) == 1.0
 
 
+def test_cpu_fallback_only_allows_known_accelerator_errors() -> None:
+    """[if] a non-device error occurs on GPU [then] it must not retry CPU."""
+    assert worker._is_accelerator_failure("cuda", RuntimeError("CUDA out of memory"))
+    assert worker._is_accelerator_failure("mps", RuntimeError("output channels > 65536"))
+    assert not worker._is_accelerator_failure("cuda", ValueError("bad audio header"))
+
+
 def test_confidence_samples_at_least_first_hop() -> None:
     env = _env([0.2, 0.9])
     # zero-length region still samples index 0 (PoC max(int+1, ...) rule)

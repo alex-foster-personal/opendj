@@ -22,7 +22,7 @@ pytestmark = pytest.mark.requirement("CAT-05")
 
 def _worker_result(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": 1,
+        "schema": vcache.VOCAL_CACHE_SCHEMA,
         "source": "demucs-htdemucs",
         "fps": 2.0,
         "duration_s": 120.0,
@@ -54,7 +54,7 @@ def test_write_then_load_roundtrip(tmp_path: Path, audio: Path) -> None:
     loaded = vcache.load_valid_entry(path, audio)
     assert loaded == written
     assert loaded is not None
-    assert loaded["schema"] == 1
+    assert loaded["schema"] == vcache.VOCAL_CACHE_SCHEMA
     assert loaded["source"] == "demucs-htdemucs"
     assert loaded["audio_mtime"] == audio.stat().st_mtime
     assert loaded["confidence"] == 0.84  # scalar = max region confidence
@@ -89,7 +89,7 @@ def test_absent_entry_is_none_but_corrupt_raises(tmp_path: Path, audio: Path) ->
 def test_entry_missing_contract_fields_raises(tmp_path: Path, audio: Path) -> None:
     path = vcache.cache_path(tmp_path, "abc123")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"schema": 1}), encoding="utf-8")
+    path.write_text(json.dumps({"schema": vcache.VOCAL_CACHE_SCHEMA}), encoding="utf-8")
     with pytest.raises(ValueError, match="missing fields"):
         vcache.load_valid_entry(path, audio)
 
@@ -100,6 +100,36 @@ def test_schema_bump_self_heals_as_none(tmp_path: Path, audio: Path) -> None:
     entry["schema"] = 999
     path.write_text(json.dumps(entry), encoding="utf-8")
     assert vcache.load_valid_entry(path, audio) is None
+
+
+def test_source_replacement_with_preserved_mtime_invalidates(
+    tmp_path: Path, audio: Path
+) -> None:
+    """[if] source is swapped but keeps its timestamp [then] cache misses."""
+    path = vcache.cache_path(tmp_path, "abc123")
+    vcache.write_entry(path, _worker_result(), audio)
+    original_mtime_ns = audio.stat().st_mtime_ns
+    replacement = tmp_path / "replacement.mp3"
+    replacement.write_bytes(b"different audio bytes")
+    os.utime(replacement, ns=(replacement.stat().st_atime_ns, original_mtime_ns))
+    os.replace(replacement, audio)
+    assert audio.stat().st_mtime_ns == original_mtime_ns
+    assert vcache.load_valid_entry(path, audio) is None
+
+
+def test_malformed_region_raises_instead_of_serving(tmp_path: Path, audio: Path) -> None:
+    """[if] cached region has an invalid confidence [then] fail loudly."""
+    path = vcache.cache_path(tmp_path, "abc123")
+    entry = vcache.write_entry(path, _worker_result(), audio)
+    entry["regions"][0]["confidence"] = 1.5
+    path.write_text(json.dumps(entry), encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid region"):
+        vcache.load_valid_entry(path, audio)
+
+
+def test_cache_path_rejects_directory_escape(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="escapes"):
+        vcache.cache_path(tmp_path, "../outside")
 
 
 def test_write_rejects_incomplete_worker_result(tmp_path: Path, audio: Path) -> None:
