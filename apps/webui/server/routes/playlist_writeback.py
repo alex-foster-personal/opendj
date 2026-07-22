@@ -1,6 +1,7 @@
 """HTTP contract for fail-closed vendor playlist writeback."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,6 +11,7 @@ from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
 from ..playlist_writeback import (
     VENDORS, WritebackConflict, WritebackService, WritebackUnavailable,
+    bind_default_writer_factory, default_writer_factory,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlist-writeback"])
@@ -107,7 +109,12 @@ def get_writeback_service(backend: StateBackend = Depends(get_read_state)) -> Wr
     source_lock_factory = getattr(backend, "hold_writeback_source_lock", None)
     if not callable(source_lock_factory):
         source_lock_factory = None
+    state_db_path = getattr(backend, "writeback_state_db_path", None)
+    writer_factory = default_writer_factory
+    if source_lock_factory is not None and isinstance(state_db_path, (str, Path)):
+        writer_factory = bind_default_writer_factory(state_db_path)
     return WritebackService(
+        writer_factory=writer_factory,
         source_members_reader=lambda playlist_id: list(backend.get_playlist(playlist_id).items),
         source_lock_factory=source_lock_factory,
     )

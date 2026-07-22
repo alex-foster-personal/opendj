@@ -13,6 +13,7 @@ import pytest
 from apps.webui.server.playlist_writeback import (
     VendorPlaylist, WritebackBackup, WritebackConflict, WritebackService, WritebackUnavailable,
 )
+from apps.webui.server.routes.playlist_writeback import get_writeback_service
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 
@@ -229,6 +230,91 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
     state_conn.close()
 
 
+def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
+    monkeypatch, tmp_path,
+) -> None:
+    """The production writer and source lock share one custom state DB."""
+    from apps.shared.state import db as state_db
+    from apps.shared.state import paths as state_paths
+    from apps.smartlists import djay_writer as djay_writer_module
+    from apps.webui.server import playlist_writeback as writeback_module
+
+    state_path = tmp_path / "custom-state.db"
+    decoy_path = tmp_path / "default-state.db"
+    for path, prefix in ((state_path, "djay"), (decoy_path, "decoy")):
+        with state_db.connect_rw(path) as conn:
+            conn.executemany(
+                "INSERT INTO tracks (stable_id, stable_id_tier, created_at, updated_at) "
+                "VALUES (?, 'inferred', 't', 't')",
+                [("a",), ("b",), ("c",)],
+            )
+            conn.executemany(
+                "INSERT INTO track_vendor_ids VALUES (?, 'djay', ?)",
+                [(stable_id, f"{prefix}-{stable_id}") for stable_id in ("a", "b", "c")],
+            )
+            if path == state_path:
+                conn.execute("INSERT INTO playlists VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
+                conn.executemany(
+                    "INSERT INTO playlist_memberships VALUES ('source', ?, ?)",
+                    [("a", 0), ("b", 1)],
+                )
+
+    target_path = tmp_path / "MediaLibrary.db"
+    target_path.touch()
+    monkeypatch.setattr(state_paths, "STATE_DB", decoy_path)
+    monkeypatch.setattr(writeback_module.paths, "DJAY_LIVE_DB", target_path)
+
+    shared_playlists = {"one": ("Set", ["a", "c"])}
+    built_writers: list[_FakeVendorWriter] = []
+    mapping_paths: list[Path] = []
+    rejected: list[str] = []
+
+    def reject_custom_state_remap() -> None:
+        contender = sqlite3.connect(state_path, isolation_level=None)
+        try:
+            contender.execute("PRAGMA busy_timeout = 0")
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                contender.execute("BEGIN IMMEDIATE")
+            rejected.append("custom-state")
+        finally:
+            contender.close()
+
+    def build_writer(
+        djay_db_path: Path | None = None,
+        state_conn: sqlite3.Connection | None = None,
+    ) -> _FakeVendorWriter:
+        mapping_conn = state_conn if state_conn is not None else state_db.open_ro()
+        mapping_path = mapping_conn.execute("PRAGMA database_list").fetchone()[2]
+        mapping_paths.append(Path(mapping_path).resolve())
+        writer = _FakeVendorWriter(
+            "djay", mapping_conn, shared_playlists, target_path=Path(djay_db_path or target_path),
+            after_mapping_check=reject_custom_state_remap,
+        )
+        built_writers.append(writer)
+        return writer
+
+    monkeypatch.setattr(djay_writer_module, "build_djay_writer", build_writer)
+    backend = SqliteBackend(state_path)
+    service = get_writeback_service(backend)
+    try:
+        plan = service.plan(
+            vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
+            target_mode="live", target_path=str(target_path), target_id="one",
+        )
+        service.apply(
+            vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
+            target_mode="live", target_path=str(target_path), target_id="one",
+            plan_token=plan.plan_token, dry_run=False, confirmed=True,
+        )
+    finally:
+        for built_writer in built_writers:
+            built_writer.state_conn.close()
+
+    assert set(mapping_paths) == {state_path.resolve()}
+    assert rejected == ["custom-state"]
+    assert any(("native", "one", ["djay-a", "djay-b"]) in writer.calls for writer in built_writers)
+
+
 def test_dry_run_is_non_mutating_and_confirmation_is_required(service, writer) -> None:
     plan = _plan(service, writer)
     result = service.apply(vendor="rekordbox", source_playlist_id="source", desired_ids=["a", "b"], target_mode="live", target_path="/fixture/live.db", target_id="one", plan_token=plan.plan_token)
@@ -254,3 +340,13 @@ def test_wrong_target_path_is_refused_by_production_factory(monkeypatch, tmp_pat
     monkeypatch.setattr(module.paths, "REKORDBOX_LIVE_DB", tmp_path / "live.db")
     with pytest.raises(Exception):
         module.default_writer_factory("rekordbox", "live", tmp_path / "working.db")
+
+
+def test_production_factory_refuses_unowned_mapping_state(monkeypatch, tmp_path) -> None:
+    from apps.webui.server import playlist_writeback as module
+
+    target_path = tmp_path / "MediaLibrary.db"
+    target_path.touch()
+    monkeypatch.setattr(module.paths, "DJAY_LIVE_DB", target_path)
+    with pytest.raises(WritebackUnavailable, match="mapping state database ownership"):
+        module.default_writer_factory("djay", "live", target_path)

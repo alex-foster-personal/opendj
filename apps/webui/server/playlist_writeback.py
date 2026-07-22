@@ -74,24 +74,57 @@ def _require_exact_live_target(vendor: Vendor, target_mode: TargetMode, target_p
 
 
 def default_writer_factory(
-    vendor: Vendor, target_mode: TargetMode, target_path: Path,
+    vendor: Vendor, target_mode: TargetMode, target_path: Path, *,
+    state_db_path: Path | None = None,
 ) -> Optional[VendorPlaylistWriter]:
-    """Open only the exact live target.  No production fallback exists."""
+    """Open the exact live target against an explicitly owned state DB."""
     _require_exact_live_target(vendor, target_mode, str(target_path))
+    if state_db_path is None:
+        raise WritebackUnavailable(
+            "writeback mapping state database ownership is unavailable"
+        )
+
+    from apps.shared.state.db import open_ro
+
+    state_conn = open_ro(state_db_path)
     if vendor == "rekordbox":
         from apps.shared.rekordbox_db import open_db
         from apps.smartlists.rb_writer import RBPlaylistWriter
-        from apps.shared.state.db import open_ro
 
-        return RBPlaylistWriter(
-            db=open_db(target_path), state_conn=open_ro(), live=True,
-            live_db_path=target_path,
-        )
-    if vendor == "djay":
+        try:
+            return RBPlaylistWriter(
+                db=open_db(target_path), state_conn=state_conn, live=True,
+                live_db_path=target_path,
+            )
+        except Exception:
+            state_conn.close()
+            raise
+    elif vendor == "djay":
         from apps.smartlists.djay_writer import build_djay_writer
 
-        return build_djay_writer(target_path)
+        try:
+            writer = build_djay_writer(target_path, state_conn=state_conn)
+        except Exception:
+            state_conn.close()
+            raise
+        if writer is None:
+            state_conn.close()
+        return writer
     raise ValueError(f"unknown writeback vendor: {vendor!r}")
+
+
+def bind_default_writer_factory(state_db_path: str | Path) -> WriterFactory:
+    """Bind production mapping reads to one backend-owned state database."""
+    bound_path = Path(state_db_path)
+
+    def factory(
+        vendor: Vendor, target_mode: TargetMode, target_path: Path,
+    ) -> Optional[VendorPlaylistWriter]:
+        return default_writer_factory(
+            vendor, target_mode, target_path, state_db_path=bound_path,
+        )
+
+    return factory
 
 
 @dataclass(frozen=True)
@@ -316,5 +349,5 @@ __all__ = [
     "TargetMode", "VENDORS", "Vendor", "VendorPlaylist", "VendorPlaylistWriter",
     "WritebackApplyResult", "WritebackBackup", "WritebackCapability", "WritebackConflict",
     "WritebackPlan", "WritebackRollbackResult", "WritebackService", "WritebackUnavailable",
-    "WriterFactory", "default_writer_factory",
+    "WriterFactory", "bind_default_writer_factory", "default_writer_factory",
 ]

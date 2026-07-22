@@ -308,6 +308,11 @@ class SqliteBackend:
         ).fetchone()
         return row is not None
 
+    @property
+    def writeback_state_db_path(self) -> Path:
+        """Return the exact state database protected by the writeback lock."""
+        return self._path
+
     @contextmanager
     def hold_writeback_source_lock(self) -> Iterator[None]:
         """Exclude source edits and vendor-ID remaps during a writeback apply.
