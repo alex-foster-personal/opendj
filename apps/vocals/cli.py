@@ -69,7 +69,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
 from apps.shared.paths import DATA_DIR
-from apps.shared.platform_paths import MappedPath, resolve_library_path
+from apps.shared.platform_paths import PathMap, MappedPath, load_path_map, resolve_library_path
 from apps.vocals import cache as vcache
 
 # ----- CFG ---------------------------------------------------------------------
@@ -149,14 +149,14 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     return conn
 
 
-def _resolve(path: str) -> Optional[Path]:
+def _resolve(path: str, *, path_map: PathMap) -> Optional[Path]:
     """Resolve a state.db/rekordbox path via the shared platform resolver.
 
     ``None`` is the load-bearing "unmapped" state (a foreign-absolute path,
     e.g. a Mac FolderPath read on Windows with no path-map entry, or a
     streaming URI) -- never a fabricated ``Path`` that happens not to
     exist. Windows portability plan section 3.1."""
-    mapped: MappedPath = resolve_library_path(path)
+    mapped: MappedPath = resolve_library_path(path, path_map=path_map)
     return mapped.resolved
 
 
@@ -177,6 +177,7 @@ def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
 
 def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
     """All rekordbox-mapped tracks (optionally one playlist's members)."""
+    path_map = load_path_map(ctx.data_dir)
     state = _open_ro(ctx.state_db, "STATE_DB")
     try:
         if playlist is not None:
@@ -242,7 +243,7 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
         audio: Optional[Path] = None
         on_disk = False
         if folder_path:
-            audio = _resolve(str(folder_path))
+            audio = _resolve(str(folder_path), path_map=path_map)
             on_disk = audio is not None and audio.is_file()
         tracks.append(VocalTrack(
             stable_id=stable_id,
@@ -286,10 +287,11 @@ def pvdi_present(path_2ex: Path) -> bool:
 def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
     """Assign each track exactly one category (pvdi wins over everything:
     an analyzed track is covered even if its audio has since moved)."""
+    path_map = load_path_map(ctx.data_dir)
     for tr in tracks:
         twoex: Optional[Path] = None
         if tr.analysis_data_path is not None:
-            resolved_adp = _resolve(tr.analysis_data_path)
+            resolved_adp = _resolve(tr.analysis_data_path, path_map=path_map)
             if resolved_adp is not None:
                 twoex = resolved_adp.with_suffix(".2EX")
         if twoex is not None and twoex.is_file() and pvdi_present(twoex):

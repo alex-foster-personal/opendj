@@ -165,6 +165,24 @@ def test_load_path_map_uses_mdt_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert pp.load_path_map().entries == (("/Users/dev", "D:/music"),)
 
 
+def test_load_path_map_uses_explicit_data_dir_over_the_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    default_data = tmp_path / "default-data"
+    explicit_data = tmp_path / "snapshot-data"
+    default_data.mkdir()
+    explicit_data.mkdir()
+    (default_data / "path-map.json").write_text(
+        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/wrong"}]}), encoding="utf-8"
+    )
+    (explicit_data / "path-map.json").write_text(
+        json.dumps({"entries": [{"from": "/Users/dev", "to": "D:/snapshot"}]}), encoding="utf-8"
+    )
+    monkeypatch.delenv("MDT_PATH_MAP", raising=False)
+    monkeypatch.setattr(pp, "DATA_DIR", default_data)
+    assert pp.load_path_map(explicit_data).entries == (("/Users/dev", "D:/snapshot"),)
+
+
 def test_example_path_map_file_is_valid_and_loadable(monkeypatch: pytest.MonkeyPatch) -> None:
     example = pp.PROJECT_ROOT / "apps" / "shared" / "path_map.example.json"
     assert example.is_file()

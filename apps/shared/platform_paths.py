@@ -128,10 +128,11 @@ def _normalise_map_prefix(path: str) -> str:
     return path.rstrip("/\\\\")
 
 
-def load_path_map() -> PathMap:
+def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
     """Load the active :class:`PathMap`.
 
     Source order: env ``MDT_PATH_MAP`` (path to a JSON file) -> else
+    ``data_dir / "path-map.json"`` when supplied -> else
     ``DATA_DIR / "path-map.json"`` -> else an empty map.
 
     JSON shape: ``{"entries": [{"from": "...", "to": "..."}]}``. Entries are
@@ -143,7 +144,7 @@ def load_path_map() -> PathMap:
     if env_path:
         map_path = Path(env_path)
     else:
-        map_path = DATA_DIR / "path-map.json"
+        map_path = (data_dir or DATA_DIR) / "path-map.json"
 
     if not map_path.is_file():
         return _EMPTY_PATH_MAP
