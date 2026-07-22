@@ -52,7 +52,7 @@ def _validate_playlist_id(playlist_id: str) -> str:
 TOKEN_CACHE_PATH: Path = Path("~/.music-dj-tools/spotify-token.json").expanduser()
 CACHE_DIR: Path = DATA_DIR / "spotify" / "cache"
 
-DEFAULT_REDIRECT_URI: str = "http://localhost:8888/callback"
+DEFAULT_REDIRECT_URI: str = "http://127.0.0.1:8888/callback"
 DEFAULT_SCOPES: str = "playlist-read-private playlist-read-collaborative"
 
 

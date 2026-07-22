@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from apps.spotify.client import MissingCredentialsError, SpotifyClient
+from apps.spotify.client import (
+    DEFAULT_REDIRECT_URI,
+    MissingCredentialsError,
+    SpotifyClient,
+)
 
 from .fake_spotipy import FakeSpotipy, make_meta, make_track
 
@@ -17,6 +23,34 @@ def fake_cache_dir(tmp_path: Path) -> Path:
     d = tmp_path / "cache"
     d.mkdir()
     return d
+
+
+def test_from_env_uses_registered_loopback_callback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_pkce(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "configured-client-id")
+    monkeypatch.setitem(
+        sys.modules,
+        "spotipy",
+        SimpleNamespace(Spotify=lambda **kwargs: SimpleNamespace(**kwargs)),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "spotipy.oauth2",
+        SimpleNamespace(SpotifyPKCE=fake_pkce),
+    )
+
+    SpotifyClient.from_env(cache_dir=tmp_path)
+
+    assert DEFAULT_REDIRECT_URI == "http://127.0.0.1:8888/callback"
+    assert captured["redirect_uri"] == DEFAULT_REDIRECT_URI
 
 
 @pytest.mark.requirement("CAT-01")

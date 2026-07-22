@@ -13,7 +13,7 @@ and Discogs.
 ## One-time setup
 
 1. Create a Spotify developer app: <https://developer.spotify.com/dashboard>.
-2. Add `http://localhost:8888/callback` as a redirect URI.
+2. Add `http://127.0.0.1:8888/callback` as a redirect URI.
 3. Stash the Client ID in Doppler (no client secret needed; PKCE):
 
    ```sh
