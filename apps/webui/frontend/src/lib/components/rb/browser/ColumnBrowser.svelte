@@ -36,7 +36,11 @@
 		type ColumnBucket,
 		type ColumnSelector
 	} from './column-buckets';
+	import VirtualList from './VirtualList.svelte';
 	import { fetchAllPages } from './virtual-window';
+
+	// Matches `.row { height: 18px; }` below - see VirtualList's rowHeight doc.
+	const ROW_HEIGHT = 18;
 
 	let {
 		onselecttrack,
@@ -120,36 +124,41 @@
 )}
 	<div class="col">
 		<div class="col-head">{title}</div>
-		<div class="col-scroll">
-			<div
-				class="row"
-				class:selected={selected === undefined}
-				role="button"
-				tabindex="0"
-				onclick={() => onpick(undefined)}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') onpick(undefined);
-				}}
-			>
-				<span class="name">All</span>
-				<span class="count">{allCount}</span>
-			</div>
-			{#each buckets as bucket (bucket.value ?? ' ')}
-				<div
-					class="row"
-					class:selected={selected === bucket.value}
-					role="button"
-					tabindex="0"
-					onclick={() => onpick(bucket.value)}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') onpick(bucket.value);
-					}}
-				>
-					<span class="name" title={_label(bucket)}>{_label(bucket)}</span>
-					<span class="count">{bucket.count}</span>
-				</div>
-			{/each}
+		<!-- 'All' stays pinned above the virtualized scroll region - it is
+		     not part of `buckets` and would otherwise need its own window
+		     index bookkeeping for a single always-visible row. -->
+		<div
+			class="row"
+			class:selected={selected === undefined}
+			role="button"
+			tabindex="0"
+			onclick={() => onpick(undefined)}
+			onkeydown={(e) => {
+				if (e.key === 'Enter') onpick(undefined);
+			}}
+		>
+			<span class="name">All</span>
+			<span class="count">{allCount}</span>
 		</div>
+		<VirtualList itemCount={buckets.length} rowHeight={ROW_HEIGHT}>
+			{#snippet children(start, end)}
+				{#each buckets.slice(start, end) as bucket (bucket.value ?? ' ')}
+					<div
+						class="row"
+						class:selected={selected === bucket.value}
+						role="button"
+						tabindex="0"
+						onclick={() => onpick(bucket.value)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') onpick(bucket.value);
+						}}
+					>
+						<span class="name" title={_label(bucket)}>{_label(bucket)}</span>
+						<span class="count">{bucket.count}</span>
+					</div>
+				{/each}
+			{/snippet}
+		</VirtualList>
 	</div>
 {/snippet}
 
@@ -163,30 +172,34 @@
 		{@render bucketColumn('Album', albumList, album, artistFilteredCount, _selectAlbum)}
 		<div class="col col-tracks">
 			<div class="col-head">Track</div>
-			<div class="col-scroll">
+			{#if trackList.length === 0}
+				<div class="row rb-inert">
+					<span class="name dim">no tracks</span>
+				</div>
+			{:else}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-				{#each trackList as row (row.stable_id)}
-					<div
-						class="row"
-						class:selected={selectedId === row.stable_id}
-						class:broken={!row.file_exists}
-						role="button"
-						tabindex="0"
-						onclick={() => _selectTrack(row)}
-						ondblclick={() => _loadTrack(row, null)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') _selectTrack(row);
-						}}
-					>
-						<span class="name" title={row.title ?? ''}>{row.title ?? ''}</span>
-					</div>
-				{:else}
-					<div class="row rb-inert">
-						<span class="name dim">no tracks</span>
-					</div>
-				{/each}
-			</div>
+				<VirtualList itemCount={trackList.length} rowHeight={ROW_HEIGHT}>
+					{#snippet children(start, end)}
+						{#each trackList.slice(start, end) as row (row.stable_id)}
+							<div
+								class="row"
+								class:selected={selectedId === row.stable_id}
+								class:broken={!row.file_exists}
+								role="button"
+								tabindex="0"
+								onclick={() => _selectTrack(row)}
+								ondblclick={() => _loadTrack(row, null)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') _selectTrack(row);
+								}}
+							>
+								<span class="name" title={row.title ?? ''}>{row.title ?? ''}</span>
+							</div>
+						{/each}
+					{/snippet}
+				</VirtualList>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -227,11 +240,6 @@
 		font-size: var(--rb-fs-label);
 		border-bottom: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
-	}
-	.col-scroll {
-		flex: 1;
-		min-height: 0;
-		overflow-y: auto;
 	}
 	.row {
 		display: flex;
