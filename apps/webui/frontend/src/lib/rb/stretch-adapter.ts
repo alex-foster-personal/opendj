@@ -14,6 +14,8 @@
  *   ✔︎ Fail explicitly on creation/command timeout or processor failure.
  *     [if] the worklet does not acknowledge [then] the caller receives a
  *       typed timeout error and no alternate audio path is selected
+ *     [if] a timeout or processor error becomes terminal [then] later
+ *       commands reject before invoking the worklet
  *   ✔︎ Transfer copied mono/stereo PCM into the processor.
  *     [if] decoded audio has more than two channels [then] loading rejects
  */
@@ -131,15 +133,23 @@ export function stretchProcessorError(event: Event): StretchProcessorError {
 export interface StretchAdapterOptions {
 	onInputTime?: (inputTimeSec: number) => void;
 	onProcessorError: (error: StretchProcessorError) => void;
+	commandTimeoutMs?: number;
 }
 
 /** One terminal-failure-aware worklet instance for one deck. */
 export class StretchDeckProcessor {
 	readonly #node: SignalsmithStretchNode;
-	#terminalError: StretchProcessorError | null = null;
+	readonly #commandTimeoutMs: number;
+	#terminalError: StretchProcessorError | StretchCommandTimeoutError | null = null;
 
 	private constructor(node: SignalsmithStretchNode, options: StretchAdapterOptions) {
 		this.#node = node;
+		this.#commandTimeoutMs = options.commandTimeoutMs ?? STRETCH_COMMAND_TIMEOUT_MS;
+		if (!Number.isFinite(this.#commandTimeoutMs) || this.#commandTimeoutMs <= 0) {
+			throw new RangeError(
+				`commandTimeoutMs must be a finite positive number, got ${this.#commandTimeoutMs}`
+			);
+		}
 		this.#node.addEventListener('processorerror', (event) => {
 			const error = stretchProcessorError(event);
 			this.#terminalError = error;
@@ -160,9 +170,10 @@ export class StretchDeckProcessor {
 			STRETCH_CREATE_TIMEOUT_MS
 		);
 		const processor = new StretchDeckProcessor(node, options);
-		if (options.onInputTime !== undefined) {
+		const onInputTime = options.onInputTime;
+		if (onInputTime !== undefined) {
 			await processor.#command(
-				node.setUpdateInterval(1 / 30, options.onInputTime),
+				() => node.setUpdateInterval(1 / 30, onInputTime),
 				'position update configuration'
 			);
 		}
@@ -190,20 +201,20 @@ export class StretchDeckProcessor {
 			buffer.copyFromChannel(samples, channel);
 			return samples;
 		});
-		await this.#command(this.#node.dropBuffers(), 'drop buffers');
+		await this.#command(() => this.#node.dropBuffers(), 'drop buffers');
 		const transfer = channels.map((channel) => channel.buffer);
-		await this.#command(this.#node.addBuffers(channels, transfer), 'add buffers');
+		await this.#command(() => this.#node.addBuffers(channels, transfer), 'add buffers');
 	}
 
 	async latencySec(): Promise<number> {
-		const latency = await this.#command(this.#node.latency(), 'latency query');
+		const latency = await this.#command(() => this.#node.latency(), 'latency query');
 		_assertFiniteNonNegative('Signalsmith latency', latency);
 		return latency;
 	}
 
 	async schedule(outputTime: number, change: StretchScheduleChange): Promise<void> {
 		await this.#command(
-			this.#node.schedule(buildStretchSchedule(outputTime, change)),
+			() => this.#node.schedule(buildStretchSchedule(outputTime, change)),
 			'schedule'
 		);
 	}
@@ -216,12 +227,24 @@ export class StretchDeckProcessor {
 		if (this.#terminalError !== null) throw this.#terminalError;
 	}
 
-	async #command<T>(command: Promise<T>, operation: string): Promise<T> {
+	async #command<T>(command: () => Promise<T>, operation: string): Promise<T> {
 		this.#assertOperational();
 		try {
-			return await withStretchCommandTimeout(command, operation);
+			const result = await withStretchCommandTimeout(
+				command(),
+				operation,
+				this.#commandTimeoutMs
+			);
+			this.#assertOperational();
+			return result;
 		} catch (error) {
-			if (error instanceof StretchProcessorError) this.#terminalError = error;
+			if (
+				this.#terminalError === null &&
+				(error instanceof StretchProcessorError || error instanceof StretchCommandTimeoutError)
+			) {
+				this.#terminalError = error;
+			}
+			if (this.#terminalError !== null) throw this.#terminalError;
 			throw error;
 		}
 	}

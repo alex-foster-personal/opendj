@@ -89,3 +89,57 @@ test('processor errors become terminal typed failures', () => {
 	assert.equal(error.name, 'StretchProcessorError');
 	assert.match(error.message, /Signalsmith processor failed/);
 });
+
+function fakeStretchNode() {
+	let processorErrorListener;
+	let scheduleCalls = 0;
+	return {
+		node: {
+			addEventListener(type, listener) {
+				if (type === 'processorerror') processorErrorListener = listener;
+			},
+			connect() {},
+			disconnect() {},
+			schedule() {
+				scheduleCalls += 1;
+				return new Promise(() => {});
+			}
+		},
+		processorError() {
+			assert.ok(processorErrorListener);
+			processorErrorListener(new Event('processorerror'));
+		},
+		scheduleCalls() {
+			return scheduleCalls;
+		}
+	};
+}
+
+test('terminal processor failure prevents later worklet invocation', async () => {
+	const fake = fakeStretchNode();
+	const processor = new adapter.StretchDeckProcessor(fake.node, {
+		onProcessorError() {}
+	});
+	fake.processorError();
+
+	await assert.rejects(processor.schedule(1, { active: true }), {
+		name: 'StretchProcessorError'
+	});
+	assert.equal(fake.scheduleCalls(), 0);
+});
+
+test('command timeout is terminal and prevents a second worklet invocation', async () => {
+	const fake = fakeStretchNode();
+	const processor = new adapter.StretchDeckProcessor(fake.node, {
+		commandTimeoutMs: 5,
+		onProcessorError() {}
+	});
+
+	await assert.rejects(processor.schedule(1, { active: true }), {
+		name: 'StretchCommandTimeoutError'
+	});
+	await assert.rejects(processor.schedule(2, { active: false }), {
+		name: 'StretchCommandTimeoutError'
+	});
+	assert.equal(fake.scheduleCalls(), 1);
+});
