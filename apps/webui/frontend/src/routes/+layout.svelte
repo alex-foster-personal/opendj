@@ -4,13 +4,14 @@
 	import { page } from '$app/stores';
 	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
+	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 
 	let { children } = $props();
 
 	// /performance is a pixel-faithful full-window rekordbox clone; it must
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
 	// option (a). Toasts stay global as the app-wide error surface.
-	const isPerformance = $derived($page.url.pathname === '/performance');
+	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
 	onMount(() => {
 		refreshHealth();
