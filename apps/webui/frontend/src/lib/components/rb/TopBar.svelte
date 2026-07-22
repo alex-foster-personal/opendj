@@ -16,19 +16,23 @@
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
-	/** 4-waveform view icon geometry: 4 rows of mini waveform bars (x,
-	 * half-height) so the glyph reads as stacked waveforms, not a list. */
-	const WAVE_ICON_ROWS_CY: number[] = [1.5, 4.3, 7.1, 9.9];
-	const WAVE_ICON_BARS: { x: number; half: number }[] = [
-		{ x: 1, half: 0.5 },
-		{ x: 2.6, half: 1 },
-		{ x: 4.2, half: 0.65 },
-		{ x: 5.8, half: 1.15 },
-		{ x: 7.4, half: 0.5 },
-		{ x: 9, half: 0.9 },
-		{ x: 10.6, half: 1.15 },
-		{ x: 12.2, half: 0.65 }
+	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
+	 * deck row) so the glyph reads as 4 waveforms, not a dotted grid. */
+	const WAVE_ICON_XS: number[] = [1, 3, 5, 7, 9, 11, 13];
+	const WAVE_ICON_ROWS: { cy: number; offsets: number[] }[] = [
+		{ cy: 1.6, offsets: [0.3, -0.9, 0.6, -0.4, 0.9, -0.2, 0.4] },
+		{ cy: 4.4, offsets: [-0.5, 0.9, -0.9, 0.5, -0.3, 0.8, -0.6] },
+		{ cy: 7.2, offsets: [0.6, -0.3, 0.9, -0.7, 0.3, -0.9, 0.5] },
+		{ cy: 10, offsets: [-0.3, 0.5, -0.7, 0.3, -0.6, 0.4, -0.2] }
 	];
+
+	function _waveIconPoints(row: { cy: number; offsets: number[] }): string {
+		return WAVE_ICON_XS.map((x, i) => `${x},${row.cy + row.offsets[i]}`).join(' ');
+	}
+
+	/** Gear (settings) icon: 8 square teeth radiating off the ring so the
+	 * glyph reads as a mechanical cog, not a sun with rays. */
+	const GEAR_TOOTH_ANGLES: number[] = [0, 45, 90, 135, 180, 225, 270, 315];
 
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
@@ -130,20 +134,19 @@
 			</svg>
 		</button>
 		<!-- 4-waveform icon: the ACTIVE layout, painted blue statically. Four
-		     rows of varying-height mini waveform bars - must NOT read as a
-		     plain list glyph (SCREENSHOT-SPEC 1). -->
+		     stacked jagged polylines - must NOT read as a plain list glyph or
+		     a dotted grid (SCREENSHOT-SPEC 1). -->
 		<button class="tb-icon active rb-inert" disabled title={INERT_TITLE} aria-label="4 waveform view">
 			<svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true">
-				{#each WAVE_ICON_ROWS_CY as cy (cy)}
-					{#each WAVE_ICON_BARS as bar (bar.x)}
-						<rect
-							x={bar.x}
-							y={cy - bar.half}
-							width="0.9"
-							height={2 * bar.half}
-							fill="currentColor"
-						/>
-					{/each}
+				{#each WAVE_ICON_ROWS as row (row.cy)}
+					<polyline
+						points={_waveIconPoints(row)}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="0.9"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
 				{/each}
 			</svg>
 		</button>
@@ -162,7 +165,11 @@
 		</button>
 	</div>
 
-	<!-- center-left: LINK -->
+	<!-- center-left: LINK, given clear room from the left icon cluster so it
+	     reads as centre-left rather than butted against the left group
+	     (SCREENSHOT-SPEC 1). -->
+	<div class="spacer-left"></div>
+
 	<button class="link-btn rb-inert" disabled title={INERT_TITLE}>LINK</button>
 
 	<div class="spacer"></div>
@@ -183,17 +190,17 @@
 
 	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="settings">
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<circle cx="6" cy="6" r="2" fill="none" stroke="currentColor" />
-			<g stroke="currentColor" stroke-width="1.3">
-				<line x1="6" y1="0.5" x2="6" y2="2.4" />
-				<line x1="6" y1="9.6" x2="6" y2="11.5" />
-				<line x1="0.5" y1="6" x2="2.4" y2="6" />
-				<line x1="9.6" y1="6" x2="11.5" y2="6" />
-				<line x1="2.1" y1="2.1" x2="3.5" y2="3.5" />
-				<line x1="8.5" y1="8.5" x2="9.9" y2="9.9" />
-				<line x1="2.1" y1="9.9" x2="3.5" y2="8.5" />
-				<line x1="8.5" y1="3.5" x2="9.9" y2="2.1" />
-			</g>
+			<circle cx="6" cy="6" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3" />
+			{#each GEAR_TOOTH_ANGLES as angle (angle)}
+				<rect
+					x="5.15"
+					y="0.6"
+					width="1.7"
+					height="1.7"
+					fill="currentColor"
+					transform={`rotate(${angle} 6 6)`}
+				/>
+			{/each}
 		</svg>
 	</button>
 
@@ -240,8 +247,12 @@
 		overflow: hidden;
 	}
 
-	.spacer {
+	.spacer-left {
 		flex: 1;
+	}
+
+	.spacer {
+		flex: 2;
 	}
 
 	.mode-dd {
