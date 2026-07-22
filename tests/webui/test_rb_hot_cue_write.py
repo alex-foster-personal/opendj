@@ -14,6 +14,7 @@ Regression one-liners:
   - if a cleared slot still shows up in fetch_cues then broken
   - if a slot outside A-H is ever accepted then broken
   - if a negative in_ms is ever accepted then broken
+  - if a hot-cue write uses a deferred SQLite transaction then concurrent saves can duplicate a slot
   - if the PUT/DELETE routes don't round-trip through fetch_cues then broken
   - if the route ever accepts a slot letter beyond H (Kind 9-11) then broken
 """
@@ -119,6 +120,22 @@ def test_save_hot_cue_resave_overwrites_slot_not_duplicates(master_db: Path) -> 
     assert cues[0]["comment"] == "moved"
 
 
+def test_save_hot_cue_acquires_immediate_write_transaction(
+    master_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    statements: list[str] = []
+    open_rw = rb_vendor._open_rw
+
+    def open_traced(path: Path, label: str) -> sqlite3.Connection:
+        conn = open_rw(path, label)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(rb_vendor, "_open_rw", open_traced)
+    rb_vendor.save_hot_cue(VENDOR_ID, "A", 1_000)
+    assert "BEGIN IMMEDIATE" in statements
+
+
 def test_save_hot_cue_distinct_slots_coexist(master_db: Path) -> None:
     rb_vendor.save_hot_cue(VENDOR_ID, "A", 1_000)
     rb_vendor.save_hot_cue(VENDOR_ID, "H", 2_000)
@@ -159,6 +176,23 @@ def test_clear_hot_cue_soft_deletes(master_db: Path) -> None:
 def test_clear_hot_cue_on_empty_slot_is_a_noop(master_db: Path) -> None:
     rb_vendor.clear_hot_cue(VENDOR_ID, "D")  # must not raise
     assert rb_vendor.fetch_cues(VENDOR_ID) == []
+
+
+def test_clear_hot_cue_acquires_immediate_write_transaction(
+    master_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rb_vendor.save_hot_cue(VENDOR_ID, "A", 1_000)
+    statements: list[str] = []
+    open_rw = rb_vendor._open_rw
+
+    def open_traced(path: Path, label: str) -> sqlite3.Connection:
+        conn = open_rw(path, label)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(rb_vendor, "_open_rw", open_traced)
+    rb_vendor.clear_hot_cue(VENDOR_ID, "A")
+    assert "BEGIN IMMEDIATE" in statements
 
 
 def test_clear_hot_cue_rejects_unknown_slot(master_db: Path) -> None:

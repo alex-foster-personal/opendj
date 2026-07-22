@@ -1129,6 +1129,11 @@ def save_hot_cue(
     now = _rb_timestamp()
     master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
     try:
+        # Serialize read-then-upsert with other API processes. The fixture
+        # schema deliberately has no (ContentID, Kind) uniqueness constraint,
+        # so a deferred transaction would let concurrent writers both observe
+        # an empty slot and insert duplicate live rows.
+        master.execute("BEGIN IMMEDIATE")
         existing = master.execute(
             "SELECT ID FROM djmdCue "
             "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
@@ -1156,6 +1161,9 @@ def save_hot_cue(
                  color_table_index, comment, now, now),
             )
         master.commit()
+    except Exception:
+        master.rollback()
+        raise
     finally:
         master.close()
     return {
@@ -1177,12 +1185,16 @@ def clear_hot_cue(vendor_id: str, slot: str) -> None:
     kind = _slot_to_kind(slot)
     master = _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
     try:
+        master.execute("BEGIN IMMEDIATE")
         master.execute(
             "UPDATE djmdCue SET rb_local_deleted = 1, updated_at = ? "
             "WHERE ContentID = ? AND Kind = ? AND rb_local_deleted = 0",
             (_rb_timestamp(), vendor_id, kind),
         )
         master.commit()
+    except Exception:
+        master.rollback()
+        raise
     finally:
         master.close()
 
