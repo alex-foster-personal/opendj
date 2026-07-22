@@ -249,6 +249,7 @@ def _stage_mp3(tmp_path: Path, rel: str = "audio/track.mp3") -> tuple[Path, Path
 
 
 @pytest.mark.requirement("OPEN-02c")
+@pytest.mark.requires_mutagen
 def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
     """Library with hot cues + loop -> Serato write -> read back -> identical cues."""
     audio_root, _ = _stage_mp3(tmp_path)
@@ -306,6 +307,7 @@ def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
 
 
 @pytest.mark.requirement("OPEN-02c")
+@pytest.mark.requires_mutagen
 def test_geob_beatgrid_roundtrip(tmp_path) -> None:
     """Beatgrid written to GEOB frame round-trips back through the adapter."""
     audio_root, _ = _stage_mp3(tmp_path)
@@ -385,6 +387,7 @@ def test_geob_write_skips_non_mp3_with_warning(tmp_path) -> None:
 
 
 @pytest.mark.requirement("OPEN-02c")
+@pytest.mark.requires_mutagen
 def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
     """Rail 2 regression (adversarial #2, HIGH): a GEOB write MUST
     produce a pre-mutation backup copy of the MP3 on disk before any

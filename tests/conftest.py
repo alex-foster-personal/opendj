@@ -10,16 +10,26 @@ a single-winner override.
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 
 import pytest
 
+# Optional-dependency gates, resolved once at collection time. Absence is a
+# SKIP (the extra is deliberately opt-in), never a silent pass or a failure.
+_HAS_MUTAGEN: bool = importlib.util.find_spec("mutagen") is not None
+_HAS_JOBLIB: bool = importlib.util.find_spec("joblib") is not None
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip ``requires_darwin`` items when not running on macOS."""
-    if sys.platform == "darwin":
-        return
+    """Skip ``requires_*``-marked items whose platform/extra is absent."""
     skip_darwin = pytest.mark.skip(reason="macOS-only")
+    skip_mutagen = pytest.mark.skip(reason="needs the tags extra (mutagen)")
+    skip_joblib = pytest.mark.skip(reason="needs joblib")
     for item in items:
-        if "requires_darwin" in item.keywords:
+        if sys.platform != "darwin" and "requires_darwin" in item.keywords:
             item.add_marker(skip_darwin)
+        if not _HAS_MUTAGEN and "requires_mutagen" in item.keywords:
+            item.add_marker(skip_mutagen)
+        if not _HAS_JOBLIB and "requires_joblib" in item.keywords:
+            item.add_marker(skip_joblib)

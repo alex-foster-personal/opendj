@@ -8,9 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from apps.dedup import schema as dedup_schema
 from apps.shared.tag_writer import TagRead, read_tags
 from apps.tags import apply as tags_apply
+
+# tag write path needs the tags extra; skip (never fail) when absent.
+pytestmark = pytest.mark.requires_mutagen
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
@@ -126,6 +128,8 @@ def test_reversal_script_restores_original(tmp_path: Path) -> None:
     # Execute the reversal script via shell.
     import subprocess
 
+    if shutil.which("bash") is None:
+        pytest.skip("bash unavailable; cannot execute the generated reversal script")
     rc = subprocess.run(
         ["bash", res["reversal"]], capture_output=True, text=True, check=False
     )

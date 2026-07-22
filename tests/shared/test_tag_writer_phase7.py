@@ -15,6 +15,9 @@ from apps.shared.tag_writer import (
     write_tags,
 )
 
+# tag read/write needs the tags extra; skip (never fail) when absent.
+pytestmark = pytest.mark.requires_mutagen
+
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 

@@ -86,6 +86,7 @@ def test_train_aborts_with_too_few_sessions(tmp_path: Path):
 
 
 @pytest.mark.requirement("SET-02")
+@pytest.mark.requires_joblib
 def test_train_produces_joblib_and_meta_when_gate_passes(tmp_path: Path):
     ids = _synthetic_corpus(tmp_path, n_sessions=5)
     report = model_mod.train(
@@ -104,6 +105,7 @@ def test_train_produces_joblib_and_meta_when_gate_passes(tmp_path: Path):
 
 
 @pytest.mark.requirement("SET-02")
+@pytest.mark.requires_joblib
 def test_predict_returns_class_and_confidence(tmp_path: Path):
     ids = _synthetic_corpus(tmp_path, n_sessions=5)
     report = model_mod.train(
@@ -152,7 +154,7 @@ def test_train_skips_sessions_without_labels(tmp_path: Path):
         (sess / "transitions.jsonl").write_text(
             json.dumps({"idx": 0, "features": {"overlap_s": 1.0}}) + "\n"
         )
-    ids = [f"session-00"] + [f"unlabeled-{i}" for i in range(1, 5)]
+    ids = ["session-00"] + [f"unlabeled-{i}" for i in range(1, 5)]
     report = model_mod.train(ids, sessions_root=tmp_path, models_dir=tmp_path / "m")
     assert report.n_training_sessions == 1
     assert report.accepted is False
