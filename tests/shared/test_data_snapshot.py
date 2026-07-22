@@ -173,6 +173,113 @@ def test_unpack_rejects_unexpected_and_traversal_members(tmp_path: Path) -> None
     assert not (tmp_path / "outside").exists()
 
 
+def _write_required_snapshot(
+    snapshot: Path,
+    *,
+    extra_members: list[tuple[str, bytes]] | None = None,
+) -> None:
+    with tarfile.open(snapshot, "w") as tar:
+        for name in data_snapshot.REQUIRED_MEMBERS:
+            payload = b"db"
+            info = tarfile.TarInfo(name=name)
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+        for name, payload in extra_members or []:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        r"state\state.db",
+        r"state\vocal-cache\entry.json",
+        r"state/vocal-cache\entry.json",
+    ],
+)
+def test_unpack_rejects_windows_backslash_member_aliases(
+    tmp_path: Path, alias: str
+) -> None:
+    snapshot = tmp_path / "backslash-alias.tar"
+    _write_required_snapshot(snapshot, extra_members=[(alias, b"{}")])
+    dest = tmp_path / "dest"
+
+    with pytest.raises(ValueError, match="backslash"):
+        data_snapshot.unpack(snapshot, dest)
+
+    assert not dest.exists()
+
+
+def test_unpack_rejects_archive_over_byte_cap_before_opening_tar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = tmp_path / "oversized.tar"
+    snapshot.write_bytes(b"x" * 17)
+    monkeypatch.setattr(data_snapshot, "MAX_ARCHIVE_BYTES", 16)
+
+    with pytest.raises(ValueError, match="archive byte limit"):
+        data_snapshot.unpack(snapshot, tmp_path / "dest")
+
+
+def test_unpack_rejects_member_count_cap_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = tmp_path / "too-many.tar"
+    _write_required_snapshot(snapshot)
+    monkeypatch.setattr(data_snapshot, "MAX_MEMBER_COUNT", 1)
+    dest = tmp_path / "dest"
+
+    with pytest.raises(ValueError, match="member count limit"):
+        data_snapshot.unpack(snapshot, dest)
+
+    assert not dest.exists()
+
+
+def test_unpack_rejects_member_byte_cap_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = tmp_path / "member-too-large.tar"
+    _write_required_snapshot(snapshot)
+    monkeypatch.setattr(data_snapshot, "MAX_MEMBER_BYTES", 1)
+    dest = tmp_path / "dest"
+
+    with pytest.raises(ValueError, match="member byte limit"):
+        data_snapshot.unpack(snapshot, dest)
+
+    assert not dest.exists()
+
+
+def test_unpack_rejects_total_member_byte_cap_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = tmp_path / "total-too-large.tar"
+    _write_required_snapshot(snapshot)
+    monkeypatch.setattr(data_snapshot, "MAX_TOTAL_MEMBER_BYTES", 3)
+    dest = tmp_path / "dest"
+
+    with pytest.raises(ValueError, match="total member byte limit"):
+        data_snapshot.unpack(snapshot, dest)
+
+    assert not dest.exists()
+
+
+def test_unpack_rejects_malformed_vocal_cache_json_before_writing(
+    tmp_path: Path
+) -> None:
+    snapshot = tmp_path / "bad-cache-json.tar"
+    _write_required_snapshot(
+        snapshot,
+        extra_members=[("state/vocal-cache/bad.json", b"not-json")],
+    )
+    dest = tmp_path / "dest"
+
+    with pytest.raises(ValueError, match="malformed JSON"):
+        data_snapshot.unpack(snapshot, dest)
+
+    assert not dest.exists()
+
+
 def test_cli_pack_and_unpack_json_round_trip(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     data_dir = _make_data_dir(tmp_path)
     out = tmp_path / "snapshot.tar"
