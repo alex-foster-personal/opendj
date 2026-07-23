@@ -1,0 +1,59 @@
+# Quick-draw menu tree (labels + order only).
+# Action `id` values must exist in quick-draw-catalog.ts (PerformanceCommand-tied).
+# Sentinel `deck_channels` expands to CH1-4 at runtime.
+# Omitted from menu on purpose: hot_cue save/clear/restore, mixer continuous,
+# stems, pitch_range, raw loop in/out ms, headphone device select.
+
+version: 1
+
+# --- shipped left tree (P0) ---
+quick:
+  - id: unload
+    label: Unload
+    children: deck_channels
+  - id: play.toggle
+    label: Play/Pause
+    children: deck_channels
+  - id: loop
+    label: Loop
+    children:
+      - id: loop.start_8
+        label: Start Loop 8B
+        children: deck_channels
+      - id: loop.exit
+        label: Exit Loop
+        children: deck_channels
+      # P1 siblings (wire when ready):
+      # - id: loop.start_4
+      # - id: loop.start_16
+
+# --- contextual right column (wire as data-* hooks land) ---
+contextual:
+  # requires data-deck (+ live deck state for toggles)
+  deck:
+    - unload          # P0
+    - loop.exit       # P0 if looping
+    - loop.start_8    # P0
+    - play.toggle     # P1
+    - cue             # P1
+    - quantize.toggle # P1
+    - beat_sync.toggle # P1
+    - master          # P1
+    - slip.toggle     # P2
+    - master_tempo.toggle # P2
+    - key_sync.toggle # P2
+    - key_nudge.up    # P2
+    - key_nudge.down  # P2
+    - tempo.reset     # P2
+  # requires data-stable-id (+ deck fan-out CH1-4)
+  browser_row:
+    - load            # P0
+  # requires data-deck + data-wave-ms
+  wave:
+    - seek            # P1
+
+# --- hooks still needed ---
+# data-deck          - Deck.svelte, WaveRow.svelte (done)
+# data-stable-id     - TrackTable rows
+# data-wave-ms       - compute on contextmenu from pointer
+# data-slot          - HotCueBank (jump via seek only; no clear/save in menu)
