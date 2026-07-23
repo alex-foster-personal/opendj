@@ -7,7 +7,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if createPaneStore() defaults differ from the blank pane then broken
 // - if beginLoad doesn't reset rows/selection/scroll then broken
 // - if a stale completeLoad/failLoad mutates a newer load's pane then broken
-// - if toggleSort same-key doesn't flip / new-key doesn't reset asc then broken
+// - if toggleSort same-key doesn't cycle asc → desc → clear then broken
 // - if filterRows hide-broken doesn't compose with search then broken
 // - if sortRows doesn't keep nulls last in BOTH directions then broken
 // - if provider rows/total/truncated don't live-track sources then broken
@@ -142,7 +142,7 @@ test('failLoad records the error and clears loading for the current load', () =>
 	assert.equal(p.loading, false);
 });
 
-test('toggleSort: new key starts ascending, same key flips direction', () => {
+test('toggleSort: asc → desc → clear (natural order)', () => {
 	const p = contract.createPaneStore();
 	p.toggleSort('bpm');
 	assert.equal(p.sort_key, 'bpm');
@@ -150,8 +150,9 @@ test('toggleSort: new key starts ascending, same key flips direction', () => {
 	p.toggleSort('bpm');
 	assert.equal(p.sort_dir, -1);
 	p.toggleSort('bpm');
+	assert.equal(p.sort_key, null);
 	assert.equal(p.sort_dir, 1);
-	p.toggleSort('title'); // switching keys resets to ascending
+	p.toggleSort('title'); // switching keys starts ascending
 	assert.equal(p.sort_key, 'title');
 	assert.equal(p.sort_dir, 1);
 });
@@ -208,6 +209,26 @@ test('filterRows: case-insensitive match over title/artist/comments/key and rb_m
 	assert.deepEqual(
 		contract.filterRows(rows, '8a', false).map((r) => r.stable_id),
 		['key']
+	);
+});
+
+test('filterRows: genre: strict token vs genre:~ loose substring', () => {
+	const rows = [
+		_row({ stable_id: 'exact', genre: 'House, Disco' }),
+		_row({ stable_id: 'deep', genre: 'Deep House' }),
+		_row({ stable_id: 'title-house', title: 'House Party', genre: 'Techno' }),
+		_row({
+			stable_id: 'meta',
+			rb_meta: { artwork_available: false, genre: 'Tech House', is_streaming: false }
+		})
+	];
+	assert.deepEqual(
+		contract.filterRows(rows, 'genre:House', false).map((r) => r.stable_id),
+		['exact']
+	);
+	assert.deepEqual(
+		contract.filterRows(rows, 'genre:~House', false).map((r) => r.stable_id),
+		['exact', 'deep', 'meta']
 	);
 });
 

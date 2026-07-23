@@ -224,12 +224,15 @@ export class PaneStore {
 		return true;
 	}
 
-	/** Header click: same key flips direction, new key starts ascending. */
+	/** Header click cycle: new key asc → desc → clear (natural order). */
 	toggleSort(key: SortKey): void {
-		if (this.sort_key === key) {
-			this.sort_dir = this.sort_dir === 1 ? -1 : 1;
-		} else {
+		if (this.sort_key !== key) {
 			this.sort_key = key;
+			this.sort_dir = 1;
+		} else if (this.sort_dir === 1) {
+			this.sort_dir = -1;
+		} else {
+			this.sort_key = null;
 			this.sort_dir = 1;
 		}
 	}
@@ -283,17 +286,49 @@ export function canMutatePlaylist(
 // -------------------------------------------- client search + sort pipeline
 
 /** FR-1 hide-broken filter THEN case-insensitive substring search over
- * title/artist/comments/key/genre (genre falls back to lazy rb_meta). */
+ * title/artist/comments/key/genre (genre falls back to lazy rb_meta).
+ *
+ * Genre demos (search box / chip clicks):
+ *   `genre:House`  - strict: a comma-split genre token equals the tag
+ *   `genre:~House` - loose: genre field contains the tag as a substring
+ * Plain queries still match across title/artist/comments/key/genre. */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
 	const base = hideBroken ? rows.filter((r) => r.file_exists) : rows;
-	const q = query.trim().toLowerCase();
-	if (q === '') return base;
+	const raw = query.trim();
+	if (raw === '') return base;
+
+	const genreStrict = /^genre:(?!~)(.+)$/i.exec(raw);
+	if (genreStrict !== null) {
+		const tag = genreStrict[1].trim().toLowerCase();
+		if (tag === '') return base;
+		return base.filter((r) => _genreTokens(r).some((t) => t === tag));
+	}
+	const genreLoose = /^genre:~(.+)$/i.exec(raw);
+	if (genreLoose !== null) {
+		const tag = genreLoose[1].trim().toLowerCase();
+		if (tag === '') return base;
+		return base.filter((r) => {
+			const g = (r.genre ?? r.rb_meta?.genre ?? '').toLowerCase();
+			return g.includes(tag);
+		});
+	}
+
+	const q = raw.toLowerCase();
 	return base.filter((r) =>
 		[r.title, r.artist, r.comments, r.key, r.genre ?? r.rb_meta?.genre ?? null].some(
 			(field) => field !== null && field.toLowerCase().includes(q)
 		)
 	);
+}
+
+function _genreTokens(row: BrowserRow): string[] {
+	const raw = row.genre ?? row.rb_meta?.genre ?? '';
+	if (raw.trim() === '') return [];
+	return raw
+		.split(',')
+		.map((t) => t.trim().toLowerCase())
+		.filter((t) => t !== '');
 }
 
 /** Comparable cell value for a sort key (null = missing, sorts last). */
