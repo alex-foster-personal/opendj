@@ -33,6 +33,7 @@
 	let tracksError = $state<string | null>(null);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
+	let conflictCurrent = $state<SmartlistOut | null>(null);
 
 	const errors = $derived(formRoot ? validateForm(formRoot) : []);
 	const astResult = $derived.by(() => {
@@ -52,7 +53,7 @@
 	}
 
 	async function save(): Promise<void> {
-		if (!smartlist || !astResult?.ok || etag === null) {
+		if (!smartlist || !astResult?.ok || etag === null || conflictCurrent !== null) {
 			saveError = 'Fix rule validation errors before saving.';
 			return;
 		}
@@ -71,6 +72,7 @@
 			etag = saved.etag;
 			orderBy = saved.smartlist.order_by;
 			formRoot = astToForm(saved.smartlist.rule);
+			conflictCurrent = null;
 			pushToast('Smartlist saved.');
 			try {
 				tracks = await getSmartlistTracks(saved.smartlist.id);
@@ -81,14 +83,38 @@
 			}
 		} catch (exc) {
 			if (exc instanceof SmartlistConflictError) {
-				etag = null;
-				saveError = 'This smartlist changed elsewhere. Reload before saving again.';
+				conflictCurrent = exc.current;
+				etag = exc.etag;
+				saveError = 'This smartlist changed elsewhere. Choose how to resolve it.';
 			} else {
 				saveError = `${exc}`;
 			}
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function reloadConflict(): Promise<void> {
+		const current = conflictCurrent;
+		if (current === null) return;
+		smartlist = current;
+		orderBy = current.order_by;
+		formRoot = astToForm(current.rule);
+		conflictCurrent = null;
+		saveError = null;
+		try {
+			tracks = await getSmartlistTracks(current.id);
+			tracksError = null;
+		} catch (exc) {
+			tracksError = `${exc}`;
+		}
+	}
+
+	async function retryConflict(): Promise<void> {
+		if (conflictCurrent === null) return;
+		conflictCurrent = null;
+		saveError = null;
+		await save();
 	}
 
 	onMount(async () => {
@@ -100,6 +126,7 @@
 			etag = loaded.etag;
 			orderBy = loaded.smartlist.order_by;
 			formRoot = astToForm(loaded.smartlist.rule);
+			conflictCurrent = null;
 		} catch (exc) {
 			if (exc instanceof SmartlistApiError && exc.status === 404) {
 				notFound = true;
@@ -167,13 +194,25 @@
 	{/if}
 
 	<div class="save-row">
-		<button class="primary" onclick={save} disabled={saving || !astResult?.ok || etag === null}>
+		<button class="primary" onclick={save} disabled={saving || !astResult?.ok || etag === null || conflictCurrent !== null}>
 			{saving ? 'Saving...' : 'Save'}
 		</button>
 		{#if saveError}
 			<p class="save-error" role="alert">Save failed: {saveError}</p>
 		{/if}
 	</div>
+
+	{#if conflictCurrent}
+		<div class="conflict-panel" role="alert">
+			<strong>Smartlist changed elsewhere</strong>
+			<p>Current saved rule: {conflictCurrent.rule_summary}</p>
+			<p>Current order: {conflictCurrent.order_by}</p>
+			<div class="conflict-actions">
+				<button type="button" onclick={reloadConflict}>Reload latest</button>
+				<button type="button" class="primary" onclick={retryConflict}>Retry my changes</button>
+			</div>
+		</div>
+	{/if}
 
 	<h3>Currently matching tracks</h3>
 	{#if tracksError}
@@ -218,6 +257,16 @@
 	}
 	.save-error {
 		color: var(--danger);
+	}
+	.conflict-panel {
+		background: var(--surface);
+		border: 1px solid var(--danger);
+		border-radius: 6px;
+		padding: 0.8rem;
+	}
+	.conflict-actions {
+		display: flex;
+		gap: 0.5rem;
 	}
 	.validation-summary {
 		margin: 0.5rem 0;

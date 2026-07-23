@@ -39,7 +39,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -78,14 +78,6 @@ _ETAG_RESPONSE_HEADER: dict[str, Any] = {
 _GET_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {"headers": _ETAG_RESPONSE_HEADER},
 }
-_PUT_RESPONSES: dict[int | str, dict[str, Any]] = {
-    200: {"headers": _ETAG_RESPONSE_HEADER},
-    409: {
-        "description": "If-Match does not match the current smartlist revision",
-        "headers": _ETAG_RESPONSE_HEADER,
-    },
-    428: {"description": "If-Match is required for every smartlist update"},
-}
 _IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
     "name": "If-Match",
     "in": "header",
@@ -123,6 +115,23 @@ class SmartlistUpdateIn(BaseModel):
     order_by: str | None = None
 
 
+class SmartlistConflictBody(BaseModel):
+    """Structured stale-write response with current state and fresh ETag."""
+
+    error: Literal["conflict"] = "conflict"
+    message: str
+    current: SmartlistSummary
+    etag: str
+
+
+class SmartlistPreconditionRequiredBody(BaseModel):
+    """Structured response when an update omits its CAS precondition."""
+
+    error: Literal["precondition_required"] = "precondition_required"
+    message: str
+    details: None = None
+
+
 class SmartlistTracks(BaseModel):
     """Live evaluation result, shaped like playlist detail.
 
@@ -138,6 +147,20 @@ class SmartlistTracks(BaseModel):
     order_by: str
     items: list[str]
     tracks: list[TrackRowOut]
+
+
+_PUT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {"headers": _ETAG_RESPONSE_HEADER},
+    409: {
+        "model": SmartlistConflictBody,
+        "description": "If-Match does not match the current smartlist revision",
+        "headers": _ETAG_RESPONSE_HEADER,
+    },
+    428: {
+        "model": SmartlistPreconditionRequiredBody,
+        "description": "If-Match is required for every smartlist update",
+    },
+}
 
 
 # ----------------------------------------------------------- _helpers

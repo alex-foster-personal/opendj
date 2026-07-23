@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -126,4 +127,14 @@ test('stale smartlist update surfaces current summary and revision without retry
 			return true;
 		}
 	);
+});
+
+test('smartlist editor preserves stale server state and exposes explicit recovery actions', async () => {
+	const source = await readFile('src/routes/smartlists/[id]/+page.svelte', 'utf8');
+
+	assert.match(source, /conflictCurrent = exc\.current/);
+	assert.match(source, /etag = exc\.etag/);
+	assert.match(source, /Current saved rule:/);
+	assert.match(source, /onclick=\{reloadConflict\}/);
+	assert.match(source, /onclick=\{retryConflict\}/);
 });

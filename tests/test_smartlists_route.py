@@ -305,6 +305,21 @@ def test_smartlists_openapi_documents_cas_headers_and_responses(client):
     assert {"200", "409", "428"} <= set(put_operation["responses"])
     assert "ETag" in put_operation["responses"]["200"]["headers"]
     assert "ETag" in put_operation["responses"]["409"]["headers"]
+    assert (
+        put_operation["responses"]["409"]["content"]["application/json"]
+        ["schema"]["$ref"]
+        == "#/components/schemas/SmartlistConflictBody"
+    )
+    assert (
+        put_operation["responses"]["428"]["content"]["application/json"]
+        ["schema"]["$ref"]
+        == "#/components/schemas/SmartlistPreconditionRequiredBody"
+    )
+    conflict_schema = schema["components"]["schemas"]["SmartlistConflictBody"]
+    assert {"current", "etag"} <= set(conflict_schema["required"])
+    assert conflict_schema["properties"]["current"]["$ref"].endswith(
+        "/SmartlistSummary"
+    )
 
 
 # ----------------------------------------------------------- evaluation
