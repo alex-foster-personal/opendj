@@ -54,9 +54,11 @@ export function visibleBeatLines(
 			y: 0,
 			width: isDownbeat ? 2 : 1,
 			height: rowHeight,
-			alpha: isDownbeat ? 0.24 : 0.12,
-			capHeight: isDownbeat ? 8 : 4,
-			capAlpha: isDownbeat ? 1 : 0.55,
+			// Full-height body must stay readable through dense waveform bands so
+			// synced decks can be compared at channel borders (ch1 vs ch2).
+			alpha: isDownbeat ? 0.55 : 0.38,
+			capHeight: isDownbeat ? 10 : 5,
+			capAlpha: isDownbeat ? 1 : 0.85,
 			isDownbeat
 		});
 	}
@@ -96,4 +98,57 @@ export function barsToNextCueLabel(anlz: AnlzData, positionMs: number): string |
 	const bars = Math.floor(beatsRemaining / 4);
 	const rem = beatsRemaining % 4;
 	return `${bars}.${rem}Bars`;
+}
+
+/** Enclosing PQTZ beat + fractional phase in [0,1) at positionSec. */
+export function enclosingBeatPhase(
+	beats: AnlzBeat[],
+	positionSec: number
+): { n: number; phase: number } | null {
+	if (beats.length < 2 || !Number.isFinite(positionSec) || positionSec < 0) return null;
+	let i = firstBeatAtOrAfter(beats, positionSec) - 1;
+	if (i < 0) i = 0;
+	if (i >= beats.length - 1) return null;
+	const a = beats[i];
+	const b = beats[i + 1];
+	const dur = b.t - a.t;
+	if (!(dur > 0)) return null;
+	const phase = (positionSec - a.t) / dur;
+	if (!Number.isFinite(phase)) return null;
+	return { n: a.n, phase: Math.min(1, Math.max(0, phase)) };
+}
+
+/** Center-playhead sync tone for a Beat Sync follower vs the master. */
+export type SyncPlayheadTone = 'bar1' | 'synced' | 'drift';
+
+/** Phase within a beat that still counts as locked (light-touch warning above). */
+const SYNC_PHASE_OK = 0.12;
+
+/**
+ * Visual sync state for a follower wavestack row.
+ * null = not a synced follower (master, sync off, or missing grids).
+ * bar1 = locked on beat 1 of both; synced = locked but not on 1; drift = out.
+ */
+export function followerSyncPlayheadTone(args: {
+	beatSyncEnabled: boolean;
+	isMaster: boolean;
+	syncError: string | null;
+	syncMode: 'beat' | 'bar';
+	followerBeats: AnlzBeat[];
+	masterBeats: AnlzBeat[];
+	followerPosMs: number;
+	masterPosMs: number;
+}): SyncPlayheadTone | null {
+	if (!args.beatSyncEnabled || args.isMaster) return null;
+	if (args.syncError !== null) return 'drift';
+	const f = enclosingBeatPhase(args.followerBeats, args.followerPosMs / 1000);
+	const m = enclosingBeatPhase(args.masterBeats, args.masterPosMs / 1000);
+	if (f === null || m === null) return null;
+	const raw = Math.abs(f.phase - m.phase);
+	const phaseDelta = Math.min(raw, 1 - raw);
+	const phaseOk = phaseDelta <= SYNC_PHASE_OK;
+	const numberOk = args.syncMode === 'beat' || f.n === m.n;
+	if (!phaseOk || !numberOk) return 'drift';
+	if (f.n === 1 && m.n === 1) return 'bar1';
+	return 'synced';
 }

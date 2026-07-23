@@ -14,14 +14,22 @@
 	let {
 		deck,
 		pending,
-		onSeek
-	}: { deck: DeckState; pending: boolean; onSeek: (ms: number) => Promise<void> } = $props();
+		onSeek,
+		onPlay
+	}: {
+		deck: DeckState;
+		pending: boolean;
+		onSeek: (ms: number) => Promise<void>;
+		onPlay: () => Promise<void>;
+	} = $props();
 
 	// Canvas backing resolution (CSS scales to 100% x var(--rb-strip-h)).
 	const W = 400;
 	const H = 40;
 
 	let canvas: HTMLCanvasElement | undefined = $state();
+	/** Play affordance above the last paused seek point (pct along strip). */
+	let playHintPct: number | null = $state(null);
 
 	const posPct: number = $derived(
 		deck.duration_ms === null || deck.duration_ms === 0
@@ -127,56 +135,110 @@
 		if (vocals !== null) _drawVocalBars(ctx, vocals);
 	});
 
+	$effect(() => {
+		if (deck.playing || deck.stable_id === null) playHintPct = null;
+	});
+
 	async function handleClick(e: MouseEvent): Promise<void> {
 		if (deck.duration_ms === null) return;
 		const el = e.currentTarget as HTMLElement;
 		const rect = el.getBoundingClientRect();
 		const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
 		await onSeek(ratio * deck.duration_ms);
+		if (!deck.playing) playHintPct = ratio * 100;
+	}
+
+	async function handlePlayHint(e: MouseEvent): Promise<void> {
+		e.stopPropagation();
+		playHintPct = null;
+		await onPlay();
 	}
 </script>
 
-<button
-	class="strip"
-	onclick={handleClick}
-	disabled={deck.stable_id === null || pending}
-	aria-label="track overview waveform - click to seek"
-	title={vocalsTitle ?? undefined}
->
-	<canvas bind:this={canvas} width={W} height={H}></canvas>
-
-	{#if deck.anlz_error !== null}
-		<span class="no-anlz">NO ANALYSIS</span>
+<div class="strip-wrap">
+	{#if playHintPct !== null && !deck.playing && deck.stable_id !== null}
+		<button
+			type="button"
+			class="play-hint"
+			style={`left:${playHintPct}%`}
+			aria-label="Play from here"
+			title="Play"
+			onclick={(e) => void handlePlayHint(e)}
+		>
+			▶
+		</button>
 	{/if}
+	<button
+		class="strip"
+		onclick={(e) => void handleClick(e)}
+		disabled={deck.stable_id === null || pending}
+		aria-label="track overview waveform - click to seek"
+		title={vocalsTitle ?? undefined}
+	>
+		<canvas bind:this={canvas} width={W} height={H}></canvas>
 
-	{#each memoryCuesMs as ms, i (i)}
-		<span class="mem-cue" style={`left:${_pctOf(ms)}%`}></span>
-	{/each}
+		{#if deck.anlz_error !== null}
+			<span class="no-anlz">NO ANALYSIS</span>
+		{/if}
 
-	{#each deck.hot_cues as hc (hc.slot)}
-		<span class="cue-letter" style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
-	{/each}
+		{#each memoryCuesMs as ms, i (i)}
+			<span class="mem-cue" style={`left:${_pctOf(ms)}%`}></span>
+		{/each}
 
-	{#if loopCue !== null}
-		<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`}>
-			{loopCue.slot} {_fmtMmSs(loopCue.in_ms)}
-		</span>
-		<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`}>
-			{_fmtMmSs(loopCue.out_ms)}
-		</span>
-	{/if}
+		{#each deck.hot_cues as hc (hc.slot)}
+			<span class="cue-letter" style={`left:${_pctOf(hc.in_ms)}%`}>{hc.slot}</span>
+		{/each}
 
-	{#if deck.stable_id !== null}
-		<span class="pos" style={`left:${posPct}%`}></span>
-	{/if}
-</button>
+		{#if loopCue !== null}
+			<span class="loop-chip in" style={`left:${_pctOf(loopCue.in_ms)}%`}>
+				{loopCue.slot} {_fmtMmSs(loopCue.in_ms)}
+			</span>
+			<span class="loop-chip out" style={`left:${_pctOf(loopCue.out_ms)}%`}>
+				{_fmtMmSs(loopCue.out_ms)}
+			</span>
+		{/if}
+
+		{#if deck.stable_id !== null}
+			<span class="pos" style={`left:${posPct}%`}></span>
+		{/if}
+	</button>
+</div>
 
 <style>
+	.strip-wrap {
+		position: relative;
+		width: 100%;
+		flex: 0 0 auto;
+		overflow: visible;
+		z-index: 2;
+	}
+	.play-hint {
+		position: absolute;
+		bottom: calc(100% + 2px);
+		transform: translateX(-50%);
+		z-index: 5;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		border: 1px solid rgba(236, 240, 244, 0.65);
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--rb-panel-raised) 70%, #000);
+		color: #fff;
+		font-size: 11px;
+		line-height: 1;
+		cursor: pointer;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+	}
+	.play-hint:hover {
+		background: var(--rb-accent);
+		border-color: var(--rb-accent);
+	}
 	.strip {
 		position: relative;
 		display: block;
 		width: 100%;
 		height: var(--rb-strip-h);
+		min-height: var(--rb-strip-h);
 		padding: 0;
 		margin: 0;
 		background: #080a0d;

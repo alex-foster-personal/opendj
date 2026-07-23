@@ -11,4 +11,4 @@
  * fix THIS FILE ONLY - WaveRow.svelte imports the engine exclusively
  * from here.
  */
-export { engine, getDeckState } from '$lib/rb/audio-engine.svelte';
+export { engine, getDeckState, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';

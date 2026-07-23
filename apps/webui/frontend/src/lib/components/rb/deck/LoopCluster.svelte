@@ -5,16 +5,23 @@
 	// beat loop at the current position; halve/double resize it in place.
 	// Requires a loaded track with a real beatgrid. Sub-beat loops remain
 	// unimplemented until the engine has honest PQTZ interpolation.
-	import type { DeckState } from '$lib/rb/types';
+	import type { DeckId, DeckState } from '$lib/rb/types';
+	import {
+		armLoopHover,
+		clearLoopHover,
+		noteLoopInteraction
+	} from '$lib/rb/performance-hotkeys';
 
 	let {
 		deck,
+		deckId,
 		pending,
 		onEngage,
 		onDisengage,
 		inertTip
 	}: {
 		deck: DeckState;
+		deckId: DeckId;
 		pending: boolean;
 		onEngage: (beats: number, startMs?: number) => Promise<void>;
 		onDisengage: () => Promise<void>;
@@ -78,6 +85,7 @@
 
 	async function toggleLoop(): Promise<void> {
 		if (!canToggle) return;
+		noteLoopInteraction(deckId);
 		if (engaged) {
 			await onDisengage();
 		} else {
@@ -87,18 +95,25 @@
 
 	async function halve(): Promise<void> {
 		if (!canHalve) return;
+		noteLoopInteraction(deckId);
 		beatLength = nextHalved;
 		await _reapply();
 	}
 
 	async function double(): Promise<void> {
 		if (!canDouble) return;
+		noteLoopInteraction(deckId);
 		beatLength = nextDoubled;
 		await _reapply();
 	}
 </script>
 
-<div class="loop-cluster">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="loop-cluster"
+	onpointerenter={() => armLoopHover(deckId)}
+	onpointerleave={() => clearLoopHover(deckId)}
+>
 	<button class="rb-lit-button rb-inert int" disabled title={inertTip}>
 		INT <span class="caret">&#9662;</span>
 	</button>

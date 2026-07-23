@@ -31,8 +31,12 @@
 
 	/* -------- layout metrics -------- */
 	--rb-topbar-h: 28px;         /* section 1 */
-	--rb-waverow-h: 40px;        /* section 2, per deck row */
-	--rb-strip-h: 20px;          /* deck overview strip */
+	--rb-waverow-h: 64px;        /* section 2, per deck row - tall enough to read */
+	--rb-deck-art: 75px;         /* deck header artwork thumb */
+	--rb-strip-h: 28px;          /* deck overview strip (tightened for 75px art) */
+	/* Static A-H pad letter strip on each deck (decorative only today).
+	   Default off; set to `flex` to show. */
+	--rb-pad-strip-display: none;
 
 	background: var(--rb-bg);
 	color: var(--rb-text);
@@ -71,8 +75,9 @@
 /* -------- fader: vertical track + blue-line thumb -------- */
 .perf-root .rb-fader {
 	position: relative;
-	width: 26px;
-	height: 96px;
+	width: 30px;
+	height: 100%;
+	min-height: 64px;
 }
 .perf-root .rb-fader-track {
 	position: absolute;
@@ -92,6 +97,7 @@
 	background: #2a2f37;
 	border: 1px solid var(--rb-border);
 	border-radius: 2px;
+	z-index: 2;
 }
 .perf-root .rb-fader-thumb::after {
 	content: '';
@@ -102,6 +108,24 @@
 	height: 2px;
 	margin-top: -1px;
 	background: var(--rb-accent);
+	transform-origin: center;
+}
+.perf-root .rb-fader.playing .rb-fader-thumb::after {
+	animation: rb-fader-line-pulse 0.85s ease-in-out infinite;
+}
+.perf-root .rb-fader.looped .rb-fader-thumb::after {
+	background: var(--rb-orange);
+}
+@keyframes rb-fader-line-pulse {
+	0%,
+	100% {
+		opacity: 0.75;
+		transform: scaleX(1);
+	}
+	50% {
+		opacity: 1;
+		transform: scaleX(1.15);
+	}
 }
 
 /* -------- lit-button: dim chrome by default, blue glow when .lit -------- */
@@ -120,6 +144,13 @@
 	background: var(--rb-accent);
 	box-shadow: 0 0 6px var(--rb-accent-glow);
 }
+/* Master must beat the generic .lit blue - soft gold. */
+.perf-root .rb-lit-button.master-btn.lit {
+	color: #1a1608;
+	background: #c9b35a;
+	box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
+	border-color: #b8a24e;
+}
 .perf-root .rb-lit-button:disabled,
 .perf-root .rb-inert {
 	cursor: default;
@@ -128,17 +159,27 @@
 
 /* -------- star rating: outline stars per SCREENSHOT-SPEC 6 -------- */
 .perf-root .rb-star {
-	color: var(--rb-text-dim);
+	color: #3a3f46;
 	font-size: var(--rb-fs-browser);
 	line-height: 1;
+	transition: color 60ms linear;
 }
 .perf-root .rb-star.filled {
 	color: var(--rb-text);
+}
+.perf-root .rb-star.preview {
+	color: #c8cdd2;
 }
 
 /* -------- row states (browser track list) -------- */
 .perf-root .rb-row-loaded {
 	color: var(--rb-green); /* track currently loaded on a deck */
+}
+.perf-root tbody tr.rb-row-master .rb-row-loaded,
+.perf-root tbody tr.rb-row-master .c-title,
+.perf-root tbody tr.rb-row-master .c-artist {
+	color: #e8d78a;
+	font-weight: 700;
 }
 .perf-root .rb-row-selected {
 	background: var(--rb-select); /* blue full-row highlight */

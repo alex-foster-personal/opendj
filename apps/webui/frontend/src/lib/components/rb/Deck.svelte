@@ -26,6 +26,7 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import { setHoveredDeck, deckHoverUi } from '$lib/rb/deck-hover.svelte';
 	import type { DeckId, DeckState, HotCueSlot, StemControl } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
@@ -142,7 +143,11 @@
 	}
 
 	async function syncKey(): Promise<void> {
-		await runPerformanceCommandFromUi({ type: 'key_sync', deck: deckId });
+		await runPerformanceCommandFromUi({
+			type: 'key_sync',
+			deck: deckId,
+			enabled: !deck.key_sync_enabled
+		});
 	}
 
 	async function nudgeKey(semitones: -1 | 1): Promise<void> {
@@ -229,11 +234,62 @@
 		}
 		await runPerformanceCommandFromUi({ type: 'pitch_range', deck: deckId, range });
 	}
+	async function unloadDeck(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'unload', deck: deckId });
+	}
+
+	const MIME_TRACK = 'application/x-mdt-stable-id';
+	let dropHover = $state(false);
+
+	function onTrackDragOver(event: DragEvent): void {
+		if (!event.dataTransfer?.types.includes(MIME_TRACK)) return;
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'copy';
+		dropHover = true;
+	}
+
+	function onTrackDragLeave(event: DragEvent): void {
+		const next = event.relatedTarget;
+		if (next instanceof Node && event.currentTarget instanceof Node && event.currentTarget.contains(next)) {
+			return;
+		}
+		dropHover = false;
+	}
+
+	async function onTrackDrop(event: DragEvent): Promise<void> {
+		dropHover = false;
+		const stableId = event.dataTransfer?.getData(MIME_TRACK)?.trim() ?? '';
+		if (stableId === '') return;
+		event.preventDefault();
+		try {
+			if (deck.stable_id !== null) {
+				await dispatchPerformanceCommand({ type: 'unload', deck: deckId });
+			}
+			await dispatchPerformanceCommand({ type: 'load', deck: deckId, stable_id: stableId });
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			pushToast(`drop load failed: ${message}`, 'error');
+		}
+	}
 </script>
 
-<section class="rb-deck rb-panel" data-deck={deckId} data-command-pending={pending}>
-	<!-- Performance pad letter strip along the panel top edge (static echo
-	     of the hot-cue bank, SCREENSHOT-SPEC 3). -->
+<section
+	class="rb-deck rb-panel"
+	class:drop-hover={dropHover}
+	class:loading={pending}
+	class:deck-focus={deckHoverUi.deckId === deckId}
+	data-deck={deckId}
+	data-command-pending={pending}
+	onpointerenter={() => setHoveredDeck(deckId)}
+	onpointerleave={() => {
+		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
+	}}
+	ondragover={onTrackDragOver}
+	ondragleave={onTrackDragLeave}
+	ondrop={(e) => void onTrackDrop(e)}
+>
+	<!-- Decorative A-H pad letter strip (hidden by default via
+	     --rb-pad-strip-display: none in theme.css). -->
 	<div class="pad-strip" aria-hidden="true">
 		{#each PAD_LETTERS as letter, i (letter)}
 			{#if i === 4}
@@ -251,10 +307,11 @@
 		onMaster={selectMaster}
 		onKeySync={syncKey}
 		onKeyNudge={nudgeKey}
+		onUnload={unloadDeck}
 		{keySyncAvailable}
 	/>
 
-	<StripWaveform {deck} {pending} onSeek={seekTo} />
+	<StripWaveform {deck} {pending} onSeek={seekTo} onPlay={playPause} />
 
 	<div class="main-row">
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
@@ -267,8 +324,8 @@
 			</button>
 		</div>
 
-		<!-- The cue bank is the deck panel's flexible middle (wide slot rows,
-		     SCREENSHOT-SPEC 3 wide layout) - it absorbs all spare width. -->
+		<!-- The cue host and 2x4 bank absorb spare width to preserve control
+		     alignment; the cue rows stay vertically bounded. -->
 		<div class="cue-flex">
 			<HotCueBank
 				{deck}
@@ -283,6 +340,7 @@
 
 		<LoopCluster
 			{deck}
+			{deckId}
 			{pending}
 			onEngage={engageBeatLoop}
 			onDisengage={disengageLoop}
@@ -329,32 +387,86 @@
 		position: relative;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		padding: 6px 8px;
+		gap: 2px;
+		padding: 4px 8px;
 		min-height: 0;
 		min-width: 0;
 		flex: 1;
 		overflow: hidden;
+		/* single inset stroke - avoids .rb-panel border doubling against
+		 * column chrome / stacked neighbour decks */
+		border: none;
+		box-shadow: inset 0 0 0 1px #3d4652;
+	}
+	.rb-deck.drop-hover {
+		outline: 1px solid var(--rb-accent);
+		outline-offset: -1px;
+		background: color-mix(in srgb, var(--rb-accent) 10%, var(--rb-panel));
+	}
+	/* Bottom-left → top-right white pulse while a command (load) is in flight. */
+	.rb-deck.loading::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 6;
+		pointer-events: none;
+		background: linear-gradient(
+			135deg,
+			transparent 0%,
+			transparent 42%,
+			rgba(255, 255, 255, 0.07) 50%,
+			transparent 58%,
+			transparent 100%
+		);
+		background-size: 220% 220%;
+		animation: deck-load-sweep 1.25s ease-in-out infinite;
+	}
+	@keyframes deck-load-sweep {
+		0% {
+			background-position: 100% 100%;
+			opacity: 0.55;
+		}
+		50% {
+			opacity: 1;
+		}
+		100% {
+			background-position: 0% 0%;
+			opacity: 0.55;
+		}
+	}
+	.rb-deck.deck-focus {
+		transition:
+			box-shadow 50ms ease-out,
+			background 50ms ease-out;
+		background: radial-gradient(
+			ellipse 90% 80% at 50% 40%,
+			rgba(255, 255, 255, 0.07) 0%,
+			transparent 70%
+		);
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 	}
 	.pad-strip {
-		display: flex;
+		/* Toggle: set --rb-pad-strip-display: none on .perf-root to hide. */
+		display: var(--rb-pad-strip-display, flex);
 		align-items: center;
 		justify-content: center;
 		gap: 10px;
 		font-size: var(--rb-fs-label);
 		color: var(--rb-text-dim);
 		line-height: 1;
+		flex: 0 0 auto;
 	}
 	.pad-sep {
 		color: var(--rb-border);
 	}
 	.main-row {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 8px;
 		flex: 1 1 auto;
 		min-height: 0;
 		min-width: 0;
+		overflow: hidden;
 	}
 	.grid-adjust {
 		display: flex;

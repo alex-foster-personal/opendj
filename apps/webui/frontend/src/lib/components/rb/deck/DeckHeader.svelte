@@ -4,6 +4,8 @@
 	// KEY SYNC, key badge + semitone nudge arrows,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
+	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
+	import { effectiveCamelotKey } from '$lib/rb/audio-engine.svelte';
 	import type { DeckId, DeckState } from '$lib/rb/types';
 
 	let {
@@ -14,6 +16,7 @@
 		onMaster,
 		onKeySync,
 		onKeyNudge,
+		onUnload,
 		keySyncAvailable
 	}: {
 		deck: DeckState;
@@ -23,12 +26,13 @@
 		onMaster: () => Promise<void>;
 		onKeySync: () => Promise<void>;
 		onKeyNudge: (semitones: -1 | 1) => Promise<void>;
+		onUnload: () => Promise<void>;
 		keySyncAvailable: boolean;
 	} = $props();
 
 	let artworkFailed: boolean = $state(false);
 	const artSrc: string | null = $derived(
-		deck.stable_id === null ? null : artworkUrl(deck.stable_id, 'm')
+		deck.stable_id === null ? null : artworkUrl(deck.stable_id, 'orig')
 	);
 	$effect(() => {
 		// Reset the failure flag whenever the artwork target changes.
@@ -37,7 +41,23 @@
 	});
 
 	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
-	const keyText: string = $derived(deck.key ?? '--');
+	/** Show audible Camelot after KEY SYNC / nudge; raw metadata stays in the tooltip. */
+	const keyText: string = $derived(
+		effectiveCamelotKey(deck.key, deck.key_shift_semitones) ?? deck.key ?? '--'
+	);
+	const keyColor: string | null = $derived(camelotKeyColor(keyText === '--' ? null : keyText));
+	const keyHover: string | null = $derived.by(() => {
+		const effective = keyText === '--' ? null : keyText;
+		const base = camelotKeyHoverLabel(effective);
+		const raw = deck.key;
+		if (raw === null || deck.key_shift_semitones === 0) return base;
+		const shift =
+			deck.key_shift_semitones >= 0
+				? `+${deck.key_shift_semitones}`
+				: String(deck.key_shift_semitones);
+		const suffix = ` (was ${raw}, shift ${shift})`;
+		return base === null ? `${effective}${suffix}` : `${base}${suffix}`;
+	});
 	const keyShiftText: string = $derived(
 		deck.key_shift_semitones >= 0
 			? `+${deck.key_shift_semitones}`
@@ -65,97 +85,125 @@
 </script>
 
 <div class="deck-header">
-	{#if artSrc !== null && !artworkFailed}
-		<img
-			class="art"
-			src={artSrc}
-			alt=""
-			onerror={() => {
-				// ARTWORK_NOT_FOUND -> grey placeholder slate, never a fake image.
-				artworkFailed = true;
-			}}
-		/>
-	{:else}
-		<div class="art placeholder"></div>
-	{/if}
-
-	<span class="deck-num">{deckId}</span>
-
-	<div class="meta" class:empty={deck.stable_id === null}>
-		<span class="title">{deck.title ?? 'No track loaded'}</span>
-		<span class="artist">{deck.artist ?? ''}</span>
+	<div class="art-slot">
+		{#if artSrc !== null && !artworkFailed}
+			<button
+				type="button"
+				class="art-btn"
+				title="Unload deck"
+				aria-label={`Unload deck ${deckId}`}
+				disabled={pending}
+				onclick={() => void onUnload()}
+			>
+				<img
+					class="art"
+					src={artSrc}
+					alt=""
+					onerror={() => {
+						artworkFailed = true;
+					}}
+				/>
+				<span class="art-eject" aria-hidden="true">⏏</span>
+			</button>
+		{:else}
+			<div class="art placeholder"></div>
+		{/if}
 	</div>
 
-	<div class="readout">
-		<span class="bpm">{bpmText}</span>
-		<span class="key">{keyText}</span>
-	</div>
+	<!-- Body wraps beside art so a second chrome row does not stack under the
+	     full artwork height (header = max(art, body), not art + body). -->
+	<div class="header-body">
+		<span class="deck-num">{deckId}</span>
 
-	<div class="clocks">
-		<span class="remain">{remainText}</span>
-		<span class="elapsed">{elapsedText}</span>
-	</div>
+		<div class="meta" class:empty={deck.stable_id === null}>
+			<span class="title">{deck.title ?? 'No track loaded'}</span>
+			<span class="artist">{deck.artist ?? ''}</span>
+		</div>
 
-	<button
-		class="rb-lit-button keysync"
-		disabled={pending || !keySyncAvailable}
-		data-performance-control="key-sync"
-		title={keySyncAvailable ? 'align key to selected master' : 'requires a loaded Camelot-key master'}
-		onclick={async () => await onKeySync()}
-	>
-		KEY SYNC
-	</button>
+		<div class="readout">
+			<span class="bpm">{bpmText}</span>
+			<span
+				class="key"
+				style={keyColor !== null ? `color:${keyColor}` : undefined}
+				title={keyHover ?? undefined}>{keyText}</span
+			>
+		</div>
 
-	<div class="key-badge">
-		<button
-			class="nudge"
-			disabled={pending || deck.stable_id === null || deck.key_shift_semitones === -12}
-			data-performance-control="key-nudge-down"
-			aria-label="lower key by one semitone"
-			title="lower key by one semitone"
-			onclick={async () => await onKeyNudge(-1)}
-		>
-			&lt;
-		</button>
-		<span class="key-val">{keyText}</span>
-		<span class="key-off">{keyShiftText}</span>
-		<button
-			class="nudge"
-			disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
-			data-performance-control="key-nudge-up"
-			aria-label="raise key by one semitone"
-			title="raise key by one semitone"
-			onclick={async () => await onKeyNudge(1)}
-		>
-			&gt;
-		</button>
-	</div>
+		<div class="clocks">
+			<span class="remain">{remainText}</span>
+			<span class="elapsed">{elapsedText}</span>
+		</div>
 
-	<div class="sync-col">
-		<button
-			class="rb-lit-button"
-			class:lit={deck.beat_sync_enabled}
-			disabled={pending}
-			aria-pressed={deck.beat_sync_enabled}
-			data-performance-control="beat-sync"
-			data-state={deck.beat_sync_enabled ? 'on' : 'off'}
-			title="toggle beat sync"
-			onclick={async () => await onBeatSync()}
-		>
-			BEAT SYNC
-		</button>
-		<button
-			class="rb-lit-button"
-			class:lit={deck.is_master}
-			disabled={pending || deck.stable_id === null}
-			aria-pressed={deck.is_master}
-			data-performance-control="master"
-			data-state={deck.is_master ? 'on' : 'off'}
-			title={deck.stable_id === null ? 'no track loaded' : 'select tempo master'}
-			onclick={async () => await onMaster()}
-		>
-			MASTER
-		</button>
+		<div class="chrome">
+			<button
+				class="rb-lit-button keysync"
+				class:lit={deck.key_sync_enabled}
+				disabled={pending || !keySyncAvailable}
+				aria-pressed={deck.key_sync_enabled}
+				data-performance-control="key-sync"
+				data-state={deck.key_sync_enabled ? 'on' : 'off'}
+				title={keySyncAvailable ? 'toggle key sync to selected master' : 'requires a loaded Camelot-key master'}
+				onclick={async () => await onKeySync()}
+			>
+				KEY SYNC
+			</button>
+
+			<div class="key-badge">
+				<button
+					class="nudge"
+					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === -12}
+					data-performance-control="key-nudge-down"
+					aria-label="lower key by one semitone"
+					title="lower key by one semitone"
+					onclick={async () => await onKeyNudge(-1)}
+				>
+					&lt;
+				</button>
+				<span
+					class="key-val"
+					style={keyColor !== null ? `color:${keyColor}` : undefined}
+					title={keyHover ?? undefined}>{keyText}</span
+				>
+				<span class="key-off">{keyShiftText}</span>
+				<button
+					class="nudge"
+					disabled={pending || deck.stable_id === null || deck.key_shift_semitones === 12}
+					data-performance-control="key-nudge-up"
+					aria-label="raise key by one semitone"
+					title="raise key by one semitone"
+					onclick={async () => await onKeyNudge(1)}
+				>
+					&gt;
+				</button>
+			</div>
+
+			<div class="sync-col">
+				<button
+					class="rb-lit-button"
+					class:lit={deck.beat_sync_enabled}
+					disabled={pending}
+					aria-pressed={deck.beat_sync_enabled}
+					data-performance-control="beat-sync"
+					data-state={deck.beat_sync_enabled ? 'on' : 'off'}
+					title="toggle beat sync"
+					onclick={async () => await onBeatSync()}
+				>
+					BEAT SYNC
+				</button>
+				<button
+					class="rb-lit-button master-btn"
+					class:lit={deck.is_master}
+					disabled={pending || deck.stable_id === null}
+					aria-pressed={deck.is_master}
+					data-performance-control="master"
+					data-state={deck.is_master ? 'on' : 'off'}
+					title={deck.stable_id === null ? 'no track loaded' : 'select tempo master'}
+					onclick={async () => await onMaster()}
+				>
+					MASTER
+				</button>
+			</div>
+		</div>
 	</div>
 </div>
 
@@ -166,28 +214,90 @@
 		gap: 6px;
 		width: 100%;
 		min-width: 0;
+		flex: 0 0 auto;
+	}
+	/* Fixed square slot with equal inset so the thumb is padded on all sides. */
+	.art-slot {
+		flex: 0 0 var(--rb-deck-art, 75px);
+		width: var(--rb-deck-art, 75px);
+		height: var(--rb-deck-art, 75px);
+		box-sizing: border-box;
+		padding: 4px;
+		display: grid;
+		place-items: stretch;
 	}
 	.art {
-		width: 28px;
-		height: 28px;
-		flex: 0 0 28px;
+		width: 100%;
+		height: 100%;
 		object-fit: cover;
+		object-position: center;
 		border: 1px solid var(--rb-border);
 		background: var(--rb-panel-raised);
+		box-sizing: border-box;
 	}
 	.art.placeholder {
 		background: var(--rb-panel-raised);
+	}
+	.header-body {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		align-content: flex-start;
+		gap: 6px;
+		row-gap: 4px;
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 	.deck-num {
 		font-size: var(--rb-fs-deck-title);
 		font-weight: 700;
 		color: var(--rb-text-dim);
+		flex: 0 0 auto;
+		line-height: 1.2;
+		padding-top: 0;
+		margin-top: -2px;
+	}
+	.art-btn {
+		position: relative;
+		display: block;
+		padding: 0;
+		border: none;
+		background: transparent;
+		cursor: pointer;
+		width: 100%;
+		height: 100%;
+		min-width: 0;
+		min-height: 0;
+	}
+	.art-btn .art {
+		display: block;
+	}
+	.art-btn:hover .art {
+		filter: brightness(0.45);
+	}
+	.art-eject {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 28px;
+		color: #fff;
+		opacity: 0;
+		pointer-events: none;
+		text-shadow: 0 1px 4px #000;
+	}
+	.art-btn:hover .art-eject {
+		opacity: 1;
 	}
 	.meta {
 		display: flex;
 		flex-direction: column;
+		justify-content: center;
 		min-width: 0;
-		flex: 1 1 auto;
+		flex: 1 1 64px;
+		align-self: stretch;
+		max-height: var(--rb-deck-art, 75px);
 	}
 	.meta.empty .title {
 		color: var(--rb-text-dim);
@@ -211,7 +321,8 @@
 		display: flex;
 		align-items: baseline;
 		gap: 4px;
-		flex: 0 0 auto;
+		flex: 0 1 auto;
+		min-width: 0;
 	}
 	.readout .bpm {
 		font-size: var(--rb-fs-deck-title);
@@ -226,7 +337,8 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-end;
-		flex: 0 0 auto;
+		flex: 0 1 auto;
+		min-width: 0;
 		font-variant-numeric: tabular-nums;
 	}
 	.clocks .remain {
@@ -239,6 +351,14 @@
 	}
 	.keysync {
 		flex: 0 0 auto;
+	}
+	.chrome {
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: flex-start;
+		gap: 6px;
+		flex: 0 0 auto;
+		margin-left: auto;
 	}
 	.key-badge {
 		display: flex;
@@ -271,5 +391,11 @@
 		flex-direction: column;
 		gap: 2px;
 		flex: 0 0 auto;
+	}
+	.master-btn.lit {
+		color: #1a1608;
+		background: #c9b35a;
+		box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
+		border-color: #b8a24e;
 	}
 </style>

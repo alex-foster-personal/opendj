@@ -1,12 +1,12 @@
 <script lang="ts">
 	/**
-	 * Rotary knob: SVG dark ring + blue indicator line (SCREENSHOT-SPEC 6).
+	 * Rotary knob: SVG dark ring + indicator line (SCREENSHOT-SPEC 6).
 	 * Real knobs: drag-vertical to turn, double-click resets to 0.5, arrow
 	 * keys nudge. Inert knobs render identically but ignore input and carry
 	 * the standard tooltip.
 	 */
 	interface Props {
-		/** Small caps label under the knob (TRIM / HIGH / MID / LOW / MIX ...). */
+		/** Small caps label under the knob (TRIM / HI / MID / LOW / FILTER ...). */
 		label: string;
 		/** Position 0..1; 0.5 = center detent (unity / flat). */
 		value: number;
@@ -14,20 +14,30 @@
 		onchange?: (value: number) => void;
 		/** True = visually authentic but ignores all input. */
 		inert?: boolean;
+		/** Indicator stroke tone. */
+		tone?: 'accent' | 'white' | 'rainbow';
 	}
 
-	let { label, value, onchange, inert = false }: Props = $props();
+	let { label, value, onchange, inert = false, tone = 'accent' }: Props = $props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
 	const DRAG_RANGE_PX = 150; // full 0..1 sweep over 150px of vertical drag
 	const KEY_STEP = 0.02;
+	const SIZE = 30;
 
 	let dragStartY = 0;
 	let dragStartValue = 0;
 	let dragging = false;
 
 	const angleDeg = $derived((value - 0.5) * SWEEP_DEG);
+	/** |offset| from center: >0.15 (~30% of half-throw) orange, >0.25 (~50%) red. */
+	const warn = $derived.by((): 'none' | 'orange' | 'red' => {
+		const d = Math.abs(value - 0.5);
+		if (d > 0.25) return 'red';
+		if (d > 0.15) return 'orange';
+		return 'none';
+	});
 
 	function _clamp01(v: number): number {
 		return Math.min(1, Math.max(0, v));
@@ -70,11 +80,11 @@
 	}
 </script>
 
-<div class="knob" class:rb-inert={inert} title={inert ? INERT_TITLE : label}>
+<div class="knob" class:rb-inert={inert} class:warn-orange={warn === 'orange'} class:warn-red={warn === 'red'} title={inert ? INERT_TITLE : label}>
 	<svg
-		width="26"
-		height="26"
-		viewBox="0 0 26 26"
+		width={SIZE}
+		height={SIZE}
+		viewBox="0 0 30 30"
 		role="slider"
 		aria-label={label}
 		aria-valuemin={0}
@@ -88,13 +98,18 @@
 		ondblclick={handleDblClick}
 		onkeydown={handleKeyDown}
 	>
-		<!-- outer ring -->
-		<circle cx="13" cy="13" r="12" class="ring" />
-		<!-- knob cap -->
-		<circle cx="13" cy="13" r="9.5" class="cap" />
-		<!-- blue indicator line, rotated around center -->
-		<g style={`transform: rotate(${angleDeg}deg); transform-origin: 13px 13px;`}>
-			<line x1="13" y1="4.5" x2="13" y2="10.5" class="indicator" />
+		<circle cx="15" cy="15" r="14" class="ring" />
+		<circle cx="15" cy="15" r="11" class="cap" />
+		<g style={`transform: rotate(${angleDeg}deg); transform-origin: 15px 15px;`}>
+			<line
+				x1="15"
+				y1="5"
+				x2="15"
+				y2="12"
+				class="indicator"
+				class:white={tone === 'white'}
+				class:rainbow={tone === 'rainbow'}
+			/>
 		</g>
 	</svg>
 	<span class="label">{label}</span>
@@ -106,6 +121,20 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 1px;
+	}
+	.knob.warn-orange .cap {
+		stroke: color-mix(in srgb, var(--rb-orange) 70%, #101318);
+		fill: color-mix(in srgb, var(--rb-orange) 18%, #23272f);
+	}
+	.knob.warn-orange .indicator:not(.white):not(.rainbow) {
+		stroke: var(--rb-orange);
+	}
+	.knob.warn-red .cap {
+		stroke: color-mix(in srgb, var(--rb-red) 75%, #101318);
+		fill: color-mix(in srgb, var(--rb-red) 22%, #23272f);
+	}
+	.knob.warn-red .indicator:not(.white):not(.rainbow) {
+		stroke: var(--rb-red);
 	}
 	svg {
 		cursor: ns-resize;
@@ -133,6 +162,36 @@
 		stroke: var(--rb-accent);
 		stroke-width: 2;
 		stroke-linecap: round;
+	}
+	.indicator.white {
+		stroke: #f0f2f5;
+	}
+	.indicator.rainbow {
+		stroke: #e23a32;
+		animation: knob-rainbow 4.5s linear infinite;
+	}
+	@keyframes knob-rainbow {
+		0% {
+			stroke: #e23a32;
+		}
+		16% {
+			stroke: #e8a13a;
+		}
+		33% {
+			stroke: #35c04f;
+		}
+		50% {
+			stroke: #2f6fd6;
+		}
+		66% {
+			stroke: #7b5cff;
+		}
+		83% {
+			stroke: #d0348a;
+		}
+		100% {
+			stroke: #e23a32;
+		}
 	}
 	.label {
 		font-size: 8px;

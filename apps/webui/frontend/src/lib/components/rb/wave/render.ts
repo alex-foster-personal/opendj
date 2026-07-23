@@ -12,7 +12,14 @@
  * band arrays the server filled - bands are NEVER synthesised.
  */
 import { vocalsOf } from '$lib/rb/api-rb';
-import type { AnlzBeat, AnlzCue, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/types';
+import type {
+	AnlzBeat,
+	AnlzCue,
+	AnlzData,
+	AnlzPhrase,
+	AnlzWaveform,
+	LoopState
+} from '$lib/rb/types';
 import { visibleBeatLines } from './wave-math';
 
 /** Vocal-region bar colour (SPIKE-B1 blue bars). A literal on purpose:
@@ -33,14 +40,23 @@ export function vocalAlpha(intensity: number): number {
 }
 
 /** Seconds of track visible across one row (window is centered on the
- * fixed playhead). 24s keeps the <=2400-point detail waveform dense. */
+ * fixed playhead). 24s keeps the <=38400-point detail waveform dense. */
 export const WAVE_WINDOW_S = 24;
 
 /** Top strip reserved for beat ticks, cue triangles and phrase chevrons. */
 const MARKER_BAND_PX = 10;
 
 /** Playhead is pure white in the screenshot; not a themed surface colour. */
-const PLAYHEAD_COLOR = '#ffffff';
+/** Center 'now' line - red by default; Beat Sync followers override via tone. */
+const PLAYHEAD_COLORS = {
+	now: '#e23a32',
+	master: '#e0cc6e',
+	bar1: '#35c04f',
+	synced: '#7ed992',
+	drift: '#ff2d2d'
+} as const;
+
+export type PlayheadTone = keyof typeof PLAYHEAD_COLORS;
 
 /** Rendering style only (matches rekordbox's white core): highs are drawn
  * at reduced height so the white band reads as the inner core. The band
@@ -149,6 +165,16 @@ export interface WaveRowFrame {
 	durationMs: number;
 	anlz: AnlzData | null;
 	palette: WavePalette;
+	/** Playback-rate ratio (1 = unity). Warps the visible window into
+	 * wall-clock seconds so beat-synced decks share grid spacing away from
+	 * the playhead, not only at the center. */
+	pitch: number;
+	/** Engaged loop region (orange highlight); null when no active loop. */
+	loop: LoopState | null;
+	/** Beat Sync follower playhead tone; default `now` (red). */
+	playheadTone?: PlayheadTone;
+	/** Wall time for drift pulse animation. */
+	playheadTimeMs?: number;
 }
 
 /** Paint one full row frame. ctx must already be DPR-scaled so all
@@ -158,18 +184,27 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	ctx.fillStyle = palette.bg;
 	ctx.fillRect(0, 0, w, h);
 
+	const pitch = frame.pitch;
+	if (!Number.isFinite(pitch) || pitch <= 0) {
+		throw new RangeError(`drawWaveRow: pitch must be finite and > 0, got ${pitch}`);
+	}
 	const durS = frame.durationMs / 1000;
-	const tLeft = frame.positionMs / 1000 - WAVE_WINDOW_S / 2;
-	const pxPerS = w / WAVE_WINDOW_S;
+	// WAVE_WINDOW_S is wall-clock; scale into track time via pitch so a
+	// synced follower (pitch = masterBpm/nativeBpm) shows the same beat
+	// spacing as the master across the whole row.
+	const trackWindowS = WAVE_WINDOW_S * pitch;
+	const tLeft = frame.positionMs / 1000 - trackWindowS / 2;
+	const pxPerS = w / trackWindowS;
 
 	if (frame.anlz !== null && durS > 0) {
 		_drawBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette);
+		_drawLoopRegion(ctx, frame.loop, tLeft, pxPerS, w, h);
 		_drawBeatGrid(ctx, frame.anlz.beatgrid.beats, tLeft, pxPerS, w, h, palette);
 		_drawPhrases(ctx, frame.anlz.phrases, tLeft, pxPerS, w, palette);
 		_drawCues(ctx, frame.anlz.cues, tLeft, pxPerS, w, palette);
 		_drawVocals(ctx, frame.anlz, tLeft, pxPerS, w);
 	}
-	_drawPlayhead(ctx, w, h);
+	drawPlayhead(ctx, w, h, frame.playheadTone ?? 'now', frame.playheadTimeMs ?? 0);
 }
 
 // ----------------------------------------------------------- _helpers
@@ -299,6 +334,28 @@ function _drawCues(
 	}
 }
 
+/** Semi-transparent orange band over an engaged loop (Rekordbox parity). */
+function _drawLoopRegion(
+	ctx: CanvasRenderingContext2D,
+	loop: LoopState | null,
+	tLeft: number,
+	pxPerS: number,
+	w: number,
+	h: number
+): void {
+	if (loop === null || !loop.engaged) return;
+	const x0 = (loop.in_ms / 1000 - tLeft) * pxPerS;
+	const x1 = (loop.out_ms / 1000 - tLeft) * pxPerS;
+	const left = Math.max(0, Math.min(w, x0));
+	const right = Math.max(0, Math.min(w, x1));
+	if (right <= left) return;
+	ctx.fillStyle = 'rgba(232, 161, 58, 0.42)';
+	ctx.fillRect(left, 0, right - left, h);
+	ctx.fillStyle = 'rgba(232, 161, 58, 0.95)';
+	ctx.fillRect(left, 0, 3, h);
+	ctx.fillRect(Math.max(left, right - 3), 0, 3, h);
+}
+
 function _drawPhrases(
 	ctx: CanvasRenderingContext2D,
 	phrases: AnlzPhrase[],
@@ -347,11 +404,35 @@ function _drawVocals(
 	ctx.globalAlpha = 1;
 }
 
-function _drawPlayhead(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+/** Fixed center playhead. Always drawn (busy waveforms + empty decks).
+ * Beat Sync followers pass bar1 / synced / drift; others keep `now` (red). */
+export function drawPlayhead(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	tone: PlayheadTone = 'now',
+	timeMs: number = 0
+): void {
 	const centerX = Math.round(w / 2);
-	ctx.fillStyle = PLAYHEAD_COLOR;
-	ctx.globalAlpha = 0.18;
-	ctx.fillRect(centerX - 2, 0, 5, h); // soft glow
-	ctx.globalAlpha = 1;
+	const color = PLAYHEAD_COLORS[tone];
+	let glow = 0.4;
+	let core = 1;
+	if (tone === 'drift') {
+		// Bright pulsing red - light-touch warning, still unmissable.
+		const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(timeMs / 160));
+		glow = 0.45 * pulse;
+		core = pulse;
+	} else if (tone === 'bar1') {
+		glow = 0.55;
+	} else if (tone === 'synced') {
+		glow = 0.32;
+	} else if (tone === 'master') {
+		glow = 0.5;
+	}
+	ctx.fillStyle = color;
+	ctx.globalAlpha = glow;
+	ctx.fillRect(centerX - 1, 0, 3, h);
+	ctx.globalAlpha = core;
 	ctx.fillRect(centerX, 0, 1, h);
+	ctx.globalAlpha = 1;
 }

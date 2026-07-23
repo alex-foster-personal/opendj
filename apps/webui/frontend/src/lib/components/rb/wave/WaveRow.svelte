@@ -9,12 +9,20 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/types';
-	import { getDeckState } from './engine-accessor';
+	import { getDeckState, DECK_IDS } from './engine-accessor';
+	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
 	import { shouldUseBeatgridFallback, toSyntheticAnlzData } from '$lib/rb/beatgrid-fallback';
-	import { barsToNextCueLabel } from './wave-math';
-	import { drawWaveRow, readPalette, WAVE_WINDOW_S, type WavePalette } from './render';
+	import { barsToNextCueLabel, followerSyncPlayheadTone } from './wave-math';
+	import {
+		drawPlayhead,
+		drawWaveRow,
+		readPalette,
+		WAVE_WINDOW_S,
+		type PlayheadTone,
+		type WavePalette
+	} from './render';
 	import {
 		createLatestSeekDispatcher,
 		waveClickTargetMs,
@@ -68,6 +76,34 @@
 		paintAnlz !== null ? barsToNextCueLabel(paintAnlz, deck.position_ms) : null
 	);
 
+	const masterDeck = $derived(DECK_IDS.find((d) => getDeckState(d).is_master) ?? null);
+	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
+	const masterBeats = $derived.by(() => {
+		if (masterState === null || masterState.stable_id === null) return null;
+		if (masterState.anlz !== null) return masterState.anlz.beatgrid.beats;
+		const entry = getAnlzEntry(masterState.stable_id);
+		return entry !== undefined && entry.status === 'ready' ? entry.data.beatgrid.beats : null;
+	});
+
+	const syncPlayheadTone = $derived.by((): PlayheadTone => {
+		if (deck.is_master && deck.stable_id !== null) return 'master';
+		const followerBeats = paintAnlz?.beatgrid.beats;
+		if (followerBeats === undefined || masterBeats === null || masterState === null) {
+			return 'now';
+		}
+		const tone = followerSyncPlayheadTone({
+			beatSyncEnabled: deck.beat_sync_enabled,
+			isMaster: deck.is_master,
+			syncError: deck.sync_error,
+			syncMode: deck.sync_mode,
+			followerBeats,
+			masterBeats,
+			followerPosMs: deck.position_ms,
+			masterPosMs: masterState.position_ms
+		});
+		return tone ?? 'now';
+	});
+
 	// Vocal state tooltip (SPIKE-B1/B2 four mandatory states): bars are
 	// painted by render.ts for 'rekordbox' and 'demucs'; the barless
 	// states get an explicit tooltip so absence is never ambiguous, and
@@ -87,6 +123,9 @@
 	let cssH = $state(0);
 	let palette: WavePalette | null = null;
 	let seeking = $state(false);
+	/** SPIKE-PERF: gesture-local paint target. Not published as deck.position_ms
+	 * (presentation clock stays transport truth). Undo = always paint deck.position_ms. */
+	let scrubPreviewMs: number | null = $state(null);
 	let scrubPointerId: number | null = null;
 	let scrubOriginClientX = 0;
 	let scrubOriginPositionMs = 0;
@@ -94,11 +133,25 @@
 	let scrubLeftPx = 0;
 	let scrubWidthPx = 0;
 	let scrubMoved = false;
-	let lastSeekTs = 0;
+	let scrubDispatchError: unknown = null;
 	const DRAG_THRESHOLD_PX = 3;
 	const seekDispatcher = createLatestSeekDispatcher(async (positionMs) => {
 		await runPerformanceCommandFromUi({ type: 'seek', deck: deckId, position_ms: positionMs });
 	});
+
+	function _queueSeek(positionMs: number): void {
+		scrubPreviewMs = positionMs;
+		// Drag path must not await: the latest-only dispatcher coalesces while
+		// the previous schedule drains. Awaiting here serialized every move
+		// behind transport presentation and felt laggy vs Rekordbox.
+		void seekDispatcher.request(positionMs).catch((error: unknown) => {
+			scrubDispatchError = error;
+		});
+	}
+
+	function _paintPositionMs(): number {
+		return scrubPreviewMs !== null ? scrubPreviewMs : deck.position_ms;
+	}
 
 	$effect(() => {
 		const el = canvasEl;
@@ -124,25 +177,37 @@
 		const ctx = el.getContext('2d');
 		if (ctx === null) throw new Error(`wavestack deck ${deckId}: 2d context unavailable`);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		// CH3/4: lighter fill than --rb-bg (#0d0f12) so secondary rows read
+		// clearly under the opaque canvas (CSS alone cannot show through).
+		const rowBg = deckId === 3 || deckId === 4 ? '#1a1f28' : palette.bg;
+		const paintPalette = rowBg === palette.bg ? palette : { ...palette, bg: rowBg };
 		if (deck.stable_id === null || deck.duration_ms === null) {
-			// Empty deck: flat dark row - never an invented waveform.
-			ctx.fillStyle = palette.bg;
+			// Empty deck: flat dark row + always-on now line - never an invented waveform.
+			ctx.fillStyle = paintPalette.bg;
 			ctx.fillRect(0, 0, cssW, cssH);
+			drawPlayhead(ctx, cssW, cssH, 'now');
 			return;
 		}
 		drawWaveRow(ctx, {
 			widthCss: cssW,
 			heightCss: cssH,
-			positionMs: deck.position_ms,
+			positionMs: _paintPositionMs(),
 			durationMs: deck.duration_ms,
 			anlz: paintAnlz,
-			palette
+			palette: paintPalette,
+			pitch: deck.pitch,
+			loop: deck.loop,
+			playheadTone: syncPlayheadTone,
+			playheadTimeMs: performance.now()
 		});
 	}
 
-	// rAF loop ONLY while playing or scrubbing (task requirement).
+	// rAF while playing/scrubbing, drift pulse, or master is moving under a synced follower.
 	$effect(() => {
-		if (!(deck.playing || seeking)) return;
+		const masterMoving =
+			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
+		const pulse = syncPlayheadTone === 'drift';
+		if (!(deck.playing || seeking || pulse || masterMoving)) return;
 		let raf = requestAnimationFrame(function loop() {
 			draw();
 			raf = requestAnimationFrame(loop);
@@ -154,11 +219,22 @@
 	// early return keeps position_ms untracked during playback so this
 	// effect stays quiet while the rAF loop owns the canvas.
 	$effect(() => {
-		if (deck.playing || seeking) return;
+		const masterMoving =
+			deck.beat_sync_enabled && !deck.is_master && (masterState?.playing ?? false);
+		if (deck.playing || seeking || syncPlayheadTone === 'drift' || masterMoving) return;
 		void deck.stable_id;
 		void deck.position_ms;
+		void deck.pitch;
+		void deck.loop;
+		void deck.beat_sync_enabled;
+		void deck.sync_mode;
+		void deck.sync_error;
+		void deck.is_master;
+		void syncPlayheadTone;
 		void paintAnlz;
 		void anlzErrorCode;
+		void masterBeats;
+		void masterState?.position_ms;
 		void cssW;
 		void cssH;
 		draw();
@@ -168,13 +244,14 @@
 	// the gesture origin. Dragging grabs the waveform under the fixed playhead;
 	// click-without-drag still seeks to the time visibly beneath the pointer.
 	function _dragTarget(clientX: number): number {
+		// Match drawWaveRow: wall-clock window scaled by pitch into track time.
 		return waveDragTargetMs({
 			originPositionMs: scrubOriginPositionMs,
 			originClientX: scrubOriginClientX,
 			clientX,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
-			windowSeconds: WAVE_WINDOW_S
+			windowSeconds: WAVE_WINDOW_S * deck.pitch
 		});
 	}
 
@@ -184,7 +261,7 @@
 			pointerX: clientX - scrubLeftPx,
 			widthPx: scrubWidthPx,
 			durationMs: scrubDurationMs,
-			windowSeconds: WAVE_WINDOW_S
+			windowSeconds: WAVE_WINDOW_S * deck.pitch
 		});
 	}
 
@@ -192,6 +269,7 @@
 		scrubPointerId = null;
 		scrubMoved = false;
 		seeking = false;
+		scrubPreviewMs = null;
 	}
 
 	async function onPointerDown(event: PointerEvent): Promise<void> {
@@ -216,8 +294,16 @@
 		scrubLeftPx = rect.left;
 		scrubWidthPx = rect.width;
 		scrubMoved = false;
+		scrubDispatchError = null;
 		seeking = true;
-		lastSeekTs = performance.now();
+		// SPIKE-PERF: jump the painted window under the pointer immediately.
+		scrubPreviewMs = waveClickTargetMs({
+			centerPositionMs: scrubOriginPositionMs,
+			pointerX: event.clientX - scrubLeftPx,
+			widthPx: scrubWidthPx,
+			durationMs: scrubDurationMs,
+			windowSeconds: WAVE_WINDOW_S * deck.pitch
+		});
 	}
 
 	async function onPointerMove(event: PointerEvent): Promise<void> {
@@ -225,10 +311,7 @@
 		const deltaPx = event.clientX - scrubOriginClientX;
 		if (!scrubMoved && Math.abs(deltaPx) < DRAG_THRESHOLD_PX) return;
 		scrubMoved = true;
-		const now = performance.now();
-		if (now - lastSeekTs < 90) return; // throttle buffer-source restarts
-		lastSeekTs = now;
-		await seekDispatcher.request(_dragTarget(event.clientX));
+		_queueSeek(_dragTarget(event.clientX));
 	}
 
 	async function onPointerUp(event: PointerEvent): Promise<void> {
@@ -236,7 +319,9 @@
 		const canvas = event.currentTarget as HTMLCanvasElement;
 		try {
 			const targetMs = scrubMoved ? _dragTarget(event.clientX) : _clickTarget(event.clientX);
+			scrubPreviewMs = targetMs;
 			await seekDispatcher.request(targetMs);
+			if (scrubDispatchError !== null) throw scrubDispatchError;
 		} finally {
 			_clearGesture();
 			if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -255,7 +340,16 @@
 	}
 </script>
 
-<div class="rb-waverow">
+<div
+	class="rb-waverow"
+	class:secondary={deckId === 3 || deckId === 4}
+	class:deck-focus={deckHoverUi.deckId === deckId}
+	data-deck={deckId}
+	onpointerenter={() => setHoveredDeck(deckId)}
+	onpointerleave={() => {
+		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
+	}}
+>
 	<div class="gutter">
 		<span class="deck-num">{deckId}</span>
 		{#if barsLabel !== null}<span class="bars">{barsLabel}</span>{/if}
@@ -296,7 +390,22 @@
 		display: flex;
 		height: var(--rb-waverow-h);
 		background: var(--rb-bg);
-		border-bottom: 1px solid var(--rb-border);
+		/* Strong channel separator so beat lines can be compared across rows. */
+		border-bottom: 2px solid #3d4652;
+		transition:
+			background 50ms ease-out,
+			box-shadow 50ms ease-out;
+	}
+	/* Match mixer CH3/4: gutter/chrome use the same lighter fill as the canvas. */
+	.rb-waverow.secondary {
+		background: #1a1f28;
+	}
+	.rb-waverow.deck-focus {
+		background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
+		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+	}
+	.rb-waverow.secondary.deck-focus {
+		background: color-mix(in srgb, rgba(255, 255, 255, 0.12) 100%, #1a1f28);
 	}
 	.gutter {
 		width: 56px;

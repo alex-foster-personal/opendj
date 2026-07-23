@@ -1,7 +1,8 @@
 <script lang="ts">
 	// 8-slot hot-cue bank A-H as WIDE slot rows, 2 columns x 4 rows (A-D
-	// left, E-H right, SCREENSHOT-SPEC 3 wide layout): this bank is the
-	// deck panel's flexible middle and fills all spare width. Populated
+	// left, E-H right, SCREENSHOT-SPEC 3 wide layout): the informative rows
+	// fill spare width for cue labels while their height stays bounded so
+	// they do not consume the deck's spare vertical space. Populated
 	// slot click = real jump to in_ms via the audio engine (COMPONENT-MAP
 	// 1.3). Empty slot click = SAVE the current playhead there (djmdCue
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
@@ -150,14 +151,15 @@
 		min-width: 0;
 		flex: 1 1 auto;
 		width: 100%;
+		align-self: flex-start;
 	}
 	.bank {
 		display: grid;
-		grid-template-rows: repeat(4, minmax(18px, 1fr));
+		grid-template-rows: repeat(4, 18px);
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		grid-auto-flow: column;
 		gap: 3px;
-		flex: 1 1 auto;
+		flex: 0 0 auto;
 		min-height: 0;
 	}
 	.slot {
@@ -165,6 +167,8 @@
 		align-items: center;
 		gap: 6px;
 		min-width: 0;
+		height: 18px;
+		box-sizing: border-box;
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
@@ -230,9 +234,13 @@
 	}
 	.dropdown {
 		align-self: flex-start;
+		height: 18px;
+		box-sizing: border-box;
 	}
 	.undo {
 		align-self: flex-start;
+		height: 18px;
+		box-sizing: border-box;
 	}
 	.caret {
 		color: var(--rb-text-dim);
