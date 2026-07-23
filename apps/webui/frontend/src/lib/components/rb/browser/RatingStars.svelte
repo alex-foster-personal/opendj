@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Editable 5-star rating cell (SCREENSHOT-SPEC 5c: outline stars).
 	// Clicking star n rates n; clicking the current rating clears to 0.
+	// Hover previews the star count like a scrub (temporary highlight).
 	// Persistence is the parent's job (PATCH /tracks/{sid} + If-Match).
 	const STARS: number[] = [1, 2, 3, 4, 5];
 
@@ -12,27 +13,43 @@
 		onrate: (next: number) => void;
 	} = $props();
 
+	let hoverN: number | null = $state(null);
+
 	function _click(event: MouseEvent, n: number): void {
 		// Keep row click/dblclick (select / deck load) out of rating edits.
 		event.stopPropagation();
 		onrate(rating === n ? 0 : n);
 	}
+
+	function _lit(n: number): boolean {
+		if (hoverN !== null) return n <= hoverN;
+		return rating !== null && rating >= n;
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<span class="rb-stars" role="radiogroup" aria-label="Rating" ondblclick={(e) => e.stopPropagation()}>
+<span
+	class="rb-stars"
+	class:unrated={rating === null || rating === 0}
+	role="radiogroup"
+	aria-label="Rating"
+	ondblclick={(e) => e.stopPropagation()}
+	onpointerleave={() => (hoverN = null)}
+>
 	{#each STARS as n (n)}
 		<button
 			class="rb-star"
-			class:filled={rating !== null && rating >= n}
+			class:filled={_lit(n)}
+			class:preview={hoverN !== null && n <= hoverN}
 			role="radio"
 			aria-checked={rating !== null && rating >= n}
 			aria-label={`Set rating ${n}`}
 			title={`Set rating ${n}`}
+			onpointerenter={() => (hoverN = n)}
 			onclick={(e) => _click(e, n)}
 			ondblclick={(e) => e.stopPropagation()}
 		>
-			{rating !== null && rating >= n ? '★' : '☆'}
+			{_lit(n) ? '★' : '☆'}
 		</button>
 	{/each}
 </span>
@@ -41,6 +58,9 @@
 	.rb-stars {
 		display: inline-flex;
 		gap: 1px;
+	}
+	.rb-stars.unrated {
+		gap: 3px;
 	}
 	button {
 		padding: 0;

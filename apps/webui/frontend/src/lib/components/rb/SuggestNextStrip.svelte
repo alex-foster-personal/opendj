@@ -50,11 +50,14 @@
 	let {
 		stableId,
 		sessionIds = [],
-		topN = 8
+		topN = 8,
+		onload
 	}: {
 		stableId: string | null;
 		sessionIds?: string[];
 		topN?: number;
+		/** Click a candidate to load (deck null = free deck). */
+		onload?: (stableId: string) => void;
 	} = $props();
 
 	let state: StripState = $state({ kind: 'idle' });
@@ -124,19 +127,27 @@
 	{:else}
 		<ol class="cands">
 			{#each state.data.candidates as cand (cand.stable_id)}
-				<li class="cand" title={cand.explain_text ?? cand.stable_id}>
-					<span class="title">{cand.title ?? cand.stable_id}</span>
-					<span class="meta">
-						{cand.artist ?? '?'}
-						· {cand.bpm === null ? '?' : cand.bpm.toFixed(1)}
-						· {cand.key_camelot ?? '?'}
-						{#if cand.energy !== null}· E{cand.energy}{/if}
-					</span>
-					<span class="tags">
-						{#each cand.rationale_tags as tag (tag)}
-							<span class="tag" class:pair={tag.startsWith('pair_')}>{_tagLabel(tag)}</span>
-						{/each}
-					</span>
+				<li class="cand">
+					<button
+						type="button"
+						class="cand-btn"
+						data-stable-id={cand.stable_id}
+						title={cand.explain_text ?? `Load ${cand.title ?? cand.stable_id}`}
+						onclick={() => onload?.(cand.stable_id)}
+					>
+						<span class="title">{cand.title ?? cand.stable_id}</span>
+						<span class="meta">
+							{cand.artist ?? '?'}
+							· {cand.bpm === null ? '?' : cand.bpm.toFixed(1)}
+							· {cand.key_camelot ?? '?'}
+							{#if cand.energy !== null}· E{cand.energy}{/if}
+						</span>
+						<span class="tags">
+							{#each cand.rationale_tags as tag (tag)}
+								<span class="tag" class:pair={tag.startsWith('pair_')}>{_tagLabel(tag)}</span>
+							{/each}
+						</span>
+					</button>
 				</li>
 			{/each}
 		</ol>
@@ -181,14 +192,26 @@
 	}
 	.cand {
 		flex: none;
+		max-width: 180px;
+		list-style: none;
+	}
+	.cand-btn {
 		display: flex;
 		flex-direction: column;
 		gap: 1px;
+		width: 100%;
 		padding: 2px 6px;
 		background: var(--rb-panel-raised);
 		border: 1px solid var(--rb-border);
 		border-radius: 3px;
-		max-width: 180px;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.cand-btn:hover {
+		border-color: var(--rb-accent);
+		background: color-mix(in srgb, var(--rb-accent) 14%, var(--rb-panel-raised));
 	}
 	.title {
 		white-space: nowrap;

@@ -144,6 +144,7 @@
 				<div
 					class="row child"
 					class:selected={selectedId === node.playlist_id}
+					class:broken={node.mostly_broken}
 					role="button"
 					tabindex="0"
 					onclick={() => onselect(node)}
@@ -281,6 +282,9 @@
 	}
 	.row.selected {
 		background: var(--rb-select);
+	}
+	.row.broken {
+		color: var(--rb-text-dim);
 	}
 	.row svg {
 		flex: none;

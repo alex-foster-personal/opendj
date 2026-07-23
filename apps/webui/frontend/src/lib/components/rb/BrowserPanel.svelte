@@ -20,7 +20,8 @@
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
-		vocalsOf
+		vocalsOf,
+		RB_API_BASE
 	} from '$lib/rb/api-rb';
 	import type {
 		PlaylistSummaryHydrated,
@@ -33,8 +34,11 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks } from '$lib/rb/audio-engine.svelte';
-	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
-	import { setHideBrokenLinks, uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		dispatchPerformanceCommand,
+		runPerformanceCommandFromUi
+	} from '$lib/rb/performance-ipc.svelte';
+	import { setHideBrokenLinks, setLibraryDensity, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
 	import {
 		getPlaylistTracksEtag,
@@ -53,6 +57,7 @@
 	import {
 		canMutatePlaylist,
 		createPaneStore,
+		filterRows,
 		makeClientRowProvider,
 		sortRows,
 		visibleRowsOf
@@ -62,7 +67,7 @@
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import { fetchAllPages } from './browser/virtual-window';
-	import { getAnlzEntry } from './wave/anlz-cache.svelte';
+	import { ensureAnlz, getAnlzEntry } from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
 
@@ -78,6 +83,14 @@
 	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
 	const DECK_IDS: DeckId[] = [1, 2, 3, 4];
+	/** Spike: hide tree playlists when fewer than 30% of tracks are on disk.
+	 * Move to BE/config later. */
+	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
+
+	function playlistMostlyBroken(p: PlaylistSummaryHydrated): boolean {
+		if (p.track_count === 0) return false;
+		return p.available_count / p.track_count < HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO;
+	}
 
 	// Pane state lives in the typed contract (pane-contract.svelte.ts):
 	// 4 independent PaneStore instances - selection, search, sort, and
@@ -103,6 +116,37 @@
 	let spotifyPendingError = $state<string | null>(null);
 	let spotifyPendingSequence = 0;
 	const _inflight = new Set<string>();
+	/** Brief unload affordance after a load blocked by an active deck. */
+	let unloadOffer = $state<{ deck: DeckId; until: number } | null>(null);
+	let unloadOfferTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Bottom-left connectivity: lib = state.db tracks, BE = API, FE = Vite. */
+	let libUp = $state(false);
+	let beUp = $state(false);
+	let feUp = $state(false);
+
+	/** Library back stack: playlist + selection + scroll + search. */
+	type NavSnap = {
+		playlist_id: string | null;
+		playlist_name: string;
+		selected_id: string | null;
+		scroll_top: number;
+		search: string;
+	};
+	let navHistory = $state<NavSnap[]>([]);
+	let navEpoch = $state(0);
+	let _navRestoring = false;
+	/** Genre filter undo + 20s library gesture window. */
+	let genreFilterPrior = $state('');
+	let genreFilterUntil = $state(0);
+	const GENRE_WINDOW_MS = 20_000;
+
+	/** Cmd+F filter / Cmd+FF find / Cmd+Shift+F collection. */
+	type SearchMode = 'filter' | 'find' | 'collection';
+	let searchMode = $state<SearchMode>('filter');
+	let searchFocusToken = $state(0);
+	let searchFocused = $state(false);
+	/** Snapshot before search so Esc/X returns to prior place. */
+	let searchReturnSnap = $state<NavSnap | null>(null);
 
 	const pane = $derived(panes[activePane]);
 	const spotifyPlaylists = $derived(playlists.filter((playlist) => playlist.vendor === 'spotify'));
@@ -134,9 +178,9 @@
 	const treeNodes = $derived(
 		playlists
 			.slice()
-			// FR-1: with 'Hide broken links' ON, playlists with zero available
-			// (on-disk) tracks vanish from the tree.
-			.filter((p) => !uiPrefs.hide_broken_links || p.available_count > 0)
+			// FR-1: with 'Hide broken links' ON, playlists with fewer than
+			// 30% available (on-disk) tracks vanish from the tree.
+			.filter((p) => !uiPrefs.hide_broken_links || !playlistMostlyBroken(p))
 			// Rekordbox custom tree order (djmdPlaylist Seq walk, SCREENSHOT-SPEC
 			// 5b) - NOT alphabetical. Playlists without a rekordbox order (seq
 			// null) sink below the ordered ones, name-sorted among themselves.
@@ -152,6 +196,7 @@
 					name: p.name,
 					track_count: p.track_count,
 					kind: 'playlist',
+					mostly_broken: playlistMostlyBroken(p),
 					children: []
 				})
 			)
@@ -165,12 +210,29 @@
 			})
 		)
 	);
-	const wholeCollectionActive = $derived(pane.whole_collection && pane.search.trim() !== '');
-	const visibleRows = $derived(
-		wholeCollectionActive
-			? sortRows(pane.search_results, pane.sort_key, pane.sort_dir)
-			: visibleRowsOf(pane, uiPrefs.hide_broken_links)
+	const wholeCollectionActive = $derived(
+		searchMode === 'collection' &&
+			pane.whole_collection &&
+			pane.search.trim() !== '' &&
+			!/^genre:/i.test(pane.search.trim())
 	);
+	const findHighlightQuery = $derived(
+		searchMode === 'find' && pane.search.trim().length >= 3 ? pane.search.trim() : ''
+	);
+	const visibleRows = $derived.by(() => {
+		// Find mode: keep full list (no filter); TrackTable highlights matches.
+		if (searchMode === 'find') {
+			return sortRows(
+				filterRows(pane.rows, '', uiPrefs.hide_broken_links),
+				pane.sort_key,
+				pane.sort_dir
+			);
+		}
+		if (wholeCollectionActive) {
+			return sortRows(pane.search_results, pane.sort_key, pane.sort_dir);
+		}
+		return visibleRowsOf(pane, uiPrefs.hide_broken_links);
+	});
 	// Read contract handed to TrackTable (getters stay reactive through
 	// visibleRows/pane). The virtualization lane replaces THIS provider,
 	// not TrackTable's props.
@@ -178,7 +240,21 @@
 		() => visibleRows,
 		() => pane.truncated || (wholeCollectionActive && pane.search_total > MAX_SEARCH_ROWS)
 	);
+	const searchPlaceholder = $derived(
+		searchMode === 'find'
+			? 'Find in list (highlight, 3+ chars)'
+			: searchMode === 'collection'
+				? 'Search whole collection'
+				: 'Search within this track list'
+	);
 	const emptyMessage = $derived.by((): string | null => {
+		if (searchMode === 'find') {
+			if (pane.loading) return 'loading...';
+			else if (pane.error !== null) return `load failed: ${pane.error}`;
+			else if (pane.playlist_id === null) return 'blank list - choose a playlist in the tree';
+			else if (visibleRows.length === 0) return 'empty playlist';
+			else return null;
+		}
 		if (wholeCollectionActive) {
 			if (pane.searching) return 'searching whole collection...';
 			else if (visibleRows.length === 0) return 'no tracks match the search';
@@ -202,9 +278,73 @@
 		const unsubscribeSearch = subscribeBrowserSearch((request) => {
 			if (request.revision > 0) panes[activePane].search = request.query;
 		});
+		const onKey = (e: KeyboardEvent): void => {
+			if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+			if (e.key !== 'f' && e.key !== 'F') return;
+			// Don't steal from text fields outside the browser search box.
+			const t = e.target;
+			if (t instanceof HTMLElement) {
+				const tag = t.tagName;
+				const inSearch = t.closest('.rb-search') !== null;
+				if (
+					!inSearch &&
+					(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable)
+				) {
+					return;
+				}
+			}
+			e.preventDefault();
+			if (e.shiftKey) openSearchMode('collection');
+			else if (searchFocused && searchMode === 'filter') openSearchMode('find');
+			else openSearchMode('filter');
+		};
+		window.addEventListener('keydown', onKey);
 		void _init();
-		return unsubscribeSearch;
+		let connAlive = true;
+		const pingConn = async (): Promise<void> => {
+			const [health, fe] = await Promise.all([_pingHealth(), _pingFe()]);
+			if (!connAlive) return;
+			beUp = health.be;
+			libUp = health.lib;
+			feUp = fe;
+		};
+		void pingConn();
+		const connTimer = setInterval(() => void pingConn(), 2500);
+		return () => {
+			connAlive = false;
+			clearInterval(connTimer);
+			unsubscribeSearch();
+			window.removeEventListener('keydown', onKey);
+		};
 	});
+
+	async function _pingHealth(): Promise<{ be: boolean; lib: boolean }> {
+		try {
+			const r = await fetch(`${RB_API_BASE}/api/v1/health`, {
+				method: 'GET',
+				cache: 'no-store',
+				signal: AbortSignal.timeout(2000)
+			});
+			if (!r.ok) return { be: false, lib: false };
+			const body = (await r.json()) as { state_db?: { tracks?: number } };
+			return { be: true, lib: (body.state_db?.tracks ?? 0) > 0 };
+		} catch {
+			return { be: false, lib: false };
+		}
+	}
+
+	async function _pingFe(): Promise<boolean> {
+		try {
+			const r = await fetch(`${window.location.origin}/`, {
+				method: 'GET',
+				cache: 'no-store',
+				signal: AbortSignal.timeout(2000)
+			});
+			return r.ok;
+		} catch {
+			return false;
+		}
+	}
 
 	async function _init(): Promise<void> {
 		playlistsLoading = true;
@@ -297,7 +437,82 @@
 
 	// ------------------------------------------------- pane playlist loading
 
+	function _navSnap(): NavSnap {
+		const p = panes[activePane];
+		return {
+			playlist_id: p.playlist_id,
+			playlist_name: p.title,
+			selected_id: p.selected_id,
+			scroll_top: p.scroll_top,
+			search: p.search
+		};
+	}
+
+	function _pushNav(): void {
+		if (_navRestoring) return;
+		const snap = _navSnap();
+		const last = navHistory.length > 0 ? navHistory[navHistory.length - 1] : null;
+		if (
+			last !== null &&
+			last.playlist_id === snap.playlist_id &&
+			last.selected_id === snap.selected_id &&
+			last.search === snap.search &&
+			Math.abs(last.scroll_top - snap.scroll_top) < 8
+		) {
+			return;
+		}
+		navHistory = [...navHistory.slice(-39), snap];
+	}
+
+	function _nodeForNav(snap: NavSnap): PlaylistNode | null {
+		if (snap.playlist_id === null) return null;
+		if (snap.playlist_id === 'all') {
+			return {
+				playlist_id: 'all',
+				name: 'All Tracks',
+				track_count: allTracksCount ?? 0,
+				kind: 'all_tracks',
+				children: []
+			};
+		}
+		const found = treeNodes.find((n) => n.playlist_id === snap.playlist_id);
+		if (found !== undefined) return found;
+		return {
+			playlist_id: snap.playlist_id,
+			name: snap.playlist_name,
+			track_count: 0,
+			kind: 'playlist',
+			children: []
+		};
+	}
+
+	async function goBack(): Promise<void> {
+		if (navHistory.length === 0) return;
+		const snap = navHistory[navHistory.length - 1];
+		navHistory = navHistory.slice(0, -1);
+		_navRestoring = true;
+		try {
+			const p = panes[activePane];
+			if (snap.playlist_id !== p.playlist_id) {
+				const node = _nodeForNav(snap);
+				if (node !== null) await _loadPane(p, node);
+			}
+			p.setSearch(snap.search);
+			if (snap.selected_id !== null) p.select(snap.selected_id, false);
+			else {
+				p.selected_id = null;
+				p.selected_ids = [];
+			}
+			p.rememberScroll(snap.scroll_top);
+			navEpoch += 1;
+			genreFilterUntil = /^genre:/i.test(snap.search) ? Date.now() + GENRE_WINDOW_MS : 0;
+		} finally {
+			_navRestoring = false;
+		}
+	}
+
 	function selectPlaylist(node: PlaylistNode): void {
+		_pushNav();
 		void _loadPane(panes[activePane], node);
 	}
 
@@ -486,6 +701,35 @@
 		void _loadOntoDeck(row, deck);
 	}
 
+	/** Monotonic load counter for CH1/CH2 - double-click prefers least-recent. */
+	let deck12LoadSeq = $state({ 1: 0, 2: 0 });
+	let deck12LoadTick = 0;
+
+	function pickDoubleDeck(_row: LoadableRow): 1 | 2 {
+		return deck12LoadSeq[1] <= deck12LoadSeq[2] ? 1 : 2;
+	}
+
+	function previewSeek(row: LoadableRow, ratio: number): void {
+		const r = Math.max(0, Math.min(1, ratio));
+		const targets = DECK_IDS.filter((d) => decks[d].stable_id === row.stable_id);
+		if (targets.length === 0) {
+			pushToast(
+				'preview seek: track not on a deck (headphone cue not implemented - see PARITY-TODO)',
+				'error'
+			);
+			return;
+		}
+		for (const deck of targets) {
+			const dur = decks[deck].duration_ms;
+			if (dur === null || dur <= 0) continue;
+			void runPerformanceCommandFromUi({
+				type: 'seek',
+				deck,
+				position_ms: Math.round(r * dur)
+			});
+		}
+	}
+
 	async function _loadOntoDeck(row: LoadableRow, deck: DeckId | null): Promise<void> {
 		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 			pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
@@ -501,9 +745,43 @@
 			pushToast('no free deck: all 4 decks are loaded', 'error');
 			return;
 		}
-		// Backend refusals are persisted in the deck alert and surfaced as a
-		// toast by the same dispatcher used by agent IPC.
-		await runPerformanceCommandFromUi({ type: 'load', deck: target, stable_id: row.stable_id });
+		try {
+			// Explicit CH load (incl. confirmed double-click): replace if occupied.
+			if (deck !== null && decks[target].stable_id !== null) {
+				await dispatchPerformanceCommand({ type: 'unload', deck: target });
+			}
+			await dispatchPerformanceCommand({ type: 'load', deck: target, stable_id: row.stable_id });
+			if (target === 1 || target === 2) {
+				deck12LoadTick += 1;
+				deck12LoadSeq = { ...deck12LoadSeq, [target]: deck12LoadTick };
+			}
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes('must be fully stopped before replacement')) {
+				_offerUnload(target);
+			}
+			// Dispatcher already toasted + recorded the deck alert.
+		}
+	}
+
+	function _offerUnload(deck: DeckId): void {
+		if (unloadOfferTimer !== null) clearTimeout(unloadOfferTimer);
+		unloadOffer = { deck, until: performance.now() + 2000 };
+		unloadOfferTimer = setTimeout(() => {
+			unloadOffer = null;
+			unloadOfferTimer = null;
+		}, 2000);
+	}
+
+	async function _acceptUnloadOffer(): Promise<void> {
+		const offer = unloadOffer;
+		if (offer === null) return;
+		unloadOffer = null;
+		if (unloadOfferTimer !== null) {
+			clearTimeout(unloadOfferTimer);
+			unloadOfferTimer = null;
+		}
+		await runPerformanceCommandFromUi({ type: 'unload', deck: offer.deck });
 	}
 
 	function _lowestFreeDeck(): DeckId | null {
@@ -525,18 +803,102 @@
 	// has no multi-select concept) - treated as a non-extending single
 	// select, same as a modifier-less TrackTable click.
 	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
-		panes[activePane].select(row.stable_id, event !== undefined && (event.metaKey || event.ctrlKey));
+		const p = panes[activePane];
+		if (p.selected_id !== row.stable_id) _pushNav();
+		p.select(row.stable_id, event !== undefined && (event.metaKey || event.ctrlKey));
+		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
+		ensureAnlz(row.stable_id);
 	}
 
 	function setSearch(next: string): void {
 		panes[activePane].setSearch(next);
+		if (searchMode === 'find') return;
 		if (!panes[activePane].whole_collection) return;
+		// Genre chip filters stay client-side (filterRows), never FTS.
+		if (/^genre:/i.test(next.trim())) return;
 		const paneIndex = activePane;
 		clearTimeout(_searchDebounce[paneIndex]);
 		_searchDebounce[paneIndex] = setTimeout(
 			() => void _searchWholeCollection(panes[paneIndex], next),
 			SEARCH_DEBOUNCE_MS
 		);
+	}
+
+	function _captureSearchReturn(): void {
+		if (searchReturnSnap !== null) return;
+		if (panes[activePane].search.trim() !== '') return;
+		searchReturnSnap = _navSnap();
+	}
+
+	function openSearchMode(mode: SearchMode): void {
+		_captureSearchReturn();
+		searchMode = mode;
+		const p = panes[activePane];
+		if (mode === 'collection') {
+			p.setWholeCollection(true);
+			if (p.search.trim() !== '') void _searchWholeCollection(p, p.search);
+		} else {
+			p.setWholeCollection(false);
+		}
+		searchFocused = true;
+		searchFocusToken += 1;
+	}
+
+	async function clearSearchAndReturn(): Promise<void> {
+		const snap = searchReturnSnap;
+		searchReturnSnap = null;
+		searchMode = 'filter';
+		searchFocused = false;
+		const p = panes[activePane];
+		p.setWholeCollection(false);
+		p.setSearch('');
+		genreFilterUntil = 0;
+		if (snap === null) return;
+		_navRestoring = true;
+		try {
+			if (snap.playlist_id !== p.playlist_id) {
+				const node = _nodeForNav(snap);
+				if (node !== null) await _loadPane(p, node);
+			}
+			p.setSearch(snap.search);
+			if (snap.selected_id !== null) p.select(snap.selected_id, false);
+			else {
+				p.selected_id = null;
+				p.selected_ids = [];
+			}
+			p.rememberScroll(snap.scroll_top);
+			navEpoch += 1;
+		} finally {
+			_navRestoring = false;
+		}
+	}
+
+	/** Genre chip → search box (`genre:` / `genre:~` / clear / undo). */
+	function genreFilter(mode: 'strict' | 'loose' | 'clear' | 'undo', tag?: string): void {
+		const p = panes[activePane];
+		if (mode === 'clear') {
+			setSearch('');
+			genreFilterUntil = 0;
+			return;
+		}
+		if (mode === 'undo') {
+			setSearch(genreFilterPrior);
+			genreFilterUntil = 0;
+			return;
+		}
+		const clean = (tag ?? '').trim();
+		if (clean === '') return;
+		const next = mode === 'loose' ? `genre:~${clean}` : `genre:${clean}`;
+		const cur = p.search.trim();
+		// Same tag again clears (way back without needing triple / 20s window).
+		if (cur.toLowerCase() === next.toLowerCase()) {
+			setSearch('');
+			genreFilterUntil = 0;
+			return;
+		}
+		genreFilterPrior = cur;
+		setSearch(next);
+		genreFilterUntil = Date.now() + GENRE_WINDOW_MS;
 	}
 
 	async function openEditModal(kind: 'bulk-edit' | 'find-replace' | 'mytag'): Promise<void> {
@@ -571,6 +933,7 @@
 	function setWholeCollection(next: boolean): void {
 		const active = panes[activePane];
 		active.setWholeCollection(next);
+		searchMode = next ? 'collection' : searchMode === 'find' ? 'find' : 'filter';
 		if (next) void _searchWholeCollection(active, active.search);
 	}
 
@@ -694,6 +1057,11 @@
 		{/if}
 	</div>
 	<div class="list-panel">
+		{#if unloadOffer !== null}
+			<button class="unload-offer" onclick={() => void _acceptUnloadOffer()}>
+				Unload CH {unloadOffer.deck}
+			</button>
+		{/if}
 		<div class="pane-header">
 			<PaneTabs {tabs} active={activePane} onactivate={(i) => (activePane = i)} />
 			<div class="header-right">
@@ -705,20 +1073,24 @@
 					MASTER <span class="caret">▾</span>
 				</button>
 				<button
-					class="icon-btn rb-inert"
-					disabled
-					title="not implemented - see PARITY-TODO"
+					class="icon-btn"
+					class:active={uiPrefs.library_density === 'compact'}
+					title="compact row density"
 					aria-label="compact row density"
+					aria-pressed={uiPrefs.library_density === 'compact'}
+					onclick={() => setLibraryDensity('compact')}
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 3h12v1.5H2zM2 6h12v1.5H2zM2 9h12v1.5H2zM2 12h12v1.5H2z" fill="currentColor" />
 					</svg>
 				</button>
 				<button
-					class="icon-btn rb-inert"
-					disabled
-					title="not implemented - see PARITY-TODO"
-					aria-label="tall row density"
+					class="icon-btn"
+					class:active={uiPrefs.library_density === 'cosy'}
+					title="cosy row density"
+					aria-label="cosy row density"
+					aria-pressed={uiPrefs.library_density === 'cosy'}
+					onclick={() => setLibraryDensity('cosy')}
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 3h12v3H2zM2 8h12v3H2z" fill="currentColor" />
@@ -751,7 +1123,7 @@
 				</button>
 				<label
 					class="hide-broken"
-					title="FR-1: hide tracks whose audio file is missing on disk; also hides playlists with zero available tracks from the tree"
+					title="FR-1: hide tracks whose audio file is missing on disk; also hides playlists with fewer than 30% available tracks from the tree"
 				>
 					<input
 						type="checkbox"
@@ -774,7 +1146,25 @@
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
-				<SearchBox value={pane.search} oninput={setSearch} />
+				<button
+					type="button"
+					class="rb-lit-button nav-back"
+					disabled={navHistory.length === 0}
+					title="Back - previous playlist + selection"
+					onclick={() => void goBack()}
+				>
+					← Back
+				</button>
+				<SearchBox
+					value={pane.search}
+					mode={searchMode}
+					focusToken={searchFocusToken}
+					placeholder={searchPlaceholder}
+					oninput={setSearch}
+					onclear={() => void clearSearchAndReturn()}
+					onescapeclear={() => void clearSearchAndReturn()}
+					onfocuschange={(f) => (searchFocused = f)}
+				/>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
 				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
 				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
@@ -788,7 +1178,7 @@
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
-			restoreKey={activePane}
+			restoreKey={`${activePane}:${navEpoch}`}
 			scrollTop={pane.scroll_top}
 			removable={editablePane}
 			reorderable={reorderablePane}
@@ -796,14 +1186,33 @@
 			onsort={sortBy}
 			onselectrow={selectRow}
 			onloadrow={loadRow}
+			onpickdoubledeck={pickDoubleDeck}
+			onpreviewseek={previewSeek}
 			onrate={rateRow}
 			onrowvisible={rowVisible}
 			onremoverow={removeRow}
 			onreorder={reorderRows}
+			ongenrefilter={genreFilter}
+			{genreFilterUntil}
+			searchQuery={pane.search}
+			findQuery={findHighlightQuery}
 		/>
 		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track
 		     (recommended mount point, see SuggestNextStrip.svelte). -->
-		<SuggestNextStrip stableId={decks[1].stable_id} />
+		<SuggestNextStrip
+			stableId={decks[1].stable_id}
+			onload={(sid) =>
+				loadRow({ stable_id: sid, file_exists: true, is_streaming: false }, null)}
+		/>
+	</div>
+	<div
+		class="conn-dots"
+		aria-label="server connectivity"
+		title={`LIB ${libUp ? 'loaded' : 'empty'} · BE ${beUp ? 'up' : 'down'} · FE ${feUp ? 'up' : 'down'}`}
+	>
+		<span class="conn-dot" class:up={libUp} data-server="lib" aria-label={libUp ? 'library loaded' : 'library empty'}></span>
+		<span class="conn-dot" class:up={beUp} data-server="be" aria-label={beUp ? 'backend up' : 'backend down'}></span>
+		<span class="conn-dot" class:up={feUp} data-server="fe" aria-label={feUp ? 'frontend up' : 'frontend down'}></span>
 	</div>
 	<div class="bottom-bar">
 		<button
@@ -836,6 +1245,7 @@
 <style>
 	.rb-browser {
 		grid-area: browser;
+		position: relative;
 		display: grid;
 		grid-template-areas:
 			'rail tree list'
@@ -860,6 +1270,27 @@
 		min-height: 0;
 		min-width: 0;
 		background: var(--rb-panel);
+		position: relative;
+	}
+	.unload-offer {
+		position: absolute;
+		left: 50%;
+		bottom: 28px;
+		transform: translateX(-50%);
+		z-index: 5;
+		padding: 8px 18px;
+		border: 1px solid var(--rb-orange);
+		border-radius: 4px;
+		background: rgba(20, 24, 32, 0.94);
+		color: var(--rb-orange);
+		font-family: var(--rb-font);
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+	}
+	.unload-offer:hover {
+		background: rgba(232, 161, 58, 0.18);
 	}
 	.pane-header {
 		flex: none;
@@ -932,6 +1363,13 @@
 		background: transparent;
 		border: none;
 		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.icon-btn:disabled {
+		cursor: default;
+	}
+	.icon-btn.active {
+		color: var(--rb-accent);
 	}
 	.bottom-bar {
 		grid-area: bottom;
@@ -941,6 +1379,27 @@
 		padding: 0 6px;
 		background: var(--rb-panel);
 		border-top: 1px solid var(--rb-border);
+	}
+	.conn-dots {
+		position: absolute;
+		left: 10px;
+		bottom: 22px;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		z-index: 6;
+		pointer-events: none;
+	}
+	.conn-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: #3a4048;
+		box-shadow: inset 0 0 0 1px #23282f;
+	}
+	.conn-dot.up {
+		background: var(--rb-green, #35c04f);
+		box-shadow: 0 0 4px color-mix(in srgb, var(--rb-green, #35c04f) 70%, transparent);
 	}
 	.wordmark {
 		color: var(--rb-text-dim);
