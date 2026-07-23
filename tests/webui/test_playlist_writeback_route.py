@@ -4,15 +4,20 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Iterator
 from contextlib import nullcontext
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
-from apps.webui.server.playlist_writeback import VendorPlaylist, WritebackBackup, WritebackConflict, WritebackService
+from apps.webui.server.playlist_writeback import (
+    VendorPlaylist,
+    WritebackBackup,
+    WritebackConflict,
+    WritebackService,
+)
 from apps.webui.server.routes.playlist_writeback import get_writeback_service
 
 
@@ -53,12 +58,15 @@ def client(seed_backend: InMemoryBackend) -> Iterator[TestClient]:
     writer = _Writer()
     app = create_app(backend=seed_backend, bind_host="127.0.0.1", hostname="test-host", lock_status_fn=lambda: None)
     app.dependency_overrides[get_writeback_service] = lambda: WritebackService(
-        writer_factory=lambda *_args: writer,
+        writer_factory=lambda *_args: nullcontext(writer),
         source_members_reader=lambda playlist_id: list(seed_backend.get_playlist(playlist_id).items),
         source_lock_factory=nullcontext,
     )
-    with TestClient(app) as result:
-        yield result
+    try:
+        with TestClient(app) as result:
+            yield result
+    finally:
+        writer.state_conn.close()
 
 
 def _query() -> str: return "vendor=rekordbox&target_mode=live&target_path=%2Ffixture%2Flive.db&target_id=native-1"
