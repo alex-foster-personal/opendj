@@ -231,6 +231,25 @@ def test_trickle_rejects_dry_run_plus_live() -> None:
         build_parser().parse_args(["trickle", "--dry-run", "--live"])
 
 
+@pytest.mark.parametrize(
+    ("raw_limit", "expected_limit"),
+    [("-1", None), ("0", 0), ("2", 2)],
+)
+def test_trickle_limit_rejects_negative_and_preserves_nonnegative_values(
+    raw_limit: str, expected_limit: int | None,
+) -> None:
+    """[if] --limit is negative [then ⛔️] parsing fails before queue work;
+    [if] it is zero or positive [then] its exact value reaches trickle."""
+    from apps.vocals.cli import build_parser
+
+    if expected_limit is None:
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["trickle", "--limit", raw_limit])
+    else:
+        args = build_parser().parse_args(["trickle", "--limit", raw_limit])
+        assert args.limit == expected_limit
+
+
 def test_process_one_refuses_audio_changed_mid_analysis(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

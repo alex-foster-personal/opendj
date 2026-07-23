@@ -23,6 +23,7 @@ Requirements (mini-PRD):
     [if] run twice --live [then] second run recomputes nothing
     [if] a queued file vanished before its turn [then] "[SKIP]" line, no crash
     [if] --dry-run and --live both passed [then ⛔️] argparse rejects them
+    [if] --limit is negative [then ⛔️] argparse rejects it before queue slicing
     [if] audio mtime changes during a worker run [then ⛔️] no cache write
   ✔︎ ✅ one: analyse a single --stable-id immediately (debug path), --force
     recomputes over a valid cache entry.
@@ -940,6 +941,14 @@ def cmd_one(args: argparse.Namespace) -> int:
 
 # ----- parser ----------------------------------------------------------------------------
 
+def _nonnegative_int(raw_value: str) -> int:
+    """Parse a nonnegative CLI integer without Python slice semantics."""
+    value = int(raw_value)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m apps.vocals",
@@ -965,8 +974,10 @@ def build_parser() -> argparse.ArgumentParser:
         "trickle", parents=[common],
         help="process the todo queue (dry-run unless --live)",
     )
-    trickle.add_argument("--limit", type=int, default=DEFAULT_TRICKLE_LIMIT,
-                         help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})")
+    trickle.add_argument(
+        "--limit", type=_nonnegative_int, default=DEFAULT_TRICKLE_LIMIT,
+        help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})",
+    )
     trickle.add_argument("--playlist", default=None,
                          help="limit the queue to one playlist name")
     trickle.add_argument(
