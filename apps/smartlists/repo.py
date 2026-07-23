@@ -1,6 +1,7 @@
 """``SmartlistsRepo`` -- CRUD over the ``smartlists`` table."""
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -10,10 +11,11 @@ from typing import Iterator
 from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.smartlists import (
     SmartlistRow,
-    referenced_fields as compute_referenced_fields,
     validate_rule,
 )
-
+from apps.shared.smartlists import (
+    referenced_fields as compute_referenced_fields,
+)
 
 _ALLOWED_ORDER_BY: frozenset[str] = frozenset({
     "added_date desc", "added_date asc",
@@ -28,6 +30,17 @@ class SmartlistsRepoError(ValueError):
     """Raised on invalid CRUD arguments (bad order_by, dup name, etc)."""
 
 
+class SmartlistRevisionConflict(SmartlistsRepoError):
+    """Raised when a rule replacement targets an obsolete row revision."""
+
+    def __init__(self, current: SmartlistRow) -> None:
+        self.current = current
+        self.current_revision = smartlist_revision(current)
+        super().__init__(
+            f"smartlist {current.id!r} revision does not match current state"
+        )
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -36,6 +49,32 @@ def _parse_iso(value: str | None) -> datetime | None:
     if value is None:
         return None
     return datetime.fromisoformat(value)
+
+
+def smartlist_revision(row: SmartlistRow) -> str:
+    """Return a deterministic opaque revision for the complete stored row."""
+    payload = json.dumps(
+        {
+            "id": row.id,
+            "name": row.name,
+            "rule": row.rule,
+            "rule_schema_version": row.rule_schema_version,
+            "referenced_fields": sorted(row.referenced_fields),
+            "order_by": row.order_by,
+            "last_evaluated_at": (
+                row.last_evaluated_at.isoformat()
+                if row.last_evaluated_at is not None
+                else None
+            ),
+            "last_materialized_track_ids": row.last_materialized_track_ids,
+            "created_at": row.created_at.isoformat(),
+            "modified_at": row.modified_at.isoformat(),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _row_to_model(row: tuple) -> SmartlistRow:
@@ -114,8 +153,10 @@ class SmartlistsRepo:
         smartlist_id: str,
         rule: dict,
         *,
+        expected_revision: str,
         order_by: str | None = None,
     ) -> SmartlistRow:
+        """CAS-replace one complete rule inside one explicit transaction."""
         validate_rule(rule)
         if order_by is not None and order_by not in _ALLOWED_ORDER_BY:
             raise SmartlistsRepoError(
@@ -123,22 +164,41 @@ class SmartlistsRepo:
             )
         rule_json = json.dumps(rule, sort_keys=True)
         ref_fields = sorted(compute_referenced_fields(rule))
-        params: list[object] = [
-            rule_json, json.dumps(ref_fields), _now_iso(),
-        ]
-        sql = (
-            "UPDATE smartlists SET rule=?, referenced_fields=?, modified_at=?"
-        )
-        if order_by is not None:
-            sql += ", order_by=?"
-            params.append(order_by)
-        sql += " WHERE id=?"
-        params.append(smartlist_id)
-        self.conn.execute(sql, params)
-        row = self.get_by_id(smartlist_id)
-        if row is None:
-            raise SmartlistsRepoError(f"smartlist {smartlist_id!r} not found")
-        return row
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            current = self.get_by_id(smartlist_id)
+            if current is None:
+                raise SmartlistsRepoError(
+                    f"smartlist {smartlist_id!r} not found"
+                )
+            if expected_revision != smartlist_revision(current):
+                raise SmartlistRevisionConflict(current)
+
+            params: list[object] = [
+                rule_json, json.dumps(ref_fields), _now_iso(),
+            ]
+            sql = (
+                "UPDATE smartlists SET rule=?, referenced_fields=?, "
+                "modified_at=?"
+            )
+            if order_by is not None:
+                sql += ", order_by=?"
+                params.append(order_by)
+            sql += " WHERE id=?"
+            params.append(smartlist_id)
+            self.conn.execute(sql, params)
+
+            updated = self.get_by_id(smartlist_id)
+            if updated is None:
+                raise SmartlistsRepoError(
+                    f"smartlist {smartlist_id!r} disappeared during update"
+                )
+            self.conn.execute("COMMIT")
+            return updated
+        except BaseException:
+            if self.conn.in_transaction:
+                self.conn.execute("ROLLBACK")
+            raise
 
     def mark_materialized(
         self,
@@ -189,4 +249,9 @@ class SmartlistsRepo:
             yield _row_to_model(row)
 
 
-__all__ = ["SmartlistsRepo", "SmartlistsRepoError"]
+__all__ = [
+    "SmartlistRevisionConflict",
+    "SmartlistsRepo",
+    "SmartlistsRepoError",
+    "smartlist_revision",
+]

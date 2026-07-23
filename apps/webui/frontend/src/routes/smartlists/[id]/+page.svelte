@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { getSmartlistTracks, listSmartlists, updateSmartlist, type SmartlistOut, type SmartlistTrackOut } from '$lib/api';
+	import {
+		getSmartlist,
+		getSmartlistTracks,
+		SmartlistApiError,
+		SmartlistConflictError,
+		updateSmartlist,
+		type SmartlistOut,
+		type SmartlistTrackOut
+	} from '$lib/api';
 	import {
 		astToForm,
 		createEmptyGroup,
@@ -16,6 +24,7 @@
 	import RulePredicate from '$lib/components/smartlists/RulePredicate.svelte';
 
 	let smartlist = $state<SmartlistOut | null>(null);
+	let etag = $state<string | null>(null);
 	let notFound = $state(false);
 	let loading = $state(true);
 	let formRoot = $state<FormNode | null>(null);
@@ -43,30 +52,40 @@
 	}
 
 	async function save(): Promise<void> {
-		if (!smartlist || !astResult?.ok) {
+		if (!smartlist || !astResult?.ok || etag === null) {
 			saveError = 'Fix rule validation errors before saving.';
 			return;
 		}
 		saving = true;
 		saveError = null;
 		try {
-			const saved = await updateSmartlist(smartlist.id, {
-				rule: astResult.ast,
-				order_by: orderBy
-			});
-			smartlist = saved;
-			orderBy = saved.order_by;
-			formRoot = astToForm(saved.rule);
+			const saved = await updateSmartlist(
+				smartlist.id,
+				{
+					rule: astResult.ast,
+					order_by: orderBy
+				},
+				etag
+			);
+			smartlist = saved.smartlist;
+			etag = saved.etag;
+			orderBy = saved.smartlist.order_by;
+			formRoot = astToForm(saved.smartlist.rule);
 			pushToast('Smartlist saved.');
 			try {
-				tracks = await getSmartlistTracks(saved.id);
+				tracks = await getSmartlistTracks(saved.smartlist.id);
 				tracksError = null;
 			} catch (exc) {
 				tracksError = `${exc}`;
 				pushToast('Smartlist saved, but its track preview could not refresh.', 'error');
 			}
 		} catch (exc) {
-			saveError = `${exc}`;
+			if (exc instanceof SmartlistConflictError) {
+				etag = null;
+				saveError = 'This smartlist changed elsewhere. Reload before saving again.';
+			} else {
+				saveError = `${exc}`;
+			}
 		} finally {
 			saving = false;
 		}
@@ -76,17 +95,17 @@
 		const id = $page.params.id;
 		if (id === undefined) throw new Error('smartlists route param "id" missing');
 		try {
-			const all = await listSmartlists();
-			const found = all.find((s) => s.id === id);
-			if (!found) {
-				notFound = true;
-				return;
-			}
-			smartlist = found;
-			orderBy = found.order_by;
-			formRoot = astToForm(found.rule);
+			const loaded = await getSmartlist(id);
+			smartlist = loaded.smartlist;
+			etag = loaded.etag;
+			orderBy = loaded.smartlist.order_by;
+			formRoot = astToForm(loaded.smartlist.rule);
 		} catch (exc) {
-			pushToast(`Failed to load smartlist: ${exc}`, 'error');
+			if (exc instanceof SmartlistApiError && exc.status === 404) {
+				notFound = true;
+			} else {
+				pushToast(`Failed to load smartlist: ${exc}`, 'error');
+			}
 		} finally {
 			loading = false;
 		}
@@ -148,7 +167,7 @@
 	{/if}
 
 	<div class="save-row">
-		<button class="primary" onclick={save} disabled={saving || !astResult?.ok}>
+		<button class="primary" onclick={save} disabled={saving || !astResult?.ok || etag === null}>
 			{saving ? 'Saving...' : 'Save'}
 		</button>
 		{#if saveError}

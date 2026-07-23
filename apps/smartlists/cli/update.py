@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from apps.shared.smartlists import SmartlistRuleError, validate_rule
-from apps.smartlists.repo import SmartlistsRepoError
+from apps.smartlists.repo import SmartlistsRepoError, smartlist_revision
 
 from ._common import build_repo
 
@@ -39,7 +39,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no smartlist named {args.name!r}", file=sys.stderr)
             return 1
         try:
-            updated = repo.update_rule(row.id, rule, order_by=args.order_by)
+            updated = repo.update_rule(
+                row.id,
+                rule,
+                expected_revision=smartlist_revision(row),
+                order_by=args.order_by,
+            )
         except SmartlistsRepoError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2

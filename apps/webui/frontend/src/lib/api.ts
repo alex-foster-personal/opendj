@@ -305,11 +305,25 @@ export interface SmartlistOut {
 	id: string;
 	name: string;
 	rule: RuleAst;
+	rule_summary: string;
 	order_by: string;
 	referenced_fields: string[];
+	rule_schema_version: number;
 	last_evaluated_at: string | null;
 	created_at: string;
 	modified_at: string;
+}
+
+export class SmartlistApiError extends Error {
+	constructor(public status: number, message: string) {
+		super(message);
+	}
+}
+
+export class SmartlistConflictError extends Error {
+	constructor(public current: SmartlistOut, public etag: string) {
+		super('Smartlist If-Match mismatch');
+	}
 }
 
 export interface SmartlistTrackOut {
@@ -331,6 +345,23 @@ export async function listSmartlists(): Promise<SmartlistOut[]> {
 	return r.json();
 }
 
+function requiredSmartlistEtag(response: Response): string {
+	const etag = response.headers.get('etag');
+	if (etag === null || etag.length === 0) {
+		throw new Error('smartlist response is missing ETag');
+	}
+	return etag;
+}
+
+export async function getSmartlist(
+	id: string
+): Promise<{ smartlist: SmartlistOut; etag: string }> {
+	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}`);
+	if (!r.ok) throw new SmartlistApiError(r.status, `GET smartlist failed: ${r.status}`);
+	const etag = requiredSmartlistEtag(r);
+	return { smartlist: await r.json(), etag };
+}
+
 export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[]> {
 	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}/tracks`);
 	if (!r.ok) throw new Error(`GET smartlist tracks failed: ${r.status}`);
@@ -342,18 +373,29 @@ export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[
  * The returned object is server-persisted readback, never an optimistic copy. */
 export async function updateSmartlist(
 	id: string,
-	body: { rule: RuleAst; order_by?: string }
-): Promise<SmartlistOut> {
+	body: { rule: RuleAst; order_by?: string },
+	etag: string
+): Promise<{ smartlist: SmartlistOut; etag: string }> {
 	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}`, {
 		method: 'PUT',
+		headers: { 'If-Match': etag },
 		body: JSON.stringify(body)
 	});
+	if (r.status === 409) {
+		const responseEtag = requiredSmartlistEtag(r);
+		const payload = (await r.json()) as { current: SmartlistOut; etag: string };
+		if (payload.etag !== responseEtag) {
+			throw new Error('smartlist conflict response ETag does not match its body');
+		}
+		throw new SmartlistConflictError(payload.current, responseEtag);
+	}
 	if (!r.ok) {
 		const payload = (await r.json()) as { detail?: { message?: string } | string };
 		const detail = typeof payload.detail === 'object' ? payload.detail?.message : payload.detail;
-		throw new Error(detail ?? `PUT smartlist failed: ${r.status}`);
+		throw new SmartlistApiError(r.status, detail ?? `PUT smartlist failed: ${r.status}`);
 	}
-	return r.json();
+	const nextEtag = requiredSmartlistEtag(r);
+	return { smartlist: await r.json(), etag: nextEtag };
 }
 
 export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
