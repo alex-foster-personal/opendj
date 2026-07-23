@@ -359,15 +359,28 @@ export async function listTracksHydrated(params: {
 // ------------------------------------------------- the 4 new endpoints
 
 /** GET /tracks/{sid}/anlz - waveforms, beatgrid, cues, phrases + vocals.
- * points: 100..2400, default 2400 (server downsamples detail bands).
+ * points: 100..38400, default 38400 (server downsamples detail bands).
  * Validates the contract's vocals field up front (and primes the
- * vocalsOf memo) so paint code can trust it. */
-export async function fetchAnlz(stable_id: string, points = 2400): Promise<AnlzWithVocals> {
-	const data = await _fetchJson<AnlzWithVocals>(
+ * vocalsOf memo) so paint code can trust it.
+ * Concurrent callers with the same sid+points share one in-flight fetch so
+ * a library prefetch and a deck load do not double-hit the backend. */
+const _inflightAnlz = new Map<string, Promise<AnlzWithVocals>>();
+
+export async function fetchAnlz(stable_id: string, points = 38400): Promise<AnlzWithVocals> {
+	const key = `${stable_id}:${points}`;
+	const existing = _inflightAnlz.get(key);
+	if (existing !== undefined) return existing;
+	const pending = _fetchJson<AnlzWithVocals>(
 		`/api/v1/tracks/${encodeURIComponent(stable_id)}/anlz?points=${points}`
-	);
-	vocalsOf(data);
-	return data;
+	).then((data) => {
+		vocalsOf(data);
+		return data;
+	});
+	const tracked = pending.finally(() => {
+		if (_inflightAnlz.get(key) === tracked) _inflightAnlz.delete(key);
+	});
+	_inflightAnlz.set(key, tracked);
+	return tracked;
 }
 
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */

@@ -6,6 +6,7 @@ share assets; resolution lives in :mod:`apps.webui.server.rb_vendor`.
 
 The integrator wires ``router`` into ``create_app()`` under ``/api/v1``.
 """
+
 from __future__ import annotations
 
 from typing import Literal, Optional
@@ -20,10 +21,10 @@ from ..deps import get_read_state
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
-_CACHE_AUDIO = "no-store"           # files can move (apps/reconcile repairs)
+_CACHE_AUDIO = "no-store"  # files can move (apps/reconcile repairs)
 _CACHE_ARTWORK = "public, max-age=86400"
 _CACHE_ANLZ = "public, max-age=3600"
-_CACHE_RB_META = "no-store"         # file_exists must reflect disk truth
+_CACHE_RB_META = "no-store"  # file_exists must reflect disk truth
 
 
 class RbMetaOut(BaseModel):
@@ -80,7 +81,9 @@ def get_track_artwork(
 def get_track_anlz(
     stable_id: str,
     points: int = Query(
-        2400, ge=100, le=2400,
+        38400,
+        ge=100,
+        le=38400,
         description="Max length of each waveform band array after downsampling",
     ),
     _backend: StateBackend = Depends(get_read_state),
