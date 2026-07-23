@@ -13,14 +13,19 @@
 
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
+/** Library track-table row density (browser list only - not decks/mixer). */
+export type LibraryDensity = 'compact' | 'cosy';
+
 export interface RbUiPrefs {
 	/** FR-1: when true, missing-file tracks are hidden from every pane's
 	 * track list AND playlists with available_count == 0 are hidden from
 	 * the tree. Default OFF (broken rows render grayed-out but visible). */
 	hide_broken_links: boolean;
+	/** Track-table row height: compact = current tight rows; cosy = taller. */
+	library_density: LibraryDensity;
 }
 
-const DEFAULTS: RbUiPrefs = { hide_broken_links: false };
+const DEFAULTS: RbUiPrefs = { hide_broken_links: false, library_density: 'compact' };
 
 // ----------------------------------------------------------- _helpers
 
@@ -40,7 +45,17 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
-	return { hide_broken_links: parsed.hide_broken_links };
+	const density = parsed.library_density;
+	if (density !== undefined && density !== 'compact' && density !== 'cosy') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (library_density must be 'compact'|'cosy') - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	return {
+		hide_broken_links: parsed.hide_broken_links,
+		library_density: density ?? DEFAULTS.library_density
+	};
 }
 
 function _persist(): void {
@@ -55,5 +70,10 @@ export const uiPrefs = $state<RbUiPrefs>(_load());
 
 export function setHideBrokenLinks(next: boolean): void {
 	uiPrefs.hide_broken_links = next;
+	_persist();
+}
+
+export function setLibraryDensity(next: LibraryDensity): void {
+	uiPrefs.library_density = next;
 	_persist();
 }
