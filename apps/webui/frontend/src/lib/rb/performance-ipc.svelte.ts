@@ -54,9 +54,11 @@ import type {
 	SyncMode
 } from '$lib/rb/types';
 import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
+import { noteRecentDeck } from '$lib/rb/recent-deck';
 
 export type PerformanceCommand =
 	| { type: 'load'; deck: DeckId; stable_id: string }
+	| { type: 'unload'; deck: DeckId }
 	| { type: 'play'; deck: DeckId; playing: boolean }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
@@ -72,7 +74,7 @@ export type PerformanceCommand =
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
-	| { type: 'key_sync'; deck: DeckId }
+	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
 	| { type: 'key_nudge'; deck: DeckId; semitones: -1 | 1 }
 	| { type: 'trim'; deck: DeckId; value: number }
 	| { type: 'eq'; deck: DeckId; band: EqBand; value: number }
@@ -110,6 +112,7 @@ export interface PerformanceDeckSnapshot {
 	pitch_range: PitchRange;
 	quantize_enabled: boolean;
 	beat_sync_enabled: boolean;
+	key_sync_enabled: boolean;
 	master_tempo_enabled: boolean;
 	slip_enabled: boolean;
 	slip_active: boolean;
@@ -330,12 +333,18 @@ function _parseCommand(message: unknown): PerformanceCommand {
 			throw new TypeError('stable_id must be a non-empty string');
 		}
 		return { type, deck, stable_id: record.stable_id };
+	} else if (type === 'unload') {
+		_exactKeys(record, ['type', 'deck']);
+		return { type, deck };
 	} else if (type === 'play') {
 		_exactKeys(record, ['type', 'deck', 'playing']);
 		return { type, deck, playing: _boolean('playing', record.playing) };
-	} else if (type === 'cue' || type === 'master' || type === 'key_sync') {
+	} else if (type === 'cue' || type === 'master') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
+	} else if (type === 'key_sync') {
+		_exactKeys(record, ['type', 'deck', 'enabled']);
+		return { type, deck, enabled: _boolean('enabled', record.enabled) };
 	} else if (type === 'seek') {
 		_exactKeys(record, ['type', 'deck', 'position_ms']);
 		const position_ms = _finite('position_ms', record.position_ms);
@@ -451,6 +460,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		pitch_range: pitchRanges[deckId],
 		quantize_enabled: deck.quantize_enabled,
 		beat_sync_enabled: deck.beat_sync_enabled,
+		key_sync_enabled: deck.key_sync_enabled,
 		master_tempo_enabled: deck.master_tempo_enabled,
 		slip_enabled: deck.slip_enabled,
 		slip_active: deck.slip_active,
@@ -581,11 +591,17 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 	if (command.type === 'load') {
 		await engine.load(command.deck, command.stable_id);
 		hotCueReversals[command.deck] = null;
+		noteRecentDeck(command.deck);
+	} else if (command.type === 'unload') {
+		await engine.unload(command.deck);
+		hotCueReversals[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) await engine.play(command.deck);
 		else await engine.pause(command.deck);
+		noteRecentDeck(command.deck);
 	} else if (command.type === 'cue') {
 		await engine.pressCue(command.deck);
+		noteRecentDeck(command.deck);
 	} else if (command.type === 'seek') {
 		await engine.quantizedSeek(command.deck, command.position_ms);
 	} else if (command.type === 'loop') {
@@ -613,7 +629,7 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 	} else if (command.type === 'slip') {
 		await engine.setSlip(command.deck, command.enabled);
 	} else if (command.type === 'key_sync') {
-		await engine.syncKey(command.deck);
+		await engine.setKeySync(command.deck, command.enabled);
 	} else if (command.type === 'key_nudge') {
 		await engine.nudgeKey(command.deck, command.semitones);
 	} else if (command.type === 'trim') {

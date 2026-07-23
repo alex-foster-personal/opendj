@@ -45,7 +45,7 @@ export interface AnlzWaveformBands {
 	high: number[];
 }
 
-/** Waveform payload: 400-point preview strip + <=2400-point detail. */
+/** Waveform payload: 400-point preview strip + <=38400-point detail. */
 export interface AnlzWaveform {
 	/** 'tri' = real tri-band colour data (.EXT PWV5/PWV4); 'mono' = heights only
 	 * (PWAV/PWV3) - when 'mono' the client renders a single-colour waveform,
@@ -113,7 +113,7 @@ export interface AnlzPhrase {
 export interface AnlzData {
 	/** 40-hex stable id the payload belongs to. */
 	stable_id: string;
-	/** The points param the detail waveform was downsampled to (<=2400). */
+	/** The points param the detail waveform was downsampled to (<=38400). */
 	points: number;
 	/** Waveform bands; see AnlzWaveform. */
 	waveform: AnlzWaveform;
@@ -251,6 +251,9 @@ export interface DeckState {
 	quantize_enabled: boolean;
 	/** Follow the elected master deck's local PQTZ tempo and phase. */
 	beat_sync_enabled: boolean;
+	/** Keep this deck's audible Camelot key aligned to the elected master.
+	 * When true the KEY SYNC control stays lit and re-applies through syncKey. */
+	key_sync_enabled: boolean;
 	/** Preserve source pitch while tempo changes through Signalsmith Stretch. */
 	master_tempo_enabled: boolean;
 	/** Arm slip mode. This does not alter an existing transport schedule. */
@@ -396,6 +399,8 @@ export interface PlaylistNode {
 	track_count: number;
 	/** Node flavour; 'folder' reserved for future hierarchy, unused v1. */
 	kind: 'all_tracks' | 'playlist' | 'folder';
+	/** Fewer than 30% of tracks exist on disk; tree row renders dimmed. */
+	mostly_broken?: boolean;
 	/** Children for folder nodes; always [] at v1. */
 	children: PlaylistNode[];
 }
@@ -448,6 +453,12 @@ export interface AudioEngine {
 	/** Align the loaded deck to the elected loaded master using the documented
 	 * deterministic Camelot harmonic policy. */
 	syncKey(deck: DeckId): Promise<void>;
+	/** Latch KEY SYNC on/off. Enabling applies syncKey; the control stays lit
+	 * while enabled. Disabling restores the pre-latch manual key shift. */
+	setKeySync(deck: DeckId, enabled: boolean): Promise<void>;
+	/** Stop transport if needed and clear the deck so a replacement load can
+	 * claim it. No-op when the deck is already empty. */
+	unload(deck: DeckId): Promise<void>;
 	/** Select beat or bar phase alignment for Beat Sync. */
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void>;
 	/** Elect one loaded deck as the globally exclusive master. */

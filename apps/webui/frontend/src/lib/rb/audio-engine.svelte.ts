@@ -70,7 +70,7 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
-import {
+	import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
 	fetchHotCueSlots,
@@ -79,12 +79,14 @@ import {
 	probeStemArtifact,
 	RbApiError
 } from '$lib/rb/api-rb';
-import type { DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
+import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
+import { getAnlzEntry } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	computeFollowerSyncPlan,
 	quantizeToNearestBeat,
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
+import { beatFourLeadInSec, syncSeekBlendDurationSec } from '$lib/rb/sync-seek-blend';
 import {
 	StretchDeckProcessor,
 	type StretchScheduleChange
@@ -164,6 +166,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		pitch: 1,
 		quantize_enabled: true,
 		beat_sync_enabled: true,
+		key_sync_enabled: false,
 		master_tempo_enabled: true,
 		slip_enabled: false,
 		slip_active: false,
@@ -391,6 +394,11 @@ interface _DeckRuntime {
 	swapTail: Promise<void>;
 	slipAnchor: SlipAnchor | null;
 	slipTempoBoundaries: SlipTempoBoundary[];
+	/** Manual key-shift baseline captured when KEY SYNC latches on; restored
+	 * on disable so the Camelot offset cannot drift away from the latch. */
+	keySyncBaselineSemitones: number | null;
+	/** Decoded mix buffer retained for short sync-seek crossfades. */
+	audioBuffer: AudioBuffer | null;
 }
 
 function _emptyRuntime(): _DeckRuntime {
@@ -415,7 +423,9 @@ function _emptyRuntime(): _DeckRuntime {
 		scheduleTail: Promise.resolve(),
 		swapTail: Promise.resolve(),
 		slipAnchor: null,
-		slipTempoBoundaries: []
+		slipTempoBoundaries: [],
+		keySyncBaselineSemitones: null,
+		audioBuffer: null
 	};
 }
 
@@ -440,6 +450,27 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 	3: _emptyRuntime(),
 	4: _emptyRuntime()
 };
+
+/** Instantaneous post-DSP RMS meter 0..1 for a channel strip VU pulse.
+ * Returns 0 when the deck graph is missing or silent - real silence, not a mock. */
+const _meterScratch: Record<DeckId, Float32Array | null> = { 1: null, 2: null, 3: null, 4: null };
+
+export function peekDeckMeter(deck: DeckId): number {
+	const nodes = _rt[deck].nodes;
+	if (nodes === null) return 0;
+	let buf = _meterScratch[deck];
+	if (buf === null || buf.length !== nodes.analyser.fftSize) {
+		buf = new Float32Array(new ArrayBuffer(nodes.analyser.fftSize * 4));
+		_meterScratch[deck] = buf;
+	}
+	nodes.analyser.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>);
+	let sum = 0;
+	for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+	const rms = Math.sqrt(sum / buf.length);
+	if (!Number.isFinite(rms)) return 0;
+	// Typical music RMS sits well below 1.0; scale for a readable thin pulse.
+	return Math.min(1, rms * 5.5);
+}
 
 export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	const presentation = _rt[deck].presentation;
@@ -876,6 +907,16 @@ function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
 	const number = CAMELOT_ROOTS[key.mode].indexOf(root) + 1;
 	if (number === 0) throw new Error(`Camelot ${key.mode} root ${root} cannot be represented`);
 	return { number, mode: key.mode, root };
+}
+
+/** Audible Camelot label after an integer manual key shift (mode preserved). */
+export function effectiveCamelotKey(key: string | null, semitones: number): string | null {
+	const parsed = parseCamelotKey(key);
+	if (parsed === null) return key;
+	if (semitones === 0) return `${parsed.number}${parsed.mode}`;
+	_assertKeyShift(semitones);
+	const shifted = _shiftCamelotKey(parsed, semitones);
+	return `${shifted.number}${shifted.mode}`;
 }
 
 function _camelotCircularDistance(left: number, right: number): number {
@@ -2077,6 +2118,7 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
 	if (rt.processor !== null) rt.processor.disconnect();
 	rt.processor = null;
+	rt.audioBuffer = null;
 	rt.durationSec = 0;
 	rt.latencySec = 0;
 	rt.pending = [];
@@ -2642,6 +2684,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.bpm = null;
 	st.key = null;
 	st.key_shift_semitones = 0;
+	st.key_sync_enabled = false;
 	st.duration_ms = null;
 	st.position_ms = 0;
 	st.playing = false;
@@ -2656,6 +2699,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	st.loop = null;
 	_rt[st.deck_id].slipAnchor = null;
 	_rt[st.deck_id].slipTempoBoundaries = [];
+	_rt[st.deck_id].keySyncBaselineSemitones = null;
 	st.hot_cues = [];
 	st.anlz = null;
 	st.anlz_error = null;
@@ -2740,6 +2784,117 @@ interface _MasterSyncSchedule {
 interface _SyncOptions {
 	followerAnchorSec?: Partial<Record<DeckId, number>>;
 	masterSchedule?: _MasterSyncSchedule;
+}
+
+/**
+ * When a synced waveform seek snaps backwards, crossfade a little from the
+ * current bar into beat 4 of the target bar so the landing at `landingSec`
+ * is less of a hard cut. Falls back to a plain schedule when no buffer /
+ * lead-in is available.
+ */
+async function _scheduleFollowerBackwardBlend(
+	deck: DeckId,
+	syncAt: number,
+	landingSec: number,
+	tempoRatio: number,
+	masterTempoEnabled: boolean,
+	currentSec: number
+): Promise<number> {
+	const { st, rt } = _requireLoaded(deck, 'sync seek blend');
+	const ctx = _ctx;
+	const buffer = rt.audioBuffer;
+	const nodes = rt.nodes;
+	const processor = rt.processor;
+	if (
+		ctx === null ||
+		buffer === null ||
+		nodes === null ||
+		processor === null ||
+		landingSec >= currentSec - 0.08
+	) {
+		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
+	}
+
+	const beats = st.anlz?.beatgrid.beats ?? null;
+	const beat4 =
+		beats !== null && beats.length >= 2 ? beatFourLeadInSec(beats, landingSec) : null;
+	const incomingSec =
+		beat4 !== null && beat4 < landingSec - 0.05 && landingSec - beat4 <= 2.2
+			? beat4
+			: landingSec;
+	const blendDur = syncSeekBlendDurationSec(incomingSec, landingSec, tempoRatio);
+	const t0 = Math.max(ctx.currentTime + 0.02, syncAt - blendDur);
+	const tEnd = t0 + blendDur;
+
+	processor.disconnect();
+	const mainGain = ctx.createGain();
+	const outGain = ctx.createGain();
+	processor.connect(mainGain);
+	mainGain.connect(nodes.analyser);
+	outGain.connect(nodes.analyser);
+
+	const outSrc = ctx.createBufferSource();
+	outSrc.buffer = buffer;
+	outSrc.playbackRate.value = tempoRatio;
+	outSrc.connect(outGain);
+
+	mainGain.gain.setValueAtTime(0.0001, t0);
+	mainGain.gain.linearRampToValueAtTime(1, tEnd);
+	outGain.gain.setValueAtTime(1, t0);
+	outGain.gain.linearRampToValueAtTime(0.0001, tEnd);
+
+	const startOffset = Math.min(Math.max(0, currentSec), Math.max(0, buffer.duration - 0.01));
+	try {
+		outSrc.start(t0, startOffset);
+	} catch {
+		try {
+			mainGain.disconnect();
+			outGain.disconnect();
+		} catch {
+			/* ignore */
+		}
+		try {
+			processor.connect(nodes.analyser);
+		} catch {
+			/* ignore */
+		}
+		return _scheduleDeck(deck, syncAt, landingSec, true, tempoRatio, masterTempoEnabled);
+	}
+
+	const scheduled = await _scheduleDeck(
+		deck,
+		t0,
+		incomingSec,
+		true,
+		tempoRatio,
+		masterTempoEnabled
+	);
+
+	const token = rt.loadToken;
+	const delayMs = Math.max(0, (tEnd - ctx.currentTime) * 1000) + 50;
+	window.setTimeout(() => {
+		try {
+			outSrc.stop();
+		} catch {
+			/* already ended */
+		}
+		try {
+			outSrc.disconnect();
+			outGain.disconnect();
+			mainGain.disconnect();
+		} catch {
+			/* ignore */
+		}
+		if (rt.loadToken !== token || rt.processor !== processor || rt.nodes === null) return;
+		try {
+			processor.disconnect();
+			processor.connect(rt.nodes.analyser);
+		} catch {
+			/* ignore */
+		}
+	}, delayMs);
+
+	return scheduled;
 }
 
 async function _synchronizeFollowers(
@@ -2829,7 +2984,7 @@ async function _synchronizeFollowers(
 				maxFollowerTempoRatio: bounds.max,
 				mode: st.sync_mode
 			});
-			return { deck, st, plan };
+			return { deck, st, plan, rawFollowerPositionSec };
 		});
 		const schedules = [
 			...(options.masterSchedule === undefined
@@ -2840,7 +2995,8 @@ async function _synchronizeFollowers(
 							st: masterState,
 							inputSec: masterPositionSec,
 							tempoRatio: options.masterSchedule.tempoRatio,
-							masterTempoEnabled: options.masterSchedule.masterTempoEnabled
+							masterTempoEnabled: options.masterSchedule.masterTempoEnabled,
+							blendFromSec: null as number | null
 						}
 					]),
 			...planned.map((item) => ({
@@ -2848,20 +3004,34 @@ async function _synchronizeFollowers(
 				st: item.st,
 				inputSec: item.plan.followerPositionSec,
 				tempoRatio: item.plan.followerTempoRatio,
-				masterTempoEnabled: item.st.master_tempo_enabled
+				masterTempoEnabled: item.st.master_tempo_enabled,
+				blendFromSec:
+					options.followerAnchorSec?.[item.deck] !== undefined &&
+					item.plan.followerPositionSec < item.rawFollowerPositionSec - 0.08
+						? item.rawFollowerPositionSec
+						: null
 			}))
 		];
 		const scheduleTimes = commonSyncScheduleTimes(syncAt, schedules.length);
 		const outcomes = await Promise.allSettled(
 			schedules.map((item, index) =>
-				_scheduleDeck(
-					item.deck,
-					scheduleTimes[index],
-					item.inputSec,
-					true,
-					item.tempoRatio,
-					item.masterTempoEnabled
-				)
+				item.blendFromSec !== null
+					? _scheduleFollowerBackwardBlend(
+							item.deck,
+							scheduleTimes[index],
+							item.inputSec,
+							item.tempoRatio,
+							item.masterTempoEnabled,
+							item.blendFromSec
+						)
+					: _scheduleDeck(
+							item.deck,
+							scheduleTimes[index],
+							item.inputSec,
+							true,
+							item.tempoRatio,
+							item.masterTempoEnabled
+						)
 			)
 		);
 		const failedDecks = outcomes.flatMap((outcome, index) =>
@@ -2964,34 +3134,68 @@ class RbAudioEngine implements AudioEngine {
 		let latencySec = 0;
 		let processor: _DeckProcessor | null = null;
 		let candidateStemState: StemDeckState = unavailableStemDeckState();
+		// SPIKE-PERF: localStorage.setItem('mdt.perf','1') then reload - one breakdown log per load.
+		const perfOn =
+			typeof localStorage !== 'undefined' && localStorage.getItem('mdt.perf') === '1';
+		const perfT0 = performance.now();
+		const perfMs = (): number => Math.round(performance.now() - perfT0);
+		const stages: Record<string, number> = {};
+		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
+			const t0 = performance.now();
+			try {
+				return await work;
+			} finally {
+				if (perfOn) stages[name] = Math.round(performance.now() - t0);
+			}
+		};
 		try {
-			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] = await Promise.all([
-				getTrack(stable_id),
-				fetchAudioArrayBuffer(stable_id),
-				fetchAnlz(stable_id),
-				fetchHotCueSlots(stable_id)
-			]);
-			const stemProbe = await probeStemArtifact(stable_id);
+			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
+			const cachedAnlz = getAnlzEntry(stable_id);
+			const anlzCached = cachedAnlz !== undefined && cachedAnlz.status === 'ready';
+			const anlzPromise: Promise<AnlzWithVocals> = anlzCached
+				? Promise.resolve(cachedAnlz.data as AnlzWithVocals)
+				: fetchAnlz(stable_id);
+			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots, stemProbe] =
+				await Promise.all([
+					time('getTrack', getTrack(stable_id)),
+					time('fetchAudio', fetchAudioArrayBuffer(stable_id)),
+					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
+					time('fetchHotCues', fetchHotCueSlots(stable_id)),
+					time('probeStem', probeStemArtifact(stable_id))
+				]);
+			if (perfOn) stages.fetchWall = perfMs();
 			const ctx = _ensureGraph();
 			track = trackRes.track;
 			anlz = requiredAnlz;
 			hotCueSlots = requiredHotCueSlots;
-			buffer = await ctx.decodeAudioData(audioBytes);
 			const processorOptions = {
 				onProcessorError: (error: unknown) => {
 					if (_rt[deck].processor === processor) _recordProcessorFailure(deck, error);
 				}
 			};
 			if (stemProbe.status === 'ready') {
-				const encodedParts = await fetchStemAudioArrayBuffers(stable_id);
-				const decodedEntries = await Promise.all(
-					DEMUCS_PARTS.map(async (part) => [part, await ctx.decodeAudioData(encodedParts[part])] as const)
+				// SPIKE-PERF: decode mix while stem files download.
+				const [decodedMix, encodedParts] = await Promise.all([
+					time('decodeMix', ctx.decodeAudioData(audioBytes)),
+					time('fetchStems', fetchStemAudioArrayBuffers(stable_id))
+				]);
+				buffer = decodedMix;
+				const decodedEntries = await time(
+					'decodeStems',
+					Promise.all(
+						DEMUCS_PARTS.map(
+							async (part) => [part, await ctx.decodeAudioData(encodedParts[part])] as const
+						)
+					)
 				);
 				const stemBuffers = Object.fromEntries(decodedEntries) as Record<
 					DemucsStemPart,
 					AudioBuffer
 				> as StemBuffers;
-				const created = await AlignedStemDeckProcessor.create(ctx, stemBuffers, processorOptions);
+				const created = await time(
+					'stemProcessorCreate',
+					AlignedStemDeckProcessor.create(ctx, stemBuffers, processorOptions)
+				);
 				if (
 					created.alignment.sample_rate_hz !== buffer.sampleRate ||
 					created.alignment.frame_count !== buffer.length ||
@@ -3011,13 +3215,23 @@ class RbAudioEngine implements AudioEngine {
 					created.alignment
 				);
 			} else {
-				const mixProcessor = await StretchDeckProcessor.create(ctx, processorOptions);
-				await mixProcessor.load(buffer);
+				// SPIKE-PERF: overlap decode with worklet create (common non-stem path).
+				const [decodedMix, mixProcessor] = await Promise.all([
+					time('decodeMix', ctx.decodeAudioData(audioBytes)),
+					time('stretchCreate', StretchDeckProcessor.create(ctx, processorOptions))
+				]);
+				buffer = decodedMix;
+				await time('stretchLoad', mixProcessor.load(buffer));
 				processor = mixProcessor;
 				candidateStemState = unavailableStemDeckState(stemProbe.error);
 			}
-			latencySec = await processor.latencySec();
+			latencySec = await time('processorLatency', processor.latencySec());
+			if (perfOn) stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
+			if (perfOn) {
+				stages.failedAt = perfMs();
+				console.info(`[perf] load FAIL deck=${deck}`, stages, String(exc));
+			}
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
@@ -3071,6 +3285,7 @@ class RbAudioEngine implements AudioEngine {
 			_clearLoadedTrackState(st);
 			rt.processor = candidateProcessor;
 			rt.durationSec = candidateBuffer.duration;
+			rt.audioBuffer = candidateBuffer;
 			rt.latencySec = latencySec;
 			rt.controlActive = false;
 			rt.controlLoop = null;
@@ -3111,6 +3326,10 @@ class RbAudioEngine implements AudioEngine {
 				}
 			}
 		});
+		if (perfOn) {
+			stages.total = perfMs();
+			console.info(`[perf] load deck=${deck} sid=${stable_id.slice(0, 12)}…`, stages);
+		}
 	}
 
 	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR
@@ -3200,6 +3419,13 @@ class RbAudioEngine implements AudioEngine {
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
+		// Rekordbox: seeking outside an engaged loop exits the loop and plays
+		// from the clicked point. Keep modulo wrap only for in-loop transport.
+		const exitLoop =
+			st.loop !== null &&
+			st.loop.engaged &&
+			(targetMs < st.loop.in_ms || targetMs >= st.loop.out_ms);
+		const scheduleLoop: LoopState | null | undefined = exitLoop ? null : undefined;
 		const needsScheduledMutation = transportNeedsScheduledMutation({
 			playing: rt.desiredActive,
 			audible: st.audible,
@@ -3214,7 +3440,7 @@ class RbAudioEngine implements AudioEngine {
 				st.beat_sync_enabled,
 				_syncMaster()
 			);
-			if (master !== null) {
+			if (master !== null && !exitLoop) {
 				await _synchronizeFollowers(master, [deck], {
 					followerAnchorSec: { [deck]: targetMs / 1000 }
 				});
@@ -3224,10 +3450,14 @@ class RbAudioEngine implements AudioEngine {
 					deck,
 					_futureScheduleTime(deck),
 					targetMs / 1000,
-					rt.desiredActive
+					rt.desiredActive,
+					undefined,
+					undefined,
+					scheduleLoop
 				);
 			}
 		} else {
+			if (exitLoop) st.loop = null;
 			_setPausedPosition(deck, targetMs);
 		}
 	}
@@ -3490,6 +3720,74 @@ class RbAudioEngine implements AudioEngine {
 			deckManualShiftSemitones
 		);
 		await _setDeckKeyShift(deck, targetManualShiftSemitones);
+	}
+
+	async setKeySync(deck: DeckId, enabled: boolean): Promise<void> {
+		if (typeof enabled !== 'boolean') throw new TypeError('setKeySync: enabled must be boolean');
+		const st = deckStates[deck];
+		const rt = _rt[deck];
+		if (!enabled) {
+			st.key_sync_enabled = false;
+			const baseline = rt.keySyncBaselineSemitones;
+			rt.keySyncBaselineSemitones = null;
+			if (baseline !== null && st.stable_id !== null) {
+				await _setDeckKeyShift(deck, baseline);
+			}
+			return;
+		}
+		_requireLoaded(deck, 'setKeySync');
+		rt.keySyncBaselineSemitones = _keySyncManualShiftBaseline(deck);
+		st.key_sync_enabled = true;
+		await this.syncKey(deck);
+	}
+
+	async unload(deck: DeckId): Promise<void> {
+		const st = deckStates[deck];
+		const rt = _rt[deck];
+		if (st.stable_id === null && rt.processor === null) return;
+		if (rt.desiredActive) await this.pause(deck);
+		const deadline = performance.now() + 2000;
+		while (performance.now() < deadline) {
+			try {
+				assertDeckReplacementAllowed(deck, {
+					playing: st.playing,
+					audible: st.audible,
+					transportPending: st.transport_pending,
+					controlActive: rt.controlActive,
+					pendingScheduleCount: rt.pending.length,
+					scheduleIntentCount: rt.scheduleIntentCount
+				});
+				break;
+			} catch {
+				await new Promise<void>((resolve) => {
+					requestAnimationFrame(() => resolve());
+				});
+			}
+		}
+		rt.loadToken += 1;
+		const processor = detachProcessorForDisposal(rt);
+		if (processor !== null) {
+			processor.disconnect();
+			if (_ctx !== null) {
+				try {
+					await processor.stop(_ctx.currentTime);
+				} catch (error: unknown) {
+					const message = error instanceof Error ? error.message : String(error);
+					pushToast(`Deck ${deck} unload cleanup failed - ${message}`, 'error');
+				}
+			}
+		}
+		const wasMaster = _masterDeck === deck;
+		_rt[deck] = {
+			..._emptyRuntime(),
+			loadToken: rt.loadToken,
+			nodes: rt.nodes,
+			scheduleTail: Promise.resolve(),
+			swapTail: Promise.resolve()
+		};
+		deckStates[deck] = _emptyDeckState(deck);
+		deckLoadErrors[deck] = null;
+		if (wasMaster) _electPlayingMaster();
 	}
 
 	setSyncMode(deck: DeckId, mode: SyncMode): Promise<void> {

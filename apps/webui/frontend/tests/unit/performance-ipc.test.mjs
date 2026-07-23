@@ -64,9 +64,14 @@ test('key controls validate through IPC and round-trip serializable shift state'
 			/semitones must be -1 or 1/i
 		);
 		await assert.rejects(
-			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1, extra: true }),
+			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1, enabled: true, extra: true }),
 			/unexpected fields/i
 		);
+		await assert.rejects(
+			window.musicDjToolsPerformance.dispatch({ type: 'key_sync', deck: 1 }),
+			/missing keys|enabled/i
+		);
+		assert.equal(initial.key_sync_enabled, false);
 	} finally {
 		uninstall();
 		delete globalThis.window;
@@ -196,7 +201,10 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 test('deck header key controls dispatch only through the typed performance dispatcher', async () => {
 	const deckSource = await readFile('src/lib/components/rb/Deck.svelte', 'utf8');
 	const headerSource = await readFile('src/lib/components/rb/deck/DeckHeader.svelte', 'utf8');
-	assert.match(deckSource, /runPerformanceCommandFromUi\(\{ type: 'key_sync', deck: deckId \}\)/);
+	assert.match(
+		deckSource,
+		/runPerformanceCommandFromUi\(\{\s*type: 'key_sync',\s*deck: deckId,\s*enabled: !deck\.key_sync_enabled\s*\}\)/
+	);
 	assert.match(deckSource, /type: 'key_nudge', deck: deckId, semitones/);
 	assert.match(headerSource, /onKeySync/);
 	assert.match(headerSource, /onKeyNudge/);

@@ -1299,7 +1299,7 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 				{ status: 200, headers: { 'content-type': 'application/json' } }
 			);
 		}
-		if (url.endsWith('/anlz?points=2400')) {
+		if (url.endsWith('/anlz?points=38400')) {
 			return new Response(
 				JSON.stringify({
 					detail: { code: 'ANALYSIS_NOT_FOUND', message: 'track has no analysis' }
@@ -1308,6 +1308,12 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 			);
 		}
 		if (url.endsWith('/audio')) return new Response(new Uint8Array([1, 2, 3]));
+		if (url.endsWith('/tracks/no-analysis/stems')) {
+			return new Response(
+				JSON.stringify({ detail: { code: 'STEMS_NOT_FOUND', message: 'no stems' } }),
+				{ status: 404, headers: { 'content-type': 'application/json' } }
+			);
+		}
 		if (url.endsWith('/tracks/no-analysis')) {
 			return new Response(JSON.stringify({ stable_id: 'no-analysis' }), {
 				status: 200,
