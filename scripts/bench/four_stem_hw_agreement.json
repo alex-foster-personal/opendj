@@ -2,22 +2,22 @@
   "question": "does the production card change per-stem SI-SDR, or only the clock?",
   "gpu": "Modal H100",
   "tolerance_db": 0.05,
-  "cells_compared": 16,
+  "cells_compared": 20,
   "cells_by_source": {
     "ladder_4stem_all.json (committed, Apple M3 CPU)": 8,
-    ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)": 8
+    ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)": 12
   },
   "n_disagreements": 0,
-  "max_abs_gpu_minus_cpu_db": 0.034,
-  "mean_abs_gpu_minus_cpu_db": 0.0105,
+  "max_abs_gpu_minus_cpu_db": 0.04,
+  "mean_abs_gpu_minus_cpu_db": 0.0107,
   "worst_cell": {
-    "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+    "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
     "track": "Al James - Schoolboy Facination",
-    "model": "htdemucs",
+    "model": "htdemucs_ft",
     "stem": "bass",
-    "cpu_si_sdr": 9.44,
-    "gpu_si_sdr": 9.406,
-    "gpu_minus_cpu_db": -0.034,
+    "cpu_si_sdr": 9.879,
+    "gpu_si_sdr": 9.839,
+    "gpu_minus_cpu_db": -0.04,
     "agrees": true
   },
   "verdict": "AGREE: the card changes the clock, not the quality, so the GPU cube carries the per-stem verdict",
@@ -180,6 +180,46 @@
       "cpu_si_sdr": -0.664,
       "gpu_si_sdr": -0.667,
       "gpu_minus_cpu_db": -0.003,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs_ft",
+      "stem": "vocals",
+      "cpu_si_sdr": 8.75,
+      "gpu_si_sdr": 8.751,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs_ft",
+      "stem": "drums",
+      "cpu_si_sdr": 7.118,
+      "gpu_si_sdr": 7.116,
+      "gpu_minus_cpu_db": -0.002,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs_ft",
+      "stem": "bass",
+      "cpu_si_sdr": 9.879,
+      "gpu_si_sdr": 9.839,
+      "gpu_minus_cpu_db": -0.04,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs_ft",
+      "stem": "other",
+      "cpu_si_sdr": 0.247,
+      "gpu_si_sdr": 0.243,
+      "gpu_minus_cpu_db": -0.004,
       "agrees": true
     }
   ]
