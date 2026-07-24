@@ -30,22 +30,38 @@
 		TrackListItemWire,
 		Vocals
 	} from '$lib/rb/api-rb';
-	import type { DeckId, PlaylistNode } from '$lib/rb/types';
+	import type { DeckId, PlaylistNode, RbMeta } from '$lib/rb/types';
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
-	import { deckStates as decks } from '$lib/rb/audio-engine.svelte';
+	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
+	import {
+		ANALYSIS_COLORS,
+		jobProgress
+	} from '$lib/rb/job-progress.svelte';
 	import {
 		dispatchPerformanceCommand,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import { setHideBrokenLinks, setLibraryDensity, uiPrefs } from '$lib/rb/prefs.svelte';
-	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
 	import {
+		createPlaylist,
+		deletePlaylist,
 		getPlaylistTracksEtag,
 		PlaylistConflictError,
+		renamePlaylist,
 		replacePlaylistTracks
 	} from '$lib/rb/playlist-write';
+	import {
+		hydrateConfirmPrefsFromDisk,
+		setConfirmPref,
+		setHideBrokenLinks,
+		setLibraryDensity,
+		setNextOnlyFilter,
+		uiPrefs
+	} from '$lib/rb/prefs.svelte';
+	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
+	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
@@ -59,10 +75,17 @@
 		createPaneStore,
 		filterRows,
 		makeClientRowProvider,
+		reorderPanesInPlace,
+		resolveNewTabIndex,
 		sortRows,
 		visibleRowsOf
 	} from './browser/pane-contract.svelte';
-	import type { BrowserRow, PaneStore, SortKey } from './browser/pane-contract.svelte';
+	import type {
+		BrowserRow,
+		PaneStore,
+		PlaylistDragPayload,
+		SortKey
+	} from './browser/pane-contract.svelte';
 	import PlaylistTree from './browser/PlaylistTree.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
@@ -82,7 +105,6 @@
 	// fetch-cap removal above): a global text query over the whole library
 	// is a separate, ranked result set, not a browsable pane listing.
 	const MAX_SEARCH_ROWS = 200;
-	const DECK_IDS: DeckId[] = [1, 2, 3, 4];
 	/** Spike: hide tree playlists when fewer than 30% of tracks are on disk.
 	 * Move to BE/config later. */
 	const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO = 0.3;
@@ -123,6 +145,22 @@
 	let libUp = $state(false);
 	let beUp = $state(false);
 	let feUp = $state(false);
+	/** Suggest-next hover → temporary table scroll/highlight. */
+	let suggestHoverId = $state<string | null>(null);
+	/** Candidates for Recommended (outside-playlist) grouping. */
+	let suggestCandidates = $state<
+		Array<{
+			stable_id: string;
+			title: string | null;
+			artist: string | null;
+			bpm: number | null;
+			key_camelot: string | null;
+			energy: number | null;
+			rating: number | null;
+			rationale_tags: string[];
+			explain_text: string | null;
+		}>
+	>([]);
 
 	/** Library back stack: playlist + selection + scroll + search. */
 	type NavSnap = {
@@ -206,7 +244,9 @@
 			(p): PaneTabInfo => ({
 				title: p.playlist_id === null ? 'blank list' : p.title,
 				count: p.playlist_id === null || p.loading ? null : p.rows.length,
-				loading: p.loading
+				loading: p.loading,
+				sticky: p.sticky,
+				ephemeral: p.playlist_id === null
 			})
 		)
 	);
@@ -219,19 +259,45 @@
 	const findHighlightQuery = $derived(
 		searchMode === 'find' && pane.search.trim().length >= 3 ? pane.search.trim() : ''
 	);
+
+	/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
+	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
+		const states = DECK_IDS.map((d) => decks[d]);
+		const ordered = [
+			...states.filter((s) => s.is_master && s.stable_id !== null),
+			...states.filter((s) => s.playing && s.stable_id !== null),
+			...states.filter((s) => s.stable_id !== null)
+		];
+		for (const s of ordered) {
+			if (s.key !== null && s.bpm !== null && s.bpm > 0) {
+				return { key: s.key, bpm: s.bpm };
+			}
+		}
+		return null;
+	});
+
+	function _applyNextOnly(rows: BrowserRow[]): BrowserRow[] {
+		if (!uiPrefs.next_only_filter) return rows;
+		const ref = nextOnlyRef;
+		if (ref === null) return rows;
+		return rows.filter((r) => isAppropriateNext(r, ref));
+	}
+
 	const visibleRows = $derived.by(() => {
 		// Find mode: keep full list (no filter); TrackTable highlights matches.
 		if (searchMode === 'find') {
-			return sortRows(
-				filterRows(pane.rows, '', uiPrefs.hide_broken_links),
-				pane.sort_key,
-				pane.sort_dir
+			return _applyNextOnly(
+				sortRows(
+					filterRows(pane.rows, '', uiPrefs.hide_broken_links),
+					pane.sort_key,
+					pane.sort_dir
+				)
 			);
 		}
 		if (wholeCollectionActive) {
-			return sortRows(pane.search_results, pane.sort_key, pane.sort_dir);
+			return _applyNextOnly(sortRows(pane.search_results, pane.sort_key, pane.sort_dir));
 		}
-		return visibleRowsOf(pane, uiPrefs.hide_broken_links);
+		return _applyNextOnly(visibleRowsOf(pane, uiPrefs.hide_broken_links));
 	});
 	// Read contract handed to TrackTable (getters stay reactive through
 	// visibleRows/pane). The virtualization lane replaces THIS provider,
@@ -265,7 +331,15 @@
 		else if (visibleRows.length === 0 && pane.search.trim() !== '') return 'no tracks match the search';
 		else if (visibleRows.length === 0 && pane.rows.length > 0 && uiPrefs.hide_broken_links)
 			return 'all tracks in this list are broken links (hidden by Hide broken links)';
-		else if (visibleRows.length === 0) return 'empty playlist';
+		else if (
+			visibleRows.length === 0 &&
+			pane.rows.length > 0 &&
+			uiPrefs.next_only_filter
+		) {
+			return nextOnlyRef === null
+				? 'next-only: load a track with key+BPM (master preferred) to filter'
+				: 'no appropriate next tracks in this list (Camelot + BPM ±6% or half/double ≤15)';
+		} else if (visibleRows.length === 0) return 'empty playlist';
 		else return null;
 	});
 
@@ -300,6 +374,7 @@
 		};
 		window.addEventListener('keydown', onKey);
 		void _init();
+		void hydrateConfirmPrefsFromDisk();
 		let connAlive = true;
 		const pingConn = async (): Promise<void> => {
 			const [health, fe] = await Promise.all([_pingHealth(), _pingFe()]);
@@ -511,9 +586,171 @@
 		}
 	}
 
-	function selectPlaylist(node: PlaylistNode): void {
-		_pushNav();
-		void _loadPane(panes[activePane], node);
+	function selectPlaylist(node: PlaylistNode, opts?: { newTab?: boolean }): void {
+		const forceNew = opts?.newTab === true || panes[activePane].sticky;
+		if (!forceNew) {
+			if (panes[activePane].playlist_id === node.playlist_id) return;
+			_pushNav();
+			void _loadPane(panes[activePane], node);
+			return;
+		}
+		_openPlaylistInNewTab(node);
+	}
+
+	function _openPlaylistInNewTab(node: PlaylistNode): void {
+		const existing = panes.findIndex((p) => p.playlist_id === node.playlist_id);
+		if (existing >= 0) {
+			activePane = existing;
+			return;
+		}
+		const target = resolveNewTabIndex(panes);
+		if (target === null) {
+			pushToast(
+				'ALL 4 LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist',
+				'error'
+			);
+			return;
+		}
+		if (panes[target].playlist_id === node.playlist_id) {
+			activePane = target;
+			return;
+		}
+		activePane = target;
+		void _loadPane(panes[target], node);
+	}
+
+	function dropPlaylistOnTabBar(payload: PlaylistDragPayload): void {
+		const node: PlaylistNode = {
+			playlist_id: payload.playlist_id,
+			name: payload.name,
+			track_count: payload.track_count,
+			kind: payload.kind,
+			children: []
+		};
+		_openPlaylistInNewTab(node);
+	}
+
+	function togglePaneSticky(index: number): void {
+		if (index < 0 || index >= panes.length) return;
+		panes[index].sticky = !panes[index].sticky;
+	}
+
+	function reorderPaneTabs(from: number, to: number): void {
+		activePane = reorderPanesInPlace(panes, from, to, activePane);
+	}
+
+	async function saveAsPlaylistUi(index: number): Promise<void> {
+		const p = panes[index];
+		if (p.playlist_id !== null) return;
+		const name = window.prompt('Save blank list as playlist');
+		if (name === null || name.trim() === '') return;
+		try {
+			const created = await createPlaylist(name.trim());
+			await _refreshPlaylists();
+			const stableIds = p.rows.map((r) => r.stable_id);
+			if (stableIds.length > 0) {
+				const { etag } = await getPlaylistTracksEtag(created.playlist_id);
+				await replacePlaylistTracks(created.playlist_id, etag, stableIds);
+			}
+			activePane = index;
+			await _loadPane(p, {
+				playlist_id: created.playlist_id,
+				name: created.name,
+				track_count: stableIds.length,
+				kind: 'playlist',
+				children: []
+			});
+			pushToast(`Saved as playlist "${created.name}"`, 'info');
+		} catch (exc) {
+			pushToast(`save as playlist failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	async function _refreshPlaylists(): Promise<void> {
+		playlists = await listPlaylistsHydrated();
+	}
+
+	async function createPlaylistUi(): Promise<void> {
+		const name = window.prompt('New playlist name');
+		if (name === null || name.trim() === '') return;
+		try {
+			await createPlaylist(name.trim());
+			await _refreshPlaylists();
+			pushToast(`Created playlist "${name.trim()}"`, 'info');
+		} catch (exc) {
+			pushToast(`create playlist failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	async function renamePlaylistUi(node: PlaylistNode): Promise<void> {
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		const name = window.prompt('Rename playlist', node.name);
+		if (name === null || name.trim() === '' || name.trim() === node.name) return;
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			await renamePlaylist(node.playlist_id, etag, name.trim());
+			await _refreshPlaylists();
+			pushToast(`Renamed to "${name.trim()}"`, 'info');
+		} catch (exc) {
+			pushToast(`rename failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	async function deletePlaylistUi(node: PlaylistNode): Promise<void> {
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		const skip = uiPrefs.confirm.delete_playlist === false;
+		if (!skip) {
+			const every = window.confirm(`Delete playlist "${node.name}"?`);
+			if (!every) return;
+			const remember = window.confirm('Do this every time (skip delete confirm)?');
+			if (remember) setConfirmPref('delete_playlist', false);
+		}
+		try {
+			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
+			await deletePlaylist(node.playlist_id, etag);
+			await _refreshPlaylists();
+			pushToast(`Deleted playlist "${node.name}"`, 'info');
+		} catch (exc) {
+			pushToast(`delete failed: ${String(exc)}`, 'error');
+		}
+	}
+
+	async function dropTracksOnPlaylist(playlistId: string, stableIds: string[]): Promise<void> {
+		const remembered = uiPrefs.confirm.playlist_drop_mode;
+		let mode: 'add' | 'move' | null = remembered ?? null;
+		if (mode === null) {
+			const add = window.confirm(
+				`Drop ${stableIds.length} track(s) onto playlist.\n\nOK = Add\nCancel = choose Move`
+			);
+			mode = add ? 'add' : 'move';
+			const remember = window.confirm(`Remember "${mode}" every time for playlist drops?`);
+			if (remember) setConfirmPref('playlist_drop_mode', mode);
+		}
+		try {
+			const dest = await getPlaylistTracksEtag(playlistId);
+			const destIds = dest.detail.tracks.map((t) => t.stable_id);
+			const merged = [...destIds];
+			for (const id of stableIds) {
+				if (!merged.includes(id)) merged.push(id);
+			}
+			await replacePlaylistTracks(playlistId, dest.etag, merged);
+			if (mode === 'move') {
+				const srcId = panes[activePane].playlist_id;
+				if (srcId !== null && srcId !== playlistId && canMutatePlaylist(panes[activePane])) {
+					const src = await getPlaylistTracksEtag(srcId);
+					const next = src.detail.tracks
+						.map((t) => t.stable_id)
+						.filter((id) => !stableIds.includes(id));
+					await replacePlaylistTracks(srcId, src.etag, next);
+					const node = _currentNode(panes[activePane]);
+					if (node !== null) await _loadPane(panes[activePane], node);
+				}
+			}
+			await _refreshPlaylists();
+			pushToast(`${mode === 'add' ? 'Added' : 'Moved'} ${stableIds.length} track(s)`, 'info');
+		} catch (exc) {
+			pushToast(`playlist drop failed: ${String(exc)}`, 'error');
+		}
 	}
 
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
@@ -565,6 +802,7 @@
 			genre: wire.genre,
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
+			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
 			rb_meta: null,
 			revealed: false,
@@ -597,6 +835,7 @@
 			genre: null,
 			file_exists: track.file_exists,
 			is_streaming: null,
+			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
 			rb_meta: null,
 			revealed: false,
@@ -646,7 +885,7 @@
 		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {
-			row.rb_meta = await fetchRbMeta(row.stable_id);
+			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
 		} catch (exc) {
 			if (exc instanceof RbApiError && exc.status === 404) {
 				// No rekordbox vendor mapping for this track - a real library
@@ -654,9 +893,22 @@
 				return;
 			}
 			// Loud but non-modal: a toast per row would spam during scrolling.
+			// Transient fails leave rb_meta null; rowVisible can retry later
+			// when the row re-enters the observer (inflight cleared).
 			console.error(`rb-meta hydration failed for ${row.stable_id}:`, exc);
 		} finally {
 			_inflight.delete(row.stable_id);
+		}
+	}
+
+	/** One retry on non-404 failure so a blip does not leave the row art-dead. */
+	async function _fetchRbMetaWithRetry(stable_id: string): Promise<RbMeta> {
+		try {
+			return await fetchRbMeta(stable_id);
+		} catch (exc) {
+			if (exc instanceof RbApiError && exc.status === 404) throw exc;
+			await new Promise((r) => setTimeout(r, 250));
+			return await fetchRbMeta(stable_id);
 		}
 	}
 
@@ -697,16 +949,54 @@
 		rb_meta?: BrowserRow['rb_meta'];
 	};
 
-	function loadRow(row: LoadableRow, deck: DeckId | null): void {
-		void _loadOntoDeck(row, deck);
+	function loadRow(
+		row: LoadableRow,
+		deck: DeckId | null,
+		opts: { play?: boolean } = {}
+	): void {
+		void _loadOntoDeck(row, deck, opts);
 	}
 
-	/** Monotonic load counter for CH1/CH2 - double-click prefers least-recent. */
-	let deck12LoadSeq = $state({ 1: 0, 2: 0 });
-	let deck12LoadTick = 0;
+	function loadSuggest(sid: string, opts: { play?: boolean } = {}): void {
+		const row = { stable_id: sid, file_exists: true, is_streaming: false };
+		if (opts.play) {
+			const deck = pickDoubleDeck(row);
+			if (deck === null) return;
+			loadRow(row, deck, { play: true });
+			return;
+		}
+		loadRow(row, null);
+	}
 
-	function pickDoubleDeck(_row: LoadableRow): 1 | 2 {
-		return deck12LoadSeq[1] <= deck12LoadSeq[2] ? 1 : 2;
+	const playlistMemberIds = $derived(new Set(pane.rows.map((r) => r.stable_id)));
+	const masterRef = $derived(
+		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
+	);
+
+	/** Monotonic load counter - double-click prefers least-recent in the pair. */
+	let deckLoadSeq = $state({ 1: 0, 2: 0, 3: 0, 4: 0 });
+	let deckLoadTick = 0;
+
+	/**
+	 * Smart-load target: CH1/CH2 by default (least-recent).
+	 * Shift: CH3/CH4 only if empty or stopped (empty preferred); null if both playing.
+	 */
+	function pickDoubleDeck(_row: LoadableRow, opts: { shift?: boolean } = {}): DeckId | null {
+		if (opts.shift !== true) {
+			return deckLoadSeq[1] <= deckLoadSeq[2] ? 1 : 2;
+		}
+		const pair: Array<3 | 4> = [3, 4];
+		const empty = pair.filter((d) => decks[d].stable_id === null);
+		const stopped = pair.filter((d) => decks[d].stable_id !== null && !decks[d].playing);
+		const candidates = empty.length > 0 ? empty : stopped;
+		if (candidates.length === 0) {
+			pushToast('shift+dblclick: CH3 and CH4 are both playing - pause or unload one first', 'error');
+			return null;
+		}
+		if (candidates.length === 1) return candidates[0];
+		return deckLoadSeq[candidates[0]] <= deckLoadSeq[candidates[1]]
+			? candidates[0]
+			: candidates[1];
 	}
 
 	function previewSeek(row: LoadableRow, ratio: number): void {
@@ -730,7 +1020,11 @@
 		}
 	}
 
-	async function _loadOntoDeck(row: LoadableRow, deck: DeckId | null): Promise<void> {
+	async function _loadOntoDeck(
+		row: LoadableRow,
+		deck: DeckId | null,
+		opts: { play?: boolean } = {}
+	): Promise<void> {
 		if (row.is_streaming ?? row.rb_meta?.is_streaming ?? false) {
 			pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
 			return;
@@ -751,9 +1045,10 @@
 				await dispatchPerformanceCommand({ type: 'unload', deck: target });
 			}
 			await dispatchPerformanceCommand({ type: 'load', deck: target, stable_id: row.stable_id });
-			if (target === 1 || target === 2) {
-				deck12LoadTick += 1;
-				deck12LoadSeq = { ...deck12LoadSeq, [target]: deck12LoadTick };
+			deckLoadTick += 1;
+			deckLoadSeq = { ...deckLoadSeq, [target]: deckLoadTick };
+			if (opts.play === true) {
+				await dispatchPerformanceCommand({ type: 'play', deck: target, playing: true });
 			}
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -805,7 +1100,12 @@
 	function selectRow(row: Pick<BrowserRow, 'stable_id'>, event?: MouseEvent): void {
 		const p = panes[activePane];
 		if (p.selected_id !== row.stable_id) _pushNav();
-		p.select(row.stable_id, event !== undefined && (event.metaKey || event.ctrlKey));
+		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
+		const range = event !== undefined && event.shiftKey;
+		const orderedIds = range
+			? visibleRows.map((r) => r.stable_id)
+			: [];
+		p.select(row.stable_id, extend, range, orderedIds);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
 		ensureAnlz(row.stable_id);
 	}
@@ -1053,6 +1353,10 @@
 				onselect={selectPlaylist}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}
+				oncreateplaylist={() => void createPlaylistUi()}
+				onrenameplaylist={(n) => void renamePlaylistUi(n)}
+				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
+				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
 			/>
 		{/if}
 	</div>
@@ -1063,7 +1367,15 @@
 			</button>
 		{/if}
 		<div class="pane-header">
-			<PaneTabs {tabs} active={activePane} onactivate={(i) => (activePane = i)} />
+			<PaneTabs
+				{tabs}
+				active={activePane}
+				onactivate={(i) => (activePane = i)}
+				ontogglesticky={togglePaneSticky}
+				onreorder={reorderPaneTabs}
+				ondropplaylist={dropPlaylistOnTabBar}
+				onsaveas={(i) => void saveAsPlaylistUi(i)}
+			/>
 			<div class="header-right">
 				<button
 					class="rb-lit-button rb-inert master-dd"
@@ -1133,6 +1445,17 @@
 					<span>Hide broken links</span>
 				</label>
 				<label
+					class="next-only"
+					title="Filter to appropriate next tracks (Camelot compatible + BPM within ±6% of master, or half/double within 15 BPM). Shortcut: Tab"
+				>
+					<input
+						type="checkbox"
+						checked={uiPrefs.next_only_filter}
+						onchange={(e) => setNextOnlyFilter(e.currentTarget.checked)}
+					/>
+					<span>Next-only</span>
+				</label>
+				<label
 					class="whole-collection"
 					title="Search the whole collection with server-side FTS5 instead of only this pane"
 				>
@@ -1196,13 +1519,25 @@
 			{genreFilterUntil}
 			searchQuery={pane.search}
 			findQuery={findHighlightQuery}
+			{suggestHoverId}
 		/>
-		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track
-		     (recommended mount point, see SuggestNextStrip.svelte). -->
+		<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 		<SuggestNextStrip
 			stableId={decks[1].stable_id}
-			onload={(sid) =>
-				loadRow({ stable_id: sid, file_exists: true, is_streaming: false }, null)}
+			onload={(sid) => loadSuggest(sid)}
+			onplay={(sid) => loadSuggest(sid, { play: true })}
+			onhover={(sid) => (suggestHoverId = sid)}
+			oncandidates={(cands) => (suggestCandidates = cands)}
+		/>
+		<RecommendedSection
+			candidates={suggestCandidates}
+			currentPlaylistId={pane.playlist_id}
+			currentPlaylistMemberIds={playlistMemberIds}
+			referenceBpm={masterRef?.bpm ?? null}
+			referenceKey={masterRef?.key ?? null}
+			onload={(sid) => loadSuggest(sid)}
+			onplay={(sid) => loadSuggest(sid, { play: true })}
+			onhover={(sid) => (suggestHoverId = sid)}
 		/>
 	</div>
 	<div
@@ -1226,6 +1561,18 @@
 			</svg>
 		</button>
 		<span class="wordmark">rekordbox</span>
+		{#if jobProgress.ribbon()}
+			{@const ribbon = jobProgress.ribbon()!}
+			<span
+				class="job-ribbon"
+				style={`--job:${ANALYSIS_COLORS[ribbon.kind]}; --pct:${Math.max(0.02, ribbon.progress)}`}
+				title={`${ribbon.label} offload`}
+				aria-label={ribbon.label}
+			>
+				<span class="job-ribbon-fill"></span>
+				<span class="job-ribbon-label">{ribbon.label}</span>
+			</span>
+		{/if}
 		<span class="grip" aria-hidden="true">
 			<svg viewBox="0 0 12 12" width="10" height="10">
 				<path d="M11 1L1 11M11 5L5 11M11 9L9 11" stroke="currentColor" stroke-width="1" />
@@ -1312,7 +1659,8 @@
 	.master-dd {
 		font-size: var(--rb-fs-label);
 	}
-	.hide-broken {
+	.hide-broken,
+	.next-only {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -1321,10 +1669,12 @@
 		white-space: nowrap;
 		cursor: pointer;
 	}
-	.hide-broken:hover {
+	.hide-broken:hover,
+	.next-only:hover {
 		color: var(--rb-text);
 	}
-	.hide-broken input {
+	.hide-broken input,
+	.next-only input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -1379,6 +1729,33 @@
 		padding: 0 6px;
 		background: var(--rb-panel);
 		border-top: 1px solid var(--rb-border);
+	}
+	.job-ribbon {
+		position: relative;
+		flex: 1;
+		height: 12px;
+		border: 1px solid color-mix(in srgb, var(--job) 55%, transparent);
+		background: color-mix(in srgb, var(--job) 12%, transparent);
+		overflow: hidden;
+		min-width: 80px;
+	}
+	.job-ribbon-fill {
+		position: absolute;
+		inset: 0 auto 0 0;
+		width: calc(var(--pct) * 100%);
+		background: color-mix(in srgb, var(--job) 55%, transparent);
+	}
+	.job-ribbon-label {
+		position: relative;
+		z-index: 1;
+		display: block;
+		padding: 0 6px;
+		font-size: 9px;
+		line-height: 12px;
+		color: var(--rb-text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.conn-dots {
 		position: absolute;

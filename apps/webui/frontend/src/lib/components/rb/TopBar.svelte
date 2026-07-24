@@ -13,9 +13,15 @@
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+	import { setBeatSyncMax, toggleTheme, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { vibeState } from '$lib/rb/vibe.svelte';
 	import CommandEntry from './CommandEntry.svelte';
+	import CreatePairingSheet from './CreatePairingSheet.svelte';
+	import VibeMeter from './VibeMeter.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+
+	let pairingOpen = $state(false);
 
 	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
 	 * deck row) so the glyph reads as 4 waveforms, not a dotted grid. */
@@ -90,8 +96,11 @@
 	}
 </script>
 
-<header class="rb-topbar rb-panel">
-	<!-- left: mode dropdown + view-layout icon cluster -->
+<header
+	class="rb-topbar rb-panel"
+	class:vibe-rainbow={vibeState.display >= 0.9}
+	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
+>	<!-- left: mode dropdown + view-layout icon cluster -->
 	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
 		PERFORMANCE
 		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
@@ -175,7 +184,34 @@
 
 	<div class="spacer"></div>
 
+	<!-- dead-center vibe meter: mouse movement tops it up; history in localStorage -->
+	<div class="vibe-slot">
+		<VibeMeter />
+	</div>
+
 	<!-- right cluster -->
+	<button
+		type="button"
+		class="bsm-toggle"
+		title="Create pairing from two decks"
+		onclick={() => (pairingOpen = true)}
+	>
+		Create pairing
+	</button>
+
+	<button
+		type="button"
+		class="bsm-toggle"
+		class:on={uiPrefs.beat_sync_max}
+		aria-pressed={uiPrefs.beat_sync_max}
+		title={uiPrefs.beat_sync_max
+			? 'BeatSyncMax ON - every seek (incl. master) keeps BAR phase lock'
+			: 'BeatSyncMax OFF - followers sync on seek; master free-seeks'}
+		onclick={() => setBeatSyncMax(!uiPrefs.beat_sync_max)}
+	>
+		BeatSyncMax
+	</button>
+
 	<span class="dim-label" title={INERT_TITLE}>PAD</span>
 	<span class="dim-label" title={INERT_TITLE}>MIDI</span>
 
@@ -193,7 +229,15 @@
 
 	<span class="free-badge">Free</span>
 
-	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="settings">
+	<button
+		type="button"
+		class="tb-icon theme-toggle"
+		class:on={uiPrefs.theme === 'light'}
+		title={uiPrefs.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+		aria-pressed={uiPrefs.theme === 'light'}
+		onclick={() => toggleTheme()}
+	>
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 			<circle cx="6" cy="6" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3" />
 			{#each GEAR_TOOTH_ANGLES as angle (angle)}
@@ -221,6 +265,7 @@
 		class="master-slider"
 		role="slider"
 		aria-label="master volume"
+		title="Master volume - final output gain"
 		aria-orientation="horizontal"
 		aria-valuemin={0}
 		aria-valuemax={1}
@@ -240,8 +285,11 @@
 	<span class="clock">{clock}</span>
 </header>
 
+<CreatePairingSheet bind:open={pairingOpen} />
+
 <style>
 	.rb-topbar {
+		position: relative;
 		grid-area: topbar;
 		display: flex;
 		align-items: center;
@@ -252,12 +300,39 @@
 		overflow: hidden;
 	}
 
+
 	.spacer-left {
 		flex: 1;
 	}
 
 	.spacer {
 		flex: 2;
+	}
+
+	.vibe-slot {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		z-index: 1;
+	}
+
+	.rb-topbar.vibe-rainbow {
+		/* 200% size + identical end stop: shift by 50% = one seamless cycle.
+		   --vr grows unbounded (no wrap) so there is no loop seam. */
+		background: linear-gradient(
+				90deg,
+				#ff0040,
+				#ff8000,
+				#ffef00,
+				#00e676,
+				#00e5ff,
+				#2979ff,
+				#d500f9,
+				#ff0040
+			)
+			calc(var(--vr) * 50%) 0 / 200% 100%;
+		border-color: color-mix(in srgb, #c44dff 40%, var(--rb-border));
 	}
 
 	.mode-dd {
@@ -297,6 +372,15 @@
 	.tb-icon.active {
 		color: var(--rb-accent);
 	}
+	.tb-icon.theme-toggle {
+		cursor: pointer;
+	}
+	.tb-icon.theme-toggle.on {
+		color: var(--rb-accent);
+	}
+	.tb-icon.theme-toggle:hover {
+		color: var(--rb-text);
+	}
 	.tb-icon.fx {
 		border: 1px solid var(--rb-border);
 		padding: 2px 4px;
@@ -319,6 +403,27 @@
 		letter-spacing: 0.08em;
 		color: var(--rb-text-dim);
 		opacity: 0.6;
+	}
+
+	.bsm-toggle {
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
+		border-radius: 2px;
+		color: var(--rb-text-dim);
+		font-family: var(--rb-font);
+		font-size: 9px;
+		letter-spacing: 0.04em;
+		padding: 2px 6px;
+		line-height: 1.2;
+		cursor: pointer;
+	}
+	.bsm-toggle.on {
+		color: var(--rb-accent);
+		border-color: color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--rb-accent) 25%, transparent);
+	}
+	.bsm-toggle:hover {
+		color: var(--rb-text);
 	}
 
 	.free-badge {
@@ -347,7 +452,7 @@
 		top: 50%;
 		height: 3px;
 		margin-top: -1.5px;
-		background: #060809;
+		background: var(--rb-inset);
 		border: 1px solid var(--rb-border);
 	}
 	.master-fill {
@@ -364,7 +469,7 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: #2a2f37;
+		background: var(--rb-chrome);
 		border: 1px solid var(--rb-border);
 	}
 	.master-slider:focus-visible .master-thumb {

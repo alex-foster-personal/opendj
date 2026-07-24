@@ -10,7 +10,8 @@
 	// Rating | Comments | Time | Genre. Preview strips + file_exists arrive
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
-	// Row states: green title+artist = loaded on a deck; blue full row =
+	// Row states: yellow title+artist = loaded on a non-master deck; gold =
+	// master; faint green wash = Camelot-compatible suggested next; blue =
 	// selected; grayed row = audio file missing on disk (FR-1).
 	// Rows arrive via the RowProvider contract (pane-contract.svelte.ts).
 	// The provider materializes the full result set (parent no longer caps
@@ -19,20 +20,27 @@
 	// ever mounted, so a multi-thousand-row pane stays cheap regardless of
 	// provider.total.
 	import { untrack } from 'svelte';
-	import { artworkUrl, type Vocals } from '$lib/rb/api-rb';
+	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
-	import { bpmHeatColor } from '$lib/rb/bpm-heat';
+	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
-	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { setConfirmPref, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
+	import { beginTrackDrag, endTrackDrag } from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/types';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import RatingStars from './RatingStars.svelte';
+	import AnalysisDots from './AnalysisDots.svelte';
 	import { computeVirtualWindow } from './virtual-window';
+	import {
+		ANALYSIS_COLORS,
+		jobProgress,
+		type AnalysisBadge
+	} from '$lib/rb/job-progress.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
@@ -51,21 +59,23 @@
 		| 'artist'
 		| 'key'
 		| 'bpm'
+		| 'plays'
 		| 'rating'
 		| 'comments'
 		| 'time'
 		| 'genre';
 
 	const COL_DEFAULTS: Record<ColId, number> = {
-		funnel: 20,
+		funnel: 24,
 		cloud: 24,
 		order: 34,
 		preview: 177,
 		art: 54,
 		title: 220,
 		artist: 140,
-		key: 40,
-		bpm: 46,
+		key: 48,
+		bpm: 54,
+		plays: 36,
 		rating: 80,
 		comments: 110,
 		time: 48,
@@ -78,10 +88,11 @@
 	let resizeStartW = 0;
 	let loadConfirm = $state<{
 		row: BrowserRow;
-		deck: 1 | 2;
+		deck: DeckId;
 		x: number;
 		y: number;
 	} | null>(null);
+	let loadConfirmEveryTime = $state(false);
 
 	function onColResizeStart(event: PointerEvent, col: ColId): void {
 		event.preventDefault();
@@ -111,16 +122,13 @@
 		return color === null ? undefined : `color:${color}`;
 	}
 
-	const masterKey = $derived(
-		DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master)?.key ?? null
-	);
+	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
+	const masterKey = $derived(masterDeck?.key ?? null);
 	const masterKeyColor = $derived(camelotKeyColor(masterKey));
-	const masterBpm = $derived(
-		DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master)?.bpm ?? null
-	);
-	const masterStableId = $derived(
-		DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master)?.stable_id ?? null
-	);
+	const masterBpm = $derived(masterDeck?.bpm ?? null);
+	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
+	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
+	const masterStableId = $derived(masterDeck?.stable_id ?? null);
 	const hoverStableId = $derived(
 		deckHoverUi.deckId === null ? null : (deckStates[deckHoverUi.deckId].stable_id ?? null)
 	);
@@ -132,13 +140,53 @@
 	function keyCompatStyle(key: string | null): string | undefined {
 		const base = keyCellStyle(key);
 		if (!keyCompat(key) || masterKeyColor === null) return base;
-		const border = `box-shadow: inset 0 0 0 2px ${masterKeyColor}`;
+		const border = `box-shadow: inset 0 0 0 1px ${masterKeyColor}`;
 		return base === undefined ? border : `${base};${border}`;
 	}
 
+	function bpmCellHeat(bpm: number | null) {
+		return classifyBpmHeat(bpm, masterBpm);
+	}
+
 	function bpmCellStyle(bpm: number | null): string | undefined {
-		const color = bpmHeatColor(bpm, masterBpm);
-		return color === null ? undefined : `color:${color}`;
+		const heat = bpmCellHeat(bpm);
+		return heat === null ? undefined : `color:${heat.color}`;
+	}
+
+	/** Red now-line on library preview when this track is on a deck. Prefer
+	 * a playing deck when the same stable_id is loaded on more than one. */
+	function _nowRatioFor(stableId: string): number | null {
+		let fallback: number | null = null;
+		for (const d of DECK_IDS) {
+			const st = deckStates[d];
+			if (st.stable_id !== stableId || st.duration_ms === null || st.duration_ms <= 0) continue;
+			const ratio = st.position_ms / st.duration_ms;
+			if (st.playing) return ratio;
+			if (fallback === null) fallback = ratio;
+		}
+		return fallback;
+	}
+
+	function _badgeFor(row: BrowserRow): AnalysisBadge {
+		const fromStore = jobProgress.badges[row.stable_id] ?? {};
+		const vocals = vocalsById[row.stable_id];
+		const vocalsDone =
+			fromStore.vocals === true ||
+			(vocals !== undefined && vocals !== null && vocals.status !== 'not_analyzed');
+		return {
+			...fromStore,
+			vocals: vocalsDone,
+			beatgrid: fromStore.beatgrid ?? row.rb_meta?.analysis_available === true,
+			key: fromStore.key ?? (row.key !== null && row.key !== undefined && String(row.key) !== ''),
+			waveform: fromStore.waveform ?? row.rb_meta?.analysis_available === true
+		};
+	}
+
+	function _jobRowStyle(stableId: string): string | undefined {
+		const job = jobProgress.activeFor(stableId);
+		if (job === null) return undefined;
+		const pct = Math.max(0.02, Math.min(1, job.progress)) * 100;
+		return `--job-color:${ANALYSIS_COLORS[job.kind]}; --job-pct:${pct}%`;
 	}
 
 	let {
@@ -166,7 +214,9 @@
 		ongenrefilter,
 		genreFilterUntil = 0,
 		searchQuery = '',
-		findQuery = ''
+		findQuery = '',
+		/** Suggest-next hover: temporarily highlight + scroll to this row. */
+		suggestHoverId = null as string | null
 	}: {
 		/** Read contract: { rows, total, truncated, fetchWindow } - see
 		 * pane-contract.svelte.ts. */
@@ -196,9 +246,9 @@
 		onsort: (key: SortKey) => void;
 		onselectrow: (row: BrowserRow, event: MouseEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick. */
-		onloadrow: (row: BrowserRow, deck: DeckId | null) => void;
-		/** Preferred CH1/CH2 for double-click load confirm. */
-		onpickdoubledeck?: (row: BrowserRow) => 1 | 2;
+		onloadrow: (row: BrowserRow, deck: DeckId | null, opts?: { play?: boolean }) => void;
+		/** Preferred deck for double-click load+play. Shift → CH3/CH4 when free/stopped. */
+		onpickdoubledeck?: (row: BrowserRow, opts?: { shift?: boolean }) => DeckId | null;
 		/** Preview strip click: 0..1 ratio along the track. */
 		onpreviewseek?: (row: BrowserRow, ratio: number) => void;
 		onrate: (row: BrowserRow, next: number) => void;
@@ -215,6 +265,8 @@
 		searchQuery?: string;
 		/** In-place find highlight (≥3 chars); empty = off. */
 		findQuery?: string;
+		/** Suggest-next hover: temporarily highlight + scroll to this row. */
+		suggestHoverId?: string | null;
 	} = $props();
 
 	const GENRE_CLICK_MS = 320;
@@ -285,7 +337,14 @@
 		if (genreWindowOpen()) return;
 		const target = event.target as HTMLElement | null;
 		if (target === null || target.closest(LOAD_DBLCLICK_SEL) === null) return;
-		const deck = onpickdoubledeck?.(row) ?? 1;
+		const deck = onpickdoubledeck?.(row, { shift: event.shiftKey }) ?? (event.shiftKey ? null : 1);
+		if (deck === null) return;
+		// Missing key = ask; false = skip (remembered "do this every time").
+		if (uiPrefs.confirm.dblclick_load_play === false) {
+			onloadrow(row, deck, { play: true });
+			return;
+		}
+		loadConfirmEveryTime = false;
 		loadConfirm = {
 			row,
 			deck,
@@ -379,6 +438,31 @@
 		return null;
 	});
 
+	/** Suggest-next hover: jump to row while hovered, restore scroll on leave. */
+	let _suggestSavedScroll: number | null = null;
+	$effect(() => {
+		const sid = suggestHoverId;
+		const el = wrapEl;
+		if (el === null) return;
+		if (sid === null || sid === '') {
+			if (_suggestSavedScroll !== null) {
+				el.scrollTop = _suggestSavedScroll;
+				liveScrollTop = _suggestSavedScroll;
+				_suggestSavedScroll = null;
+			}
+			return;
+		}
+		const list = untrack(() => rows);
+		const idx = list.findIndex((r) => r.stable_id === sid);
+		if (idx < 0) return;
+		if (_suggestSavedScroll === null) _suggestSavedScroll = el.scrollTop;
+		const rh = untrack(() => rowHeight);
+		const vh = untrack(() => viewportHeight);
+		const target = Math.max(0, idx * rh - Math.floor(vh / 3));
+		el.scrollTop = target;
+		liveScrollTop = target;
+	});
+
 	function jumpToMaster(): void {
 		if (wrapEl === null || masterIndex < 0) return;
 		const target = Math.max(0, masterIndex * rowHeight - viewportHeight * 0.35);
@@ -458,8 +542,17 @@
 			event.preventDefault();
 			return;
 		}
-		event.dataTransfer?.setData(MIME_TRACK, row.stable_id);
+		const ids =
+			selectedIds.includes(row.stable_id) && selectedIds.length > 1
+				? selectedIds
+				: [row.stable_id];
+		event.dataTransfer?.setData(MIME_TRACK, ids.join(','));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		beginTrackDrag(ids);
+	}
+
+	function onRowDragEnd(): void {
+		endTrackDrag();
 	}
 
 	function onGripDragStart(event: DragEvent, row: BrowserRow): void {
@@ -554,6 +647,7 @@
 				<col style={`width:${colWidths.artist}px`} />
 				<col style={`width:${colWidths.key}px`} />
 				<col style={`width:${colWidths.bpm}px`} />
+				<col style={`width:${colWidths.plays}px`} />
 				<col style={`width:${colWidths.rating}px`} />
 				<col style={`width:${colWidths.comments}px`} />
 				<col style={`width:${colWidths.time}px`} />
@@ -615,8 +709,77 @@
 					</th>
 					{@render sortableTh('title', 'Track Title', 'title')}
 					{@render sortableTh('artist', 'Artist', 'artist')}
-					{@render sortableTh('key', 'K', 'key')}
-					{@render sortableTh('bpm', 'B', 'bpm')}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<th
+						class="h-key sortable"
+						style={`width:${colWidths.key}px`}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('key');
+						}}
+						title={masterKey !== null
+							? `Master key ${masterKey} - sort by key (asc → desc → clear)`
+							: 'Sort by key (asc → desc → clear)'}
+					>
+						<span class="th-label">
+							{#if masterKey !== null}
+								<span
+									class="th-master-val"
+									style={masterKeyColor !== null ? `color:${masterKeyColor}` : undefined}
+								>{masterKey}</span>
+							{:else}
+								<span>K</span>
+							{/if}
+							{#if sortKey === 'key'}
+								<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+							{/if}
+						</span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'key')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<th
+						class="h-bpm sortable"
+						style={`width:${colWidths.bpm}px`}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('bpm');
+						}}
+						title={masterBpm !== null
+							? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
+							: 'Sort by BPM (asc → desc → clear)'}
+					>
+						<span class="th-label">
+							{#if masterBpm !== null}
+								<span
+									class="th-master-val"
+									style={masterBpmColor !== null ? `color:${masterBpmColor}` : undefined}
+								>{_fmtBpm(masterBpm)}</span>
+							{:else}
+								<span>B</span>
+							{/if}
+							{#if sortKey === 'bpm'}
+								<span class="arrow">{sortDir === 1 ? '▲' : '▼'}</span>
+							{/if}
+						</span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'bpm')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
+					{@render sortableTh('plays', '▶', 'plays')}
 					{@render sortableTh('rating', 'Rating', 'rating')}
 					{@render sortableTh('comments', 'Comments', 'comments')}
 					{@render sortableTh('time', 'Time', 'time')}
@@ -626,7 +789,7 @@
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan="13"></td>
+						<td colspan="14"></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
@@ -645,15 +808,22 @@
 						class:rb-row-deck-hover={hoverStableId !== null &&
 							row.stable_id === hoverStableId &&
 							row.stable_id !== masterStableId}
+						class:rb-row-suggest-hover={suggestHoverId !== null &&
+							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
 						class:broken={!row.file_exists}
+						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
+						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
 						ondblclick={(e) => onRowDblClick(e, row)}
 						ondragstart={(e) => onRowDragStart(e, row)}
+						ondragend={onRowDragEnd}
 						ondragover={onRowDragOver}
 						ondrop={(e) => onRowDrop(e, row)}
 					>
-						<td class="c-funnel"></td>
+						<td class="c-funnel">
+							<AnalysisDots badge={_badgeFor(row)} />
+						</td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a
 						     cloud renders ONLY for real streaming rows and '!' for missing
@@ -699,6 +869,7 @@
 								vocals={vocalsById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
 								revealed={row.revealed}
+								nowRatio={_nowRatioFor(row.stable_id)}
 								onseek={(ratio) => onpreviewseek?.(row, ratio)}
 							/>
 							<span class="deck-btns">
@@ -729,7 +900,13 @@
 								{/if}
 							</span>
 						</td>
-						<td class="c-art">
+						<td
+							class="c-art"
+							title={row.rb_meta !== null && !row.rb_meta.artwork_available
+								? (artworkStatusLabel(row.rb_meta.artwork_status) ??
+									'artwork unavailable')
+								: undefined}
+						>
 							<span class="art-slate" aria-hidden="true"></span>
 							{#if row.rb_meta !== null && row.rb_meta.artwork_available}
 								<img
@@ -760,7 +937,18 @@
 								{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
 							{/each}
 						</td>
-						<td class="c-bpm" style={bpmCellStyle(row.bpm)}>{_fmtBpm(row.bpm)}</td>
+						<td
+							class="c-bpm"
+							class:bpm-sweet={bpmCellHeat(row.bpm)?.lane === 'sweet'}
+							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
+							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
+							style={bpmCellStyle(row.bpm)}
+							title={bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? undefined}
+						>{_fmtBpm(row.bpm)}</td>
+						<td
+							class="c-plays"
+							title="play count (rekordbox history + djay)"
+						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
 						<td class="c-rating">
 							<RatingStars rating={row.rating} onrate={(n) => onrate(row, n)} />
 						</td>
@@ -799,7 +987,7 @@
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan="13"></td>
+						<td colspan="14"></td>
 					</tr>
 				{/if}
 			</tbody>
@@ -820,19 +1008,34 @@
 		class="load-confirm"
 		style={`left:${loadConfirm.x}px;top:${loadConfirm.y}px`}
 		role="dialog"
-		aria-label={`Load to CH${loadConfirm.deck}?`}
+		aria-label={`Load and play CH${loadConfirm.deck}?`}
 	>
-		<span class="load-confirm-q">Load CH{loadConfirm.deck}?</span>
+		<span class="load-confirm-q">Load+play CH{loadConfirm.deck}?</span>
+		<label class="load-confirm-every">
+			<input type="checkbox" bind:checked={loadConfirmEveryTime} />
+			<span>do this every time</span>
+		</label>
 		<button
 			type="button"
 			class="load-confirm-yes"
 			onclick={() => {
 				const pending = loadConfirm;
+				const remember = loadConfirmEveryTime;
 				loadConfirm = null;
-				if (pending) onloadrow(pending.row, pending.deck);
+				loadConfirmEveryTime = false;
+				if (pending === null) return;
+				if (remember) setConfirmPref('dblclick_load_play', false);
+				onloadrow(pending.row, pending.deck, { play: true });
 			}}>Yes</button
 		>
-		<button type="button" class="load-confirm-no" onclick={() => (loadConfirm = null)}>No</button>
+		<button
+			type="button"
+			class="load-confirm-no"
+			onclick={() => {
+				loadConfirm = null;
+				loadConfirmEveryTime = false;
+			}}>No</button
+		>
 	</div>
 {/if}
 
@@ -903,6 +1106,10 @@
 		color: var(--rb-text);
 		background: color-mix(in srgb, var(--rb-panel-raised) 70%, #2a3140);
 	}
+	.th-master-val {
+		font-variant-numeric: tabular-nums;
+		font-weight: 700;
+	}
 	.th-label {
 		display: flex;
 		align-items: center;
@@ -923,6 +1130,32 @@
 	tbody tr {
 		height: var(--tt-row-h);
 		cursor: default;
+		position: relative;
+	}
+	/* Job progress overrides loaded/playing wash (full-row fill). */
+	tbody tr.rb-row-job {
+		background: transparent !important;
+		box-shadow: none !important;
+		outline: none !important;
+		animation: none !important;
+	}
+	tbody tr.rb-row-job::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		pointer-events: none;
+		background: linear-gradient(
+			90deg,
+			color-mix(in srgb, var(--job-color) 42%, transparent) 0%,
+			color-mix(in srgb, var(--job-color) 42%, transparent) var(--job-pct),
+			color-mix(in srgb, var(--job-color) 10%, transparent) var(--job-pct),
+			color-mix(in srgb, var(--job-color) 10%, transparent) 100%
+		);
+	}
+	tbody tr.rb-row-job > td {
+		position: relative;
+		z-index: 1;
 	}
 	/* virtualization spacers stand in for the un-mounted rows above/below
 	 * the current window - zero out padding/border so their inline height
@@ -939,25 +1172,25 @@
 		outline: 1px solid color-mix(in srgb, var(--rb-accent) 45%, transparent);
 		outline-offset: -1px;
 	}
-	/* Loaded on any deck: green edge + wash (title/artist stay green via theme). */
+	/* Loaded on a non-master deck: yellow edge + wash (distinct from master gold). */
 	tbody tr.loaded:not(.rb-row-master):not(.rb-row-selected) {
-		background: color-mix(in srgb, var(--rb-green) 11%, transparent);
-		box-shadow: inset 3px 0 0 var(--rb-green);
+		background: color-mix(in srgb, var(--rb-yellow) 12%, transparent);
+		box-shadow: inset 3px 0 0 var(--rb-yellow);
 	}
 	tbody tr.loaded:hover:not(.rb-row-master):not(.rb-row-selected):not(.rb-row-menu) {
-		background: color-mix(in srgb, var(--rb-green) 18%, var(--rb-panel-raised));
+		background: color-mix(in srgb, var(--rb-yellow) 20%, var(--rb-panel-raised));
 	}
 	/* Master: biggest pop - gold edge + strong wash. */
 	tbody tr.rb-row-master {
-		background: color-mix(in srgb, #c9b35a 28%, transparent);
+		background: color-mix(in srgb, var(--rb-master-gold, #c9b35a) 28%, transparent);
 		box-shadow:
-			inset 5px 0 0 #c9b35a,
-			inset -1px 0 0 color-mix(in srgb, #c9b35a 55%, transparent);
-		outline: 1px solid color-mix(in srgb, #c9b35a 70%, transparent);
+			inset 5px 0 0 var(--rb-master-gold, #c9b35a),
+			inset -1px 0 0 color-mix(in srgb, var(--rb-master-gold, #c9b35a) 55%, transparent);
+		outline: 1px solid color-mix(in srgb, var(--rb-master-gold, #c9b35a) 70%, transparent);
 		outline-offset: -1px;
 	}
 	tbody tr.rb-row-master:hover {
-		background: color-mix(in srgb, #c9b35a 36%, var(--rb-panel-raised));
+		background: color-mix(in srgb, var(--rb-master-gold, #c9b35a) 36%, var(--rb-panel-raised));
 	}
 	tbody tr.rb-row-master .c-title,
 	tbody tr.rb-row-master .c-artist {
@@ -965,6 +1198,10 @@
 		font-weight: 700;
 	}
 	/* Hovered deck's library track (non-master): light pulse to help find it. */
+	tbody tr.rb-row-suggest-hover {
+		outline: 1px solid #ff4da6;
+		background: color-mix(in srgb, #ff4da6 16%, transparent) !important;
+	}
 	tbody tr.rb-row-deck-hover:not(.rb-row-selected):not(.rb-row-menu) {
 		animation: deck-lib-pulse 0.9s ease-in-out infinite;
 		box-shadow: inset 3px 0 0 rgba(255, 255, 255, 0.45);
@@ -978,13 +1215,14 @@
 			background: color-mix(in srgb, rgba(255, 255, 255, 0.14) 100%, transparent);
 		}
 	}
+	/* Camelot-compatible / suggested-next: faint green (go / mixable). */
 	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master) {
-		background: color-mix(in srgb, #c9b35a 9%, transparent);
+		background: color-mix(in srgb, var(--rb-green) 9%, transparent);
 	}
 	tbody tr.rb-row-key-compat:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
 		) {
-		background: color-mix(in srgb, #c9b35a 16%, var(--rb-panel-raised));
+		background: color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised));
 	}
 
 	.master-fold {
@@ -1024,10 +1262,14 @@
 	}
 	.c-order,
 	.c-bpm,
+	.c-plays,
 	.c-time {
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 		color: var(--rb-text-dim);
+	}
+	.c-plays {
+		font-size: 10px;
 	}
 	.c-order .grip {
 		margin-right: 2px;
@@ -1047,6 +1289,18 @@
 		border-radius: 2px;
 		padding-left: 4px;
 		padding-right: 4px;
+	}
+	/* Sweet BPM: green wash only (no border). Half = purple wash. */
+	.c-bpm.bpm-sweet {
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--rb-green) 18%, transparent);
+	}
+	.c-bpm.bpm-half {
+		border-radius: 2px;
+		background: color-mix(in srgb, #a855f7 12%, transparent);
+	}
+	.c-bpm.bpm-far {
+		border-radius: 2px;
 	}
 	.c-cloud {
 		text-align: center;
@@ -1200,6 +1454,7 @@
 		z-index: 80;
 		transform: translate(-50%, -100%);
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 6px;
 		padding: 4px 8px;
@@ -1209,9 +1464,33 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		pointer-events: auto;
+		max-width: 280px;
 	}
 	.load-confirm-q {
 		white-space: nowrap;
+	}
+	.load-confirm-every {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+		white-space: nowrap;
+		flex: 1 1 100%;
+		order: 3;
+	}
+	.load-confirm-every input {
+		width: 10px;
+		height: 10px;
+		margin: 0;
+		accent-color: var(--rb-accent);
+		cursor: pointer;
+	}
+	.load-confirm-yes {
+		order: 1;
+	}
+	.load-confirm-no {
+		order: 2;
 	}
 	.load-confirm button {
 		border: 1px solid var(--rb-border);

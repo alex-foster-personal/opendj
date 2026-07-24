@@ -147,6 +147,8 @@ export interface RbMeta {
 	genre: string | null;
 	/** True when artwork files exist - lets the browser skip doomed fetches. */
 	artwork_available: boolean;
+	/** Why artwork is / isn't available (empty ImagePath is the common miss). */
+	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	/** True when the ANLZ dir exists - ditto for /anlz. */
 	analysis_available: boolean;
 	/** Live djmdCue row count for the track. */
@@ -166,14 +168,15 @@ export interface HotCue {
 	out_ms: number | null;
 	/** True when the slot stores a loop (renders loop glyph + time chips). */
 	is_loop: boolean;
-	/** rekordbox colour table index; null = default colour. */
+	/** Beat length when beat-quantised (djmdCue BeatLoopSize / decoded); null otherwise. */
+	beat_loop_size: number | null;
+	/** rekordbox ColorTableIndex (0..62); null = default colour. */
 	color_table_index: number | null;
 	/** User comment; null when unset. */
 	comment: string | null;
 }
 
-/** Active loop on a deck. v1: display-only from stored cues; the beat-length
- * cluster (INT / 8 / < >) is inert per COMPONENT-MAP 1.3. */
+/** Active loop on a deck. */
 export interface LoopState {
 	/** Loop-in position ms. */
 	in_ms: number;
@@ -183,6 +186,15 @@ export interface LoopState {
 	engaged: boolean;
 	/** Beat length (4/8/16) when beat-quantised; null when time-based. */
 	beat_length: number | null;
+}
+
+/** One secondary in-deck safety loop (auto-engage near end-of-track). */
+export interface SafetyLoopSlot {
+	in_ms: number;
+	out_ms: number;
+	beat_length: number | null;
+	/** When true, engine engages this loop instead of natural-end stop. */
+	armed: boolean;
 }
 
 // ------------------------------------------------------------- stem state
@@ -272,6 +284,8 @@ export interface DeckState {
 	stems: StemDeckState;
 	/** Active loop or null. */
 	loop: LoopState | null;
+	/** Secondary safety loop (one slot); auto-engages near end when armed. */
+	safety_loop: SafetyLoopSlot | null;
 	/** Hot-cue bank content (empty slots = letters absent from this array). */
 	hot_cues: HotCue[];
 	/** Server-issued CAS revisions for every A-H slot, including empty slots. */
@@ -440,6 +454,10 @@ export interface AudioEngine {
 	setTempoRatio(deck: DeckId, ratio: number): Promise<void>;
 	/** Engage a loop range (ms) or disengage with null. */
 	setLoop(deck: DeckId, loop: { in_ms: number; out_ms: number } | null): Promise<void>;
+	/** Save current engaged loop as the one-slot safety loop (armed). */
+	saveSafetyLoop(deck: DeckId): void;
+	setSafetyLoopArmed(deck: DeckId, armed: boolean): void;
+	clearSafetyLoop(deck: DeckId): void;
 	/** Enable/disable PQTZ snapping. Defaults true per deck. */
 	setQuantize(deck: DeckId, enabled: boolean): void;
 	/** Enable/disable master tempo/phase following. Defaults true per deck. */

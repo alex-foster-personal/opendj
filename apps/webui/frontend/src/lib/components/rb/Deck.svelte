@@ -26,7 +26,12 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import { pushToast } from '$lib/stores.svelte';
-	import { setHoveredDeck, deckHoverUi } from '$lib/rb/deck-hover.svelte';
+	import {
+		deckHoverEnter,
+		deckHoverLeave,
+		deckHoverUi,
+		deckIdFromHoverEl
+	} from '$lib/rb/deck-hover.svelte';
 	import type { DeckId, DeckState, HotCueSlot, StemControl } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
@@ -86,6 +91,18 @@
 
 	async function disengageLoop(): Promise<void> {
 		await runPerformanceCommandFromUi({ type: 'loop', deck: deckId, loop: null });
+	}
+
+	async function saveSafetyLoop(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'safety_loop_save', deck: deckId });
+	}
+
+	async function armSafetyLoop(armed: boolean): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'safety_loop_arm', deck: deckId, armed });
+	}
+
+	async function clearSafetyLoop(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'safety_loop_clear', deck: deckId });
 	}
 
 	async function toggleQuantize(): Promise<void> {
@@ -258,7 +275,8 @@
 
 	async function onTrackDrop(event: DragEvent): Promise<void> {
 		dropHover = false;
-		const stableId = event.dataTransfer?.getData(MIME_TRACK)?.trim() ?? '';
+		const raw = event.dataTransfer?.getData(MIME_TRACK)?.trim() ?? '';
+		const stableId = raw.split(',')[0]?.trim() ?? '';
 		if (stableId === '') return;
 		event.preventDefault();
 		try {
@@ -278,12 +296,12 @@
 	class:drop-hover={dropHover}
 	class:loading={pending}
 	class:deck-focus={deckHoverUi.deckId === deckId}
+	class:is-master={deck.is_master}
 	data-deck={deckId}
+	data-deck-hover={deckId}
 	data-command-pending={pending}
-	onpointerenter={() => setHoveredDeck(deckId)}
-	onpointerleave={() => {
-		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);
-	}}
+	onpointerenter={(e) => deckHoverEnter(deckIdFromHoverEl(e.currentTarget) ?? deckId)}
+	onpointerleave={(e) => deckHoverLeave(deckIdFromHoverEl(e.currentTarget) ?? deckId, e)}
 	ondragover={onTrackDragOver}
 	ondragleave={onTrackDragLeave}
 	ondrop={(e) => void onTrackDrop(e)}
@@ -344,6 +362,9 @@
 			{pending}
 			onEngage={engageBeatLoop}
 			onDisengage={disengageLoop}
+			onSafetySave={saveSafetyLoop}
+			onSafetyArm={armSafetyLoop}
+			onSafetyClear={clearSafetyLoop}
 			inertTip={INERT_TIP}
 		/>
 
@@ -380,6 +401,7 @@
 			{controlError}
 		</div>
 	{/if}
+
 </section>
 
 <style>
@@ -444,6 +466,13 @@
 			transparent 70%
 		);
 		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+	}
+	/* Yellow master outline wins over focus stroke for quick ID. */
+	.rb-deck.is-master {
+		box-shadow: inset 0 0 0 2px var(--rb-yellow);
+	}
+	.rb-deck.is-master.deck-focus {
+		box-shadow: inset 0 0 0 2px var(--rb-yellow);
 	}
 	.pad-strip {
 		/* Toggle: set --rb-pad-strip-display: none on .perf-root to hide. */

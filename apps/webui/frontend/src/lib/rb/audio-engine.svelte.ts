@@ -70,6 +70,7 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
+import { recordPerfEvent } from '$lib/rb/perf-event-log';
 	import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
@@ -87,6 +88,7 @@ import {
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
 import { beatFourLeadInSec, syncSeekBlendDurationSec } from '$lib/rb/sync-seek-blend';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	StretchDeckProcessor,
 	type StretchScheduleChange
@@ -176,6 +178,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		processor_error: null,
 		stems: unavailableStemDeckState(),
 		loop: null,
+		safety_loop: null,
 		hot_cues: [],
 		hot_cue_revisions: _emptyHotCueRevisions(),
 		anlz: null,
@@ -1333,6 +1336,52 @@ export function seekSyncMaster(
 	master: DeckId | null
 ): DeckId | null {
 	return playing && beatSyncEnabled && master !== null && master !== deck ? master : null;
+}
+
+/** BeatSyncMax master relocate: return transport-active beat-synced followers
+ * that must phase-lock when the master itself seeks. Empty = free seek. */
+export function beatSyncMaxFollowers(
+	deck: DeckId,
+	beatSyncMax: boolean,
+	master: DeckId | null,
+	candidates: readonly { id: DeckId; playing: boolean; beatSyncEnabled: boolean }[]
+): DeckId[] {
+	if (!beatSyncMax || master === null || master !== deck) return [];
+	return candidates
+		.filter((c) => c.id !== deck && c.playing && c.beatSyncEnabled)
+		.map((c) => c.id);
+}
+
+/** Decide whether a playing relocate keeps BAR/beat phase lock.
+ * Loop exit must not force a free seek - clear the loop, then still sync. */
+export type SeekSyncPlan =
+	| { kind: 'follower'; master: DeckId }
+	| { kind: 'master-max'; followers: DeckId[] }
+	| { kind: 'free' };
+
+export function planSeekSync(args: {
+	deck: DeckId;
+	transportActive: boolean;
+	beatSyncEnabled: boolean;
+	activeMaster: DeckId | null;
+	beatSyncMax: boolean;
+	candidates: readonly { id: DeckId; playing: boolean; beatSyncEnabled: boolean }[];
+}): SeekSyncPlan {
+	const master = seekSyncMaster(
+		args.deck,
+		args.transportActive,
+		args.beatSyncEnabled,
+		args.activeMaster
+	);
+	if (master !== null) return { kind: 'follower', master };
+	const followers = beatSyncMaxFollowers(
+		args.deck,
+		args.beatSyncMax,
+		args.activeMaster,
+		args.candidates
+	);
+	if (followers.length > 0) return { kind: 'master-max', followers };
+	return { kind: 'free' };
 }
 
 export function syncChangeRequiresReschedule(
@@ -2616,6 +2665,32 @@ function _publishPresentedTransport(
 	}
 	if (naturalEndNeedsRevisionedStop(st.playing, observation, rt.durationSec, rt.scheduleIntentCount)) {
 		if (_ctx === null) throw new Error('natural-end cleanup requires an AudioContext');
+		const safety = st.safety_loop;
+		if (
+			safety !== null &&
+			safety.armed &&
+			(st.loop === null || !st.loop.engaged) &&
+			safety.out_ms > safety.in_ms
+		) {
+			const nextLoop: LoopState = {
+				in_ms: safety.in_ms,
+				out_ms: safety.out_ms,
+				engaged: true,
+				beat_length: safety.beat_length
+			};
+			void _scheduleDeck(
+				deck,
+				safeTransportScheduleTime(_ctx.currentTime, rt.latencySec),
+				safety.in_ms / 1000,
+				true,
+				undefined,
+				undefined,
+				nextLoop
+			).catch((error: unknown) => {
+				if (rt.processor !== null) _recordProcessorFailure(deck, error);
+			});
+			return observation;
+		}
 		void _scheduleDeck(
 			deck,
 			safeTransportScheduleTime(_ctx.currentTime, rt.latencySec),
@@ -2658,6 +2733,7 @@ function _hotCuesFrom(cues: AnlzCue[]): HotCue[] {
 			in_ms: c.in_ms,
 			out_ms: c.out_ms,
 			is_loop: c.is_loop,
+			beat_loop_size: c.beat_loop_size,
 			color_table_index: c.color_table_index,
 			comment: c.comment
 		}))
@@ -2779,6 +2855,8 @@ export async function waitForAdvancingContextTime(
 interface _MasterSyncSchedule {
 	tempoRatio: number;
 	masterTempoEnabled: boolean;
+	/** When set, relocate master to this track position as part of the sync. */
+	positionSec?: number;
 }
 
 interface _SyncOptions {
@@ -2959,33 +3037,58 @@ async function _synchronizeFollowers(
 			return _synchronizeFollowers(master, followers, options);
 		}
 		const syncAt = requestedSyncAt;
-		const masterPositionSec = _projectPositionAt(master, syncAt);
+		const projectedMasterSec = _projectPositionAt(master, syncAt);
+		const masterPositionSec = options.masterSchedule?.positionSec ?? projectedMasterSec;
 		const masterTempoRatio = options.masterSchedule?.tempoRatio ?? _tempoAt(master, syncAt);
-		const planned = followers.map((deck) => {
-			const { st } = _requireLoaded(deck, 'Beat Sync follower');
-			const followerGrid = _requireBeatGrid(st, 'Beat Sync');
-			const bounds = _tempoBounds(deck);
-			const rawFollowerPositionSec = _currentPosSec(deck);
-			const requestedAnchorSec = options.followerAnchorSec?.[deck];
-			const followerPositionSec =
-				requestedAnchorSec ??
-				(_rt[deck].controlActive
-					? _projectPositionAt(deck, syncAt)
-					: quantizeToNearestBeat(followerGrid, rawFollowerPositionSec));
-			const plan = computeFollowerSyncPlan({
-				masterGrid,
-				followerGrid,
-				masterPositionAtSyncSec: masterPositionSec,
-				masterTempoRatio,
-				followerPositionSec,
-				currentContextTimeSec: now,
-				syncAtContextTimeSec: syncAt,
-				minFollowerTempoRatio: bounds.min,
-				maxFollowerTempoRatio: bounds.max,
-				mode: st.sync_mode
-			});
-			return { deck, st, plan, rawFollowerPositionSec };
-		});
+		// Plan per follower independently. One unsyncable deck (e.g. BAR tempo
+		// out of range) must not abort BeatSyncMax for the rest - that left
+		// CH1/CH3 desynced when CH2 could not lock.
+		type _PlannedFollower = {
+			deck: DeckId;
+			st: DeckState;
+			plan: ReturnType<typeof computeFollowerSyncPlan>;
+			rawFollowerPositionSec: number;
+		};
+		const planned: _PlannedFollower[] = [];
+		const planFailed: { deck: DeckId; message: string }[] = [];
+		for (const deck of followers) {
+			try {
+				const { st } = _requireLoaded(deck, 'Beat Sync follower');
+				const followerGrid = _requireBeatGrid(st, 'Beat Sync');
+				const bounds = _tempoBounds(deck);
+				const rawFollowerPositionSec = _currentPosSec(deck);
+				const requestedAnchorSec = options.followerAnchorSec?.[deck];
+				const followerPositionSec =
+					requestedAnchorSec ??
+					(_rt[deck].controlActive
+						? _projectPositionAt(deck, syncAt)
+						: quantizeToNearestBeat(followerGrid, rawFollowerPositionSec));
+				const plan = computeFollowerSyncPlan({
+					masterGrid,
+					followerGrid,
+					masterPositionAtSyncSec: masterPositionSec,
+					masterTempoRatio,
+					followerPositionSec,
+					currentContextTimeSec: now,
+					syncAtContextTimeSec: syncAt,
+					minFollowerTempoRatio: bounds.min,
+					maxFollowerTempoRatio: bounds.max,
+					mode: st.sync_mode
+				});
+				planned.push({ deck, st, plan, rawFollowerPositionSec });
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				planFailed.push({ deck, message });
+				deckStates[deck].sync_error = message;
+			}
+		}
+		if (planned.length === 0 && options.masterSchedule === undefined) {
+			const detail =
+				planFailed.length > 0
+					? planFailed.map((f) => `deck ${f.deck}: ${f.message}`).join('; ')
+					: 'no followers';
+			throw new Error(`Beat Sync: no followers could phase-lock (${detail})`);
+		}
 		const schedules = [
 			...(options.masterSchedule === undefined
 				? []
@@ -2996,7 +3099,11 @@ async function _synchronizeFollowers(
 							inputSec: masterPositionSec,
 							tempoRatio: options.masterSchedule.tempoRatio,
 							masterTempoEnabled: options.masterSchedule.masterTempoEnabled,
-							blendFromSec: null as number | null
+							blendFromSec:
+								options.masterSchedule.positionSec !== undefined &&
+								masterPositionSec < projectedMasterSec - 0.08
+									? projectedMasterSec
+									: (null as number | null)
 						}
 					]),
 			...planned.map((item) => ({
@@ -3044,14 +3151,31 @@ async function _synchronizeFollowers(
 			const message =
 				`Beat Sync partial failure: succeeded [${succeededDecks.join(',')}], ` +
 				`failed [${failedDecks.join(',')}]`;
-			for (const item of schedules) item.st.sync_error = message;
+			for (const item of schedules) {
+				if (failedDecks.includes(item.deck)) item.st.sync_error = message;
+			}
 			throw new Error(message, {
 				cause: outcomes.find((outcome) => outcome.status === 'rejected')
 			});
 		}
-		for (const item of schedules) item.st.sync_error = null;
+		for (const item of planned) item.st.sync_error = null;
+		if (planFailed.length > 0) {
+			const skipped = planFailed.map((f) => f.deck).join(',');
+			pushToast(
+				`Beat Sync skipped deck(s) [${skipped}] (tempo/phase cannot lock) - others stayed locked`,
+				'error'
+			);
+			for (const f of planFailed) {
+				recordPerfEvent('beat-sync-skip', f.message, f.deck);
+			}
+		}
 	} catch (error) {
-		for (const deck of followers) deckStates[deck].sync_error = String(error);
+		// Only stamp followers that do not already carry a more specific plan error.
+		for (const deck of followers) {
+			if (deckStates[deck].sync_error === null) {
+				deckStates[deck].sync_error = String(error);
+			}
+		}
 		if (options.masterSchedule !== undefined) deckStates[master].sync_error = String(error);
 		throw error;
 	}
@@ -3164,6 +3288,7 @@ class RbAudioEngine implements AudioEngine {
 					time('probeStem', probeStemArtifact(stable_id))
 				]);
 			if (perfOn) stages.fetchWall = perfMs();
+			if (perfOn) stages.audioBytes = audioBytes.byteLength;
 			const ctx = _ensureGraph();
 			track = trackRes.track;
 			anlz = requiredAnlz;
@@ -3239,6 +3364,7 @@ class RbAudioEngine implements AudioEngine {
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
 			pushToast(`Deck ${deck} load failed - ${msg}`, 'error');
+			recordPerfEvent('deck-load-fail', msg, deck);
 			throw exc;
 		}
 		if (
@@ -3421,10 +3547,13 @@ class RbAudioEngine implements AudioEngine {
 		}
 		// Rekordbox: seeking outside an engaged loop exits the loop and plays
 		// from the clicked point. Keep modulo wrap only for in-loop transport.
+		// Clear the loop BEFORE phase sync so the shared schedule path does not
+		// wrap the target back into the old loop (BeatSyncMax / follower sync).
 		const exitLoop =
 			st.loop !== null &&
 			st.loop.engaged &&
 			(targetMs < st.loop.in_ms || targetMs >= st.loop.out_ms);
+		if (exitLoop) st.loop = null;
 		const scheduleLoop: LoopState | null | undefined = exitLoop ? null : undefined;
 		const needsScheduledMutation = transportNeedsScheduledMutation({
 			playing: rt.desiredActive,
@@ -3434,15 +3563,32 @@ class RbAudioEngine implements AudioEngine {
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
 		if (needsScheduledMutation) {
-			const master = seekSyncMaster(
+			const activeMaster = _syncMaster();
+			const syncPlan = planSeekSync({
 				deck,
-				rt.desiredActive,
-				st.beat_sync_enabled,
-				_syncMaster()
-			);
-			if (master !== null && !exitLoop) {
-				await _synchronizeFollowers(master, [deck], {
+				transportActive: rt.desiredActive,
+				beatSyncEnabled: st.beat_sync_enabled,
+				activeMaster,
+				beatSyncMax: uiPrefs.beat_sync_max,
+				candidates: DECK_IDS.map((id) => ({
+					id,
+					// desiredActive covers the schedule-ack window where playing
+					// lags; otherwise BeatSyncMax can miss a just-started follower.
+					playing: deckStates[id].playing || _rt[id].desiredActive,
+					beatSyncEnabled: deckStates[id].beat_sync_enabled
+				}))
+			});
+			if (syncPlan.kind === 'follower') {
+				await _synchronizeFollowers(syncPlan.master, [deck], {
 					followerAnchorSec: { [deck]: targetMs / 1000 }
+				});
+			} else if (syncPlan.kind === 'master-max') {
+				await _synchronizeFollowers(deck, syncPlan.followers, {
+					masterSchedule: {
+						tempoRatio: st.pitch,
+						masterTempoEnabled: st.master_tempo_enabled,
+						positionSec: targetMs / 1000
+					}
 				});
 			} else {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
@@ -3457,7 +3603,6 @@ class RbAudioEngine implements AudioEngine {
 				);
 			}
 		} else {
-			if (exitLoop) st.loop = null;
 			_setPausedPosition(deck, targetMs);
 		}
 	}
@@ -3626,6 +3771,36 @@ class RbAudioEngine implements AudioEngine {
 		if (pendingLoop !== null && pendingLoop !== undefined) {
 			pendingLoop.beat_length = beats;
 		}
+	}
+
+	/** Capture the current engaged loop as the one-slot safety loop (armed). */
+	saveSafetyLoop(deck: DeckId): void {
+		const { st } = _requireLoaded(deck, 'saveSafetyLoop');
+		if (st.loop === null || !st.loop.engaged) {
+			throw new Error(`saveSafetyLoop: deck ${deck} has no engaged loop to save`);
+		}
+		st.safety_loop = {
+			in_ms: st.loop.in_ms,
+			out_ms: st.loop.out_ms,
+			beat_length: st.loop.beat_length,
+			armed: true
+		};
+	}
+
+	setSafetyLoopArmed(deck: DeckId, armed: boolean): void {
+		if (typeof armed !== 'boolean') {
+			throw new TypeError('setSafetyLoopArmed: armed must be boolean');
+		}
+		const { st } = _requireLoaded(deck, 'setSafetyLoopArmed');
+		if (st.safety_loop === null) {
+			throw new Error(`setSafetyLoopArmed: deck ${deck} has no saved safety loop`);
+		}
+		st.safety_loop = { ...st.safety_loop, armed };
+	}
+
+	clearSafetyLoop(deck: DeckId): void {
+		const { st } = _requireLoaded(deck, 'clearSafetyLoop');
+		st.safety_loop = null;
 	}
 
 	setQuantize(deck: DeckId, enabled: boolean): void {
