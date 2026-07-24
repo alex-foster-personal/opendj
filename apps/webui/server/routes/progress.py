@@ -367,9 +367,11 @@ def _progress_file_lock(progress_file: Path) -> Iterator[None]:
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    git_env = os.environ.copy()
+    git_env["GIT_NO_LAZY_FETCH"] = "1"
     return subprocess.run(
         ["git", *args], cwd=str(REPO_ROOT),
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, env=git_env,
     )
 
 
