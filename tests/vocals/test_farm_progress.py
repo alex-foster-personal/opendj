@@ -44,7 +44,7 @@ def _run_events(tracks: int = 6) -> list[dict]:
     for index in range(tracks):
         stable_id = f"trk{index}"
         clock += 1.0
-        events.append({"event": "upload", "ts": clock, "stable_id": stable_id,
+        events.append({"event": "feed_stall", "ts": clock, "stable_id": stable_id,
                        "bytes": 9_000_000, "s": 0.3})
         if index == 1:
             events.append({"event": "failed", "ts": clock, "stable_id": stable_id,
@@ -120,7 +120,7 @@ def test_concurrent_emitters_do_not_interleave(tmp_path: Path) -> None:
 
 def test_in_flight_settles_to_zero_after_a_complete_run() -> None:
     state = reduce_events(_run_events())
-    for stage in ("upload", "gpu", "stems", "written"):
+    for stage in ("feed_stall", "gpu", "stems", "written"):
         assert state.in_flight(stage) == 0, f"{stage} left a phantom backlog"
     assert state.settled == state.tracks
 
@@ -130,16 +130,16 @@ def test_failures_are_charged_to_their_own_stage() -> None:
     assert state.failed == 2
     assert state.failed_at["gpu"] == 1
     assert state.failed_at["stems"] == 1
-    assert state.failed_at["upload"] == 0
+    assert state.failed_at["feed_stall"] == 0
 
 
 def test_mid_run_in_flight_is_positive_where_work_is_pending() -> None:
     """Truncate the run part-way: the stage holding work must show it."""
     events = _run_events()
-    cut = [e for e in events if e["event"] in ("run_start", "upload")]
+    cut = [e for e in events if e["event"] in ("run_start", "feed_stall")]
     state = reduce_events(cut)
-    assert state.in_flight("gpu") == state.done["upload"]
-    assert state.in_flight("upload") == 0  # all uploads emitted
+    assert state.in_flight("gpu") == state.done["feed_stall"]
+    assert state.in_flight("feed_stall") == 0  # all feeder stalls emitted
 
 
 def test_binding_flips_to_transfer_when_local_pushes_dominate() -> None:
@@ -169,7 +169,7 @@ def test_snapshot_text_is_agent_readable() -> None:
     text = snapshot_text(reduce_events(_run_events()), L4_USD_PER_S)
     assert "binding=" in text
     assert "tracks/min" in text
-    for stage in ("upload", "gpu", "stems", "written"):
+    for stage in ("feed_stall", "gpu", "stems", "written"):
         assert stage in text
 
 
