@@ -194,3 +194,41 @@ def test_anlz_vocals_of_shape(tmp_path: Path, audio: Path) -> None:
     assert vocals["regions"][0] == {
         "start_s": 10.0, "end_s": 60.0, "intensity": 3, "confidence": 0.84,
     }
+
+
+# ----- preset stamping (Modal farm, scripts/modal_vocal_farm.py) --------------
+#   - if a preset-stamped entry loses its preset on reload then broken
+#   - if omitting preset invents one then broken (unstamped must stay visible)
+#   - if an empty/non-mapping preset is accepted then broken
+
+_PRESET: dict[str, Any] = {
+    "tag": "htdemucs-ov0.1", "model": "htdemucs",
+    "overlap": 0.1, "shifts": 0, "rung": 3,
+}
+
+
+def test_preset_stamp_roundtrips(tmp_path: Path, audio: Path) -> None:
+    path = vcache.cache_path(tmp_path, "stamped")
+    written = vcache.write_entry(path, _worker_result(), audio, preset=_PRESET)
+    assert written["preset"] == _PRESET
+    loaded = vcache.load_valid_entry(path, audio)
+    assert loaded is not None
+    assert loaded["preset"] == _PRESET
+
+
+def test_preset_omitted_leaves_key_absent(tmp_path: Path, audio: Path) -> None:
+    """Unstamped must stay distinguishable from stamped-as-default, or a
+    selective re-run cannot tell which entries predate the stamp."""
+    path = vcache.cache_path(tmp_path, "unstamped")
+    written = vcache.write_entry(path, _worker_result(), audio)
+    assert "preset" not in written
+    loaded = vcache.load_valid_entry(path, audio)
+    assert loaded is not None and "preset" not in loaded
+
+
+@pytest.mark.parametrize("bad", [{}, "htdemucs-ov0.1", 3])
+def test_preset_rejects_non_mapping(tmp_path: Path, audio: Path, bad: Any) -> None:
+    path = vcache.cache_path(tmp_path, "badpreset")
+    with pytest.raises(ValueError, match="preset must be a non-empty mapping"):
+        vcache.write_entry(path, _worker_result(), audio, preset=bad)
+    assert not path.exists()
