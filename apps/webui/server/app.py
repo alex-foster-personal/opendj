@@ -143,6 +143,11 @@ def create_app(
                 "http://localhost:5273", "http://127.0.0.1:5273",
                 "http://localhost:5275", "http://127.0.0.1:5275",
             ],
+            # scripts/bench/serve.py is a loopback static server for the
+            # vocal quality rater; its port is a CLI arg (8791 by default,
+            # 87xx in parallel runs), so it needs a pattern, not a literal.
+            # POST /bench/ratings from that page is preflighted.
+            allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):87\d\d$",
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
