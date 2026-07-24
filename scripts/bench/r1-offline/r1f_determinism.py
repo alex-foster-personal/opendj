@@ -63,8 +63,7 @@ WINDOW_START_S = 109.0
 WINDOW_END_S = 169.0
 MODEL = "hdemucs_mmi"
 OVERLAP = 0.25
-# MODEL-SHOOTOUT.md, hdemucs_mmi on this track and window, GTX 1660, overlap 0.25, shifts 0.
-SHOOTOUT_GTX1660_SI_SDR = 9.78
+SHOOTOUT_JSON = REPO / "scripts" / "bench" / "model_shootout.json"
 # Hash the SAMPLE DATA, never the file. libsndfile writes a PEAK chunk carrying a wall-clock
 # timestamp, so a whole-file hash differs between identical runs and reads as nondeterminism.
 # The first version of this script did exactly that and would have reported the opposite of
@@ -77,6 +76,26 @@ QUOTED_DELTAS = {
     "four-stem ov25 vs ov0, bass, n=1": 0.119,
     "project inaudibility threshold": 0.2,
 }
+
+
+def shootout_reference_si_sdr() -> float:
+    """Read the recorded GTX 1660 figure from the shootout JSON, never from the markdown.
+
+    The first version of this script hard-coded 9.78, transcribed from the rounded table in
+    MODEL-SHOOTOUT.md, and reported the cross-hardware agreement as 0.005 dB. The JSON stores
+    9.775 and the real agreement is 0.000202 dB, so the typed constant understated the result
+    by a factor of 25. Derive numeric fields from the artifact on disk; never type them.
+    """
+    data = json.loads(SHOOTOUT_JSON.read_text())
+    for track in data["tracks"]:
+        if track["track"] == TRACK:
+            if track["window"]["start_s"] != WINDOW_START_S or track["window"]["end_s"] != WINDOW_END_S:
+                raise RuntimeError(
+                    f"shootout window {track['window']} does not match this script's "
+                    f"{WINDOW_START_S} to {WINDOW_END_S}; the comparison would not be like for like"
+                )
+            return float(track["results"][MODEL]["si_sdr"])
+    raise RuntimeError(f"track {TRACK} not found in {SHOOTOUT_JSON}")
 
 
 def _load_window(path: Path) -> tuple[np.ndarray, int]:
@@ -133,6 +152,7 @@ def main() -> None:
         worker(args.out, args.device)
         return
 
+    shootout_reference = shootout_reference_si_sdr()
     truth, truth_sr = _load_window(MUSDB / f"{TRACK}_vocals.wav")
     truth_mono = truth.mean(axis=1)
 
@@ -194,16 +214,17 @@ def main() -> None:
         "si_sdr_stdev": round(stdev, 6),
         "si_sdr_spread": round(spread, 6),
         "hardware_transfer": {
-            "shootout_gtx1660_si_sdr": SHOOTOUT_GTX1660_SI_SDR,
+            "shootout_gtx1660_si_sdr": shootout_reference,
+            "shootout_source": "scripts/bench/model_shootout.json, derived not typed",
             "this_hardware_mean": round(mean, 3),
-            "delta_db": round(mean - SHOOTOUT_GTX1660_SI_SDR, 3),
+            "delta_db": round(mean - shootout_reference, 6),
         },
         "quoted_delta_verdicts": verdict,
     }
 
     print(f"\n  bit-identical across {len(runs)} separate processes: {result['bit_identical']}")
     print(f"  SI-SDR mean {mean:.6f} dB, stdev {stdev:.6f} dB, spread {spread:.6f} dB")
-    print(f"  vs recorded GTX 1660 {SHOOTOUT_GTX1660_SI_SDR} dB: delta {result['hardware_transfer']['delta_db']:+.3f} dB")
+    print(f"  vs recorded GTX 1660 {shootout_reference} dB: delta {result['hardware_transfer']['delta_db']:+.6f} dB")
     print("\n  quoted deltas against the measured noise floor:")
     for k, v in verdict.items():
         print(f"    {k:>62}  {v}")
