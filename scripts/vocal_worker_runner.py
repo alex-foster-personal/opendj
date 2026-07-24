@@ -44,9 +44,9 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-from ctypes import wintypes
 import hashlib
 import json
+import math
 import os
 import shutil
 import socket
@@ -54,6 +54,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -172,6 +173,20 @@ def _positive_integer(value: str) -> int:
         raise argparse.ArgumentTypeError(f"expected a positive integer: {value}") from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError(f"expected a positive integer: {value}")
+    return parsed
+
+
+def _positive_finite_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected a positive finite number: {value}"
+        ) from exc
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError(
+            f"expected a positive finite number: {value}"
+        )
     return parsed
 
 
@@ -388,6 +403,10 @@ def run_loop(
     """Repeat run_once until the STOP sentinel appears, sleeping
     poll_seconds between passes (this IS the "GPU busy -> sleep 60s,
     re-check" retry HANDOFF describes, at the default poll interval)."""
+    if not math.isfinite(poll_seconds) or poll_seconds <= 0:
+        raise ValueError(
+            f"poll seconds must be positive and finite: {poll_seconds}"
+        )
     stop_path = _stop_path(inbox)
     while True:
         if stop_path.exists():
@@ -445,7 +464,8 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--loop", action="store_true",
                       help="poll --inbox every --poll-seconds until the "
                            "STOP sentinel (--inbox's parent / STOP) appears")
-    parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS,
+    parser.add_argument("--poll-seconds", type=_positive_finite_float,
+                        default=DEFAULT_POLL_SECONDS,
                         help=f"loop poll interval (default {DEFAULT_POLL_SECONDS}s)")
     return parser
 

@@ -14,12 +14,13 @@ Regression one-liners:
   - if gpu_is_busy doesn't trip on util OR mem alone then broken
   - if publication fails then partial final or temp output must not remain
   - if publication skips flush, fsync, or close before replace then broken
+  - if a non-finite or non-positive poll interval starts a busy loop then broken
 """
 from __future__ import annotations
 
-import sys
 import os
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 from typing import Any
@@ -438,6 +439,22 @@ def test_run_loop_stop_sentinel_interrupts_empty_poll_sleep(tmp_path: Path) -> N
     assert sleeps == [1.0]
 
 
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), float("inf")])
+def test_run_loop_rejects_invalid_poll_seconds_before_scanning(
+    tmp_path: Path,
+    value: float,
+) -> None:
+    with pytest.raises(ValueError, match="poll seconds must be positive and finite"):
+        runner.run_loop(
+            tmp_path / "inbox",
+            tmp_path / "outbox",
+            tmp_path / "logs",
+            "cpu",
+            gpu_gate=False,
+            poll_seconds=value,
+        )
+
+
 # ----- CLI parser --------------------------------------------------------------------
 
 def test_build_parser_rejects_once_and_loop_together(tmp_path: Path) -> None:
@@ -462,6 +479,21 @@ def test_build_parser_defaults(tmp_path: Path) -> None:
     assert args.gpu_gate is False
     assert args.loop is False
     assert args.poll_seconds == runner.DEFAULT_POLL_SECONDS
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
+def test_build_parser_rejects_non_positive_or_non_finite_poll_seconds(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    parser = runner.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            "--inbox", str(tmp_path / "in"),
+            "--outbox", str(tmp_path / "out"),
+            "--logs", str(tmp_path / "logs"),
+            "--loop", "--poll-seconds", value,
+        ])
 
 
 def test_build_parser_accepts_resource_and_gpu_gate_thresholds(tmp_path: Path) -> None:
