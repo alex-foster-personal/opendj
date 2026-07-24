@@ -126,12 +126,39 @@ def _assert_arms_runnable() -> None:
             )
 
 
+def already_assigned(data_dir: Path) -> set[str]:
+    """Tracks a previous wave has already claimed for this experiment."""
+    db = data_dir / "state" / "state.db"
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        return {
+            row[0]
+            for row in conn.execute(
+                "SELECT stable_id FROM events WHERE kind = ?", (EVENT_KIND,)
+            )
+        }
+    finally:
+        conn.close()
+
+
 def candidate_tracks(data_dir: Path, limit: int) -> list[str]:
-    """Farmable tracks, longest first, that have a file that actually exists."""
+    """Farmable tracks NOT already covered by a previous wave, longest first.
+
+    EXCLUDING PRIOR WAVES IS THE WHOLE POINT AND WAS MISSING. This passes
+    ``refarm=True`` so the vocal cache does not hide tracks, but that also
+    meant every wave re-selected the same head of the list: a second
+    ``--limit 100`` picked 100 tracks of which 98 already had an assignment,
+    so the wave was 2 tracks of new coverage at the price of 100. Worse, each
+    of those 98 already had a remote directory at its arm's preset, and
+    ``scp -r`` into an existing directory NESTS rather than merges -- so the
+    size verify would fail and delete the local bundle it had just made.
+    """
     from scripts.modal_vocal_farm import compute_gap
 
-    gap = compute_gap(data_dir, refarm=True)
-    return [t.stable_id for t in gap[:limit]] if limit else [t.stable_id for t in gap]
+    done = already_assigned(data_dir)
+    fresh = [t.stable_id for t in compute_gap(data_dir, refarm=True)
+             if t.stable_id not in done]
+    return fresh[:limit] if limit else fresh
 
 
 def record_assignments(
