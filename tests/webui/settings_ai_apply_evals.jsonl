@@ -1,0 +1,5 @@
+{"id": "dark-mode", "instruction": "turn on dark mode", "model_json": {"key": "theme", "value": "dark", "rationale": "dark theme"}, "expect_ok": true, "expect_key": "theme", "expect_value": "dark"}
+{"id": "hide-broken", "instruction": "hide broken links", "model_json": {"key": "hide_broken_links", "value": true, "rationale": "hide missing files"}, "expect_ok": true, "expect_key": "hide_broken_links", "expect_value": true}
+{"id": "sync-rekordbox", "instruction": "enable auto sync to rekordbox", "model_json": {"key": "auto_sync.rekordbox", "value": true, "rationale": "prefer rekordbox writeback target"}, "expect_ok": true, "expect_key": "auto_sync.rekordbox", "expect_value": true}
+{"id": "cosy-density", "instruction": "use cosy library rows", "model_json": {"key": "library_density", "value": "cosy", "rationale": "taller rows"}, "expect_ok": true, "expect_key": "library_density", "expect_value": "cosy"}
+{"id": "refuse-unknown", "instruction": "enable vinyl mode", "model_json": {"key": "rb.vinyl_mode", "value": true, "rationale": "not allowlisted"}, "expect_ok": false}
