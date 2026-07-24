@@ -45,3 +45,19 @@ export function ensureAnlz(stable_id: string): void {
 export function getAnlzEntry(stable_id: string): AnlzEntry | undefined {
 	return _cache[stable_id];
 }
+
+/** Count of ready ANLZ entries for memory tracking. */
+export function anlzCacheEntryCount(): number {
+	let count = 0;
+	for (const entry of Object.values(_cache)) {
+		if (entry.status === 'ready') count++;
+	}
+	return count;
+}
+
+/** Estimated bytes of ready ANLZ JSON payloads for memory tracking.
+ * Uses rough 1.2 MB average per track at points=38400. */
+export function anlzCacheEstimatedBytes(): number {
+	const count = anlzCacheEntryCount();
+	return count * 1.2 * 1024 * 1024; // ~1.2 MB per track
+}

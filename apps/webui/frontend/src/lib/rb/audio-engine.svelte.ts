@@ -24,6 +24,7 @@
  *     playing; remaining time derivable from duration_ms - position_ms;
  *     deckEffectiveBpm() = bpm * pitch.
  *     [if] play() then 1s elapses [then] position_ms ~= 1000 * pitch
+ *     [if] play() while paused at end-of-track [then] transport restarts at 0
  *   ✔︎ CUE semantics: pause() stores the cue at the pause position;
  *     pressCue() while playing returns-to-cue and pauses; while paused it
  *     jumps the playhead to the cue; play() resumes from there.
@@ -486,6 +487,19 @@ export function deckTransportClock(deck: DeckId): DeckTransportClock {
 		desired_revision: presentation.desired_revision,
 		presented_revision: presentation.presented_revision
 	};
+}
+
+/** Estimated total bytes of decoded PCM AudioBuffers across all decks for
+ * memory tracking. Returns bytes = sampleRate * channels * 4 bytes/float32 * duration. */
+export function deckPcmEstimatedBytes(): number {
+	let total = 0;
+	for (const deck of DECK_IDS) {
+		const buffer = _rt[deck].audioBuffer;
+		if (buffer === null) continue;
+		const bytes = buffer.sampleRate * buffer.numberOfChannels * 4 * buffer.duration;
+		total += bytes;
+	}
+	return total;
 }
 
 interface AudioDisconnectable {
@@ -1900,6 +1914,15 @@ export function deckReachedEnd(
 	loop: LoopState | null
 ): boolean {
 	return !loop?.engaged && positionSec >= durationSec;
+}
+
+/** Play on a finished (end-of-track) deck restarts from 0; otherwise resume. */
+export function playResumePositionSec(
+	positionSec: number,
+	durationSec: number,
+	loop: LoopState | null
+): number {
+	return deckReachedEnd(positionSec, durationSec, loop) ? 0 : positionSec;
 }
 
 export function naturalEndNeedsRevisionedStop(
@@ -3492,11 +3515,23 @@ class RbAudioEngine implements AudioEngine {
 			pendingScheduleCount: rt.pending.length,
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
-		if (!needsScheduledMutation) _setPausedPosition(deck, st.position_ms);
+		// Finished tracks restart from 0 via the paused-seek cursor (not an
+		// optimistic playing position); schedule then publishes presentation.
+		const resumeSec = playResumePositionSec(
+			st.position_ms / 1000,
+			rt.durationSec,
+			st.loop
+		);
+		if (!needsScheduledMutation) _setPausedPosition(deck, resumeSec * 1000);
 		const ctx = await _resumeContext();
 		const startSec: number | ((effectiveWhen: number) => number) = needsScheduledMutation
-			? (effectiveWhen) => _projectPositionAt(deck, effectiveWhen)
-			: st.position_ms / 1000;
+			? (effectiveWhen) =>
+					playResumePositionSec(
+						_projectPositionAt(deck, effectiveWhen),
+						rt.durationSec,
+						st.loop
+					)
+			: resumeSec;
 		const activeMaster = _syncMaster();
 		if (activeMaster === null) {
 			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
