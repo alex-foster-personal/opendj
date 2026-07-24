@@ -43,6 +43,13 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import {
+		BLANK_PLAYLIST_GRACE_MS,
+		DEFAULT_PLAYLIST_NAME,
+		clearPlaylistCreateGrace,
+		collectBlankPlaylistDeletes,
+		markPlaylistCreateGrace
+	} from '$lib/rb/playlist-blank';
+	import {
 		createPlaylist,
 		deletePlaylist,
 		getPlaylistTracksEtag,
@@ -386,9 +393,14 @@
 		};
 		void pingConn();
 		const connTimer = setInterval(() => void pingConn(), 2500);
+		const blankSweepTimer = setInterval(
+			() => void _sweepBlankPlaylists(),
+			BLANK_PLAYLIST_GRACE_MS
+		);
 		return () => {
 			connAlive = false;
 			clearInterval(connTimer);
+			clearInterval(blankSweepTimer);
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 		};
@@ -429,6 +441,7 @@
 			const [healthRes, lists] = await Promise.all([getHealth(), listPlaylistsHydrated()]);
 			allTracksCount = healthRes.health.state_db.tracks;
 			playlists = lists;
+			await _sweepBlankPlaylists(lists);
 			if (source === 'spotify' && spotifySelectedId !== null) {
 				const selected = lists.find(
 					(playlist) =>
@@ -669,29 +682,59 @@
 
 	async function _refreshPlaylists(): Promise<void> {
 		playlists = await listPlaylistsHydrated();
+		await _sweepBlankPlaylists(playlists);
 	}
 
-	async function createPlaylistUi(): Promise<void> {
-		const name = window.prompt('New playlist name');
-		if (name === null || name.trim() === '') return;
-		try {
-			await createPlaylist(name.trim());
-			await _refreshPlaylists();
-			pushToast(`Created playlist "${name.trim()}"`, 'info');
-		} catch (exc) {
-			pushToast(`create playlist failed: ${String(exc)}`, 'error');
+	/** Auto-delete blank untitled empties (never renamed / non-empty). */
+	async function _sweepBlankPlaylists(
+		lists: typeof playlists = playlists
+	): Promise<void> {
+		const toDelete = collectBlankPlaylistDeletes(lists);
+		if (toDelete.length === 0) return;
+		let deletedAny = false;
+		for (const playlistId of toDelete) {
+			const row = lists.find((p) => p.playlist_id === playlistId);
+			if (row === undefined) continue;
+			try {
+				const { etag } = await getPlaylistTracksEtag(playlistId);
+				await deletePlaylist(playlistId, etag);
+				clearPlaylistCreateGrace(playlistId);
+				deletedAny = true;
+			} catch (exc) {
+				console.info(
+					`[playlist-blank] delete failed ${playlistId}: ${String(exc)}`
+				);
+			}
+		}
+		if (deletedAny) {
+			playlists = await listPlaylistsHydrated();
 		}
 	}
 
-	async function renamePlaylistUi(node: PlaylistNode): Promise<void> {
+	/** '+' create: default name + grace, return id for in-place rename focus. */
+	async function createPlaylistUi(): Promise<string | null> {
+		try {
+			const created = await createPlaylist(DEFAULT_PLAYLIST_NAME);
+			markPlaylistCreateGrace(created.playlist_id);
+			// Refresh without sweeping away the brand-new blank (still in grace).
+			playlists = await listPlaylistsHydrated();
+			return created.playlist_id;
+		} catch (exc) {
+			pushToast(`create playlist failed: ${String(exc)}`, 'error');
+			return null;
+		}
+	}
+
+	async function renamePlaylistUi(node: PlaylistNode, name: string): Promise<void> {
 		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
-		const name = window.prompt('Rename playlist', node.name);
-		if (name === null || name.trim() === '' || name.trim() === node.name) return;
+		const next = name.trim();
+		if (next === '' || next === node.name) return;
 		try {
 			const { etag } = await getPlaylistTracksEtag(node.playlist_id);
-			await renamePlaylist(node.playlist_id, etag, name.trim());
+			await renamePlaylist(node.playlist_id, etag, next);
+			clearPlaylistCreateGrace(node.playlist_id);
 			await _refreshPlaylists();
-			pushToast(`Renamed to "${name.trim()}"`, 'info');
+			pushToast(`Renamed to "${next}"`, 'info');
 		} catch (exc) {
 			pushToast(`rename failed: ${String(exc)}`, 'error');
 		}
@@ -1357,8 +1400,8 @@
 				onselect={selectPlaylist}
 				onselecttrack={selectRow}
 				onloadtrack={loadRow}
-				oncreateplaylist={() => void createPlaylistUi()}
-				onrenameplaylist={(n) => void renamePlaylistUi(n)}
+				oncreateplaylist={() => createPlaylistUi()}
+				onrenameplaylist={(n, name) => void renamePlaylistUi(n, name)}
 				ondeleteplaylist={(n) => void deletePlaylistUi(n)}
 				ondroptracks={(id, ids) => void dropTracksOnPlaylist(id, ids)}
 			/>

@@ -9,6 +9,7 @@
 	import type { DeckId, PlaylistNode } from '$lib/rb/types';
 	import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { RbApiError } from '$lib/rb/api-rb';
+	import { tick } from 'svelte';
 	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
 
 	let {
@@ -19,7 +20,10 @@
 		onselect,
 		onselectsmartlist,
 		onselecttrack,
-		onloadtrack
+		onloadtrack,
+		oncreateplaylist,
+		onrenameplaylist,
+		ondeleteplaylist
 	}: {
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
@@ -38,7 +42,18 @@
 		 * click/dblclick with no handler wired). */
 		onselecttrack?: (row: ColumnTrackRow) => void;
 		onloadtrack?: (row: ColumnTrackRow, deck: DeckId | null) => void;
+		/** Create then return new playlist_id (or null on cancel/fail). */
+		oncreateplaylist?: () => Promise<string | null> | string | null;
+		/** Commit in-place rename; empty/cancelled name leaves server name. */
+		onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
+		ondeleteplaylist?: (node: PlaylistNode) => void;
 	} = $props();
+
+	let editingId = $state<string | null>(null);
+	let editDraft = $state('');
+	let renameInputEl = $state<HTMLInputElement | null>(null);
+	/** Set after '+'; rename starts once the new node appears in `nodes`. */
+	let pendingRenameId = $state<string | null>(null);
 
 	let mode = $state<'tree' | 'column'>('tree');
 	// ColumnBrowser mounts lazily on first activation (its onMount walks
@@ -90,6 +105,57 @@
 	function _rowKeydown(event: KeyboardEvent, node: PlaylistNode): void {
 		if (event.key === 'Enter') onselect(node);
 	}
+
+	async function _beginRename(node: PlaylistNode): Promise<void> {
+		if (onrenameplaylist === undefined) return;
+		if (node.kind === 'all_tracks' || node.playlist_id === 'all') return;
+		editingId = node.playlist_id;
+		editDraft = node.name;
+		await tick();
+		renameInputEl?.focus();
+		renameInputEl?.select();
+	}
+
+	async function _commitRename(): Promise<void> {
+		const id = editingId;
+		if (id === null || onrenameplaylist === undefined) return;
+		const node = nodes.find((n) => n.playlist_id === id);
+		editingId = null;
+		if (node === undefined) return;
+		const next = editDraft.trim();
+		if (next === '' || next === node.name) return;
+		await onrenameplaylist(node, next);
+	}
+
+	function _cancelRename(): void {
+		editingId = null;
+	}
+
+	async function _createAndRename(): Promise<void> {
+		if (oncreateplaylist === undefined) return;
+		const createdId = await oncreateplaylist();
+		if (createdId === null || createdId === '') return;
+		pendingRenameId = createdId;
+	}
+
+	function _renameKeydown(event: KeyboardEvent): void {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			void _commitRename();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			_cancelRename();
+		}
+	}
+
+	$effect(() => {
+		const id = pendingRenameId;
+		if (id === null) return;
+		const node = nodes.find((n) => n.playlist_id === id);
+		if (node === undefined) return;
+		pendingRenameId = null;
+		void _beginRename(node);
+	});
 </script>
 
 <div class="tree-root">
@@ -138,6 +204,19 @@
 				<path d="M1 3h5l1.5 2H15v8H1z" fill="currentColor" />
 			</svg>
 			<span class="name">Playlists</span>
+			{#if oncreateplaylist}
+				<button
+					type="button"
+					class="pl-action"
+					title="Create playlist"
+					onclick={(e) => {
+						e.stopPropagation();
+						void _createAndRename();
+					}}
+				>
+					+
+				</button>
+			{/if}
 		</div>
 		{#if playlistsOpen}
 			{#each nodes as node (node.playlist_id)}
@@ -153,8 +232,49 @@
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
 					</svg>
-					<span class="name" title={node.name}>{node.name}</span>
+					{#if editingId === node.playlist_id}
+						<input
+							bind:this={renameInputEl}
+							class="rename-input"
+							type="text"
+							value={editDraft}
+							aria-label="Rename playlist"
+							onclick={(e) => e.stopPropagation()}
+							onmousedown={(e) => e.stopPropagation()}
+							oninput={(e) => (editDraft = e.currentTarget.value)}
+							onkeydown={_renameKeydown}
+							onblur={() => void _commitRename()}
+						/>
+					{:else}
+						<span class="name" title={node.name}>{node.name}</span>
+					{/if}
 					<span class="count">{node.track_count}</span>
+					{#if onrenameplaylist}
+						<button
+							type="button"
+							class="pl-action dim"
+							title="Rename playlist"
+							onclick={(e) => {
+								e.stopPropagation();
+								void _beginRename(node);
+							}}
+						>
+							✎
+						</button>
+					{/if}
+					{#if ondeleteplaylist}
+						<button
+							type="button"
+							class="pl-action dim"
+							title="Delete playlist"
+							onclick={(e) => {
+								e.stopPropagation();
+								ondeleteplaylist(node);
+							}}
+						>
+							×
+						</button>
+					{/if}
 					{#if _hasExtraBadge(node.name)}
 						<span class="badge badge-extra" aria-hidden="true">extra</span>
 					{/if}
@@ -298,6 +418,40 @@
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	.rename-input {
+		flex: 1;
+		min-width: 0;
+		height: 16px;
+		margin: 0;
+		padding: 0 2px;
+		border: 1px solid var(--rb-accent);
+		background: var(--rb-panel);
+		color: var(--rb-text);
+		font: inherit;
+		outline: none;
+	}
+	.pl-action {
+		flex: none;
+		border: none;
+		background: transparent;
+		color: var(--rb-text);
+		font-size: 12px;
+		line-height: 1;
+		padding: 0 3px;
+		cursor: pointer;
+		opacity: 0.75;
+	}
+	.pl-action.dim {
+		opacity: 0;
+	}
+	.row:hover .pl-action.dim,
+	.row.selected .pl-action.dim {
+		opacity: 0.7;
+	}
+	.pl-action:hover {
+		opacity: 1 !important;
+		color: var(--rb-accent);
 	}
 	.count {
 		flex: none;
