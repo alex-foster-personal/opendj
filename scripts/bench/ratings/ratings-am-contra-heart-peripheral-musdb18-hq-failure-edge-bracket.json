@@ -1,0 +1,78 @@
+{
+  "track": "AM Contra - Heart Peripheral (MUSDB18-HQ, failure-edge bracket)",
+  "blind_mode": false,
+  "ratings": [
+    {
+      "id": "cfg-e",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-e.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-e.inst.m4a",
+      "params": "htdemucs_ft overlap=0.25 (best clean quality)",
+      "machine_score": 10,
+      "machine_rank": 1,
+      "si_sdr": 11.836,
+      "human_score": 10,
+      "human_inst_score": 10,
+      "note": "Yeah I mean - this is... very good, super impressed."
+    },
+    {
+      "id": "cfg-d",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-d.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-d.inst.m4a",
+      "params": "hdemucs_mmi overlap=0.25 (best dB per second among test-set-clean models)",
+      "machine_score": 9,
+      "machine_rank": 2,
+      "si_sdr": 11.689,
+      "human_score": 9,
+      "human_inst_score": 9,
+      "note": "barely noticable rough edges"
+    },
+    {
+      "id": "cfg-c",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-c.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-c.inst.m4a",
+      "params": "htdemucs overlap=0.1 (current production candidate)",
+      "machine_score": 8,
+      "machine_rank": 3,
+      "si_sdr": 11.669,
+      "human_score": 7,
+      "human_inst_score": null,
+      "note": "slight tinniness in edges of voices - not quite as crisp, some of the vocal auro/echo/reverb may be missing - still seems likely unoitcable if in a mashup."
+    },
+    {
+      "id": "cfg-b",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-b.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-b.inst.m4a",
+      "params": "mdx_q overlap=0.1 (cheapest real config)",
+      "machine_score": 6,
+      "machine_rank": 4,
+      "si_sdr": 10.702,
+      "human_score": 6,
+      "human_inst_score": 6,
+      "note": "slightly slightly more noticeable edges than #3. not by much."
+    },
+    {
+      "id": "cfg-a",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-a.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-a.inst.m4a",
+      "params": "mdx_q overlap=0 DELIBERATE FLOOR: input band-limited to 8 kHz then upsampled, 1.5s segments",
+      "machine_score": 2,
+      "machine_rank": 5,
+      "si_sdr": 8.642,
+      "human_score": 4,
+      "human_inst_score": 4,
+      "note": "sounds like it's underwater, muffled. edges are actually still very good though, the muffle smooths them potentially, but yeah, "
+    },
+    {
+      "id": "cfg-mix",
+      "file": "clips-edge/am-contra-heart-peripheral-mixture.m4a",
+      "inst_file": null,
+      "params": "no separation - raw mixture graded as the vocal estimate (do-nothing anchor)",
+      "machine_score": 1,
+      "machine_rank": 6,
+      "si_sdr": -4.105,
+      "human_score": 1,
+      "human_inst_score": null,
+      "note": "did this just fail to run? invalid output probably? "
+    }
+  ]
+}
