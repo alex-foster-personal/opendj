@@ -1,0 +1,1280 @@
+{
+  "device": "Numark DJ2GO2 Touch",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "numark-dj2go2-touch-channel1_input",
+      "fig": "channel1_input",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input",
+        "type": "note",
+        "ch": 16,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "wheelTouch",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-wheel_turn",
+      "fig": "wheel_turn",
+      "label": "wheelTurn",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_2",
+      "fig": "channel1_input_2",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_2",
+        "type": "note",
+        "ch": 5,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_3",
+      "fig": "channel1_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_3",
+        "type": "note",
+        "ch": 5,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_4",
+      "fig": "channel1_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_4",
+        "type": "note",
+        "ch": 5,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_5",
+      "fig": "channel1_input_5",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_5",
+        "type": "note",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_6",
+      "fig": "channel1_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_6",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_7",
+      "fig": "channel1_input_7",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_7",
+        "type": "note",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_8",
+      "fig": "channel1_input_8",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_8",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_9",
+      "fig": "channel1_input_9",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_9",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_10",
+      "fig": "channel1_input_10",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_10",
+        "type": "note",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_11",
+      "fig": "channel1_input_11",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_11",
+        "type": "note",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_12",
+      "fig": "channel1_input_12",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_12",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_13",
+      "fig": "channel1_input_13",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_13",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_14",
+      "fig": "channel1_input_14",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_14",
+        "type": "note",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_15",
+      "fig": "channel1_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_15",
+        "type": "note",
+        "ch": 5,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_16",
+      "fig": "channel1_input_16",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_16",
+        "type": "note",
+        "ch": 5,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_17",
+      "fig": "channel1_input_17",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_17",
+        "type": "note",
+        "ch": 5,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_18",
+      "fig": "channel1_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_18",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_19",
+      "fig": "channel1_input_19",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_19",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_20",
+      "fig": "channel1_input_20",
+      "label": "input",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_20",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_21",
+      "fig": "channel1_input_21",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_21",
+        "type": "note",
+        "ch": 5,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-quick_effect_rack1_channel1_input",
+      "fig": "quick_effect_rack1_channel1_input",
+      "label": "input",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel1_input",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_22",
+      "fig": "channel1_input_22",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_22",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input",
+      "fig": "channel2_input",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input",
+        "type": "note",
+        "ch": 16,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "wheelTouch",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-wheel_turn_2",
+      "fig": "wheel_turn_2",
+      "label": "wheelTurn",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_2",
+      "fig": "channel2_input_2",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_2",
+        "type": "note",
+        "ch": 6,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_3",
+      "fig": "channel2_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_3",
+        "type": "note",
+        "ch": 6,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_4",
+      "fig": "channel2_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_4",
+        "type": "note",
+        "ch": 6,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel1_input_23",
+      "fig": "channel1_input_23",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_23",
+        "type": "note",
+        "ch": 6,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_5",
+      "fig": "channel2_input_5",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_5",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_6",
+      "fig": "channel2_input_6",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_6",
+        "type": "note",
+        "ch": 6,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_7",
+      "fig": "channel2_input_7",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_7",
+        "type": "note",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_8",
+      "fig": "channel2_input_8",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_8",
+        "type": "note",
+        "ch": 6,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_9",
+      "fig": "channel2_input_9",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_9",
+        "type": "note",
+        "ch": 6,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_10",
+      "fig": "channel2_input_10",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_10",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_11",
+      "fig": "channel2_input_11",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_11",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_12",
+      "fig": "channel2_input_12",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_12",
+        "type": "note",
+        "ch": 6,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_13",
+      "fig": "channel2_input_13",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_13",
+        "type": "note",
+        "ch": 6,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_14",
+      "fig": "channel2_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_14",
+        "type": "note",
+        "ch": 6,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_15",
+      "fig": "channel2_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_15",
+        "type": "note",
+        "ch": 6,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_16",
+      "fig": "channel2_input_16",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_16",
+        "type": "note",
+        "ch": 6,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_17",
+      "fig": "channel2_input_17",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_17",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_18",
+      "fig": "channel2_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_18",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_19",
+      "fig": "channel2_input_19",
+      "label": "input",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_19",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_20",
+      "fig": "channel2_input_20",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_20",
+        "type": "note",
+        "ch": 6,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-quick_effect_rack1_channel2_input",
+      "fig": "quick_effect_rack1_channel2_input",
+      "label": "input",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel2_input",
+        "type": "cc",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-channel2_input_21",
+      "fig": "channel2_input_21",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_21",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-library_browser_knob",
+      "fig": "library_browser_knob",
+      "label": "BROWSER KNOB",
+      "kind": "encoder",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_browser_knob",
+        "type": "cc",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[library_browser_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-library_browser_knob_press",
+      "fig": "library_browser_knob_press",
+      "label": "BROWSER KNOB PRESS",
+      "kind": "encoder",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_browser_knob_press",
+        "type": "note",
+        "ch": 16,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[library_browser_knob_press] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 16,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-gain",
+      "fig": "gain",
+      "label": "gain",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-head_gain",
+      "fig": "head_gain",
+      "label": "headGain",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[head_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler1_input",
+      "fig": "sampler1_input",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler1_input",
+        "type": "note",
+        "ch": 5,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[sampler1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler2_input",
+      "fig": "sampler2_input",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler2_input",
+        "type": "note",
+        "ch": 5,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[sampler2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler3_input",
+      "fig": "sampler3_input",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler3_input",
+        "type": "note",
+        "ch": 5,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[sampler3_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler4_input",
+      "fig": "sampler4_input",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler4_input",
+        "type": "note",
+        "ch": 5,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[sampler4_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler5_input",
+      "fig": "sampler5_input",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler5_input",
+        "type": "note",
+        "ch": 6,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[sampler5_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler6_input",
+      "fig": "sampler6_input",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler6_input",
+        "type": "note",
+        "ch": 6,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[sampler6_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler7_input",
+      "fig": "sampler7_input",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler7_input",
+        "type": "note",
+        "ch": 6,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[sampler7_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-dj2go2-touch-sampler8_input",
+      "fig": "sampler8_input",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler8_input",
+        "type": "note",
+        "ch": 6,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[sampler8_input] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

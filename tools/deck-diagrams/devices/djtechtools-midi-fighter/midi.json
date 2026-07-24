@@ -1,0 +1,138 @@
+{
+  "source": "mixxx:DJTechTools MIDI Fighter.midi.xml",
+  "archived": "tools/deck-diagrams/devices/djtechtools-midi-fighter/source/DJTechTools MIDI Fighter.midi.xml",
+  "device": "DJ TechTools MIDI Fighter",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "button_down",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 36,
+      "notes": "Mixxx MIDIFighter.button_down [button_down]"
+    },
+    {
+      "name": "button_down_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 37,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_2]"
+    },
+    {
+      "name": "button_down_3",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 38,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_3]"
+    },
+    {
+      "name": "button_down_4",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 39,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_4]"
+    },
+    {
+      "name": "button_down_5",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 40,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_5]"
+    },
+    {
+      "name": "button_down_6",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 41,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_6]"
+    },
+    {
+      "name": "button_down_7",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 42,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_7]"
+    },
+    {
+      "name": "button_down_8",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 43,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_8]"
+    },
+    {
+      "name": "button_down_9",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_9]"
+    },
+    {
+      "name": "button_down_10",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 45,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_10]"
+    },
+    {
+      "name": "button_down_11",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 46,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_11]"
+    },
+    {
+      "name": "button_down_12",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 47,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_12]"
+    },
+    {
+      "name": "button_down_13",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 48,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_13]"
+    },
+    {
+      "name": "button_down_14",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 49,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_14]"
+    },
+    {
+      "name": "button_down_15",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 50,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_15]"
+    },
+    {
+      "name": "button_down_16",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 51,
+      "notes": "Mixxx MIDIFighter.button_down [button_down_16]"
+    }
+  ]
+}

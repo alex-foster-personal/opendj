@@ -1,0 +1,218 @@
+{
+  "source": "mixxx:Numark DJ2Go.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-dj2go/source/Numark DJ2Go.midi.xml",
+  "device": "Numark DJ2Go",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "head_volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx headVolume [head_volume]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "back_but",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 89,
+      "notes": "Mixxx NumarkDJ2Go.backBut [back_but]"
+    },
+    {
+      "name": "enter_but",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 90,
+      "notes": "Mixxx NumarkDJ2Go.enterBut [enter_but]"
+    },
+    {
+      "name": "select_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx NumarkDJ2Go.selectKnob [select_knob]"
+    },
+    {
+      "name": "shift_a",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 75,
+      "notes": "Mixxx NumarkDJ2Go.shiftA [shift_a]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx NumarkDJ2Go.loopOut [loop_out]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx NumarkDJ2Go.loopIn [loop_in]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx NumarkDJ2Go.sync [sync]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 101,
+      "notes": "Mixxx NumarkDJ2Go.pfl [pfl]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx NumarkDJ2Go.cue [cue]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx NumarkDJ2Go.play [play]"
+    },
+    {
+      "name": "wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx NumarkDJ2Go.wheel [wheel]"
+    },
+    {
+      "name": "shift_b",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx NumarkDJ2Go.shiftB [shift_b]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "loop_out_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx NumarkDJ2Go.loopOut [loop_out_2]"
+    },
+    {
+      "name": "loop_in_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx NumarkDJ2Go.loopIn [loop_in_2]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "sync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx NumarkDJ2Go.sync [sync_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 102,
+      "notes": "Mixxx NumarkDJ2Go.pfl [pfl_2]"
+    },
+    {
+      "name": "cue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx NumarkDJ2Go.cue [cue_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx NumarkDJ2Go.play [play_2]"
+    },
+    {
+      "name": "wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx NumarkDJ2Go.wheel [wheel_2]"
+    }
+  ]
+}

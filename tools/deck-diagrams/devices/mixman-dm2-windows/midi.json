@@ -1,0 +1,194 @@
+{
+  "source": "mixxx:Mixman DM2 (Windows).midi.xml",
+  "archived": "tools/deck-diagrams/devices/mixman-dm2-windows/source/Mixman DM2 (Windows).midi.xml",
+  "device": "Mixman DM2 (Windows)",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "reverse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx reverse [reverse]"
+    },
+    {
+      "name": "rate_perm_down",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx rate_perm_down [rate_perm_down]"
+    },
+    {
+      "name": "rate_perm_up",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx rate_perm_up [rate_perm_up]"
+    },
+    {
+      "name": "rate_perm_down_small",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx rate_perm_down_small [rate_perm_down_small]"
+    },
+    {
+      "name": "rate_perm_up_small",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx rate_perm_up_small [rate_perm_up_small]"
+    },
+    {
+      "name": "cue_set",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx cue_set [cue_set]"
+    },
+    {
+      "name": "cue_preview",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx cue_preview [cue_preview]"
+    },
+    {
+      "name": "cue_goto",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx cue_goto [cue_goto]"
+    },
+    {
+      "name": "flanger",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx flanger [flanger]"
+    },
+    {
+      "name": "wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx wheel [wheel]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "reverse_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx reverse [reverse_2]"
+    },
+    {
+      "name": "rate_perm_down_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx rate_perm_down [rate_perm_down_2]"
+    },
+    {
+      "name": "rate_perm_up_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx rate_perm_up [rate_perm_up_2]"
+    },
+    {
+      "name": "rate_perm_down_small_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "Mixxx rate_perm_down_small [rate_perm_down_small_2]"
+    },
+    {
+      "name": "rate_perm_up_small_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 78,
+      "notes": "Mixxx rate_perm_up_small [rate_perm_up_small_2]"
+    },
+    {
+      "name": "cue_set_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx cue_set [cue_set_2]"
+    },
+    {
+      "name": "cue_preview_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx cue_preview [cue_preview_2]"
+    },
+    {
+      "name": "cue_goto_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx cue_goto [cue_goto_2]"
+    },
+    {
+      "name": "flanger_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "Mixxx flanger [flanger_2]"
+    },
+    {
+      "name": "wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx wheel [wheel_2]"
+    }
+  ]
+}

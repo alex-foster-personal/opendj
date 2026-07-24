@@ -1,0 +1,1020 @@
+{
+  "device": "DJ-Tech Mixer One",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "dj-tech-mixer-one-volume",
+      "fig": "volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 6,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-volume_2",
+      "fig": "volume_2",
+      "label": "volume",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-head_volume",
+      "fig": "head_volume",
+      "label": "headVolume",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_volume",
+        "type": "cc",
+        "ch": 6,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[head_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-head_volume_2",
+      "fig": "head_volume_2",
+      "label": "headVolume",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_volume_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[head_volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-head_mix",
+      "fig": "head_mix",
+      "label": "headMix",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 6,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-head_mix_2",
+      "fig": "head_mix_2",
+      "label": "headMix",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[head_mix_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 6,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-crossfader_2",
+      "fig": "crossfader_2",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[crossfader_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-clear_volume_leds",
+      "fig": "clear_volume_leds",
+      "label": "clearVolumeLEDs",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "clear_volume_leds",
+        "type": "note",
+        "ch": 8,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[clear_volume_leds] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-clear_volume_leds_2",
+      "fig": "clear_volume_leds_2",
+      "label": "clearVolumeLEDs",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "clear_volume_leds_2",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[clear_volume_leds_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-xfader_curve",
+      "fig": "xfader_curve",
+      "label": "xfaderCurve",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "xfader_curve",
+        "type": "cc",
+        "ch": 6,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[xfader_curve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-xfader_curve_2",
+      "fig": "xfader_curve_2",
+      "label": "xfaderCurve",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "xfader_curve_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[xfader_curve_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-mute",
+      "fig": "mute",
+      "label": "mute",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mute",
+        "type": "note",
+        "ch": 8,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-mute_2",
+      "fig": "mute_2",
+      "label": "mute",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mute_2",
+        "type": "note",
+        "ch": 6,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[mute_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pregain",
+      "fig": "pregain",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 6,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high",
+      "fig": "filter_high",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high",
+        "type": "cc",
+        "ch": 6,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[filter_high] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid",
+      "fig": "filter_mid",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid",
+        "type": "cc",
+        "ch": 6,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_mid] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low",
+      "fig": "filter_low",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low",
+        "type": "cc",
+        "ch": 6,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_low] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_kill",
+      "fig": "filter_low_kill",
+      "label": "filterLowKill",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_kill",
+        "type": "note",
+        "ch": 6,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[filter_low_kill] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_kill",
+      "fig": "filter_mid_kill",
+      "label": "filterMidKill",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_kill",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_kill] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_kill",
+      "fig": "filter_high_kill",
+      "label": "filterHighKill",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_kill",
+        "type": "note",
+        "ch": 6,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[filter_high_kill] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pfl",
+      "fig": "pfl",
+      "label": "pfl",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 6,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-volume_3",
+      "fig": "volume_3",
+      "label": "volume",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 6,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pregain_2",
+      "fig": "pregain_2",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_2",
+      "fig": "filter_high_2",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[filter_high_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_2",
+      "fig": "filter_mid_2",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_2",
+      "fig": "filter_low_2",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_2",
+        "type": "cc",
+        "ch": 8,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_low_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_kill_2",
+      "fig": "filter_low_kill_2",
+      "label": "filterLowKill",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_kill_2",
+        "type": "note",
+        "ch": 8,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[filter_low_kill_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_kill_2",
+      "fig": "filter_mid_kill_2",
+      "label": "filterMidKill",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_kill_2",
+        "type": "note",
+        "ch": 8,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_kill_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_kill_2",
+      "fig": "filter_high_kill_2",
+      "label": "filterHighKill",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_kill_2",
+        "type": "note",
+        "ch": 8,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[filter_high_kill_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pfl_2",
+      "fig": "pfl_2",
+      "label": "pfl",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 8,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-volume_4",
+      "fig": "volume_4",
+      "label": "volume",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_4",
+        "type": "cc",
+        "ch": 8,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pregain_3",
+      "fig": "pregain_3",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_3",
+        "type": "cc",
+        "ch": 7,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pregain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_3",
+      "fig": "filter_high_3",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_3",
+        "type": "cc",
+        "ch": 7,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[filter_high_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_3",
+      "fig": "filter_mid_3",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_3",
+        "type": "cc",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_3",
+      "fig": "filter_low_3",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_3",
+        "type": "cc",
+        "ch": 7,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[filter_low_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_kill_3",
+      "fig": "filter_low_kill_3",
+      "label": "filterLowKill",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_kill_3",
+        "type": "note",
+        "ch": 7,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[filter_low_kill_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_kill_3",
+      "fig": "filter_mid_kill_3",
+      "label": "filterMidKill",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_kill_3",
+        "type": "note",
+        "ch": 7,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_kill_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_kill_3",
+      "fig": "filter_high_kill_3",
+      "label": "filterHighKill",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_kill_3",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[filter_high_kill_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pfl_3",
+      "fig": "pfl_3",
+      "label": "pfl",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_3",
+        "type": "note",
+        "ch": 7,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pfl_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-volume_5",
+      "fig": "volume_5",
+      "label": "volume",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_5",
+        "type": "cc",
+        "ch": 7,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[volume_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pregain_4",
+      "fig": "pregain_4",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_4",
+        "type": "cc",
+        "ch": 9,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pregain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_4",
+      "fig": "filter_high_4",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_4",
+        "type": "cc",
+        "ch": 9,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[filter_high_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_4",
+      "fig": "filter_mid_4",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_4",
+        "type": "cc",
+        "ch": 9,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_4",
+      "fig": "filter_low_4",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_4",
+        "type": "cc",
+        "ch": 9,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[filter_low_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_low_kill_4",
+      "fig": "filter_low_kill_4",
+      "label": "filterLowKill",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_kill_4",
+        "type": "note",
+        "ch": 9,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[filter_low_kill_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_mid_kill_4",
+      "fig": "filter_mid_kill_4",
+      "label": "filterMidKill",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_kill_4",
+        "type": "note",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_kill_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-filter_high_kill_4",
+      "fig": "filter_high_kill_4",
+      "label": "filterHighKill",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_kill_4",
+        "type": "note",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[filter_high_kill_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-pfl_4",
+      "fig": "pfl_4",
+      "label": "pfl",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_4",
+        "type": "note",
+        "ch": 9,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pfl_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-mixer-one-volume_6",
+      "fig": "volume_6",
+      "label": "volume",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_6",
+        "type": "cc",
+        "ch": 9,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[volume_6] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

@@ -1,0 +1,1040 @@
+{
+  "device": "Korg nanoKONTROL2",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "korg-nanokontrol-2-volume",
+      "fig": "volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_2",
+      "fig": "volume_2",
+      "label": "volume",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_3",
+      "fig": "volume_3",
+      "label": "volume",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_4",
+      "fig": "volume_4",
+      "label": "volume",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_5",
+      "fig": "volume_5",
+      "label": "volume",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "volume_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[volume_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_6",
+      "fig": "volume_6",
+      "label": "volume",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "volume_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[volume_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_7",
+      "fig": "volume_7",
+      "label": "volume",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "volume_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[volume_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-volume_8",
+      "fig": "volume_8",
+      "label": "volume",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "volume_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[volume_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob",
+      "fig": "knob",
+      "label": "knob",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_2",
+      "fig": "knob_2",
+      "label": "knob",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_3",
+      "fig": "knob_3",
+      "label": "knob",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_4",
+      "fig": "knob_4",
+      "label": "knob",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[knob_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_5",
+      "fig": "knob_5",
+      "label": "knob",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[knob_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_6",
+      "fig": "knob_6",
+      "label": "knob",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[knob_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_7",
+      "fig": "knob_7",
+      "label": "knob",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[knob_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-knob_8",
+      "fig": "knob_8",
+      "label": "knob",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[knob_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button",
+      "fig": "button",
+      "label": "button",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button",
+        "type": "cc",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_2",
+      "fig": "button_2",
+      "label": "button",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_3",
+      "fig": "button_3",
+      "label": "button",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_4",
+      "fig": "button_4",
+      "label": "button",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_5",
+      "fig": "button_5",
+      "label": "button",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[button_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_6",
+      "fig": "button_6",
+      "label": "button",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[button_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_7",
+      "fig": "button_7",
+      "label": "button",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[button_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_8",
+      "fig": "button_8",
+      "label": "button",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[button_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_9",
+      "fig": "button_9",
+      "label": "button",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_9",
+        "type": "cc",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[button_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_10",
+      "fig": "button_10",
+      "label": "button",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_10",
+        "type": "cc",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[button_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_11",
+      "fig": "button_11",
+      "label": "button",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[button_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_12",
+      "fig": "button_12",
+      "label": "button",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_12",
+        "type": "cc",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[button_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_13",
+      "fig": "button_13",
+      "label": "button",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_13",
+        "type": "cc",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[button_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_14",
+      "fig": "button_14",
+      "label": "button",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_14",
+        "type": "cc",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[button_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_15",
+      "fig": "button_15",
+      "label": "button",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_15",
+        "type": "cc",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[button_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_16",
+      "fig": "button_16",
+      "label": "button",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_16",
+        "type": "cc",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[button_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_17",
+      "fig": "button_17",
+      "label": "button",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_17",
+        "type": "cc",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[button_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_18",
+      "fig": "button_18",
+      "label": "button",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_18",
+        "type": "cc",
+        "ch": 1,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[button_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_19",
+      "fig": "button_19",
+      "label": "button",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_19",
+        "type": "cc",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[button_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_20",
+      "fig": "button_20",
+      "label": "button",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_20",
+        "type": "cc",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[button_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_21",
+      "fig": "button_21",
+      "label": "button",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_21",
+        "type": "cc",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[button_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_22",
+      "fig": "button_22",
+      "label": "button",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_22",
+        "type": "cc",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[button_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_23",
+      "fig": "button_23",
+      "label": "button",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_23",
+        "type": "cc",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[button_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_24",
+      "fig": "button_24",
+      "label": "button",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_24",
+        "type": "cc",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[button_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_25",
+      "fig": "button_25",
+      "label": "button",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_25",
+        "type": "cc",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[button_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_26",
+      "fig": "button_26",
+      "label": "button",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_26",
+        "type": "cc",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[button_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_27",
+      "fig": "button_27",
+      "label": "button",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_27",
+        "type": "cc",
+        "ch": 1,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[button_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_28",
+      "fig": "button_28",
+      "label": "button",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_28",
+        "type": "cc",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[button_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_29",
+      "fig": "button_29",
+      "label": "button",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_29",
+        "type": "cc",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[button_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_30",
+      "fig": "button_30",
+      "label": "button",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_30",
+        "type": "cc",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[button_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_31",
+      "fig": "button_31",
+      "label": "button",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_31",
+        "type": "cc",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[button_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_32",
+      "fig": "button_32",
+      "label": "button",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_32",
+        "type": "cc",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[button_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_33",
+      "fig": "button_33",
+      "label": "button",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_33",
+        "type": "cc",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[button_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_34",
+      "fig": "button_34",
+      "label": "button",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_34",
+        "type": "cc",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[button_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-nanokontrol-2-button_35",
+      "fig": "button_35",
+      "label": "button",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_35",
+        "type": "cc",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[button_35] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

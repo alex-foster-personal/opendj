@@ -1,0 +1,1098 @@
+{
+  "source": "mixxx:Hercules_DJControl_Jogvision.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-djcontrol-jogvision/source/Hercules_DJControl_Jogvision.midi.xml",
+  "device": "Hercules DJControl Jogvision",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "mode_key",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 87,
+      "notes": "Mixxx DJCJV.modeKey [mode_key]"
+    },
+    {
+      "name": "mode_key_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 87,
+      "notes": "Mixxx DJCJV.modeKey [mode_key_2]"
+    },
+    {
+      "name": "shift_key",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx DJCJV.shiftKey [shift_key]"
+    },
+    {
+      "name": "shift_key_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 86,
+      "notes": "Mixxx DJCJV.shiftKey [shift_key_2]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "play_stutter",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx play_stutter [play_stutter]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "start_play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx start_play [start_play]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "sync_leader",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx sync_leader [sync_leader]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "head_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "Mixxx DJCJV.headCue [head_cue]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "Mixxx DJCJV.headMix [head_mix]"
+    },
+    {
+      "name": "load_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DJCJV.loadTrack [load_track]"
+    },
+    {
+      "name": "eject",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "notes": "Mixxx eject [eject]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "slip_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx slip_enabled [slip_enabled]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 85,
+      "notes": "Mixxx DJCJV.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "beat_loop_change",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx DJCJV.beatLoopChange [beat_loop_change]"
+    },
+    {
+      "name": "beatloop_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx DJCJV.beatloopActivate [beatloop_activate]"
+    },
+    {
+      "name": "beat_loop_change_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx DJCJV.beatLoopChange [beat_loop_change_2]"
+    },
+    {
+      "name": "enabled",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx enabled [enabled]"
+    },
+    {
+      "name": "enabled_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx enabled [enabled_2]"
+    },
+    {
+      "name": "enabled_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx enabled [enabled_3]"
+    },
+    {
+      "name": "effect_selector",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx effect_selector [effect_selector]"
+    },
+    {
+      "name": "effect_selector_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx effect_selector [effect_selector_2]"
+    },
+    {
+      "name": "effect_selector_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx effect_selector [effect_selector_3]"
+    },
+    {
+      "name": "hotcue_1_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate]"
+    },
+    {
+      "name": "hotcue_2_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate]"
+    },
+    {
+      "name": "hotcue_3_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate]"
+    },
+    {
+      "name": "hotcue_4_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx hotcue_4_activate [hotcue_4_activate]"
+    },
+    {
+      "name": "hotcue_5_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx hotcue_5_activate [hotcue_5_activate]"
+    },
+    {
+      "name": "hotcue_6_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx hotcue_6_activate [hotcue_6_activate]"
+    },
+    {
+      "name": "hotcue_7_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx hotcue_7_activate [hotcue_7_activate]"
+    },
+    {
+      "name": "hotcue_8_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx hotcue_8_activate [hotcue_8_activate]"
+    },
+    {
+      "name": "hotcue_1_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx hotcue_1_clear [hotcue_1_clear]"
+    },
+    {
+      "name": "hotcue_2_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx hotcue_2_clear [hotcue_2_clear]"
+    },
+    {
+      "name": "hotcue_3_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx hotcue_3_clear [hotcue_3_clear]"
+    },
+    {
+      "name": "hotcue_4_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx hotcue_4_clear [hotcue_4_clear]"
+    },
+    {
+      "name": "hotcue_5_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx hotcue_5_clear [hotcue_5_clear]"
+    },
+    {
+      "name": "hotcue_6_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx hotcue_6_clear [hotcue_6_clear]"
+    },
+    {
+      "name": "hotcue_7_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx hotcue_7_clear [hotcue_7_clear]"
+    },
+    {
+      "name": "hotcue_8_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx hotcue_8_clear [hotcue_8_clear]"
+    },
+    {
+      "name": "cue_gotoandplay",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay]"
+    },
+    {
+      "name": "cue_gotoandplay_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_2]"
+    },
+    {
+      "name": "cue_gotoandplay_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_3]"
+    },
+    {
+      "name": "cue_gotoandplay_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_4]"
+    },
+    {
+      "name": "cue_gotoandplay_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_5]"
+    },
+    {
+      "name": "cue_gotoandplay_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_6]"
+    },
+    {
+      "name": "cue_gotoandplay_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_7]"
+    },
+    {
+      "name": "cue_gotoandplay_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_8]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 50,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "play_stutter_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 55,
+      "notes": "Mixxx play_stutter [play_stutter_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 49,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "start_play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 54,
+      "notes": "Mixxx start_play [start_play_2]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 48,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "sync_leader_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 53,
+      "notes": "Mixxx sync_leader [sync_leader_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 51,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "load_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DJCJV.loadTrack [load_track_2]"
+    },
+    {
+      "name": "eject_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 83,
+      "notes": "Mixxx eject [eject_2]"
+    },
+    {
+      "name": "keylock_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 52,
+      "notes": "Mixxx keylock [keylock_2]"
+    },
+    {
+      "name": "slip_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 57,
+      "notes": "Mixxx slip_enabled [slip_enabled_2]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 85,
+      "notes": "Mixxx DJCJV.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "beat_loop_change_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx DJCJV.beatLoopChange [beat_loop_change_3]"
+    },
+    {
+      "name": "beatloop_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx DJCJV.beatloopActivate [beatloop_activate_2]"
+    },
+    {
+      "name": "beat_loop_change_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx DJCJV.beatLoopChange [beat_loop_change_4]"
+    },
+    {
+      "name": "enabled_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx enabled [enabled_4]"
+    },
+    {
+      "name": "enabled_5",
+      "section": "effect",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx enabled [enabled_5]"
+    },
+    {
+      "name": "enabled_6",
+      "section": "effect",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx enabled [enabled_6]"
+    },
+    {
+      "name": "effect_selector_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx effect_selector [effect_selector_4]"
+    },
+    {
+      "name": "effect_selector_5",
+      "section": "effect",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx effect_selector [effect_selector_5]"
+    },
+    {
+      "name": "effect_selector_6",
+      "section": "effect",
+      "type": "note",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx effect_selector [effect_selector_6]"
+    },
+    {
+      "name": "hotcue_1_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate_2]"
+    },
+    {
+      "name": "hotcue_2_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate_2]"
+    },
+    {
+      "name": "hotcue_3_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 18,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate_2]"
+    },
+    {
+      "name": "hotcue_4_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx hotcue_4_activate [hotcue_4_activate_2]"
+    },
+    {
+      "name": "hotcue_5_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx hotcue_5_activate [hotcue_5_activate_2]"
+    },
+    {
+      "name": "hotcue_6_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx hotcue_6_activate [hotcue_6_activate_2]"
+    },
+    {
+      "name": "hotcue_7_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx hotcue_7_activate [hotcue_7_activate_2]"
+    },
+    {
+      "name": "hotcue_8_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx hotcue_8_activate [hotcue_8_activate_2]"
+    },
+    {
+      "name": "hotcue_1_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx hotcue_1_clear [hotcue_1_clear_2]"
+    },
+    {
+      "name": "hotcue_2_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx hotcue_2_clear [hotcue_2_clear_2]"
+    },
+    {
+      "name": "hotcue_3_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx hotcue_3_clear [hotcue_3_clear_2]"
+    },
+    {
+      "name": "hotcue_4_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx hotcue_4_clear [hotcue_4_clear_2]"
+    },
+    {
+      "name": "hotcue_5_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx hotcue_5_clear [hotcue_5_clear_2]"
+    },
+    {
+      "name": "hotcue_6_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx hotcue_6_clear [hotcue_6_clear_2]"
+    },
+    {
+      "name": "hotcue_7_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx hotcue_7_clear [hotcue_7_clear_2]"
+    },
+    {
+      "name": "hotcue_8_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx hotcue_8_clear [hotcue_8_clear_2]"
+    },
+    {
+      "name": "cue_gotoandplay_9",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_9]"
+    },
+    {
+      "name": "cue_gotoandplay_10",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_10]"
+    },
+    {
+      "name": "cue_gotoandplay_11",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_11]"
+    },
+    {
+      "name": "cue_gotoandplay_12",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_12]"
+    },
+    {
+      "name": "cue_gotoandplay_13",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_13]"
+    },
+    {
+      "name": "cue_gotoandplay_14",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_14]"
+    },
+    {
+      "name": "cue_gotoandplay_15",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_15]"
+    },
+    {
+      "name": "cue_gotoandplay_16",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_16]"
+    },
+    {
+      "name": "vinyl_button",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx DJCJV.vinylButton [vinyl_button]"
+    },
+    {
+      "name": "show_maximized_library",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx show_maximized_library [show_maximized_library]"
+    },
+    {
+      "name": "enabled_7",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx enabled [enabled_7]"
+    },
+    {
+      "name": "move_focus",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 79,
+      "notes": "Mixxx DJCJV.moveFocus [move_focus]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "browse_library",
+      "section": "browser",
+      "type": "cc",
+      "ch": 1,
+      "code": 78,
+      "notes": "Mixxx DJCJV.browseLibrary [browse_library]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "parameter1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx parameter1 [parameter1]"
+    },
+    {
+      "name": "parameter2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx parameter2 [parameter2]"
+    },
+    {
+      "name": "parameter3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx parameter3 [parameter3]"
+    },
+    {
+      "name": "pre_gain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 79,
+      "notes": "Mixxx DJCJV.preGain [pre_gain]"
+    },
+    {
+      "name": "filter",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx DJCJV.Filter [filter]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "scratch_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 65,
+      "notes": "Mixxx DJCJV.scratchWheel [scratch_wheel]"
+    },
+    {
+      "name": "bend_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx DJCJV.bendWheel [bend_wheel]"
+    },
+    {
+      "name": "beatjump_size",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx DJCJV.beatjumpSize [beatjump_size]"
+    },
+    {
+      "name": "beatjump_move",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx DJCJV.beatjumpMove [beatjump_move]"
+    },
+    {
+      "name": "beats_translate_curpos",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos]"
+    },
+    {
+      "name": "meta",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx meta [meta]"
+    },
+    {
+      "name": "meta_2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx meta [meta_2]"
+    },
+    {
+      "name": "meta_3",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 73,
+      "notes": "Mixxx meta [meta_3]"
+    },
+    {
+      "name": "mix_level",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx DJCJV.mixLevel [mix_level]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "parameter1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx parameter1 [parameter1_2]"
+    },
+    {
+      "name": "parameter2_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx parameter2 [parameter2_2]"
+    },
+    {
+      "name": "parameter3_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx parameter3 [parameter3_2]"
+    },
+    {
+      "name": "pre_gain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 79,
+      "notes": "Mixxx DJCJV.preGain [pre_gain_2]"
+    },
+    {
+      "name": "filter_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx DJCJV.Filter [filter_2]"
+    },
+    {
+      "name": "rate_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx rate [rate_3]"
+    },
+    {
+      "name": "rate_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx rate [rate_4]"
+    },
+    {
+      "name": "scratch_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 65,
+      "notes": "Mixxx DJCJV.scratchWheel [scratch_wheel_2]"
+    },
+    {
+      "name": "bend_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 64,
+      "notes": "Mixxx DJCJV.bendWheel [bend_wheel_2]"
+    },
+    {
+      "name": "beatjump_size_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 68,
+      "notes": "Mixxx DJCJV.beatjumpSize [beatjump_size_2]"
+    },
+    {
+      "name": "beatjump_move_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 74,
+      "notes": "Mixxx DJCJV.beatjumpMove [beatjump_move_2]"
+    },
+    {
+      "name": "beats_translate_curpos_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 82,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos_2]"
+    },
+    {
+      "name": "meta_4",
+      "section": "effect",
+      "type": "cc",
+      "ch": 2,
+      "code": 71,
+      "notes": "Mixxx meta [meta_4]"
+    },
+    {
+      "name": "meta_5",
+      "section": "effect",
+      "type": "cc",
+      "ch": 2,
+      "code": 72,
+      "notes": "Mixxx meta [meta_5]"
+    },
+    {
+      "name": "meta_6",
+      "section": "effect",
+      "type": "cc",
+      "ch": 2,
+      "code": 73,
+      "notes": "Mixxx meta [meta_6]"
+    },
+    {
+      "name": "mix_level_2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 2,
+      "code": 70,
+      "notes": "Mixxx DJCJV.mixLevel [mix_level_2]"
+    }
+  ]
+}

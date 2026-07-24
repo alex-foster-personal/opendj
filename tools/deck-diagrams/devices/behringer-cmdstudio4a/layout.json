@@ -1,0 +1,3380 @@
+{
+  "device": "Behringer CMD STUDIO 4a",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "behringer-cmdstudio4a-select_track_knob",
+      "fig": "select_track_knob",
+      "label": "Browse knob.",
+      "kind": "encoder",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[select_track_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-toggle_selected_sidebar_item",
+      "fig": "toggle_selected_sidebar_item",
+      "label": "ENTER button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "toggle_selected_sidebar_item",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[toggle_selected_sidebar_item] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-browse_lr",
+      "fig": "browse_lr",
+      "label": "Browse left button.",
+      "kind": "encoder",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "browse_lr",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[browse_lr] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-browse_lr_2",
+      "fig": "browse_lr_2",
+      "label": "Browse right button.",
+      "kind": "encoder",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "browse_lr_2",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[browse_lr_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pregain",
+      "fig": "pregain",
+      "label": "Deck A Gain.",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pregain_2",
+      "fig": "pregain_2",
+      "label": "Deck B Gain.",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pregain_3",
+      "fig": "pregain_3",
+      "label": "Deck C Gain.",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[pregain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pregain_4",
+      "fig": "pregain_4",
+      "label": "Deck D Gain.",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[pregain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-slip_enabled",
+      "fig": "slip_enabled",
+      "label": "Deck A FX 1 button.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-slip_enabled_2",
+      "fig": "slip_enabled_2",
+      "label": "Deck B FX 1 button.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled_2",
+        "type": "note",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-slip_enabled_3",
+      "fig": "slip_enabled_3",
+      "label": "Deck C FX 1 button.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled_3",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-slip_enabled_4",
+      "fig": "slip_enabled_4",
+      "label": "Deck D FX 1 button.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled_4",
+        "type": "note",
+        "ch": 4,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-repeat",
+      "fig": "repeat",
+      "label": "Deck A FX 2 button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "repeat",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[repeat] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-repeat_2",
+      "fig": "repeat_2",
+      "label": "Deck B FX 2 button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "repeat_2",
+        "type": "note",
+        "ch": 2,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[repeat_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-repeat_3",
+      "fig": "repeat_3",
+      "label": "Deck C FX 2 button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "repeat_3",
+        "type": "note",
+        "ch": 3,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[repeat_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-repeat_4",
+      "fig": "repeat_4",
+      "label": "Deck D FX 2 button.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "repeat_4",
+        "type": "note",
+        "ch": 4,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[repeat_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-beats_translate_curpos",
+      "fig": "beats_translate_curpos",
+      "label": "Deck A FX 3 button push.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-beats_translate_curpos_2",
+      "fig": "beats_translate_curpos_2",
+      "label": "Deck B FX 3 button push.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_2",
+        "type": "note",
+        "ch": 2,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-beats_translate_curpos_3",
+      "fig": "beats_translate_curpos_3",
+      "label": "Deck C FX 3 button push.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_3",
+        "type": "note",
+        "ch": 3,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-beats_translate_curpos_4",
+      "fig": "beats_translate_curpos_4",
+      "label": "Deck D FX 3 button push.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_4",
+        "type": "note",
+        "ch": 4,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-quantize",
+      "fig": "quantize",
+      "label": "Deck A FX 4 button.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[quantize] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-quantize_2",
+      "fig": "quantize_2",
+      "label": "Deck B FX 4 button.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize_2",
+        "type": "note",
+        "ch": 2,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[quantize_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-quantize_3",
+      "fig": "quantize_3",
+      "label": "Deck C FX 4 button.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize_3",
+        "type": "note",
+        "ch": 3,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[quantize_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-quantize_4",
+      "fig": "quantize_4",
+      "label": "Deck D FX 4 button.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize_4",
+        "type": "note",
+        "ch": 4,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[quantize_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1",
+      "fig": "super1",
+      "label": "Deck A FX knob 2.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[super1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_2",
+      "fig": "super1_2",
+      "label": "Deck A FX knob 3.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[super1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_3",
+      "fig": "super1_3",
+      "label": "Deck B FX knob 2.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[super1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_4",
+      "fig": "super1_4",
+      "label": "Deck B FX knob 3.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[super1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_5",
+      "fig": "super1_5",
+      "label": "Deck C FX knob 2.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_5",
+        "type": "cc",
+        "ch": 3,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[super1_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_6",
+      "fig": "super1_6",
+      "label": "Deck C FX knob 3.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_6",
+        "type": "cc",
+        "ch": 3,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[super1_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_7",
+      "fig": "super1_7",
+      "label": "Deck D FX knob 2.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_7",
+        "type": "cc",
+        "ch": 4,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[super1_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_8",
+      "fig": "super1_8",
+      "label": "Deck D FX knob 3.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "super1_8",
+        "type": "cc",
+        "ch": 4,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[super1_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_9",
+      "fig": "super1_9",
+      "label": "Deck A FX knob 4.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_9",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[super1_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_10",
+      "fig": "super1_10",
+      "label": "Deck B FX knob 4.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_10",
+        "type": "cc",
+        "ch": 2,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[super1_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_11",
+      "fig": "super1_11",
+      "label": "Deck C FX knob 4.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_11",
+        "type": "cc",
+        "ch": 3,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[super1_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-super1_12",
+      "fig": "super1_12",
+      "label": "Deck D FX knob 4.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_12",
+        "type": "cc",
+        "ch": 4,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[super1_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-scratch",
+      "fig": "scratch",
+      "label": "Deck A Scratch button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[scratch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-scratch_2",
+      "fig": "scratch_2",
+      "label": "Deck B Scratch button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[scratch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-scratch_3",
+      "fig": "scratch_3",
+      "label": "Deck C Scratch button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_3",
+        "type": "note",
+        "ch": 3,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[scratch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-scratch_4",
+      "fig": "scratch_4",
+      "label": "Deck D Scratch button.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[scratch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_in",
+      "fig": "loop_in",
+      "label": "Deck A loop start push.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_out",
+      "fig": "loop_out",
+      "label": "Deck A loop end push.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-reloop_exit",
+      "fig": "reloop_exit",
+      "label": "Deck A loop ON/OFF.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_in_2",
+      "fig": "loop_in_2",
+      "label": "Deck B loop start push.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_2",
+        "type": "note",
+        "ch": 2,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[loop_in_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_out_2",
+      "fig": "loop_out_2",
+      "label": "Deck B loop end push.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_2",
+        "type": "note",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_out_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-reloop_exit_2",
+      "fig": "reloop_exit_2",
+      "label": "Deck B loop ON/OFF.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_2",
+        "type": "note",
+        "ch": 2,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_in_3",
+      "fig": "loop_in_3",
+      "label": "Deck C loop start push.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_3",
+        "type": "note",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[loop_in_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_out_3",
+      "fig": "loop_out_3",
+      "label": "Deck C loop end push.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_3",
+        "type": "note",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[loop_out_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-reloop_exit_3",
+      "fig": "reloop_exit_3",
+      "label": "Deck C loop ON/OFF.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_3",
+        "type": "note",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_in_4",
+      "fig": "loop_in_4",
+      "label": "Deck D loop start push.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_4",
+        "type": "note",
+        "ch": 4,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[loop_in_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-loop_out_4",
+      "fig": "loop_out_4",
+      "label": "Deck D loop end push.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_4",
+        "type": "note",
+        "ch": 4,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_out_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-reloop_exit_4",
+      "fig": "reloop_exit_4",
+      "label": "Deck D loop ON/OFF.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_4",
+        "type": "note",
+        "ch": 4,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "Deck A wheel toutch.",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_turn",
+      "fig": "wheel_turn",
+      "label": "Deck A wheel turn.",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "Deck B wheel toutch.",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_turn_2",
+      "fig": "wheel_turn_2",
+      "label": "Deck B wheel turn.",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_touch_3",
+      "fig": "wheel_touch_3",
+      "label": "Deck C wheel toutch.",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_3",
+        "type": "note",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_turn_3",
+      "fig": "wheel_turn_3",
+      "label": "Deck C wheel turn.",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_touch_4",
+      "fig": "wheel_touch_4",
+      "label": "Deck D wheel toutch.",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-wheel_turn_4",
+      "fig": "wheel_turn_4",
+      "label": "Deck D wheel turn.",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-keylock",
+      "fig": "keylock",
+      "label": "Deck A LOCK button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-keylock_2",
+      "fig": "keylock_2",
+      "label": "Deck B LOCK button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 2,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-keylock_3",
+      "fig": "keylock_3",
+      "label": "Deck C LOCK button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_3",
+        "type": "note",
+        "ch": 3,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[keylock_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-keylock_4",
+      "fig": "keylock_4",
+      "label": "Deck D LOCK button.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_4",
+        "type": "note",
+        "ch": 4,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[keylock_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch",
+      "fig": "pitch",
+      "label": "Deck A pitch- push.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pitch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_2",
+      "fig": "pitch_2",
+      "label": "Deck A pitch+ push.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_2",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pitch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_3",
+      "fig": "pitch_3",
+      "label": "Deck B pitch- push.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_3",
+        "type": "note",
+        "ch": 2,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[pitch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_4",
+      "fig": "pitch_4",
+      "label": "Deck B pitch+ push.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_4",
+        "type": "note",
+        "ch": 2,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[pitch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_5",
+      "fig": "pitch_5",
+      "label": "Deck C pitch- push.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_5",
+        "type": "note",
+        "ch": 3,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pitch_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_6",
+      "fig": "pitch_6",
+      "label": "Deck C pitch+ push.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_6",
+        "type": "note",
+        "ch": 3,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pitch_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_7",
+      "fig": "pitch_7",
+      "label": "Deck D pitch- push.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_7",
+        "type": "note",
+        "ch": 4,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[pitch_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pitch_8",
+      "fig": "pitch_8",
+      "label": "Deck D pitch+ push.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_8",
+        "type": "note",
+        "ch": 4,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[pitch_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue",
+      "fig": "hotcue",
+      "label": "Deck A hotcue 1 push.",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[hotcue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_2",
+      "fig": "hotcue_2",
+      "label": "Deck A hotcue 2 push.",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_3",
+      "fig": "hotcue_3",
+      "label": "Deck A hotcue 3 push.",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_4",
+      "fig": "hotcue_4",
+      "label": "Deck A hotcue 4 push.",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4",
+        "type": "note",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_5",
+      "fig": "hotcue_5",
+      "label": "Deck A hotcue 5 push.",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_5",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[hotcue_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_6",
+      "fig": "hotcue_6",
+      "label": "Deck A hotcue 6 push.",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_6",
+        "type": "note",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[hotcue_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_7",
+      "fig": "hotcue_7",
+      "label": "Deck A hotcue 7 push.",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_7",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[hotcue_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_8",
+      "fig": "hotcue_8",
+      "label": "Deck A hotcue 8 push.",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_8",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[hotcue_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_9",
+      "fig": "hotcue_9",
+      "label": "Deck B hotcue 1 push.",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_9",
+        "type": "note",
+        "ch": 2,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[hotcue_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_10",
+      "fig": "hotcue_10",
+      "label": "Deck B hotcue 2 push.",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_10",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[hotcue_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_11",
+      "fig": "hotcue_11",
+      "label": "Deck B hotcue 3 push.",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_11",
+        "type": "note",
+        "ch": 2,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[hotcue_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_12",
+      "fig": "hotcue_12",
+      "label": "Deck B hotcue 4 push.",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_12",
+        "type": "note",
+        "ch": 2,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[hotcue_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_13",
+      "fig": "hotcue_13",
+      "label": "Deck B hotcue 5 push.",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_13",
+        "type": "note",
+        "ch": 2,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[hotcue_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_14",
+      "fig": "hotcue_14",
+      "label": "Deck B hotcue 6 push.",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_14",
+        "type": "note",
+        "ch": 2,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[hotcue_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_15",
+      "fig": "hotcue_15",
+      "label": "Deck B hotcue 7 push.",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_15",
+        "type": "note",
+        "ch": 2,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[hotcue_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_16",
+      "fig": "hotcue_16",
+      "label": "Deck B hotcue 8 push.",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_16",
+        "type": "note",
+        "ch": 2,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[hotcue_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_17",
+      "fig": "hotcue_17",
+      "label": "Deck C hotcue 1 push.",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_17",
+        "type": "note",
+        "ch": 3,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[hotcue_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_18",
+      "fig": "hotcue_18",
+      "label": "Deck C hotcue 2 push.",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_18",
+        "type": "note",
+        "ch": 3,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[hotcue_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_19",
+      "fig": "hotcue_19",
+      "label": "Deck C hotcue 3 push.",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_19",
+        "type": "note",
+        "ch": 3,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[hotcue_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_20",
+      "fig": "hotcue_20",
+      "label": "Deck C hotcue 4 push.",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_20",
+        "type": "note",
+        "ch": 3,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[hotcue_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_21",
+      "fig": "hotcue_21",
+      "label": "Deck C hotcue 5 push.",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_21",
+        "type": "note",
+        "ch": 3,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[hotcue_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_22",
+      "fig": "hotcue_22",
+      "label": "Deck C hotcue 6 push.",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_22",
+        "type": "note",
+        "ch": 3,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[hotcue_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_23",
+      "fig": "hotcue_23",
+      "label": "Deck C hotcue 7 push.",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_23",
+        "type": "note",
+        "ch": 3,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[hotcue_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_24",
+      "fig": "hotcue_24",
+      "label": "Deck C hotcue 8 push.",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_24",
+        "type": "note",
+        "ch": 3,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[hotcue_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_25",
+      "fig": "hotcue_25",
+      "label": "Deck D hotcue 1 push.",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_25",
+        "type": "note",
+        "ch": 4,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[hotcue_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_26",
+      "fig": "hotcue_26",
+      "label": "Deck D hotcue 2 push.",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_26",
+        "type": "note",
+        "ch": 4,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[hotcue_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_27",
+      "fig": "hotcue_27",
+      "label": "Deck D hotcue 3 push.",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_27",
+        "type": "note",
+        "ch": 4,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[hotcue_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_28",
+      "fig": "hotcue_28",
+      "label": "Deck D hotcue 4 push.",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_28",
+        "type": "note",
+        "ch": 4,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[hotcue_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_29",
+      "fig": "hotcue_29",
+      "label": "Deck D hotcue 5 push.",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_29",
+        "type": "note",
+        "ch": 4,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[hotcue_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_30",
+      "fig": "hotcue_30",
+      "label": "Deck D hotcue 6 push.",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_30",
+        "type": "note",
+        "ch": 4,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[hotcue_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_31",
+      "fig": "hotcue_31",
+      "label": "Deck D hotcue 7 push.",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_31",
+        "type": "note",
+        "ch": 4,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[hotcue_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-hotcue_32",
+      "fig": "hotcue_32",
+      "label": "Deck D hotcue 8 push.",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_32",
+        "type": "note",
+        "ch": 4,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[hotcue_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-del",
+      "fig": "del",
+      "label": "Deck A DEL button push.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "del",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[del] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-del_2",
+      "fig": "del_2",
+      "label": "Deck B DEL button push.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "del_2",
+        "type": "note",
+        "ch": 2,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[del_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-del_3",
+      "fig": "del_3",
+      "label": "Deck C DEL button push.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "del_3",
+        "type": "note",
+        "ch": 3,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[del_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-del_4",
+      "fig": "del_4",
+      "label": "Deck D DEL button push.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "del_4",
+        "type": "note",
+        "ch": 4,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[del_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-cue",
+      "fig": "cue",
+      "label": "Deck A CUE push.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-cue_2",
+      "fig": "cue_2",
+      "label": "Deck B CUE push.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_2",
+        "type": "note",
+        "ch": 2,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[cue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-cue_3",
+      "fig": "cue_3",
+      "label": "Deck C CUE push.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_3",
+        "type": "note",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[cue_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-cue_4",
+      "fig": "cue_4",
+      "label": "Deck D CUE push.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_4",
+        "type": "note",
+        "ch": 4,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[cue_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-play",
+      "fig": "play",
+      "label": "Deck A PLAY push.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-play_2",
+      "fig": "play_2",
+      "label": "Deck B PLAY push.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 2,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-play_3",
+      "fig": "play_3",
+      "label": "Deck C PLAY push.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_3",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[play_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-play_4",
+      "fig": "play_4",
+      "label": "Deck D PLAY push.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_4",
+        "type": "note",
+        "ch": 4,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[play_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-sync_enabled",
+      "fig": "sync_enabled",
+      "label": "Deck A Sync button.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-sync_enabled_2",
+      "fig": "sync_enabled_2",
+      "label": "Deck B Sync button.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_2",
+        "type": "note",
+        "ch": 2,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-sync_enabled_3",
+      "fig": "sync_enabled_3",
+      "label": "Deck C Sync button.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_3",
+        "type": "note",
+        "ch": 3,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-sync_enabled_4",
+      "fig": "sync_enabled_4",
+      "label": "Deck D Sync button.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_4",
+        "type": "note",
+        "ch": 4,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "Deck A LOAD button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 1,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "Deck B LOAD button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-load_selected_track_3",
+      "fig": "load_selected_track_3",
+      "label": "Deck C LOAD button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_3",
+        "type": "note",
+        "ch": 3,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-load_selected_track_4",
+      "fig": "load_selected_track_4",
+      "label": "Deck D LOAD button.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_4",
+        "type": "note",
+        "ch": 4,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign",
+      "fig": "fx_assign",
+      "label": "Deck A FX Assign 1 push.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign",
+        "type": "note",
+        "ch": 1,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[fx_assign] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_2",
+      "fig": "fx_assign_2",
+      "label": "Deck A FX Assign 2 push.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_2",
+        "type": "note",
+        "ch": 1,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_3",
+      "fig": "fx_assign_3",
+      "label": "Deck B FX Assign 1 push.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_3",
+        "type": "note",
+        "ch": 2,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_4",
+      "fig": "fx_assign_4",
+      "label": "Deck B FX Assign 2 push.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_4",
+        "type": "note",
+        "ch": 2,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_5",
+      "fig": "fx_assign_5",
+      "label": "Deck C FX Assign 1 push.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_5",
+        "type": "note",
+        "ch": 3,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_6",
+      "fig": "fx_assign_6",
+      "label": "Deck C FX Assign 2 push.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_6",
+        "type": "note",
+        "ch": 3,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_7",
+      "fig": "fx_assign_7",
+      "label": "Deck D FX Assign 1 push.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_7",
+        "type": "note",
+        "ch": 4,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-fx_assign_8",
+      "fig": "fx_assign_8",
+      "label": "Deck D FX Assign 2 push.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_assign_8",
+        "type": "note",
+        "ch": 4,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[fx_assign_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter3",
+      "fig": "parameter3",
+      "label": "Deck A Hi knob.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3",
+        "type": "cc",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter2",
+      "fig": "parameter2",
+      "label": "Deck A Mid knob.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2",
+        "type": "cc",
+        "ch": 1,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter1",
+      "fig": "parameter1",
+      "label": "Deck A Low knob.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1",
+        "type": "cc",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter3",
+      "fig": "button_parameter3",
+      "label": "Deck A Hi KILL.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3",
+        "type": "note",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter2",
+      "fig": "button_parameter2",
+      "label": "Deck A Mid KILL.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2",
+        "type": "note",
+        "ch": 1,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter1",
+      "fig": "button_parameter1",
+      "label": "Deck A Low KILL.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1",
+        "type": "note",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter3_2",
+      "fig": "parameter3_2",
+      "label": "Deck B Hi knob.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter2_2",
+      "fig": "parameter2_2",
+      "label": "Deck B Mid knob.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter1_2",
+      "fig": "parameter1_2",
+      "label": "Deck B Low knob.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter3_2",
+      "fig": "button_parameter3_2",
+      "label": "Deck B Hi KILL.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3_2",
+        "type": "note",
+        "ch": 2,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter2_2",
+      "fig": "button_parameter2_2",
+      "label": "Deck B Mid KILL.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2_2",
+        "type": "note",
+        "ch": 2,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter1_2",
+      "fig": "button_parameter1_2",
+      "label": "Deck B Low KILL.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1_2",
+        "type": "note",
+        "ch": 2,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter3_3",
+      "fig": "button_parameter3_3",
+      "label": "Deck C Hi knob.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3_3",
+        "type": "note",
+        "ch": 3,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter2_3",
+      "fig": "button_parameter2_3",
+      "label": "Deck C Mid knob.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2_3",
+        "type": "note",
+        "ch": 3,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter1_3",
+      "fig": "button_parameter1_3",
+      "label": "Deck C Low knob.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1_3",
+        "type": "note",
+        "ch": 3,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter3_3",
+      "fig": "parameter3_3",
+      "label": "Deck C Hi KILL.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[parameter3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter2_3",
+      "fig": "parameter2_3",
+      "label": "Deck C Mid KILL.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[parameter2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter1_3",
+      "fig": "parameter1_3",
+      "label": "Deck C Low KILL.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[parameter1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter3_4",
+      "fig": "button_parameter3_4",
+      "label": "Deck D Hi knob.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3_4",
+        "type": "note",
+        "ch": 4,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter2_4",
+      "fig": "button_parameter2_4",
+      "label": "Deck D Mid knob.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2_4",
+        "type": "note",
+        "ch": 4,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-button_parameter1_4",
+      "fig": "button_parameter1_4",
+      "label": "Deck D Low knob.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1_4",
+        "type": "note",
+        "ch": 4,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter3_4",
+      "fig": "parameter3_4",
+      "label": "Deck D Hi KILL.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[parameter3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter2_4",
+      "fig": "parameter2_4",
+      "label": "Deck D Mid KILL.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[parameter2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-parameter1_4",
+      "fig": "parameter1_4",
+      "label": "Deck D Low KILL.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[parameter1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pfl",
+      "fig": "pfl",
+      "label": "Deck A PHONES button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pfl_2",
+      "fig": "pfl_2",
+      "label": "Deck B PHONES button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 2,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pfl_3",
+      "fig": "pfl_3",
+      "label": "Deck C PHONES button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_3",
+        "type": "note",
+        "ch": 3,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[pfl_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-pfl_4",
+      "fig": "pfl_4",
+      "label": "Deck D PHONES button.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_4",
+        "type": "note",
+        "ch": 4,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[pfl_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-volume",
+      "fig": "volume",
+      "label": "Deck A Fader.",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 112,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-volume_2",
+      "fig": "volume_2",
+      "label": "Deck B Fader.",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 113,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-volume_3",
+      "fig": "volume_3",
+      "label": "Deck C Fader.",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 112,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-volume_4",
+      "fig": "volume_4",
+      "label": "Deck D Fader.",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 113,
+        "shift_name": null
+      },
+      "notes": "[volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-gain",
+      "fig": "gain",
+      "label": "Main knob.",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-crossfader",
+      "fig": "crossfader",
+      "label": "Crossfader.",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 114,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-head_mix",
+      "fig": "head_mix",
+      "label": "PHONES MIX knob.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 1,
+        "code": 122,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmdstudio4a-head_gain",
+      "fig": "head_gain",
+      "label": "PHONES VOLUME knob.",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 123,
+        "shift_name": null
+      },
+      "notes": "[head_gain] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

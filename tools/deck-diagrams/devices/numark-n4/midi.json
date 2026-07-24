@@ -1,0 +1,1370 @@
+{
+  "source": "mixxx:Numark N4.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-n4/source/Numark N4.midi.xml",
+  "device": "Numark N4",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "library_input",
+      "section": "browser",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx NumarkN4.Mixer.navigationEncoderTick.input [library_input]"
+    },
+    {
+      "name": "library_input_2",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx NumarkN4.Mixer.navigationEncoderButton.input [library_input_2]"
+    },
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx NumarkN4.Decks[1].orientationButtonLeft.input [channel1_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx NumarkN4.Decks[1].orientationButtonRight.input [channel1_input_2]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx NumarkN4.Decks[2].orientationButtonLeft.input [channel2_input]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx NumarkN4.Decks[2].orientationButtonRight.input [channel2_input_2]"
+    },
+    {
+      "name": "channel3_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx NumarkN4.Decks[3].orientationButtonLeft.input [channel3_input]"
+    },
+    {
+      "name": "channel3_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx NumarkN4.Decks[3].orientationButtonRight.input [channel3_input_2]"
+    },
+    {
+      "name": "channel4_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx NumarkN4.Decks[4].orientationButtonLeft.input [channel4_input]"
+    },
+    {
+      "name": "channel4_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx NumarkN4.Decks[4].orientationButtonRight.input [channel4_input_2]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.btnEffect1.input [channel1_input_3]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 19,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.btnEffect1.input [channel2_input_3]"
+    },
+    {
+      "name": "channel3_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 19,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.btnEffect1.input [channel3_input_3]"
+    },
+    {
+      "name": "channel4_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 19,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.btnEffect1.input [channel4_input_3]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.btnEffect2.input [channel1_input_4]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 20,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.btnEffect2.input [channel2_input_4]"
+    },
+    {
+      "name": "channel3_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 20,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.btnEffect2.input [channel3_input_4]"
+    },
+    {
+      "name": "channel4_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.btnEffect2.input [channel4_input_4]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.btnSample3.input [channel1_input_5]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 21,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.btnSample3.input [channel2_input_5]"
+    },
+    {
+      "name": "channel3_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 21,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.btnSample3.input [channel3_input_5]"
+    },
+    {
+      "name": "channel4_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 21,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.btnSample3.input [channel4_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.btnSample4.input [channel1_input_6]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 22,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.btnSample4.input [channel2_input_6]"
+    },
+    {
+      "name": "channel3_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 22,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.btnSample4.input [channel3_input_6]"
+    },
+    {
+      "name": "channel4_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 22,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.btnSample4.input [channel4_input_6]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.hotcueButtons[0].input [channel1_input_7]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 39,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.hotcueButtons[0].input [channel2_input_7]"
+    },
+    {
+      "name": "channel3_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 39,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.hotcueButtons[0].input [channel3_input_7]"
+    },
+    {
+      "name": "channel4_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 39,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.hotcueButtons[0].input [channel4_input_7]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.hotcueButtons[1].input [channel1_input_8]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 40,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.hotcueButtons[1].input [channel2_input_8]"
+    },
+    {
+      "name": "channel3_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 40,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.hotcueButtons[1].input [channel3_input_8]"
+    },
+    {
+      "name": "channel4_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 40,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.hotcueButtons[1].input [channel4_input_8]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.hotcueButtons[2].input [channel1_input_9]"
+    },
+    {
+      "name": "channel2_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 41,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.hotcueButtons[2].input [channel2_input_9]"
+    },
+    {
+      "name": "channel3_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 41,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.hotcueButtons[2].input [channel3_input_9]"
+    },
+    {
+      "name": "channel4_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 41,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.hotcueButtons[2].input [channel4_input_9]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.hotcueButtons[3].input [channel1_input_10]"
+    },
+    {
+      "name": "channel2_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 42,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.hotcueButtons[3].input [channel2_input_10]"
+    },
+    {
+      "name": "channel3_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 42,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.hotcueButtons[3].input [channel3_input_10]"
+    },
+    {
+      "name": "channel4_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 42,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.hotcueButtons[3].input [channel4_input_10]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 87,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.encFxParam1.input [channel1_input_11]"
+    },
+    {
+      "name": "channel2_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 87,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.encFxParam1.input [channel2_input_11]"
+    },
+    {
+      "name": "channel3_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 87,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.encFxParam1.input [channel3_input_11]"
+    },
+    {
+      "name": "channel4_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 87,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.encFxParam1.input [channel4_input_11]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 88,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.encFxParam2.input [channel1_input_12]"
+    },
+    {
+      "name": "channel2_input_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 88,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.encFxParam2.input [channel2_input_12]"
+    },
+    {
+      "name": "channel3_input_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 88,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.encFxParam2.input [channel3_input_12]"
+    },
+    {
+      "name": "channel4_input_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 88,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.encFxParam2.input [channel4_input_12]"
+    },
+    {
+      "name": "channel1_input_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 89,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.encSample3.input [channel1_input_13]"
+    },
+    {
+      "name": "channel2_input_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 89,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.encSample3.input [channel2_input_13]"
+    },
+    {
+      "name": "channel3_input_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 89,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.encSample3.input [channel3_input_13]"
+    },
+    {
+      "name": "channel4_input_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 89,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.encSample3.input [channel4_input_13]"
+    },
+    {
+      "name": "channel1_input_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 90,
+      "notes": "Mixxx NumarkN4.Decks[1].topContainer.encSample4.input [channel1_input_14]"
+    },
+    {
+      "name": "channel2_input_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 90,
+      "notes": "Mixxx NumarkN4.Decks[2].topContainer.encSample4.input [channel2_input_14]"
+    },
+    {
+      "name": "channel3_input_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 90,
+      "notes": "Mixxx NumarkN4.Decks[3].topContainer.encSample4.input [channel3_input_14]"
+    },
+    {
+      "name": "channel4_input_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 90,
+      "notes": "Mixxx NumarkN4.Decks[4].topContainer.encSample4.input [channel4_input_14]"
+    },
+    {
+      "name": "pfl_vu_meter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 92,
+      "notes": "Mixxx NumarkN4.Mixer.pflVuMeter [pfl_vu_meter]"
+    },
+    {
+      "name": "channel1_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx NumarkN4.Decks[1].loadButton.input [channel1_input_15]"
+    },
+    {
+      "name": "channel2_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx NumarkN4.Decks[2].loadButton.input [channel2_input_15]"
+    },
+    {
+      "name": "channel3_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx NumarkN4.Decks[3].loadButton.input [channel3_input_15]"
+    },
+    {
+      "name": "channel4_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx NumarkN4.Decks[4].loadButton.input [channel4_input_15]"
+    },
+    {
+      "name": "channel1_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx NumarkN4.Decks[1].pflButton.input [channel1_input_16]"
+    },
+    {
+      "name": "channel2_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx NumarkN4.Decks[2].pflButton.input [channel2_input_16]"
+    },
+    {
+      "name": "channel3_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx NumarkN4.Decks[3].pflButton.input [channel3_input_16]"
+    },
+    {
+      "name": "channel4_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx NumarkN4.Decks[4].pflButton.input [channel4_input_16]"
+    },
+    {
+      "name": "channel1_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx NumarkN4.Decks[1].cueButton.input [channel1_input_17]"
+    },
+    {
+      "name": "channel2_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 16,
+      "notes": "Mixxx NumarkN4.Decks[2].cueButton.input [channel2_input_17]"
+    },
+    {
+      "name": "channel3_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 16,
+      "notes": "Mixxx NumarkN4.Decks[3].cueButton.input [channel3_input_17]"
+    },
+    {
+      "name": "channel4_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 16,
+      "notes": "Mixxx NumarkN4.Decks[4].cueButton.input [channel4_input_17]"
+    },
+    {
+      "name": "channel1_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[1].searchButton.input [channel1_input_18]"
+    },
+    {
+      "name": "channel2_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[2].searchButton.input [channel2_input_18]"
+    },
+    {
+      "name": "channel3_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[3].searchButton.input [channel3_input_18]"
+    },
+    {
+      "name": "channel4_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[4].searchButton.input [channel4_input_18]"
+    },
+    {
+      "name": "mixer_profile_input",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 75,
+      "notes": "Mixxx NumarkN4.Mixer.changeCrossfaderContour.input [mixer_profile_input]"
+    },
+    {
+      "name": "channel3_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 73,
+      "notes": "Mixxx NumarkN4.Mixer.channelInputSwitcherL.input [channel3_input_19]"
+    },
+    {
+      "name": "channel4_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx NumarkN4.Mixer.channelInputSwitcherR.input [channel4_input_19]"
+    },
+    {
+      "name": "master_handles_deck_assignment_led_feedback_right",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 80,
+      "notes": "Mixxx NumarkN4.Mixer.deckChangeL.input [master_handles_deck_assignment_led_feedback_right]"
+    },
+    {
+      "name": "master_handles_deck_assignment_led_feedback_left",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx NumarkN4.Mixer.deckChangeR.input [master_handles_deck_assignment_led_feedback_left]"
+    },
+    {
+      "name": "channel1_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx NumarkN4.Decks[1].playButton.input [channel1_input_19]"
+    },
+    {
+      "name": "channel2_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 17,
+      "notes": "Mixxx NumarkN4.Decks[2].playButton.input [channel2_input_19]"
+    },
+    {
+      "name": "channel3_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 17,
+      "notes": "Mixxx NumarkN4.Decks[3].playButton.input [channel3_input_20]"
+    },
+    {
+      "name": "channel4_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 17,
+      "notes": "Mixxx NumarkN4.Decks[4].playButton.input [channel4_input_20]"
+    },
+    {
+      "name": "channel1_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx NumarkN4.Decks[1].syncButton.input [channel1_input_20]"
+    },
+    {
+      "name": "channel2_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 15,
+      "notes": "Mixxx NumarkN4.Decks[2].syncButton.input [channel2_input_20]"
+    },
+    {
+      "name": "channel3_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 15,
+      "notes": "Mixxx NumarkN4.Decks[3].syncButton.input [channel3_input_21]"
+    },
+    {
+      "name": "channel4_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 15,
+      "notes": "Mixxx NumarkN4.Decks[4].syncButton.input [channel4_input_21]"
+    },
+    {
+      "name": "channel1_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx NumarkN4.Decks[1].tapButton.input [channel1_input_21]"
+    },
+    {
+      "name": "channel2_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 30,
+      "notes": "Mixxx NumarkN4.Decks[2].tapButton.input [channel2_input_21]"
+    },
+    {
+      "name": "channel3_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 30,
+      "notes": "Mixxx NumarkN4.Decks[3].tapButton.input [channel3_input_22]"
+    },
+    {
+      "name": "channel4_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 30,
+      "notes": "Mixxx NumarkN4.Decks[4].tapButton.input [channel4_input_22]"
+    },
+    {
+      "name": "channel1_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx NumarkN4.Decks[1].keylockButton.input [channel1_input_22]"
+    },
+    {
+      "name": "channel2_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 27,
+      "notes": "Mixxx NumarkN4.Decks[2].keylockButton.input [channel2_input_22]"
+    },
+    {
+      "name": "channel3_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 27,
+      "notes": "Mixxx NumarkN4.Decks[3].keylockButton.input [channel3_input_23]"
+    },
+    {
+      "name": "channel4_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 27,
+      "notes": "Mixxx NumarkN4.Decks[4].keylockButton.input [channel4_input_23]"
+    },
+    {
+      "name": "channel1_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx NumarkN4.Decks[1].pitchRange.input [channel1_input_23]"
+    },
+    {
+      "name": "channel2_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx NumarkN4.Decks[2].pitchRange.input [channel2_input_23]"
+    },
+    {
+      "name": "channel3_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 26,
+      "notes": "Mixxx NumarkN4.Decks[3].pitchRange.input [channel3_input_24]"
+    },
+    {
+      "name": "channel4_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 26,
+      "notes": "Mixxx NumarkN4.Decks[4].pitchRange.input [channel4_input_24]"
+    },
+    {
+      "name": "channel1_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx NumarkN4.Decks[1].jogWheelScratchEnable.input [channel1_input_24]"
+    },
+    {
+      "name": "channel2_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx NumarkN4.Decks[2].jogWheelScratchEnable.input [channel2_input_24]"
+    },
+    {
+      "name": "channel3_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 44,
+      "notes": "Mixxx NumarkN4.Decks[3].jogWheelScratchEnable.input [channel3_input_25]"
+    },
+    {
+      "name": "channel4_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 44,
+      "notes": "Mixxx NumarkN4.Decks[4].jogWheelScratchEnable.input [channel4_input_25]"
+    },
+    {
+      "name": "channel1_input_25",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx NumarkN4.Decks[1].jogWheelTurn.input [channel1_input_25]"
+    },
+    {
+      "name": "channel2_input_25",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 32,
+      "notes": "Mixxx NumarkN4.Decks[2].jogWheelTurn.input [channel2_input_25]"
+    },
+    {
+      "name": "channel3_input_26",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 32,
+      "notes": "Mixxx NumarkN4.Decks[3].jogWheelTurn.input [channel3_input_26]"
+    },
+    {
+      "name": "channel4_input_26",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 32,
+      "notes": "Mixxx NumarkN4.Decks[4].jogWheelTurn.input [channel4_input_26]"
+    },
+    {
+      "name": "channel1_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 18,
+      "notes": "Mixxx NumarkN4.Decks[1].shiftButton.input [channel1_input_26]"
+    },
+    {
+      "name": "channel2_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 18,
+      "notes": "Mixxx NumarkN4.Decks[2].shiftButton.input [channel2_input_26]"
+    },
+    {
+      "name": "channel3_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 18,
+      "notes": "Mixxx NumarkN4.Decks[3].shiftButton.input [channel3_input_27]"
+    },
+    {
+      "name": "channel4_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 18,
+      "notes": "Mixxx NumarkN4.Decks[4].shiftButton.input [channel4_input_27]"
+    },
+    {
+      "name": "channel1_pitch_bend_minus_left_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx NumarkN4.Decks[1].pitchBendMinus.input [channel1_pitch_bend_minus_left_on]"
+    },
+    {
+      "name": "channel2_pitch_bend_minus_right_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx NumarkN4.Decks[2].pitchBendMinus.input [channel2_pitch_bend_minus_right_on]"
+    },
+    {
+      "name": "channel1_pitch_bend_plus_left_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx NumarkN4.Decks[1].pitchBendPlus.input [channel1_pitch_bend_plus_left_on]"
+    },
+    {
+      "name": "channel2_pitch_bend_plus_right_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 25,
+      "notes": "Mixxx NumarkN4.Decks[2].pitchBendPlus.input [channel2_pitch_bend_plus_right_on]"
+    },
+    {
+      "name": "channel3_pitch_bend_minus_left_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 24,
+      "notes": "Mixxx NumarkN4.Decks[3].pitchBendMinus.input [channel3_pitch_bend_minus_left_on]"
+    },
+    {
+      "name": "channel4_pitch_bend_minus_right_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 24,
+      "notes": "Mixxx NumarkN4.Decks[4].pitchBendMinus.input [channel4_pitch_bend_minus_right_on]"
+    },
+    {
+      "name": "channel3_pitch_bend_plus_left_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 25,
+      "notes": "Mixxx NumarkN4.Decks[3].pitchBendPlus.input [channel3_pitch_bend_plus_left_on]"
+    },
+    {
+      "name": "channel4_pitch_bend_plus_right_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 25,
+      "notes": "Mixxx NumarkN4.Decks[4].pitchBendPlus.input [channel4_pitch_bend_plus_right_on]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "crossfader_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx crossfader [crossfader_2]"
+    },
+    {
+      "name": "input_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx NumarkN4.Decks[1].eqKnobs[1].inputLSB [input_lsb]"
+    },
+    {
+      "name": "input_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx NumarkN4.Decks[1].eqKnobs[1].inputMSB [input_msb]"
+    },
+    {
+      "name": "input_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx NumarkN4.Decks[2].eqKnobs[1].inputLSB [input_lsb_2]"
+    },
+    {
+      "name": "input_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx NumarkN4.Decks[2].eqKnobs[1].inputMSB [input_msb_2]"
+    },
+    {
+      "name": "input_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx NumarkN4.Decks[3].eqKnobs[1].inputLSB [input_lsb_3]"
+    },
+    {
+      "name": "input_msb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx NumarkN4.Decks[3].eqKnobs[1].inputMSB [input_msb_3]"
+    },
+    {
+      "name": "input_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx NumarkN4.Decks[4].eqKnobs[1].inputLSB [input_lsb_4]"
+    },
+    {
+      "name": "input_msb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx NumarkN4.Decks[4].eqKnobs[1].inputMSB [input_msb_4]"
+    },
+    {
+      "name": "input_lsb_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx NumarkN4.Decks[1].eqKnobs[2].inputLSB [input_lsb_5]"
+    },
+    {
+      "name": "input_msb_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx NumarkN4.Decks[1].eqKnobs[2].inputMSB [input_msb_5]"
+    },
+    {
+      "name": "input_lsb_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx NumarkN4.Decks[2].eqKnobs[2].inputLSB [input_lsb_6]"
+    },
+    {
+      "name": "input_msb_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx NumarkN4.Decks[2].eqKnobs[2].inputMSB [input_msb_6]"
+    },
+    {
+      "name": "input_lsb_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx NumarkN4.Decks[3].eqKnobs[2].inputLSB [input_lsb_7]"
+    },
+    {
+      "name": "input_msb_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx NumarkN4.Decks[3].eqKnobs[2].inputMSB [input_msb_7]"
+    },
+    {
+      "name": "input_lsb_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx NumarkN4.Decks[4].eqKnobs[2].inputLSB [input_lsb_8]"
+    },
+    {
+      "name": "input_msb_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx NumarkN4.Decks[4].eqKnobs[2].inputMSB [input_msb_8]"
+    },
+    {
+      "name": "input_lsb_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx NumarkN4.Decks[1].eqKnobs[3].inputLSB [input_lsb_9]"
+    },
+    {
+      "name": "input_msb_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx NumarkN4.Decks[1].eqKnobs[3].inputMSB [input_msb_9]"
+    },
+    {
+      "name": "input_lsb_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx NumarkN4.Decks[2].eqKnobs[3].inputLSB [input_lsb_10]"
+    },
+    {
+      "name": "input_msb_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx NumarkN4.Decks[2].eqKnobs[3].inputMSB [input_msb_10]"
+    },
+    {
+      "name": "input_lsb_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx NumarkN4.Decks[3].eqKnobs[3].inputLSB [input_lsb_11]"
+    },
+    {
+      "name": "input_msb_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx NumarkN4.Decks[3].eqKnobs[3].inputMSB [input_msb_11]"
+    },
+    {
+      "name": "input_lsb_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx NumarkN4.Decks[4].eqKnobs[3].inputLSB [input_lsb_12]"
+    },
+    {
+      "name": "input_msb_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx NumarkN4.Decks[4].eqKnobs[3].inputMSB [input_msb_12]"
+    },
+    {
+      "name": "input_lsb_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx NumarkN4.Decks[1].gainKnob.inputLSB [input_lsb_13]"
+    },
+    {
+      "name": "input_msb_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx NumarkN4.Decks[1].gainKnob.inputMSB [input_msb_13]"
+    },
+    {
+      "name": "input_lsb_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx NumarkN4.Decks[2].gainKnob.inputLSB [input_lsb_14]"
+    },
+    {
+      "name": "input_msb_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx NumarkN4.Decks[2].gainKnob.inputMSB [input_msb_14]"
+    },
+    {
+      "name": "input_lsb_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx NumarkN4.Decks[3].gainKnob.inputLSB [input_lsb_15]"
+    },
+    {
+      "name": "input_msb_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx NumarkN4.Decks[3].gainKnob.inputMSB [input_msb_15]"
+    },
+    {
+      "name": "input_lsb_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx NumarkN4.Decks[4].gainKnob.inputLSB [input_lsb_16]"
+    },
+    {
+      "name": "input_msb_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx NumarkN4.Decks[4].gainKnob.inputMSB [input_msb_16]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx volume [volume_4]"
+    },
+    {
+      "name": "volume_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx volume [volume_5]"
+    },
+    {
+      "name": "volume_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx volume [volume_6]"
+    },
+    {
+      "name": "volume_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx volume [volume_7]"
+    },
+    {
+      "name": "volume_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx volume [volume_8]"
+    },
+    {
+      "name": "input_msb_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx NumarkN4.Decks[1].bpmSlider.inputMSB [input_msb_17]"
+    },
+    {
+      "name": "input_lsb_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[1].bpmSlider.inputLSB [input_lsb_17]"
+    },
+    {
+      "name": "input_msb_18",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx NumarkN4.Decks[2].bpmSlider.inputMSB [input_msb_18]"
+    },
+    {
+      "name": "input_lsb_18",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[2].bpmSlider.inputLSB [input_lsb_18]"
+    },
+    {
+      "name": "input_msb_19",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 1,
+      "notes": "Mixxx NumarkN4.Decks[3].bpmSlider.inputMSB [input_msb_19]"
+    },
+    {
+      "name": "input_lsb_19",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[3].bpmSlider.inputLSB [input_lsb_19]"
+    },
+    {
+      "name": "input_msb_20",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 1,
+      "notes": "Mixxx NumarkN4.Decks[4].bpmSlider.inputMSB [input_msb_20]"
+    },
+    {
+      "name": "input_lsb_20",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 33,
+      "notes": "Mixxx NumarkN4.Decks[4].bpmSlider.inputLSB [input_lsb_20]"
+    }
+  ]
+}

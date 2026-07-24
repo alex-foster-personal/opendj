@@ -1,0 +1,2020 @@
+{
+  "device": "DJ TechTools MIDI Fighter Twister",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_sets_the_decks_pregain",
+      "fig": "channel1_sets_the_decks_pregain",
+      "label": "Sets the decks pregain.",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sets_the_decks_pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_sets_the_decks_pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_resets_the_decks_pregain",
+      "fig": "channel1_resets_the_decks_pregain",
+      "label": "Resets the decks pregain.",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_resets_the_decks_pregain",
+        "type": "cc",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_resets_the_decks_pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel1_effect1_sets_the_decks_high_eq",
+      "fig": "equalizer_rack1_channel1_effect1_sets_the_decks_high_eq",
+      "label": "Sets the decks high EQ.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_sets_the_decks_high_eq",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_sets_the_decks_high_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel1_effect1_resets_the_decks_high_eq",
+      "fig": "equalizer_rack1_channel1_effect1_resets_the_decks_high_eq",
+      "label": "Resets the decks high EQ.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_resets_the_decks_high_eq",
+        "type": "cc",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_resets_the_decks_high_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel2_effect1_sets_the_decks_high_eq",
+      "fig": "equalizer_rack1_channel2_effect1_sets_the_decks_high_eq",
+      "label": "Sets the decks high EQ.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_sets_the_decks_high_eq",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_sets_the_decks_high_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel2_effect1_resets_the_decks_high_eq",
+      "fig": "equalizer_rack1_channel2_effect1_resets_the_decks_high_eq",
+      "label": "Resets the decks high EQ.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_resets_the_decks_high_eq",
+        "type": "cc",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_resets_the_decks_high_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_sets_the_decks_pregain",
+      "fig": "channel2_sets_the_decks_pregain",
+      "label": "Sets the decks pregain.",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_sets_the_decks_pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_sets_the_decks_pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_resets_the_decks_pregain",
+      "fig": "channel2_resets_the_decks_pregain",
+      "label": "Resets the decks pregain.",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_resets_the_decks_pregain",
+        "type": "cc",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_resets_the_decks_pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_sets_the_decks_tempo",
+      "fig": "channel1_sets_the_decks_tempo",
+      "label": "Sets the decks tempo.",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sets_the_decks_tempo",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_sets_the_decks_tempo] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_resets_the_decks_tempo",
+      "fig": "channel1_resets_the_decks_tempo",
+      "label": "Resets the decks tempo.",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_resets_the_decks_tempo",
+        "type": "cc",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_resets_the_decks_tempo] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel1_effect1_sets_the_decks_mid_eq",
+      "fig": "equalizer_rack1_channel1_effect1_sets_the_decks_mid_eq",
+      "label": "Sets the decks mid EQ.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_sets_the_decks_mid_eq",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_sets_the_decks_mid_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel1_effect1_resets_the_decks_mid_eq",
+      "fig": "equalizer_rack1_channel1_effect1_resets_the_decks_mid_eq",
+      "label": "Resets the decks mid EQ.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_resets_the_decks_mid_eq",
+        "type": "cc",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_resets_the_decks_mid_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel2_effect1_sets_the_decks_mid_eq",
+      "fig": "equalizer_rack1_channel2_effect1_sets_the_decks_mid_eq",
+      "label": "Sets the decks mid EQ.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_sets_the_decks_mid_eq",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_sets_the_decks_mid_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel2_effect1_resets_the_decks_mid_eq",
+      "fig": "equalizer_rack1_channel2_effect1_resets_the_decks_mid_eq",
+      "label": "Resets the decks mid EQ.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_resets_the_decks_mid_eq",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_resets_the_decks_mid_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_sets_the_decks_tempo",
+      "fig": "channel2_sets_the_decks_tempo",
+      "label": "Sets the decks tempo.",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_sets_the_decks_tempo",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_sets_the_decks_tempo] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_resets_the_decks_tempo",
+      "fig": "channel2_resets_the_decks_tempo",
+      "label": "Resets the decks tempo.",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_resets_the_decks_tempo",
+        "type": "cc",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_resets_the_decks_tempo] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_sets_the_decks_volume",
+      "fig": "channel1_sets_the_decks_volume",
+      "label": "Sets the decks volume.",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sets_the_decks_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_sets_the_decks_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_toggles_headphone_output",
+      "fig": "channel1_toggles_headphone_output",
+      "label": "Toggles headphone output.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_toggles_headphone_output",
+        "type": "cc",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_toggles_headphone_output] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel1_effect1_sets_the_decks_low_eq",
+      "fig": "equalizer_rack1_channel1_effect1_sets_the_decks_low_eq",
+      "label": "Sets the decks low EQ.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_sets_the_decks_low_eq",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_sets_the_decks_low_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel1_effect1_resets_the_decks_low_eq",
+      "fig": "equalizer_rack1_channel1_effect1_resets_the_decks_low_eq",
+      "label": "Resets the decks low EQ.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_resets_the_decks_low_eq",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_resets_the_decks_low_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel2_effect1_sets_the_decks_low_eq",
+      "fig": "equalizer_rack1_channel2_effect1_sets_the_decks_low_eq",
+      "label": "Sets the decks low EQ.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_sets_the_decks_low_eq",
+        "type": "cc",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_sets_the_decks_low_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-equalizer_rack1_channel2_effect1_resets_the_decks_low_eq",
+      "fig": "equalizer_rack1_channel2_effect1_resets_the_decks_low_eq",
+      "label": "Resets the decks low EQ.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_resets_the_decks_low_eq",
+        "type": "cc",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_resets_the_decks_low_eq] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_sets_the_decks_volume",
+      "fig": "channel2_sets_the_decks_volume",
+      "label": "Sets the decks volume.",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_sets_the_decks_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel2_sets_the_decks_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_toggles_headphone_output",
+      "fig": "channel2_toggles_headphone_output",
+      "label": "Toggles headphone output.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_toggles_headphone_output",
+        "type": "cc",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel2_toggles_headphone_output] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-master_adjust_the_crossfade_between_the_decks",
+      "fig": "master_adjust_the_crossfade_between_the_decks",
+      "label": "Adjust the crossfade between the decks.",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_adjust_the_crossfade_between_the_decks",
+        "type": "cc",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[master_adjust_the_crossfade_between_the_decks] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-master_reset_the_crossfader_to_center",
+      "fig": "master_reset_the_crossfader_to_center",
+      "label": "Reset the crossfader to center.",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_reset_the_crossfader_to_center",
+        "type": "cc",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[master_reset_the_crossfader_to_center] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-master_adjust_the_main_gain",
+      "fig": "master_adjust_the_main_gain",
+      "label": "Adjust the main gain.",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_adjust_the_main_gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[master_adjust_the_main_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-master_reset_the_main_gain",
+      "fig": "master_reset_the_main_gain",
+      "label": "Reset the main gain.",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_reset_the_main_gain",
+        "type": "cc",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[master_reset_the_main_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-quick_effect_rack1_channel1_set_the_decks_effect_super_knob",
+      "fig": "quick_effect_rack1_channel1_set_the_decks_effect_super_knob",
+      "label": "Set the decks effect super knob.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel1_set_the_decks_effect_super_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel1_set_the_decks_effect_super_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-quick_effect_rack1_channel1_reset_the_decks_effect_super_knob",
+      "fig": "quick_effect_rack1_channel1_reset_the_decks_effect_super_knob",
+      "label": "Reset the decks effect super knob.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel1_reset_the_decks_effect_super_knob",
+        "type": "cc",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel1_reset_the_decks_effect_super_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-quick_effect_rack1_channel2_set_the_decks_effect_super_knob",
+      "fig": "quick_effect_rack1_channel2_set_the_decks_effect_super_knob",
+      "label": "Set the decks effect super knob.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel2_set_the_decks_effect_super_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel2_set_the_decks_effect_super_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-quick_effect_rack1_channel2_reset_the_decks_effect_super_knob",
+      "fig": "quick_effect_rack1_channel2_reset_the_decks_effect_super_knob",
+      "label": "Reset the decks effect super knob.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel2_reset_the_decks_effect_super_knob",
+        "type": "cc",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel2_reset_the_decks_effect_super_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_deck",
+      "fig": "toggle_deck",
+      "label": "Toggle the left side of the controller between decks 1 and 3.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_deck",
+        "type": "cc",
+        "ch": 4,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[toggle_deck] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_deck_2",
+      "fig": "toggle_deck_2",
+      "label": "Toggle the right side of the controller between decks 2 and 4.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_deck_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[toggle_deck_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_deck_3",
+      "fig": "toggle_deck_3",
+      "label": "Toggle the left side of the controller between decks 1 and 3.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_deck_3",
+        "type": "cc",
+        "ch": 4,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[toggle_deck_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_deck_4",
+      "fig": "toggle_deck_4",
+      "label": "Toggle the right side of the controller between decks 2 and 4.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_deck_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[toggle_deck_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_effects",
+      "fig": "toggle_effects",
+      "label": "toggleEffects",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_effects",
+        "type": "cc",
+        "ch": 4,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[toggle_effects] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input",
+      "fig": "channel1_input",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input",
+        "type": "cc",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_2",
+      "fig": "channel1_input_2",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_3",
+      "fig": "channel1_input_3",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_4",
+      "fig": "channel1_input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_5",
+      "fig": "channel1_input_5",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_5",
+        "type": "cc",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_6",
+      "fig": "channel1_input_6",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_7",
+      "fig": "channel1_input_7",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_7",
+        "type": "cc",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_8",
+      "fig": "channel1_input_8",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_9",
+      "fig": "channel1_input_9",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_9",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_10",
+      "fig": "channel1_input_10",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_10",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_11",
+      "fig": "channel1_input_11",
+      "label": "input",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_input_12",
+      "fig": "channel1_input_12",
+      "label": "input",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_12",
+        "type": "cc",
+        "ch": 2,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_effects_2",
+      "fig": "toggle_effects_2",
+      "label": "toggleEffects",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_effects_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[toggle_effects_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input",
+      "fig": "channel2_input",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input",
+        "type": "cc",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_2",
+      "fig": "channel2_input_2",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_3",
+      "fig": "channel2_input_3",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_4",
+      "fig": "channel2_input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_5",
+      "fig": "channel2_input_5",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_5",
+        "type": "cc",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_6",
+      "fig": "channel2_input_6",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_7",
+      "fig": "channel2_input_7",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_7",
+        "type": "cc",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_8",
+      "fig": "channel2_input_8",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_9",
+      "fig": "channel2_input_9",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_9",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_10",
+      "fig": "channel2_input_10",
+      "label": "input",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_10",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_11",
+      "fig": "channel2_input_11",
+      "label": "input",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_input_12",
+      "fig": "channel2_input_12",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_12",
+        "type": "cc",
+        "ch": 2,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_shift",
+      "fig": "toggle_shift",
+      "label": "Shift button for layer 1.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_shift",
+        "type": "cc",
+        "ch": 4,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[toggle_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_shift_2",
+      "fig": "toggle_shift_2",
+      "label": "Shift button for layer 1.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_shift_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[toggle_shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_shift_3",
+      "fig": "toggle_shift_3",
+      "label": "Shift button for layer 2.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_shift_3",
+        "type": "cc",
+        "ch": 4,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[toggle_shift_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_shift_4",
+      "fig": "toggle_shift_4",
+      "label": "Shift button for layer 2.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_shift_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[toggle_shift_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_shift_5",
+      "fig": "toggle_shift_5",
+      "label": "Shift button for layer 3.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_shift_5",
+        "type": "cc",
+        "ch": 4,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[toggle_shift_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-toggle_shift_6",
+      "fig": "toggle_shift_6",
+      "label": "Shift button for layer 3.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_shift_6",
+        "type": "cc",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[toggle_shift_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_1_volume",
+      "fig": "channel1_stem_1_volume",
+      "label": "Stem 1 volume.",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_1_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_1_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_2_volume",
+      "fig": "channel1_stem_2_volume",
+      "label": "Stem 2 volume.",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_2_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_2_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_3_volume",
+      "fig": "channel1_stem_3_volume",
+      "label": "Stem 3 volume.",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_3_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_3_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_4_volume",
+      "fig": "channel1_stem_4_volume",
+      "label": "Stem 4 volume.",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_4_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_4_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_1_mute",
+      "fig": "channel1_stem_1_mute",
+      "label": "Stem 1 mute.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_1_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_1_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_2_mute",
+      "fig": "channel1_stem_2_mute",
+      "label": "Stem 2 mute.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_2_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_2_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_3_mute",
+      "fig": "channel1_stem_3_mute",
+      "label": "Stem 3 mute.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_3_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_3_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_4_mute",
+      "fig": "channel1_stem_4_mute",
+      "label": "Stem 4 mute.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_4_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_4_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_1_fx",
+      "fig": "channel1_stem_1_fx",
+      "label": "Stem 1 FX.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_1_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_1_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_2_fx",
+      "fig": "channel1_stem_2_fx",
+      "label": "Stem 2 FX.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_2_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_2_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_3_fx",
+      "fig": "channel1_stem_3_fx",
+      "label": "Stem 3 FX.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_3_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_3_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_4_fx",
+      "fig": "channel1_stem_4_fx",
+      "label": "Stem 4 FX.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_4_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_4_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_1_fx_reset",
+      "fig": "channel1_stem_1_fx_reset",
+      "label": "Stem 1 FX reset.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_1_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_1_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_2_fx_reset",
+      "fig": "channel1_stem_2_fx_reset",
+      "label": "Stem 2 FX reset.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_2_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_2_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_3_fx_reset",
+      "fig": "channel1_stem_3_fx_reset",
+      "label": "Stem 3 FX reset.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_3_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_3_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel1_stem_4_fx_reset",
+      "fig": "channel1_stem_4_fx_reset",
+      "label": "Stem 4 FX reset.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem_4_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem_4_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_1_volume",
+      "fig": "channel2_stem_1_volume",
+      "label": "Stem 1 volume.",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_1_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_1_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_2_volume",
+      "fig": "channel2_stem_2_volume",
+      "label": "Stem 2 volume.",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_2_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_2_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_3_volume",
+      "fig": "channel2_stem_3_volume",
+      "label": "Stem 3 volume.",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_3_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_3_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_4_volume",
+      "fig": "channel2_stem_4_volume",
+      "label": "Stem 4 volume.",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_4_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_4_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_1_mute",
+      "fig": "channel2_stem_1_mute",
+      "label": "Stem 1 mute.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_1_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_1_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_2_mute",
+      "fig": "channel2_stem_2_mute",
+      "label": "Stem 2 mute.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_2_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_2_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_3_mute",
+      "fig": "channel2_stem_3_mute",
+      "label": "Stem 3 mute.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_3_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_3_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_4_mute",
+      "fig": "channel2_stem_4_mute",
+      "label": "Stem 4 mute.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_4_mute",
+        "type": "cc",
+        "ch": 2,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_4_mute] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_1_fx",
+      "fig": "channel2_stem_1_fx",
+      "label": "Stem 1 FX.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_1_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_1_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_2_fx",
+      "fig": "channel2_stem_2_fx",
+      "label": "Stem 2 FX.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_2_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_2_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_3_fx",
+      "fig": "channel2_stem_3_fx",
+      "label": "Stem 3 FX.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_3_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_3_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_4_fx",
+      "fig": "channel2_stem_4_fx",
+      "label": "Stem 4 FX.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_4_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_4_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_1_fx_reset",
+      "fig": "channel2_stem_1_fx_reset",
+      "label": "Stem 1 FX reset.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_1_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_1_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_2_fx_reset",
+      "fig": "channel2_stem_2_fx_reset",
+      "label": "Stem 2 FX reset.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_2_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_2_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_3_fx_reset",
+      "fig": "channel2_stem_3_fx_reset",
+      "label": "Stem 3 FX reset.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_3_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_3_fx_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister-channel2_stem_4_fx_reset",
+      "fig": "channel2_stem_4_fx_reset",
+      "label": "Stem 4 FX reset.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_stem_4_fx_reset",
+        "type": "cc",
+        "ch": 2,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel2_stem_4_fx_reset] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

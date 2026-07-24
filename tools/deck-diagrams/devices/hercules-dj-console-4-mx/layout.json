@@ -1,0 +1,3700 @@
+{
+  "device": "Hercules DJ Console 4-Mx",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "hercules-dj-console-4-mx-button_mic_on_off_pressed",
+      "fig": "button_mic_on_off_pressed",
+      "label": "Button Mic On/Off pressed",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "button_mic_on_off_pressed",
+        "type": "note",
+        "ch": 1,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[button_mic_on_off_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "Button Load on Right Deck",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 1,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "Button Load on Right Deck",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 2,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-load_selected_track_3",
+      "fig": "load_selected_track_3",
+      "label": "Button Load on Left Deck",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_3",
+        "type": "note",
+        "ch": 1,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-load_selected_track_4",
+      "fig": "load_selected_track_4",
+      "label": "Button Load on Left Deck",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_4",
+        "type": "note",
+        "ch": 2,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_dstate_change",
+      "fig": "deck_dstate_change",
+      "label": "Button Deck D (State)",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "deck_dstate_change",
+        "type": "note",
+        "ch": 1,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[deck_dstate_change] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_cstate_change",
+      "fig": "deck_cstate_change",
+      "label": "Button Deck C (State)",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "deck_cstate_change",
+        "type": "note",
+        "ch": 1,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[deck_cstate_change] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_mic_on_off_state",
+      "fig": "button_mic_on_off_state",
+      "label": "Button Mic On/Off (state)",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "button_mic_on_off_state",
+        "type": "note",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[button_mic_on_off_state] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-forward_button",
+      "fig": "forward_button",
+      "label": "Right Forward",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "forward_button",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[forward_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-forward_button_2",
+      "fig": "forward_button_2",
+      "label": "Right Forward",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "forward_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[forward_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-rewind_button",
+      "fig": "rewind_button",
+      "label": "Right Rewind",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rewind_button",
+        "type": "note",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[rewind_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-rewind_button_2",
+      "fig": "rewind_button_2",
+      "label": "Right Rewind",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rewind_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[rewind_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_up_button",
+      "fig": "p_bend_up_button",
+      "label": "Right P. Bend +",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_up_button",
+        "type": "note",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[p_bend_up_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_down_button",
+      "fig": "p_bend_down_button",
+      "label": "Right P. Bend -",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_down_button",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[p_bend_down_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_up_button_2",
+      "fig": "p_bend_up_button_2",
+      "label": "Right P. Bend +",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_up_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[p_bend_up_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_down_button_2",
+      "fig": "p_bend_down_button_2",
+      "label": "Right P. Bend -",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_down_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[p_bend_down_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-press_effect_shift",
+      "fig": "press_effect_shift",
+      "label": "Right button shift pressed",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "press_effect_shift",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[press_effect_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-press_effect_shift_2",
+      "fig": "press_effect_shift_2",
+      "label": "Right button shift pressed",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "press_effect_shift_2",
+        "type": "note",
+        "ch": 2,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[press_effect_shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-navigation",
+      "fig": "navigation",
+      "label": "Button Nav Down",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "navigation",
+        "type": "note",
+        "ch": 1,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[navigation] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-navigation_2",
+      "fig": "navigation_2",
+      "label": "Button Nav Up",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "navigation_2",
+        "type": "note",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[navigation_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-navigation_folders",
+      "fig": "navigation_folders",
+      "label": "Button Nav Folder",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "navigation_folders",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[navigation_folders] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-navigation_files",
+      "fig": "navigation_files",
+      "label": "Button Nav Files",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "navigation_files",
+        "type": "note",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[navigation_files] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-scratch_button",
+      "fig": "scratch_button",
+      "label": "Button Scratch",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "scratch_button",
+        "type": "note",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[scratch_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-auto_djbutton",
+      "fig": "auto_djbutton",
+      "label": "Button Auto (DJ)",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "auto_djbutton",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[auto_djbutton] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-state_effect_shift",
+      "fig": "state_effect_shift",
+      "label": "Right button shift State",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "state_effect_shift",
+        "type": "note",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[state_effect_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-state_effect_shift_2",
+      "fig": "state_effect_shift_2",
+      "label": "Right button shift State",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "state_effect_shift_2",
+        "type": "note",
+        "ch": 2,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[state_effect_shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "Right Jog wheel pressed",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "Right Jog wheel pressed",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter1",
+      "fig": "button_parameter1",
+      "label": "Right Kill bass",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter1_2",
+      "fig": "button_parameter1_2",
+      "label": "Right Kill bass",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1_2",
+        "type": "note",
+        "ch": 2,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter2",
+      "fig": "button_parameter2",
+      "label": "Right Kill mid",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2",
+        "type": "note",
+        "ch": 1,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter2_2",
+      "fig": "button_parameter2_2",
+      "label": "Right Kill mid",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2_2",
+        "type": "note",
+        "ch": 2,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter3",
+      "fig": "button_parameter3",
+      "label": "Right Kill treble",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter3_2",
+      "fig": "button_parameter3_2",
+      "label": "Right Kill treble",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3_2",
+        "type": "note",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-passthrough",
+      "fig": "passthrough",
+      "label": "Button Source 2",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "passthrough",
+        "type": "note",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[passthrough] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-passthrough_2",
+      "fig": "passthrough_2",
+      "label": "Button Source 2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "passthrough_2",
+        "type": "note",
+        "ch": 2,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[passthrough_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-reset_key",
+      "fig": "reset_key",
+      "label": "Right Pitch reset (press both pitch scale to send)",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reset_key",
+        "type": "note",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[reset_key] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-reset_key_2",
+      "fig": "reset_key_2",
+      "label": "Right Pitch reset (press both pitch scale to send)",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reset_key_2",
+        "type": "note",
+        "ch": 2,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[reset_key_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_down_button",
+      "fig": "p_scale_down_button",
+      "label": "Right Pitch scale-",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_down_button",
+        "type": "note",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[p_scale_down_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_down_button_2",
+      "fig": "p_scale_down_button_2",
+      "label": "Right Pitch scale-",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_down_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[p_scale_down_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_up_button",
+      "fig": "p_scale_up_button",
+      "label": "Right Pitch scale+",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_up_button",
+        "type": "note",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[p_scale_up_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_up_button_2",
+      "fig": "p_scale_up_button_2",
+      "label": "Right Pitch scale+",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_up_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[p_scale_up_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_deck_d_pressed",
+      "fig": "button_deck_d_pressed",
+      "label": "Button Deck D (pressed)",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "button_deck_d_pressed",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[button_deck_d_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-sync_button",
+      "fig": "sync_button",
+      "label": "Right Sync button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_button",
+        "type": "note",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[sync_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-sync_button_2",
+      "fig": "sync_button_2",
+      "label": "Right Sync button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[sync_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-stop_button",
+      "fig": "stop_button",
+      "label": "Right Stop",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_button",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[stop_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-stop_button_2",
+      "fig": "stop_button_2",
+      "label": "Right Stop",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[stop_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deckheadphones",
+      "fig": "deckheadphones",
+      "label": "Right Cue Select Deck (PFL headphones)",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deckheadphones",
+        "type": "note",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[deckheadphones] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deckheadphones_2",
+      "fig": "deckheadphones_2",
+      "label": "Right Cue Select Deck (PFL headphones)",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deckheadphones_2",
+        "type": "note",
+        "ch": 2,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[deckheadphones_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-play_button",
+      "fig": "play_button",
+      "label": "Right Play",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_button",
+        "type": "note",
+        "ch": 1,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[play_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-play_button_2",
+      "fig": "play_button_2",
+      "label": "Right Play",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[play_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-cue_button",
+      "fig": "cue_button",
+      "label": "Right Cue",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_button",
+        "type": "note",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[cue_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-cue_button_2",
+      "fig": "cue_button_2",
+      "label": "Right Cue",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[cue_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton",
+      "fig": "fxbutton",
+      "label": "Right Effect button 12",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[fxbutton] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_2",
+      "fig": "fxbutton_2",
+      "label": "Right Effect button 12",
+      "kind": "button",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_2",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_3",
+      "fig": "fxbutton_3",
+      "label": "Right Effect button 11",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_3",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_4",
+      "fig": "fxbutton_4",
+      "label": "Right Effect button 11",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_4",
+        "type": "note",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_5",
+      "fig": "fxbutton_5",
+      "label": "Right Effect button 10",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_5",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_6",
+      "fig": "fxbutton_6",
+      "label": "Right Effect button 10",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_6",
+        "type": "note",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_7",
+      "fig": "fxbutton_7",
+      "label": "Right Effect button 9",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_7",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_8",
+      "fig": "fxbutton_8",
+      "label": "Right Effect button 9",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_8",
+        "type": "note",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_9",
+      "fig": "fxbutton_9",
+      "label": "Right Effect button 8",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_9",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_10",
+      "fig": "fxbutton_10",
+      "label": "Right Effect button 8",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_10",
+        "type": "note",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_11",
+      "fig": "fxbutton_11",
+      "label": "Right Effect button 7",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_11",
+        "type": "note",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-on_sensitivity_change",
+      "fig": "on_sensitivity_change",
+      "label": "Receives information about the sensitivity setting",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "on_sensitivity_change",
+        "type": "cc",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[on_sensitivity_change] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_12",
+      "fig": "fxbutton_12",
+      "label": "Right Effect button 7",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_12",
+        "type": "note",
+        "ch": 2,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_13",
+      "fig": "fxbutton_13",
+      "label": "Right Effect button 6",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_13",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_14",
+      "fig": "fxbutton_14",
+      "label": "Right Effect button 6",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_14",
+        "type": "note",
+        "ch": 2,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_15",
+      "fig": "fxbutton_15",
+      "label": "Right Effect button 5",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_15",
+        "type": "note",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_16",
+      "fig": "fxbutton_16",
+      "label": "Right Effect button 5",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_16",
+        "type": "note",
+        "ch": 2,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_17",
+      "fig": "fxbutton_17",
+      "label": "Right Effect button 4",
+      "kind": "button",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_17",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_18",
+      "fig": "fxbutton_18",
+      "label": "Right Effect button 4",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_18",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_19",
+      "fig": "fxbutton_19",
+      "label": "Right Effect button 3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_19",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_20",
+      "fig": "fxbutton_20",
+      "label": "Right Effect button 3",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_20",
+        "type": "note",
+        "ch": 2,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_21",
+      "fig": "fxbutton_21",
+      "label": "Right Effect button 2",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_21",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_22",
+      "fig": "fxbutton_22",
+      "label": "Right Effect button 2",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_22",
+        "type": "note",
+        "ch": 2,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_23",
+      "fig": "fxbutton_23",
+      "label": "Right Effect button 1",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_23",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_24",
+      "fig": "fxbutton_24",
+      "label": "Right Effect button 1",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_24",
+        "type": "note",
+        "ch": 2,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-forward_button_3",
+      "fig": "forward_button_3",
+      "label": "Left Forward",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "forward_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[forward_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-forward_button_4",
+      "fig": "forward_button_4",
+      "label": "Left Forward",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "forward_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[forward_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-rewind_button_3",
+      "fig": "rewind_button_3",
+      "label": "Left Rewind",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rewind_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[rewind_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-rewind_button_4",
+      "fig": "rewind_button_4",
+      "label": "Left Rewind",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rewind_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[rewind_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_up_button_3",
+      "fig": "p_bend_up_button_3",
+      "label": "Left P.Bend +",
+      "kind": "button",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_up_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[p_bend_up_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_up_button_4",
+      "fig": "p_bend_up_button_4",
+      "label": "Left P.Bend +",
+      "kind": "button",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_up_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[p_bend_up_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_down_button_3",
+      "fig": "p_bend_down_button_3",
+      "label": "Left P.Bend -",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_down_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[p_bend_down_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_bend_down_button_4",
+      "fig": "p_bend_down_button_4",
+      "label": "Left P.Bend -",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_bend_down_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[p_bend_down_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-press_effect_shift_3",
+      "fig": "press_effect_shift_3",
+      "label": "Left button shift pressed",
+      "kind": "button",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "press_effect_shift_3",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[press_effect_shift_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-press_effect_shift_4",
+      "fig": "press_effect_shift_4",
+      "label": "Left button shift pressed",
+      "kind": "button",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "press_effect_shift_4",
+        "type": "note",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[press_effect_shift_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-state_effect_shift_3",
+      "fig": "state_effect_shift_3",
+      "label": "Left button shift State",
+      "kind": "button",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "state_effect_shift_3",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[state_effect_shift_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-state_effect_shift_4",
+      "fig": "state_effect_shift_4",
+      "label": "Left button shift State",
+      "kind": "button",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "state_effect_shift_4",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[state_effect_shift_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-wheel_touch_3",
+      "fig": "wheel_touch_3",
+      "label": "Left Jog wheel pressed",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_3",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-wheel_touch_4",
+      "fig": "wheel_touch_4",
+      "label": "Left Jog wheel pressed",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_4",
+        "type": "note",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter1_3",
+      "fig": "button_parameter1_3",
+      "label": "Left Kill bass",
+      "kind": "button",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1_3",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter2_3",
+      "fig": "button_parameter2_3",
+      "label": "Left Kill mid",
+      "kind": "button",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2_3",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter1_4",
+      "fig": "button_parameter1_4",
+      "label": "Left Kill bass",
+      "kind": "button",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter1_4",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[button_parameter1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter2_4",
+      "fig": "button_parameter2_4",
+      "label": "Left Kill mid",
+      "kind": "button",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter2_4",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[button_parameter2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter3_3",
+      "fig": "button_parameter3_3",
+      "label": "Left Kill treble",
+      "kind": "button",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3_3",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_parameter3_4",
+      "fig": "button_parameter3_4",
+      "label": "Left Kill treble",
+      "kind": "button",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_parameter3_4",
+        "type": "note",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[button_parameter3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-passthrough_3",
+      "fig": "passthrough_3",
+      "label": "Button Source 1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "passthrough_3",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[passthrough_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-passthrough_4",
+      "fig": "passthrough_4",
+      "label": "Button Source 1",
+      "kind": "button",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "passthrough_4",
+        "type": "note",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[passthrough_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-reset_key_3",
+      "fig": "reset_key_3",
+      "label": "Left Pitch reset (press both pitch scale to send)",
+      "kind": "button",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reset_key_3",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[reset_key_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-reset_key_4",
+      "fig": "reset_key_4",
+      "label": "Left Pitch reset (press both pitch scale to send)",
+      "kind": "button",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reset_key_4",
+        "type": "note",
+        "ch": 2,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[reset_key_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_down_button_3",
+      "fig": "p_scale_down_button_3",
+      "label": "Left Pitch scale-",
+      "kind": "button",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_down_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[p_scale_down_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_down_button_4",
+      "fig": "p_scale_down_button_4",
+      "label": "Left Pitch scale-",
+      "kind": "button",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_down_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[p_scale_down_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_up_button_3",
+      "fig": "p_scale_up_button_3",
+      "label": "Left Pitch scale+",
+      "kind": "button",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_up_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[p_scale_up_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-p_scale_up_button_4",
+      "fig": "p_scale_up_button_4",
+      "label": "Left Pitch scale+",
+      "kind": "button",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "p_scale_up_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[p_scale_up_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-button_deck_c_pressed",
+      "fig": "button_deck_c_pressed",
+      "label": "Button Deck C (pressed)",
+      "kind": "button",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "button_deck_c_pressed",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[button_deck_c_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-sync_button_3",
+      "fig": "sync_button_3",
+      "label": "Left Sync button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[sync_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-sync_button_4",
+      "fig": "sync_button_4",
+      "label": "Left Sync button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[sync_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-stop_button_3",
+      "fig": "stop_button_3",
+      "label": "Left Stop",
+      "kind": "button",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[stop_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-stop_button_4",
+      "fig": "stop_button_4",
+      "label": "Left Stop",
+      "kind": "button",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[stop_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deckheadphones_3",
+      "fig": "deckheadphones_3",
+      "label": "Left Deck Cue Select (PFL headphones)",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deckheadphones_3",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[deckheadphones_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deckheadphones_4",
+      "fig": "deckheadphones_4",
+      "label": "Left Deck Cue Select (PFL headphones)",
+      "kind": "button",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deckheadphones_4",
+        "type": "note",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[deckheadphones_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-play_button_3",
+      "fig": "play_button_3",
+      "label": "Left Play",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[play_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-play_button_4",
+      "fig": "play_button_4",
+      "label": "Left Play",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[play_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-cue_button_3",
+      "fig": "cue_button_3",
+      "label": "Left Cue",
+      "kind": "button",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[cue_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-cue_button_4",
+      "fig": "cue_button_4",
+      "label": "Left Cue",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_button_4",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[cue_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_25",
+      "fig": "fxbutton_25",
+      "label": "Left Effect button 12",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_25",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_lsb",
+      "fig": "deck_rate_lsb",
+      "label": "Right Pitch (14bits LSB).",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_lsb",
+        "type": "cc",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_lsb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_26",
+      "fig": "fxbutton_26",
+      "label": "Left Effect button 12",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_26",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_27",
+      "fig": "fxbutton_27",
+      "label": "Left Effect button 11",
+      "kind": "button",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_27",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_lsb_2",
+      "fig": "deck_rate_lsb_2",
+      "label": "Left Pitch (14bits LSB).",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_lsb_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_lsb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_28",
+      "fig": "fxbutton_28",
+      "label": "Left Effect button 11",
+      "kind": "button",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_28",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_29",
+      "fig": "fxbutton_29",
+      "label": "Left Effect button 10",
+      "kind": "button",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_29",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_lsb_3",
+      "fig": "deck_rate_lsb_3",
+      "label": "Right Pitch (14bits LSB).",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_lsb_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_lsb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_30",
+      "fig": "fxbutton_30",
+      "label": "Left Effect button 10",
+      "kind": "button",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_30",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_31",
+      "fig": "fxbutton_31",
+      "label": "Left Effect button 9",
+      "kind": "button",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_31",
+        "type": "note",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_lsb_4",
+      "fig": "deck_rate_lsb_4",
+      "label": "Right Pitch (14bits LSB).",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_lsb_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_lsb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_32",
+      "fig": "fxbutton_32",
+      "label": "Left Effect button 9",
+      "kind": "button",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_32",
+        "type": "note",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_33",
+      "fig": "fxbutton_33",
+      "label": "Left Effect button 8",
+      "kind": "button",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_33",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-scratch_wheel",
+      "fig": "scratch_wheel",
+      "label": "Right Jog wheel moved with pressure",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[scratch_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_34",
+      "fig": "fxbutton_34",
+      "label": "Left Effect button 8",
+      "kind": "button",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_34",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_35",
+      "fig": "fxbutton_35",
+      "label": "Left Effect button 7",
+      "kind": "button",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_35",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-scratch_wheel_2",
+      "fig": "scratch_wheel_2",
+      "label": "Left Jog wheel moved with pressure",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_wheel_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[scratch_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_36",
+      "fig": "fxbutton_36",
+      "label": "Left Effect button 7",
+      "kind": "button",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_36",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_37",
+      "fig": "fxbutton_37",
+      "label": "Left Effect button 6",
+      "kind": "button",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_37",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-scratch_wheel_3",
+      "fig": "scratch_wheel_3",
+      "label": "Right Jog wheel moved with pressure",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_wheel_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[scratch_wheel_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_38",
+      "fig": "fxbutton_38",
+      "label": "Left Effect button 6",
+      "kind": "button",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_38",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_39",
+      "fig": "fxbutton_39",
+      "label": "Left Effect button 5",
+      "kind": "button",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_39",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-scratch_wheel_4",
+      "fig": "scratch_wheel_4",
+      "label": "Left Jog wheel moved with pressure",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_wheel_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[scratch_wheel_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_40",
+      "fig": "fxbutton_40",
+      "label": "Left Effect button 5",
+      "kind": "button",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_40",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_41",
+      "fig": "fxbutton_41",
+      "label": "Left Effect button 4",
+      "kind": "button",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_41",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_42",
+      "fig": "fxbutton_42",
+      "label": "Left Effect button 4",
+      "kind": "button",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_42",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_43",
+      "fig": "fxbutton_43",
+      "label": "Left Effect button 3",
+      "kind": "button",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_43",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-head_mix",
+      "fig": "head_mix",
+      "label": "Heaphone Cue/Mix",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_44",
+      "fig": "fxbutton_44",
+      "label": "Left Effect button 2",
+      "kind": "button",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_44",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_45",
+      "fig": "fxbutton_45",
+      "label": "Left Effect button 3",
+      "kind": "button",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_45",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-crossfader",
+      "fig": "crossfader",
+      "label": "Crossfader",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_46",
+      "fig": "fxbutton_46",
+      "label": "Left Effect button 2",
+      "kind": "button",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_46",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_47",
+      "fig": "fxbutton_47",
+      "label": "Left Effect button 1",
+      "kind": "button",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_47",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-gain",
+      "fig": "gain",
+      "label": "Vol Main",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-fxbutton_48",
+      "fig": "fxbutton_48",
+      "label": "Left Effect button 1",
+      "kind": "button",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxbutton_48",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[fxbutton_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_bass",
+      "fig": "deck_bass",
+      "label": "Right Bass",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_bass",
+        "type": "cc",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[deck_bass] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_mids",
+      "fig": "deck_mids",
+      "label": "Right Mid",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_mids",
+        "type": "cc",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[deck_mids] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_treble",
+      "fig": "deck_treble",
+      "label": "Right Treble",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_treble",
+        "type": "cc",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[deck_treble] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_msb",
+      "fig": "deck_rate_msb",
+      "label": "Right Pitch (MSB)",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_gain",
+      "fig": "deck_gain",
+      "label": "Right Gain",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[deck_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_volume",
+      "fig": "deck_volume",
+      "label": "Right Volume Fader",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[deck_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-effect_knob",
+      "fig": "effect_knob",
+      "label": "Right effect knob",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "effect_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[effect_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-jog_wheel",
+      "fig": "jog_wheel",
+      "label": "Right Jog wheel moved without pressure",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_bass_2",
+      "fig": "deck_bass_2",
+      "label": "Left Bass",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_bass_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[deck_bass_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_mids_2",
+      "fig": "deck_mids_2",
+      "label": "Left Mid",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_mids_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[deck_mids_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_treble_2",
+      "fig": "deck_treble_2",
+      "label": "Left Treble",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_treble_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[deck_treble_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_msb_2",
+      "fig": "deck_rate_msb_2",
+      "label": "Left Pitch (MSB)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_msb_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_gain_2",
+      "fig": "deck_gain_2",
+      "label": "Left Gain",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_gain_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[deck_gain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_volume_2",
+      "fig": "deck_volume_2",
+      "label": "Left Volume Fader",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_volume_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[deck_volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-effect_knob_2",
+      "fig": "effect_knob_2",
+      "label": "Left effect knob",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "effect_knob_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[effect_knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-jog_wheel_2",
+      "fig": "jog_wheel_2",
+      "label": "Left Jog wheel moved without pressure",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_bass_3",
+      "fig": "deck_bass_3",
+      "label": "Right Bass",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_bass_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[deck_bass_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_mids_3",
+      "fig": "deck_mids_3",
+      "label": "Right Mid",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_mids_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[deck_mids_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_treble_3",
+      "fig": "deck_treble_3",
+      "label": "Right Treble",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_treble_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[deck_treble_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_msb_3",
+      "fig": "deck_rate_msb_3",
+      "label": "Right Pitch (MSB)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_msb_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_msb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_gain_3",
+      "fig": "deck_gain_3",
+      "label": "Right Gain",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_gain_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[deck_gain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_volume_3",
+      "fig": "deck_volume_3",
+      "label": "Right Volume Fader",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_volume_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[deck_volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-effect_knob_3",
+      "fig": "effect_knob_3",
+      "label": "Right effect knob",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "effect_knob_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[effect_knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-jog_wheel_3",
+      "fig": "jog_wheel_3",
+      "label": "Right Jog wheel moved without pressure",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_bass_4",
+      "fig": "deck_bass_4",
+      "label": "Left Bass",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_bass_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[deck_bass_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_mids_4",
+      "fig": "deck_mids_4",
+      "label": "Left Mid",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_mids_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[deck_mids_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_treble_4",
+      "fig": "deck_treble_4",
+      "label": "Left Treble",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_treble_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[deck_treble_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_rate_msb_4",
+      "fig": "deck_rate_msb_4",
+      "label": "Left Pitch (MSB)",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_rate_msb_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[deck_rate_msb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_gain_4",
+      "fig": "deck_gain_4",
+      "label": "Left Gain",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_gain_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[deck_gain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-deck_volume_4",
+      "fig": "deck_volume_4",
+      "label": "Left Volume Fader",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_volume_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[deck_volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-effect_knob_4",
+      "fig": "effect_knob_4",
+      "label": "Left effect knob",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "effect_knob_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_knob_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-dj-console-4-mx-jog_wheel_4",
+      "fig": "jog_wheel_4",
+      "label": "Left Jog wheel moved without pressure",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 101.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_4] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

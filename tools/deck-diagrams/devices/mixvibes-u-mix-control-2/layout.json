@@ -1,0 +1,1420 @@
+{
+  "device": "MixVibes U-Mix Control 2",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "mixvibes-u-mix-control-2-volume",
+      "fig": "volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-jog",
+      "fig": "jog",
+      "label": "jog",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[jog] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-cue_default",
+      "fig": "cue_default",
+      "label": "cue_default",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-beatsync",
+      "fig": "beatsync",
+      "label": "beatsync",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[beatsync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-back",
+      "fig": "back",
+      "label": "back",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[back] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-fwd",
+      "fig": "fwd",
+      "label": "fwd",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[fwd] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_6_clear",
+      "fig": "hotcue_6_clear",
+      "label": "hotcue_6_clear",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_6_clear",
+        "type": "note",
+        "ch": 5,
+        "code": 127,
+        "shift_name": null
+      },
+      "notes": "[hotcue_6_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-keylock",
+      "fig": "keylock",
+      "label": "keylock",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_6_clear_2",
+      "fig": "hotcue_6_clear_2",
+      "label": "hotcue_6_clear",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_6_clear_2",
+        "type": "note",
+        "ch": 4,
+        "code": 127,
+        "shift_name": null
+      },
+      "notes": "[hotcue_6_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-flanger",
+      "fig": "flanger",
+      "label": "flanger",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[flanger] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-pfl",
+      "fig": "pfl",
+      "label": "pfl",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_1_clear",
+      "fig": "hotcue_1_clear",
+      "label": "hotcue_1_clear",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_clear",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_2_clear",
+      "fig": "hotcue_2_clear",
+      "label": "hotcue_2_clear",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_clear",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_3_clear",
+      "fig": "hotcue_3_clear",
+      "label": "hotcue_3_clear",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_clear",
+        "type": "note",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_1_clear_2",
+      "fig": "hotcue_1_clear_2",
+      "label": "hotcue_1_clear",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_clear_2",
+        "type": "note",
+        "ch": 4,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_2_clear_2",
+      "fig": "hotcue_2_clear_2",
+      "label": "hotcue_2_clear",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_clear_2",
+        "type": "note",
+        "ch": 4,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_3_clear_2",
+      "fig": "hotcue_3_clear_2",
+      "label": "hotcue_3_clear",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_clear_2",
+        "type": "note",
+        "ch": 4,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "cue_default",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-beatsync_2",
+      "fig": "beatsync_2",
+      "label": "beatsync",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync_2",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[beatsync_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-back_2",
+      "fig": "back_2",
+      "label": "back",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back_2",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[back_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-fwd_2",
+      "fig": "fwd_2",
+      "label": "fwd",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd_2",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[fwd_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_4_clear",
+      "fig": "hotcue_4_clear",
+      "label": "hotcue_4_clear",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_clear",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_5_clear",
+      "fig": "hotcue_5_clear",
+      "label": "hotcue_5_clear",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_5_clear",
+        "type": "note",
+        "ch": 5,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_5_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-keylock_2",
+      "fig": "keylock_2",
+      "label": "keylock",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_1_activate",
+      "fig": "hotcue_1_activate",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_2_activate",
+      "fig": "hotcue_2_activate",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_3_activate",
+      "fig": "hotcue_3_activate",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_4_clear_2",
+      "fig": "hotcue_4_clear_2",
+      "label": "hotcue_4_clear",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_clear_2",
+        "type": "note",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-reloop_exit",
+      "fig": "reloop_exit",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-scratch_enable",
+      "fig": "scratch_enable",
+      "label": "scratch_enable",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_enable",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[scratch_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_5_clear_2",
+      "fig": "hotcue_5_clear_2",
+      "label": "hotcue_5_clear",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_5_clear_2",
+        "type": "note",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_5_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-flanger_2",
+      "fig": "flanger_2",
+      "label": "flanger",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger_2",
+        "type": "note",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[flanger_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-pfl_2",
+      "fig": "pfl_2",
+      "label": "pfl",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_1_activate_2",
+      "fig": "hotcue_1_activate_2",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_2_activate_2",
+      "fig": "hotcue_2_activate_2",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_high_kill",
+      "fig": "filter_high_kill",
+      "label": "filterHighKill",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_kill",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_high_kill] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_3_activate_2",
+      "fig": "hotcue_3_activate_2",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_mid_kill",
+      "fig": "filter_mid_kill",
+      "label": "filterMidKill",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_kill",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_kill] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_low_kill",
+      "fig": "filter_low_kill",
+      "label": "filterLowKill",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_kill",
+        "type": "note",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[filter_low_kill] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_4_activate",
+      "fig": "hotcue_4_activate",
+      "label": "hotcue_4_activate",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_activate",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_high_kill_2",
+      "fig": "filter_high_kill_2",
+      "label": "filterHighKill",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_kill_2",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_high_kill_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_5_activate",
+      "fig": "hotcue_5_activate",
+      "label": "hotcue_5_activate",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_5_activate",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_5_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_mid_kill_2",
+      "fig": "filter_mid_kill_2",
+      "label": "filterMidKill",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_kill_2",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_kill_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_6_activate",
+      "fig": "hotcue_6_activate",
+      "label": "hotcue_6_activate",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_6_activate",
+        "type": "note",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[hotcue_6_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_low_kill_2",
+      "fig": "filter_low_kill_2",
+      "label": "filterLowKill",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_kill_2",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[filter_low_kill_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_4_activate_2",
+      "fig": "hotcue_4_activate_2",
+      "label": "hotcue_4_activate",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_5_activate_2",
+      "fig": "hotcue_5_activate_2",
+      "label": "hotcue_5_activate",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_5_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_5_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-hotcue_6_activate_2",
+      "fig": "hotcue_6_activate_2",
+      "label": "hotcue_6_activate",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_6_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[hotcue_6_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-rate",
+      "fig": "rate",
+      "label": "rate",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate",
+        "type": "cc",
+        "ch": 1,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[rate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-rate_2",
+      "fig": "rate_2",
+      "label": "rate",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[rate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-volume_2",
+      "fig": "volume_2",
+      "label": "volume",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-select_track_knob",
+      "fig": "select_track_knob",
+      "label": "SelectTrackKnob",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_knob",
+        "type": "cc",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[select_track_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-lfo_depth",
+      "fig": "lfo_depth",
+      "label": "lfoDepth",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "lfo_depth",
+        "type": "cc",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[lfo_depth] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-pregain",
+      "fig": "pregain",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_high",
+      "fig": "filter_high",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high",
+        "type": "cc",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_high] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_mid",
+      "fig": "filter_mid",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid",
+        "type": "cc",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_mid] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-reloop_exit_2",
+      "fig": "reloop_exit_2",
+      "label": "reloop_exit",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_low",
+      "fig": "filter_low",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low",
+        "type": "cc",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[filter_low] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-volume_3",
+      "fig": "volume_3",
+      "label": "volume",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-lfo_depth_2",
+      "fig": "lfo_depth_2",
+      "label": "lfoDepth",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "lfo_depth_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[lfo_depth_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-jog_2",
+      "fig": "jog_2",
+      "label": "jog",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[jog_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-pregain_2",
+      "fig": "pregain_2",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_high_2",
+      "fig": "filter_high_2",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_high_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_mid_2",
+      "fig": "filter_mid_2",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixvibes-u-mix-control-2-filter_low_2",
+      "fig": "filter_low_2",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[filter_low_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

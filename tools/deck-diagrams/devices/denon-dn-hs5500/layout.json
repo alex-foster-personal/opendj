@@ -1,0 +1,1020 @@
+{
+  "device": "Denon HS5500",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "denon-dn-hs5500-fwd",
+      "fig": "fwd",
+      "label": "fwd",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[fwd] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-loop_in",
+      "fig": "loop_in",
+      "label": "loop_in",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-keylock",
+      "fig": "keylock",
+      "label": "keylock",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-cue_gotoandstop",
+      "fig": "cue_gotoandstop",
+      "label": "cue_gotoandstop",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_gotoandstop",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_gotoandstop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-keylock_2",
+      "fig": "keylock_2",
+      "label": "keylock",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-back",
+      "fig": "back",
+      "label": "back",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[back] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-wheel_turn",
+      "fig": "wheel_turn",
+      "label": "wheelTurn",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "wheelTouch",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-platter_turn",
+      "fig": "platter_turn",
+      "label": "platterTurn",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "platter_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[platter_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-wheel_turn_2",
+      "fig": "wheel_turn_2",
+      "label": "wheelTurn",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "wheelTouch",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-platter_turn_2",
+      "fig": "platter_turn_2",
+      "label": "platterTurn",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "platter_turn_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[platter_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-back_2",
+      "fig": "back_2",
+      "label": "back",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back_2",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[back_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-play_button",
+      "fig": "play_button",
+      "label": "playButton",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_button",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-play_button_2",
+      "fig": "play_button_2",
+      "label": "playButton",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-fwd_2",
+      "fig": "fwd_2",
+      "label": "fwd",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd_2",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[fwd_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-rate_temp_down_small",
+      "fig": "rate_temp_down_small",
+      "label": "rate_temp_down_small",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_small",
+        "type": "note",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_small] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-loop_in_2",
+      "fig": "loop_in_2",
+      "label": "loop_in",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_2",
+        "type": "note",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-cue_gotoandstop_2",
+      "fig": "cue_gotoandstop_2",
+      "label": "cue_gotoandstop",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_gotoandstop_2",
+        "type": "note",
+        "ch": 2,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_gotoandstop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-reverse",
+      "fig": "reverse",
+      "label": "reverse",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[reverse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-reverse_2",
+      "fig": "reverse_2",
+      "label": "reverse",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[reverse_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-pregain",
+      "fig": "pregain",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 2,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-reloop_exit",
+      "fig": "reloop_exit",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-rate_temp_up_small",
+      "fig": "rate_temp_up_small",
+      "label": "rate_temp_up_small",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_small",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_small] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-rate_temp_down_small_2",
+      "fig": "rate_temp_down_small_2",
+      "label": "rate_temp_down_small",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_small_2",
+        "type": "note",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_small_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-select_track",
+      "fig": "select_track",
+      "label": "selectTrack",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track",
+        "type": "cc",
+        "ch": 1,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[select_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-select_track_2",
+      "fig": "select_track_2",
+      "label": "selectTrack",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[select_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-reverse_3",
+      "fig": "reverse_3",
+      "label": "reverse",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_3",
+        "type": "note",
+        "ch": 2,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[reverse_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-bpm_tap",
+      "fig": "bpm_tap",
+      "label": "bpm_tap",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bpm_tap",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[bpm_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-reloop_exit_2",
+      "fig": "reloop_exit_2",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_2",
+        "type": "note",
+        "ch": 2,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-loop_out",
+      "fig": "loop_out",
+      "label": "loop_out",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-rate_temp_up_small_2",
+      "fig": "rate_temp_up_small_2",
+      "label": "rate_temp_up_small",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_small_2",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_small_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-load_selected_into_first_stopped",
+      "fig": "load_selected_into_first_stopped",
+      "label": "LoadSelectedIntoFirstStopped",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "load_selected_into_first_stopped",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[load_selected_into_first_stopped] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-load_selected_into_first_stopped_2",
+      "fig": "load_selected_into_first_stopped_2",
+      "label": "LoadSelectedIntoFirstStopped",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "load_selected_into_first_stopped_2",
+        "type": "note",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[load_selected_into_first_stopped_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-bpm_tap_2",
+      "fig": "bpm_tap_2",
+      "label": "bpm_tap",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bpm_tap_2",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[bpm_tap_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-loop_out_2",
+      "fig": "loop_out_2",
+      "label": "loop_out",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_2",
+        "type": "note",
+        "ch": 2,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-eject",
+      "fig": "eject",
+      "label": "eject",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "eject",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[eject] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-eject_2",
+      "fig": "eject_2",
+      "label": "eject",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "eject_2",
+        "type": "note",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[eject_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-repeat",
+      "fig": "repeat",
+      "label": "repeat",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "repeat",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[repeat] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-repeat_2",
+      "fig": "repeat_2",
+      "label": "repeat",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "repeat_2",
+        "type": "note",
+        "ch": 2,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[repeat_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-hotcue_1_activate",
+      "fig": "hotcue_1_activate",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-hotcue_2_activate",
+      "fig": "hotcue_2_activate",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-hotcue_3_activate",
+      "fig": "hotcue_3_activate",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-hotcue_1_activate_2",
+      "fig": "hotcue_1_activate_2",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate_2",
+        "type": "note",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-hotcue_2_activate_2",
+      "fig": "hotcue_2_activate_2",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate_2",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-hotcue_3_activate_2",
+      "fig": "hotcue_3_activate_2",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate_2",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-wheel_touch_3",
+      "fig": "wheel_touch_3",
+      "label": "wheelTouch",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_3",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-wheel_touch_4",
+      "fig": "wheel_touch_4",
+      "label": "wheelTouch",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_4",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-brake",
+      "fig": "brake",
+      "label": "brake",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "brake",
+        "type": "note",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[brake] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-hs5500-brake_2",
+      "fig": "brake_2",
+      "label": "brake",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "brake_2",
+        "type": "note",
+        "ch": 2,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[brake_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

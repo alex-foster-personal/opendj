@@ -1,0 +1,810 @@
+{
+  "source": "mixxx:DJ TechTools MIDI Fighter Twister.midi.xml",
+  "archived": "tools/deck-diagrams/devices/dj-techtools-midi-fighter-twister/source/DJ TechTools MIDI Fighter Twister.midi.xml",
+  "device": "DJ TechTools MIDI Fighter Twister",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel1_sets_the_decks_pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.gainKnob.input [channel1_sets_the_decks_pregain]"
+    },
+    {
+      "name": "channel1_resets_the_decks_pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.gainButton.input [channel1_resets_the_decks_pregain]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_sets_the_decks_high_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.highKnob.input [equalizer_rack1_channel1_effect1_sets_the_decks_high_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_resets_the_decks_high_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.highButton.input [equalizer_rack1_channel1_effect1_resets_the_decks_high_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_sets_the_decks_high_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.highKnob.input [equalizer_rack1_channel2_effect1_sets_the_decks_high_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_resets_the_decks_high_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.highButton.input [equalizer_rack1_channel2_effect1_resets_the_decks_high_eq]"
+    },
+    {
+      "name": "channel2_sets_the_decks_pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.gainKnob.input [channel2_sets_the_decks_pregain]"
+    },
+    {
+      "name": "channel2_resets_the_decks_pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.gainButton.input [channel2_resets_the_decks_pregain]"
+    },
+    {
+      "name": "channel1_sets_the_decks_tempo",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.rateKnob.input [channel1_sets_the_decks_tempo]"
+    },
+    {
+      "name": "channel1_resets_the_decks_tempo",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.rateButton.input [channel1_resets_the_decks_tempo]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_sets_the_decks_mid_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.midKnob.input [equalizer_rack1_channel1_effect1_sets_the_decks_mid_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_resets_the_decks_mid_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.midButton.input [equalizer_rack1_channel1_effect1_resets_the_decks_mid_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_sets_the_decks_mid_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.midKnob.input [equalizer_rack1_channel2_effect1_sets_the_decks_mid_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_resets_the_decks_mid_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.midButton.input [equalizer_rack1_channel2_effect1_resets_the_decks_mid_eq]"
+    },
+    {
+      "name": "channel2_sets_the_decks_tempo",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.rateKnob.input [channel2_sets_the_decks_tempo]"
+    },
+    {
+      "name": "channel2_resets_the_decks_tempo",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.rateButton.input [channel2_resets_the_decks_tempo]"
+    },
+    {
+      "name": "channel1_sets_the_decks_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.volumeKnob.input [channel1_sets_the_decks_volume]"
+    },
+    {
+      "name": "channel1_toggles_headphone_output",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.pflButton.input [channel1_toggles_headphone_output]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_sets_the_decks_low_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.lowKnob.input [equalizer_rack1_channel1_effect1_sets_the_decks_low_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_resets_the_decks_low_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.lowButton.input [equalizer_rack1_channel1_effect1_resets_the_decks_low_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_sets_the_decks_low_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.lowKnob.input [equalizer_rack1_channel2_effect1_sets_the_decks_low_eq]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_resets_the_decks_low_eq",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.lowButton.input [equalizer_rack1_channel2_effect1_resets_the_decks_low_eq]"
+    },
+    {
+      "name": "channel2_sets_the_decks_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.volumeKnob.input [channel2_sets_the_decks_volume]"
+    },
+    {
+      "name": "channel2_toggles_headphone_output",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.pflButton.input [channel2_toggles_headphone_output]"
+    },
+    {
+      "name": "master_adjust_the_crossfade_between_the_decks",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx MidiFighterTwister.controller.crossfaderKnob.input [master_adjust_the_crossfade_between_the_decks]"
+    },
+    {
+      "name": "master_reset_the_crossfader_to_center",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx MidiFighterTwister.controller.crossfaderButton.input [master_reset_the_crossfader_to_center]"
+    },
+    {
+      "name": "master_adjust_the_main_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx MidiFighterTwister.controller.mainGainKnob.input [master_adjust_the_main_gain]"
+    },
+    {
+      "name": "master_reset_the_main_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx MidiFighterTwister.controller.mainGainButton.input [master_reset_the_main_gain]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_set_the_decks_effect_super_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.superKnob.input [quick_effect_rack1_channel1_set_the_decks_effect_super_knob]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_reset_the_decks_effect_super_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx MidiFighterTwister.controller.leftDeck.superButton.input [quick_effect_rack1_channel1_reset_the_decks_effect_super_knob]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_set_the_decks_effect_super_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.superKnob.input [quick_effect_rack1_channel2_set_the_decks_effect_super_knob]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_reset_the_decks_effect_super_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx MidiFighterTwister.controller.rightDeck.superButton.input [quick_effect_rack1_channel2_reset_the_decks_effect_super_knob]"
+    },
+    {
+      "name": "toggle_deck",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 8,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleDeck [toggle_deck]"
+    },
+    {
+      "name": "toggle_deck_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleDeck [toggle_deck_2]"
+    },
+    {
+      "name": "toggle_deck_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 20,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleDeck [toggle_deck_3]"
+    },
+    {
+      "name": "toggle_deck_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 23,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleDeck [toggle_deck_4]"
+    },
+    {
+      "name": "toggle_effects",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 14,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleEffects [toggle_effects]"
+    },
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].enableOnChannelButtons[\"Channel1\"].input [channel1_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].enableOnChannelButtons[\"Channel2\"].input [channel1_input_2]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].enableOnChannelButtons[\"Headphone\"].input [channel1_input_3]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].mixModeButton.input [channel1_input_4]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].enableButtons[1].input [channel1_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].enableButtons[2].input [channel1_input_6]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].enableButtons[3].input [channel1_input_7]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].knobs[1].input [channel1_input_8]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].knobs[2].input [channel1_input_9]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].knobs[3].input [channel1_input_10]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].dryWetKnob.input [channel1_input_11]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[0].effectFocusButton.input [channel1_input_12]"
+    },
+    {
+      "name": "toggle_effects_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 17,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleEffects [toggle_effects_2]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].enableOnChannelButtons[\"Channel1\"].input [channel2_input]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].enableOnChannelButtons[\"Channel2\"].input [channel2_input_2]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].enableOnChannelButtons[\"Headphone\"].input [channel2_input_3]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].mixModeButton.input [channel2_input_4]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 18,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].enableButtons[1].input [channel2_input_5]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].enableButtons[2].input [channel2_input_6]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].enableButtons[3].input [channel2_input_7]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].knobs[1].input [channel2_input_8]"
+    },
+    {
+      "name": "channel2_input_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].knobs[2].input [channel2_input_9]"
+    },
+    {
+      "name": "channel2_input_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].knobs[3].input [channel2_input_10]"
+    },
+    {
+      "name": "channel2_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].dryWetKnob.input [channel2_input_11]"
+    },
+    {
+      "name": "channel2_input_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx MidiFighterTwister.controller.fx[1].effectFocusButton.input [channel2_input_12]"
+    },
+    {
+      "name": "toggle_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 10,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleShift [toggle_shift]"
+    },
+    {
+      "name": "toggle_shift_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 13,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleShift [toggle_shift_2]"
+    },
+    {
+      "name": "toggle_shift_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 16,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleShift [toggle_shift_3]"
+    },
+    {
+      "name": "toggle_shift_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 19,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleShift [toggle_shift_4]"
+    },
+    {
+      "name": "toggle_shift_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 22,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleShift [toggle_shift_5]"
+    },
+    {
+      "name": "toggle_shift_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 25,
+      "notes": "Mixxx MidiFighterTwister.controller.toggleShift [toggle_shift_6]"
+    },
+    {
+      "name": "channel1_stem_1_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.volume[0].input [channel1_stem_1_volume]"
+    },
+    {
+      "name": "channel1_stem_2_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.volume[1].input [channel1_stem_2_volume]"
+    },
+    {
+      "name": "channel1_stem_3_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.volume[2].input [channel1_stem_3_volume]"
+    },
+    {
+      "name": "channel1_stem_4_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.volume[3].input [channel1_stem_4_volume]"
+    },
+    {
+      "name": "channel1_stem_1_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.mute[0].input [channel1_stem_1_mute]"
+    },
+    {
+      "name": "channel1_stem_2_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.mute[1].input [channel1_stem_2_mute]"
+    },
+    {
+      "name": "channel1_stem_3_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.mute[2].input [channel1_stem_3_mute]"
+    },
+    {
+      "name": "channel1_stem_4_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.mute[3].input [channel1_stem_4_mute]"
+    },
+    {
+      "name": "channel1_stem_1_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effect[0].input [channel1_stem_1_fx]"
+    },
+    {
+      "name": "channel1_stem_2_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effect[1].input [channel1_stem_2_fx]"
+    },
+    {
+      "name": "channel1_stem_3_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effect[2].input [channel1_stem_3_fx]"
+    },
+    {
+      "name": "channel1_stem_4_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effect[3].input [channel1_stem_4_fx]"
+    },
+    {
+      "name": "channel1_stem_1_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effectReset[0].input [channel1_stem_1_fx_reset]"
+    },
+    {
+      "name": "channel1_stem_2_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effectReset[1].input [channel1_stem_2_fx_reset]"
+    },
+    {
+      "name": "channel1_stem_3_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effectReset[2].input [channel1_stem_3_fx_reset]"
+    },
+    {
+      "name": "channel1_stem_4_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx MidiFighterTwister.controller.leftStemDeck.effectReset[3].input [channel1_stem_4_fx_reset]"
+    },
+    {
+      "name": "channel2_stem_1_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.volume[0].input [channel2_stem_1_volume]"
+    },
+    {
+      "name": "channel2_stem_2_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.volume[1].input [channel2_stem_2_volume]"
+    },
+    {
+      "name": "channel2_stem_3_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.volume[2].input [channel2_stem_3_volume]"
+    },
+    {
+      "name": "channel2_stem_4_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.volume[3].input [channel2_stem_4_volume]"
+    },
+    {
+      "name": "channel2_stem_1_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.mute[0].input [channel2_stem_1_mute]"
+    },
+    {
+      "name": "channel2_stem_2_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.mute[1].input [channel2_stem_2_mute]"
+    },
+    {
+      "name": "channel2_stem_3_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.mute[2].input [channel2_stem_3_mute]"
+    },
+    {
+      "name": "channel2_stem_4_mute",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 47,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.mute[3].input [channel2_stem_4_mute]"
+    },
+    {
+      "name": "channel2_stem_1_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effect[0].input [channel2_stem_1_fx]"
+    },
+    {
+      "name": "channel2_stem_2_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effect[1].input [channel2_stem_2_fx]"
+    },
+    {
+      "name": "channel2_stem_3_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effect[2].input [channel2_stem_3_fx]"
+    },
+    {
+      "name": "channel2_stem_4_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effect[3].input [channel2_stem_4_fx]"
+    },
+    {
+      "name": "channel2_stem_1_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effectReset[0].input [channel2_stem_1_fx_reset]"
+    },
+    {
+      "name": "channel2_stem_2_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effectReset[1].input [channel2_stem_2_fx_reset]"
+    },
+    {
+      "name": "channel2_stem_3_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effectReset[2].input [channel2_stem_3_fx_reset]"
+    },
+    {
+      "name": "channel2_stem_4_fx_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 46,
+      "notes": "Mixxx MidiFighterTwister.controller.rightStemDeck.effectReset[3].input [channel2_stem_4_fx_reset]"
+    }
+  ]
+}

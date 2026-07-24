@@ -1,0 +1,1640 @@
+{
+  "device": "Korg KAOSS DJ",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "korg-kaoss-dj-change_focus",
+      "fig": "change_focus",
+      "label": "Change focus between library and playlist",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "change_focus",
+        "type": "note",
+        "ch": 7,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[change_focus] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-tap_button_callback",
+      "fig": "tap_button_callback",
+      "label": "tapButtonCallback",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tap_button_callback",
+        "type": "note",
+        "ch": 7,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[tap_button_callback] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_touch_move_horizontal",
+      "fig": "fx_touch_move_horizontal",
+      "label": "Fx Control",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_touch_move_horizontal",
+        "type": "cc",
+        "ch": 9,
+        "code": 12,
+        "shift_name": "fx_touch_move_horizontal_shift"
+      },
+      "notes": "[fx_touch_move_horizontal] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_touch_move_vertical",
+      "fig": "fx_touch_move_vertical",
+      "label": "Fx Control",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_touch_move_vertical",
+        "type": "cc",
+        "ch": 9,
+        "code": 13,
+        "shift_name": "fx_touch_move_vertical_shift"
+      },
+      "notes": "[fx_touch_move_vertical] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-load_callback",
+      "fig": "load_callback",
+      "label": "Load into Deck 1",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_callback",
+        "type": "note",
+        "ch": 8,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[load_callback] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-load_callback_2",
+      "fig": "load_callback_2",
+      "label": "Load into Deck 2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_callback_2",
+        "type": "note",
+        "ch": 9,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[load_callback_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_turn",
+      "fig": "wheel_turn",
+      "label": "Left Jog Wheel Turn",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn",
+        "type": "cc",
+        "ch": 8,
+        "code": 14,
+        "shift_name": "wheel_turn_shift"
+      },
+      "notes": "[wheel_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_turn_2",
+      "fig": "wheel_turn_2",
+      "label": "Right Jog Wheel Turn",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_halve",
+      "fig": "loop_halve",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve",
+        "type": "note",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[loop_halve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_halve_2",
+      "fig": "loop_halve_2",
+      "label": "MIDI Learned from 6 messages.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve_2",
+        "type": "note",
+        "ch": 9,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[loop_halve_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_turn_shift",
+      "fig": "wheel_turn_shift",
+      "label": "Left Jog Wheel Turn Shift",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_shift",
+        "type": "cc",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_turn_shift_2",
+      "fig": "wheel_turn_shift_2",
+      "label": "Right Jog Wheel Turn Shift",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_shift_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-toggle_loop",
+      "fig": "toggle_loop",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_loop",
+        "type": "note",
+        "ch": 8,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[toggle_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_turn_3",
+      "fig": "wheel_turn_3",
+      "label": "Left Jog Wheel Turn Scratch",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_3",
+        "type": "cc",
+        "ch": 8,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-toggle_loop_2",
+      "fig": "toggle_loop_2",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_loop_2",
+        "type": "note",
+        "ch": 9,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[toggle_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_turn_4",
+      "fig": "wheel_turn_4",
+      "label": "Right Jog Wheel Turn SCRATCH",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_4",
+        "type": "cc",
+        "ch": 9,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_double",
+      "fig": "loop_double",
+      "label": "MIDI Learned from 4 messages.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double",
+        "type": "note",
+        "ch": 8,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[loop_double] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_double_2",
+      "fig": "loop_double_2",
+      "label": "MIDI Learned from 8 messages.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double_2",
+        "type": "note",
+        "ch": 9,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[loop_double_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_touch_move_vertical_shift",
+      "fig": "fx_touch_move_vertical_shift",
+      "label": "fxTouchMoveVerticalShift",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_touch_move_vertical_shift",
+        "type": "cc",
+        "ch": 7,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[fx_touch_move_vertical_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_1_activate",
+      "fig": "hotcue_1_activate",
+      "label": "Left HotCue 1",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate",
+        "type": "note",
+        "ch": 8,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_1_activate_2",
+      "fig": "hotcue_1_activate_2",
+      "label": "Right HotCue 1",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate_2",
+        "type": "note",
+        "ch": 9,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_touch_move_horizontal_shift",
+      "fig": "fx_touch_move_horizontal_shift",
+      "label": "fxTouchMoveHorizontalShift",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_touch_move_horizontal_shift",
+        "type": "cc",
+        "ch": 7,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[fx_touch_move_horizontal_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_2_activate",
+      "fig": "hotcue_2_activate",
+      "label": "Left HotCue 2",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate",
+        "type": "note",
+        "ch": 8,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_2_activate_2",
+      "fig": "hotcue_2_activate_2",
+      "label": "Right HotCue 2",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate_2",
+        "type": "note",
+        "ch": 9,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_3_activate",
+      "fig": "hotcue_3_activate",
+      "label": "Left HotCue 3",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate",
+        "type": "note",
+        "ch": 8,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_3_activate_2",
+      "fig": "hotcue_3_activate_2",
+      "label": "Right HotCue 3",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate_2",
+        "type": "note",
+        "ch": 9,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-rate_temp_down",
+      "fig": "rate_temp_down",
+      "label": "Nudge (pitch -)",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down",
+        "type": "note",
+        "ch": 8,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-rate_temp_down_2",
+      "fig": "rate_temp_down_2",
+      "label": "Nudge (pitch-)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_2",
+        "type": "note",
+        "ch": 9,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-scratch_mode",
+      "fig": "scratch_mode",
+      "label": "Scratch mode button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_mode",
+        "type": "note",
+        "ch": 8,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[scratch_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-scratch_mode_2",
+      "fig": "scratch_mode_2",
+      "label": "Scratch mode button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_mode_2",
+        "type": "note",
+        "ch": 9,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[scratch_mode_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-rate_temp_up",
+      "fig": "rate_temp_up",
+      "label": "Nudge (pitch +)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up",
+        "type": "note",
+        "ch": 8,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-rate_temp_up_2",
+      "fig": "rate_temp_up_2",
+      "label": "Nudge (pitch+)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_2",
+        "type": "note",
+        "ch": 9,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-crossfader",
+      "fig": "crossfader",
+      "label": "X-Fader",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_toggle_button",
+      "fig": "fx_toggle_button",
+      "label": "Left Fx Toggle Button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_toggle_button",
+        "type": "note",
+        "ch": 8,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[fx_toggle_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_toggle_button_2",
+      "fig": "fx_toggle_button_2",
+      "label": "Right Fx Toggle Button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_toggle_button_2",
+        "type": "note",
+        "ch": 9,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[fx_toggle_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-volume",
+      "fig": "volume",
+      "label": "MIDI Learned from 150 messages.",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 8,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-volume_2",
+      "fig": "volume_2",
+      "label": "MIDI Learned from 238 messages.",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-pfl",
+      "fig": "pfl",
+      "label": "Left Headphones Button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 8,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-pfl_2",
+      "fig": "pfl_2",
+      "label": "Right Headphones Button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 9,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-rate",
+      "fig": "rate",
+      "label": "Left Pitch Bend",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate",
+        "type": "cc",
+        "ch": 8,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[rate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-rate_2",
+      "fig": "rate_2",
+      "label": "Right Pitch Bend",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[rate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-shift_left_callback",
+      "fig": "shift_left_callback",
+      "label": "Right shift button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_left_callback",
+        "type": "note",
+        "ch": 8,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[shift_left_callback] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-shift_right_callback",
+      "fig": "shift_right_callback",
+      "label": "Left shift button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_right_callback",
+        "type": "note",
+        "ch": 9,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[shift_right_callback] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-pregain",
+      "fig": "pregain",
+      "label": "Left Gain",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 8,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-pregain_2",
+      "fig": "pregain_2",
+      "label": "Right Gain",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-play",
+      "fig": "play",
+      "label": "Left Play",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 8,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-play_2",
+      "fig": "play_2",
+      "label": "Right Play",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 9,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-parameter3",
+      "fig": "parameter3",
+      "label": "Left Equaliser High",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3",
+        "type": "cc",
+        "ch": 8,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-parameter3_2",
+      "fig": "parameter3_2",
+      "label": "Right Equaliser High",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-parameter2",
+      "fig": "parameter2",
+      "label": "Left Equaliser Mid",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2",
+        "type": "cc",
+        "ch": 8,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-parameter2_2",
+      "fig": "parameter2_2",
+      "label": "Right Equaliser Mid",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-sync_enabled",
+      "fig": "sync_enabled",
+      "label": "Left Sync",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled",
+        "type": "note",
+        "ch": 8,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-sync_enabled_2",
+      "fig": "sync_enabled_2",
+      "label": "Right Sync",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_2",
+        "type": "note",
+        "ch": 9,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-parameter1",
+      "fig": "parameter1",
+      "label": "Left Equaliser Low",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1",
+        "type": "cc",
+        "ch": 8,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-parameter1_2",
+      "fig": "parameter1_2",
+      "label": "Right Equaliser Low",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-cue_default",
+      "fig": "cue_default",
+      "label": "Left CUE",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 8,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "Right CUE",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 9,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-browse_knob",
+      "fig": "browse_knob",
+      "label": "Library Browse",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "browse_knob",
+        "type": "cc",
+        "ch": 7,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[browse_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "Left Jog Wheel Touch",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 8,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "Right Jog Wheel Touch",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 9,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_knob",
+      "fig": "fx_knob",
+      "label": "Fx Knob",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_knob",
+        "type": "cc",
+        "ch": 7,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[fx_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_touch",
+      "fig": "fx_touch",
+      "label": "Fx Control",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_touch",
+        "type": "note",
+        "ch": 8,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[fx_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-fx_touch_2",
+      "fig": "fx_touch_2",
+      "label": "Fx Control",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fx_touch_2",
+        "type": "note",
+        "ch": 9,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[fx_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-playposition",
+      "fig": "playposition",
+      "label": "Track Seek",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "playposition",
+        "type": "cc",
+        "ch": 8,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[playposition] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-playposition_2",
+      "fig": "playposition_2",
+      "label": "Track Seek",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "playposition_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[playposition_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_in",
+      "fig": "loop_in",
+      "label": "Left Loop in",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 8,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_in_2",
+      "fig": "loop_in_2",
+      "label": "Right Loop in",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_2",
+        "type": "note",
+        "ch": 9,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[loop_in_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-reloop_toggle",
+      "fig": "reloop_toggle",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_toggle",
+        "type": "note",
+        "ch": 8,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[reloop_toggle] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-reloop_toggle_2",
+      "fig": "reloop_toggle_2",
+      "label": "MIDI Learned from 4 messages.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_toggle_2",
+        "type": "note",
+        "ch": 9,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[reloop_toggle_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_out",
+      "fig": "loop_out",
+      "label": "Left Loop out",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 8,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-loop_out_2",
+      "fig": "loop_out_2",
+      "label": "Right Loop out",
+      "kind": "button",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_2",
+        "type": "note",
+        "ch": 9,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[loop_out_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_1_clear",
+      "fig": "hotcue_1_clear",
+      "label": "Left HotCue 1 clear",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_clear",
+        "type": "note",
+        "ch": 8,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_1_clear_2",
+      "fig": "hotcue_1_clear_2",
+      "label": "Right HotCue 1 clear",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_clear_2",
+        "type": "note",
+        "ch": 9,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_2_clear",
+      "fig": "hotcue_2_clear",
+      "label": "Left HotCue 2 clear",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_clear",
+        "type": "note",
+        "ch": 8,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_2_clear_2",
+      "fig": "hotcue_2_clear_2",
+      "label": "Right HotCue 2 clear",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_clear_2",
+        "type": "note",
+        "ch": 9,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_3_clear",
+      "fig": "hotcue_3_clear",
+      "label": "Left HotCue 3 clear",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_clear",
+        "type": "note",
+        "ch": 8,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_clear] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-hotcue_3_clear_2",
+      "fig": "hotcue_3_clear_2",
+      "label": "Right HotCue 3 clear",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_clear_2",
+        "type": "note",
+        "ch": 9,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_clear_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-cue_gotoandplay",
+      "fig": "cue_gotoandplay",
+      "label": "Sampler 1 Play",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "cue_gotoandplay",
+        "type": "note",
+        "ch": 7,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[cue_gotoandplay] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-cue_gotoandplay_2",
+      "fig": "cue_gotoandplay_2",
+      "label": "Sampler 2 Play",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "cue_gotoandplay_2",
+        "type": "note",
+        "ch": 7,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[cue_gotoandplay_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-cue_gotoandplay_3",
+      "fig": "cue_gotoandplay_3",
+      "label": "Sampler 3 Play",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "cue_gotoandplay_3",
+        "type": "note",
+        "ch": 7,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[cue_gotoandplay_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "korg-kaoss-dj-cue_gotoandplay_4",
+      "fig": "cue_gotoandplay_4",
+      "label": "Sampler 4 Play",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "cue_gotoandplay_4",
+        "type": "note",
+        "ch": 7,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[cue_gotoandplay_4] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

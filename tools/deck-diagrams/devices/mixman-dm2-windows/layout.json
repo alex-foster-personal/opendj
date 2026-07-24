@@ -1,0 +1,480 @@
+{
+  "device": "Mixman DM2 (Windows)",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "mixman-dm2-windows-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-reverse",
+      "fig": "reverse",
+      "label": "reverse",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[reverse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_down",
+      "fig": "rate_perm_down",
+      "label": "rate_perm_down",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_down",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_down] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_up",
+      "fig": "rate_perm_up",
+      "label": "rate_perm_up",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_up",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_up] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_down_small",
+      "fig": "rate_perm_down_small",
+      "label": "rate_perm_down_small",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_down_small",
+        "type": "note",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_down_small] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_up_small",
+      "fig": "rate_perm_up_small",
+      "label": "rate_perm_up_small",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_up_small",
+        "type": "note",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_up_small] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-cue_set",
+      "fig": "cue_set",
+      "label": "cue_set",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_set",
+        "type": "note",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[cue_set] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-cue_preview",
+      "fig": "cue_preview",
+      "label": "cue_preview",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_preview",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[cue_preview] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-cue_goto",
+      "fig": "cue_goto",
+      "label": "cue_goto",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_goto",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[cue_goto] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-flanger",
+      "fig": "flanger",
+      "label": "flanger",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger",
+        "type": "note",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[flanger] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-wheel",
+      "fig": "wheel",
+      "label": "wheel",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-reverse_2",
+      "fig": "reverse_2",
+      "label": "reverse",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_2",
+        "type": "note",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[reverse_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_down_2",
+      "fig": "rate_perm_down_2",
+      "label": "rate_perm_down",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_down_2",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_down_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_up_2",
+      "fig": "rate_perm_up_2",
+      "label": "rate_perm_up",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_up_2",
+        "type": "note",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_up_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_down_small_2",
+      "fig": "rate_perm_down_small_2",
+      "label": "rate_perm_down_small",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_down_small_2",
+        "type": "note",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_down_small_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-rate_perm_up_small_2",
+      "fig": "rate_perm_up_small_2",
+      "label": "rate_perm_up_small",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_up_small_2",
+        "type": "note",
+        "ch": 1,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_up_small_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-cue_set_2",
+      "fig": "cue_set_2",
+      "label": "cue_set",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_set_2",
+        "type": "note",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[cue_set_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-cue_preview_2",
+      "fig": "cue_preview_2",
+      "label": "cue_preview",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_preview_2",
+        "type": "note",
+        "ch": 1,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[cue_preview_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-cue_goto_2",
+      "fig": "cue_goto_2",
+      "label": "cue_goto",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_goto_2",
+        "type": "note",
+        "ch": 1,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[cue_goto_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-flanger_2",
+      "fig": "flanger_2",
+      "label": "flanger",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger_2",
+        "type": "note",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[flanger_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mixman-dm2-windows-wheel_2",
+      "fig": "wheel_2",
+      "label": "wheel",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[wheel_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

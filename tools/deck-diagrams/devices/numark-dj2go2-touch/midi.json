@@ -1,0 +1,514 @@
+{
+  "source": "mixxx:Numark_DJ2GO2_Touch.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-dj2go2-touch/source/Numark_DJ2GO2_Touch.midi.xml",
+  "device": "Numark DJ2GO2 Touch",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 2,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.loadButton.input [channel1_input]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.wheelTurn [wheel_turn]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 17,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.beatloopButtons[1].input [channel1_input_2]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 18,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.beatloopButtons[2].input [channel1_input_3]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 19,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.beatloopButtons[3].input [channel1_input_4]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.beatloopButtons[4].input [channel1_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.cueButton.input [channel1_input_6]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 1,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[1].input [channel1_input_7]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[2].input [channel1_input_8]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[3].input [channel1_input_9]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 4,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[4].input [channel1_input_10]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 9,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[1].input [channel1_input_11]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[2].input [channel1_input_12]"
+    },
+    {
+      "name": "channel1_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[3].input [channel1_input_13]"
+    },
+    {
+      "name": "channel1_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 12,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.hotcueButtons[4].input [channel1_input_14]"
+    },
+    {
+      "name": "channel1_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 33,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.loopIn.input [channel1_input_15]"
+    },
+    {
+      "name": "channel1_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 34,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.loopOut.input [channel1_input_16]"
+    },
+    {
+      "name": "channel1_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 36,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.reLoopStop.input [channel1_input_17]"
+    },
+    {
+      "name": "channel1_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.pflButton.input [channel1_input_18]"
+    },
+    {
+      "name": "channel1_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.playButton.input [channel1_input_19]"
+    },
+    {
+      "name": "channel1_input_20",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.tempoFader.input [channel1_input_20]"
+    },
+    {
+      "name": "channel1_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 35,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.LoopToggleButton.input [channel1_input_21]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.preGain.input [quick_effect_rack1_channel1_input]"
+    },
+    {
+      "name": "channel1_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.syncButton.input [channel1_input_22]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 3,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.loadButton.input [channel2_input]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "wheel_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.wheelTurn [wheel_turn_2]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 17,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.beatloopButtons[1].input [channel2_input_2]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 18,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.beatloopButtons[2].input [channel2_input_3]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 19,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.beatloopButtons[3].input [channel2_input_4]"
+    },
+    {
+      "name": "channel1_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 20,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.beatloopButtons[4].input [channel1_input_23]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.cueButton.input [channel2_input_5]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 1,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[1].input [channel2_input_6]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 2,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[2].input [channel2_input_7]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 3,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[3].input [channel2_input_8]"
+    },
+    {
+      "name": "channel2_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 4,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[4].input [channel2_input_9]"
+    },
+    {
+      "name": "channel2_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 9,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[1].input [channel2_input_10]"
+    },
+    {
+      "name": "channel2_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[2].input [channel2_input_11]"
+    },
+    {
+      "name": "channel2_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[3].input [channel2_input_12]"
+    },
+    {
+      "name": "channel2_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 12,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.hotcueButtons[4].input [channel2_input_13]"
+    },
+    {
+      "name": "channel2_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 33,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.loopIn.input [channel2_input_14]"
+    },
+    {
+      "name": "channel2_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 34,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.loopOut.input [channel2_input_15]"
+    },
+    {
+      "name": "channel2_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 36,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.reLoopStop.input [channel2_input_16]"
+    },
+    {
+      "name": "channel2_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.pflButton.input [channel2_input_17]"
+    },
+    {
+      "name": "channel2_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.playButton.input [channel2_input_18]"
+    },
+    {
+      "name": "channel2_input_19",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.tempoFader.input [channel2_input_19]"
+    },
+    {
+      "name": "channel2_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 35,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.LoopToggleButton.input [channel2_input_20]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.preGain.input [quick_effect_rack1_channel2_input]"
+    },
+    {
+      "name": "channel2_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.syncButton.input [channel2_input_21]"
+    },
+    {
+      "name": "library_browser_knob",
+      "section": "browser",
+      "type": "cc",
+      "ch": 16,
+      "code": 0,
+      "notes": "Mixxx DJ2GO2Touch.browseEncoder.input [library_browser_knob]"
+    },
+    {
+      "name": "library_browser_knob_press",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 6,
+      "notes": "Mixxx DJ2GO2Touch.browseEncoder.input [library_browser_knob_press]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 8,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 10,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 12,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "sampler1_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 5,
+      "code": 49,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.samplerButtons[1].input [sampler1_input]"
+    },
+    {
+      "name": "sampler2_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 5,
+      "code": 50,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.samplerButtons[2].input [sampler2_input]"
+    },
+    {
+      "name": "sampler3_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 5,
+      "code": 51,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.samplerButtons[3].input [sampler3_input]"
+    },
+    {
+      "name": "sampler4_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 5,
+      "code": 52,
+      "notes": "Mixxx DJ2GO2Touch.leftDeck.samplerButtons[4].input [sampler4_input]"
+    },
+    {
+      "name": "sampler5_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 6,
+      "code": 49,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.samplerButtons[1].input [sampler5_input]"
+    },
+    {
+      "name": "sampler6_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 6,
+      "code": 50,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.samplerButtons[2].input [sampler6_input]"
+    },
+    {
+      "name": "sampler7_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 6,
+      "code": 51,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.samplerButtons[3].input [sampler7_input]"
+    },
+    {
+      "name": "sampler8_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 6,
+      "code": 52,
+      "notes": "Mixxx DJ2GO2Touch.rightDeck.samplerButtons[4].input [sampler8_input]"
+    }
+  ]
+}

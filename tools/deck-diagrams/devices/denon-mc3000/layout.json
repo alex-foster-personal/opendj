@@ -1,0 +1,2540 @@
+{
+  "device": "Denon MC3000 v0.995",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "denon-mc3000-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-volume",
+      "fig": "volume",
+      "label": "Volume Fader deck1 (A)",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-volume_2",
+      "fig": "volume_2",
+      "label": "Volume Fader deck2 (B)",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-volume_3",
+      "fig": "volume_3",
+      "label": "Volume Fader deck3 (C)",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-volume_4",
+      "fig": "volume_4",
+      "label": "Volume Fader deck4 (D)",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain",
+      "fig": "pregain",
+      "label": "Pregain knob deck1 (A)",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_2",
+      "fig": "pregain_2",
+      "label": "Pregain knob deck2 (B)",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_3",
+      "fig": "pregain_3",
+      "label": "Pregain knob deck3 (C)",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pregain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_4",
+      "fig": "pregain_4",
+      "label": "Pregain knob deck4 (D)",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[pregain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_high",
+      "fig": "filter_high",
+      "label": "FilterHigh knob deck1 (A)",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[filter_high] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_high_2",
+      "fig": "filter_high_2",
+      "label": "FilterHigh knob deck2 (B)",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[filter_high_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_high_3",
+      "fig": "filter_high_3",
+      "label": "FilterHigh knob deck3 (C)",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[filter_high_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_high_4",
+      "fig": "filter_high_4",
+      "label": "FilterHigh knob deck4 (D)",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[filter_high_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_mid",
+      "fig": "filter_mid",
+      "label": "FilterMid knob deck1 (A)",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[filter_mid] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_mid_2",
+      "fig": "filter_mid_2",
+      "label": "FilterMid knob deck2 (B)",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_mid_3",
+      "fig": "filter_mid_3",
+      "label": "FilterMid knob deck3 (C)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_mid_4",
+      "fig": "filter_mid_4",
+      "label": "FilterMid knob deck4 (D)",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_low",
+      "fig": "filter_low",
+      "label": "FilterLow knob deck1 (A)",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[filter_low] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_low_2",
+      "fig": "filter_low_2",
+      "label": "FilterLow knob deck2 (B)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[filter_low_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_low_3",
+      "fig": "filter_low_3",
+      "label": "FilterLow knob deck3 (C)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[filter_low_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-filter_low_4",
+      "fig": "filter_low_4",
+      "label": "FilterLow knob deck4 (D)",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[filter_low_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-jog_wheel",
+      "fig": "jog_wheel",
+      "label": "JogWheel deck1 (A)",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-jog_wheel_2",
+      "fig": "jog_wheel_2",
+      "label": "JogWheel deck2 (B)",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-jog_wheel_3",
+      "fig": "jog_wheel_3",
+      "label": "JogWheel deck3 (C)",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-jog_wheel_4",
+      "fig": "jog_wheel_4",
+      "label": "JogWheel deck4 (D)",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "TouchWheel pressed deck1 (A)",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "TouchWheel pressed deck2 (B)",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-wheel_touch_3",
+      "fig": "wheel_touch_3",
+      "label": "TouchWheel pressed deck3 (C)",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_3",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-wheel_touch_4",
+      "fig": "wheel_touch_4",
+      "label": "TouchWheel pressed deck4 (D)",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-rate",
+      "fig": "rate",
+      "label": "rate",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate",
+        "type": "cc",
+        "ch": 1,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[rate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-rate_2",
+      "fig": "rate_2",
+      "label": "rate",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[rate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pfl",
+      "fig": "pfl",
+      "label": "Cue PFL deck1 (A)",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pfl_2",
+      "fig": "pfl_2",
+      "label": "Cue PFL deck2 (B)",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pfl_3",
+      "fig": "pfl_3",
+      "label": "Cue PFL deck3 (C)",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_3",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pfl_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pfl_4",
+      "fig": "pfl_4",
+      "label": "Cue PFL deck4 (D)",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_4",
+        "type": "note",
+        "ch": 4,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pfl_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x",
+      "fig": "efx_beat_loop_x",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_2",
+      "fig": "efx_beat_loop_x_2",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_2",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_3",
+      "fig": "efx_beat_loop_x_3",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_3",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_4",
+      "fig": "efx_beat_loop_x_4",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_4",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_5",
+      "fig": "efx_beat_loop_x_5",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_5",
+        "type": "note",
+        "ch": 3,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_6",
+      "fig": "efx_beat_loop_x_6",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_6",
+        "type": "note",
+        "ch": 3,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_7",
+      "fig": "efx_beat_loop_x_7",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_7",
+        "type": "note",
+        "ch": 3,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-efx_beat_loop_x_8",
+      "fig": "efx_beat_loop_x_8",
+      "label": "efx_beatLoopX",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "efx_beat_loop_x_8",
+        "type": "note",
+        "ch": 3,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[efx_beat_loop_x_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset",
+      "fig": "hotcueset",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[hotcueset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_2",
+      "fig": "hotcueset_2",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_2",
+        "type": "note",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_3",
+      "fig": "hotcueset_3",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_3",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_4",
+      "fig": "hotcueset_4",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_4",
+        "type": "note",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_5",
+      "fig": "hotcueset_5",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_5",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_6",
+      "fig": "hotcueset_6",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_6",
+        "type": "note",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_7",
+      "fig": "hotcueset_7",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_7",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_8",
+      "fig": "hotcueset_8",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_8",
+        "type": "note",
+        "ch": 3,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_9",
+      "fig": "hotcueset_9",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_9",
+        "type": "note",
+        "ch": 1,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_10",
+      "fig": "hotcueset_10",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_10",
+        "type": "note",
+        "ch": 3,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_11",
+      "fig": "hotcueset_11",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_11",
+        "type": "note",
+        "ch": 1,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_12",
+      "fig": "hotcueset_12",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_12",
+        "type": "note",
+        "ch": 3,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_13",
+      "fig": "hotcueset_13",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_13",
+        "type": "note",
+        "ch": 1,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_14",
+      "fig": "hotcueset_14",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_14",
+        "type": "note",
+        "ch": 3,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_15",
+      "fig": "hotcueset_15",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_15",
+        "type": "note",
+        "ch": 1,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-hotcueset_16",
+      "fig": "hotcueset_16",
+      "label": "hotcueset",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcueset_16",
+        "type": "note",
+        "ch": 3,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[hotcueset_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-lfo_period",
+      "fig": "lfo_period",
+      "label": "lfoPeriod",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "lfo_period",
+        "type": "cc",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[lfo_period] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-lfo_depth",
+      "fig": "lfo_depth",
+      "label": "lfoDepth",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "lfo_depth",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[lfo_depth] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-lfo_delay",
+      "fig": "lfo_delay",
+      "label": "lfoDelay",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "lfo_delay",
+        "type": "cc",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[lfo_delay] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-mic_volume",
+      "fig": "mic_volume",
+      "label": "micVolume",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "mic_volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[mic_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-head_mix",
+      "fig": "head_mix",
+      "label": "headMix",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 3,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-head_volume",
+      "fig": "head_volume",
+      "label": "headVolume",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_volume",
+        "type": "cc",
+        "ch": 3,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[head_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-master_balance",
+      "fig": "master_balance",
+      "label": "masterBalance",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_balance",
+        "type": "cc",
+        "ch": 3,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[master_balance] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-master_volume",
+      "fig": "master_volume",
+      "label": "masterVolume",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_volume",
+        "type": "cc",
+        "ch": 3,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[master_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_5",
+      "fig": "pregain_5",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "pregain_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[pregain_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_6",
+      "fig": "pregain_6",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "pregain_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[pregain_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_3",
+      "fig": "play_3",
+      "label": "play",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "play_3",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[play_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_7",
+      "fig": "pregain_7",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "pregain_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[pregain_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_4",
+      "fig": "play_4",
+      "label": "play",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "play_4",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[play_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-pregain_8",
+      "fig": "pregain_8",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "pregain_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[pregain_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-cue_default",
+      "fig": "cue_default",
+      "label": "Cue BT pressed deck1 (A)",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "Cue BT pressed deck2 (B)",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 3,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-cue_default_3",
+      "fig": "cue_default_3",
+      "label": "Cue BT pressed deck3 (C)",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_3",
+        "type": "note",
+        "ch": 2,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_default_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-cue_default_4",
+      "fig": "cue_default_4",
+      "label": "Cue BT pressed deck4 (D)",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_4",
+        "type": "note",
+        "ch": 4,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_default_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_5",
+      "fig": "play_5",
+      "label": "Play BT deck1 (A)",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_5",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_6",
+      "fig": "play_6",
+      "label": "Play BT deck2 (B)",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_6",
+        "type": "note",
+        "ch": 3,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_7",
+      "fig": "play_7",
+      "label": "Play BT deck3 (C)",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_7",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-play_8",
+      "fig": "play_8",
+      "label": "Play BT deck4 (D)",
+      "kind": "button",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_8",
+        "type": "note",
+        "ch": 4,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_in",
+      "fig": "loop_in",
+      "label": "loopIn",
+      "kind": "button",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_in_2",
+      "fig": "loop_in_2",
+      "label": "loopIn",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_2",
+        "type": "note",
+        "ch": 3,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_out",
+      "fig": "loop_out",
+      "label": "loopOut",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_out_2",
+      "fig": "loop_out_2",
+      "label": "loopOut",
+      "kind": "button",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_2",
+        "type": "note",
+        "ch": 3,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_cut_m",
+      "fig": "loop_cut_m",
+      "label": "loopCutM",
+      "kind": "button",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_cut_m",
+        "type": "note",
+        "ch": 1,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[loop_cut_m] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_cut_m_2",
+      "fig": "loop_cut_m_2",
+      "label": "loopCutM",
+      "kind": "button",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_cut_m_2",
+        "type": "note",
+        "ch": 3,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[loop_cut_m_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_cut_p",
+      "fig": "loop_cut_p",
+      "label": "loopCutP",
+      "kind": "button",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_cut_p",
+        "type": "note",
+        "ch": 1,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[loop_cut_p] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-loop_cut_p_2",
+      "fig": "loop_cut_p_2",
+      "label": "loopCutP",
+      "kind": "button",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_cut_p_2",
+        "type": "note",
+        "ch": 3,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[loop_cut_p_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-auto_loop",
+      "fig": "auto_loop",
+      "label": "autoLoop",
+      "kind": "button",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "auto_loop",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[auto_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-auto_loop_2",
+      "fig": "auto_loop_2",
+      "label": "autoLoop",
+      "kind": "button",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "auto_loop_2",
+        "type": "note",
+        "ch": 3,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[auto_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-kill_mid",
+      "fig": "kill_mid",
+      "label": "BT Sample",
+      "kind": "button",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "kill_mid",
+        "type": "note",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[kill_mid] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-kill_mid_2",
+      "fig": "kill_mid_2",
+      "label": "BT EFX",
+      "kind": "button",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "kill_mid_2",
+        "type": "note",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[kill_mid_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-kill_bass",
+      "fig": "kill_bass",
+      "label": "BT Browse",
+      "kind": "encoder",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "kill_bass",
+        "type": "note",
+        "ch": 1,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[kill_bass] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-kill_bass_2",
+      "fig": "kill_bass_2",
+      "label": "BT Record",
+      "kind": "button",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "kill_bass_2",
+        "type": "note",
+        "ch": 1,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[kill_bass_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-cf_mode",
+      "fig": "cf_mode",
+      "label": "BT CfMode",
+      "kind": "button",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cf_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[cf_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 1,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-select_prev_playlist",
+      "fig": "select_prev_playlist",
+      "label": "SelectPrevPlaylist",
+      "kind": "button",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_prev_playlist",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[select_prev_playlist] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-select_next_playlist",
+      "fig": "select_next_playlist",
+      "label": "SelectNextPlaylist",
+      "kind": "button",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_next_playlist",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[select_next_playlist] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-load_selected_into_first_stopped",
+      "fig": "load_selected_into_first_stopped",
+      "label": "LoadSelectedIntoFirstStopped",
+      "kind": "button",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "load_selected_into_first_stopped",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[load_selected_into_first_stopped] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-select_knob",
+      "fig": "select_knob",
+      "label": "Track select knob",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[select_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-keylock",
+      "fig": "keylock",
+      "label": "Keylock BT deck1 (A)",
+      "kind": "button",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-keylock_2",
+      "fig": "keylock_2",
+      "label": "Keylock BT deck2 (B)",
+      "kind": "button",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-keylock_3",
+      "fig": "keylock_3",
+      "label": "Keylock BT deck3 (C)",
+      "kind": "button",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_3",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[keylock_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-keylock_4",
+      "fig": "keylock_4",
+      "label": "Keylock BT deck4 (D)",
+      "kind": "button",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_4",
+        "type": "note",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[keylock_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-beatsync",
+      "fig": "beatsync",
+      "label": "Sync BT deck1 (A)",
+      "kind": "button",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync",
+        "type": "note",
+        "ch": 1,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[beatsync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-beatsync_2",
+      "fig": "beatsync_2",
+      "label": "Sync BT deck2 (B)",
+      "kind": "button",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync_2",
+        "type": "note",
+        "ch": 3,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[beatsync_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-beatsync_3",
+      "fig": "beatsync_3",
+      "label": "Sync BT deck3 (C)",
+      "kind": "button",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync_3",
+        "type": "note",
+        "ch": 2,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[beatsync_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-beatsync_4",
+      "fig": "beatsync_4",
+      "label": "Sync BT deck4 (D)",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync_4",
+        "type": "note",
+        "ch": 4,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[beatsync_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-vinylmode",
+      "fig": "vinylmode",
+      "label": "VinylMode BT deck1 (A)",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinylmode",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[vinylmode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-vinylmode_2",
+      "fig": "vinylmode_2",
+      "label": "VinylMode BT deck2 (B)",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinylmode_2",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[vinylmode_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-vinylmode_3",
+      "fig": "vinylmode_3",
+      "label": "VinylMode BT deck3 (C)",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinylmode_3",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[vinylmode_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-vinylmode_4",
+      "fig": "vinylmode_4",
+      "label": "VinylMode BT deck4 (D)",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinylmode_4",
+        "type": "note",
+        "ch": 4,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[vinylmode_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-bend_up",
+      "fig": "bend_up",
+      "label": "bendUp",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bend_up",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[bend_up] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-bend_down",
+      "fig": "bend_down",
+      "label": "bendDown",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bend_down",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[bend_down] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-bend_up_2",
+      "fig": "bend_up_2",
+      "label": "bendUp",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bend_up_2",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[bend_up_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-bend_down_2",
+      "fig": "bend_down_2",
+      "label": "bendDown",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bend_down_2",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[bend_down_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-shift",
+      "fig": "shift",
+      "label": "shift",
+      "kind": "button",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift",
+        "type": "note",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-shift_2",
+      "fig": "shift_2",
+      "label": "shift",
+      "kind": "button",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_2",
+        "type": "note",
+        "ch": 3,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-fxon1",
+      "fig": "fxon1",
+      "label": "fxon1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxon1",
+        "type": "note",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[fxon1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-fxon1_2",
+      "fig": "fxon1_2",
+      "label": "fxon1",
+      "kind": "button",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxon1_2",
+        "type": "note",
+        "ch": 3,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[fxon1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-fxon2",
+      "fig": "fxon2",
+      "label": "fxon2",
+      "kind": "button",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxon2",
+        "type": "note",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[fxon2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc3000-fxon2_2",
+      "fig": "fxon2_2",
+      "label": "fxon2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fxon2_2",
+        "type": "note",
+        "ch": 3,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[fxon2_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

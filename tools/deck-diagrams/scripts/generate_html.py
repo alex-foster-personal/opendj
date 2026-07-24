@@ -82,6 +82,17 @@ DECK_EXTRA = """
 """
 
 
+def _esc(s: object) -> str:
+    """Escape attribute values so labels like 'CALL >' cannot break the tag."""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def _ctrl_style(c: dict) -> str:
     return f"left:{c['x']}%;top:{c['y']}%;width:{c['w']}%;height:{c['h']}%;"
 
@@ -90,11 +101,11 @@ def _ctrl_attrs(c: dict) -> str:
     m = c["midi"]
     shift = m.get("shift_name") or ""
     return (
-        f'data-fig="{c["fig"]}" data-label="{c["label"]}" data-kind="{c["kind"]}" '
-        f'data-midi-name="{m["name"]}" data-midi-type="{m["type"]}" '
-        f'data-midi-ch="{m["ch"]}" data-midi-code="{m["code"]}" '
-        f'data-shift-name="{shift}" data-layer="{c["layer"]}" '
-        f'title="{c["fig"]} {c["label"]}"'
+        f'data-fig="{_esc(c["fig"])}" data-label="{_esc(c["label"])}" data-kind="{_esc(c["kind"])}" '
+        f'data-midi-name="{_esc(m["name"])}" data-midi-type="{_esc(m["type"])}" '
+        f'data-midi-ch="{_esc(m["ch"])}" data-midi-code="{_esc(m["code"])}" '
+        f'data-shift-name="{_esc(shift)}" data-layer="{_esc(c["layer"])}" '
+        f'title="{_esc(c["fig"])} {_esc(c["label"])}"'
     )
 
 

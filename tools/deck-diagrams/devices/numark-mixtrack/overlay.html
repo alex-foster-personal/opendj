@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Numark MIXTRACK overlay (red recreation)</title>
+<style>
+:root {
+  --bg: #0e1114;
+  --ink: #e8eef2;
+  --muted: #8a9aa6;
+  --red: #ff2a2a;
+  --accent: #3dd6c6;
+  --panel: #1a2229;
+  --shift: #ffb020;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--ink);
+}
+header {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #2a3540;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+header .meta { color: var(--muted); font-size: 12px; }
+.toolbar button, .toolbar label {
+  background: #24303a; color: var(--ink); border: 1px solid #3a4a57;
+  border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.toolbar button.active, .toolbar button[aria-pressed="true"] {
+  background: var(--shift); color: #111; border-color: var(--shift); font-weight: 600;
+}
+.stage-wrap { padding: 12px; overflow: auto; }
+.stage {
+  position: relative; width: min(1200px, 100%);
+  margin: 0 auto; user-select: none;
+}
+.stage img.plate { width: 100%; height: auto; display: block; border-radius: 4px; }
+.control {
+  position: absolute; border: 2px solid var(--red); color: var(--red);
+  background: rgba(255, 40, 40, 0.12); font-size: 9px; line-height: 1.1;
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  padding: 1px 2px; overflow: hidden; cursor: pointer;
+}
+.control .tag { font-weight: 700; pointer-events: none; }
+.control.kind-jog { border-radius: 50%; }
+.control.kind-knob, .control.kind-encoder { border-radius: 50%; }
+.control.kind-fader { border-radius: 2px; }
+.control.kind-pad { border-radius: 3px; }
+.control.pressed, .control:active { background: rgba(255,40,40,0.45); }
+.control.shift-hot { border-color: var(--shift); color: var(--shift); background: rgba(255,176,32,0.18); }
+#readout {
+  position: sticky; bottom: 0; background: #12181e; border-top: 1px solid #2a3540;
+  padding: 10px 14px; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px; min-height: 52px;
+}
+#readout .k { color: var(--accent); }
+.legend { color: var(--muted); font-size: 11px; margin-left: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Numark MIXTRACK - red overlay</h1>
+  <span class="meta">Compare recreation vs official plate. Missing = no red box.</span>
+  <div class="toolbar">
+    <button type="button" id="shiftBtn" aria-pressed="false" title="Toggle SHIFT layer highlight">SHIFT</button>
+  </div>
+  <span class="legend">Hold keyboard Shift or click SHIFT · hover for MIDI</span>
+</header>
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+    <img class="plate" src="" alt="Numark MIXTRACK official plate"/>
+    <div class="control kind-knob" style="left:2.0%;top:4.0%;width:4.0%;height:4.5%;" data-fig="head_mix" data-label="headMix" data-kind="knob" data-midi-name="head_mix" data-midi-type="cc" data-midi-ch="1" data-midi-code="12" data-shift-name="" data-layer="base" title="head_mix headMix"><span class="tag">head_mix</span></div><div class="control kind-fader" style="left:9.8%;top:4.0%;width:3.0%;height:8.0%;" data-fig="volume" data-label="volume" data-kind="fader" data-midi-name="volume" data-midi-type="cc" data-midi-ch="1" data-midi-code="23" data-shift-name="" data-layer="base" title="volume volume"><span class="tag">volume</span></div><div class="control kind-fader" style="left:17.6%;top:4.0%;width:3.0%;height:8.0%;" data-fig="head_volume" data-label="headVolume" data-kind="fader" data-midi-name="head_volume" data-midi-type="cc" data-midi-ch="1" data-midi-code="11" data-shift-name="" data-layer="base" title="head_volume headVolume"><span class="tag">head_volume</span></div><div class="control kind-fader" style="left:25.4%;top:4.0%;width:3.0%;height:8.0%;" data-fig="crossfader" data-label="crossfader" data-kind="fader" data-midi-name="crossfader" data-midi-type="cc" data-midi-ch="1" data-midi-code="10" data-shift-name="" data-layer="base" title="crossfader crossfader"><span class="tag">crossfader</span></div><div class="control kind-knob" style="left:33.2%;top:4.0%;width:4.0%;height:4.5%;" data-fig="select_knob" data-label="selectKnob" data-kind="knob" data-midi-name="select_knob" data-midi-type="cc" data-midi-ch="1" data-midi-code="26" data-shift-name="" data-layer="base" title="select_knob selectKnob"><span class="tag">select_knob</span></div><div class="control kind-button" style="left:41.0%;top:4.0%;width:4.0%;height:4.5%;" data-fig="toggle_directory_mode" data-label="toggleDirectoryMode" data-kind="button" data-midi-name="toggle_directory_mode" data-midi-type="note" data-midi-ch="1" data-midi-code="105" data-shift-name="" data-layer="base" title="toggle_directory_mode toggleDirectoryMode"><span class="tag">toggle_directory_mode</span></div><div class="control kind-button" style="left:48.8%;top:4.0%;width:4.0%;height:4.5%;" data-fig="load_selected_into_first_stopped" data-label="LoadSelectedIntoFirstStopped" data-kind="button" data-midi-name="load_selected_into_first_stopped" data-midi-type="note" data-midi-ch="1" data-midi-code="79" data-shift-name="" data-layer="base" title="load_selected_into_first_stopped LoadSelectedIntoFirstStopped"><span class="tag">load_selected_into_first_stopped</span></div><div class="control kind-knob" style="left:56.6%;top:4.0%;width:4.0%;height:4.5%;" data-fig="lfo_depth" data-label="lfoDepth" data-kind="knob" data-midi-name="lfo_depth" data-midi-type="cc" data-midi-ch="1" data-midi-code="28" data-shift-name="" data-layer="base" title="lfo_depth lfoDepth"><span class="tag">lfo_depth</span></div><div class="control kind-knob" style="left:64.4%;top:4.0%;width:4.0%;height:4.5%;" data-fig="lfo_period" data-label="lfoPeriod" data-kind="knob" data-midi-name="lfo_period" data-midi-type="cc" data-midi-ch="1" data-midi-code="27" data-shift-name="" data-layer="base" title="lfo_period lfoPeriod"><span class="tag">lfo_period</span></div><div class="control kind-knob" style="left:72.2%;top:4.0%;width:4.0%;height:4.5%;" data-fig="lfo_delay" data-label="lfoDelay" data-kind="knob" data-midi-name="lfo_delay" data-midi-type="cc" data-midi-ch="1" data-midi-code="29" data-shift-name="" data-layer="base" title="lfo_delay lfoDelay"><span class="tag">lfo_delay</span></div><div class="control kind-button" style="left:80.0%;top:4.0%;width:4.0%;height:4.5%;" data-fig="play" data-label="play" data-kind="button" data-midi-name="play" data-midi-type="note" data-midi-ch="1" data-midi-code="59" data-shift-name="" data-layer="base" title="play play"><span class="tag">play</span></div><div class="control kind-button" style="left:87.8%;top:4.0%;width:4.0%;height:4.5%;" data-fig="cue_default" data-label="cue_default" data-kind="button" data-midi-name="cue_default" data-midi-type="note" data-midi-ch="1" data-midi-code="51" data-shift-name="" data-layer="base" title="cue_default cue_default"><span class="tag">cue_default</span></div><div class="control kind-button" style="left:2.0%;top:10.5%;width:4.0%;height:4.5%;" data-fig="cue_goto" data-label="cue_goto" data-kind="button" data-midi-name="cue_goto" data-midi-type="note" data-midi-ch="1" data-midi-code="74" data-shift-name="" data-layer="base" title="cue_goto cue_goto"><span class="tag">cue_goto</span></div><div class="control kind-button" style="left:9.8%;top:10.5%;width:4.0%;height:4.5%;" data-fig="cue_set" data-label="cue_set" data-kind="button" data-midi-name="cue_set" data-midi-type="note" data-midi-ch="1" data-midi-code="89" data-shift-name="" data-layer="base" title="cue_set cue_set"><span class="tag">cue_set</span></div><div class="control kind-button" style="left:17.6%;top:10.5%;width:4.0%;height:4.5%;" data-fig="beatsync" data-label="beatsync" data-kind="button" data-midi-name="beatsync" data-midi-type="note" data-midi-ch="1" data-midi-code="64" data-shift-name="" data-layer="base" title="beatsync beatsync"><span class="tag">beatsync</span></div><div class="control kind-button" style="left:25.4%;top:10.5%;width:4.0%;height:4.5%;" data-fig="toggle_keylock" data-label="ToggleKeylock" data-kind="button" data-midi-name="toggle_keylock" data-midi-type="note" data-midi-ch="1" data-midi-code="81" data-shift-name="" data-layer="base" title="toggle_keylock ToggleKeylock"><span class="tag">toggle_keylock</span></div><div class="control kind-button" style="left:33.2%;top:10.5%;width:4.0%;height:4.5%;" data-fig="pfl" data-label="pfl" data-kind="button" data-midi-name="pfl" data-midi-type="note" data-midi-ch="1" data-midi-code="101" data-shift-name="" data-layer="base" title="pfl pfl"><span class="tag">pfl</span></div><div class="control kind-knob" style="left:41.0%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_high_kill" data-label="filterHighKill" data-kind="knob" data-midi-name="filter_high_kill" data-midi-type="note" data-midi-ch="1" data-midi-code="92" data-shift-name="" data-layer="base" title="filter_high_kill filterHighKill"><span class="tag">filter_high_kill</span></div><div class="control kind-knob" style="left:48.8%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_kill" data-label="filterMidKill" data-kind="knob" data-midi-name="filter_mid_kill" data-midi-type="note" data-midi-ch="1" data-midi-code="91" data-shift-name="" data-layer="base" title="filter_mid_kill filterMidKill"><span class="tag">filter_mid_kill</span></div><div class="control kind-knob" style="left:56.6%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_low_kill" data-label="filterLowKill" data-kind="knob" data-midi-name="filter_low_kill" data-midi-type="note" data-midi-ch="1" data-midi-code="90" data-shift-name="" data-layer="base" title="filter_low_kill filterLowKill"><span class="tag">filter_low_kill</span></div><div class="control kind-knob" style="left:64.4%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_high" data-label="filterHigh" data-kind="knob" data-midi-name="filter_high" data-midi-type="cc" data-midi-ch="1" data-midi-code="16" data-shift-name="" data-layer="base" title="filter_high filterHigh"><span class="tag">filter_high</span></div><div class="control kind-knob" style="left:72.2%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_mid" data-label="filterMid" data-kind="knob" data-midi-name="filter_mid" data-midi-type="cc" data-midi-ch="1" data-midi-code="18" data-shift-name="" data-layer="base" title="filter_mid filterMid"><span class="tag">filter_mid</span></div><div class="control kind-knob" style="left:80.0%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_low" data-label="filterLow" data-kind="knob" data-midi-name="filter_low" data-midi-type="cc" data-midi-ch="1" data-midi-code="20" data-shift-name="" data-layer="base" title="filter_low filterLow"><span class="tag">filter_low</span></div><div class="control kind-button" style="left:87.8%;top:10.5%;width:4.0%;height:4.5%;" data-fig="toggle_manual_looping" data-label="toggleManualLooping" data-kind="button" data-midi-name="toggle_manual_looping" data-midi-type="note" data-midi-ch="1" data-midi-code="97" data-shift-name="" data-layer="base" title="toggle_manual_looping toggleManualLooping"><span class="tag">toggle_manual_looping</span></div><div class="control kind-button" style="left:2.0%;top:17.0%;width:4.0%;height:4.5%;" data-fig="loop_in" data-label="loopIn" data-kind="button" data-midi-name="loop_in" data-midi-type="note" data-midi-ch="1" data-midi-code="83" data-shift-name="" data-layer="base" title="loop_in loopIn"><span class="tag">loop_in</span></div><div class="control kind-button" style="left:9.8%;top:17.0%;width:4.0%;height:4.5%;" data-fig="loop_out" data-label="loopOut" data-kind="button" data-midi-name="loop_out" data-midi-type="note" data-midi-ch="1" data-midi-code="84" data-shift-name="" data-layer="base" title="loop_out loopOut"><span class="tag">loop_out</span></div><div class="control kind-button" style="left:17.6%;top:17.0%;width:4.0%;height:4.5%;" data-fig="re_loop" data-label="reLoop" data-kind="button" data-midi-name="re_loop" data-midi-type="note" data-midi-ch="1" data-midi-code="85" data-shift-name="" data-layer="base" title="re_loop reLoop"><span class="tag">re_loop</span></div><div class="control kind-button" style="left:25.4%;top:17.0%;width:4.0%;height:4.5%;" data-fig="load_selected_track" data-label="LoadSelectedTrack" data-kind="button" data-midi-name="load_selected_track" data-midi-type="note" data-midi-ch="1" data-midi-code="75" data-shift-name="" data-layer="base" title="load_selected_track LoadSelectedTrack"><span class="tag">load_selected_track</span></div><div class="control kind-fader" style="left:33.2%;top:17.0%;width:3.0%;height:8.0%;" data-fig="volume_2" data-label="volume" data-kind="fader" data-midi-name="volume_2" data-midi-type="cc" data-midi-ch="1" data-midi-code="8" data-shift-name="" data-layer="base" title="volume_2 volume"><span class="tag">volume_2</span></div><div class="control kind-knob" style="left:41.0%;top:17.0%;width:4.0%;height:4.5%;" data-fig="rate" data-label="rate" data-kind="knob" data-midi-name="rate" data-midi-type="cc" data-midi-ch="1" data-midi-code="13" data-shift-name="" data-layer="base" title="rate rate"><span class="tag">rate</span></div><div class="control kind-knob" style="left:48.8%;top:17.0%;width:4.0%;height:4.5%;" data-fig="rate_temp_up" data-label="rate_temp_up" data-kind="knob" data-midi-name="rate_temp_up" data-midi-type="note" data-midi-ch="1" data-midi-code="68" data-shift-name="" data-layer="base" title="rate_temp_up rate_temp_up"><span class="tag">rate_temp_up</span></div><div class="control kind-knob" style="left:56.6%;top:17.0%;width:4.0%;height:4.5%;" data-fig="rate_temp_down" data-label="rate_temp_down" data-kind="knob" data-midi-name="rate_temp_down" data-midi-type="note" data-midi-ch="1" data-midi-code="67" data-shift-name="" data-layer="base" title="rate_temp_down rate_temp_down"><span class="tag">rate_temp_down</span></div><div class="control kind-button" style="left:64.4%;top:17.0%;width:4.0%;height:4.5%;" data-fig="toggle_scratch_mode" data-label="toggleScratchMode" data-kind="button" data-midi-name="toggle_scratch_mode" data-midi-type="note" data-midi-ch="1" data-midi-code="72" data-shift-name="" data-layer="base" title="toggle_scratch_mode toggleScratchMode"><span class="tag">toggle_scratch_mode</span></div><div class="control kind-jog" style="left:72.2%;top:17.0%;width:6.0%;height:6.0%;" data-fig="wheel_touch" data-label="WheelTouch" data-kind="jog" data-midi-name="wheel_touch" data-midi-type="note" data-midi-ch="1" data-midi-code="78" data-shift-name="" data-layer="base" title="wheel_touch WheelTouch"><span class="tag">wheel_touch</span></div><div class="control kind-jog" style="left:80.0%;top:17.0%;width:6.0%;height:6.0%;" data-fig="jog_wheel" data-label="jogWheel" data-kind="jog" data-midi-name="jog_wheel" data-midi-type="cc" data-midi-ch="1" data-midi-code="25" data-shift-name="" data-layer="base" title="jog_wheel jogWheel"><span class="tag">jog_wheel</span></div><div class="control kind-button" style="left:87.8%;top:17.0%;width:4.0%;height:4.5%;" data-fig="flanger" data-label="flanger" data-kind="button" data-midi-name="flanger" data-midi-type="note" data-midi-ch="1" data-midi-code="99" data-shift-name="" data-layer="base" title="flanger flanger"><span class="tag">flanger</span></div><div class="control kind-button" style="left:2.0%;top:23.5%;width:4.0%;height:4.5%;" data-fig="play_2" data-label="play" data-kind="button" data-midi-name="play_2" data-midi-type="note" data-midi-ch="1" data-midi-code="66" data-shift-name="" data-layer="base" title="play_2 play"><span class="tag">play_2</span></div><div class="control kind-button" style="left:9.8%;top:23.5%;width:4.0%;height:4.5%;" data-fig="cue_default_2" data-label="cue_default" data-kind="button" data-midi-name="cue_default_2" data-midi-type="note" data-midi-ch="1" data-midi-code="60" data-shift-name="" data-layer="base" title="cue_default_2 cue_default"><span class="tag">cue_default_2</span></div><div class="control kind-button" style="left:17.6%;top:23.5%;width:4.0%;height:4.5%;" data-fig="cue_goto_2" data-label="cue_goto" data-kind="button" data-midi-name="cue_goto_2" data-midi-type="note" data-midi-ch="1" data-midi-code="76" data-shift-name="" data-layer="base" title="cue_goto_2 cue_goto"><span class="tag">cue_goto_2</span></div><div class="control kind-button" style="left:25.4%;top:23.5%;width:4.0%;height:4.5%;" data-fig="cue_set_2" data-label="cue_set" data-kind="button" data-midi-name="cue_set_2" data-midi-type="note" data-midi-ch="1" data-midi-code="93" data-shift-name="" data-layer="base" title="cue_set_2 cue_set"><span class="tag">cue_set_2</span></div><div class="control kind-button" style="left:33.2%;top:23.5%;width:4.0%;height:4.5%;" data-fig="beatsync_2" data-label="beatsync" data-kind="button" data-midi-name="beatsync_2" data-midi-type="note" data-midi-ch="1" data-midi-code="71" data-shift-name="" data-layer="base" title="beatsync_2 beatsync"><span class="tag">beatsync_2</span></div><div class="control kind-button" style="left:41.0%;top:23.5%;width:4.0%;height:4.5%;" data-fig="toggle_keylock_2" data-label="ToggleKeylock" data-kind="button" data-midi-name="toggle_keylock_2" data-midi-type="note" data-midi-ch="1" data-midi-code="82" data-shift-name="" data-layer="base" title="toggle_keylock_2 ToggleKeylock"><span class="tag">toggle_keylock_2</span></div><div class="control kind-button" style="left:48.8%;top:23.5%;width:4.0%;height:4.5%;" data-fig="pfl_2" data-label="pfl" data-kind="button" data-midi-name="pfl_2" data-midi-type="note" data-midi-ch="1" data-midi-code="102" data-shift-name="" data-layer="base" title="pfl_2 pfl"><span class="tag">pfl_2</span></div><div class="control kind-knob" style="left:56.6%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_high_kill_2" data-label="filterHighKill" data-kind="knob" data-midi-name="filter_high_kill_2" data-midi-type="note" data-midi-ch="1" data-midi-code="96" data-shift-name="" data-layer="base" title="filter_high_kill_2 filterHighKill"><span class="tag">filter_high_kill_2</span></div><div class="control kind-knob" style="left:64.4%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_kill_2" data-label="filterMidKill" data-kind="knob" data-midi-name="filter_mid_kill_2" data-midi-type="note" data-midi-ch="1" data-midi-code="95" data-shift-name="" data-layer="base" title="filter_mid_kill_2 filterMidKill"><span class="tag">filter_mid_kill_2</span></div><div class="control kind-knob" style="left:72.2%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_low_kill_2" data-label="filterLowKill" data-kind="knob" data-midi-name="filter_low_kill_2" data-midi-type="note" data-midi-ch="1" data-midi-code="94" data-shift-name="" data-layer="base" title="filter_low_kill_2 filterLowKill"><span class="tag">filter_low_kill_2</span></div><div class="control kind-knob" style="left:80.0%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_high_2" data-label="filterHigh" data-kind="knob" data-midi-name="filter_high_2" data-midi-type="cc" data-midi-ch="1" data-midi-code="17" data-shift-name="" data-layer="base" title="filter_high_2 filterHigh"><span class="tag">filter_high_2</span></div><div class="control kind-knob" style="left:87.8%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_2" data-label="filterMid" data-kind="knob" data-midi-name="filter_mid_2" data-midi-type="cc" data-midi-ch="1" data-midi-code="19" data-shift-name="" data-layer="base" title="filter_mid_2 filterMid"><span class="tag">filter_mid_2</span></div><div class="control kind-knob" style="left:2.0%;top:30.0%;width:4.0%;height:4.5%;" data-fig="filter_low_2" data-label="filterLow" data-kind="knob" data-midi-name="filter_low_2" data-midi-type="cc" data-midi-ch="1" data-midi-code="21" data-shift-name="" data-layer="base" title="filter_low_2 filterLow"><span class="tag">filter_low_2</span></div><div class="control kind-button" style="left:9.8%;top:30.0%;width:4.0%;height:4.5%;" data-fig="toggle_manual_looping_2" data-label="toggleManualLooping" data-kind="button" data-midi-name="toggle_manual_looping_2" data-midi-type="note" data-midi-ch="1" data-midi-code="98" data-shift-name="" data-layer="base" title="toggle_manual_looping_2 toggleManualLooping"><span class="tag">toggle_manual_looping_2</span></div><div class="control kind-button" style="left:17.6%;top:30.0%;width:4.0%;height:4.5%;" data-fig="loop_in_2" data-label="loopIn" data-kind="button" data-midi-name="loop_in_2" data-midi-type="note" data-midi-ch="1" data-midi-code="86" data-shift-name="" data-layer="base" title="loop_in_2 loopIn"><span class="tag">loop_in_2</span></div><div class="control kind-button" style="left:25.4%;top:30.0%;width:4.0%;height:4.5%;" data-fig="loop_out_2" data-label="loopOut" data-kind="button" data-midi-name="loop_out_2" data-midi-type="note" data-midi-ch="1" data-midi-code="87" data-shift-name="" data-layer="base" title="loop_out_2 loopOut"><span class="tag">loop_out_2</span></div><div class="control kind-button" style="left:33.2%;top:30.0%;width:4.0%;height:4.5%;" data-fig="re_loop_2" data-label="reLoop" data-kind="button" data-midi-name="re_loop_2" data-midi-type="note" data-midi-ch="1" data-midi-code="88" data-shift-name="" data-layer="base" title="re_loop_2 reLoop"><span class="tag">re_loop_2</span></div><div class="control kind-button" style="left:41.0%;top:30.0%;width:4.0%;height:4.5%;" data-fig="load_selected_track_2" data-label="LoadSelectedTrack" data-kind="button" data-midi-name="load_selected_track_2" data-midi-type="note" data-midi-ch="1" data-midi-code="52" data-shift-name="" data-layer="base" title="load_selected_track_2 LoadSelectedTrack"><span class="tag">load_selected_track_2</span></div><div class="control kind-fader" style="left:48.8%;top:30.0%;width:3.0%;height:8.0%;" data-fig="volume_3" data-label="volume" data-kind="fader" data-midi-name="volume_3" data-midi-type="cc" data-midi-ch="1" data-midi-code="9" data-shift-name="" data-layer="base" title="volume_3 volume"><span class="tag">volume_3</span></div><div class="control kind-knob" style="left:56.6%;top:30.0%;width:4.0%;height:4.5%;" data-fig="rate_2" data-label="rate" data-kind="knob" data-midi-name="rate_2" data-midi-type="cc" data-midi-ch="1" data-midi-code="14" data-shift-name="" data-layer="base" title="rate_2 rate"><span class="tag">rate_2</span></div><div class="control kind-knob" style="left:64.4%;top:30.0%;width:4.0%;height:4.5%;" data-fig="rate_temp_up_2" data-label="rate_temp_up" data-kind="knob" data-midi-name="rate_temp_up_2" data-midi-type="note" data-midi-ch="1" data-midi-code="70" data-shift-name="" data-layer="base" title="rate_temp_up_2 rate_temp_up"><span class="tag">rate_temp_up_2</span></div><div class="control kind-knob" style="left:72.2%;top:30.0%;width:4.0%;height:4.5%;" data-fig="rate_temp_down_2" data-label="rate_temp_down" data-kind="knob" data-midi-name="rate_temp_down_2" data-midi-type="note" data-midi-ch="1" data-midi-code="69" data-shift-name="" data-layer="base" title="rate_temp_down_2 rate_temp_down"><span class="tag">rate_temp_down_2</span></div><div class="control kind-button" style="left:80.0%;top:30.0%;width:4.0%;height:4.5%;" data-fig="toggle_scratch_mode_2" data-label="toggleScratchMode" data-kind="button" data-midi-name="toggle_scratch_mode_2" data-midi-type="note" data-midi-ch="1" data-midi-code="80" data-shift-name="" data-layer="base" title="toggle_scratch_mode_2 toggleScratchMode"><span class="tag">toggle_scratch_mode_2</span></div><div class="control kind-jog" style="left:87.8%;top:30.0%;width:6.0%;height:6.0%;" data-fig="wheel_touch_2" data-label="WheelTouch" data-kind="jog" data-midi-name="wheel_touch_2" data-midi-type="note" data-midi-ch="1" data-midi-code="77" data-shift-name="" data-layer="base" title="wheel_touch_2 WheelTouch"><span class="tag">wheel_touch_2</span></div><div class="control kind-jog" style="left:2.0%;top:36.5%;width:6.0%;height:6.0%;" data-fig="jog_wheel_2" data-label="jogWheel" data-kind="jog" data-midi-name="jog_wheel_2" data-midi-type="cc" data-midi-ch="1" data-midi-code="24" data-shift-name="" data-layer="base" title="jog_wheel_2 jogWheel"><span class="tag">jog_wheel_2</span></div><div class="control kind-button" style="left:9.8%;top:36.5%;width:4.0%;height:4.5%;" data-fig="flanger_2" data-label="flanger" data-kind="button" data-midi-name="flanger_2" data-midi-type="note" data-midi-ch="1" data-midi-code="100" data-shift-name="" data-layer="base" title="flanger_2 flanger"><span class="tag">flanger_2</span></div>
+  </div>
+</div>
+<div id="readout">Hover a control…</div>
+<script>
+const stage = document.getElementById('stage');
+const readout = document.getElementById('readout');
+const shiftBtn = document.getElementById('shiftBtn');
+let shift = false;
+const dials = new Map();
+
+function setShift(on) {
+  shift = on;
+  shiftBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  shiftBtn.classList.toggle('active', on);
+  document.querySelectorAll('.control').forEach(el => {
+    const has = !!el.dataset.shiftName;
+    el.classList.toggle('shift-hot', on && has);
+    if (on && has) {
+      const base = el.dataset.label;
+      el.querySelector('.tag').innerHTML = el.dataset.fig + '<br>SHIFT: ' + el.dataset.shiftName;
+      el.dataset._baseLabel = base;
+    } else if (el.dataset._baseHtml) {
+      el.querySelector('.tag').innerHTML = el.dataset._baseHtml;
+    }
+  });
+}
+
+document.querySelectorAll('.control').forEach(el => {
+  el.dataset._baseHtml = el.querySelector('.tag').innerHTML;
+  el.addEventListener('pointerenter', () => {
+    const sn = el.dataset.shiftName;
+    readout.innerHTML =
+      `<span class="k">${el.dataset.fig}</span> ${el.dataset.label} · ` +
+      `<span class="k">${el.dataset.midiType.toUpperCase()}</span> ch${el.dataset.midiCh} ` +
+      `code ${el.dataset.midiCode} · name <span class="k">${el.dataset.midiName}</span>` +
+      (sn ? ` · shift twin <span class="k">${sn}</span>` : ' · (no shift twin)') +
+      (shift && sn ? ' · <span class="k">SHIFT LAYER ACTIVE</span>' : '');
+  });
+  el.addEventListener('pointerdown', (ev) => {
+    el.classList.add('pressed');
+    if (el.dataset.kind === 'knob' || el.dataset.kind === 'encoder' || el.dataset.kind === 'fader') {
+      const id = el.dataset.fig;
+      let v = dials.get(id) ?? 64;
+      v = Math.max(0, Math.min(127, v + (ev.shiftKey ? -8 : 8)));
+      dials.set(id, v);
+      const dv = el.querySelector('.dial-value');
+      if (dv) { dv.hidden = false; dv.textContent = String(v); }
+      readout.innerHTML += ` · value <span class="k">${v}</span>`;
+    }
+  });
+  el.addEventListener('pointerup', () => el.classList.remove('pressed'));
+  el.addEventListener('pointerleave', () => el.classList.remove('pressed'));
+});
+
+shiftBtn?.addEventListener('click', () => setShift(!shift));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') setShift(true);
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Shift') setShift(false);
+});
+</script>
+</body>
+</html>

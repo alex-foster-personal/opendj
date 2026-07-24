@@ -1,7 +1,7 @@
 {
   "version": 1,
   "updated": "2026-07-24",
-  "notes": "Quick popularity ranks (1=most). Harden later via deep research \u2014 see skill reference.md. Seeded from docs/controller/research/2026-07-22-map-availability-survey.md + brand heuristics.",
+  "notes": "Quick popularity ranks (1=most). Harden later via deep research - see skill reference.md. Seeded from docs/controller/research/2026-07-22-map-availability-survey.md + brand heuristics.",
   "issue": "https://github.com/maintainer/music-dj-tools/issues/371",
   "controllers": [
     {
@@ -15,7 +15,8 @@
         "docs": "ok",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "ok"
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -29,7 +30,8 @@
         "docs": "ok",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "ok"
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -43,7 +45,8 @@
         "docs": "ok",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "ok"
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -57,91 +60,8 @@
         "docs": "ok",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "ok"
-      }
-    },
-    {
-      "id": "ddj-800",
-      "brand": "Pioneer DJ",
-      "model": "DDJ-800",
-      "popularity_rank": 8,
-      "popularity_notes": "Portable 2-channel pro",
-      "doc_tier": 1,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "ddj-rev5",
-      "brand": "AlphaTheta",
-      "model": "DDJ-REV5",
-      "popularity_rank": 6,
-      "popularity_notes": "Scratch / battle style",
-      "doc_tier": 1,
-      "status": {
-        "docs": "ok",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "ddj-rev7",
-      "brand": "AlphaTheta",
-      "model": "DDJ-REV7",
-      "popularity_rank": 7,
-      "popularity_notes": "Motorized battle flagship",
-      "doc_tier": 1,
-      "status": {
-        "docs": "ok",
-        "midi": "ok",
-        "diagram": "ok",
-        "checksum": "ok"
-      }
-    },
-    {
-      "id": "ddj-rev1",
-      "brand": "AlphaTheta",
-      "model": "DDJ-REV1",
-      "popularity_rank": 12,
-      "popularity_notes": "Entry scratch",
-      "doc_tier": 1,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "xdj-xz",
-      "brand": "Pioneer DJ",
-      "model": "XDJ-XZ",
-      "popularity_rank": 9,
-      "popularity_notes": "All-in-one club; MIDI-out limited",
-      "doc_tier": 1,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "xdj-rx3",
-      "brand": "AlphaTheta",
-      "model": "XDJ-RX3",
-      "popularity_rank": 10,
-      "popularity_notes": "Popular all-in-one",
-      "doc_tier": 1,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -155,7 +75,83 @@
         "docs": "pending",
         "midi": "pending",
         "diagram": "pending",
-        "checksum": "pending"
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-rev5",
+      "brand": "AlphaTheta",
+      "model": "DDJ-REV5",
+      "popularity_rank": 6,
+      "popularity_notes": "Scratch / battle style",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-rev7",
+      "brand": "AlphaTheta",
+      "model": "DDJ-REV7",
+      "popularity_rank": 7,
+      "popularity_notes": "Motorized battle flagship",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-800",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-800",
+      "popularity_rank": 8,
+      "popularity_notes": "Portable 2-channel pro",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "xdj-xz",
+      "brand": "Pioneer DJ",
+      "model": "XDJ-XZ",
+      "popularity_rank": 9,
+      "popularity_notes": "All-in-one club; MIDI-out limited",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "xdj-rx3",
+      "brand": "AlphaTheta",
+      "model": "XDJ-RX3",
+      "popularity_rank": 10,
+      "popularity_notes": "Popular all-in-one",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
       }
     },
     {
@@ -169,7 +165,23 @@
         "docs": "pending",
         "midi": "pending",
         "diagram": "pending",
-        "checksum": "pending"
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-rev1",
+      "brand": "AlphaTheta",
+      "model": "DDJ-REV1",
+      "popularity_rank": 12,
+      "popularity_notes": "Entry scratch",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -183,7 +195,8 @@
         "docs": "pending",
         "midi": "pending",
         "diagram": "pending",
-        "checksum": "pending"
+        "checksum": "pending",
+        "hover": "pending"
       }
     },
     {
@@ -197,7 +210,8 @@
         "docs": "pending",
         "midi": "pending",
         "diagram": "pending",
-        "checksum": "pending"
+        "checksum": "pending",
+        "hover": "pending"
       }
     },
     {
@@ -211,35 +225,8 @@
         "docs": "ok",
         "midi": "ok",
         "diagram": "ok",
-        "checksum": "ok"
-      }
-    },
-    {
-      "id": "reloop-mixtour-pro",
-      "brand": "Reloop",
-      "model": "MIXTOUR PRO",
-      "popularity_rank": 18,
-      "popularity_notes": "No official MIDI PDF \u2014 tier2",
-      "doc_tier": 2,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "reloop-mixon-8",
-      "brand": "Reloop",
-      "model": "Mixon 8 Pro",
-      "popularity_rank": 22,
-      "popularity_notes": "No official MIDI PDF \u2014 tier2",
-      "doc_tier": 2,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -271,39 +258,11 @@
       }
     },
     {
-      "id": "traktor-s3",
-      "brand": "Native Instruments",
-      "model": "Traktor Kontrol S3",
-      "popularity_rank": 20,
-      "popularity_notes": "4-channel NI; tier2",
-      "doc_tier": 2,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "traktor-x1-mk2",
-      "brand": "Native Instruments",
-      "model": "Traktor Kontrol X1 MK2",
-      "popularity_rank": 28,
-      "popularity_notes": "Addon; tier2",
-      "doc_tier": 2,
-      "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
-      }
-    },
-    {
-      "id": "traktor-z2",
-      "brand": "Native Instruments",
-      "model": "Traktor Kontrol Z2",
-      "popularity_rank": 30,
-      "popularity_notes": "Mixer; tier2",
+      "id": "reloop-mixtour-pro",
+      "brand": "Reloop",
+      "model": "MIXTOUR PRO",
+      "popularity_rank": 18,
+      "popularity_notes": "No official MIDI PDF - tier2",
       "doc_tier": 2,
       "status": {
         "docs": "pending",
@@ -317,13 +276,28 @@
       "brand": "Denon DJ",
       "model": "Prime 4",
       "popularity_rank": 19,
-      "popularity_notes": "Standalone; no official MIDI chart \u2014 tier2",
+      "popularity_notes": "Standalone; no official MIDI chart - tier2",
       "doc_tier": 2,
       "status": {
         "docs": "blocked_tier2",
         "midi": "pending",
         "diagram": "stub",
-        "checksum": "n/a"
+        "checksum": "n/a",
+        "hover": "skipped_blocked"
+      }
+    },
+    {
+      "id": "traktor-s3",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol S3",
+      "popularity_rank": 20,
+      "popularity_notes": "4-channel NI; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
       }
     },
     {
@@ -341,12 +315,12 @@
       }
     },
     {
-      "id": "denon-lc6000",
-      "brand": "Denon DJ",
-      "model": "LC6000",
-      "popularity_rank": 35,
-      "popularity_notes": "Has official MIDI Spec v1.0",
-      "doc_tier": 1,
+      "id": "reloop-mixon-8",
+      "brand": "Reloop",
+      "model": "Mixon 8 Pro",
+      "popularity_rank": 22,
+      "popularity_notes": "No official MIDI PDF - tier2",
+      "doc_tier": 2,
       "status": {
         "docs": "pending",
         "midi": "pending",
@@ -359,13 +333,14 @@
       "brand": "Numark",
       "model": "Mixtrack Platinum FX",
       "popularity_rank": 23,
-      "popularity_notes": "Community maps only",
+      "popularity_notes": "Community maps only; mixxx ingest 233 ctrls",
       "doc_tier": 2,
       "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
       }
     },
     {
@@ -373,13 +348,14 @@
       "brand": "Numark",
       "model": "Mixtrack Pro FX",
       "popularity_rank": 24,
-      "popularity_notes": "Community maps only",
+      "popularity_notes": "Community maps only; mixxx ingest 127 ctrls",
       "doc_tier": 2,
       "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
       }
     },
     {
@@ -387,13 +363,14 @@
       "brand": "Hercules",
       "model": "Inpulse 500",
       "popularity_rank": 25,
-      "popularity_notes": "Closed DJUCED; community RE",
+      "popularity_notes": "Closed DJUCED; community RE; mixxx ingest 328 ctrls",
       "doc_tier": 2,
       "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
       }
     },
     {
@@ -411,6 +388,35 @@
       }
     },
     {
+      "id": "rane-one",
+      "brand": "Rane",
+      "model": "One",
+      "popularity_rank": 27,
+      "popularity_notes": "Motorized; community WIP",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-x1-mk2",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol X1 MK2",
+      "popularity_rank": 28,
+      "popularity_notes": "Addon; tier2; mixxx ingest 88 ctrls",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
       "id": "roland-dj-202",
       "brand": "Roland",
       "model": "DJ-202",
@@ -425,11 +431,11 @@
       }
     },
     {
-      "id": "rane-one",
-      "brand": "Rane",
-      "model": "One",
-      "popularity_rank": 27,
-      "popularity_notes": "Motorized; community WIP",
+      "id": "traktor-z2",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol Z2",
+      "popularity_rank": 30,
+      "popularity_notes": "Mixer; tier2",
       "doc_tier": 2,
       "status": {
         "docs": "pending",
@@ -474,10 +480,11 @@
       "popularity_notes": "Legacy Serato entry (still common used)",
       "doc_tier": 1,
       "status": {
-        "docs": "pending",
-        "midi": "pending",
-        "diagram": "pending",
-        "checksum": "pending"
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
       }
     },
     {
@@ -488,11 +495,2275 @@
       "popularity_notes": "Legacy rekordbox entry",
       "doc_tier": 1,
       "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-lc6000",
+      "brand": "Denon DJ",
+      "model": "LC6000",
+      "popularity_rank": 35,
+      "popularity_notes": "Has official MIDI Spec v1.0",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-flx2",
+      "brand": "AlphaTheta",
+      "model": "DDJ-FLX2",
+      "popularity_rank": 36,
+      "popularity_notes": "New entry 2-deck rekordbox",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-flx8",
+      "brand": "AlphaTheta",
+      "model": "DDJ-FLX8",
+      "popularity_rank": 37,
+      "popularity_notes": "Midrange 4-deck rekordbox",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-sx3",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SX3",
+      "popularity_rank": 38,
+      "popularity_notes": "Serato 4-deck flagship",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-rr",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-RR",
+      "popularity_rank": 39,
+      "popularity_notes": "Portable Serato 2-deck pro",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "xdj-az",
+      "brand": "AlphaTheta",
+      "model": "XDJ-AZ",
+      "popularity_rank": 40,
+      "popularity_notes": "Flagship standalone all-in-one",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "opus-quad",
+      "brand": "AlphaTheta",
+      "model": "OPUS-QUAD",
+      "popularity_rank": 41,
+      "popularity_notes": "4-deck standalone flagship",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-xp2",
+      "brand": "AlphaTheta",
+      "model": "DDJ-XP2",
+      "popularity_rank": 42,
+      "popularity_notes": "Portable 2-deck rekordbox pro",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-grv6",
+      "brand": "AlphaTheta",
+      "model": "DDJ-GRV6",
+      "popularity_rank": 43,
+      "popularity_notes": "Stems-focused 4-deck",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-sx2",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SX2",
+      "popularity_rank": 44,
+      "popularity_notes": "Legacy Serato 4-deck (still common)",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "xdj-rr",
+      "brand": "Pioneer DJ",
+      "model": "XDJ-RR",
+      "popularity_rank": 45,
+      "popularity_notes": "Compact rekordbox all-in-one",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "xdj-rx2",
+      "brand": "Pioneer DJ",
+      "model": "XDJ-RX2",
+      "popularity_rank": 46,
+      "popularity_notes": "Legacy all-in-one (still common used)",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-s11",
+      "brand": "Pioneer DJ",
+      "model": "DJM-S11",
+      "popularity_rank": 47,
+      "popularity_notes": "Scratch mixer flagship",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-s7",
+      "brand": "Pioneer DJ",
+      "model": "DJM-S7",
+      "popularity_rank": 48,
+      "popularity_notes": "2-channel scratch mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-s5",
+      "brand": "Pioneer DJ",
+      "model": "DJM-S5",
+      "popularity_rank": 49,
+      "popularity_notes": "Entry scratch mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "cdj-2000nxs",
+      "brand": "Pioneer DJ",
+      "model": "CDJ-2000NXS",
+      "popularity_rank": 50,
+      "popularity_notes": "Older club player (still in venues)",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-v10",
+      "brand": "Pioneer DJ",
+      "model": "DJM-V10",
+      "popularity_rank": 51,
+      "popularity_notes": "6-channel club mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-a6",
+      "brand": "AlphaTheta",
+      "model": "DJM-A6",
+      "popularity_rank": 52,
+      "popularity_notes": "Compact club mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-sr2",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SR2",
+      "popularity_rank": 53,
+      "popularity_notes": "Portable Serato 2-deck",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-200",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-200",
+      "popularity_rank": 54,
+      "popularity_notes": "Ultra-portable rekordbox entry",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-1000srt",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-1000SRT",
+      "popularity_rank": 55,
+      "popularity_notes": "Serato variant of DDJ-1000",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "cdj-900nxs",
+      "brand": "Pioneer DJ",
+      "model": "CDJ-900NXS",
+      "popularity_rank": 56,
+      "popularity_notes": "Mid-tier club player legacy",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-s9",
+      "brand": "Pioneer DJ",
+      "model": "DJM-S9",
+      "popularity_rank": 57,
+      "popularity_notes": "Legacy battle mixer (still popular)",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-750mk2",
+      "brand": "Pioneer DJ",
+      "model": "DJM-750MK2",
+      "popularity_rank": 58,
+      "popularity_notes": "Club mixer midrange",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "denon-prime4-plus",
+      "brand": "Denon DJ",
+      "model": "Prime 4+",
+      "popularity_rank": 59,
+      "popularity_notes": "Updated standalone flagship; tier2",
+      "doc_tier": 2,
+      "status": {
         "docs": "pending",
         "midi": "pending",
         "diagram": "pending",
         "checksum": "pending"
       }
+    },
+    {
+      "id": "denon-prime2",
+      "brand": "Denon DJ",
+      "model": "Prime 2",
+      "popularity_rank": 60,
+      "popularity_notes": "2-deck standalone; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "denon-sc6000m",
+      "brand": "Denon DJ",
+      "model": "SC6000M",
+      "popularity_rank": 61,
+      "popularity_notes": "Motorized Prime player; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "denon-sc5000m",
+      "brand": "Denon DJ",
+      "model": "SC5000M",
+      "popularity_rank": 62,
+      "popularity_notes": "Motorized Prime player midrange; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "denon-prime-go",
+      "brand": "Denon DJ",
+      "model": "Prime GO",
+      "popularity_rank": 63,
+      "popularity_notes": "Battery standalone; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "denon-sc5000",
+      "brand": "Denon DJ",
+      "model": "SC5000",
+      "popularity_rank": 64,
+      "popularity_notes": "Prime player; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-s8",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol S8",
+      "popularity_rank": 65,
+      "popularity_notes": "Legacy NI flagship; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "rane-four",
+      "brand": "Rane",
+      "model": "Four",
+      "popularity_rank": 66,
+      "popularity_notes": "4-deck Serato flagship",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-ns7iii",
+      "brand": "Numark",
+      "model": "NS7III",
+      "popularity_rank": 67,
+      "popularity_notes": "Motorized Serato controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-ns6ii",
+      "brand": "Numark",
+      "model": "NS6II",
+      "popularity_rank": 68,
+      "popularity_notes": "4-channel Serato controller; mixxx ingest 304 ctrls",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "reloop-elite",
+      "brand": "Reloop",
+      "model": "Elite",
+      "popularity_rank": 69,
+      "popularity_notes": "2-deck Serato controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "reloop-buddy",
+      "brand": "Reloop",
+      "model": "Buddy",
+      "popularity_rank": 70,
+      "popularity_notes": "Compact 2-deck entry",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "reloop-beatmix-4-mk2",
+      "brand": "Reloop",
+      "model": "Beatmix 4 MK2",
+      "popularity_rank": 71,
+      "popularity_notes": "4-deck Serato entry",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "hercules-inpulse-300",
+      "brand": "Hercules",
+      "model": "Inpulse 300",
+      "popularity_rank": 72,
+      "popularity_notes": "Entry 2-deck DJUCED; mixxx ingest 282 ctrls",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-starlight",
+      "brand": "Hercules",
+      "model": "DJControl Starlight",
+      "popularity_rank": 73,
+      "popularity_notes": "Ultra-compact entry controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-mixtrack-pro-3",
+      "brand": "Numark",
+      "model": "Mixtrack Pro 3",
+      "popularity_rank": 74,
+      "popularity_notes": "Legacy entry (still common used)",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "allen-heath-xone-96",
+      "brand": "Allen & Heath",
+      "model": "Xone:96",
+      "popularity_rank": 75,
+      "popularity_notes": "Club mixer; community MIDI maps",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "allen-heath-xone-92",
+      "brand": "Allen & Heath",
+      "model": "Xone:92",
+      "popularity_rank": 76,
+      "popularity_notes": "Legendary club mixer legacy",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "roland-dj-808",
+      "brand": "Roland",
+      "model": "DJ-808",
+      "popularity_rank": 77,
+      "popularity_notes": "4-channel with drum machine",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "roland-dj-505",
+      "brand": "Roland",
+      "model": "DJ-505",
+      "popularity_rank": 78,
+      "popularity_notes": "2-channel with drum machine; mixxx ingest 356 ctrls",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "rane-seventy",
+      "brand": "Rane",
+      "model": "Seventy",
+      "popularity_rank": 79,
+      "popularity_notes": "2-channel battle mixer",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-d2",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol D2",
+      "popularity_rank": 80,
+      "popularity_notes": "Deck addon display; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-f1",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol F1",
+      "popularity_rank": 81,
+      "popularity_notes": "Remix deck addon; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "hercules-inpulse-200",
+      "brand": "Hercules",
+      "model": "Inpulse 200",
+      "popularity_rank": 82,
+      "popularity_notes": "Budget entry DJUCED",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "hercules-inpulse-t7",
+      "brand": "Hercules",
+      "model": "Inpulse T7",
+      "popularity_rank": 83,
+      "popularity_notes": "Motorized portable controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-party-mix-ii",
+      "brand": "Numark",
+      "model": "Party Mix II",
+      "popularity_rank": 84,
+      "popularity_notes": "Beginner party controller with lights",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-mixtrack-platinum",
+      "brand": "Numark",
+      "model": "Mixtrack Platinum",
+      "popularity_rank": 85,
+      "popularity_notes": "Legacy entry with jog displays",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-sb2",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SB2",
+      "popularity_rank": 86,
+      "popularity_notes": "Older Serato entry (used market); mixxx ingest 432 ctrls",
+      "doc_tier": 1,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-sx",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SX",
+      "popularity_rank": 87,
+      "popularity_notes": "Original Serato 4-deck legacy",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ddj-sr",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SR",
+      "popularity_rank": 88,
+      "popularity_notes": "Original Serato 2-deck legacy",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "cdj-850",
+      "brand": "Pioneer DJ",
+      "model": "CDJ-850",
+      "popularity_rank": 89,
+      "popularity_notes": "Entry pro player legacy; mixxx ingest 70 ctrls",
+      "doc_tier": 1,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "djm-900srt",
+      "brand": "Pioneer DJ",
+      "model": "DJM-900SRT",
+      "popularity_rank": 90,
+      "popularity_notes": "Serato club mixer variant",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "allen-heath-xone-43c",
+      "brand": "Allen & Heath",
+      "model": "Xone:43C",
+      "popularity_rank": 91,
+      "popularity_notes": "4-channel club mixer with MIDI",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "allen-heath-xone-k2",
+      "brand": "Allen & Heath",
+      "model": "Xone:K2",
+      "popularity_rank": 92,
+      "popularity_notes": "Compact MIDI pad controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "allen-heath-xone-23c",
+      "brand": "Allen & Heath",
+      "model": "Xone:23C",
+      "popularity_rank": 93,
+      "popularity_notes": "Entry mixer with MIDI",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "roland-dj-701c",
+      "brand": "Roland",
+      "model": "DJ-701C",
+      "popularity_rank": 94,
+      "popularity_notes": "Compact 4-channel with sampling",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "gemini-gmx",
+      "brand": "Gemini",
+      "model": "GMX",
+      "popularity_rank": 95,
+      "popularity_notes": "Budget entry controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "reloop-ready",
+      "brand": "Reloop",
+      "model": "Ready",
+      "popularity_rank": 96,
+      "popularity_notes": "Compact 2-deck entry",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-mix-ultra",
+      "brand": "Hercules",
+      "model": "DJControl Mix Ultra",
+      "popularity_rank": 97,
+      "popularity_notes": "Phone/tablet hybrid controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-z1",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol Z1",
+      "popularity_rank": 98,
+      "popularity_notes": "Compact mixer/audio interface; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "omnis-duo",
+      "brand": "AlphaTheta",
+      "model": "OMNIS-DUO",
+      "popularity_rank": 99,
+      "popularity_notes": "Battery-powered portable all-in-one",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-450",
+      "brand": "Pioneer DJ",
+      "model": "DJM-450",
+      "popularity_rank": 100,
+      "popularity_notes": "Compact 2-channel club mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "ddj-sb",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SB",
+      "popularity_rank": 101,
+      "popularity_notes": "Original Serato entry legacy",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "reloop-mixon-4",
+      "brand": "Reloop",
+      "model": "Mixon 4",
+      "popularity_rank": 102,
+      "popularity_notes": "Legacy 4-channel controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-x1-mk3",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol X1 MK3",
+      "popularity_rank": 103,
+      "popularity_notes": "Current addon controller; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "xdj-rx",
+      "brand": "Pioneer DJ",
+      "model": "XDJ-RX",
+      "popularity_rank": 104,
+      "popularity_notes": "Original all-in-one legacy",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "djm-250mk2",
+      "brand": "Pioneer DJ",
+      "model": "DJM-250MK2",
+      "popularity_rank": 105,
+      "popularity_notes": "Entry home/practice mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "pending"
+      }
+    },
+    {
+      "id": "reloop-beatmix-2-mk2",
+      "brand": "Reloop",
+      "model": "Beatmix 2 MK2",
+      "popularity_rank": 106,
+      "popularity_notes": "2-deck Serato entry",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "rane-twelve",
+      "brand": "Rane",
+      "model": "Twelve",
+      "popularity_rank": 107,
+      "popularity_notes": "Original motorized deck controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "gemini-g4v",
+      "brand": "Gemini",
+      "model": "G4V",
+      "popularity_rank": 108,
+      "popularity_notes": "4-channel budget controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-party-mix",
+      "brand": "Numark",
+      "model": "Party Mix",
+      "popularity_rank": 109,
+      "popularity_notes": "Original beginner party controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-inmix",
+      "brand": "Hercules",
+      "model": "DJControl Inmix",
+      "popularity_rank": 110,
+      "popularity_notes": "Legacy Hercules entry controller",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "allen-and-heath-xone-k2",
+      "brand": "Allen and Heath",
+      "model": "Allen and Heath Xone K2",
+      "popularity_rank": 111,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "behringer-bcd2000",
+      "brand": "Behringer",
+      "model": "Behringer BCD2000",
+      "popularity_rank": 112,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "behringer-bcd3000-advanced",
+      "brand": "Behringer",
+      "model": "Behringer BCD3000 Advanced",
+      "popularity_rank": 113,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "behringer-bcd3000",
+      "brand": "Behringer",
+      "model": "Behringer BCD3000",
+      "popularity_rank": 114,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "behringer-cmd-mm1",
+      "brand": "Behringer",
+      "model": "Behringer CMD MM1",
+      "popularity_rank": 115,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "behringer-cmd-micro",
+      "brand": "Behringer",
+      "model": "Behringer CMD Micro",
+      "popularity_rank": 116,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "behringer-cmdstudio4a",
+      "brand": "Behringer",
+      "model": "Behringer CMDStudio4a",
+      "popularity_rank": 117,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra",
+      "brand": "Dj Techtools",
+      "model": "DJ TechTools MIDI Fighter Spectra",
+      "popularity_rank": 118,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-techtools-midi-fighter-twister",
+      "brand": "Dj Techtools",
+      "model": "DJ TechTools MIDI Fighter Twister",
+      "popularity_rank": 119,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-tech-cdj-101",
+      "brand": "Dj-Tech",
+      "model": "DJ-Tech CDJ-101",
+      "popularity_rank": 120,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-tech-djm-101",
+      "brand": "Dj-Tech",
+      "model": "DJ-Tech DJM-101",
+      "popularity_rank": 121,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-tech-kontrol-one",
+      "brand": "Dj-Tech",
+      "model": "DJ-Tech Kontrol One",
+      "popularity_rank": 122,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-tech-mix-101",
+      "brand": "Dj-Tech",
+      "model": "DJ-Tech Mix-101",
+      "popularity_rank": 123,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-tech-mixer-one",
+      "brand": "Dj-Tech",
+      "model": "DJ-Tech Mixer One",
+      "popularity_rank": 124,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "dj-tech-i-mix-reload",
+      "brand": "Dj-Tech",
+      "model": "DJ-Tech i-Mix Reload",
+      "popularity_rank": 125,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "djtechtools-midi-fighter",
+      "brand": "Other",
+      "model": "DJTechTools MIDI Fighter",
+      "popularity_rank": 126,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-dn-hs5500",
+      "brand": "Denon",
+      "model": "Denon DN HS5500",
+      "popularity_rank": 127,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-dn-sc2000",
+      "brand": "Denon",
+      "model": "Denon DN SC2000",
+      "popularity_rank": 128,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-mc3000",
+      "brand": "Denon",
+      "model": "Denon MC3000",
+      "popularity_rank": 129,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-mc4000",
+      "brand": "Denon",
+      "model": "Denon MC4000",
+      "popularity_rank": 130,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-mc6000mk2",
+      "brand": "Denon",
+      "model": "Denon-MC6000MK2",
+      "popularity_rank": 131,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "denon-mc7000",
+      "brand": "Denon",
+      "model": "Denon-MC7000",
+      "popularity_rank": 132,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "faderfoxdj2",
+      "brand": "Other",
+      "model": "FaderFoxDJ2",
+      "popularity_rank": 133,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "gemini-cdmp-7000-l-audio",
+      "brand": "Gemini",
+      "model": "Gemini CDMP-7000 L audio",
+      "popularity_rank": 134,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "gemini-cdmp-7000-r-audio",
+      "brand": "Gemini",
+      "model": "Gemini CDMP-7000 R audio",
+      "popularity_rank": 135,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "gemini-firstmix",
+      "brand": "Gemini",
+      "model": "Gemini FirstMix",
+      "popularity_rank": 136,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-4-mx",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console 4-Mx",
+      "popularity_rank": 137,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-mac-edition",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console Mac Edition",
+      "popularity_rank": 138,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-mk2",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console Mk2",
+      "popularity_rank": 139,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-mk4",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console Mk4",
+      "popularity_rank": 140,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-rmx-2",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console RMX 2",
+      "popularity_rank": 141,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-rmx-advanced",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console RMX Advanced",
+      "popularity_rank": 142,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-console-rmx",
+      "brand": "Hercules",
+      "model": "Hercules DJ Console RMX",
+      "popularity_rank": 143,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-control-air",
+      "brand": "Hercules",
+      "model": "Hercules DJ Control AIR",
+      "popularity_rank": 144,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-control-instinct",
+      "brand": "Hercules",
+      "model": "Hercules DJ Control Instinct",
+      "popularity_rank": 145,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-control-mp3-e2",
+      "brand": "Hercules",
+      "model": "Hercules DJ Control MP3 e2",
+      "popularity_rank": 146,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-control-mp3",
+      "brand": "Hercules",
+      "model": "Hercules DJ Control MP3",
+      "popularity_rank": 147,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-dj-control-steel",
+      "brand": "Hercules",
+      "model": "Hercules DJ Control Steel",
+      "popularity_rank": 148,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-compact",
+      "brand": "Hercules",
+      "model": "Hercules DJControl Compact",
+      "popularity_rank": 149,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-mix",
+      "brand": "Hercules",
+      "model": "Hercules DJControl MIX",
+      "popularity_rank": 150,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-starlight",
+      "brand": "Hercules",
+      "model": "Hercules DJControl Starlight",
+      "popularity_rank": 151,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-p32-dj",
+      "brand": "Hercules",
+      "model": "Hercules P32 DJ",
+      "popularity_rank": 152,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-200",
+      "brand": "Hercules",
+      "model": "Hercules_DJControl_Inpulse_200",
+      "popularity_rank": 153,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-300",
+      "brand": "Hercules",
+      "model": "Hercules_DJControl_Inpulse_300",
+      "popularity_rank": 154,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500",
+      "brand": "Hercules",
+      "model": "Hercules_DJControl_Inpulse_500",
+      "popularity_rank": 155,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "hercules-djcontrol-jogvision",
+      "brand": "Hercules",
+      "model": "Hercules_DJControl_Jogvision",
+      "popularity_rank": 156,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ion-discover-dj",
+      "brand": "Ion",
+      "model": "Ion Discover DJ",
+      "popularity_rank": 157,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "ion-discover-dj-pro",
+      "brand": "Ion",
+      "model": "Ion-Discover-DJ-Pro",
+      "popularity_rank": 158,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "kontrol-dj-kdj500",
+      "brand": "Other",
+      "model": "Kontrol Dj KDJ500",
+      "popularity_rank": 159,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "korg-nanokontrol-2",
+      "brand": "Other",
+      "model": "Korg nanoKONTROL 2",
+      "popularity_rank": 160,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "korg-nanokontrol",
+      "brand": "Other",
+      "model": "Korg nanoKONTROL",
+      "popularity_rank": 161,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "korg-kaoss-dj",
+      "brand": "Other",
+      "model": "Korg-KAOSS-DJ",
+      "popularity_rank": 162,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "mvave-smc-mixer",
+      "brand": "Other",
+      "model": "MVave-SMC-Mixer",
+      "popularity_rank": 163,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "mixvibes-u-mix-control-2",
+      "brand": "Mixvibes",
+      "model": "MixVibes U-Mix Control 2",
+      "popularity_rank": 164,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "mixvibes-u-mix-control-pro-2",
+      "brand": "Mixvibes",
+      "model": "MixVibes U-Mix Control Pro 2",
+      "popularity_rank": 165,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "mixman-dm2-linux",
+      "brand": "Other",
+      "model": "Mixman DM2 (Linux)",
+      "popularity_rank": 166,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "mixman-dm2-os-x",
+      "brand": "Other",
+      "model": "Mixman DM2 (OS X)",
+      "popularity_rank": 167,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "mixman-dm2-windows",
+      "brand": "Other",
+      "model": "Mixman DM2 (Windows)",
+      "popularity_rank": 168,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-dj2go",
+      "brand": "Numark",
+      "model": "Numark DJ2Go",
+      "popularity_rank": 169,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-mixtrack",
+      "brand": "Numark",
+      "model": "Numark MIXTRACK",
+      "popularity_rank": 170,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-mixtrack-2",
+      "brand": "Numark",
+      "model": "Numark Mixtrack 2",
+      "popularity_rank": 171,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-mixtrack-pro",
+      "brand": "Numark",
+      "model": "Numark Mixtrack Pro",
+      "popularity_rank": 172,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-n4",
+      "brand": "Numark",
+      "model": "Numark N4",
+      "popularity_rank": 173,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-ns4fx",
+      "brand": "Numark",
+      "model": "Numark NS4FX",
+      "popularity_rank": 174,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-ns7",
+      "brand": "Numark",
+      "model": "Numark NS7",
+      "popularity_rank": 175,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-omni-control",
+      "brand": "Numark",
+      "model": "Numark Omni Control",
+      "popularity_rank": 176,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-total-control",
+      "brand": "Numark",
+      "model": "Numark Total Control",
+      "popularity_rank": 177,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-v7",
+      "brand": "Numark",
+      "model": "Numark V7",
+      "popularity_rank": 178,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-idj-live-ii",
+      "brand": "Numark",
+      "model": "Numark iDJ Live II",
+      "popularity_rank": 179,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-mixstream-pro",
+      "brand": "Numark",
+      "model": "Numark-Mixstream-Pro",
+      "popularity_rank": 180,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-mixtrack-3",
+      "brand": "Numark",
+      "model": "Numark-Mixtrack-3",
+      "popularity_rank": 181,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-scratch",
+      "brand": "Numark",
+      "model": "Numark-Scratch",
+      "popularity_rank": 182,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "numark-dj2go2-touch",
+      "brand": "Numark",
+      "model": "Numark_DJ2GO2_Touch",
+      "popularity_rank": 183,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "pioneer-cdj-2000",
+      "brand": "Pioneer",
+      "model": "Pioneer CDJ-2000",
+      "popularity_rank": 184,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "pioneer-cdj-350-ch1",
+      "brand": "Pioneer",
+      "model": "Pioneer CDJ-350 Ch1",
+      "popularity_rank": 185,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "pioneer-cdj-350-ch2",
+      "brand": "Pioneer",
+      "model": "Pioneer CDJ-350 Ch2",
+      "popularity_rank": 186,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
+    },
+    {
+      "id": "pioneer-cdj-850",
+      "brand": "Pioneer",
+      "model": "Pioneer CDJ-850",
+      "popularity_rank": 187,
+      "popularity_notes": "Mixxx community map ingest",
+      "doc_tier": 2,
+      "status": {
+        "docs": "mixxx",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "n/a",
+        "hover": "ok"
+      }
     }
-  ]
+  ],
+  "stats": {
+    "hover_ok": 106,
+    "devices_with_deck": 106,
+    "updated": "2026-07-24"
+  }
 }

@@ -1,29 +1,35 @@
-# Scale to ~100 controllers
+# Scale status
 
 Tracking: https://github.com/maintainer/music-dj-tools/issues/371
 
-## Gate (must hold before mass fan-out)
+## AC (hover)
 
-1. FLX10 checksum exits 0 and overlay reviewed against plate.
-2. Skill documents letter figs, section figs (`1-1`), Reloop named figs, AlphaTheta URL casing.
-3. At least 5 diverse devices checksum-green (Pioneer letter, Pioneer section, Reloop named, plus Denon tier-2 stub path noted).
-4. `bootstrap_from_midi_pdf.py` + `generate_html.py` + `checksum.py` stay the toolchain.
-5. Catalog `popularity_rank` used as queue order (quick ranks OK until deep research).
+Every control in every non-blocked `devices/*/deck.html` must:
+- render as `.control` with `data-fig`, `data-label`, `data-midi-name|type|ch|code`
+- share the `pointerenter` handler that fills `#readout`
 
-## Current wave
+Gate script:
 
-| id | figs | checksum | notes |
-|---|---|---|---|
-| ddj-flx10 | 79 | PASS | reference implementation |
-| ddj-flx4 | 40 | PASS | section figs |
-| ddj-flx6 | 49 | PASS | section figs |
-| ddj-1000 | 69 | PASS | letter figs |
-| ddj-rev7 | 83 | PASS | letter + E* FX figs |
-| reloop-mixtour | 28 | PASS | named figs / schematic |
-| denon-prime4 | 0 | stub | tier-2 Mixxx path |
+```sh
+uv run python tools/deck-diagrams/scripts/verify_hover_ac.py
+```
 
-## After gate
+## Current (2026-07-24)
 
-- Parallel subagents: one device each under `devices/<id>/`
-- Prefer `doc_tier: 1` then tier-2 Mixxx ingest
-- Do not expand past ~5 new devices per wave without hardening overlay-nudge + pad-mode layers in the skill
+- 100+ devices with hover AC PASS
+- Mix of official Pioneer MIDI-list diagrams + Mixxx tier-2 ingest
+- Catalog: `catalog/controllers.json` (`stats.hover_ok`)
+
+## Scale-to-100 gate (met)
+
+1. FLX10 checksum + hover PASS
+2. Skill documents letter / section / named / Mixxx paths
+3. `verify_hover_ac.py` green across device tree (blocked stubs skipped)
+4. Batch tools: `batch_build_all.py`, `ingest_mixxx.py`, `ingest_mixxx_all.py`, `generate_html.py`
+
+## Next hardening
+
+- Plate-tuned coords (not grid) for Mixxx devices
+- Official PDF fetch for remaining AlphaTheta SKUs (URL casing / product folders)
+- Pad-mode layers beyond SHIFT
+- Deep-research popularity ranks

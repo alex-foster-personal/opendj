@@ -1,0 +1,1066 @@
+{
+  "source": "mixxx:DJ-Tech Kontrol One.midi.xml",
+  "archived": "tools/deck-diagrams/devices/dj-tech-kontrol-one/source/DJ-Tech Kontrol One.midi.xml",
+  "device": "DJ-Tech Kontrol One",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx KONTROL1.knob [knob]"
+    },
+    {
+      "name": "knob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx KONTROL1.knob [knob_2]"
+    },
+    {
+      "name": "knob_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx KONTROL1.knob [knob_3]"
+    },
+    {
+      "name": "knob_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx KONTROL1.knob [knob_4]"
+    },
+    {
+      "name": "knob_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx KONTROL1.knob [knob_5]"
+    },
+    {
+      "name": "button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx KONTROL1.button [button]"
+    },
+    {
+      "name": "knob_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx KONTROL1.knob [knob_6]"
+    },
+    {
+      "name": "button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx KONTROL1.button [button_2]"
+    },
+    {
+      "name": "button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx KONTROL1.button [button_3]"
+    },
+    {
+      "name": "button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx KONTROL1.button [button_4]"
+    },
+    {
+      "name": "button_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx KONTROL1.button [button_5]"
+    },
+    {
+      "name": "button_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx KONTROL1.button [button_6]"
+    },
+    {
+      "name": "button_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx KONTROL1.button [button_7]"
+    },
+    {
+      "name": "button_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx KONTROL1.button [button_8]"
+    },
+    {
+      "name": "button_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx KONTROL1.button [button_9]"
+    },
+    {
+      "name": "button_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx KONTROL1.button [button_10]"
+    },
+    {
+      "name": "button_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx KONTROL1.button [button_11]"
+    },
+    {
+      "name": "button_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx KONTROL1.button [button_12]"
+    },
+    {
+      "name": "button_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx KONTROL1.button [button_13]"
+    },
+    {
+      "name": "button_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx KONTROL1.button [button_14]"
+    },
+    {
+      "name": "button_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx KONTROL1.button [button_15]"
+    },
+    {
+      "name": "button_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx KONTROL1.button [button_16]"
+    },
+    {
+      "name": "button_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx KONTROL1.button [button_17]"
+    },
+    {
+      "name": "button_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx KONTROL1.button [button_18]"
+    },
+    {
+      "name": "button_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx KONTROL1.button [button_19]"
+    },
+    {
+      "name": "button_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx KONTROL1.button [button_20]"
+    },
+    {
+      "name": "button_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx KONTROL1.button [button_21]"
+    },
+    {
+      "name": "button_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx KONTROL1.button [button_22]"
+    },
+    {
+      "name": "button_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx KONTROL1.button [button_23]"
+    },
+    {
+      "name": "button_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx KONTROL1.button [button_24]"
+    },
+    {
+      "name": "button_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx KONTROL1.button [button_25]"
+    },
+    {
+      "name": "button_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx KONTROL1.button [button_26]"
+    },
+    {
+      "name": "button_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx KONTROL1.button [button_27]"
+    },
+    {
+      "name": "knob_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 55,
+      "notes": "Mixxx KONTROL1.knob [knob_7]"
+    },
+    {
+      "name": "knob_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 54,
+      "notes": "Mixxx KONTROL1.knob [knob_8]"
+    },
+    {
+      "name": "knob_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 53,
+      "notes": "Mixxx KONTROL1.knob [knob_9]"
+    },
+    {
+      "name": "knob_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 52,
+      "notes": "Mixxx KONTROL1.knob [knob_10]"
+    },
+    {
+      "name": "knob_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx KONTROL1.knob [knob_11]"
+    },
+    {
+      "name": "button_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx KONTROL1.button [button_28]"
+    },
+    {
+      "name": "knob_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx KONTROL1.knob [knob_12]"
+    },
+    {
+      "name": "button_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx KONTROL1.button [button_29]"
+    },
+    {
+      "name": "button_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx KONTROL1.button [button_30]"
+    },
+    {
+      "name": "button_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx KONTROL1.button [button_31]"
+    },
+    {
+      "name": "button_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx KONTROL1.button [button_32]"
+    },
+    {
+      "name": "button_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx KONTROL1.button [button_33]"
+    },
+    {
+      "name": "button_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx KONTROL1.button [button_34]"
+    },
+    {
+      "name": "button_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx KONTROL1.button [button_35]"
+    },
+    {
+      "name": "button_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx KONTROL1.button [button_36]"
+    },
+    {
+      "name": "button_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx KONTROL1.button [button_37]"
+    },
+    {
+      "name": "button_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx KONTROL1.button [button_38]"
+    },
+    {
+      "name": "button_39",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx KONTROL1.button [button_39]"
+    },
+    {
+      "name": "button_40",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx KONTROL1.button [button_40]"
+    },
+    {
+      "name": "button_41",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx KONTROL1.button [button_41]"
+    },
+    {
+      "name": "button_42",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx KONTROL1.button [button_42]"
+    },
+    {
+      "name": "button_43",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx KONTROL1.button [button_43]"
+    },
+    {
+      "name": "button_44",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx KONTROL1.button [button_44]"
+    },
+    {
+      "name": "button_45",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx KONTROL1.button [button_45]"
+    },
+    {
+      "name": "button_46",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx KONTROL1.button [button_46]"
+    },
+    {
+      "name": "button_47",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx KONTROL1.button [button_47]"
+    },
+    {
+      "name": "button_48",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 18,
+      "notes": "Mixxx KONTROL1.button [button_48]"
+    },
+    {
+      "name": "button_49",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx KONTROL1.button [button_49]"
+    },
+    {
+      "name": "button_50",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx KONTROL1.button [button_50]"
+    },
+    {
+      "name": "button_51",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx KONTROL1.button [button_51]"
+    },
+    {
+      "name": "button_52",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx KONTROL1.button [button_52]"
+    },
+    {
+      "name": "button_53",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx KONTROL1.button [button_53]"
+    },
+    {
+      "name": "button_54",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx KONTROL1.button [button_54]"
+    },
+    {
+      "name": "knob_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 55,
+      "notes": "Mixxx KONTROL1.knob [knob_13]"
+    },
+    {
+      "name": "knob_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 54,
+      "notes": "Mixxx KONTROL1.knob [knob_14]"
+    },
+    {
+      "name": "knob_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 53,
+      "notes": "Mixxx KONTROL1.knob [knob_15]"
+    },
+    {
+      "name": "knob_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 52,
+      "notes": "Mixxx KONTROL1.knob [knob_16]"
+    },
+    {
+      "name": "knob_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx KONTROL1.knob [knob_17]"
+    },
+    {
+      "name": "button_55",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 31,
+      "notes": "Mixxx KONTROL1.button [button_55]"
+    },
+    {
+      "name": "knob_18",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 32,
+      "notes": "Mixxx KONTROL1.knob [knob_18]"
+    },
+    {
+      "name": "button_56",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx KONTROL1.button [button_56]"
+    },
+    {
+      "name": "button_57",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx KONTROL1.button [button_57]"
+    },
+    {
+      "name": "button_58",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx KONTROL1.button [button_58]"
+    },
+    {
+      "name": "button_59",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx KONTROL1.button [button_59]"
+    },
+    {
+      "name": "button_60",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx KONTROL1.button [button_60]"
+    },
+    {
+      "name": "button_61",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 25,
+      "notes": "Mixxx KONTROL1.button [button_61]"
+    },
+    {
+      "name": "button_62",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 30,
+      "notes": "Mixxx KONTROL1.button [button_62]"
+    },
+    {
+      "name": "button_63",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 29,
+      "notes": "Mixxx KONTROL1.button [button_63]"
+    },
+    {
+      "name": "button_64",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 28,
+      "notes": "Mixxx KONTROL1.button [button_64]"
+    },
+    {
+      "name": "button_65",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 27,
+      "notes": "Mixxx KONTROL1.button [button_65]"
+    },
+    {
+      "name": "button_66",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx KONTROL1.button [button_66]"
+    },
+    {
+      "name": "button_67",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx KONTROL1.button [button_67]"
+    },
+    {
+      "name": "button_68",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx KONTROL1.button [button_68]"
+    },
+    {
+      "name": "button_69",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx KONTROL1.button [button_69]"
+    },
+    {
+      "name": "button_70",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 14,
+      "notes": "Mixxx KONTROL1.button [button_70]"
+    },
+    {
+      "name": "button_71",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 13,
+      "notes": "Mixxx KONTROL1.button [button_71]"
+    },
+    {
+      "name": "button_72",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx KONTROL1.button [button_72]"
+    },
+    {
+      "name": "button_73",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx KONTROL1.button [button_73]"
+    },
+    {
+      "name": "button_74",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 19,
+      "notes": "Mixxx KONTROL1.button [button_74]"
+    },
+    {
+      "name": "button_75",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 18,
+      "notes": "Mixxx KONTROL1.button [button_75]"
+    },
+    {
+      "name": "button_76",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 17,
+      "notes": "Mixxx KONTROL1.button [button_76]"
+    },
+    {
+      "name": "button_77",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 16,
+      "notes": "Mixxx KONTROL1.button [button_77]"
+    },
+    {
+      "name": "button_78",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx KONTROL1.button [button_78]"
+    },
+    {
+      "name": "button_79",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 23,
+      "notes": "Mixxx KONTROL1.button [button_79]"
+    },
+    {
+      "name": "button_80",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 22,
+      "notes": "Mixxx KONTROL1.button [button_80]"
+    },
+    {
+      "name": "button_81",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 21,
+      "notes": "Mixxx KONTROL1.button [button_81]"
+    },
+    {
+      "name": "knob_19",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 4,
+      "code": 55,
+      "notes": "Mixxx KONTROL1.knob [knob_19]"
+    },
+    {
+      "name": "knob_20",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 4,
+      "code": 54,
+      "notes": "Mixxx KONTROL1.knob [knob_20]"
+    },
+    {
+      "name": "knob_21",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 4,
+      "code": 53,
+      "notes": "Mixxx KONTROL1.knob [knob_21]"
+    },
+    {
+      "name": "knob_22",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 4,
+      "code": 52,
+      "notes": "Mixxx KONTROL1.knob [knob_22]"
+    },
+    {
+      "name": "knob_23",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 4,
+      "code": 33,
+      "notes": "Mixxx KONTROL1.knob [knob_23]"
+    },
+    {
+      "name": "button_82",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 31,
+      "notes": "Mixxx KONTROL1.button [button_82]"
+    },
+    {
+      "name": "knob_24",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 4,
+      "code": 32,
+      "notes": "Mixxx KONTROL1.knob [knob_24]"
+    },
+    {
+      "name": "button_83",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 4,
+      "notes": "Mixxx KONTROL1.button [button_83]"
+    },
+    {
+      "name": "button_84",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 3,
+      "notes": "Mixxx KONTROL1.button [button_84]"
+    },
+    {
+      "name": "button_85",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 2,
+      "notes": "Mixxx KONTROL1.button [button_85]"
+    },
+    {
+      "name": "button_86",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 1,
+      "notes": "Mixxx KONTROL1.button [button_86]"
+    },
+    {
+      "name": "button_87",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 26,
+      "notes": "Mixxx KONTROL1.button [button_87]"
+    },
+    {
+      "name": "button_88",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 25,
+      "notes": "Mixxx KONTROL1.button [button_88]"
+    },
+    {
+      "name": "button_89",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 30,
+      "notes": "Mixxx KONTROL1.button [button_89]"
+    },
+    {
+      "name": "button_90",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 29,
+      "notes": "Mixxx KONTROL1.button [button_90]"
+    },
+    {
+      "name": "button_91",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 28,
+      "notes": "Mixxx KONTROL1.button [button_91]"
+    },
+    {
+      "name": "button_92",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 27,
+      "notes": "Mixxx KONTROL1.button [button_92]"
+    },
+    {
+      "name": "button_93",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 9,
+      "notes": "Mixxx KONTROL1.button [button_93]"
+    },
+    {
+      "name": "button_94",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 8,
+      "notes": "Mixxx KONTROL1.button [button_94]"
+    },
+    {
+      "name": "button_95",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 7,
+      "notes": "Mixxx KONTROL1.button [button_95]"
+    },
+    {
+      "name": "button_96",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx KONTROL1.button [button_96]"
+    },
+    {
+      "name": "button_97",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 14,
+      "notes": "Mixxx KONTROL1.button [button_97]"
+    },
+    {
+      "name": "button_98",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 13,
+      "notes": "Mixxx KONTROL1.button [button_98]"
+    },
+    {
+      "name": "button_99",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "notes": "Mixxx KONTROL1.button [button_99]"
+    },
+    {
+      "name": "button_100",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx KONTROL1.button [button_100]"
+    },
+    {
+      "name": "button_101",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 19,
+      "notes": "Mixxx KONTROL1.button [button_101]"
+    },
+    {
+      "name": "button_102",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 18,
+      "notes": "Mixxx KONTROL1.button [button_102]"
+    },
+    {
+      "name": "button_103",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 17,
+      "notes": "Mixxx KONTROL1.button [button_103]"
+    },
+    {
+      "name": "button_104",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 16,
+      "notes": "Mixxx KONTROL1.button [button_104]"
+    },
+    {
+      "name": "button_105",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 24,
+      "notes": "Mixxx KONTROL1.button [button_105]"
+    },
+    {
+      "name": "button_106",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 23,
+      "notes": "Mixxx KONTROL1.button [button_106]"
+    },
+    {
+      "name": "button_107",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 22,
+      "notes": "Mixxx KONTROL1.button [button_107]"
+    },
+    {
+      "name": "button_108",
+      "section": "sampler",
+      "type": "note",
+      "ch": 4,
+      "code": 21,
+      "notes": "Mixxx KONTROL1.button [button_108]"
+    }
+  ]
+}

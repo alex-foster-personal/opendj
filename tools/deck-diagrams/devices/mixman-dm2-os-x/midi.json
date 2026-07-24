@@ -1,0 +1,290 @@
+{
+  "source": "mixxx:Mixman DM2 (OS X).midi.xml",
+  "archived": "tools/deck-diagrams/devices/mixman-dm2-os-x/source/Mixman DM2 (OS X).midi.xml",
+  "device": "Mixman DM2 (OS X)",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "playlist",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx DM2.playlist [playlist]"
+    },
+    {
+      "name": "playlist_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx DM2.playlist [playlist_2]"
+    },
+    {
+      "name": "middle",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx DM2.middle [middle]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "beatsync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx beatsync [beatsync]"
+    },
+    {
+      "name": "beatsync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx beatsync [beatsync_2]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "filter_kill",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx DM2.filterKill [filter_kill]"
+    },
+    {
+      "name": "filter_kill_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx DM2.filterKill [filter_kill_2]"
+    },
+    {
+      "name": "filter_kill_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx DM2.filterKill [filter_kill_3]"
+    },
+    {
+      "name": "filter_kill_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx DM2.filterKill [filter_kill_4]"
+    },
+    {
+      "name": "filter_kill_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx DM2.filterKill [filter_kill_5]"
+    },
+    {
+      "name": "filter_kill_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx DM2.filterKill [filter_kill_6]"
+    },
+    {
+      "name": "filter",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx DM2.filter [filter]"
+    },
+    {
+      "name": "filter_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx DM2.filter [filter_2]"
+    },
+    {
+      "name": "filter_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx DM2.filter [filter_3]"
+    },
+    {
+      "name": "filter_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx DM2.filter [filter_4]"
+    },
+    {
+      "name": "filter_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx DM2.filter [filter_5]"
+    },
+    {
+      "name": "filter_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx DM2.filter [filter_6]"
+    },
+    {
+      "name": "filter_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx DM2.filter [filter_7]"
+    },
+    {
+      "name": "filter_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx DM2.filter [filter_8]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx DM2.volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx DM2.volume [volume_2]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx DM2.rate [rate]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx DM2.rate [rate_2]"
+    },
+    {
+      "name": "filter_kill_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx DM2.filterKill [filter_kill_7]"
+    },
+    {
+      "name": "filter_kill_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx DM2.filterKill [filter_kill_8]"
+    },
+    {
+      "name": "filter_kill_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx DM2.filterKill [filter_kill_9]"
+    },
+    {
+      "name": "filter_kill_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx DM2.filterKill [filter_kill_10]"
+    },
+    {
+      "name": "trigger",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx DM2.trigger [trigger]"
+    },
+    {
+      "name": "trigger_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx DM2.trigger [trigger_2]"
+    },
+    {
+      "name": "trigger_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx DM2.trigger [trigger_3]"
+    },
+    {
+      "name": "trigger_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx DM2.trigger [trigger_4]"
+    }
+  ]
+}

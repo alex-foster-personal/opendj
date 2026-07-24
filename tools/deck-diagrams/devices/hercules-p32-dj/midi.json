@@ -1,0 +1,2146 @@
+{
+  "source": "mixxx:Hercules P32 DJ.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-p32-dj/source/Hercules P32 DJ.midi.xml",
+  "device": "Hercules P32 DJ",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "show_maximized_library",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx show_maximized_library [show_maximized_library]"
+    },
+    {
+      "name": "head_split",
+      "section": "mixer",
+      "type": "note",
+      "ch": 4,
+      "code": 1,
+      "notes": "Mixxx headSplit [head_split]"
+    },
+    {
+      "name": "head_mix_encoder",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 4,
+      "code": 2,
+      "notes": "Mixxx P32.headMixEncoder [head_mix_encoder]"
+    },
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx P32.leftDeck.leftEncoder.input [channel1_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx P32.leftDeck.leftEncoder.input [channel1_input_2]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx P32.leftDeck.leftEncoderPress.input [channel1_input_3]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 1,
+      "notes": "Mixxx P32.leftDeck.leftEncoderPress.input [channel1_input_4]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx P32.leftDeck.rightEncoder.input [channel1_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 5,
+      "notes": "Mixxx P32.leftDeck.rightEncoder.input [channel1_input_6]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx P32.leftDeck.rightEncoderPress.input [channel1_input_7]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx P32.leftDeck.rightEncoderPress.input [channel1_input_8]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 80,
+      "notes": "Mixxx P32.leftDeck.loopIn.input [channel1_input_9]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx P32.leftDeck.loopOut.input [channel1_input_10]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 82,
+      "notes": "Mixxx P32.leftDeck.reloop.input [channel1_input_11]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 80,
+      "notes": "Mixxx P32.leftDeck.loopIn.input [channel1_input_12]"
+    },
+    {
+      "name": "channel1_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 81,
+      "notes": "Mixxx P32.leftDeck.loopOut.input [channel1_input_13]"
+    },
+    {
+      "name": "channel1_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 82,
+      "notes": "Mixxx P32.leftDeck.reloop.input [channel1_input_14]"
+    },
+    {
+      "name": "channel1_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 96,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[1].input [channel1_input_15]"
+    },
+    {
+      "name": "channel1_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 97,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[2].input [channel1_input_16]"
+    },
+    {
+      "name": "channel1_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 98,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[3].input [channel1_input_17]"
+    },
+    {
+      "name": "channel1_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 99,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[4].input [channel1_input_18]"
+    },
+    {
+      "name": "channel1_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 92,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[5].input [channel1_input_19]"
+    },
+    {
+      "name": "channel1_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 93,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[6].input [channel1_input_20]"
+    },
+    {
+      "name": "channel1_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 94,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[7].input [channel1_input_21]"
+    },
+    {
+      "name": "channel1_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 95,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[8].input [channel1_input_22]"
+    },
+    {
+      "name": "channel1_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 88,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[9].input [channel1_input_23]"
+    },
+    {
+      "name": "channel1_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 89,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[10].input [channel1_input_24]"
+    },
+    {
+      "name": "channel1_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 90,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[11].input [channel1_input_25]"
+    },
+    {
+      "name": "channel1_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 91,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[12].input [channel1_input_26]"
+    },
+    {
+      "name": "channel1_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 84,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[13].input [channel1_input_27]"
+    },
+    {
+      "name": "channel1_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 85,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[14].input [channel1_input_28]"
+    },
+    {
+      "name": "channel1_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 86,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[15].input [channel1_input_29]"
+    },
+    {
+      "name": "channel1_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 87,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[16].input [channel1_input_30]"
+    },
+    {
+      "name": "channel1_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 96,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[1].input [channel1_input_31]"
+    },
+    {
+      "name": "channel1_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 97,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[2].input [channel1_input_32]"
+    },
+    {
+      "name": "channel1_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 98,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[3].input [channel1_input_33]"
+    },
+    {
+      "name": "channel1_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 99,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[4].input [channel1_input_34]"
+    },
+    {
+      "name": "channel1_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 92,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[5].input [channel1_input_35]"
+    },
+    {
+      "name": "channel1_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 93,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[6].input [channel1_input_36]"
+    },
+    {
+      "name": "channel1_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 94,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[7].input [channel1_input_37]"
+    },
+    {
+      "name": "channel1_input_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 95,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[8].input [channel1_input_38]"
+    },
+    {
+      "name": "channel1_input_39",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 88,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[9].input [channel1_input_39]"
+    },
+    {
+      "name": "channel1_input_40",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 89,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[10].input [channel1_input_40]"
+    },
+    {
+      "name": "channel1_input_41",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 90,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[11].input [channel1_input_41]"
+    },
+    {
+      "name": "channel1_input_42",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 91,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[12].input [channel1_input_42]"
+    },
+    {
+      "name": "channel1_input_43",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 84,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[13].input [channel1_input_43]"
+    },
+    {
+      "name": "channel1_input_44",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 85,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[14].input [channel1_input_44]"
+    },
+    {
+      "name": "channel1_input_45",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 86,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[15].input [channel1_input_45]"
+    },
+    {
+      "name": "channel1_input_46",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 87,
+      "notes": "Mixxx P32.leftDeck.hotcueButton[16].input [channel1_input_46]"
+    },
+    {
+      "name": "channel1_input_47",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx P32.leftDeck.effectUnit.knobs[1].input [channel1_input_47]"
+    },
+    {
+      "name": "channel1_input_48",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx P32.leftDeck.effectUnit.knobs[2].input [channel1_input_48]"
+    },
+    {
+      "name": "channel1_input_49",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx P32.leftDeck.effectUnit.knobs[3].input [channel1_input_49]"
+    },
+    {
+      "name": "channel1_input_50",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx P32.leftDeck.effectUnit.knobs[1].input [channel1_input_50]"
+    },
+    {
+      "name": "channel1_input_51",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 7,
+      "notes": "Mixxx P32.leftDeck.effectUnit.knobs[2].input [channel1_input_51]"
+    },
+    {
+      "name": "channel1_input_52",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 8,
+      "notes": "Mixxx P32.leftDeck.effectUnit.knobs[3].input [channel1_input_52]"
+    },
+    {
+      "name": "channel1_input_53",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx P32.leftDeck.dryWetKnobOrPregain.input [channel1_input_53]"
+    },
+    {
+      "name": "channel1_input_54",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 9,
+      "notes": "Mixxx P32.leftDeck.dryWetKnobOrPregain.input [channel1_input_54]"
+    },
+    {
+      "name": "channel1_input_55",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx P32.leftDeck.effectUnit.enableButtons[1].input [channel1_input_55]"
+    },
+    {
+      "name": "channel1_input_56",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx P32.leftDeck.effectUnit.enableButtons[2].input [channel1_input_56]"
+    },
+    {
+      "name": "channel1_input_57",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx P32.leftDeck.effectUnit.enableButtons[3].input [channel1_input_57]"
+    },
+    {
+      "name": "channel1_input_58",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx P32.leftDeck.effectUnit.effectFocusButton.input [channel1_input_58]"
+    },
+    {
+      "name": "channel1_input_59",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx P32.leftDeck.effectUnit.enableButtons[1].input [channel1_input_59]"
+    },
+    {
+      "name": "channel1_input_60",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 4,
+      "notes": "Mixxx P32.leftDeck.effectUnit.enableButtons[2].input [channel1_input_60]"
+    },
+    {
+      "name": "channel1_input_61",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 5,
+      "notes": "Mixxx P32.leftDeck.effectUnit.enableButtons[3].input [channel1_input_61]"
+    },
+    {
+      "name": "channel1_input_62",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx P32.leftDeck.effectUnit.effectFocusButton.input [channel1_input_62]"
+    },
+    {
+      "name": "channel1_input_63",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx P32.leftDeck.play.input [channel1_input_63]"
+    },
+    {
+      "name": "channel1_input_64",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx P32.leftDeck.cue.input [channel1_input_64]"
+    },
+    {
+      "name": "channel1_input_65",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 9,
+      "notes": "Mixxx P32.leftDeck.cue.input [channel1_input_65]"
+    },
+    {
+      "name": "channel1_input_66",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx P32.leftDeck.play.input [channel1_input_66]"
+    },
+    {
+      "name": "channel1_input_67",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx P32.leftDeck.sync.input [channel1_input_67]"
+    },
+    {
+      "name": "channel1_input_68",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 8,
+      "notes": "Mixxx P32.leftDeck.sync.input [channel1_input_68]"
+    },
+    {
+      "name": "channel1_input_69",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 68,
+      "notes": "Mixxx P32.leftDeck.tempSlow.input [channel1_input_69]"
+    },
+    {
+      "name": "channel1_input_70",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 68,
+      "notes": "Mixxx P32.leftDeck.tempSlow.input [channel1_input_70]"
+    },
+    {
+      "name": "channel1_input_71",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 69,
+      "notes": "Mixxx P32.leftDeck.tempFast.input [channel1_input_71]"
+    },
+    {
+      "name": "channel1_input_72",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 69,
+      "notes": "Mixxx P32.leftDeck.tempFast.input [channel1_input_72]"
+    },
+    {
+      "name": "channel1_input_73",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 70,
+      "notes": "Mixxx P32.leftDeck.alignBeats.input [channel1_input_73]"
+    },
+    {
+      "name": "channel1_input_74",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 70,
+      "notes": "Mixxx P32.leftDeck.alignBeats.input [channel1_input_74]"
+    },
+    {
+      "name": "channel1_input_75",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 83,
+      "notes": "Mixxx P32.leftDeck.syncKey.input [channel1_input_75]"
+    },
+    {
+      "name": "channel1_input_76",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 79,
+      "notes": "Mixxx P32.leftDeck.pitchUp.input [channel1_input_76]"
+    },
+    {
+      "name": "channel1_input_77",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 75,
+      "notes": "Mixxx P32.leftDeck.pitchDown.input [channel1_input_77]"
+    },
+    {
+      "name": "channel1_input_78",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 71,
+      "notes": "Mixxx P32.leftDeck.resetKey.input [channel1_input_78]"
+    },
+    {
+      "name": "channel1_input_79",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 64,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[0].input [channel1_input_79]"
+    },
+    {
+      "name": "channel1_input_80",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 64,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[0].input [channel1_input_80]"
+    },
+    {
+      "name": "channel1_input_81",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 65,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[1].input [channel1_input_81]"
+    },
+    {
+      "name": "channel1_input_82",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 65,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[1].input [channel1_input_82]"
+    },
+    {
+      "name": "channel1_input_83",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 60,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[2].input [channel1_input_83]"
+    },
+    {
+      "name": "channel1_input_84",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 60,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[2].input [channel1_input_84]"
+    },
+    {
+      "name": "channel1_input_85",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 61,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[3].input [channel1_input_85]"
+    },
+    {
+      "name": "channel1_input_86",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 61,
+      "notes": "Mixxx P32.leftDeck.enableEffectUnitButtons[3].input [channel1_input_86]"
+    },
+    {
+      "name": "shift_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx P32.leftDeck.shiftButton [shift_button]"
+    },
+    {
+      "name": "channel1_input_87",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx P32.leftDeck.eqKnob[3].input [channel1_input_87]"
+    },
+    {
+      "name": "channel1_input_88",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx P32.leftDeck.eqKnob[2].input [channel1_input_88]"
+    },
+    {
+      "name": "channel1_input_89",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 4,
+      "notes": "Mixxx P32.leftDeck.eqKnob[3].input [channel1_input_89]"
+    },
+    {
+      "name": "browse_encoder",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx P32.browseEncoder [browse_encoder]"
+    },
+    {
+      "name": "channel1_input_90",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx P32.leftDeck.pfl.input [channel1_input_90]"
+    },
+    {
+      "name": "channel1_input_91",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx P32.leftDeck.eqKnob[1].input [channel1_input_91]"
+    },
+    {
+      "name": "channel1_input_92",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx P32.leftDeck.eqKnob[2].input [channel1_input_92]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "channel1_input_93",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx P32.leftDeck.loadTrack.input [channel1_input_93]"
+    },
+    {
+      "name": "channel1_input_94",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 15,
+      "notes": "Mixxx P32.leftDeck.loadTrack.input [channel1_input_94]"
+    },
+    {
+      "name": "channel1_input_95",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx P32.leftDeck.volume.input [channel1_input_95]"
+    },
+    {
+      "name": "channel1_input_96",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx P32.leftDeck.eqKnob[1].input [channel1_input_96]"
+    },
+    {
+      "name": "recording_input",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx P32.recordButton.input [recording_input]"
+    },
+    {
+      "name": "channel1_input_97",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx P32.rightDeck.leftEncoder.input [channel1_input_97]"
+    },
+    {
+      "name": "channel1_input_98",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 5,
+      "notes": "Mixxx P32.rightDeck.leftEncoder.input [channel1_input_98]"
+    },
+    {
+      "name": "channel1_input_99",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx P32.rightDeck.leftEncoderPress.input [channel1_input_99]"
+    },
+    {
+      "name": "channel1_input_100",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 2,
+      "notes": "Mixxx P32.rightDeck.leftEncoderPress.input [channel1_input_100]"
+    },
+    {
+      "name": "channel1_input_101",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx P32.rightDeck.rightEncoder.input [channel1_input_101]"
+    },
+    {
+      "name": "channel1_input_102",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx P32.rightDeck.rightEncoder.input [channel1_input_102]"
+    },
+    {
+      "name": "channel1_input_103",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx P32.rightDeck.rightEncoderPress.input [channel1_input_103]"
+    },
+    {
+      "name": "channel1_input_104",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 1,
+      "notes": "Mixxx P32.rightDeck.rightEncoderPress.input [channel1_input_104]"
+    },
+    {
+      "name": "recording_input_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx P32.slipButton.input [recording_input_2]"
+    },
+    {
+      "name": "channel1_input_105",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 1,
+      "notes": "Mixxx P32.leftDeck.volume.input [channel1_input_105]"
+    },
+    {
+      "name": "channel1_input_106",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx P32.rightDeck.play.input [channel1_input_106]"
+    },
+    {
+      "name": "channel1_input_107",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx P32.rightDeck.cue.input [channel1_input_107]"
+    },
+    {
+      "name": "channel1_input_108",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 9,
+      "notes": "Mixxx P32.rightDeck.cue.input [channel1_input_108]"
+    },
+    {
+      "name": "channel1_input_109",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx P32.rightDeck.play.input [channel1_input_109]"
+    },
+    {
+      "name": "channel1_input_110",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx P32.rightDeck.sync.input [channel1_input_110]"
+    },
+    {
+      "name": "channel1_input_111",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "notes": "Mixxx P32.rightDeck.sync.input [channel1_input_111]"
+    },
+    {
+      "name": "shift_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx P32.rightDeck.shiftButton [shift_button_2]"
+    },
+    {
+      "name": "channel1_input_112",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx P32.rightDeck.eqKnob[3].input [channel1_input_112]"
+    },
+    {
+      "name": "channel1_input_113",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx P32.rightDeck.eqKnob[2].input [channel1_input_113]"
+    },
+    {
+      "name": "channel1_input_114",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 4,
+      "notes": "Mixxx P32.rightDeck.eqKnob[3].input [channel1_input_114]"
+    },
+    {
+      "name": "channel1_input_115",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 16,
+      "notes": "Mixxx P32.rightDeck.pfl.input [channel1_input_115]"
+    },
+    {
+      "name": "channel1_input_116",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx P32.rightDeck.eqKnob[1].input [channel1_input_116]"
+    },
+    {
+      "name": "channel1_input_117",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 3,
+      "notes": "Mixxx P32.rightDeck.eqKnob[2].input [channel1_input_117]"
+    },
+    {
+      "name": "channel1_input_118",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 15,
+      "notes": "Mixxx P32.rightDeck.loadTrack.input [channel1_input_118]"
+    },
+    {
+      "name": "channel1_input_119",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 15,
+      "notes": "Mixxx P32.rightDeck.loadTrack.input [channel1_input_119]"
+    },
+    {
+      "name": "channel1_input_120",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx P32.rightDeck.volume.input [channel1_input_120]"
+    },
+    {
+      "name": "channel1_input_121",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 2,
+      "notes": "Mixxx P32.rightDeck.eqKnob[1].input [channel1_input_121]"
+    },
+    {
+      "name": "channel1_input_122",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 1,
+      "notes": "Mixxx P32.rightDeck.volume.input [channel1_input_122]"
+    },
+    {
+      "name": "channel1_input_123",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 96,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[1].input [channel1_input_123]"
+    },
+    {
+      "name": "channel1_input_124",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 97,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[2].input [channel1_input_124]"
+    },
+    {
+      "name": "channel1_input_125",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 98,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[3].input [channel1_input_125]"
+    },
+    {
+      "name": "channel1_input_126",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 99,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[4].input [channel1_input_126]"
+    },
+    {
+      "name": "channel1_input_127",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 92,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[5].input [channel1_input_127]"
+    },
+    {
+      "name": "channel1_input_128",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 93,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[6].input [channel1_input_128]"
+    },
+    {
+      "name": "channel1_input_129",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 94,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[7].input [channel1_input_129]"
+    },
+    {
+      "name": "channel1_input_130",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 95,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[8].input [channel1_input_130]"
+    },
+    {
+      "name": "channel1_input_131",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 88,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[9].input [channel1_input_131]"
+    },
+    {
+      "name": "channel1_input_132",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 89,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[10].input [channel1_input_132]"
+    },
+    {
+      "name": "channel1_input_133",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 90,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[11].input [channel1_input_133]"
+    },
+    {
+      "name": "channel1_input_134",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 91,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[12].input [channel1_input_134]"
+    },
+    {
+      "name": "channel1_input_135",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 84,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[13].input [channel1_input_135]"
+    },
+    {
+      "name": "channel1_input_136",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 85,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[14].input [channel1_input_136]"
+    },
+    {
+      "name": "channel1_input_137",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 86,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[15].input [channel1_input_137]"
+    },
+    {
+      "name": "channel1_input_138",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 87,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[16].input [channel1_input_138]"
+    },
+    {
+      "name": "channel1_input_139",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 96,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[1].input [channel1_input_139]"
+    },
+    {
+      "name": "channel1_input_140",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 97,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[2].input [channel1_input_140]"
+    },
+    {
+      "name": "channel1_input_141",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 98,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[3].input [channel1_input_141]"
+    },
+    {
+      "name": "channel1_input_142",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 99,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[4].input [channel1_input_142]"
+    },
+    {
+      "name": "channel1_input_143",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 92,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[5].input [channel1_input_143]"
+    },
+    {
+      "name": "channel1_input_144",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 93,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[6].input [channel1_input_144]"
+    },
+    {
+      "name": "channel1_input_145",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 94,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[7].input [channel1_input_145]"
+    },
+    {
+      "name": "channel1_input_146",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 95,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[8].input [channel1_input_146]"
+    },
+    {
+      "name": "channel1_input_147",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 88,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[9].input [channel1_input_147]"
+    },
+    {
+      "name": "channel1_input_148",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 89,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[10].input [channel1_input_148]"
+    },
+    {
+      "name": "channel1_input_149",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 90,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[11].input [channel1_input_149]"
+    },
+    {
+      "name": "channel1_input_150",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 91,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[12].input [channel1_input_150]"
+    },
+    {
+      "name": "channel1_input_151",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 84,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[13].input [channel1_input_151]"
+    },
+    {
+      "name": "channel1_input_152",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 85,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[14].input [channel1_input_152]"
+    },
+    {
+      "name": "channel1_input_153",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 86,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[15].input [channel1_input_153]"
+    },
+    {
+      "name": "channel1_input_154",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 87,
+      "notes": "Mixxx P32.rightDeck.hotcueButton[16].input [channel1_input_154]"
+    },
+    {
+      "name": "channel1_input_155",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx P32.rightDeck.effectUnit.knobs[1].input [channel1_input_155]"
+    },
+    {
+      "name": "channel1_input_156",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx P32.rightDeck.effectUnit.knobs[2].input [channel1_input_156]"
+    },
+    {
+      "name": "channel1_input_157",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx P32.rightDeck.effectUnit.knobs[3].input [channel1_input_157]"
+    },
+    {
+      "name": "channel1_input_158",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx P32.rightDeck.effectUnit.knobs[1].input [channel1_input_158]"
+    },
+    {
+      "name": "channel1_input_159",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 7,
+      "notes": "Mixxx P32.rightDeck.effectUnit.knobs[2].input [channel1_input_159]"
+    },
+    {
+      "name": "channel1_input_160",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 8,
+      "notes": "Mixxx P32.rightDeck.effectUnit.knobs[3].input [channel1_input_160]"
+    },
+    {
+      "name": "channel1_input_161",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx P32.rightDeck.dryWetKnobOrPregain.input [channel1_input_161]"
+    },
+    {
+      "name": "channel1_input_162",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 9,
+      "notes": "Mixxx P32.rightDeck.dryWetKnobOrPregain.input [channel1_input_162]"
+    },
+    {
+      "name": "channel1_input_163",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx P32.rightDeck.effectUnit.enableButtons[1].input [channel1_input_163]"
+    },
+    {
+      "name": "channel1_input_164",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx P32.rightDeck.effectUnit.enableButtons[2].input [channel1_input_164]"
+    },
+    {
+      "name": "channel1_input_165",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx P32.rightDeck.effectUnit.enableButtons[3].input [channel1_input_165]"
+    },
+    {
+      "name": "channel1_input_166",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx P32.rightDeck.effectUnit.effectFocusButton.input [channel1_input_166]"
+    },
+    {
+      "name": "channel1_input_167",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 3,
+      "notes": "Mixxx P32.rightDeck.effectUnit.enableButtons[1].input [channel1_input_167]"
+    },
+    {
+      "name": "channel1_input_168",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 4,
+      "notes": "Mixxx P32.rightDeck.effectUnit.enableButtons[2].input [channel1_input_168]"
+    },
+    {
+      "name": "channel1_input_169",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 5,
+      "notes": "Mixxx P32.rightDeck.effectUnit.enableButtons[3].input [channel1_input_169]"
+    },
+    {
+      "name": "channel1_input_170",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx P32.rightDeck.effectUnit.effectFocusButton.input [channel1_input_170]"
+    },
+    {
+      "name": "channel1_input_171",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 48,
+      "notes": "Mixxx P32.leftDeck.samplerButton[1].input [channel1_input_171]"
+    },
+    {
+      "name": "channel1_input_172",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 49,
+      "notes": "Mixxx P32.leftDeck.samplerButton[2].input [channel1_input_172]"
+    },
+    {
+      "name": "channel1_input_173",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 50,
+      "notes": "Mixxx P32.leftDeck.samplerButton[3].input [channel1_input_173]"
+    },
+    {
+      "name": "channel1_input_174",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 51,
+      "notes": "Mixxx P32.leftDeck.samplerButton[4].input [channel1_input_174]"
+    },
+    {
+      "name": "channel1_input_175",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx P32.leftDeck.samplerButton[9].input [channel1_input_175]"
+    },
+    {
+      "name": "channel1_input_176",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx P32.leftDeck.samplerButton[10].input [channel1_input_176]"
+    },
+    {
+      "name": "channel1_input_177",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 46,
+      "notes": "Mixxx P32.leftDeck.samplerButton[11].input [channel1_input_177]"
+    },
+    {
+      "name": "channel1_input_178",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 47,
+      "notes": "Mixxx P32.leftDeck.samplerButton[12].input [channel1_input_178]"
+    },
+    {
+      "name": "channel1_input_179",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx P32.leftDeck.samplerButton[17].input [channel1_input_179]"
+    },
+    {
+      "name": "channel1_input_180",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx P32.leftDeck.samplerButton[18].input [channel1_input_180]"
+    },
+    {
+      "name": "channel1_input_181",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx P32.leftDeck.samplerButton[19].input [channel1_input_181]"
+    },
+    {
+      "name": "channel1_input_182",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx P32.leftDeck.samplerButton[20].input [channel1_input_182]"
+    },
+    {
+      "name": "channel1_input_183",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx P32.leftDeck.samplerButton[25].input [channel1_input_183]"
+    },
+    {
+      "name": "channel1_input_184",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx P32.leftDeck.samplerButton[26].input [channel1_input_184]"
+    },
+    {
+      "name": "channel1_input_185",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx P32.leftDeck.samplerButton[27].input [channel1_input_185]"
+    },
+    {
+      "name": "channel1_input_186",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx P32.leftDeck.samplerButton[28].input [channel1_input_186]"
+    },
+    {
+      "name": "channel1_input_187",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 48,
+      "notes": "Mixxx P32.leftDeck.samplerButton[1].input [channel1_input_187]"
+    },
+    {
+      "name": "channel1_input_188",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 49,
+      "notes": "Mixxx P32.leftDeck.samplerButton[2].input [channel1_input_188]"
+    },
+    {
+      "name": "channel1_input_189",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 50,
+      "notes": "Mixxx P32.leftDeck.samplerButton[3].input [channel1_input_189]"
+    },
+    {
+      "name": "channel1_input_190",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 51,
+      "notes": "Mixxx P32.leftDeck.samplerButton[4].input [channel1_input_190]"
+    },
+    {
+      "name": "channel1_input_191",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 44,
+      "notes": "Mixxx P32.leftDeck.samplerButton[9].input [channel1_input_191]"
+    },
+    {
+      "name": "channel1_input_192",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 45,
+      "notes": "Mixxx P32.leftDeck.samplerButton[10].input [channel1_input_192]"
+    },
+    {
+      "name": "channel1_input_193",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 46,
+      "notes": "Mixxx P32.leftDeck.samplerButton[11].input [channel1_input_193]"
+    },
+    {
+      "name": "channel1_input_194",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 47,
+      "notes": "Mixxx P32.leftDeck.samplerButton[12].input [channel1_input_194]"
+    },
+    {
+      "name": "channel1_input_195",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 40,
+      "notes": "Mixxx P32.leftDeck.samplerButton[17].input [channel1_input_195]"
+    },
+    {
+      "name": "channel1_input_196",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 41,
+      "notes": "Mixxx P32.leftDeck.samplerButton[18].input [channel1_input_196]"
+    },
+    {
+      "name": "channel1_input_197",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 42,
+      "notes": "Mixxx P32.leftDeck.samplerButton[19].input [channel1_input_197]"
+    },
+    {
+      "name": "channel1_input_198",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 43,
+      "notes": "Mixxx P32.leftDeck.samplerButton[20].input [channel1_input_198]"
+    },
+    {
+      "name": "channel1_input_199",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 36,
+      "notes": "Mixxx P32.leftDeck.samplerButton[25].input [channel1_input_199]"
+    },
+    {
+      "name": "channel1_input_200",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 37,
+      "notes": "Mixxx P32.leftDeck.samplerButton[26].input [channel1_input_200]"
+    },
+    {
+      "name": "channel1_input_201",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 38,
+      "notes": "Mixxx P32.leftDeck.samplerButton[27].input [channel1_input_201]"
+    },
+    {
+      "name": "channel1_input_202",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 39,
+      "notes": "Mixxx P32.leftDeck.samplerButton[28].input [channel1_input_202]"
+    },
+    {
+      "name": "channel1_input_203",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 48,
+      "notes": "Mixxx P32.rightDeck.samplerButton[5].input [channel1_input_203]"
+    },
+    {
+      "name": "channel1_input_204",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 49,
+      "notes": "Mixxx P32.rightDeck.samplerButton[6].input [channel1_input_204]"
+    },
+    {
+      "name": "channel1_input_205",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 50,
+      "notes": "Mixxx P32.rightDeck.samplerButton[7].input [channel1_input_205]"
+    },
+    {
+      "name": "channel1_input_206",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 51,
+      "notes": "Mixxx P32.rightDeck.samplerButton[8].input [channel1_input_206]"
+    },
+    {
+      "name": "channel1_input_207",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx P32.rightDeck.samplerButton[13].input [channel1_input_207]"
+    },
+    {
+      "name": "channel1_input_208",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 45,
+      "notes": "Mixxx P32.rightDeck.samplerButton[14].input [channel1_input_208]"
+    },
+    {
+      "name": "channel1_input_209",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 46,
+      "notes": "Mixxx P32.rightDeck.samplerButton[15].input [channel1_input_209]"
+    },
+    {
+      "name": "channel1_input_210",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 47,
+      "notes": "Mixxx P32.rightDeck.samplerButton[16].input [channel1_input_210]"
+    },
+    {
+      "name": "channel1_input_211",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 40,
+      "notes": "Mixxx P32.rightDeck.samplerButton[21].input [channel1_input_211]"
+    },
+    {
+      "name": "channel1_input_212",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 41,
+      "notes": "Mixxx P32.rightDeck.samplerButton[22].input [channel1_input_212]"
+    },
+    {
+      "name": "channel1_input_213",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 42,
+      "notes": "Mixxx P32.rightDeck.samplerButton[23].input [channel1_input_213]"
+    },
+    {
+      "name": "channel1_input_214",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 43,
+      "notes": "Mixxx P32.rightDeck.samplerButton[24].input [channel1_input_214]"
+    },
+    {
+      "name": "channel1_input_215",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 36,
+      "notes": "Mixxx P32.rightDeck.samplerButton[29].input [channel1_input_215]"
+    },
+    {
+      "name": "channel1_input_216",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 37,
+      "notes": "Mixxx P32.rightDeck.samplerButton[30].input [channel1_input_216]"
+    },
+    {
+      "name": "channel1_input_217",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 38,
+      "notes": "Mixxx P32.rightDeck.samplerButton[31].input [channel1_input_217]"
+    },
+    {
+      "name": "channel1_input_218",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 39,
+      "notes": "Mixxx P32.rightDeck.samplerButton[32].input [channel1_input_218]"
+    },
+    {
+      "name": "channel1_input_219",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 48,
+      "notes": "Mixxx P32.rightDeck.samplerButton[5].input [channel1_input_219]"
+    },
+    {
+      "name": "channel1_input_220",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 49,
+      "notes": "Mixxx P32.rightDeck.samplerButton[6].input [channel1_input_220]"
+    },
+    {
+      "name": "channel1_input_221",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 50,
+      "notes": "Mixxx P32.rightDeck.samplerButton[7].input [channel1_input_221]"
+    },
+    {
+      "name": "channel1_input_222",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 51,
+      "notes": "Mixxx P32.rightDeck.samplerButton[8].input [channel1_input_222]"
+    },
+    {
+      "name": "channel1_input_223",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 44,
+      "notes": "Mixxx P32.rightDeck.samplerButton[13].input [channel1_input_223]"
+    },
+    {
+      "name": "channel1_input_224",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 45,
+      "notes": "Mixxx P32.rightDeck.samplerButton[14].input [channel1_input_224]"
+    },
+    {
+      "name": "channel1_input_225",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 46,
+      "notes": "Mixxx P32.rightDeck.samplerButton[15].input [channel1_input_225]"
+    },
+    {
+      "name": "channel1_input_226",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 47,
+      "notes": "Mixxx P32.rightDeck.samplerButton[16].input [channel1_input_226]"
+    },
+    {
+      "name": "channel1_input_227",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 40,
+      "notes": "Mixxx P32.rightDeck.samplerButton[21].input [channel1_input_227]"
+    },
+    {
+      "name": "channel1_input_228",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 41,
+      "notes": "Mixxx P32.rightDeck.samplerButton[22].input [channel1_input_228]"
+    },
+    {
+      "name": "channel1_input_229",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 42,
+      "notes": "Mixxx P32.rightDeck.samplerButton[23].input [channel1_input_229]"
+    },
+    {
+      "name": "channel1_input_230",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 43,
+      "notes": "Mixxx P32.rightDeck.samplerButton[24].input [channel1_input_230]"
+    },
+    {
+      "name": "channel1_input_231",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 36,
+      "notes": "Mixxx P32.rightDeck.samplerButton[29].input [channel1_input_231]"
+    },
+    {
+      "name": "channel1_input_232",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 37,
+      "notes": "Mixxx P32.rightDeck.samplerButton[30].input [channel1_input_232]"
+    },
+    {
+      "name": "channel1_input_233",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 38,
+      "notes": "Mixxx P32.rightDeck.samplerButton[31].input [channel1_input_233]"
+    },
+    {
+      "name": "channel1_input_234",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 39,
+      "notes": "Mixxx P32.rightDeck.samplerButton[32].input [channel1_input_234]"
+    },
+    {
+      "name": "channel1_input_235",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 80,
+      "notes": "Mixxx P32.rightDeck.loopIn.input [channel1_input_235]"
+    },
+    {
+      "name": "channel1_input_236",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 81,
+      "notes": "Mixxx P32.rightDeck.loopOut.input [channel1_input_236]"
+    },
+    {
+      "name": "channel1_input_237",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 82,
+      "notes": "Mixxx P32.rightDeck.reloop.input [channel1_input_237]"
+    },
+    {
+      "name": "channel1_input_238",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 80,
+      "notes": "Mixxx P32.rightDeck.loopIn.input [channel1_input_238]"
+    },
+    {
+      "name": "channel1_input_239",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 81,
+      "notes": "Mixxx P32.rightDeck.loopOut.input [channel1_input_239]"
+    },
+    {
+      "name": "channel1_input_240",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 82,
+      "notes": "Mixxx P32.rightDeck.reloop.input [channel1_input_240]"
+    },
+    {
+      "name": "channel1_input_241",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 68,
+      "notes": "Mixxx P32.rightDeck.tempSlow.input [channel1_input_241]"
+    },
+    {
+      "name": "channel1_input_242",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 68,
+      "notes": "Mixxx P32.rightDeck.tempSlow.input [channel1_input_242]"
+    },
+    {
+      "name": "channel1_input_243",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 69,
+      "notes": "Mixxx P32.rightDeck.tempFast.input [channel1_input_243]"
+    },
+    {
+      "name": "channel1_input_244",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 69,
+      "notes": "Mixxx P32.rightDeck.tempFast.input [channel1_input_244]"
+    },
+    {
+      "name": "channel1_input_245",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 70,
+      "notes": "Mixxx P32.rightDeck.alignBeats.input [channel1_input_245]"
+    },
+    {
+      "name": "channel1_input_246",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 70,
+      "notes": "Mixxx P32.rightDeck.alignBeats.input [channel1_input_246]"
+    },
+    {
+      "name": "channel1_input_247",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 83,
+      "notes": "Mixxx P32.rightDeck.syncKey.input [channel1_input_247]"
+    },
+    {
+      "name": "channel1_input_248",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 79,
+      "notes": "Mixxx P32.rightDeck.pitchUp.input [channel1_input_248]"
+    },
+    {
+      "name": "channel1_input_249",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 75,
+      "notes": "Mixxx P32.rightDeck.pitchDown.input [channel1_input_249]"
+    },
+    {
+      "name": "channel1_input_250",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 71,
+      "notes": "Mixxx P32.rightDeck.resetKey.input [channel1_input_250]"
+    },
+    {
+      "name": "channel1_input_251",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 64,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[0].input [channel1_input_251]"
+    },
+    {
+      "name": "channel1_input_252",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 64,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[0].input [channel1_input_252]"
+    },
+    {
+      "name": "channel1_input_253",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 65,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[1].input [channel1_input_253]"
+    },
+    {
+      "name": "channel1_input_254",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 65,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[1].input [channel1_input_254]"
+    },
+    {
+      "name": "channel1_input_255",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 60,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[2].input [channel1_input_255]"
+    },
+    {
+      "name": "channel1_input_256",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 60,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[2].input [channel1_input_256]"
+    },
+    {
+      "name": "channel1_input_257",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 61,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[3].input [channel1_input_257]"
+    },
+    {
+      "name": "channel1_input_258",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 61,
+      "notes": "Mixxx P32.rightDeck.enableEffectUnitButtons[3].input [channel1_input_258]"
+    }
+  ]
+}

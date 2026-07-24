@@ -1,0 +1,1474 @@
+{
+  "source": "mixxx:Denon-MC6000MK2.midi.xml",
+  "archived": "tools/deck-diagrams/devices/denon-mc6000mk2/source/Denon-MC6000MK2.midi.xml",
+  "device": "Denon MC6000MK2",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.hotcueButtons[4].input [channel1_input]"
+    },
+    {
+      "name": "channel3_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.hotcueButtons[4].input [channel3_input]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 32,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.hotcueButtons[4].input [channel2_input]"
+    },
+    {
+      "name": "channel4_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 32,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.hotcueButtons[4].input [channel4_input]"
+    },
+    {
+      "name": "recv_deck_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 89,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.efxUnit.recvDeckButton [recv_deck_button]"
+    },
+    {
+      "name": "input",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 85,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.enableButtons[1].input [input]"
+    },
+    {
+      "name": "recv_filter_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.recvFilterButton [recv_filter_button]"
+    },
+    {
+      "name": "input_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.enableButtons[3].input [input_2]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.hotcueButtons[2].input [channel1_input_2]"
+    },
+    {
+      "name": "channel3_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.hotcueButtons[2].input [channel3_input_2]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.hotcueButtons[2].input [channel2_input_2]"
+    },
+    {
+      "name": "channel4_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 24,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.hotcueButtons[2].input [channel4_input_2]"
+    },
+    {
+      "name": "recv_jog_touch_vinyl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouchVinyl [recv_jog_touch_vinyl]"
+    },
+    {
+      "name": "recv_jog_touch_vinyl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouchVinyl [recv_jog_touch_vinyl_2]"
+    },
+    {
+      "name": "recv_jog_touch_vinyl_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouchVinyl [recv_jog_touch_vinyl_3]"
+    },
+    {
+      "name": "recv_jog_touch_vinyl_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouchVinyl [recv_jog_touch_vinyl_4]"
+    },
+    {
+      "name": "input_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 91,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.knobs[3].input [input_3]"
+    },
+    {
+      "name": "recv_filter_button_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.recvFilterButton [recv_filter_button_2]"
+    },
+    {
+      "name": "input_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 89,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.knobs[1].input [input_4]"
+    },
+    {
+      "name": "recv_area_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "Mixxx DenonMC6000MK2.recvAreaButton [recv_area_button]"
+    },
+    {
+      "name": "input_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 87,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.knobs[3].input [input_5]"
+    },
+    {
+      "name": "input_6",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.enableButtons[2].input [input_6]"
+    },
+    {
+      "name": "input_7",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 85,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.knobs[1].input [input_7]"
+    },
+    {
+      "name": "recv_tap_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.efxUnit.recvTapButton [recv_tap_button]"
+    },
+    {
+      "name": "recv_jog_spin_vinyl",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpinVinyl [recv_jog_spin_vinyl]"
+    },
+    {
+      "name": "recv_jog_spin_vinyl_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpinVinyl [recv_jog_spin_vinyl_2]"
+    },
+    {
+      "name": "recv_jog_spin_vinyl_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpinVinyl [recv_jog_spin_vinyl_3]"
+    },
+    {
+      "name": "recv_bend_plus_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx DenonMC6000MK2.recvBendPlusButton [recv_bend_plus_button]"
+    },
+    {
+      "name": "recv_jog_spin_vinyl_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 81,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpinVinyl [recv_jog_spin_vinyl_4]"
+    },
+    {
+      "name": "recv_bend_plus_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx DenonMC6000MK2.recvBendPlusButton [recv_bend_plus_button_2]"
+    },
+    {
+      "name": "recv_bend_plus_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx DenonMC6000MK2.recvBendPlusButton [recv_bend_plus_button_3]"
+    },
+    {
+      "name": "recv_bend_plus_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "notes": "Mixxx DenonMC6000MK2.recvBendPlusButton [recv_bend_plus_button_4]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "parameter1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx parameter1 [parameter1]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.playButton.input [channel1_input_3]"
+    },
+    {
+      "name": "channel3_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 67,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.playButton.input [channel3_input_3]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 67,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.playButton.input [channel2_input_3]"
+    },
+    {
+      "name": "channel4_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 67,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.playButton.input [channel4_input_3]"
+    },
+    {
+      "name": "parameter3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx parameter3 [parameter3]"
+    },
+    {
+      "name": "input_8",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.effectFocusButton.input [input_8]"
+    },
+    {
+      "name": "recv_deck_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 10,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.recvDeckButton [recv_deck_button_2]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "recv_deck_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.recvDeckButton [recv_deck_button_3]"
+    },
+    {
+      "name": "parameter2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx parameter2 [parameter2]"
+    },
+    {
+      "name": "recv_key_lock_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx DenonMC6000MK2.recvKeyLockButton [recv_key_lock_button]"
+    },
+    {
+      "name": "recv_key_lock_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx DenonMC6000MK2.recvKeyLockButton [recv_key_lock_button_2]"
+    },
+    {
+      "name": "recv_key_lock_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx DenonMC6000MK2.recvKeyLockButton [recv_key_lock_button_3]"
+    },
+    {
+      "name": "recv_key_lock_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx DenonMC6000MK2.recvKeyLockButton [recv_key_lock_button_4]"
+    },
+    {
+      "name": "recv_xfader_assign_right_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignRightButton [recv_xfader_assign_right_button]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "recv_xfader_contour_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderContourKnob [recv_xfader_contour_knob]"
+    },
+    {
+      "name": "recv_vinyl_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx DenonMC6000MK2.recvVinylButton [recv_vinyl_button]"
+    },
+    {
+      "name": "recv_vinyl_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx DenonMC6000MK2.recvVinylButton [recv_vinyl_button_2]"
+    },
+    {
+      "name": "recv_vinyl_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx DenonMC6000MK2.recvVinylButton [recv_vinyl_button_3]"
+    },
+    {
+      "name": "recv_vinyl_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 4,
+      "notes": "Mixxx DenonMC6000MK2.recvVinylButton [recv_vinyl_button_4]"
+    },
+    {
+      "name": "recv_xfader_assign_left_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignLeftButton [recv_xfader_assign_left_button]"
+    },
+    {
+      "name": "parameter1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx parameter1 [parameter1_2]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "recv_cue_mix_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx DenonMC6000MK2.recvCueMixButton [recv_cue_mix_button]"
+    },
+    {
+      "name": "recv_xfader_assign_thru_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignThruButton [recv_xfader_assign_thru_button]"
+    },
+    {
+      "name": "parameter3_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx parameter3 [parameter3_2]"
+    },
+    {
+      "name": "loop_out_button_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 57,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.loopOutButtonInput [loop_out_button_input]"
+    },
+    {
+      "name": "loop_out_button_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 57,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.loopOutButtonInput [loop_out_button_input_2]"
+    },
+    {
+      "name": "loop_out_button_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.loopOutButtonInput [loop_out_button_input_3]"
+    },
+    {
+      "name": "loop_out_button_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 57,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.loopOutButtonInput [loop_out_button_input_4]"
+    },
+    {
+      "name": "loop_in_button_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 55,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.loopInButtonInput [loop_in_button_input]"
+    },
+    {
+      "name": "loop_in_button_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 55,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.loopInButtonInput [loop_in_button_input_2]"
+    },
+    {
+      "name": "loop_in_button_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.loopInButtonInput [loop_in_button_input_3]"
+    },
+    {
+      "name": "loop_in_button_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 55,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.loopInButtonInput [loop_in_button_input_4]"
+    },
+    {
+      "name": "parameter1_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx parameter1 [parameter1_3]"
+    },
+    {
+      "name": "recv_xfader_assign_thru_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignThruButton [recv_xfader_assign_thru_button_2]"
+    },
+    {
+      "name": "parameter3_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx parameter3 [parameter3_3]"
+    },
+    {
+      "name": "recv_loop_cut_plus_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 106,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutPlusButton [recv_loop_cut_plus_button]"
+    },
+    {
+      "name": "recv_loop_cut_plus_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 106,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutPlusButton [recv_loop_cut_plus_button_2]"
+    },
+    {
+      "name": "recv_loop_cut_plus_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 106,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutPlusButton [recv_loop_cut_plus_button_3]"
+    },
+    {
+      "name": "recv_loop_cut_plus_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 106,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutPlusButton [recv_loop_cut_plus_button_4]"
+    },
+    {
+      "name": "recv_xfader_assign_right_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignRightButton [recv_xfader_assign_right_button_2]"
+    },
+    {
+      "name": "recv_xfader_assign_left_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignLeftButton [recv_xfader_assign_left_button_2]"
+    },
+    {
+      "name": "recv_panel_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 100,
+      "notes": "Mixxx DenonMC6000MK2.recvPanelButton [recv_panel_button]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 98,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.loadButton.input [channel1_input_4]"
+    },
+    {
+      "name": "channel3_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 98,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.loadButton.input [channel3_input_4]"
+    },
+    {
+      "name": "shift_button_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.shiftButtonInput [shift_button_input]"
+    },
+    {
+      "name": "shift_button_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 96,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.shiftButtonInput [shift_button_input_2]"
+    },
+    {
+      "name": "recv_fwd_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx DenonMC6000MK2.recvFwdButton [recv_fwd_button]"
+    },
+    {
+      "name": "recv_sampler_button",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button]"
+    },
+    {
+      "name": "recv_sampler_button_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 35,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_2]"
+    },
+    {
+      "name": "recv_filter_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 102,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.recvFilterKnob [recv_filter_knob]"
+    },
+    {
+      "name": "recv_sampler_button_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_3]"
+    },
+    {
+      "name": "recv_deck_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 94,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.efxUnit.recvDeckButton [recv_deck_button_4]"
+    },
+    {
+      "name": "recv_sampler_button_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_4]"
+    },
+    {
+      "name": "recv_deck_button_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 92,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.efxUnit.recvDeckButton [recv_deck_button_5]"
+    },
+    {
+      "name": "recv_deck_button_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 90,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.efxUnit.recvDeckButton [recv_deck_button_6]"
+    },
+    {
+      "name": "recv_jog_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouch [recv_jog_touch]"
+    },
+    {
+      "name": "recv_jog_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 86,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouch [recv_jog_touch_2]"
+    },
+    {
+      "name": "recv_jog_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 86,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouch [recv_jog_touch_3]"
+    },
+    {
+      "name": "recv_jog_touch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 86,
+      "notes": "Mixxx DenonMC6000MK2.recvJogTouch [recv_jog_touch_4]"
+    },
+    {
+      "name": "recv_deck_button_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 88,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.efxUnit.recvDeckButton [recv_deck_button_7]"
+    },
+    {
+      "name": "recv_auto_loop_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx DenonMC6000MK2.recvAutoLoopButton [recv_auto_loop_button]"
+    },
+    {
+      "name": "recv_auto_loop_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx DenonMC6000MK2.recvAutoLoopButton [recv_auto_loop_button_2]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.hotcueButtons[3].input [channel1_input_5]"
+    },
+    {
+      "name": "recv_auto_loop_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 29,
+      "notes": "Mixxx DenonMC6000MK2.recvAutoLoopButton [recv_auto_loop_button_3]"
+    },
+    {
+      "name": "channel3_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.hotcueButtons[3].input [channel3_input_5]"
+    },
+    {
+      "name": "recv_auto_loop_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 29,
+      "notes": "Mixxx DenonMC6000MK2.recvAutoLoopButton [recv_auto_loop_button_4]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 25,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.hotcueButtons[3].input [channel2_input_4]"
+    },
+    {
+      "name": "channel4_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 25,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.hotcueButtons[3].input [channel4_input_4]"
+    },
+    {
+      "name": "input_9",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 82,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.enableButtons[2].input [input_9]"
+    },
+    {
+      "name": "input_10",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 92,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.dryWetKnob.input [input_10]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.hotcueButtons[1].input [channel1_input_6]"
+    },
+    {
+      "name": "channel3_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.hotcueButtons[1].input [channel3_input_6]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 23,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.hotcueButtons[1].input [channel2_input_5]"
+    },
+    {
+      "name": "channel4_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 23,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.hotcueButtons[1].input [channel4_input_5]"
+    },
+    {
+      "name": "recv_censor_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 80,
+      "notes": "Mixxx DenonMC6000MK2.recvCensorButton [recv_censor_button]"
+    },
+    {
+      "name": "recv_censor_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 80,
+      "notes": "Mixxx DenonMC6000MK2.recvCensorButton [recv_censor_button_2]"
+    },
+    {
+      "name": "recv_censor_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 80,
+      "notes": "Mixxx DenonMC6000MK2.recvCensorButton [recv_censor_button_3]"
+    },
+    {
+      "name": "recv_censor_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 80,
+      "notes": "Mixxx DenonMC6000MK2.recvCensorButton [recv_censor_button_4]"
+    },
+    {
+      "name": "input_11",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 90,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.effectUnit.knobs[2].input [input_11]"
+    },
+    {
+      "name": "input_12",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.enableButtons[1].input [input_12]"
+    },
+    {
+      "name": "input_13",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 88,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.dryWetKnob.input [input_13]"
+    },
+    {
+      "name": "input_14",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.enableButtons[3].input [input_14]"
+    },
+    {
+      "name": "recv_view_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "Mixxx DenonMC6000MK2.recvViewButton [recv_view_button]"
+    },
+    {
+      "name": "input_15",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.knobs[2].input [input_15]"
+    },
+    {
+      "name": "recv_track_select_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 84,
+      "notes": "Mixxx DenonMC6000MK2.recvTrackSelectKnob [recv_track_select_knob]"
+    },
+    {
+      "name": "recv_jog_spin",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 82,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpin [recv_jog_spin]"
+    },
+    {
+      "name": "recv_jog_spin_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 82,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpin [recv_jog_spin_2]"
+    },
+    {
+      "name": "recv_jog_spin_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 82,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpin [recv_jog_spin_3]"
+    },
+    {
+      "name": "recv_bend_minus_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx DenonMC6000MK2.recvBendMinusButton [recv_bend_minus_button]"
+    },
+    {
+      "name": "recv_jog_spin_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 82,
+      "notes": "Mixxx DenonMC6000MK2.recvJogSpin [recv_jog_spin_4]"
+    },
+    {
+      "name": "recv_bend_minus_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx DenonMC6000MK2.recvBendMinusButton [recv_bend_minus_button_2]"
+    },
+    {
+      "name": "recv_bend_minus_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 13,
+      "notes": "Mixxx DenonMC6000MK2.recvBendMinusButton [recv_bend_minus_button_3]"
+    },
+    {
+      "name": "recv_bend_minus_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 13,
+      "notes": "Mixxx DenonMC6000MK2.recvBendMinusButton [recv_bend_minus_button_4]"
+    },
+    {
+      "name": "crossfader_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx crossfader [crossfader_2]"
+    },
+    {
+      "name": "recv_tap_button_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.efxUnit.recvTapButton [recv_tap_button_2]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "parameter2_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx parameter2 [parameter2_2]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.cueButton.input [channel1_input_7]"
+    },
+    {
+      "name": "channel3_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 66,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.cueButton.input [channel3_input_7]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 66,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.cueButton.input [channel2_input_6]"
+    },
+    {
+      "name": "channel4_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 66,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.cueButton.input [channel4_input_6]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "input_16",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx DenonMC6000MK2.leftSide.effectUnit.effectFocusButton.input [input_16]"
+    },
+    {
+      "name": "recv_deck_button_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.recvDeckButton [recv_deck_button_8]"
+    },
+    {
+      "name": "parameter1_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx parameter1 [parameter1_4]"
+    },
+    {
+      "name": "recv_cue_mix_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx DenonMC6000MK2.recvCueMixButton [recv_cue_mix_button_2]"
+    },
+    {
+      "name": "parameter3_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx parameter3 [parameter3_4]"
+    },
+    {
+      "name": "recv_cue_mix_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx DenonMC6000MK2.recvCueMixButton [recv_cue_mix_button_3]"
+    },
+    {
+      "name": "recv_xfader_assign_thru_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignThruButton [recv_xfader_assign_thru_button_3]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "recv_deck_button_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.recvDeckButton [recv_deck_button_9]"
+    },
+    {
+      "name": "recv_xfader_assign_right_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignRightButton [recv_xfader_assign_right_button_3]"
+    },
+    {
+      "name": "parameter2_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx parameter2 [parameter2_3]"
+    },
+    {
+      "name": "recv_cue_mix_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx DenonMC6000MK2.recvCueMixButton [recv_cue_mix_button_4]"
+    },
+    {
+      "name": "recv_xfader_assign_left_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignLeftButton [recv_xfader_assign_left_button_3]"
+    },
+    {
+      "name": "pregain_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx pregain [pregain_3]"
+    },
+    {
+      "name": "volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx volume [volume_4]"
+    },
+    {
+      "name": "recv_xfader_assign_right_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignRightButton [recv_xfader_assign_right_button_4]"
+    },
+    {
+      "name": "parameter2_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx parameter2 [parameter2_4]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck1.syncButton.input [channel1_input_8]"
+    },
+    {
+      "name": "channel3_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 107,
+      "notes": "Mixxx DenonMC6000MK2.leftDeck3.syncButton.input [channel3_input_8]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 107,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.syncButton.input [channel2_input_7]"
+    },
+    {
+      "name": "channel4_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 107,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.syncButton.input [channel4_input_7]"
+    },
+    {
+      "name": "recv_xfader_assign_left_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignLeftButton [recv_xfader_assign_left_button_4]"
+    },
+    {
+      "name": "pregain_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx pregain [pregain_4]"
+    },
+    {
+      "name": "recv_loop_cut_minus_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutMinusButton [recv_loop_cut_minus_button]"
+    },
+    {
+      "name": "recv_loop_cut_minus_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 105,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutMinusButton [recv_loop_cut_minus_button_2]"
+    },
+    {
+      "name": "recv_loop_cut_minus_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 105,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutMinusButton [recv_loop_cut_minus_button_3]"
+    },
+    {
+      "name": "recv_loop_cut_minus_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 105,
+      "notes": "Mixxx DenonMC6000MK2.recvLoopCutMinusButton [recv_loop_cut_minus_button_4]"
+    },
+    {
+      "name": "recv_xfader_assign_thru_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx DenonMC6000MK2.recvXfaderAssignThruButton [recv_xfader_assign_thru_button_4]"
+    },
+    {
+      "name": "recv_back_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx DenonMC6000MK2.recvBackButton [recv_back_button]"
+    },
+    {
+      "name": "recv_list_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 101,
+      "notes": "Mixxx DenonMC6000MK2.recvListButton [recv_list_button]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 99,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck2.loadButton.input [channel2_input_8]"
+    },
+    {
+      "name": "channel4_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 99,
+      "notes": "Mixxx DenonMC6000MK2.rightDeck4.loadButton.input [channel4_input_8]"
+    },
+    {
+      "name": "shift_button_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 97,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.shiftButtonInput [shift_button_input_3]"
+    },
+    {
+      "name": "shift_button_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 97,
+      "notes": "Mixxx DenonMC6000MK2.rightSide.shiftButtonInput [shift_button_input_4]"
+    },
+    {
+      "name": "recv_track_select_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx DenonMC6000MK2.recvTrackSelectButton [recv_track_select_button]"
+    },
+    {
+      "name": "recv_sampler_button_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_5]"
+    },
+    {
+      "name": "recv_sampler_button_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 36,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_6]"
+    },
+    {
+      "name": "recv_filter_knob_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 103,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.recvFilterKnob [recv_filter_knob_2]"
+    },
+    {
+      "name": "recv_sampler_button_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_7]"
+    },
+    {
+      "name": "recv_deck_button_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 95,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.efxUnit.recvDeckButton [recv_deck_button_10]"
+    },
+    {
+      "name": "recv_sampler_button_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 34,
+      "notes": "Mixxx DenonMC6000MK2.recvSamplerButton [recv_sampler_button_8]"
+    },
+    {
+      "name": "recv_deck_button_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 93,
+      "notes": "Mixxx DenonMC6000MK2.oldRightSide.efxUnit.recvDeckButton [recv_deck_button_11]"
+    },
+    {
+      "name": "recv_deck_button_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 91,
+      "notes": "Mixxx DenonMC6000MK2.oldLeftSide.efxUnit.recvDeckButton [recv_deck_button_12]"
+    }
+  ]
+}

@@ -1,0 +1,274 @@
+{
+  "source": "mixxx:Gemini CDMP-7000 L audio.midi.xml",
+  "archived": "tools/deck-diagrams/devices/gemini-cdmp-7000-l-audio/source/Gemini CDMP-7000 L audio.midi.xml",
+  "device": "Gemini CDMP-7000 L",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "select_track_knob_neg",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx cdmp7000.select_track_knob_neg [select_track_knob_neg]"
+    },
+    {
+      "name": "select_prev_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx SelectPrevTrack [select_prev_track]"
+    },
+    {
+      "name": "hotcue_2_activate_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx cdmp7000.hotcue_2_activate_d1 [hotcue_2_activate_d1]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx cdmp7000.loopOut [loop_out]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "flanger",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx flanger [flanger]"
+    },
+    {
+      "name": "select_track_knob_pos",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx cdmp7000.select_track_knob_pos [select_track_knob_pos]"
+    },
+    {
+      "name": "rate_perm_down",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx rate_perm_down [rate_perm_down]"
+    },
+    {
+      "name": "fx3_enable_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx cdmp7000.fx3_enable_d1 [fx3_enable_d1]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "hotcue_1_activate_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx cdmp7000.hotcue_1_activate_d1 [hotcue_1_activate_d1]"
+    },
+    {
+      "name": "lfo_depth",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx lfoDepth [lfo_depth]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx cdmp7000.loopIn [loop_in]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "fx1_enable_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx cdmp7000.fx1_enable_d1 [fx1_enable_d1]"
+    },
+    {
+      "name": "rate_perm_up",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx rate_perm_up [rate_perm_up]"
+    },
+    {
+      "name": "vinyl_mode",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx cdmp7000.vinyl_mode [vinyl_mode]"
+    },
+    {
+      "name": "flanger_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx flanger [flanger_2]"
+    },
+    {
+      "name": "beats_translate_curpos",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos]"
+    },
+    {
+      "name": "beatsync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx beatsync [beatsync]"
+    },
+    {
+      "name": "slip_enabled_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx cdmp7000.slip_enabled_d1 [slip_enabled_d1]"
+    },
+    {
+      "name": "select_next_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx SelectNextTrack [select_next_track]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "quantize",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx quantize [quantize]"
+    },
+    {
+      "name": "memo_active_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx cdmp7000.memoActive_d1 [memo_active_d1]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "reverse_toggle_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx cdmp7000.reverse_toggle_d1 [reverse_toggle_d1]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "wheel_touch_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx cdmp7000.wheelTouch_d1 [wheel_touch_d1]"
+    },
+    {
+      "name": "hotcue_3_activate_d1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx cdmp7000.hotcue_3_activate_d1 [hotcue_3_activate_d1]"
+    },
+    {
+      "name": "wheel_turn_d1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx cdmp7000.wheelTurn_d1 [wheel_turn_d1]"
+    },
+    {
+      "name": "loop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx cdmp7000.loopExit [loop_exit]"
+    }
+  ]
+}

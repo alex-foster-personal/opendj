@@ -1,0 +1,242 @@
+{
+  "source": "mixxx:Ion Discover DJ.midi.xml",
+  "archived": "tools/deck-diagrams/devices/ion-discover-dj/source/Ion Discover DJ.midi.xml",
+  "device": "Ion Discover DJ",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "show_maximized_library",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 79,
+      "notes": "Mixxx show_maximized_library [show_maximized_library]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx filterLow [filter_low]"
+    },
+    {
+      "name": "toggle_scratch_mode_on",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx IonDiscoverDJ.toggle_scratch_mode_on [toggle_scratch_mode_on]"
+    },
+    {
+      "name": "reverse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx reverse [reverse]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx filterMid [filter_mid]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "jog_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "Mixxx IonDiscoverDJ.jog_touch [jog_touch]"
+    },
+    {
+      "name": "rate_perm_down",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx rate_perm_down [rate_perm_down]"
+    },
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx IonDiscoverDJ.jog_wheel [jog_wheel]"
+    },
+    {
+      "name": "reverse_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx reverse [reverse_2]"
+    },
+    {
+      "name": "jog_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 78,
+      "notes": "Mixxx IonDiscoverDJ.jog_touch [jog_touch_2]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx filterLow [filter_low_2]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx IonDiscoverDJ.jog_wheel [jog_wheel_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "rate_perm_up",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx rate_perm_up [rate_perm_up]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "rate_perm_down_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx rate_perm_down [rate_perm_down_2]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx filterHigh [filter_high]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "load_selected_track_ch1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 75,
+      "notes": "Mixxx IonDiscoverDJ.LoadSelectedTrackCh1 [load_selected_track_ch1]"
+    },
+    {
+      "name": "rate_perm_up_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx rate_perm_up [rate_perm_up_2]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx filterHigh [filter_high_2]"
+    },
+    {
+      "name": "load_selected_track_ch2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx IonDiscoverDJ.LoadSelectedTrackCh2 [load_selected_track_ch2]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx filterMid [filter_mid_2]"
+    },
+    {
+      "name": "select_track_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx SelectTrackKnob [select_track_knob]"
+    }
+  ]
+}

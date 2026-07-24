@@ -1,0 +1,1220 @@
+{
+  "device": "DJ TechTools MIDI Fighter Spectra",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel3_high_cutoff",
+      "fig": "channel3_high_cutoff",
+      "label": "High cutoff.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_high_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel3_high_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_high_cutoff",
+      "fig": "channel1_high_cutoff",
+      "label": "High cutoff.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_high_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel1_high_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel2_high_cutoff",
+      "fig": "channel2_high_cutoff",
+      "label": "High cutoff.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_high_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel2_high_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel4_high_cutoff",
+      "fig": "channel4_high_cutoff",
+      "label": "High cutoff.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_high_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel4_high_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel3_mid_cutoff",
+      "fig": "channel3_mid_cutoff",
+      "label": "Mid cutoff.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_mid_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel3_mid_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_mid_cutoff",
+      "fig": "channel1_mid_cutoff",
+      "label": "Mid cutoff.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_mid_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_mid_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel2_mid_cutoff",
+      "fig": "channel2_mid_cutoff",
+      "label": "Mid cutoff.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_mid_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel2_mid_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel4_mid_cutoff",
+      "fig": "channel4_mid_cutoff",
+      "label": "Mid cutoff.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_mid_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel4_mid_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel3_low_cutoff",
+      "fig": "channel3_low_cutoff",
+      "label": "Low cutoff.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_low_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel3_low_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_low_cutoff",
+      "fig": "channel1_low_cutoff",
+      "label": "Low cutoff.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_low_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_low_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel2_low_cutoff",
+      "fig": "channel2_low_cutoff",
+      "label": "Low cutoff.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_low_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel2_low_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel4_low_cutoff",
+      "fig": "channel4_low_cutoff",
+      "label": "Low cutoff.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_low_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel4_low_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel3_quick_effect_cutoff",
+      "fig": "channel3_quick_effect_cutoff",
+      "label": "Quick effect cutoff.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_quick_effect_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel3_quick_effect_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_quick_effect_cutoff",
+      "fig": "channel1_quick_effect_cutoff",
+      "label": "Quick effect cutoff.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_quick_effect_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_quick_effect_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel2_quick_effect_cutoff",
+      "fig": "channel2_quick_effect_cutoff",
+      "label": "Quick effect cutoff.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_quick_effect_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel2_quick_effect_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel4_quick_effect_cutoff",
+      "fig": "channel4_quick_effect_cutoff",
+      "label": "Quick effect cutoff.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_quick_effect_cutoff",
+        "type": "note",
+        "ch": 3,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel4_quick_effect_cutoff] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_intro_start_marker",
+      "fig": "channel1_set_intro_start_marker",
+      "label": "Set intro start marker.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_intro_start_marker",
+        "type": "note",
+        "ch": 3,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_intro_start_marker] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_intro_end_marker",
+      "fig": "channel1_set_intro_end_marker",
+      "label": "Set intro end marker.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_intro_end_marker",
+        "type": "note",
+        "ch": 3,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_intro_end_marker] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_outro_start_marker",
+      "fig": "channel1_set_outro_start_marker",
+      "label": "Set outro start marker.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_outro_start_marker",
+        "type": "note",
+        "ch": 3,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_outro_start_marker] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_outro_end_marker",
+      "fig": "channel1_set_outro_end_marker",
+      "label": "Set outro end marker.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_outro_end_marker",
+        "type": "note",
+        "ch": 3,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_outro_end_marker] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_1",
+      "fig": "channel1_set_activate_hotcue_1",
+      "label": "Set/activate hotcue 1.",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_1",
+        "type": "note",
+        "ch": 3,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_2",
+      "fig": "channel1_set_activate_hotcue_2",
+      "label": "Set/activate hotcue 2.",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_2",
+        "type": "note",
+        "ch": 3,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_3",
+      "fig": "channel1_set_activate_hotcue_3",
+      "label": "Set/activate hotcue 3.",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_3",
+        "type": "note",
+        "ch": 3,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_4",
+      "fig": "channel1_set_activate_hotcue_4",
+      "label": "Set/activate hotcue 4.",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_4",
+        "type": "note",
+        "ch": 3,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_5",
+      "fig": "channel1_set_activate_hotcue_5",
+      "label": "Set/activate hotcue 5.",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_5",
+        "type": "note",
+        "ch": 3,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_6",
+      "fig": "channel1_set_activate_hotcue_6",
+      "label": "Set/activate hotcue 6.",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_6",
+        "type": "note",
+        "ch": 3,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_7",
+      "fig": "channel1_set_activate_hotcue_7",
+      "label": "Set/activate hotcue 7.",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_7",
+        "type": "note",
+        "ch": 3,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_set_activate_hotcue_8",
+      "fig": "channel1_set_activate_hotcue_8",
+      "label": "Set/activate hotcue 8.",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_set_activate_hotcue_8",
+        "type": "note",
+        "ch": 3,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[channel1_set_activate_hotcue_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_select_deck_1",
+      "fig": "channel1_select_deck_1",
+      "label": "Select deck 1.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_select_deck_1",
+        "type": "note",
+        "ch": 3,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[channel1_select_deck_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel2_select_deck_2",
+      "fig": "channel2_select_deck_2",
+      "label": "Select deck 2.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_select_deck_2",
+        "type": "note",
+        "ch": 3,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[channel2_select_deck_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel3_select_deck_3",
+      "fig": "channel3_select_deck_3",
+      "label": "Select deck 3.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_select_deck_3",
+        "type": "note",
+        "ch": 3,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[channel3_select_deck_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel4_select_deck_4",
+      "fig": "channel4_select_deck_4",
+      "label": "Select deck 4.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_select_deck_4",
+        "type": "note",
+        "ch": 3,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[channel4_select_deck_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_select_deck_1_2",
+      "fig": "channel1_select_deck_1_2",
+      "label": "Select deck 1.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_select_deck_1_2",
+        "type": "note",
+        "ch": 3,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel1_select_deck_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel2_select_deck_2_2",
+      "fig": "channel2_select_deck_2_2",
+      "label": "Select deck 2.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_select_deck_2_2",
+        "type": "note",
+        "ch": 3,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel2_select_deck_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel3_select_deck_3_2",
+      "fig": "channel3_select_deck_3_2",
+      "label": "Select deck 3.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_select_deck_3_2",
+        "type": "note",
+        "ch": 3,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel3_select_deck_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel4_select_deck_4_2",
+      "fig": "channel4_select_deck_4_2",
+      "label": "Select deck 4.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_select_deck_4_2",
+        "type": "note",
+        "ch": 3,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel4_select_deck_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler1_load_or_play_sampler",
+      "fig": "sampler1_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler1_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[sampler1_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler2_load_or_play_sampler",
+      "fig": "sampler2_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler2_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[sampler2_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler3_load_or_play_sampler",
+      "fig": "sampler3_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler3_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[sampler3_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler4_load_or_play_sampler",
+      "fig": "sampler4_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler4_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[sampler4_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler5_load_or_play_sampler",
+      "fig": "sampler5_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler5_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[sampler5_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler6_load_or_play_sampler",
+      "fig": "sampler6_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler6_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[sampler6_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler7_load_or_play_sampler",
+      "fig": "sampler7_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler7_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[sampler7_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler8_load_or_play_sampler",
+      "fig": "sampler8_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler8_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[sampler8_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler9_load_or_play_sampler",
+      "fig": "sampler9_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler9_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[sampler9_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler10_load_or_play_sampler",
+      "fig": "sampler10_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler10_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[sampler10_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler11_load_or_play_sampler",
+      "fig": "sampler11_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler11_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[sampler11_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler12_load_or_play_sampler",
+      "fig": "sampler12_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler12_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[sampler12_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler13_load_or_play_sampler",
+      "fig": "sampler13_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler13_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[sampler13_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler14_load_or_play_sampler",
+      "fig": "sampler14_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler14_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[sampler14_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler15_load_or_play_sampler",
+      "fig": "sampler15_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler15_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[sampler15_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-sampler16_load_or_play_sampler",
+      "fig": "sampler16_load_or_play_sampler",
+      "label": "Load or play sampler.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler16_load_or_play_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[sampler16_load_or_play_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem1_activate_deactivate_stem",
+      "fig": "channel1_stem1_activate_deactivate_stem",
+      "label": "Activate/deactivate stem.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem1_activate_deactivate_stem",
+        "type": "note",
+        "ch": 3,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem1_activate_deactivate_stem] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem2_activate_deactivate_stem",
+      "fig": "channel1_stem2_activate_deactivate_stem",
+      "label": "Activate/deactivate stem.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem2_activate_deactivate_stem",
+        "type": "note",
+        "ch": 3,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem2_activate_deactivate_stem] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem3_activate_deactivate_stem",
+      "fig": "channel1_stem3_activate_deactivate_stem",
+      "label": "Activate/deactivate stem.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem3_activate_deactivate_stem",
+        "type": "note",
+        "ch": 3,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem3_activate_deactivate_stem] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem4_activate_deactivate_stem",
+      "fig": "channel1_stem4_activate_deactivate_stem",
+      "label": "Activate/deactivate stem.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem4_activate_deactivate_stem",
+        "type": "note",
+        "ch": 3,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem4_activate_deactivate_stem] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem1_activate_deactivate_stem_fx",
+      "fig": "channel1_stem1_activate_deactivate_stem_fx",
+      "label": "Activate/deactivate stem FX.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem1_activate_deactivate_stem_fx",
+        "type": "note",
+        "ch": 3,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem1_activate_deactivate_stem_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem2_activate_deactivate_stem_fx",
+      "fig": "channel1_stem2_activate_deactivate_stem_fx",
+      "label": "Activate/deactivate stem FX.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem2_activate_deactivate_stem_fx",
+        "type": "note",
+        "ch": 3,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem2_activate_deactivate_stem_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem3_activate_deactivate_stem_fx",
+      "fig": "channel1_stem3_activate_deactivate_stem_fx",
+      "label": "Activate/deactivate stem FX.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem3_activate_deactivate_stem_fx",
+        "type": "note",
+        "ch": 3,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem3_activate_deactivate_stem_fx] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-techtools-midi-fighter-spectra-channel1_stem4_activate_deactivate_stem_fx",
+      "fig": "channel1_stem4_activate_deactivate_stem_fx",
+      "label": "Activate/deactivate stem FX.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_stem4_activate_deactivate_stem_fx",
+        "type": "note",
+        "ch": 3,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[channel1_stem4_activate_deactivate_stem_fx] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

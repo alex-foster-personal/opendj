@@ -1,0 +1,418 @@
+{
+  "source": "mixxx:Korg nanoKONTROL 2.midi.xml",
+  "archived": "tools/deck-diagrams/devices/korg-nanokontrol-2/source/Korg nanoKONTROL 2.midi.xml",
+  "device": "Korg nanoKONTROL2",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx volume [volume_4]"
+    },
+    {
+      "name": "volume_5",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx volume [volume_5]"
+    },
+    {
+      "name": "volume_6",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx volume [volume_6]"
+    },
+    {
+      "name": "volume_7",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx volume [volume_7]"
+    },
+    {
+      "name": "volume_8",
+      "section": "sampler",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx volume [volume_8]"
+    },
+    {
+      "name": "knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx NK2.knob [knob]"
+    },
+    {
+      "name": "knob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx NK2.knob [knob_2]"
+    },
+    {
+      "name": "knob_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx NK2.knob [knob_3]"
+    },
+    {
+      "name": "knob_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx NK2.knob [knob_4]"
+    },
+    {
+      "name": "knob_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx NK2.knob [knob_5]"
+    },
+    {
+      "name": "knob_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx NK2.knob [knob_6]"
+    },
+    {
+      "name": "knob_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx NK2.knob [knob_7]"
+    },
+    {
+      "name": "knob_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx NK2.knob [knob_8]"
+    },
+    {
+      "name": "button",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx NK2.button [button]"
+    },
+    {
+      "name": "button_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx NK2.button [button_2]"
+    },
+    {
+      "name": "button_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx NK2.button [button_3]"
+    },
+    {
+      "name": "button_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx NK2.button [button_4]"
+    },
+    {
+      "name": "button_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx NK2.button [button_5]"
+    },
+    {
+      "name": "button_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx NK2.button [button_6]"
+    },
+    {
+      "name": "button_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx NK2.button [button_7]"
+    },
+    {
+      "name": "button_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx NK2.button [button_8]"
+    },
+    {
+      "name": "button_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx NK2.button [button_9]"
+    },
+    {
+      "name": "button_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx NK2.button [button_10]"
+    },
+    {
+      "name": "button_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx NK2.button [button_11]"
+    },
+    {
+      "name": "button_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx NK2.button [button_12]"
+    },
+    {
+      "name": "button_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx NK2.button [button_13]"
+    },
+    {
+      "name": "button_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx NK2.button [button_14]"
+    },
+    {
+      "name": "button_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx NK2.button [button_15]"
+    },
+    {
+      "name": "button_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx NK2.button [button_16]"
+    },
+    {
+      "name": "button_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx NK2.button [button_17]"
+    },
+    {
+      "name": "button_18",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 65,
+      "notes": "Mixxx NK2.button [button_18]"
+    },
+    {
+      "name": "button_19",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx NK2.button [button_19]"
+    },
+    {
+      "name": "button_20",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx NK2.button [button_20]"
+    },
+    {
+      "name": "button_21",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx NK2.button [button_21]"
+    },
+    {
+      "name": "button_22",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx NK2.button [button_22]"
+    },
+    {
+      "name": "button_23",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx NK2.button [button_23]"
+    },
+    {
+      "name": "button_24",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx NK2.button [button_24]"
+    },
+    {
+      "name": "button_25",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx NK2.button [button_25]"
+    },
+    {
+      "name": "button_26",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx NK2.button [button_26]"
+    },
+    {
+      "name": "button_27",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx NK2.button [button_27]"
+    },
+    {
+      "name": "button_28",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx NK2.button [button_28]"
+    },
+    {
+      "name": "button_29",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx NK2.button [button_29]"
+    },
+    {
+      "name": "button_30",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx NK2.button [button_30]"
+    },
+    {
+      "name": "button_31",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx NK2.button [button_31]"
+    },
+    {
+      "name": "button_32",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx NK2.button [button_32]"
+    },
+    {
+      "name": "button_33",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx NK2.button [button_33]"
+    },
+    {
+      "name": "button_34",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx NK2.button [button_34]"
+    },
+    {
+      "name": "button_35",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx NK2.button [button_35]"
+    }
+  ]
+}

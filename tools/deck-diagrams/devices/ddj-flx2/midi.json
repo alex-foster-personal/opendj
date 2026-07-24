@@ -1,0 +1,225 @@
+{
+  "source": "/Users/dev/Music/music-dj-tools/docs/controller/reference/DDJ-FLX2_MIDI_Message_List_E1.pdf",
+  "archived": "/Users/dev/Music/music-dj-tools/tools/deck-diagrams/devices/ddj-flx2/source/DDJ-FLX2_MIDI_Message_List_E1.pdf",
+  "device": "DDJ-FLX2",
+  "vendor": "AlphaTheta",
+  "bootstrap": true,
+  "controls": [
+    {
+      "name": "fig_b4",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "bootstrap stub from PDF plate label [B4] - refine from tables"
+    },
+    {
+      "name": "fig_b6",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "bootstrap stub from PDF plate label [B6] - refine from tables"
+    },
+    {
+      "name": "fig_d1",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "bootstrap stub from PDF plate label [D1] - refine from tables"
+    },
+    {
+      "name": "fig_d2",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "bootstrap stub from PDF plate label [D2] - refine from tables"
+    },
+    {
+      "name": "fig_d3",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "bootstrap stub from PDF plate label [D3] - refine from tables"
+    },
+    {
+      "name": "fig_d4",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "bootstrap stub from PDF plate label [D4] - refine from tables"
+    },
+    {
+      "name": "fig_d5",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "bootstrap stub from PDF plate label [D5] - refine from tables"
+    },
+    {
+      "name": "fig_d6",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "bootstrap stub from PDF plate label [D6] - refine from tables"
+    },
+    {
+      "name": "fig_f1",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "bootstrap stub from PDF plate label [F1] - refine from tables"
+    },
+    {
+      "name": "fig_m1",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "bootstrap stub from PDF plate label [M1] - refine from tables"
+    },
+    {
+      "name": "fig_m2",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "bootstrap stub from PDF plate label [M2] - refine from tables"
+    },
+    {
+      "name": "fig_m3",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "bootstrap stub from PDF plate label [M3] - refine from tables"
+    },
+    {
+      "name": "fig_m4",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "bootstrap stub from PDF plate label [M4] - refine from tables"
+    },
+    {
+      "name": "fig_m5",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "bootstrap stub from PDF plate label [M5] - refine from tables"
+    },
+    {
+      "name": "fig_m6",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "bootstrap stub from PDF plate label [M6] - refine from tables"
+    },
+    {
+      "name": "fig_m7",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "bootstrap stub from PDF plate label [M7] - refine from tables"
+    },
+    {
+      "name": "fig_m8",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "bootstrap stub from PDF plate label [M8] - refine from tables"
+    },
+    {
+      "name": "fig_m9",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "bootstrap stub from PDF plate label [M9] - refine from tables"
+    },
+    {
+      "name": "fig_m10",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "bootstrap stub from PDF plate label [M10] - refine from tables"
+    },
+    {
+      "name": "fig_p1",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "bootstrap stub from PDF plate label [P1] - refine from tables"
+    },
+    {
+      "name": "fig_p2",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "bootstrap stub from PDF plate label [P2] - refine from tables"
+    },
+    {
+      "name": "fig_p3",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "bootstrap stub from PDF plate label [P3] - refine from tables"
+    },
+    {
+      "name": "fig_p4",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "bootstrap stub from PDF plate label [P4] - refine from tables"
+    },
+    {
+      "name": "fig_p5",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "bootstrap stub from PDF plate label [P5] - refine from tables"
+    },
+    {
+      "name": "fig_p6",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "bootstrap stub from PDF plate label [P6] - refine from tables"
+    },
+    {
+      "name": "fig_p7",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "bootstrap stub from PDF plate label [P7] - refine from tables"
+    },
+    {
+      "name": "fig_p8",
+      "section": "unknown",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "bootstrap stub from PDF plate label [P8] - refine from tables"
+    }
+  ]
+}

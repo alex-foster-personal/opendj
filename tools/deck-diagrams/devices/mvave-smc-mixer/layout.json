@@ -1,0 +1,1040 @@
+{
+  "device": "M-Vave SMC-Mixer",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel3_effect1_first_s_button",
+      "fig": "equalizer_rack1_channel3_effect1_first_s_button",
+      "label": "First S button.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel3_effect1_first_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel3_effect1_first_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel3_effect1_first_r_button",
+      "fig": "equalizer_rack1_channel3_effect1_first_r_button",
+      "label": "First R button.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel3_effect1_first_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel3_effect1_first_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel3_effect1_first_m_button",
+      "fig": "equalizer_rack1_channel3_effect1_first_m_button",
+      "label": "First M button.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel3_effect1_first_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel3_effect1_first_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-quick_effect_rack1_channel3_first_square_button",
+      "fig": "quick_effect_rack1_channel3_first_square_button",
+      "label": "First square button.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel3_first_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel3_first_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel1_effect1_second_s_button",
+      "fig": "equalizer_rack1_channel1_effect1_second_s_button",
+      "label": "Second S button.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_second_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_second_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel1_effect1_second_r_button",
+      "fig": "equalizer_rack1_channel1_effect1_second_r_button",
+      "label": "Second R button.",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_second_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_second_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel1_effect1_second_m_button",
+      "fig": "equalizer_rack1_channel1_effect1_second_m_button",
+      "label": "Second M button.",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel1_effect1_second_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel1_effect1_second_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-quick_effect_rack1_channel1_second_square_button",
+      "fig": "quick_effect_rack1_channel1_second_square_button",
+      "label": "Second square button.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel1_second_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel1_second_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel2_effect1_third_s_button",
+      "fig": "equalizer_rack1_channel2_effect1_third_s_button",
+      "label": "Third S button.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_third_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_third_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel2_effect1_third_r_button",
+      "fig": "equalizer_rack1_channel2_effect1_third_r_button",
+      "label": "Third R button.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_third_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_third_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel2_effect1_third_m_button",
+      "fig": "equalizer_rack1_channel2_effect1_third_m_button",
+      "label": "Third M button.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel2_effect1_third_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel2_effect1_third_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-quick_effect_rack1_channel2_third_square_button",
+      "fig": "quick_effect_rack1_channel2_third_square_button",
+      "label": "Third square button.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel2_third_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel2_third_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel4_effect1_fourth_s_button",
+      "fig": "equalizer_rack1_channel4_effect1_fourth_s_button",
+      "label": "Fourth S button.",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel4_effect1_fourth_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel4_effect1_fourth_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel4_effect1_third_r_button",
+      "fig": "equalizer_rack1_channel4_effect1_third_r_button",
+      "label": "Third R button.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel4_effect1_third_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel4_effect1_third_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-equalizer_rack1_channel4_effect1_fourth_m_button",
+      "fig": "equalizer_rack1_channel4_effect1_fourth_m_button",
+      "label": "Fourth M button.",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "equalizer_rack1_channel4_effect1_fourth_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[equalizer_rack1_channel4_effect1_fourth_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-quick_effect_rack1_channel4_fourth_square_button",
+      "fig": "quick_effect_rack1_channel4_fourth_square_button",
+      "label": "Fourth square button.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel4_fourth_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel4_fourth_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel3_fifth_m_button",
+      "fig": "channel3_fifth_m_button",
+      "label": "Fifth M button.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_fifth_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel3_fifth_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_sixth_m_button",
+      "fig": "channel1_sixth_m_button",
+      "label": "Sixth M button.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sixth_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel1_sixth_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel2_seventh_m_button",
+      "fig": "channel2_seventh_m_button",
+      "label": "Seventh M button.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_seventh_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_seventh_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel4_eighth_m_button",
+      "fig": "channel4_eighth_m_button",
+      "label": "Eighth M button.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_eighth_m_button",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel4_eighth_m_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel3_fifth_s_button",
+      "fig": "channel3_fifth_s_button",
+      "label": "Fifth S button.",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_fifth_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel3_fifth_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_sixth_s_button",
+      "fig": "channel1_sixth_s_button",
+      "label": "Sixth S button.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sixth_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel1_sixth_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel2_seventh_s_button",
+      "fig": "channel2_seventh_s_button",
+      "label": "Seventh S button.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_seventh_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel2_seventh_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel4_eighth_s_button",
+      "fig": "channel4_eighth_s_button",
+      "label": "Eighth S button.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_eighth_s_button",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel4_eighth_s_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel3_fifth_r_button",
+      "fig": "channel3_fifth_r_button",
+      "label": "Fifth R button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_fifth_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel3_fifth_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_sixth_r_button",
+      "fig": "channel1_sixth_r_button",
+      "label": "Sixth R button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sixth_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_sixth_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel2_seventh_r_button",
+      "fig": "channel2_seventh_r_button",
+      "label": "Seventh R button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_seventh_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel2_seventh_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel4_eighth_r_button",
+      "fig": "channel4_eighth_r_button",
+      "label": "Eighth R button.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_eighth_r_button",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel4_eighth_r_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel3_fifth_square_button",
+      "fig": "channel3_fifth_square_button",
+      "label": "Fifth square button.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_fifth_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel3_fifth_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_sixth_square_button",
+      "fig": "channel1_sixth_square_button",
+      "label": "Sixth square button.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sixth_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel1_sixth_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel2_seventh_square_button",
+      "fig": "channel2_seventh_square_button",
+      "label": "Seventh square button.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_seventh_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel2_seventh_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel4_eighth_square_button",
+      "fig": "channel4_eighth_square_button",
+      "label": "Eighth square button.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_eighth_square_button",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel4_eighth_square_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel3_knob_1",
+      "fig": "channel3_knob_1",
+      "label": "Knob 1.",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_knob_1",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel3_knob_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_knob_2",
+      "fig": "channel1_knob_2",
+      "label": "Knob 2.",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_knob_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel1_knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel2_knob_3",
+      "fig": "channel2_knob_3",
+      "label": "Knob 3.",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_knob_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel4_knob_3",
+      "fig": "channel4_knob_3",
+      "label": "Knob 3.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_knob_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel4_knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-master_knob_4",
+      "fig": "master_knob_4",
+      "label": "Knob 4.",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_knob_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[master_knob_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-master_knob_5",
+      "fig": "master_knob_5",
+      "label": "Knob 5.",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_knob_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[master_knob_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-master_knob_6",
+      "fig": "master_knob_6",
+      "label": "Knob 6.",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_knob_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[master_knob_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-master_knob_7",
+      "fig": "master_knob_7",
+      "label": "Knob 7.",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_knob_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[master_knob_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_channel_left_button",
+      "fig": "channel1_channel_left_button",
+      "label": "Channel Left button.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_channel_left_button",
+        "type": "note",
+        "ch": 1,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel1_channel_left_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_channel_right_button",
+      "fig": "channel1_channel_right_button",
+      "label": "Channel Right button.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_channel_right_button",
+        "type": "note",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel1_channel_right_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_rewind_transport_button",
+      "fig": "channel1_rewind_transport_button",
+      "label": "Rewind transport button.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_rewind_transport_button",
+        "type": "note",
+        "ch": 1,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[channel1_rewind_transport_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_fast_forward_transport_button",
+      "fig": "channel1_fast_forward_transport_button",
+      "label": "Fast forward transport button.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_fast_forward_transport_button",
+        "type": "note",
+        "ch": 1,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[channel1_fast_forward_transport_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_pause_transport_button_used_for_cue",
+      "fig": "channel1_pause_transport_button_used_for_cue",
+      "label": "Pause transport button (used for Cue).",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pause_transport_button_used_for_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[channel1_pause_transport_button_used_for_cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_play_transport_button",
+      "fig": "channel1_play_transport_button",
+      "label": "Play transport button.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_play_transport_button",
+        "type": "note",
+        "ch": 1,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[channel1_play_transport_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-recording_record_transport_button",
+      "fig": "recording_record_transport_button",
+      "label": "Record transport button.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recording_record_transport_button",
+        "type": "note",
+        "ch": 1,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[recording_record_transport_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_down_button",
+      "fig": "channel1_down_button",
+      "label": "Down button.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_down_button",
+        "type": "note",
+        "ch": 1,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_down_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_down_button_2",
+      "fig": "channel1_down_button_2",
+      "label": "Down button.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_down_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_down_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_left_button",
+      "fig": "channel1_left_button",
+      "label": "Left button.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_left_button",
+        "type": "note",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_left_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "mvave-smc-mixer-channel1_right_button",
+      "fig": "channel1_right_button",
+      "label": "Right button.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_right_button",
+        "type": "note",
+        "ch": 1,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_right_button] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

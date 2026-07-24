@@ -1,0 +1,1482 @@
+{
+  "source": "mixxx:Hercules DJ Console 4-Mx.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-dj-console-4-mx/source/Hercules DJ Console 4-Mx.midi.xml",
+  "device": "Hercules DJ Console 4-Mx",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "button_mic_on_off_pressed",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "notes": "Mixxx Button Mic On/Off pressed [button_mic_on_off_pressed]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 75,
+      "notes": "Mixxx Hercules4Mx.LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 75,
+      "notes": "Mixxx Hercules4Mx.LoadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "load_selected_track_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx Hercules4Mx.LoadSelectedTrack [load_selected_track_3]"
+    },
+    {
+      "name": "load_selected_track_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 74,
+      "notes": "Mixxx Hercules4Mx.LoadSelectedTrack [load_selected_track_4]"
+    },
+    {
+      "name": "deck_dstate_change",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 73,
+      "notes": "Mixxx Hercules4Mx.deckDStateChange [deck_dstate_change]"
+    },
+    {
+      "name": "deck_cstate_change",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx Hercules4Mx.deckCStateChange [deck_cstate_change]"
+    },
+    {
+      "name": "button_mic_on_off_state",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx Button Mic On/Off (state) [button_mic_on_off_state]"
+    },
+    {
+      "name": "forward_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx Hercules4Mx.forwardButton [forward_button]"
+    },
+    {
+      "name": "forward_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 70,
+      "notes": "Mixxx Hercules4Mx.forwardButton [forward_button_2]"
+    },
+    {
+      "name": "rewind_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx Hercules4Mx.rewindButton [rewind_button]"
+    },
+    {
+      "name": "rewind_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 69,
+      "notes": "Mixxx Hercules4Mx.rewindButton [rewind_button_2]"
+    },
+    {
+      "name": "p_bend_up_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx Hercules4Mx.pBendUpButton [p_bend_up_button]"
+    },
+    {
+      "name": "p_bend_down_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx Hercules4Mx.pBendDownButton [p_bend_down_button]"
+    },
+    {
+      "name": "p_bend_up_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 68,
+      "notes": "Mixxx Hercules4Mx.pBendUpButton [p_bend_up_button_2]"
+    },
+    {
+      "name": "p_bend_down_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 67,
+      "notes": "Mixxx Hercules4Mx.pBendDownButton [p_bend_down_button_2]"
+    },
+    {
+      "name": "press_effect_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx Hercules4Mx.pressEffectShift [press_effect_shift]"
+    },
+    {
+      "name": "press_effect_shift_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 66,
+      "notes": "Mixxx Hercules4Mx.pressEffectShift [press_effect_shift_2]"
+    },
+    {
+      "name": "navigation",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "notes": "Mixxx Hercules4Mx.navigation [navigation]"
+    },
+    {
+      "name": "navigation_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx Hercules4Mx.navigation [navigation_2]"
+    },
+    {
+      "name": "navigation_folders",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx Hercules4Mx.navigationFolders [navigation_folders]"
+    },
+    {
+      "name": "navigation_files",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx Hercules4Mx.navigationFiles [navigation_files]"
+    },
+    {
+      "name": "scratch_button",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx Hercules4Mx.scratchButton [scratch_button]"
+    },
+    {
+      "name": "auto_djbutton",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx Hercules4Mx.autoDJButton [auto_djbutton]"
+    },
+    {
+      "name": "state_effect_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx Hercules4Mx.stateEffectShift [state_effect_shift]"
+    },
+    {
+      "name": "state_effect_shift_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 59,
+      "notes": "Mixxx Hercules4Mx.stateEffectShift [state_effect_shift_2]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx Hercules4Mx.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 58,
+      "notes": "Mixxx Hercules4Mx.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "button_parameter1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx button_parameter1 [button_parameter1]"
+    },
+    {
+      "name": "button_parameter1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 57,
+      "notes": "Mixxx button_parameter1 [button_parameter1_2]"
+    },
+    {
+      "name": "button_parameter2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx button_parameter2 [button_parameter2]"
+    },
+    {
+      "name": "button_parameter2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 56,
+      "notes": "Mixxx button_parameter2 [button_parameter2_2]"
+    },
+    {
+      "name": "button_parameter3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx button_parameter3 [button_parameter3]"
+    },
+    {
+      "name": "button_parameter3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 55,
+      "notes": "Mixxx button_parameter3 [button_parameter3_2]"
+    },
+    {
+      "name": "passthrough",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx passthrough [passthrough]"
+    },
+    {
+      "name": "passthrough_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 54,
+      "notes": "Mixxx passthrough [passthrough_2]"
+    },
+    {
+      "name": "reset_key",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx reset_key [reset_key]"
+    },
+    {
+      "name": "reset_key_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 53,
+      "notes": "Mixxx reset_key [reset_key_2]"
+    },
+    {
+      "name": "p_scale_down_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx Hercules4Mx.pScaleDownButton [p_scale_down_button]"
+    },
+    {
+      "name": "p_scale_down_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 52,
+      "notes": "Mixxx Hercules4Mx.pScaleDownButton [p_scale_down_button_2]"
+    },
+    {
+      "name": "p_scale_up_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx Hercules4Mx.pScaleUpButton [p_scale_up_button]"
+    },
+    {
+      "name": "p_scale_up_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 51,
+      "notes": "Mixxx Hercules4Mx.pScaleUpButton [p_scale_up_button_2]"
+    },
+    {
+      "name": "button_deck_d_pressed",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx Button Deck D (pressed) [button_deck_d_pressed]"
+    },
+    {
+      "name": "sync_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx Hercules4Mx.syncButton [sync_button]"
+    },
+    {
+      "name": "sync_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 49,
+      "notes": "Mixxx Hercules4Mx.syncButton [sync_button_2]"
+    },
+    {
+      "name": "stop_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx Hercules4Mx.stopButton [stop_button]"
+    },
+    {
+      "name": "stop_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 48,
+      "notes": "Mixxx Hercules4Mx.stopButton [stop_button_2]"
+    },
+    {
+      "name": "deckheadphones",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx Hercules4Mx.deckheadphones [deckheadphones]"
+    },
+    {
+      "name": "deckheadphones_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 47,
+      "notes": "Mixxx Hercules4Mx.deckheadphones [deckheadphones_2]"
+    },
+    {
+      "name": "play_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx Hercules4Mx.playButton [play_button]"
+    },
+    {
+      "name": "play_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 46,
+      "notes": "Mixxx Hercules4Mx.playButton [play_button_2]"
+    },
+    {
+      "name": "cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx Hercules4Mx.cueButton [cue_button]"
+    },
+    {
+      "name": "cue_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx Hercules4Mx.cueButton [cue_button_2]"
+    },
+    {
+      "name": "fxbutton",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton]"
+    },
+    {
+      "name": "fxbutton_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_2]"
+    },
+    {
+      "name": "fxbutton_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_3]"
+    },
+    {
+      "name": "fxbutton_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_4]"
+    },
+    {
+      "name": "fxbutton_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_5]"
+    },
+    {
+      "name": "fxbutton_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_6]"
+    },
+    {
+      "name": "fxbutton_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_7]"
+    },
+    {
+      "name": "fxbutton_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_8]"
+    },
+    {
+      "name": "fxbutton_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_9]"
+    },
+    {
+      "name": "fxbutton_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_10]"
+    },
+    {
+      "name": "fxbutton_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_11]"
+    },
+    {
+      "name": "on_sensitivity_change",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx Hercules4Mx.onSensitivityChange [on_sensitivity_change]"
+    },
+    {
+      "name": "fxbutton_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_12]"
+    },
+    {
+      "name": "fxbutton_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_13]"
+    },
+    {
+      "name": "fxbutton_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_14]"
+    },
+    {
+      "name": "fxbutton_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_15]"
+    },
+    {
+      "name": "fxbutton_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_16]"
+    },
+    {
+      "name": "fxbutton_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_17]"
+    },
+    {
+      "name": "fxbutton_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_18]"
+    },
+    {
+      "name": "fxbutton_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_19]"
+    },
+    {
+      "name": "fxbutton_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_20]"
+    },
+    {
+      "name": "fxbutton_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_21]"
+    },
+    {
+      "name": "fxbutton_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_22]"
+    },
+    {
+      "name": "fxbutton_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_23]"
+    },
+    {
+      "name": "fxbutton_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_24]"
+    },
+    {
+      "name": "forward_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx Hercules4Mx.forwardButton [forward_button_3]"
+    },
+    {
+      "name": "forward_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx Hercules4Mx.forwardButton [forward_button_4]"
+    },
+    {
+      "name": "rewind_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx Hercules4Mx.rewindButton [rewind_button_3]"
+    },
+    {
+      "name": "rewind_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx Hercules4Mx.rewindButton [rewind_button_4]"
+    },
+    {
+      "name": "p_bend_up_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx Hercules4Mx.pBendUpButton [p_bend_up_button_3]"
+    },
+    {
+      "name": "p_bend_up_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx Hercules4Mx.pBendUpButton [p_bend_up_button_4]"
+    },
+    {
+      "name": "p_bend_down_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx Hercules4Mx.pBendDownButton [p_bend_down_button_3]"
+    },
+    {
+      "name": "p_bend_down_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx Hercules4Mx.pBendDownButton [p_bend_down_button_4]"
+    },
+    {
+      "name": "press_effect_shift_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx Hercules4Mx.pressEffectShift [press_effect_shift_3]"
+    },
+    {
+      "name": "press_effect_shift_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx Hercules4Mx.pressEffectShift [press_effect_shift_4]"
+    },
+    {
+      "name": "state_effect_shift_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx Hercules4Mx.stateEffectShift [state_effect_shift_3]"
+    },
+    {
+      "name": "state_effect_shift_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx Hercules4Mx.stateEffectShift [state_effect_shift_4]"
+    },
+    {
+      "name": "wheel_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx Hercules4Mx.wheelTouch [wheel_touch_3]"
+    },
+    {
+      "name": "wheel_touch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx Hercules4Mx.wheelTouch [wheel_touch_4]"
+    },
+    {
+      "name": "button_parameter1_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx button_parameter1 [button_parameter1_3]"
+    },
+    {
+      "name": "button_parameter2_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx button_parameter2 [button_parameter2_3]"
+    },
+    {
+      "name": "button_parameter1_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx button_parameter1 [button_parameter1_4]"
+    },
+    {
+      "name": "button_parameter2_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx button_parameter2 [button_parameter2_4]"
+    },
+    {
+      "name": "button_parameter3_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx button_parameter3 [button_parameter3_3]"
+    },
+    {
+      "name": "button_parameter3_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx button_parameter3 [button_parameter3_4]"
+    },
+    {
+      "name": "passthrough_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx passthrough [passthrough_3]"
+    },
+    {
+      "name": "passthrough_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx passthrough [passthrough_4]"
+    },
+    {
+      "name": "reset_key_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx reset_key [reset_key_3]"
+    },
+    {
+      "name": "reset_key_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx reset_key [reset_key_4]"
+    },
+    {
+      "name": "p_scale_down_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx Hercules4Mx.pScaleDownButton [p_scale_down_button_3]"
+    },
+    {
+      "name": "p_scale_down_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx Hercules4Mx.pScaleDownButton [p_scale_down_button_4]"
+    },
+    {
+      "name": "p_scale_up_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx Hercules4Mx.pScaleUpButton [p_scale_up_button_3]"
+    },
+    {
+      "name": "p_scale_up_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx Hercules4Mx.pScaleUpButton [p_scale_up_button_4]"
+    },
+    {
+      "name": "button_deck_c_pressed",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx Button Deck C (pressed) [button_deck_c_pressed]"
+    },
+    {
+      "name": "sync_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx Hercules4Mx.syncButton [sync_button_3]"
+    },
+    {
+      "name": "sync_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx Hercules4Mx.syncButton [sync_button_4]"
+    },
+    {
+      "name": "stop_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx Hercules4Mx.stopButton [stop_button_3]"
+    },
+    {
+      "name": "stop_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx Hercules4Mx.stopButton [stop_button_4]"
+    },
+    {
+      "name": "deckheadphones_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx Hercules4Mx.deckheadphones [deckheadphones_3]"
+    },
+    {
+      "name": "deckheadphones_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx Hercules4Mx.deckheadphones [deckheadphones_4]"
+    },
+    {
+      "name": "play_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx Hercules4Mx.playButton [play_button_3]"
+    },
+    {
+      "name": "play_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx Hercules4Mx.playButton [play_button_4]"
+    },
+    {
+      "name": "cue_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx Hercules4Mx.cueButton [cue_button_3]"
+    },
+    {
+      "name": "cue_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx Hercules4Mx.cueButton [cue_button_4]"
+    },
+    {
+      "name": "fxbutton_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_25]"
+    },
+    {
+      "name": "deck_rate_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx Hercules4Mx.deckRateLsb [deck_rate_lsb]"
+    },
+    {
+      "name": "fxbutton_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_26]"
+    },
+    {
+      "name": "fxbutton_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_27]"
+    },
+    {
+      "name": "deck_rate_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx Hercules4Mx.deckRateLsb [deck_rate_lsb_2]"
+    },
+    {
+      "name": "fxbutton_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_28]"
+    },
+    {
+      "name": "fxbutton_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_29]"
+    },
+    {
+      "name": "deck_rate_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx Hercules4Mx.deckRateLsb [deck_rate_lsb_3]"
+    },
+    {
+      "name": "fxbutton_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_30]"
+    },
+    {
+      "name": "fxbutton_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_31]"
+    },
+    {
+      "name": "deck_rate_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx Hercules4Mx.deckRateLsb [deck_rate_lsb_4]"
+    },
+    {
+      "name": "fxbutton_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_32]"
+    },
+    {
+      "name": "fxbutton_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_33]"
+    },
+    {
+      "name": "scratch_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx Hercules4Mx.scratchWheel [scratch_wheel]"
+    },
+    {
+      "name": "fxbutton_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_34]"
+    },
+    {
+      "name": "fxbutton_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_35]"
+    },
+    {
+      "name": "scratch_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx Hercules4Mx.scratchWheel [scratch_wheel_2]"
+    },
+    {
+      "name": "fxbutton_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_36]"
+    },
+    {
+      "name": "fxbutton_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_37]"
+    },
+    {
+      "name": "scratch_wheel_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx Hercules4Mx.scratchWheel [scratch_wheel_3]"
+    },
+    {
+      "name": "fxbutton_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_38]"
+    },
+    {
+      "name": "fxbutton_39",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_39]"
+    },
+    {
+      "name": "scratch_wheel_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx Hercules4Mx.scratchWheel [scratch_wheel_4]"
+    },
+    {
+      "name": "fxbutton_40",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_40]"
+    },
+    {
+      "name": "fxbutton_41",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_41]"
+    },
+    {
+      "name": "fxbutton_42",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_42]"
+    },
+    {
+      "name": "fxbutton_43",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_43]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "fxbutton_44",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_44]"
+    },
+    {
+      "name": "fxbutton_45",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_45]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx Hercules4Mx.crossfader [crossfader]"
+    },
+    {
+      "name": "fxbutton_46",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_46]"
+    },
+    {
+      "name": "fxbutton_47",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_47]"
+    },
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "fxbutton_48",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx Hercules4Mx.FXButton [fxbutton_48]"
+    },
+    {
+      "name": "deck_bass",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx Hercules4Mx.deckBass [deck_bass]"
+    },
+    {
+      "name": "deck_mids",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx Hercules4Mx.deckMids [deck_mids]"
+    },
+    {
+      "name": "deck_treble",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx Hercules4Mx.deckTreble [deck_treble]"
+    },
+    {
+      "name": "deck_rate_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx Hercules4Mx.deckRateMsb [deck_rate_msb]"
+    },
+    {
+      "name": "deck_gain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx Hercules4Mx.deckGain [deck_gain]"
+    },
+    {
+      "name": "deck_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx Hercules4Mx.deckVolume [deck_volume]"
+    },
+    {
+      "name": "effect_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx Hercules4Mx.effectKnob [effect_knob]"
+    },
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx Hercules4Mx.jogWheel [jog_wheel]"
+    },
+    {
+      "name": "deck_bass_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx Hercules4Mx.deckBass [deck_bass_2]"
+    },
+    {
+      "name": "deck_mids_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx Hercules4Mx.deckMids [deck_mids_2]"
+    },
+    {
+      "name": "deck_treble_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx Hercules4Mx.deckTreble [deck_treble_2]"
+    },
+    {
+      "name": "deck_rate_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx Hercules4Mx.deckRateMsb [deck_rate_msb_2]"
+    },
+    {
+      "name": "deck_gain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx Hercules4Mx.deckGain [deck_gain_2]"
+    },
+    {
+      "name": "deck_volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx Hercules4Mx.deckVolume [deck_volume_2]"
+    },
+    {
+      "name": "effect_knob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx Hercules4Mx.effectKnob [effect_knob_2]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx Hercules4Mx.jogWheel [jog_wheel_2]"
+    },
+    {
+      "name": "deck_bass_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx Hercules4Mx.deckBass [deck_bass_3]"
+    },
+    {
+      "name": "deck_mids_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx Hercules4Mx.deckMids [deck_mids_3]"
+    },
+    {
+      "name": "deck_treble_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx Hercules4Mx.deckTreble [deck_treble_3]"
+    },
+    {
+      "name": "deck_rate_msb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx Hercules4Mx.deckRateMsb [deck_rate_msb_3]"
+    },
+    {
+      "name": "deck_gain_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx Hercules4Mx.deckGain [deck_gain_3]"
+    },
+    {
+      "name": "deck_volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx Hercules4Mx.deckVolume [deck_volume_3]"
+    },
+    {
+      "name": "effect_knob_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx Hercules4Mx.effectKnob [effect_knob_3]"
+    },
+    {
+      "name": "jog_wheel_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx Hercules4Mx.jogWheel [jog_wheel_3]"
+    },
+    {
+      "name": "deck_bass_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx Hercules4Mx.deckBass [deck_bass_4]"
+    },
+    {
+      "name": "deck_mids_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx Hercules4Mx.deckMids [deck_mids_4]"
+    },
+    {
+      "name": "deck_treble_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx Hercules4Mx.deckTreble [deck_treble_4]"
+    },
+    {
+      "name": "deck_rate_msb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx Hercules4Mx.deckRateMsb [deck_rate_msb_4]"
+    },
+    {
+      "name": "deck_gain_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx Hercules4Mx.deckGain [deck_gain_4]"
+    },
+    {
+      "name": "deck_volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx Hercules4Mx.deckVolume [deck_volume_4]"
+    },
+    {
+      "name": "effect_knob_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx Hercules4Mx.effectKnob [effect_knob_4]"
+    },
+    {
+      "name": "jog_wheel_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx Hercules4Mx.jogWheel [jog_wheel_4]"
+    }
+  ]
+}

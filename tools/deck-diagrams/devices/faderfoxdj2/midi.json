@@ -1,0 +1,554 @@
+{
+  "source": "mixxx:FaderFoxDJ2.midi.xml",
+  "archived": "tools/deck-diagrams/devices/faderfoxdj2/source/FaderFoxDJ2.midi.xml",
+  "device": "FaderFox DJ2",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "mute",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx mute [mute]"
+    },
+    {
+      "name": "jog",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx jog [jog]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "rate_temp_up",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx rate_temp_up [rate_temp_up]"
+    },
+    {
+      "name": "rate_temp_down",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx rate_temp_down [rate_temp_down]"
+    },
+    {
+      "name": "rate_temp_up_small",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx rate_temp_up_small [rate_temp_up_small]"
+    },
+    {
+      "name": "rate_temp_down_small",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx rate_temp_down_small [rate_temp_down_small]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "beats_translate_curpos",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "beatjump_1_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx beatjump_1_backward [beatjump_1_backward]"
+    },
+    {
+      "name": "beatjump_1_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx beatjump_1_forward [beatjump_1_forward]"
+    },
+    {
+      "name": "quantize",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx quantize [quantize]"
+    },
+    {
+      "name": "reverse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx reverse [reverse]"
+    },
+    {
+      "name": "parameter1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx parameter1 [parameter1]"
+    },
+    {
+      "name": "button_parameter1",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx button_parameter1 [button_parameter1]"
+    },
+    {
+      "name": "parameter2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx parameter2 [parameter2]"
+    },
+    {
+      "name": "button_parameter2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx button_parameter2 [button_parameter2]"
+    },
+    {
+      "name": "parameter3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx parameter3 [parameter3]"
+    },
+    {
+      "name": "button_parameter3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx button_parameter3 [button_parameter3]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "group_channel1_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx group_[Channel1]_enable [group_channel1_enable]"
+    },
+    {
+      "name": "group_channel1_enable_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx group_[Channel1]_enable [group_channel1_enable_2]"
+    },
+    {
+      "name": "group_channel1_enable_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx group_[Channel1]_enable [group_channel1_enable_3]"
+    },
+    {
+      "name": "group_channel1_enable_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx group_[Channel1]_enable [group_channel1_enable_4]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "mute_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "Mixxx mute [mute_2]"
+    },
+    {
+      "name": "jog_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx jog [jog_2]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "rate_temp_up_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx rate_temp_up [rate_temp_up_2]"
+    },
+    {
+      "name": "rate_temp_down_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx rate_temp_down [rate_temp_down_2]"
+    },
+    {
+      "name": "rate_temp_up_small_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx rate_temp_up_small [rate_temp_up_small_2]"
+    },
+    {
+      "name": "rate_temp_down_small_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 73,
+      "notes": "Mixxx rate_temp_down_small [rate_temp_down_small_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "keylock_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx keylock [keylock_2]"
+    },
+    {
+      "name": "beats_translate_curpos_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "beatjump_1_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx beatjump_1_backward [beatjump_1_backward_2]"
+    },
+    {
+      "name": "beatjump_1_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx beatjump_1_forward [beatjump_1_forward_2]"
+    },
+    {
+      "name": "quantize_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx quantize [quantize_2]"
+    },
+    {
+      "name": "reverse_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 78,
+      "notes": "Mixxx reverse [reverse_2]"
+    },
+    {
+      "name": "parameter1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx parameter1 [parameter1_2]"
+    },
+    {
+      "name": "button_parameter1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx button_parameter1 [button_parameter1_2]"
+    },
+    {
+      "name": "parameter2_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx parameter2 [parameter2_2]"
+    },
+    {
+      "name": "button_parameter2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx button_parameter2 [button_parameter2_2]"
+    },
+    {
+      "name": "parameter3_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx parameter3 [parameter3_2]"
+    },
+    {
+      "name": "button_parameter3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx button_parameter3 [button_parameter3_2]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "group_channel2_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx group_[Channel2]_enable [group_channel2_enable]"
+    },
+    {
+      "name": "group_channel2_enable_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx group_[Channel2]_enable [group_channel2_enable_2]"
+    },
+    {
+      "name": "group_channel2_enable_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx group_[Channel2]_enable [group_channel2_enable_3]"
+    },
+    {
+      "name": "group_channel2_enable_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "notes": "Mixxx group_[Channel2]_enable [group_channel2_enable_4]"
+    },
+    {
+      "name": "mix",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx mix [mix]"
+    },
+    {
+      "name": "super1",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx super1 [super1]"
+    },
+    {
+      "name": "mix_2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx mix [mix_2]"
+    },
+    {
+      "name": "super1_2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx super1 [super1_2]"
+    },
+    {
+      "name": "select_next_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx SelectNextTrack [select_next_track]"
+    },
+    {
+      "name": "select_prev_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx SelectPrevTrack [select_prev_track]"
+    }
+  ]
+}

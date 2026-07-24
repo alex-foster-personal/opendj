@@ -1,0 +1,3466 @@
+{
+  "source": "mixxx:Pioneer-DDJ-SB2.midi.xml",
+  "archived": "tools/deck-diagrams/devices/ddj-sb2/source/Pioneer-DDJ-SB2.midi.xml",
+  "device": "DDJ-SB2",
+  "vendor": "Pioneer DJ",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel1_toggles_play_pause_deck_1_button_left_play_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].playButton.input [channel1_toggles_play_pause_deck_1_button_left_play_deck_1_active]"
+    },
+    {
+      "name": "channel2_toggles_play_pause_deck_2_button_right_play_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].playButton.input [channel2_toggles_play_pause_deck_2_button_right_play_deck_2_active]"
+    },
+    {
+      "name": "channel3_toggles_play_pause_deck_3_button_left_play_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].playButton.input [channel3_toggles_play_pause_deck_3_button_left_play_deck_3_active]"
+    },
+    {
+      "name": "channel4_toggles_play_pause_deck_4_button_right_play_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].playButton.input [channel4_toggles_play_pause_deck_4_button_right_play_deck_4_active]"
+    },
+    {
+      "name": "channel1_reverse_play_deck_1_button_shift_left_play_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].playButton.input [channel1_reverse_play_deck_1_button_shift_left_play_deck_1_active]"
+    },
+    {
+      "name": "channel2_reverse_play_deck_2_button_shift_right_play_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].playButton.input [channel2_reverse_play_deck_2_button_shift_right_play_deck_2_active]"
+    },
+    {
+      "name": "channel3_reverse_play_deck_3_button_shift_left_play_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].playButton.input [channel3_reverse_play_deck_3_button_shift_left_play_deck_3_active]"
+    },
+    {
+      "name": "channel4_reverse_play_deck_4_button_shift_right_play_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].playButton.input [channel4_reverse_play_deck_4_button_shift_right_play_deck_4_active]"
+    },
+    {
+      "name": "channel1_cue_deck_1_button_left_cue_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].cueButton.input [channel1_cue_deck_1_button_left_cue_deck_1_active]"
+    },
+    {
+      "name": "channel2_cue_deck_2_button_right_cue_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].cueButton.input [channel2_cue_deck_2_button_right_cue_deck_2_active]"
+    },
+    {
+      "name": "channel3_cue_deck_3_button_left_cue_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].cueButton.input [channel3_cue_deck_3_button_left_cue_deck_3_active]"
+    },
+    {
+      "name": "channel4_cue_deck_4_button_right_cue_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].cueButton.input [channel4_cue_deck_4_button_right_cue_deck_4_active]"
+    },
+    {
+      "name": "channel1_break_deck_1_button_left_shift_cue_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].cueButton.input [channel1_break_deck_1_button_left_shift_cue_deck_1_active]"
+    },
+    {
+      "name": "channel2_break_deck_2_button_right_shift_cue_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].cueButton.input [channel2_break_deck_2_button_right_shift_cue_deck_2_active]"
+    },
+    {
+      "name": "channel3_break_deck_3_button_left_shift_cue_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].cueButton.input [channel3_break_deck_3_button_left_shift_cue_deck_3_active]"
+    },
+    {
+      "name": "channel4_break_deck_4_button_right_shift_cue_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].cueButton.input [channel4_break_deck_4_button_right_shift_cue_deck_4_active]"
+    },
+    {
+      "name": "channel1_sync_deck_1_button_left_sync_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].syncButton.input [channel1_sync_deck_1_button_left_sync_deck_1_active]"
+    },
+    {
+      "name": "channel2_sync_deck_2_button_right_sync_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].syncButton.input [channel2_sync_deck_2_button_right_sync_deck_2_active]"
+    },
+    {
+      "name": "channel3_sync_deck_3_button_left_sync_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].syncButton.input [channel3_sync_deck_3_button_left_sync_deck_3_active]"
+    },
+    {
+      "name": "channel4_sync_deck_4_button_right_sync_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].syncButton.input [channel4_sync_deck_4_button_right_sync_deck_4_active]"
+    },
+    {
+      "name": "channel1_quantize_deck_1_button_left_shift_sync_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 92,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].syncButton.input [channel1_quantize_deck_1_button_left_shift_sync_deck_1_active]"
+    },
+    {
+      "name": "channel2_quantize_deck_2_button_right_shift_sync_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 92,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].syncButton.input [channel2_quantize_deck_2_button_right_shift_sync_deck_2_active]"
+    },
+    {
+      "name": "channel3_quantize_deck_3_button_left_shift_sync_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 92,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].syncButton.input [channel3_quantize_deck_3_button_left_shift_sync_deck_3_active]"
+    },
+    {
+      "name": "channel4_quantize_deck_4_button_right_shift_sync_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 92,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].syncButton.input [channel4_quantize_deck_4_button_right_shift_sync_deck_4_active]"
+    },
+    {
+      "name": "jog_platter_tick",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick]"
+    },
+    {
+      "name": "jog_platter_tick_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_2]"
+    },
+    {
+      "name": "jog_platter_tick_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_3]"
+    },
+    {
+      "name": "jog_platter_tick_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_4]"
+    },
+    {
+      "name": "jog_platter_tick_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_5]"
+    },
+    {
+      "name": "jog_platter_tick_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_6]"
+    },
+    {
+      "name": "jog_platter_tick_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_7]"
+    },
+    {
+      "name": "jog_platter_tick_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTick [jog_platter_tick_8]"
+    },
+    {
+      "name": "jog_platter_tick_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTickShift [jog_platter_tick_shift]"
+    },
+    {
+      "name": "jog_platter_tick_shift_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTickShift [jog_platter_tick_shift_2]"
+    },
+    {
+      "name": "jog_platter_tick_shift_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 31,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTickShift [jog_platter_tick_shift_3]"
+    },
+    {
+      "name": "jog_platter_tick_shift_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 31,
+      "notes": "Mixxx PioneerDDJSB2.jogPlatterTickShift [jog_platter_tick_shift_4]"
+    },
+    {
+      "name": "jog_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch]"
+    },
+    {
+      "name": "jog_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 54,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_2]"
+    },
+    {
+      "name": "jog_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 54,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_3]"
+    },
+    {
+      "name": "jog_touch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 54,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_4]"
+    },
+    {
+      "name": "jog_touch_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_5]"
+    },
+    {
+      "name": "jog_touch_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 53,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_6]"
+    },
+    {
+      "name": "jog_touch_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 53,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_7]"
+    },
+    {
+      "name": "jog_touch_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 53,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_8]"
+    },
+    {
+      "name": "jog_touch_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 103,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_9]"
+    },
+    {
+      "name": "jog_touch_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 103,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_10]"
+    },
+    {
+      "name": "jog_touch_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 103,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_11]"
+    },
+    {
+      "name": "jog_touch_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 103,
+      "notes": "Mixxx PioneerDDJSB2.jogTouch [jog_touch_12]"
+    },
+    {
+      "name": "jog_ring_tick",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTick [jog_ring_tick]"
+    },
+    {
+      "name": "jog_ring_tick_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTick [jog_ring_tick_2]"
+    },
+    {
+      "name": "jog_ring_tick_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTick [jog_ring_tick_3]"
+    },
+    {
+      "name": "jog_ring_tick_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTick [jog_ring_tick_4]"
+    },
+    {
+      "name": "jog_ring_tick_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTickShift [jog_ring_tick_shift]"
+    },
+    {
+      "name": "jog_ring_tick_shift_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTickShift [jog_ring_tick_shift_2]"
+    },
+    {
+      "name": "jog_ring_tick_shift_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 38,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTickShift [jog_ring_tick_shift_3]"
+    },
+    {
+      "name": "jog_ring_tick_shift_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 38,
+      "notes": "Mixxx PioneerDDJSB2.jogRingTickShift [jog_ring_tick_shift_4]"
+    },
+    {
+      "name": "input_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].tempoFader.inputMSB [input_msb]"
+    },
+    {
+      "name": "input_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].tempoFader.inputLSB [input_lsb]"
+    },
+    {
+      "name": "input_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].tempoFader.inputMSB [input_msb_2]"
+    },
+    {
+      "name": "input_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].tempoFader.inputLSB [input_lsb_2]"
+    },
+    {
+      "name": "input_msb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].tempoFader.inputMSB [input_msb_3]"
+    },
+    {
+      "name": "input_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].tempoFader.inputLSB [input_lsb_3]"
+    },
+    {
+      "name": "input_msb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].tempoFader.inputMSB [input_msb_4]"
+    },
+    {
+      "name": "input_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].tempoFader.inputLSB [input_lsb_4]"
+    },
+    {
+      "name": "input_msb_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].tempoFader.inputMSB [input_msb_5]"
+    },
+    {
+      "name": "input_lsb_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].tempoFader.inputLSB [input_lsb_5]"
+    },
+    {
+      "name": "input_msb_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].tempoFader.inputMSB [input_msb_6]"
+    },
+    {
+      "name": "input_lsb_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].tempoFader.inputLSB [input_lsb_6]"
+    },
+    {
+      "name": "input_msb_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].tempoFader.inputMSB [input_msb_7]"
+    },
+    {
+      "name": "input_lsb_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 37,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].tempoFader.inputLSB [input_lsb_7]"
+    },
+    {
+      "name": "input_msb_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 5,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].tempoFader.inputMSB [input_msb_8]"
+    },
+    {
+      "name": "input_lsb_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 37,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].tempoFader.inputLSB [input_lsb_8]"
+    },
+    {
+      "name": "vinyl_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx PioneerDDJSB2.vinylButton [vinyl_button]"
+    },
+    {
+      "name": "vinyl_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx PioneerDDJSB2.vinylButton [vinyl_button_2]"
+    },
+    {
+      "name": "vinyl_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 23,
+      "notes": "Mixxx PioneerDDJSB2.vinylButton [vinyl_button_3]"
+    },
+    {
+      "name": "vinyl_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 23,
+      "notes": "Mixxx PioneerDDJSB2.vinylButton [vinyl_button_4]"
+    },
+    {
+      "name": "slip_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 78,
+      "notes": "Mixxx PioneerDDJSB2.slipButton [slip_button]"
+    },
+    {
+      "name": "slip_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 78,
+      "notes": "Mixxx PioneerDDJSB2.slipButton [slip_button_2]"
+    },
+    {
+      "name": "slip_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 78,
+      "notes": "Mixxx PioneerDDJSB2.slipButton [slip_button_3]"
+    },
+    {
+      "name": "slip_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 78,
+      "notes": "Mixxx PioneerDDJSB2.slipButton [slip_button_4]"
+    },
+    {
+      "name": "key_lock_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.keyLockButton [key_lock_button]"
+    },
+    {
+      "name": "key_lock_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.keyLockButton [key_lock_button_2]"
+    },
+    {
+      "name": "key_lock_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.keyLockButton [key_lock_button_3]"
+    },
+    {
+      "name": "key_lock_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.keyLockButton [key_lock_button_4]"
+    },
+    {
+      "name": "shift_key_lock_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.shiftKeyLockButton [shift_key_lock_button]"
+    },
+    {
+      "name": "shift_key_lock_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.shiftKeyLockButton [shift_key_lock_button_2]"
+    },
+    {
+      "name": "shift_key_lock_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.shiftKeyLockButton [shift_key_lock_button_3]"
+    },
+    {
+      "name": "shift_key_lock_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.shiftKeyLockButton [shift_key_lock_button_4]"
+    },
+    {
+      "name": "shift_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].shiftButton [shift_button]"
+    },
+    {
+      "name": "shift_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 63,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].shiftButton [shift_button_2]"
+    },
+    {
+      "name": "shift_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 63,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].shiftButton [shift_button_3]"
+    },
+    {
+      "name": "shift_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 63,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].shiftButton [shift_button_4]"
+    },
+    {
+      "name": "autodj_skip_next",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 115,
+      "notes": "Mixxx PioneerDDJSB2.autodjSkipNext [autodj_skip_next]"
+    },
+    {
+      "name": "autodj_toggle",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 115,
+      "notes": "Mixxx PioneerDDJSB2.autodjToggle [autodj_toggle]"
+    },
+    {
+      "name": "autodj_skip_next_2",
+      "section": "other",
+      "type": "note",
+      "ch": 3,
+      "code": 115,
+      "notes": "Mixxx PioneerDDJSB2.autodjSkipNext [autodj_skip_next_2]"
+    },
+    {
+      "name": "autodj_toggle_2",
+      "section": "other",
+      "type": "note",
+      "ch": 4,
+      "code": 115,
+      "notes": "Mixxx PioneerDDJSB2.autodjToggle [autodj_toggle_2]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 31,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "crossfader_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 63,
+      "notes": "Mixxx crossfader [crossfader_2]"
+    },
+    {
+      "name": "deck_fader_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderMSB [deck_fader_msb]"
+    },
+    {
+      "name": "deck_fader_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderLSB [deck_fader_lsb]"
+    },
+    {
+      "name": "deck_fader_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderMSB [deck_fader_msb_2]"
+    },
+    {
+      "name": "deck_fader_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 51,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderLSB [deck_fader_lsb_2]"
+    },
+    {
+      "name": "deck_fader_msb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderMSB [deck_fader_msb_3]"
+    },
+    {
+      "name": "deck_fader_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 51,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderLSB [deck_fader_lsb_3]"
+    },
+    {
+      "name": "deck_fader_msb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderMSB [deck_fader_msb_4]"
+    },
+    {
+      "name": "deck_fader_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 51,
+      "notes": "Mixxx PioneerDDJSB2.deckFaderLSB [deck_fader_lsb_4]"
+    },
+    {
+      "name": "input_msb_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].gainKnob.inputMSB [input_msb_9]"
+    },
+    {
+      "name": "input_lsb_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].gainKnob.inputLSB [input_lsb_9]"
+    },
+    {
+      "name": "input_msb_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].gainKnob.inputMSB [input_msb_10]"
+    },
+    {
+      "name": "input_lsb_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].gainKnob.inputLSB [input_lsb_10]"
+    },
+    {
+      "name": "input_msb_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].gainKnob.inputMSB [input_msb_11]"
+    },
+    {
+      "name": "input_lsb_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 36,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].gainKnob.inputLSB [input_lsb_11]"
+    },
+    {
+      "name": "input_msb_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 4,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].gainKnob.inputMSB [input_msb_12]"
+    },
+    {
+      "name": "input_lsb_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 36,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].gainKnob.inputLSB [input_lsb_12]"
+    },
+    {
+      "name": "input_msb_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].eqKnob[3].inputMSB [input_msb_13]"
+    },
+    {
+      "name": "input_lsb_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].eqKnob[3].inputLSB [input_lsb_13]"
+    },
+    {
+      "name": "input_msb_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].eqKnob[3].inputMSB [input_msb_14]"
+    },
+    {
+      "name": "input_lsb_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].eqKnob[3].inputLSB [input_lsb_14]"
+    },
+    {
+      "name": "input_msb_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].eqKnob[3].inputMSB [input_msb_15]"
+    },
+    {
+      "name": "input_lsb_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 39,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].eqKnob[3].inputLSB [input_lsb_15]"
+    },
+    {
+      "name": "input_msb_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 7,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].eqKnob[3].inputMSB [input_msb_16]"
+    },
+    {
+      "name": "input_lsb_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 39,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].eqKnob[3].inputLSB [input_lsb_16]"
+    },
+    {
+      "name": "input_msb_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].eqKnob[2].inputMSB [input_msb_17]"
+    },
+    {
+      "name": "input_lsb_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].eqKnob[2].inputLSB [input_lsb_17]"
+    },
+    {
+      "name": "input_msb_18",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].eqKnob[2].inputMSB [input_msb_18]"
+    },
+    {
+      "name": "input_lsb_18",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].eqKnob[2].inputLSB [input_lsb_18]"
+    },
+    {
+      "name": "input_msb_19",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].eqKnob[2].inputMSB [input_msb_19]"
+    },
+    {
+      "name": "input_lsb_19",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].eqKnob[2].inputLSB [input_lsb_19]"
+    },
+    {
+      "name": "input_msb_20",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].eqKnob[2].inputMSB [input_msb_20]"
+    },
+    {
+      "name": "input_lsb_20",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].eqKnob[2].inputLSB [input_lsb_20]"
+    },
+    {
+      "name": "input_msb_21",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].eqKnob[1].inputMSB [input_msb_21]"
+    },
+    {
+      "name": "input_lsb_21",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].eqKnob[1].inputLSB [input_lsb_21]"
+    },
+    {
+      "name": "input_msb_22",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].eqKnob[1].inputMSB [input_msb_22]"
+    },
+    {
+      "name": "input_lsb_22",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 47,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].eqKnob[1].inputLSB [input_lsb_22]"
+    },
+    {
+      "name": "input_msb_23",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 15,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].eqKnob[1].inputMSB [input_msb_23]"
+    },
+    {
+      "name": "input_lsb_23",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 47,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].eqKnob[1].inputLSB [input_lsb_23]"
+    },
+    {
+      "name": "input_msb_24",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 15,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].eqKnob[1].inputMSB [input_msb_24]"
+    },
+    {
+      "name": "input_lsb_24",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 47,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].eqKnob[1].inputLSB [input_lsb_24]"
+    },
+    {
+      "name": "input_msb_25",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 23,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].quickEffectKnob.inputMSB [input_msb_25]"
+    },
+    {
+      "name": "input_lsb_25",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 55,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].quickEffectKnob.inputLSB [input_lsb_25]"
+    },
+    {
+      "name": "input_msb_26",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 24,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].quickEffectKnob.inputMSB [input_msb_26]"
+    },
+    {
+      "name": "input_lsb_26",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 56,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].quickEffectKnob.inputLSB [input_lsb_26]"
+    },
+    {
+      "name": "input_msb_27",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 25,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].quickEffectKnob.inputMSB [input_msb_27]"
+    },
+    {
+      "name": "input_lsb_27",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 57,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].quickEffectKnob.inputLSB [input_lsb_27]"
+    },
+    {
+      "name": "input_msb_28",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].quickEffectKnob.inputMSB [input_msb_28]"
+    },
+    {
+      "name": "input_lsb_28",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 58,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].quickEffectKnob.inputLSB [input_lsb_28]"
+    },
+    {
+      "name": "headphone_cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 84,
+      "notes": "Mixxx PioneerDDJSB2.headphoneCueButton [headphone_cue_button]"
+    },
+    {
+      "name": "headphone_cue_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 84,
+      "notes": "Mixxx PioneerDDJSB2.headphoneCueButton [headphone_cue_button_2]"
+    },
+    {
+      "name": "headphone_cue_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 84,
+      "notes": "Mixxx PioneerDDJSB2.headphoneCueButton [headphone_cue_button_3]"
+    },
+    {
+      "name": "headphone_cue_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 84,
+      "notes": "Mixxx PioneerDDJSB2.headphoneCueButton [headphone_cue_button_4]"
+    },
+    {
+      "name": "headphone_shift_cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 104,
+      "notes": "Mixxx PioneerDDJSB2.headphoneShiftCueButton [headphone_shift_cue_button]"
+    },
+    {
+      "name": "headphone_shift_cue_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 104,
+      "notes": "Mixxx PioneerDDJSB2.headphoneShiftCueButton [headphone_shift_cue_button_2]"
+    },
+    {
+      "name": "headphone_shift_cue_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 104,
+      "notes": "Mixxx PioneerDDJSB2.headphoneShiftCueButton [headphone_shift_cue_button_3]"
+    },
+    {
+      "name": "headphone_shift_cue_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 104,
+      "notes": "Mixxx PioneerDDJSB2.headphoneShiftCueButton [headphone_shift_cue_button_4]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 5,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "head_mix_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 37,
+      "notes": "Mixxx headMix [head_mix_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_fx1_1_deck1_button_left_fx1_1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].button[1].input [effect_rack1_effect_unit1_fx1_1_deck1_button_left_fx1_1]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_shift_fx1_1_button_left_shift_fx1_1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 99,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].button[1].input [effect_rack1_effect_unit1_shift_fx1_1_button_left_shift_fx1_1]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_fx1_2_head_button_left_fx1_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].button[2].input [effect_rack1_effect_unit1_fx1_2_head_button_left_fx1_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_shift_fx1_2_head_button_left_shift_fx1_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 100,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].button[2].input [effect_rack1_effect_unit1_shift_fx1_2_head_button_left_shift_fx1_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_fx1_3_deck2_button_left_fx1_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].button[3].input [effect_rack1_effect_unit1_fx1_3_deck2_button_left_fx1_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_shift_fx1_3_deck2_button_left_shift_fx1_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 101,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].button[3].input [effect_rack1_effect_unit1_shift_fx1_3_deck2_button_left_shift_fx1_3]"
+    },
+    {
+      "name": "input_msb_29",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].knob.inputMSB [input_msb_29]"
+    },
+    {
+      "name": "input_lsb_29",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 38,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].knob.inputLSB [input_lsb_29]"
+    },
+    {
+      "name": "input_msb_30",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].knob.inputMSB [input_msb_30]"
+    },
+    {
+      "name": "input_lsb_30",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[1].knob.inputLSB [input_lsb_30]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_fx2_1_deck1_button_right_fx2_1",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].button[1].input [effect_rack1_effect_unit2_fx2_1_deck1_button_right_fx2_1]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_shift_fx2_1_deck1_button_right_shift_fx2_1",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 99,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].button[1].input [effect_rack1_effect_unit2_shift_fx2_1_deck1_button_right_shift_fx2_1]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_fx2_2_head_button_right_fx2_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].button[2].input [effect_rack1_effect_unit2_fx2_2_head_button_right_fx2_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_shift_fx2_2_head_button_right_shift_fx2_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 100,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].button[2].input [effect_rack1_effect_unit2_shift_fx2_2_head_button_right_shift_fx2_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_fx2_3_deck2_button_right_fx2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].button[3].input [effect_rack1_effect_unit2_fx2_3_deck2_button_right_fx2_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_shift_fx2_3_deck2_button_right_shift_fx2_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 6,
+      "code": 101,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].button[3].input [effect_rack1_effect_unit2_shift_fx2_3_deck2_button_right_shift_fx2_3]"
+    },
+    {
+      "name": "input_msb_31",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].knob.inputMSB [input_msb_31]"
+    },
+    {
+      "name": "input_lsb_31",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 38,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].knob.inputLSB [input_lsb_31]"
+    },
+    {
+      "name": "input_msb_32",
+      "section": "effect",
+      "type": "cc",
+      "ch": 6,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].knob.inputMSB [input_msb_32]"
+    },
+    {
+      "name": "input_lsb_32",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.effectUnit[2].knob.inputLSB [input_lsb_32]"
+    },
+    {
+      "name": "rotary_selector",
+      "section": "other",
+      "type": "cc",
+      "ch": 7,
+      "code": 64,
+      "notes": "Mixxx PioneerDDJSB2.rotarySelector [rotary_selector]"
+    },
+    {
+      "name": "shifted_rotary_selector",
+      "section": "other",
+      "type": "cc",
+      "ch": 7,
+      "code": 100,
+      "notes": "Mixxx PioneerDDJSB2.shiftedRotarySelector [shifted_rotary_selector]"
+    },
+    {
+      "name": "rotary_selector_click",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 65,
+      "notes": "Mixxx PioneerDDJSB2.rotarySelectorClick [rotary_selector_click]"
+    },
+    {
+      "name": "rotary_selector_shifted_click",
+      "section": "other",
+      "type": "note",
+      "ch": 7,
+      "code": 66,
+      "notes": "Mixxx PioneerDDJSB2.rotarySelectorShiftedClick [rotary_selector_shifted_click]"
+    },
+    {
+      "name": "load_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 70,
+      "notes": "Mixxx PioneerDDJSB2.loadButton [load_button]"
+    },
+    {
+      "name": "show",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 88,
+      "notes": "Mixxx show [show]"
+    },
+    {
+      "name": "load_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.loadButton [load_button_2]"
+    },
+    {
+      "name": "show_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 96,
+      "notes": "Mixxx show [show_2]"
+    },
+    {
+      "name": "load_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 71,
+      "notes": "Mixxx PioneerDDJSB2.loadButton [load_button_3]"
+    },
+    {
+      "name": "show_samplers",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 89,
+      "notes": "Mixxx show_samplers [show_samplers]"
+    },
+    {
+      "name": "load_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.loadButton [load_button_4]"
+    },
+    {
+      "name": "show_samplers_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 97,
+      "notes": "Mixxx show_samplers [show_samplers_2]"
+    },
+    {
+      "name": "hot_cue_buttons",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons]"
+    },
+    {
+      "name": "hot_cue_buttons_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_2]"
+    },
+    {
+      "name": "hot_cue_buttons_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_3]"
+    },
+    {
+      "name": "hot_cue_buttons_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 0,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_4]"
+    },
+    {
+      "name": "clear_hot_cue_buttons",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 8,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_2]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 8,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_3]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 8,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_4]"
+    },
+    {
+      "name": "channel1_auto_loop_1_deck_1_button_pad1_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.beatloopButton.input [channel1_auto_loop_1_deck_1_button_pad1_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_1_deck_2_button_pad1_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 16,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.beatloopButton.input [channel2_auto_loop_1_deck_2_button_pad1_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel3_auto_loop_1_deck_3_button_pad1_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 16,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.beatloopButton.input [channel3_auto_loop_1_deck_3_button_pad1_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_1_deck_4_button_pad1_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 16,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.beatloopButton.input [channel4_auto_loop_1_deck_4_button_pad1_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "channel1_auto_loop_16_deck_1_button_shift_pad1_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.beatloopButton.input [channel1_auto_loop_16_deck_1_button_shift_pad1_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_16_deck_2_button_shift_pad1_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 24,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.beatloopButton.input [channel2_auto_loop_16_deck_2_button_shift_pad1_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_16_deck_3_button_shift_pad1_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 24,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.beatloopButton.input [channel3_auto_loop_16_deck_3_button_shift_pad1_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_16_deck_4_button_shift_pad1_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 24,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.beatloopButton.input [channel4_auto_loop_16_deck_4_button_shift_pad1_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "loop_in_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.loopInButton [loop_in_button]"
+    },
+    {
+      "name": "loop_in_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.loopInButton [loop_in_button_2]"
+    },
+    {
+      "name": "loop_in_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.loopInButton [loop_in_button_3]"
+    },
+    {
+      "name": "loop_in_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 32,
+      "notes": "Mixxx PioneerDDJSB2.loopInButton [loop_in_button_4]"
+    },
+    {
+      "name": "loop_move_back_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 40,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveBackButton [loop_move_back_button]"
+    },
+    {
+      "name": "loop_move_back_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 40,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveBackButton [loop_move_back_button_2]"
+    },
+    {
+      "name": "loop_move_back_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 40,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveBackButton [loop_move_back_button_3]"
+    },
+    {
+      "name": "loop_move_back_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 40,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveBackButton [loop_move_back_button_4]"
+    },
+    {
+      "name": "start_play",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "notes": "Mixxx start_play [start_play]"
+    },
+    {
+      "name": "start_play_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 48,
+      "notes": "Mixxx start_play [start_play_2]"
+    },
+    {
+      "name": "start_play_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 48,
+      "notes": "Mixxx start_play [start_play_3]"
+    },
+    {
+      "name": "start_play_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 48,
+      "notes": "Mixxx start_play [start_play_4]"
+    },
+    {
+      "name": "stop",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 56,
+      "notes": "Mixxx stop [stop]"
+    },
+    {
+      "name": "stop_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 56,
+      "notes": "Mixxx stop [stop_2]"
+    },
+    {
+      "name": "stop_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 56,
+      "notes": "Mixxx stop [stop_3]"
+    },
+    {
+      "name": "stop_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 56,
+      "notes": "Mixxx stop [stop_4]"
+    },
+    {
+      "name": "hot_cue_buttons_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 64,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_5]"
+    },
+    {
+      "name": "hot_cue_buttons_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 64,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_6]"
+    },
+    {
+      "name": "hot_cue_buttons_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 64,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_7]"
+    },
+    {
+      "name": "hot_cue_buttons_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 64,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_8]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_5]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_6]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_7]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 72,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_8]"
+    },
+    {
+      "name": "beatloop_roll_buttons",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 80,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons]"
+    },
+    {
+      "name": "beatloop_roll_buttons_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 80,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_2]"
+    },
+    {
+      "name": "beatloop_roll_buttons_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 80,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_3]"
+    },
+    {
+      "name": "beatloop_roll_buttons_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 80,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_4]"
+    },
+    {
+      "name": "beatloop_roll_buttons_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_5]"
+    },
+    {
+      "name": "beatloop_roll_buttons_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_6]"
+    },
+    {
+      "name": "beatloop_roll_buttons_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_7]"
+    },
+    {
+      "name": "beatloop_roll_buttons_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 88,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_8]"
+    },
+    {
+      "name": "low_kill_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.lowKillButton [low_kill_button]"
+    },
+    {
+      "name": "low_kill_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.lowKillButton [low_kill_button_2]"
+    },
+    {
+      "name": "low_kill_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.lowKillButton [low_kill_button_3]"
+    },
+    {
+      "name": "low_kill_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 96,
+      "notes": "Mixxx PioneerDDJSB2.lowKillButton [low_kill_button_4]"
+    },
+    {
+      "name": "prev_chain",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 104,
+      "notes": "Mixxx prev_chain [prev_chain]"
+    },
+    {
+      "name": "prev_chain_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 104,
+      "notes": "Mixxx prev_chain [prev_chain_2]"
+    },
+    {
+      "name": "prev_chain_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 104,
+      "notes": "Mixxx prev_chain [prev_chain_3]"
+    },
+    {
+      "name": "prev_chain_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 11,
+      "code": 104,
+      "notes": "Mixxx prev_chain [prev_chain_4]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 112,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 112,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "load_selected_track_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 112,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_3]"
+    },
+    {
+      "name": "load_selected_track_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 112,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_4]"
+    },
+    {
+      "name": "eject",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 120,
+      "notes": "Mixxx eject [eject]"
+    },
+    {
+      "name": "eject_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 120,
+      "notes": "Mixxx eject [eject_2]"
+    },
+    {
+      "name": "eject_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 120,
+      "notes": "Mixxx eject [eject_3]"
+    },
+    {
+      "name": "eject_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 120,
+      "notes": "Mixxx eject [eject_4]"
+    },
+    {
+      "name": "hot_cue_buttons_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_9]"
+    },
+    {
+      "name": "hot_cue_buttons_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_10]"
+    },
+    {
+      "name": "hot_cue_buttons_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 1,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_11]"
+    },
+    {
+      "name": "hot_cue_buttons_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 1,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_12]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_9]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 9,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_10]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 9,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_11]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 9,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_12]"
+    },
+    {
+      "name": "channel1_auto_loop_2_deck_1_button_pad2_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel1_auto_loop_2_deck_1_button_pad2_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_2_deck_2_button_pad2_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 17,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel2_auto_loop_2_deck_2_button_pad2_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_2_deck_3_button_pad2_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 17,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel3_auto_loop_2_deck_3_button_pad2_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_2_deck_4_button_pad2_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 17,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel4_auto_loop_2_deck_4_button_pad2_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "channel1_auto_loop_32_deck_1_button_shift_pad2_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel1_auto_loop_32_deck_1_button_shift_pad2_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_32_deck_2_button_shift_pad2_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 25,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel2_auto_loop_32_deck_2_button_shift_pad2_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_32_deck_3_button_shift_pad2_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 25,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel3_auto_loop_32_deck_3_button_shift_pad2_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_32_deck_4_button_shift_pad2_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 25,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.beatloopHalveButton.input [channel4_auto_loop_32_deck_4_button_shift_pad2_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "loop_out_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.loopOutButton [loop_out_button]"
+    },
+    {
+      "name": "loop_out_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.loopOutButton [loop_out_button_2]"
+    },
+    {
+      "name": "loop_out_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.loopOutButton [loop_out_button_3]"
+    },
+    {
+      "name": "loop_out_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 33,
+      "notes": "Mixxx PioneerDDJSB2.loopOutButton [loop_out_button_4]"
+    },
+    {
+      "name": "loop_move_forward_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 41,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveForwardButton [loop_move_forward_button]"
+    },
+    {
+      "name": "loop_move_forward_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 41,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveForwardButton [loop_move_forward_button_2]"
+    },
+    {
+      "name": "loop_move_forward_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 41,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveForwardButton [loop_move_forward_button_3]"
+    },
+    {
+      "name": "loop_move_forward_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 41,
+      "notes": "Mixxx PioneerDDJSB2.loopMoveForwardButton [loop_move_forward_button_4]"
+    },
+    {
+      "name": "start_play_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 49,
+      "notes": "Mixxx start_play [start_play_5]"
+    },
+    {
+      "name": "start_play_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 49,
+      "notes": "Mixxx start_play [start_play_6]"
+    },
+    {
+      "name": "start_play_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 49,
+      "notes": "Mixxx start_play [start_play_7]"
+    },
+    {
+      "name": "start_play_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 49,
+      "notes": "Mixxx start_play [start_play_8]"
+    },
+    {
+      "name": "stop_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 57,
+      "notes": "Mixxx stop [stop_5]"
+    },
+    {
+      "name": "stop_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 57,
+      "notes": "Mixxx stop [stop_6]"
+    },
+    {
+      "name": "stop_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 57,
+      "notes": "Mixxx stop [stop_7]"
+    },
+    {
+      "name": "stop_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 57,
+      "notes": "Mixxx stop [stop_8]"
+    },
+    {
+      "name": "hot_cue_buttons_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 65,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_13]"
+    },
+    {
+      "name": "hot_cue_buttons_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 65,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_14]"
+    },
+    {
+      "name": "hot_cue_buttons_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 65,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_15]"
+    },
+    {
+      "name": "hot_cue_buttons_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 65,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_16]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_13]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_14]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_15]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 73,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_16]"
+    },
+    {
+      "name": "beatloop_roll_buttons_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 81,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_9]"
+    },
+    {
+      "name": "beatloop_roll_buttons_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 81,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_10]"
+    },
+    {
+      "name": "beatloop_roll_buttons_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 81,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_11]"
+    },
+    {
+      "name": "beatloop_roll_buttons_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 81,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_12]"
+    },
+    {
+      "name": "beatloop_roll_buttons_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 89,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_13]"
+    },
+    {
+      "name": "beatloop_roll_buttons_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 89,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_14]"
+    },
+    {
+      "name": "beatloop_roll_buttons_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 89,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_15]"
+    },
+    {
+      "name": "beatloop_roll_buttons_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 89,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_16]"
+    },
+    {
+      "name": "mid_kill_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 97,
+      "notes": "Mixxx PioneerDDJSB2.midKillButton [mid_kill_button]"
+    },
+    {
+      "name": "mid_kill_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 97,
+      "notes": "Mixxx PioneerDDJSB2.midKillButton [mid_kill_button_2]"
+    },
+    {
+      "name": "mid_kill_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 97,
+      "notes": "Mixxx PioneerDDJSB2.midKillButton [mid_kill_button_3]"
+    },
+    {
+      "name": "mid_kill_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 97,
+      "notes": "Mixxx PioneerDDJSB2.midKillButton [mid_kill_button_4]"
+    },
+    {
+      "name": "next_chain",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 105,
+      "notes": "Mixxx next_chain [next_chain]"
+    },
+    {
+      "name": "next_chain_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 105,
+      "notes": "Mixxx next_chain [next_chain_2]"
+    },
+    {
+      "name": "next_chain_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 105,
+      "notes": "Mixxx next_chain [next_chain_3]"
+    },
+    {
+      "name": "next_chain_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 11,
+      "code": 105,
+      "notes": "Mixxx next_chain [next_chain_4]"
+    },
+    {
+      "name": "load_selected_track_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 113,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_5]"
+    },
+    {
+      "name": "load_selected_track_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 113,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_6]"
+    },
+    {
+      "name": "load_selected_track_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 113,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_7]"
+    },
+    {
+      "name": "load_selected_track_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 113,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_8]"
+    },
+    {
+      "name": "eject_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 121,
+      "notes": "Mixxx eject [eject_5]"
+    },
+    {
+      "name": "eject_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 121,
+      "notes": "Mixxx eject [eject_6]"
+    },
+    {
+      "name": "eject_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 121,
+      "notes": "Mixxx eject [eject_7]"
+    },
+    {
+      "name": "eject_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 121,
+      "notes": "Mixxx eject [eject_8]"
+    },
+    {
+      "name": "hot_cue_buttons_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_17]"
+    },
+    {
+      "name": "hot_cue_buttons_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_18]"
+    },
+    {
+      "name": "hot_cue_buttons_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 2,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_19]"
+    },
+    {
+      "name": "hot_cue_buttons_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 2,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_20]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_17]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 10,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_18]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 10,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_19]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 10,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_20]"
+    },
+    {
+      "name": "channel1_auto_loop_4_deck_1_button_pad3_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel1_auto_loop_4_deck_1_button_pad3_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_4_deck_2_button_pad3_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 18,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel2_auto_loop_4_deck_2_button_pad3_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_4_deck_3_button_pad3_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 18,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel3_auto_loop_4_deck_3_button_pad3_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_4_deck_4_button_pad3_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 18,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel4_auto_loop_4_deck_4_button_pad3_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "channel1_auto_loop_64_deck_1_button_shift_pad3_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel1_auto_loop_64_deck_1_button_shift_pad3_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_64_deck_2_button_shift_pad3_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel2_auto_loop_64_deck_2_button_shift_pad3_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_64_deck_3_button_shift_pad3_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel3_auto_loop_64_deck_3_button_shift_pad3_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_64_deck_4_button_shift_pad3_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 26,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.beatloopDoubleButton.input [channel4_auto_loop_64_deck_4_button_shift_pad3_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "loop_exit_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.loopExitButton [loop_exit_button]"
+    },
+    {
+      "name": "loop_exit_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.loopExitButton [loop_exit_button_2]"
+    },
+    {
+      "name": "loop_exit_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.loopExitButton [loop_exit_button_3]"
+    },
+    {
+      "name": "loop_exit_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 34,
+      "notes": "Mixxx PioneerDDJSB2.loopExitButton [loop_exit_button_4]"
+    },
+    {
+      "name": "start_play_9",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "notes": "Mixxx start_play [start_play_9]"
+    },
+    {
+      "name": "start_play_10",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 50,
+      "notes": "Mixxx start_play [start_play_10]"
+    },
+    {
+      "name": "start_play_11",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 50,
+      "notes": "Mixxx start_play [start_play_11]"
+    },
+    {
+      "name": "start_play_12",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 50,
+      "notes": "Mixxx start_play [start_play_12]"
+    },
+    {
+      "name": "stop_9",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 58,
+      "notes": "Mixxx stop [stop_9]"
+    },
+    {
+      "name": "stop_10",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 58,
+      "notes": "Mixxx stop [stop_10]"
+    },
+    {
+      "name": "stop_11",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 58,
+      "notes": "Mixxx stop [stop_11]"
+    },
+    {
+      "name": "stop_12",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 58,
+      "notes": "Mixxx stop [stop_12]"
+    },
+    {
+      "name": "hot_cue_buttons_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 66,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_21]"
+    },
+    {
+      "name": "hot_cue_buttons_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 66,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_22]"
+    },
+    {
+      "name": "hot_cue_buttons_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 66,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_23]"
+    },
+    {
+      "name": "hot_cue_buttons_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 66,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_24]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 74,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_21]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 74,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_22]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 74,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_23]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 74,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_24]"
+    },
+    {
+      "name": "beatloop_roll_buttons_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 82,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_17]"
+    },
+    {
+      "name": "beatloop_roll_buttons_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 82,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_18]"
+    },
+    {
+      "name": "beatloop_roll_buttons_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 82,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_19]"
+    },
+    {
+      "name": "beatloop_roll_buttons_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 82,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_20]"
+    },
+    {
+      "name": "beatloop_roll_buttons_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 90,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_21]"
+    },
+    {
+      "name": "beatloop_roll_buttons_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 90,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_22]"
+    },
+    {
+      "name": "beatloop_roll_buttons_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 90,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_23]"
+    },
+    {
+      "name": "beatloop_roll_buttons_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 90,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_24]"
+    },
+    {
+      "name": "high_kill_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 98,
+      "notes": "Mixxx PioneerDDJSB2.highKillButton [high_kill_button]"
+    },
+    {
+      "name": "high_kill_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 98,
+      "notes": "Mixxx PioneerDDJSB2.highKillButton [high_kill_button_2]"
+    },
+    {
+      "name": "high_kill_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 98,
+      "notes": "Mixxx PioneerDDJSB2.highKillButton [high_kill_button_3]"
+    },
+    {
+      "name": "high_kill_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 98,
+      "notes": "Mixxx PioneerDDJSB2.highKillButton [high_kill_button_4]"
+    },
+    {
+      "name": "load_selected_track_9",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 114,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_9]"
+    },
+    {
+      "name": "load_selected_track_10",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 114,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_10]"
+    },
+    {
+      "name": "load_selected_track_11",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 114,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_11]"
+    },
+    {
+      "name": "load_selected_track_12",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 114,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_12]"
+    },
+    {
+      "name": "eject_9",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 122,
+      "notes": "Mixxx eject [eject_9]"
+    },
+    {
+      "name": "eject_10",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 122,
+      "notes": "Mixxx eject [eject_10]"
+    },
+    {
+      "name": "eject_11",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 122,
+      "notes": "Mixxx eject [eject_11]"
+    },
+    {
+      "name": "eject_12",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 122,
+      "notes": "Mixxx eject [eject_12]"
+    },
+    {
+      "name": "hot_cue_buttons_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_25]"
+    },
+    {
+      "name": "hot_cue_buttons_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 3,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_26]"
+    },
+    {
+      "name": "hot_cue_buttons_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_27]"
+    },
+    {
+      "name": "hot_cue_buttons_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 3,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_28]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_25]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_26]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_27]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 11,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_28]"
+    },
+    {
+      "name": "channel1_auto_loop_8_deck_1_button_pad4_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.reloopButton.input [channel1_auto_loop_8_deck_1_button_pad4_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_8_deck_2_button_pad4_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.reloopButton.input [channel2_auto_loop_8_deck_2_button_pad4_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_8_deck_3_button_pad4_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.reloopButton.input [channel3_auto_loop_8_deck_3_button_pad4_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_8_deck_4_button_pad4_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 19,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.reloopButton.input [channel4_auto_loop_8_deck_4_button_pad4_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "channel1_auto_loop_8_deck_1_button_shift_pad4_in_auto_loop_mode_deck_1_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx PioneerDDJSB2.deck[1].topPadRow.autoLoopLayer.reloopButton.input [channel1_auto_loop_8_deck_1_button_shift_pad4_in_auto_loop_mode_deck_1_active]"
+    },
+    {
+      "name": "channel2_auto_loop_8_deck_2_button_shift_pad4_in_auto_loop_mode_deck_2_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 27,
+      "notes": "Mixxx PioneerDDJSB2.deck[2].topPadRow.autoLoopLayer.reloopButton.input [channel2_auto_loop_8_deck_2_button_shift_pad4_in_auto_loop_mode_deck_2_active]"
+    },
+    {
+      "name": "channel3_auto_loop_8_deck_3_button_shift_pad4_in_auto_loop_mode_deck_3_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 27,
+      "notes": "Mixxx PioneerDDJSB2.deck[3].topPadRow.autoLoopLayer.reloopButton.input [channel3_auto_loop_8_deck_3_button_shift_pad4_in_auto_loop_mode_deck_3_active]"
+    },
+    {
+      "name": "channel4_auto_loop_8_deck_4_button_shift_pad4_in_auto_loop_mode_deck_4_active",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 27,
+      "notes": "Mixxx PioneerDDJSB2.deck[4].topPadRow.autoLoopLayer.reloopButton.input [channel4_auto_loop_8_deck_4_button_shift_pad4_in_auto_loop_mode_deck_4_active]"
+    },
+    {
+      "name": "loop_halve_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.loopHalveButton [loop_halve_button]"
+    },
+    {
+      "name": "loop_halve_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.loopHalveButton [loop_halve_button_2]"
+    },
+    {
+      "name": "loop_halve_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.loopHalveButton [loop_halve_button_3]"
+    },
+    {
+      "name": "loop_halve_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 35,
+      "notes": "Mixxx PioneerDDJSB2.loopHalveButton [loop_halve_button_4]"
+    },
+    {
+      "name": "loop_double_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.loopDoubleButton [loop_double_button]"
+    },
+    {
+      "name": "loop_double_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.loopDoubleButton [loop_double_button_2]"
+    },
+    {
+      "name": "loop_double_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.loopDoubleButton [loop_double_button_3]"
+    },
+    {
+      "name": "loop_double_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 43,
+      "notes": "Mixxx PioneerDDJSB2.loopDoubleButton [loop_double_button_4]"
+    },
+    {
+      "name": "start_play_13",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 51,
+      "notes": "Mixxx start_play [start_play_13]"
+    },
+    {
+      "name": "start_play_14",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 51,
+      "notes": "Mixxx start_play [start_play_14]"
+    },
+    {
+      "name": "start_play_15",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 51,
+      "notes": "Mixxx start_play [start_play_15]"
+    },
+    {
+      "name": "start_play_16",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 51,
+      "notes": "Mixxx start_play [start_play_16]"
+    },
+    {
+      "name": "stop_13",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 59,
+      "notes": "Mixxx stop [stop_13]"
+    },
+    {
+      "name": "stop_14",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 59,
+      "notes": "Mixxx stop [stop_14]"
+    },
+    {
+      "name": "stop_15",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 59,
+      "notes": "Mixxx stop [stop_15]"
+    },
+    {
+      "name": "stop_16",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 59,
+      "notes": "Mixxx stop [stop_16]"
+    },
+    {
+      "name": "hot_cue_buttons_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 67,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_29]"
+    },
+    {
+      "name": "hot_cue_buttons_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 67,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_30]"
+    },
+    {
+      "name": "hot_cue_buttons_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 67,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_31]"
+    },
+    {
+      "name": "hot_cue_buttons_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 67,
+      "notes": "Mixxx PioneerDDJSB2.hotCueButtons [hot_cue_buttons_32]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 75,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_29]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 75,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_30]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 75,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_31]"
+    },
+    {
+      "name": "clear_hot_cue_buttons_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 75,
+      "notes": "Mixxx PioneerDDJSB2.clearHotCueButtons [clear_hot_cue_buttons_32]"
+    },
+    {
+      "name": "beatloop_roll_buttons_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 83,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_25]"
+    },
+    {
+      "name": "beatloop_roll_buttons_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 83,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_26]"
+    },
+    {
+      "name": "beatloop_roll_buttons_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 83,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_27]"
+    },
+    {
+      "name": "beatloop_roll_buttons_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 83,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_28]"
+    },
+    {
+      "name": "beatloop_roll_buttons_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 91,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_29]"
+    },
+    {
+      "name": "beatloop_roll_buttons_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 91,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_30]"
+    },
+    {
+      "name": "beatloop_roll_buttons_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 91,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_31]"
+    },
+    {
+      "name": "beatloop_roll_buttons_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 91,
+      "notes": "Mixxx PioneerDDJSB2.beatloopRollButtons [beatloop_roll_buttons_32]"
+    },
+    {
+      "name": "mute_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 99,
+      "notes": "Mixxx PioneerDDJSB2.muteButton [mute_button]"
+    },
+    {
+      "name": "mute_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 99,
+      "notes": "Mixxx PioneerDDJSB2.muteButton [mute_button_2]"
+    },
+    {
+      "name": "mute_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 99,
+      "notes": "Mixxx PioneerDDJSB2.muteButton [mute_button_3]"
+    },
+    {
+      "name": "mute_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 11,
+      "code": 99,
+      "notes": "Mixxx PioneerDDJSB2.muteButton [mute_button_4]"
+    },
+    {
+      "name": "load_selected_track_13",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 115,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_13]"
+    },
+    {
+      "name": "load_selected_track_14",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 115,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_14]"
+    },
+    {
+      "name": "load_selected_track_15",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 115,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_15]"
+    },
+    {
+      "name": "load_selected_track_16",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 115,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_16]"
+    },
+    {
+      "name": "eject_13",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 123,
+      "notes": "Mixxx eject [eject_13]"
+    },
+    {
+      "name": "eject_14",
+      "section": "sampler",
+      "type": "note",
+      "ch": 9,
+      "code": 123,
+      "notes": "Mixxx eject [eject_14]"
+    },
+    {
+      "name": "eject_15",
+      "section": "sampler",
+      "type": "note",
+      "ch": 10,
+      "code": 123,
+      "notes": "Mixxx eject [eject_15]"
+    },
+    {
+      "name": "eject_16",
+      "section": "sampler",
+      "type": "note",
+      "ch": 11,
+      "code": 123,
+      "notes": "Mixxx eject [eject_16]"
+    }
+  ]
+}

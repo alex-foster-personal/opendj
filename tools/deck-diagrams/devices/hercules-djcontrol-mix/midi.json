@@ -1,0 +1,706 @@
+{
+  "source": "mixxx:Hercules DJControl MIX.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-djcontrol-mix/source/Hercules DJControl MIX.midi.xml",
+  "device": "Hercules DJControl MIX",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "shift_button",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx DJCMIX.shiftButton [shift_button]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "vinyl_button",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx DJCMIX.vinylButton [vinyl_button]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx DJCMIX.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx DJCMIX.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "play_stutter",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "notes": "Mixxx play_stutter [play_stutter]"
+    },
+    {
+      "name": "start",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx start [start]"
+    },
+    {
+      "name": "sync_leader",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 5,
+      "notes": "Mixxx sync_leader [sync_leader]"
+    },
+    {
+      "name": "cue_master",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 12,
+      "notes": "Mixxx DJCMIX.cueMaster [cue_master]"
+    },
+    {
+      "name": "wheel_touch_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 8,
+      "notes": "Mixxx DJCMIX.wheelTouchShift [wheel_touch_shift]"
+    },
+    {
+      "name": "play_stutter_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "notes": "Mixxx play_stutter [play_stutter_2]"
+    },
+    {
+      "name": "start_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx start [start_2]"
+    },
+    {
+      "name": "sync_leader_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 5,
+      "notes": "Mixxx sync_leader [sync_leader_2]"
+    },
+    {
+      "name": "cue_mix",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 12,
+      "notes": "Mixxx DJCMIX.cueMix [cue_mix]"
+    },
+    {
+      "name": "wheel_touch_shift_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "notes": "Mixxx DJCMIX.wheelTouchShift [wheel_touch_shift_2]"
+    },
+    {
+      "name": "hotcue_1_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 0,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate]"
+    },
+    {
+      "name": "hotcue_2_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 1,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate]"
+    },
+    {
+      "name": "hotcue_3_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 2,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate]"
+    },
+    {
+      "name": "hotcue_4_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 3,
+      "notes": "Mixxx hotcue_4_activate [hotcue_4_activate]"
+    },
+    {
+      "name": "hotcue_1_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 8,
+      "notes": "Mixxx hotcue_1_clear [hotcue_1_clear]"
+    },
+    {
+      "name": "hotcue_2_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 9,
+      "notes": "Mixxx hotcue_2_clear [hotcue_2_clear]"
+    },
+    {
+      "name": "hotcue_3_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 10,
+      "notes": "Mixxx hotcue_3_clear [hotcue_3_clear]"
+    },
+    {
+      "name": "hotcue_4_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "notes": "Mixxx hotcue_4_clear [hotcue_4_clear]"
+    },
+    {
+      "name": "beatloop_1_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 48,
+      "notes": "Mixxx beatloop_1_toggle [beatloop_1_toggle]"
+    },
+    {
+      "name": "beatloop_2_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 49,
+      "notes": "Mixxx beatloop_2_toggle [beatloop_2_toggle]"
+    },
+    {
+      "name": "beatloop_4_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 50,
+      "notes": "Mixxx beatloop_4_toggle [beatloop_4_toggle]"
+    },
+    {
+      "name": "beatloop_8_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 51,
+      "notes": "Mixxx beatloop_8_toggle [beatloop_8_toggle]"
+    },
+    {
+      "name": "enabled",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 32,
+      "notes": "Mixxx enabled [enabled]"
+    },
+    {
+      "name": "enabled_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 33,
+      "notes": "Mixxx enabled [enabled_2]"
+    },
+    {
+      "name": "enabled_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 34,
+      "notes": "Mixxx enabled [enabled_3]"
+    },
+    {
+      "name": "group_channel1_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 35,
+      "notes": "Mixxx group_[Channel1]_enable [group_channel1_enable]"
+    },
+    {
+      "name": "effect_selector",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 40,
+      "notes": "Mixxx effect_selector [effect_selector]"
+    },
+    {
+      "name": "effect_selector_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 41,
+      "notes": "Mixxx effect_selector [effect_selector_2]"
+    },
+    {
+      "name": "effect_selector_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 7,
+      "code": 42,
+      "notes": "Mixxx effect_selector [effect_selector_3]"
+    },
+    {
+      "name": "cue_gotoandplay",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 16,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay]"
+    },
+    {
+      "name": "cue_gotoandplay_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 17,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_2]"
+    },
+    {
+      "name": "cue_gotoandplay_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 18,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_3]"
+    },
+    {
+      "name": "cue_gotoandplay_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 19,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_4]"
+    },
+    {
+      "name": "hotcue_1_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate_2]"
+    },
+    {
+      "name": "hotcue_2_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate_2]"
+    },
+    {
+      "name": "hotcue_3_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate_2]"
+    },
+    {
+      "name": "hotcue_4_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "notes": "Mixxx hotcue_4_activate [hotcue_4_activate_2]"
+    },
+    {
+      "name": "hotcue_1_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "notes": "Mixxx hotcue_1_clear [hotcue_1_clear_2]"
+    },
+    {
+      "name": "hotcue_2_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "notes": "Mixxx hotcue_2_clear [hotcue_2_clear_2]"
+    },
+    {
+      "name": "hotcue_3_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "notes": "Mixxx hotcue_3_clear [hotcue_3_clear_2]"
+    },
+    {
+      "name": "hotcue_4_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx hotcue_4_clear [hotcue_4_clear_2]"
+    },
+    {
+      "name": "beatloop_1_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "notes": "Mixxx beatloop_1_toggle [beatloop_1_toggle_2]"
+    },
+    {
+      "name": "beatloop_2_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 49,
+      "notes": "Mixxx beatloop_2_toggle [beatloop_2_toggle_2]"
+    },
+    {
+      "name": "beatloop_4_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "notes": "Mixxx beatloop_4_toggle [beatloop_4_toggle_2]"
+    },
+    {
+      "name": "beatloop_8_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 51,
+      "notes": "Mixxx beatloop_8_toggle [beatloop_8_toggle_2]"
+    },
+    {
+      "name": "enabled_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx enabled [enabled_4]"
+    },
+    {
+      "name": "enabled_5",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx enabled [enabled_5]"
+    },
+    {
+      "name": "enabled_6",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "Mixxx enabled [enabled_6]"
+    },
+    {
+      "name": "group_channel2_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "Mixxx group_[Channel2]_enable [group_channel2_enable]"
+    },
+    {
+      "name": "effect_selector_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 40,
+      "notes": "Mixxx effect_selector [effect_selector_4]"
+    },
+    {
+      "name": "effect_selector_5",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 41,
+      "notes": "Mixxx effect_selector [effect_selector_5]"
+    },
+    {
+      "name": "effect_selector_6",
+      "section": "effect",
+      "type": "note",
+      "ch": 8,
+      "code": 42,
+      "notes": "Mixxx effect_selector [effect_selector_6]"
+    },
+    {
+      "name": "cue_gotoandplay_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_5]"
+    },
+    {
+      "name": "cue_gotoandplay_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_6]"
+    },
+    {
+      "name": "cue_gotoandplay_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_7]"
+    },
+    {
+      "name": "cue_gotoandplay_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 19,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_8]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "parameter1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx parameter1 [parameter1]"
+    },
+    {
+      "name": "super1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx super1 [super1]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "scratch_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx DJCMIX.scratchWheel [scratch_wheel]"
+    },
+    {
+      "name": "scratch_wheel_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx DJCMIX.scratchWheelShift [scratch_wheel_shift]"
+    },
+    {
+      "name": "bend_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx DJCMIX.bendWheel [bend_wheel]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 0,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "parameter1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx parameter1 [parameter1_2]"
+    },
+    {
+      "name": "super1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx super1 [super1_2]"
+    },
+    {
+      "name": "rate_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx rate [rate_3]"
+    },
+    {
+      "name": "rate_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 40,
+      "notes": "Mixxx rate [rate_4]"
+    },
+    {
+      "name": "scratch_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx DJCMIX.scratchWheel [scratch_wheel_2]"
+    },
+    {
+      "name": "scratch_wheel_shift_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx DJCMIX.scratchWheelShift [scratch_wheel_shift_2]"
+    },
+    {
+      "name": "bend_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx DJCMIX.bendWheel [bend_wheel_2]"
+    }
+  ]
+}

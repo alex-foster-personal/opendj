@@ -1,0 +1,860 @@
+{
+  "device": "Behringer CMD MM-1",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_2_3",
+      "fig": "mixer_eq_knob_2_3",
+      "label": "knob[2,3]",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_2_3",
+        "type": "cc",
+        "ch": 5,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_4_1",
+      "fig": "mixer_eq_knob_4_1",
+      "label": "knob[4,1]",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_4_1",
+        "type": "cc",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_4_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel4_pfl",
+      "fig": "channel4_pfl",
+      "label": "pfl",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_pfl",
+        "type": "note",
+        "ch": 5,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel4_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit1_group_channel2_enable",
+      "fig": "effect_rack1_effect_unit1_group_channel2_enable",
+      "label": "group_[Channel2]_enable",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_group_channel2_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_group_channel2_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel1_volume",
+      "fig": "channel1_volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_volume",
+        "type": "cc",
+        "ch": 5,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel1_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_3_4",
+      "fig": "mixer_eq_knob_3_4",
+      "label": "knob[3,4]",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_3_4",
+        "type": "cc",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_shift_off",
+      "fig": "master_shift_off",
+      "label": "shiftOff",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_shift_off",
+        "type": "note",
+        "ch": 5,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[master_shift_off] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-library_left_right_library_select_encoder",
+      "fig": "library_left_right_library_select_encoder",
+      "label": "left/right library select encoder",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_left_right_library_select_encoder",
+        "type": "cc",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[library_left_right_library_select_encoder] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_ctrl_on",
+      "fig": "master_ctrl_on",
+      "label": "ctrlOn",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_ctrl_on",
+        "type": "note",
+        "ch": 5,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[master_ctrl_on] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_1_3",
+      "fig": "mixer_eq_knob_1_3",
+      "label": "knob[1,3]",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_1_3",
+        "type": "cc",
+        "ch": 5,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit2_group_channel3_enable",
+      "fig": "effect_rack1_effect_unit2_group_channel3_enable",
+      "label": "group_[Channel3]_enable",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_group_channel3_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_group_channel3_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_crossfader",
+      "fig": "master_crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_crossfader",
+        "type": "cc",
+        "ch": 5,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[master_crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_3_1",
+      "fig": "mixer_eq_knob_3_1",
+      "label": "knob[3,1]",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_3_1",
+        "type": "cc",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_3_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel3_pfl",
+      "fig": "channel3_pfl",
+      "label": "pfl",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_pfl",
+        "type": "note",
+        "ch": 5,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel3_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_2_4",
+      "fig": "mixer_eq_knob_2_4",
+      "label": "knob[2,4]",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_2_4",
+        "type": "cc",
+        "ch": 5,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit2_master_gain",
+      "fig": "effect_rack1_effect_unit2_master_gain",
+      "label": "Master Gain",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_master_gain",
+        "type": "cc",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_master_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_4_2",
+      "fig": "mixer_eq_knob_4_2",
+      "label": "knob[4,2]",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_4_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit1_group_channel3_enable",
+      "fig": "effect_rack1_effect_unit1_group_channel3_enable",
+      "label": "group_[Channel3]_enable",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_group_channel3_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_group_channel3_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel2_pfl",
+      "fig": "channel2_pfl",
+      "label": "pfl",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pfl",
+        "type": "note",
+        "ch": 5,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel2_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_2_1",
+      "fig": "mixer_eq_knob_2_1",
+      "label": "knob[2,1]",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_2_1",
+        "type": "cc",
+        "ch": 5,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_2_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_1_4",
+      "fig": "mixer_eq_knob_1_4",
+      "label": "knob[1,4]",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_1_4",
+        "type": "cc",
+        "ch": 5,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit2_group_channel4_enable",
+      "fig": "effect_rack1_effect_unit2_group_channel4_enable",
+      "label": "group_[Channel4]_enable",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_group_channel4_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_group_channel4_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_master_balance",
+      "fig": "master_master_balance",
+      "label": "Master balance",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_master_balance",
+        "type": "cc",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[master_master_balance] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_3_2",
+      "fig": "mixer_eq_knob_3_2",
+      "label": "knob[3,2]",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_3_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel4_volume",
+      "fig": "channel4_volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_volume",
+        "type": "cc",
+        "ch": 5,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel4_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel1_pfl",
+      "fig": "channel1_pfl",
+      "label": "pfl",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pfl",
+        "type": "note",
+        "ch": 5,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel1_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_1_1",
+      "fig": "mixer_eq_knob_1_1",
+      "label": "knob[1,1]",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_1_1",
+        "type": "cc",
+        "ch": 5,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_1_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit2_group_channel1_enable",
+      "fig": "effect_rack1_effect_unit2_group_channel1_enable",
+      "label": "group_[Channel1]_enable",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_group_channel1_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_group_channel1_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_4_3",
+      "fig": "mixer_eq_knob_4_3",
+      "label": "knob[4,3]",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_4_3",
+        "type": "cc",
+        "ch": 5,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_4_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit1_group_channel4_enable",
+      "fig": "effect_rack1_effect_unit1_group_channel4_enable",
+      "label": "group_[Channel4]_enable",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_group_channel4_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_group_channel4_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-library_middle_click_library_encoder",
+      "fig": "library_middle_click_library_encoder",
+      "label": "Middle click libraryEncoder",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_middle_click_library_encoder",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[library_middle_click_library_encoder] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_2_2",
+      "fig": "mixer_eq_knob_2_2",
+      "label": "knob[2,2]",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_2_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel3_volume",
+      "fig": "channel3_volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_volume",
+        "type": "cc",
+        "ch": 5,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel3_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_script_pfl_mix",
+      "fig": "master_script_pfl_mix",
+      "label": "script pfl mix",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_script_pfl_mix",
+        "type": "cc",
+        "ch": 5,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[master_script_pfl_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit1_group_channel1_enable",
+      "fig": "effect_rack1_effect_unit1_group_channel1_enable",
+      "label": "group_[Channel1]_enable",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_group_channel1_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_group_channel1_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_3_3",
+      "fig": "mixer_eq_knob_3_3",
+      "label": "knob[3,3]",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_3_3",
+        "type": "cc",
+        "ch": 5,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_1_2",
+      "fig": "mixer_eq_knob_1_2",
+      "label": "knob[1,2]",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_1_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-effect_rack1_effect_unit2_group_channel2_enable",
+      "fig": "effect_rack1_effect_unit2_group_channel2_enable",
+      "label": "group_[Channel2]_enable",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_group_channel2_enable",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_group_channel2_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-channel2_volume",
+      "fig": "channel2_volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_volume",
+        "type": "cc",
+        "ch": 5,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel2_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-mixer_eq_knob_4_4",
+      "fig": "mixer_eq_knob_4_4",
+      "label": "knob[4,4]",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_eq_knob_4_4",
+        "type": "cc",
+        "ch": 5,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[mixer_eq_knob_4_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_inscript_pfl_volume",
+      "fig": "master_inscript_pfl_volume",
+      "label": "inscript pfl volume",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_inscript_pfl_volume",
+        "type": "cc",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[master_inscript_pfl_volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "behringer-cmd-mm1-master_button_in_the_middle_shift_on_other_mappings",
+      "fig": "master_button_in_the_middle_shift_on_other_mappings",
+      "label": "Button in the Middle (shift on other mappings)",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_button_in_the_middle_shift_on_other_mappings",
+        "type": "note",
+        "ch": 5,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[master_button_in_the_middle_shift_on_other_mappings] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

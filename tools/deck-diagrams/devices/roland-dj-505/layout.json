@@ -1,0 +1,7140 @@
+{
+  "device": "DJ-505",
+  "vendor": "Roland",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "roland-dj-505-channel1_deck_1_play_pause",
+      "fig": "channel1_deck_1_play_pause",
+      "label": "DECK 1 PLAY/PAUSE",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_play_pause",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_play_pause] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_cue",
+      "fig": "channel1_deck_1_cue",
+      "label": "DECK 1 CUE",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_sync",
+      "fig": "channel1_deck_1_sync",
+      "label": "DECK 1 SYNC",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_sync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_sync_off",
+      "fig": "channel1_deck_1_sync_off",
+      "label": "DECK 1 SYNC OFF",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_sync_off",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_sync_off] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_stutter",
+      "fig": "channel1_deck_1_stutter",
+      "label": "DECK 1 STUTTER",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_stutter",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_cue_rewind",
+      "fig": "channel1_deck_1_cue_rewind",
+      "label": "DECK 1 CUE REWIND",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_cue_rewind",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_cue_rewind] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb",
+      "fig": "input_msb",
+      "label": "DECK 1 TEMPO FADER (MSB)",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb",
+      "fig": "input_lsb",
+      "label": "DECK 1 TEMPO FADER (LSB)",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb",
+        "type": "cc",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[input_lsb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_key_lock",
+      "fig": "channel1_deck_1_key_lock",
+      "label": "DECK 1 KEY LOCK",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_key_lock",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_key_lock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_tempo_range",
+      "fig": "channel1_deck_1_tempo_range",
+      "label": "DECK 1 TEMPO RANGE",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_tempo_range",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_tempo_range] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed",
+      "fig": "pad_mode_button_pressed",
+      "label": "DECK 1 PADS - HOT CUE",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed",
+        "type": "note",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_2",
+      "fig": "pad_mode_button_pressed_2",
+      "label": "DECK 1 PADS - FLIP",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_2",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_3",
+      "fig": "pad_mode_button_pressed_3",
+      "label": "DECK 1 PADS - CUE LOOP",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_3",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_4",
+      "fig": "pad_mode_button_pressed_4",
+      "label": "DECK 1 PADS - ROLL",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_4",
+        "type": "note",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_5",
+      "fig": "pad_mode_button_pressed_5",
+      "label": "DECK 1 PADS - LOOP",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_5",
+        "type": "note",
+        "ch": 5,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_6",
+      "fig": "pad_mode_button_pressed_6",
+      "label": "DECK 1 PADS - SLICER",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_6",
+        "type": "note",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_7",
+      "fig": "pad_mode_button_pressed_7",
+      "label": "DECK 1 PADS - SLICER LOOP",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_7",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_8",
+      "fig": "pad_mode_button_pressed_8",
+      "label": "DECK 1 PADS - TR",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_8",
+        "type": "note",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_9",
+      "fig": "pad_mode_button_pressed_9",
+      "label": "DECK 1 PADS - TR VELOCITY",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_9",
+        "type": "note",
+        "ch": 5,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_10",
+      "fig": "pad_mode_button_pressed_10",
+      "label": "DECK 1 PADS - PATTERN",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_10",
+        "type": "note",
+        "ch": 5,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_11",
+      "fig": "pad_mode_button_pressed_11",
+      "label": "DECK 1 PADS - SAMPLER",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_11",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_12",
+      "fig": "pad_mode_button_pressed_12",
+      "label": "DECK 1 PADS - PITCH PLAY",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_12",
+        "type": "note",
+        "ch": 5,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_13",
+      "fig": "pad_mode_button_pressed_13",
+      "label": "DECK 1 PADS - VELOCITY",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_13",
+        "type": "note",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed",
+      "fig": "pad_pressed",
+      "label": "DECK 1 PAD 1",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed",
+        "type": "note",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_2",
+      "fig": "pad_pressed_2",
+      "label": "DECK 1 PAD 2",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_2",
+        "type": "note",
+        "ch": 5,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_3",
+      "fig": "pad_pressed_3",
+      "label": "DECK 1 PAD 3",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_3",
+        "type": "note",
+        "ch": 5,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_4",
+      "fig": "pad_pressed_4",
+      "label": "DECK 1 PAD 4",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_4",
+        "type": "note",
+        "ch": 5,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_5",
+      "fig": "pad_pressed_5",
+      "label": "DECK 1 PAD 5",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_5",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_6",
+      "fig": "pad_pressed_6",
+      "label": "DECK 1 PAD 6",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_6",
+        "type": "note",
+        "ch": 5,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_7",
+      "fig": "pad_pressed_7",
+      "label": "DECK 1 PAD 7",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_7",
+        "type": "note",
+        "ch": 5,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_8",
+      "fig": "pad_pressed_8",
+      "label": "DECK 1 PAD 8",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_8",
+        "type": "note",
+        "ch": 5,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_9",
+      "fig": "pad_pressed_9",
+      "label": "DECK 1 PAD 1 (shifted)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_9",
+        "type": "note",
+        "ch": 5,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_10",
+      "fig": "pad_pressed_10",
+      "label": "DECK 1 PAD 2 (shifted)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_10",
+        "type": "note",
+        "ch": 5,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_11",
+      "fig": "pad_pressed_11",
+      "label": "DECK 1 PAD 3 (shifted)",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_11",
+        "type": "note",
+        "ch": 5,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_12",
+      "fig": "pad_pressed_12",
+      "label": "DECK 1 PAD 4 (shifted)",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_12",
+        "type": "note",
+        "ch": 5,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_13",
+      "fig": "pad_pressed_13",
+      "label": "DECK 1 PAD 5 (shifted)",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_13",
+        "type": "note",
+        "ch": 5,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_14",
+      "fig": "pad_pressed_14",
+      "label": "DECK 1 PAD 6 (shifted)",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_14",
+        "type": "note",
+        "ch": 5,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_15",
+      "fig": "pad_pressed_15",
+      "label": "DECK 1 PAD 7 (shifted)",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_15",
+        "type": "note",
+        "ch": 5,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_16",
+      "fig": "pad_pressed_16",
+      "label": "DECK 1 PAD 8 (shifted)",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_16",
+        "type": "note",
+        "ch": 5,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_active",
+      "fig": "channel1_deck_1_loop_active",
+      "label": "DECK 1 LOOP ACTIVE",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_active",
+        "type": "note",
+        "ch": 5,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_active] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_reloop_exit",
+      "fig": "channel1_deck_1_reloop_exit",
+      "label": "DECK 1 RELOOP/EXIT",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_reloop_exit",
+        "type": "note",
+        "ch": 5,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_1_2_x",
+      "fig": "channel1_deck_1_loop_1_2_x",
+      "label": "DECK 1 LOOP 1/2X",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_1_2_x",
+        "type": "note",
+        "ch": 5,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_2_x",
+      "fig": "channel1_deck_1_loop_2_x",
+      "label": "DECK 1 LOOP 2X",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_2_x",
+        "type": "note",
+        "ch": 5,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_shift_1_2_x",
+      "fig": "channel1_deck_1_loop_shift_1_2_x",
+      "label": "DECK 1 LOOP SHIFT 1/2X",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_shift_1_2_x",
+        "type": "note",
+        "ch": 5,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_shift_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_shift_2_x",
+      "fig": "channel1_deck_1_loop_shift_2_x",
+      "label": "DECK 1 LOOP SHIFT 2X",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_shift_2_x",
+        "type": "note",
+        "ch": 5,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_shift_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_in",
+      "fig": "channel1_deck_1_loop_in",
+      "label": "DECK 1 LOOP IN",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_in",
+        "type": "note",
+        "ch": 5,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_loop_out",
+      "fig": "channel1_deck_1_loop_out",
+      "label": "DECK 1 LOOP OUT",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_loop_out",
+        "type": "note",
+        "ch": 5,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_slot_select",
+      "fig": "channel1_deck_1_slot_select",
+      "label": "DECK 1 SLOT SELECT",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_slot_select",
+        "type": "note",
+        "ch": 5,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_slot_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_auto_loop",
+      "fig": "channel1_deck_1_auto_loop",
+      "label": "DECK 1 AUTO LOOP",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_auto_loop",
+        "type": "note",
+        "ch": 5,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_auto_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "DECK 1 JOG WHEEL TOUCH",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_turn",
+      "fig": "wheel_turn",
+      "label": "DECK 1 JOG WHEEL TURN",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_vinyl_mode",
+      "fig": "channel1_deck_1_vinyl_mode",
+      "label": "DECK 1 VINYL MODE",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_vinyl_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_vinyl_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_slip_mode",
+      "fig": "channel1_deck_1_slip_mode",
+      "label": "DECK 1 SLIP MODE",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_slip_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_slip_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_2",
+      "fig": "input_msb_2",
+      "label": "DECK 1 TRIM (MSB)",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[input_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_2",
+      "fig": "input_lsb_2",
+      "label": "DECK 1 TRIM (LSB)",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_3",
+      "fig": "input_msb_3",
+      "label": "DECK 1 EQ HI (MSB)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[input_msb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_3",
+      "fig": "input_lsb_3",
+      "label": "DECK 1 EQ HI (LSB)",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_4",
+      "fig": "input_msb_4",
+      "label": "DECK 1 EQ MID (MSB)",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[input_msb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_4",
+      "fig": "input_lsb_4",
+      "label": "DECK 1 EQ MID (LSB)",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_5",
+      "fig": "input_msb_5",
+      "label": "DECK 1 EQ LOW (MSB)",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[input_msb_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_5",
+      "fig": "input_lsb_5",
+      "label": "DECK 1 EQ LOW (LSB)",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-quick_effect_rack1_channel1_deck_1_filter",
+      "fig": "quick_effect_rack1_channel1_deck_1_filter",
+      "label": "DECK 1 FILTER",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel1_deck_1_filter",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel1_deck_1_filter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_cue_pfl",
+      "fig": "channel1_deck_1_cue_pfl",
+      "label": "DECK 1 CUE/PFL",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_cue_pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_cue_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed",
+      "fig": "param_button_pressed",
+      "label": "DECK 1 PARAMETER 1 MINUS",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed",
+        "type": "note",
+        "ch": 5,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_2",
+      "fig": "param_button_pressed_2",
+      "label": "DECK 1 PARAMETER 1 PLUS",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_2",
+        "type": "note",
+        "ch": 5,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_3",
+      "fig": "param_button_pressed_3",
+      "label": "DECK 1 PARAMETER 2 MINUS",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_3",
+        "type": "note",
+        "ch": 5,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_4",
+      "fig": "param_button_pressed_4",
+      "label": "DECK 1 PARAMETER 2 PLUS",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_4",
+        "type": "note",
+        "ch": 5,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_tap",
+      "fig": "channel1_deck_1_tap",
+      "label": "DECK 1 TAP",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_tap",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_6",
+      "fig": "input_msb_6",
+      "label": "DECK 1 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[input_msb_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_6",
+      "fig": "input_lsb_6",
+      "label": "DECK 1 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_play_pause",
+      "fig": "channel3_deck_3_play_pause",
+      "label": "DECK 3 PLAY/PAUSE",
+      "kind": "button",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_play_pause",
+        "type": "note",
+        "ch": 3,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_play_pause] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_cue",
+      "fig": "channel3_deck_3_cue",
+      "label": "DECK 3 CUE",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_cue",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_sync",
+      "fig": "channel3_deck_3_sync",
+      "label": "DECK 3 SYNC",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_sync",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_sync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_sync_off",
+      "fig": "channel3_deck_3_sync_off",
+      "label": "DECK 3 SYNC OFF",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_sync_off",
+        "type": "note",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_sync_off] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_stutter",
+      "fig": "channel3_deck_3_stutter",
+      "label": "DECK 3 STUTTER",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_stutter",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_cue_rewind",
+      "fig": "channel3_deck_3_cue_rewind",
+      "label": "DECK 3 CUE REWIND",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_cue_rewind",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_cue_rewind] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_7",
+      "fig": "input_msb_7",
+      "label": "DECK 3 TEMPO FADER (MSB)",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_7",
+        "type": "cc",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_7",
+      "fig": "input_lsb_7",
+      "label": "DECK 3 TEMPO FADER (LSB)",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_7",
+        "type": "cc",
+        "ch": 3,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_key_lock",
+      "fig": "channel3_deck_3_key_lock",
+      "label": "DECK 3 KEY LOCK",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_key_lock",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_key_lock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_tempo_range",
+      "fig": "channel3_deck_3_tempo_range",
+      "label": "DECK 3 TEMPO RANGE",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_tempo_range",
+        "type": "note",
+        "ch": 3,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_tempo_range] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_14",
+      "fig": "pad_mode_button_pressed_14",
+      "label": "DECK 3 PADS - HOT CUE",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_14",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_15",
+      "fig": "pad_mode_button_pressed_15",
+      "label": "DECK 3 PADS - FLIP",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_15",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_16",
+      "fig": "pad_mode_button_pressed_16",
+      "label": "DECK 3 PADS - CUE LOOP",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_16",
+        "type": "note",
+        "ch": 7,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_17",
+      "fig": "pad_mode_button_pressed_17",
+      "label": "DECK 3 PADS - ROLL",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_17",
+        "type": "note",
+        "ch": 7,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_18",
+      "fig": "pad_mode_button_pressed_18",
+      "label": "DECK 3 PADS - LOOP",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_18",
+        "type": "note",
+        "ch": 7,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_19",
+      "fig": "pad_mode_button_pressed_19",
+      "label": "DECK 3 PADS - SLICER",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_19",
+        "type": "note",
+        "ch": 7,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_20",
+      "fig": "pad_mode_button_pressed_20",
+      "label": "DECK 3 PADS - SLICER LOOP",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_20",
+        "type": "note",
+        "ch": 7,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_21",
+      "fig": "pad_mode_button_pressed_21",
+      "label": "DECK 3 PADS - TR",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_21",
+        "type": "note",
+        "ch": 7,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_22",
+      "fig": "pad_mode_button_pressed_22",
+      "label": "DECK 3 PADS - TR VELOCITY",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_22",
+        "type": "note",
+        "ch": 7,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_23",
+      "fig": "pad_mode_button_pressed_23",
+      "label": "DECK 3 PADS - PATTERN",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_23",
+        "type": "note",
+        "ch": 7,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_24",
+      "fig": "pad_mode_button_pressed_24",
+      "label": "DECK 3 PADS - SAMPLER",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_24",
+        "type": "note",
+        "ch": 7,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_25",
+      "fig": "pad_mode_button_pressed_25",
+      "label": "DECK 3 PADS - PITCH PLAY",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_25",
+        "type": "note",
+        "ch": 7,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_26",
+      "fig": "pad_mode_button_pressed_26",
+      "label": "DECK 3 PADS - VELOCITY",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_26",
+        "type": "note",
+        "ch": 7,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_17",
+      "fig": "pad_pressed_17",
+      "label": "DECK 3 PAD 1",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_17",
+        "type": "note",
+        "ch": 7,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_18",
+      "fig": "pad_pressed_18",
+      "label": "DECK 3 PAD 2",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_18",
+        "type": "note",
+        "ch": 7,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_19",
+      "fig": "pad_pressed_19",
+      "label": "DECK 3 PAD 3",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_19",
+        "type": "note",
+        "ch": 7,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_20",
+      "fig": "pad_pressed_20",
+      "label": "DECK 3 PAD 4",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_20",
+        "type": "note",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_21",
+      "fig": "pad_pressed_21",
+      "label": "DECK 3 PAD 5",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_21",
+        "type": "note",
+        "ch": 7,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_22",
+      "fig": "pad_pressed_22",
+      "label": "DECK 3 PAD 6",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_22",
+        "type": "note",
+        "ch": 7,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_23",
+      "fig": "pad_pressed_23",
+      "label": "DECK 3 PAD 7",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_23",
+        "type": "note",
+        "ch": 7,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_24",
+      "fig": "pad_pressed_24",
+      "label": "DECK 3 PAD 8",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_24",
+        "type": "note",
+        "ch": 7,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_25",
+      "fig": "pad_pressed_25",
+      "label": "DECK 3 PAD 1 (shifted)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_25",
+        "type": "note",
+        "ch": 7,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_26",
+      "fig": "pad_pressed_26",
+      "label": "DECK 3 PAD 2 (shifted)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_26",
+        "type": "note",
+        "ch": 7,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_27",
+      "fig": "pad_pressed_27",
+      "label": "DECK 3 PAD 3 (shifted)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_27",
+        "type": "note",
+        "ch": 7,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_28",
+      "fig": "pad_pressed_28",
+      "label": "DECK 3 PAD 4 (shifted)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_28",
+        "type": "note",
+        "ch": 7,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_29",
+      "fig": "pad_pressed_29",
+      "label": "DECK 3 PAD 5 (shifted)",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_29",
+        "type": "note",
+        "ch": 7,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_30",
+      "fig": "pad_pressed_30",
+      "label": "DECK 3 PAD 6 (shifted)",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_30",
+        "type": "note",
+        "ch": 7,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_31",
+      "fig": "pad_pressed_31",
+      "label": "DECK 3 PAD 7 (shifted)",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_31",
+        "type": "note",
+        "ch": 7,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_32",
+      "fig": "pad_pressed_32",
+      "label": "DECK 3 PAD 8 (shifted)",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_32",
+        "type": "note",
+        "ch": 7,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_active",
+      "fig": "channel3_deck_3_loop_active",
+      "label": "DECK 3 LOOP ACTIVE",
+      "kind": "button",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_active",
+        "type": "note",
+        "ch": 7,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_active] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_reloop_exit",
+      "fig": "channel3_deck_3_reloop_exit",
+      "label": "DECK 3 RELOOP/EXIT",
+      "kind": "button",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_reloop_exit",
+        "type": "note",
+        "ch": 7,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_1_2_x",
+      "fig": "channel3_deck_3_loop_1_2_x",
+      "label": "DECK 3 LOOP 1/2X",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_1_2_x",
+        "type": "note",
+        "ch": 7,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_2_x",
+      "fig": "channel3_deck_3_loop_2_x",
+      "label": "DECK 3 LOOP 2X",
+      "kind": "button",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_2_x",
+        "type": "note",
+        "ch": 7,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_shift_1_2_x",
+      "fig": "channel3_deck_3_loop_shift_1_2_x",
+      "label": "DECK 3 LOOP SHIFT 1/2X",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_shift_1_2_x",
+        "type": "note",
+        "ch": 7,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_shift_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_shift_2_x",
+      "fig": "channel3_deck_3_loop_shift_2_x",
+      "label": "DECK 3 LOOP SHIFT 2X",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_shift_2_x",
+        "type": "note",
+        "ch": 7,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_shift_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_in",
+      "fig": "channel3_deck_3_loop_in",
+      "label": "DECK 3 LOOP IN",
+      "kind": "button",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_in",
+        "type": "note",
+        "ch": 7,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_loop_out",
+      "fig": "channel3_deck_3_loop_out",
+      "label": "DECK 3 LOOP OUT",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_loop_out",
+        "type": "note",
+        "ch": 7,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_slot_select",
+      "fig": "channel3_deck_3_slot_select",
+      "label": "DECK 3 SLOT SELECT",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_slot_select",
+        "type": "note",
+        "ch": 7,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_slot_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_auto_loop",
+      "fig": "channel3_deck_3_auto_loop",
+      "label": "DECK 3 AUTO LOOP",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_auto_loop",
+        "type": "note",
+        "ch": 7,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_auto_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "DECK 3 JOG WHEEL TOUCH",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_turn_2",
+      "fig": "wheel_turn_2",
+      "label": "DECK 3 JOG WHEEL TURN",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_2",
+        "type": "cc",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_vinyl_mode",
+      "fig": "channel3_deck_3_vinyl_mode",
+      "label": "DECK 3 VINYL MODE",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_vinyl_mode",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_vinyl_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_slip_mode",
+      "fig": "channel3_deck_3_slip_mode",
+      "label": "DECK 3 SLIP MODE",
+      "kind": "button",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_slip_mode",
+        "type": "note",
+        "ch": 3,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_slip_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_8",
+      "fig": "input_msb_8",
+      "label": "DECK 3 TRIM (MSB)",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_8",
+        "type": "cc",
+        "ch": 3,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[input_msb_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_8",
+      "fig": "input_lsb_8",
+      "label": "DECK 3 TRIM (LSB)",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_8",
+        "type": "cc",
+        "ch": 3,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_9",
+      "fig": "input_msb_9",
+      "label": "DECK 3 EQ HI (MSB)",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_9",
+        "type": "cc",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[input_msb_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_9",
+      "fig": "input_lsb_9",
+      "label": "DECK 3 EQ HI (LSB)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_9",
+        "type": "cc",
+        "ch": 3,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_10",
+      "fig": "input_msb_10",
+      "label": "DECK 3 EQ MID (MSB)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_10",
+        "type": "cc",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[input_msb_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_10",
+      "fig": "input_lsb_10",
+      "label": "DECK 3 EQ MID (LSB)",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_10",
+        "type": "cc",
+        "ch": 3,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_11",
+      "fig": "input_msb_11",
+      "label": "DECK 3 EQ LOW (MSB)",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_11",
+        "type": "cc",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[input_msb_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_11",
+      "fig": "input_lsb_11",
+      "label": "DECK 3 EQ LOW (LSB)",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_11",
+        "type": "cc",
+        "ch": 3,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-quick_effect_rack1_channel3_deck_3_filter",
+      "fig": "quick_effect_rack1_channel3_deck_3_filter",
+      "label": "DECK 3 FILTER",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel3_deck_3_filter",
+        "type": "cc",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel3_deck_3_filter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_cue_pfl",
+      "fig": "channel3_deck_3_cue_pfl",
+      "label": "DECK 3 CUE/PFL",
+      "kind": "button",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_cue_pfl",
+        "type": "note",
+        "ch": 3,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_cue_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_5",
+      "fig": "param_button_pressed_5",
+      "label": "DECK 3 PARAMETER 1 MINUS",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_5",
+        "type": "note",
+        "ch": 7,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_6",
+      "fig": "param_button_pressed_6",
+      "label": "DECK 3 PARAMETER 1 PLUS",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_6",
+        "type": "note",
+        "ch": 7,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_7",
+      "fig": "param_button_pressed_7",
+      "label": "DECK 3 PARAMETER 2 MINUS",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_7",
+        "type": "note",
+        "ch": 7,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_8",
+      "fig": "param_button_pressed_8",
+      "label": "DECK 3 PARAMETER 2 PLUS",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_8",
+        "type": "note",
+        "ch": 7,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_tap",
+      "fig": "channel3_deck_3_tap",
+      "label": "DECK 3 TAP",
+      "kind": "button",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_tap",
+        "type": "note",
+        "ch": 3,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_12",
+      "fig": "input_msb_12",
+      "label": "DECK 3 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_12",
+        "type": "cc",
+        "ch": 3,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[input_msb_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_12",
+      "fig": "input_lsb_12",
+      "label": "DECK 3 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_12",
+        "type": "cc",
+        "ch": 3,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_play_pause",
+      "fig": "channel2_deck_2_play_pause",
+      "label": "DECK 2 PLAY/PAUSE",
+      "kind": "button",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_play_pause",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_play_pause] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_cue",
+      "fig": "channel2_deck_2_cue",
+      "label": "DECK 2 CUE",
+      "kind": "button",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_cue",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_sync",
+      "fig": "channel2_deck_2_sync",
+      "label": "DECK 2 SYNC",
+      "kind": "button",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_sync",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_sync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_sync_off",
+      "fig": "channel2_deck_2_sync_off",
+      "label": "DECK 2 SYNC OFF",
+      "kind": "button",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_sync_off",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_sync_off] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_stutter",
+      "fig": "channel2_deck_2_stutter",
+      "label": "DECK 2 STUTTER",
+      "kind": "button",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_stutter",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_cue_rewind",
+      "fig": "channel2_deck_2_cue_rewind",
+      "label": "DECK 2 CUE REWIND",
+      "kind": "button",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_cue_rewind",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_cue_rewind] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_13",
+      "fig": "input_msb_13",
+      "label": "DECK 2 TEMPO FADER (MSB)",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_13",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_13",
+      "fig": "input_lsb_13",
+      "label": "DECK 2 TEMPO FADER (LSB)",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_13",
+        "type": "cc",
+        "ch": 2,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_key_lock",
+      "fig": "channel2_deck_2_key_lock",
+      "label": "DECK 2 KEY LOCK",
+      "kind": "button",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_key_lock",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_key_lock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_tempo_range",
+      "fig": "channel2_deck_2_tempo_range",
+      "label": "DECK 2 TEMPO RANGE",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_tempo_range",
+        "type": "note",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_tempo_range] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_27",
+      "fig": "pad_mode_button_pressed_27",
+      "label": "DECK 2 PADS - HOT CUE",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_27",
+        "type": "note",
+        "ch": 6,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_28",
+      "fig": "pad_mode_button_pressed_28",
+      "label": "DECK 2 PADS - FLIP",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_28",
+        "type": "note",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_29",
+      "fig": "pad_mode_button_pressed_29",
+      "label": "DECK 2 PADS - CUE LOOP",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_29",
+        "type": "note",
+        "ch": 6,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_30",
+      "fig": "pad_mode_button_pressed_30",
+      "label": "DECK 2 PADS - ROLL",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_30",
+        "type": "note",
+        "ch": 6,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_31",
+      "fig": "pad_mode_button_pressed_31",
+      "label": "DECK 2 PADS - LOOP",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_31",
+        "type": "note",
+        "ch": 6,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_32",
+      "fig": "pad_mode_button_pressed_32",
+      "label": "DECK 2 PADS - SLICER",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_32",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_33",
+      "fig": "pad_mode_button_pressed_33",
+      "label": "DECK 2 PADS - SLICER LOOP",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_33",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_34",
+      "fig": "pad_mode_button_pressed_34",
+      "label": "DECK 2 PADS - TR",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_34",
+        "type": "note",
+        "ch": 6,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_35",
+      "fig": "pad_mode_button_pressed_35",
+      "label": "DECK 2 PADS - TR VELOCITY",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_35",
+        "type": "note",
+        "ch": 6,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_36",
+      "fig": "pad_mode_button_pressed_36",
+      "label": "DECK 2 PADS - PATTERN",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_36",
+        "type": "note",
+        "ch": 6,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_37",
+      "fig": "pad_mode_button_pressed_37",
+      "label": "DECK 2 PADS - SAMPLER",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_37",
+        "type": "note",
+        "ch": 6,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_38",
+      "fig": "pad_mode_button_pressed_38",
+      "label": "DECK 2 PADS - PITCH PLAY",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_38",
+        "type": "note",
+        "ch": 6,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_39",
+      "fig": "pad_mode_button_pressed_39",
+      "label": "DECK 2 PADS - VELOCITY",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_39",
+        "type": "note",
+        "ch": 6,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_33",
+      "fig": "pad_pressed_33",
+      "label": "DECK 2 PAD 1",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_33",
+        "type": "note",
+        "ch": 6,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_34",
+      "fig": "pad_pressed_34",
+      "label": "DECK 2 PAD 2",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_34",
+        "type": "note",
+        "ch": 6,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_35",
+      "fig": "pad_pressed_35",
+      "label": "DECK 2 PAD 3",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_35",
+        "type": "note",
+        "ch": 6,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_36",
+      "fig": "pad_pressed_36",
+      "label": "DECK 2 PAD 4",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_36",
+        "type": "note",
+        "ch": 6,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_37",
+      "fig": "pad_pressed_37",
+      "label": "DECK 2 PAD 5",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_37",
+        "type": "note",
+        "ch": 6,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_38",
+      "fig": "pad_pressed_38",
+      "label": "DECK 2 PAD 6",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_38",
+        "type": "note",
+        "ch": 6,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_39",
+      "fig": "pad_pressed_39",
+      "label": "DECK 2 PAD 7",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_39",
+        "type": "note",
+        "ch": 6,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_40",
+      "fig": "pad_pressed_40",
+      "label": "DECK 2 PAD 8",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_40",
+        "type": "note",
+        "ch": 6,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_41",
+      "fig": "pad_pressed_41",
+      "label": "DECK 2 PAD 1 (shifted)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_41",
+        "type": "note",
+        "ch": 6,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_42",
+      "fig": "pad_pressed_42",
+      "label": "DECK 2 PAD 2 (shifted)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_42",
+        "type": "note",
+        "ch": 6,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_43",
+      "fig": "pad_pressed_43",
+      "label": "DECK 2 PAD 3 (shifted)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_43",
+        "type": "note",
+        "ch": 6,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_44",
+      "fig": "pad_pressed_44",
+      "label": "DECK 2 PAD 4 (shifted)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_44",
+        "type": "note",
+        "ch": 6,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_45",
+      "fig": "pad_pressed_45",
+      "label": "DECK 2 PAD 5 (shifted)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_45",
+        "type": "note",
+        "ch": 6,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_46",
+      "fig": "pad_pressed_46",
+      "label": "DECK 2 PAD 6 (shifted)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_46",
+        "type": "note",
+        "ch": 6,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_47",
+      "fig": "pad_pressed_47",
+      "label": "DECK 2 PAD 7 (shifted)",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_47",
+        "type": "note",
+        "ch": 6,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_48",
+      "fig": "pad_pressed_48",
+      "label": "DECK 2 PAD 8 (shifted)",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_48",
+        "type": "note",
+        "ch": 6,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_active",
+      "fig": "channel2_deck_2_loop_active",
+      "label": "DECK 2 LOOP ACTIVE",
+      "kind": "button",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_active",
+        "type": "note",
+        "ch": 6,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_active] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_reloop_exit",
+      "fig": "channel2_deck_2_reloop_exit",
+      "label": "DECK 2 RELOOP/EXIT",
+      "kind": "button",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_reloop_exit",
+        "type": "note",
+        "ch": 6,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_1_2_x",
+      "fig": "channel2_deck_2_loop_1_2_x",
+      "label": "DECK 2 LOOP 1/2X",
+      "kind": "button",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_1_2_x",
+        "type": "note",
+        "ch": 6,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_2_x",
+      "fig": "channel2_deck_2_loop_2_x",
+      "label": "DECK 2 LOOP 2X",
+      "kind": "button",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_2_x",
+        "type": "note",
+        "ch": 6,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_shift_1_2_x",
+      "fig": "channel2_deck_2_loop_shift_1_2_x",
+      "label": "DECK 2 LOOP SHIFT 1/2X",
+      "kind": "button",
+      "x": 25.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_shift_1_2_x",
+        "type": "note",
+        "ch": 6,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_shift_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_shift_2_x",
+      "fig": "channel2_deck_2_loop_shift_2_x",
+      "label": "DECK 2 LOOP SHIFT 2X",
+      "kind": "button",
+      "x": 33.2,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_shift_2_x",
+        "type": "note",
+        "ch": 6,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_shift_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_in",
+      "fig": "channel2_deck_2_loop_in",
+      "label": "DECK 2 LOOP IN",
+      "kind": "button",
+      "x": 41.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_in",
+        "type": "note",
+        "ch": 6,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_loop_out",
+      "fig": "channel2_deck_2_loop_out",
+      "label": "DECK 2 LOOP OUT",
+      "kind": "button",
+      "x": 48.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_loop_out",
+        "type": "note",
+        "ch": 6,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_slot_select",
+      "fig": "channel2_deck_2_slot_select",
+      "label": "DECK 2 SLOT SELECT",
+      "kind": "button",
+      "x": 56.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_slot_select",
+        "type": "note",
+        "ch": 6,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_slot_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_auto_loop",
+      "fig": "channel2_deck_2_auto_loop",
+      "label": "DECK 2 AUTO LOOP",
+      "kind": "button",
+      "x": 64.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_auto_loop",
+        "type": "note",
+        "ch": 6,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_auto_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_touch_3",
+      "fig": "wheel_touch_3",
+      "label": "DECK 2 JOG WHEEL TOUCH",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 101.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_3",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_turn_3",
+      "fig": "wheel_turn_3",
+      "label": "DECK 2 JOG WHEEL TURN",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 101.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_vinyl_mode",
+      "fig": "channel2_deck_2_vinyl_mode",
+      "label": "DECK 2 VINYL MODE",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 101.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_vinyl_mode",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_vinyl_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_slip_mode",
+      "fig": "channel2_deck_2_slip_mode",
+      "label": "DECK 2 SLIP MODE",
+      "kind": "button",
+      "x": 2.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_slip_mode",
+        "type": "note",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_slip_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_14",
+      "fig": "input_msb_14",
+      "label": "DECK 2 TRIM (MSB)",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 108.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_14",
+        "type": "cc",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[input_msb_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_14",
+      "fig": "input_lsb_14",
+      "label": "DECK 2 TRIM (LSB)",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 108.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_14",
+        "type": "cc",
+        "ch": 2,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_15",
+      "fig": "input_msb_15",
+      "label": "DECK 2 EQ HI (MSB)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_15",
+        "type": "cc",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[input_msb_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_15",
+      "fig": "input_lsb_15",
+      "label": "DECK 2 EQ HI (LSB)",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_15",
+        "type": "cc",
+        "ch": 2,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_16",
+      "fig": "input_msb_16",
+      "label": "DECK 2 EQ MID (MSB)",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_16",
+        "type": "cc",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[input_msb_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_16",
+      "fig": "input_lsb_16",
+      "label": "DECK 2 EQ MID (LSB)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_16",
+        "type": "cc",
+        "ch": 2,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_17",
+      "fig": "input_msb_17",
+      "label": "DECK 2 EQ LOW (MSB)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_17",
+        "type": "cc",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[input_msb_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_17",
+      "fig": "input_lsb_17",
+      "label": "DECK 2 EQ LOW (LSB)",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_17",
+        "type": "cc",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-quick_effect_rack1_channel2_deck_2_filter",
+      "fig": "quick_effect_rack1_channel2_deck_2_filter",
+      "label": "DECK 2 FILTER",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel2_deck_2_filter",
+        "type": "cc",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel2_deck_2_filter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_cue_pfl",
+      "fig": "channel2_deck_2_cue_pfl",
+      "label": "DECK 2 CUE/PFL",
+      "kind": "button",
+      "x": 80.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_cue_pfl",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_cue_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_9",
+      "fig": "param_button_pressed_9",
+      "label": "DECK 2 PARAMETER 1 MINUS",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_9",
+        "type": "note",
+        "ch": 6,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_10",
+      "fig": "param_button_pressed_10",
+      "label": "DECK 2 PARAMETER 1 PLUS",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_10",
+        "type": "note",
+        "ch": 6,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_11",
+      "fig": "param_button_pressed_11",
+      "label": "DECK 2 PARAMETER 2 MINUS",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_11",
+        "type": "note",
+        "ch": 6,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_12",
+      "fig": "param_button_pressed_12",
+      "label": "DECK 2 PARAMETER 2 PLUS",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_12",
+        "type": "note",
+        "ch": 6,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_tap",
+      "fig": "channel2_deck_2_tap",
+      "label": "DECK 2 TAP",
+      "kind": "button",
+      "x": 25.4,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_tap",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_18",
+      "fig": "input_msb_18",
+      "label": "DECK 2 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 114.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_18",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[input_msb_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_18",
+      "fig": "input_lsb_18",
+      "label": "DECK 2 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 114.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_18",
+        "type": "cc",
+        "ch": 2,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_play_pause",
+      "fig": "channel4_deck_4_play_pause",
+      "label": "DECK 4 PLAY/PAUSE",
+      "kind": "button",
+      "x": 48.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_play_pause",
+        "type": "note",
+        "ch": 4,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_play_pause] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_cue",
+      "fig": "channel4_deck_4_cue",
+      "label": "DECK 4 CUE",
+      "kind": "button",
+      "x": 56.6,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_cue",
+        "type": "note",
+        "ch": 4,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_sync",
+      "fig": "channel4_deck_4_sync",
+      "label": "DECK 4 SYNC",
+      "kind": "button",
+      "x": 64.4,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_sync",
+        "type": "note",
+        "ch": 4,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_sync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_sync_off",
+      "fig": "channel4_deck_4_sync_off",
+      "label": "DECK 4 SYNC OFF",
+      "kind": "button",
+      "x": 72.2,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_sync_off",
+        "type": "note",
+        "ch": 4,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_sync_off] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_stutter",
+      "fig": "channel4_deck_4_stutter",
+      "label": "DECK 4 STUTTER",
+      "kind": "button",
+      "x": 80.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_stutter",
+        "type": "note",
+        "ch": 4,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_cue_rewind",
+      "fig": "channel4_deck_4_cue_rewind",
+      "label": "DECK 4 CUE REWIND",
+      "kind": "button",
+      "x": 87.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_cue_rewind",
+        "type": "note",
+        "ch": 4,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_cue_rewind] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_19",
+      "fig": "input_msb_19",
+      "label": "DECK 4 TEMPO FADER (MSB)",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_19",
+        "type": "cc",
+        "ch": 4,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_19",
+      "fig": "input_lsb_19",
+      "label": "DECK 4 TEMPO FADER (LSB)",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_19",
+        "type": "cc",
+        "ch": 4,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_key_lock",
+      "fig": "channel4_deck_4_key_lock",
+      "label": "DECK 4 KEY LOCK",
+      "kind": "button",
+      "x": 17.6,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_key_lock",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_key_lock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_tempo_range",
+      "fig": "channel4_deck_4_tempo_range",
+      "label": "DECK 4 TEMPO RANGE",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_tempo_range",
+        "type": "note",
+        "ch": 4,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_tempo_range] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_40",
+      "fig": "pad_mode_button_pressed_40",
+      "label": "DECK 4 PADS - HOT CUE",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_40",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_41",
+      "fig": "pad_mode_button_pressed_41",
+      "label": "DECK 4 PADS - FLIP",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_41",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_42",
+      "fig": "pad_mode_button_pressed_42",
+      "label": "DECK 4 PADS - CUE LOOP",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_42",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_43",
+      "fig": "pad_mode_button_pressed_43",
+      "label": "DECK 4 PADS - ROLL",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_43",
+        "type": "note",
+        "ch": 8,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_44",
+      "fig": "pad_mode_button_pressed_44",
+      "label": "DECK 4 PADS - LOOP",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_44",
+        "type": "note",
+        "ch": 8,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_45",
+      "fig": "pad_mode_button_pressed_45",
+      "label": "DECK 4 PADS - SLICER",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_45",
+        "type": "note",
+        "ch": 8,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_46",
+      "fig": "pad_mode_button_pressed_46",
+      "label": "DECK 4 PADS - SLICER LOOP",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_46",
+        "type": "note",
+        "ch": 8,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_47",
+      "fig": "pad_mode_button_pressed_47",
+      "label": "DECK 4 PADS - TR",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_47",
+        "type": "note",
+        "ch": 8,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_48",
+      "fig": "pad_mode_button_pressed_48",
+      "label": "DECK 4 PADS - TR VELOCITY",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_48",
+        "type": "note",
+        "ch": 8,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_49",
+      "fig": "pad_mode_button_pressed_49",
+      "label": "DECK 4 PADS - PATTERN",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_49",
+        "type": "note",
+        "ch": 8,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_50",
+      "fig": "pad_mode_button_pressed_50",
+      "label": "DECK 4 PADS - SAMPLER",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_50",
+        "type": "note",
+        "ch": 8,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_51",
+      "fig": "pad_mode_button_pressed_51",
+      "label": "DECK 4 PADS - PITCH PLAY",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_51",
+        "type": "note",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_mode_button_pressed_52",
+      "fig": "pad_mode_button_pressed_52",
+      "label": "DECK 4 PADS - VELOCITY",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_button_pressed_52",
+        "type": "note",
+        "ch": 8,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_button_pressed_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_49",
+      "fig": "pad_pressed_49",
+      "label": "DECK 4 PAD 1",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_49",
+        "type": "note",
+        "ch": 8,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_50",
+      "fig": "pad_pressed_50",
+      "label": "DECK 4 PAD 2",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_50",
+        "type": "note",
+        "ch": 8,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_51",
+      "fig": "pad_pressed_51",
+      "label": "DECK 4 PAD 3",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_51",
+        "type": "note",
+        "ch": 8,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_52",
+      "fig": "pad_pressed_52",
+      "label": "DECK 4 PAD 4",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_52",
+        "type": "note",
+        "ch": 8,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_53",
+      "fig": "pad_pressed_53",
+      "label": "DECK 4 PAD 5",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_53",
+        "type": "note",
+        "ch": 8,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_54",
+      "fig": "pad_pressed_54",
+      "label": "DECK 4 PAD 6",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_54",
+        "type": "note",
+        "ch": 8,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_55",
+      "fig": "pad_pressed_55",
+      "label": "DECK 4 PAD 7",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_55",
+        "type": "note",
+        "ch": 8,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_55] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_56",
+      "fig": "pad_pressed_56",
+      "label": "DECK 4 PAD 8",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_56",
+        "type": "note",
+        "ch": 8,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_56] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_57",
+      "fig": "pad_pressed_57",
+      "label": "DECK 4 PAD 1 (shifted)",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_57",
+        "type": "note",
+        "ch": 8,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_57] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_58",
+      "fig": "pad_pressed_58",
+      "label": "DECK 4 PAD 2 (shifted)",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_58",
+        "type": "note",
+        "ch": 8,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_58] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_59",
+      "fig": "pad_pressed_59",
+      "label": "DECK 4 PAD 3 (shifted)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_59",
+        "type": "note",
+        "ch": 8,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_59] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_60",
+      "fig": "pad_pressed_60",
+      "label": "DECK 4 PAD 4 (shifted)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_60",
+        "type": "note",
+        "ch": 8,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_60] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_61",
+      "fig": "pad_pressed_61",
+      "label": "DECK 4 PAD 5 (shifted)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_61",
+        "type": "note",
+        "ch": 8,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_61] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_62",
+      "fig": "pad_pressed_62",
+      "label": "DECK 4 PAD 6 (shifted)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_62",
+        "type": "note",
+        "ch": 8,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_62] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_63",
+      "fig": "pad_pressed_63",
+      "label": "DECK 4 PAD 7 (shifted)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_63",
+        "type": "note",
+        "ch": 8,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_63] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-pad_pressed_64",
+      "fig": "pad_pressed_64",
+      "label": "DECK 4 PAD 8 (shifted)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_pressed_64",
+        "type": "note",
+        "ch": 8,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_pressed_64] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_active",
+      "fig": "channel4_deck_4_loop_active",
+      "label": "DECK 4 LOOP ACTIVE",
+      "kind": "button",
+      "x": 72.2,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_active",
+        "type": "note",
+        "ch": 8,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_active] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_reloop_exit",
+      "fig": "channel4_deck_4_reloop_exit",
+      "label": "DECK 4 RELOOP/EXIT",
+      "kind": "button",
+      "x": 80.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_reloop_exit",
+        "type": "note",
+        "ch": 8,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_1_2_x",
+      "fig": "channel4_deck_4_loop_1_2_x",
+      "label": "DECK 4 LOOP 1/2X",
+      "kind": "button",
+      "x": 87.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_1_2_x",
+        "type": "note",
+        "ch": 8,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_2_x",
+      "fig": "channel4_deck_4_loop_2_x",
+      "label": "DECK 4 LOOP 2X",
+      "kind": "button",
+      "x": 2.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_2_x",
+        "type": "note",
+        "ch": 8,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_shift_1_2_x",
+      "fig": "channel4_deck_4_loop_shift_1_2_x",
+      "label": "DECK 4 LOOP SHIFT 1/2X",
+      "kind": "button",
+      "x": 9.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_shift_1_2_x",
+        "type": "note",
+        "ch": 8,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_shift_1_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_shift_2_x",
+      "fig": "channel4_deck_4_loop_shift_2_x",
+      "label": "DECK 4 LOOP SHIFT 2X",
+      "kind": "button",
+      "x": 17.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_shift_2_x",
+        "type": "note",
+        "ch": 8,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_shift_2_x] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_in",
+      "fig": "channel4_deck_4_loop_in",
+      "label": "DECK 4 LOOP IN",
+      "kind": "button",
+      "x": 25.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_in",
+        "type": "note",
+        "ch": 8,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_loop_out",
+      "fig": "channel4_deck_4_loop_out",
+      "label": "DECK 4 LOOP OUT",
+      "kind": "button",
+      "x": 33.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_loop_out",
+        "type": "note",
+        "ch": 8,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_slot_select",
+      "fig": "channel4_deck_4_slot_select",
+      "label": "DECK 4 SLOT SELECT",
+      "kind": "button",
+      "x": 41.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_slot_select",
+        "type": "note",
+        "ch": 8,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_slot_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_auto_loop",
+      "fig": "channel4_deck_4_auto_loop",
+      "label": "DECK 4 AUTO LOOP",
+      "kind": "button",
+      "x": 48.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_auto_loop",
+        "type": "note",
+        "ch": 8,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_auto_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_touch_4",
+      "fig": "wheel_touch_4",
+      "label": "DECK 4 JOG WHEEL TOUCH",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 140.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-wheel_turn_4",
+      "fig": "wheel_turn_4",
+      "label": "DECK 4 JOG WHEEL TURN",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 140.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_vinyl_mode",
+      "fig": "channel4_deck_4_vinyl_mode",
+      "label": "DECK 4 VINYL MODE",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 140.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_vinyl_mode",
+        "type": "note",
+        "ch": 4,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_vinyl_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_slip_mode",
+      "fig": "channel4_deck_4_slip_mode",
+      "label": "DECK 4 SLIP MODE",
+      "kind": "button",
+      "x": 80.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_slip_mode",
+        "type": "note",
+        "ch": 4,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_slip_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_20",
+      "fig": "input_msb_20",
+      "label": "DECK 4 TRIM (MSB)",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 140.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_20",
+        "type": "cc",
+        "ch": 4,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[input_msb_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_20",
+      "fig": "input_lsb_20",
+      "label": "DECK 4 TRIM (LSB)",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 147.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_20",
+        "type": "cc",
+        "ch": 4,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_21",
+      "fig": "input_msb_21",
+      "label": "DECK 4 EQ HI (MSB)",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_21",
+        "type": "cc",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[input_msb_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_21",
+      "fig": "input_lsb_21",
+      "label": "DECK 4 EQ HI (LSB)",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_21",
+        "type": "cc",
+        "ch": 4,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_22",
+      "fig": "input_msb_22",
+      "label": "DECK 4 EQ MID (MSB)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_22",
+        "type": "cc",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[input_msb_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_22",
+      "fig": "input_lsb_22",
+      "label": "DECK 4 EQ MID (LSB)",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_22",
+        "type": "cc",
+        "ch": 4,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_23",
+      "fig": "input_msb_23",
+      "label": "DECK 4 EQ LOW (MSB)",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_23",
+        "type": "cc",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[input_msb_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_23",
+      "fig": "input_lsb_23",
+      "label": "DECK 4 EQ LOW (LSB)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_23",
+        "type": "cc",
+        "ch": 4,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-quick_effect_rack1_channel4_deck_4_filter",
+      "fig": "quick_effect_rack1_channel4_deck_4_filter",
+      "label": "DECK 4 FILTER",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quick_effect_rack1_channel4_deck_4_filter",
+        "type": "cc",
+        "ch": 4,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[quick_effect_rack1_channel4_deck_4_filter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_cue_pfl",
+      "fig": "channel4_deck_4_cue_pfl",
+      "label": "DECK 4 CUE/PFL",
+      "kind": "button",
+      "x": 64.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_cue_pfl",
+        "type": "note",
+        "ch": 4,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_cue_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_13",
+      "fig": "param_button_pressed_13",
+      "label": "DECK 4 PARAMETER 1 MINUS",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_13",
+        "type": "note",
+        "ch": 8,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_14",
+      "fig": "param_button_pressed_14",
+      "label": "DECK 4 PARAMETER 1 PLUS",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_14",
+        "type": "note",
+        "ch": 8,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_15",
+      "fig": "param_button_pressed_15",
+      "label": "DECK 4 PARAMETER 2 MINUS",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_15",
+        "type": "note",
+        "ch": 8,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-param_button_pressed_16",
+      "fig": "param_button_pressed_16",
+      "label": "DECK 4 PARAMETER 2 PLUS",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 153.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "param_button_pressed_16",
+        "type": "note",
+        "ch": 8,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[param_button_pressed_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_tap",
+      "fig": "channel4_deck_4_tap",
+      "label": "DECK 4 TAP",
+      "kind": "button",
+      "x": 9.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_tap",
+        "type": "note",
+        "ch": 4,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_24",
+      "fig": "input_msb_24",
+      "label": "DECK 4 VOLUME (MSB)",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_24",
+        "type": "cc",
+        "ch": 4,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[input_msb_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_24",
+      "fig": "input_lsb_24",
+      "label": "DECK 4 VOLUME (LSB)",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_24",
+        "type": "cc",
+        "ch": 4,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_3_enable",
+      "fig": "channel1_deck_3_enable",
+      "label": "DECK 3 ENABLE",
+      "kind": "button",
+      "x": 33.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_3_enable",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_3_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_enable",
+      "fig": "channel4_deck_4_enable",
+      "label": "DECK 4 ENABLE",
+      "kind": "button",
+      "x": 41.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_enable",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_on_1",
+      "fig": "master_fx_1_on_1",
+      "label": "FX 1 ON 1",
+      "kind": "button",
+      "x": 48.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_on_1",
+        "type": "note",
+        "ch": 9,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_on_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_on_2",
+      "fig": "master_fx_1_on_2",
+      "label": "FX 1 ON 2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_on_2",
+        "type": "note",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_on_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_on_3",
+      "fig": "master_fx_1_on_3",
+      "label": "FX 1 ON 3",
+      "kind": "button",
+      "x": 64.4,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_on_3",
+        "type": "note",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_on_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_tap",
+      "fig": "master_fx_1_tap",
+      "label": "FX 1 TAP",
+      "kind": "button",
+      "x": 72.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_tap",
+        "type": "note",
+        "ch": 9,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_fx_select_1",
+      "fig": "master_fx_1_fx_select_1",
+      "label": "FX 1 FX SELECT 1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_fx_select_1",
+        "type": "note",
+        "ch": 9,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_fx_select_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_fx_select_2",
+      "fig": "master_fx_1_fx_select_2",
+      "label": "FX 1 FX SELECT 2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_fx_select_2",
+        "type": "note",
+        "ch": 9,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_fx_select_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_fx_select_3",
+      "fig": "master_fx_1_fx_select_3",
+      "label": "FX 1 FX SELECT 3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_fx_select_3",
+        "type": "note",
+        "ch": 9,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_fx_select_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_fx_mode",
+      "fig": "master_fx_1_fx_mode",
+      "label": "FX 1 FX MODE",
+      "kind": "button",
+      "x": 9.8,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_fx_mode",
+        "type": "note",
+        "ch": 9,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_fx_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_knob_1",
+      "fig": "master_fx_1_knob_1",
+      "label": "FX 1 KNOB 1",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_knob_1",
+        "type": "cc",
+        "ch": 9,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_knob_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_knob_2",
+      "fig": "master_fx_1_knob_2",
+      "label": "FX 1 KNOB 2",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_knob_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_knob_3",
+      "fig": "master_fx_1_knob_3",
+      "label": "FX 1 KNOB 3",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_knob_3",
+        "type": "cc",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_knob_1_shifted",
+      "fig": "master_fx_1_knob_1_shifted",
+      "label": "FX 1 KNOB 1 (shifted)",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_knob_1_shifted",
+        "type": "cc",
+        "ch": 9,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_knob_1_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_knob_2_shifted",
+      "fig": "master_fx_1_knob_2_shifted",
+      "label": "FX 1 KNOB 2 (shifted)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_knob_2_shifted",
+        "type": "cc",
+        "ch": 9,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_knob_2_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_knob_3_shifted",
+      "fig": "master_fx_1_knob_3_shifted",
+      "label": "FX 1 KNOB 3 (shifted)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_knob_3_shifted",
+        "type": "cc",
+        "ch": 9,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_knob_3_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_beats_knob",
+      "fig": "master_fx_1_beats_knob",
+      "label": "FX 1 BEATS KNOB",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_beats_knob",
+        "type": "cc",
+        "ch": 9,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_beats_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_beats_knob_press",
+      "fig": "master_fx_1_beats_knob_press",
+      "label": "FX 1 BEATS KNOB PRESS",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_beats_knob_press",
+        "type": "note",
+        "ch": 9,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_beats_knob_press] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_ch_assign_1",
+      "fig": "master_fx_1_ch_assign_1",
+      "label": "FX 1 CH ASSIGN 1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_ch_assign_1",
+        "type": "note",
+        "ch": 9,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_ch_assign_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_ch_assign_2",
+      "fig": "master_fx_1_ch_assign_2",
+      "label": "FX 1 CH ASSIGN 2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_ch_assign_2",
+        "type": "note",
+        "ch": 9,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_ch_assign_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_ch_assign_3",
+      "fig": "master_fx_1_ch_assign_3",
+      "label": "FX 1 CH ASSIGN 3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_ch_assign_3",
+        "type": "note",
+        "ch": 9,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_ch_assign_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_1_ch_assign_4",
+      "fig": "master_fx_1_ch_assign_4",
+      "label": "FX 1 CH ASSIGN 4",
+      "kind": "button",
+      "x": 9.8,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_1_ch_assign_4",
+        "type": "note",
+        "ch": 9,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[master_fx_1_ch_assign_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_ch_assign_tr_sampler",
+      "fig": "master_fx_2_ch_assign_tr_sampler",
+      "label": "FX 2 CH ASSIGN TR/SAMPLER",
+      "kind": "button",
+      "x": 17.6,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_ch_assign_tr_sampler",
+        "type": "note",
+        "ch": 9,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_ch_assign_tr_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_on_1",
+      "fig": "master_fx_2_on_1",
+      "label": "FX 2 ON 1",
+      "kind": "button",
+      "x": 25.4,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_on_1",
+        "type": "note",
+        "ch": 10,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_on_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_on_2",
+      "fig": "master_fx_2_on_2",
+      "label": "FX 2 ON 2",
+      "kind": "button",
+      "x": 33.2,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_on_2",
+        "type": "note",
+        "ch": 10,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_on_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_on_3",
+      "fig": "master_fx_2_on_3",
+      "label": "FX 2 ON 3",
+      "kind": "button",
+      "x": 41.0,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_on_3",
+        "type": "note",
+        "ch": 10,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_on_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_tap",
+      "fig": "master_fx_2_tap",
+      "label": "FX 2 TAP",
+      "kind": "button",
+      "x": 48.8,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_tap",
+        "type": "note",
+        "ch": 10,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_fx_select_1",
+      "fig": "master_fx_2_fx_select_1",
+      "label": "FX 2 FX SELECT 1",
+      "kind": "button",
+      "x": 56.6,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_fx_select_1",
+        "type": "note",
+        "ch": 10,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_fx_select_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_fx_select_2",
+      "fig": "master_fx_2_fx_select_2",
+      "label": "FX 2 FX SELECT 2",
+      "kind": "button",
+      "x": 64.4,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_fx_select_2",
+        "type": "note",
+        "ch": 10,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_fx_select_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_fx_select_3",
+      "fig": "master_fx_2_fx_select_3",
+      "label": "FX 2 FX SELECT 3",
+      "kind": "button",
+      "x": 72.2,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_fx_select_3",
+        "type": "note",
+        "ch": 10,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_fx_select_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_fx_mode",
+      "fig": "master_fx_2_fx_mode",
+      "label": "FX 2 FX MODE",
+      "kind": "button",
+      "x": 80.0,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_fx_mode",
+        "type": "note",
+        "ch": 10,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_fx_mode] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_knob_1",
+      "fig": "master_fx_2_knob_1",
+      "label": "FX 2 KNOB 1",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_knob_1",
+        "type": "cc",
+        "ch": 10,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_knob_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_knob_2",
+      "fig": "master_fx_2_knob_2",
+      "label": "FX 2 KNOB 2",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_knob_2",
+        "type": "cc",
+        "ch": 10,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_knob_3",
+      "fig": "master_fx_2_knob_3",
+      "label": "FX 2 KNOB 3",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_knob_3",
+        "type": "cc",
+        "ch": 10,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_knob_1_shifted",
+      "fig": "master_fx_2_knob_1_shifted",
+      "label": "FX 2 KNOB 1 (shifted)",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_knob_1_shifted",
+        "type": "cc",
+        "ch": 10,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_knob_1_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_knob_2_shifted",
+      "fig": "master_fx_2_knob_2_shifted",
+      "label": "FX 2 KNOB 2 (shifted)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_knob_2_shifted",
+        "type": "cc",
+        "ch": 10,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_knob_2_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_knob_3_shifted",
+      "fig": "master_fx_2_knob_3_shifted",
+      "label": "FX 2 KNOB 3 (shifted)",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_knob_3_shifted",
+        "type": "cc",
+        "ch": 10,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_knob_3_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_beats_knob",
+      "fig": "master_fx_2_beats_knob",
+      "label": "FX 2 BEATS KNOB",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_beats_knob",
+        "type": "cc",
+        "ch": 10,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_beats_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_beats_knob_press",
+      "fig": "master_fx_2_beats_knob_press",
+      "label": "FX 2 BEATS KNOB PRESS",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_beats_knob_press",
+        "type": "note",
+        "ch": 10,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_beats_knob_press] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_ch_assign_1",
+      "fig": "master_fx_2_ch_assign_1",
+      "label": "FX 2 CH ASSIGN 1",
+      "kind": "button",
+      "x": 56.6,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_ch_assign_1",
+        "type": "note",
+        "ch": 10,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_ch_assign_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_ch_assign_2",
+      "fig": "master_fx_2_ch_assign_2",
+      "label": "FX 2 CH ASSIGN 2",
+      "kind": "button",
+      "x": 64.4,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_ch_assign_2",
+        "type": "note",
+        "ch": 10,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_ch_assign_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_ch_assign_3",
+      "fig": "master_fx_2_ch_assign_3",
+      "label": "FX 2 CH ASSIGN 3",
+      "kind": "button",
+      "x": 72.2,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_ch_assign_3",
+        "type": "note",
+        "ch": 10,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_ch_assign_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_ch_assign_4",
+      "fig": "master_fx_2_ch_assign_4",
+      "label": "FX 2 CH ASSIGN 4",
+      "kind": "button",
+      "x": 80.0,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_ch_assign_4",
+        "type": "note",
+        "ch": 10,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_ch_assign_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_fx_2_ch_assign_tr_sampler_2",
+      "fig": "master_fx_2_ch_assign_tr_sampler_2",
+      "label": "FX 2 CH ASSIGN TR/SAMPLER",
+      "kind": "button",
+      "x": 87.8,
+      "y": 173.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_fx_2_ch_assign_tr_sampler_2",
+        "type": "note",
+        "ch": 10,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[master_fx_2_ch_assign_tr_sampler_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-shift_button",
+      "fig": "shift_button",
+      "label": "SHIFT",
+      "kind": "button",
+      "x": 2.0,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "shift_button",
+        "type": "note",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[shift_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel1_deck_1_load",
+      "fig": "channel1_deck_1_load",
+      "label": "DECK 1 LOAD",
+      "kind": "button",
+      "x": 9.8,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_deck_1_load",
+        "type": "note",
+        "ch": 16,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_deck_1_load] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel3_deck_3_load",
+      "fig": "channel3_deck_3_load",
+      "label": "DECK 3 LOAD",
+      "kind": "button",
+      "x": 17.6,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_deck_3_load",
+        "type": "note",
+        "ch": 16,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel3_deck_3_load] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel2_deck_2_load",
+      "fig": "channel2_deck_2_load",
+      "label": "DECK 2 LOAD",
+      "kind": "button",
+      "x": 25.4,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_deck_2_load",
+        "type": "note",
+        "ch": 16,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_deck_2_load] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-channel4_deck_4_load",
+      "fig": "channel4_deck_4_load",
+      "label": "DECK 4 LOAD",
+      "kind": "button",
+      "x": 33.2,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_deck_4_load",
+        "type": "note",
+        "ch": 16,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel4_deck_4_load] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-sort_library",
+      "fig": "sort_library",
+      "label": "BPM",
+      "kind": "button",
+      "x": 41.0,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library",
+        "type": "note",
+        "ch": 16,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[sort_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-sort_library_2",
+      "fig": "sort_library_2",
+      "label": "KEY",
+      "kind": "button",
+      "x": 48.8,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library_2",
+        "type": "note",
+        "ch": 16,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[sort_library_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-library_browser_knob",
+      "fig": "library_browser_knob",
+      "label": "BROWSER KNOB",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_browser_knob",
+        "type": "cc",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[library_browser_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-library_browser_knob_shifted",
+      "fig": "library_browser_knob_shifted",
+      "label": "BROWSER KNOB (shifted)",
+      "kind": "encoder",
+      "x": 64.4,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_browser_knob_shifted",
+        "type": "cc",
+        "ch": 16,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[library_browser_knob_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-library_browser_knob_press",
+      "fig": "library_browser_knob_press",
+      "label": "BROWSER KNOB PRESS",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_browser_knob_press",
+        "type": "note",
+        "ch": 16,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[library_browser_knob_press] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-library_back",
+      "fig": "library_back",
+      "label": "BACK",
+      "kind": "button",
+      "x": 80.0,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_back",
+        "type": "note",
+        "ch": 16,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[library_back] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-sort_library_3",
+      "fig": "sort_library_3",
+      "label": "SONG",
+      "kind": "button",
+      "x": 87.8,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library_3",
+        "type": "note",
+        "ch": 16,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[sort_library_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-library_add_prepare",
+      "fig": "library_add_prepare",
+      "label": "ADD PREPARE",
+      "kind": "button",
+      "x": 2.0,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_add_prepare",
+        "type": "note",
+        "ch": 16,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[library_add_prepare] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-sort_library_4",
+      "fig": "sort_library_4",
+      "label": "ARTIST",
+      "kind": "button",
+      "x": 9.8,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library_4",
+        "type": "note",
+        "ch": 16,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[sort_library_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_msb_25",
+      "fig": "input_msb_25",
+      "label": "CROSS FADER (MSB)",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 186.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "input_msb_25",
+        "type": "cc",
+        "ch": 16,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_msb_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-input_lsb_25",
+      "fig": "input_lsb_25",
+      "label": "CROSS FADER (LSB)",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 186.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "input_lsb_25",
+        "type": "cc",
+        "ch": 16,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_tr_sampler_level",
+      "fig": "master_tr_sampler_level",
+      "label": "TR/SAMPLER LEVEL",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_tr_sampler_level",
+        "type": "cc",
+        "ch": 16,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[master_tr_sampler_level] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-master_tr_sampler_cue_pfl",
+      "fig": "master_tr_sampler_cue_pfl",
+      "label": "TR/SAMPLER CUE/PFL",
+      "kind": "button",
+      "x": 41.0,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_tr_sampler_cue_pfl",
+        "type": "note",
+        "ch": 16,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[master_tr_sampler_cue_pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-set_curve",
+      "fig": "set_curve",
+      "label": "CROSS FADER CURVE",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 186.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "set_curve",
+        "type": "cc",
+        "ch": 16,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[set_curve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-set_reverse",
+      "fig": "set_reverse",
+      "label": "CROSS FADER REVERSE ON/OFF",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 186.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "set_reverse",
+        "type": "note",
+        "ch": 16,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[set_reverse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-set_channel_input",
+      "fig": "set_channel_input",
+      "label": "CH 1 PC/LINE/PHONO",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "set_channel_input",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[set_channel_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-set_channel_input_2",
+      "fig": "set_channel_input_2",
+      "label": "CH 2 PC/LINE/PHONO",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "set_channel_input_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[set_channel_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-sync_button_pressed",
+      "fig": "sync_button_pressed",
+      "label": "TR-S SYNC",
+      "kind": "button",
+      "x": 80.0,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "sync_button_pressed",
+        "type": "note",
+        "ch": 16,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[sync_button_pressed] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-sync_button_pressed_2",
+      "fig": "sync_button_pressed_2",
+      "label": "TR-S SYNC OFF",
+      "kind": "button",
+      "x": 87.8,
+      "y": 186.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "sync_button_pressed_2",
+        "type": "note",
+        "ch": 16,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[sync_button_pressed_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback",
+      "fig": "custom_sample_playback",
+      "label": "SERATO SAMPLER S1 PLAYBACK",
+      "kind": "button",
+      "x": 2.0,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback",
+        "type": "note",
+        "ch": 16,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_2",
+      "fig": "custom_sample_playback_2",
+      "label": "SERATO SAMPLER S2 PLAYBACK",
+      "kind": "button",
+      "x": 9.8,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_2",
+        "type": "note",
+        "ch": 16,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_3",
+      "fig": "custom_sample_playback_3",
+      "label": "SERATO SAMPLER S3 PLAYBACK",
+      "kind": "button",
+      "x": 17.6,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_3",
+        "type": "note",
+        "ch": 16,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_4",
+      "fig": "custom_sample_playback_4",
+      "label": "SERATO SAMPLER S4 PLAYBACK",
+      "kind": "button",
+      "x": 25.4,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_4",
+        "type": "note",
+        "ch": 16,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_5",
+      "fig": "custom_sample_playback_5",
+      "label": "SERATO SAMPLER S5 PLAYBACK",
+      "kind": "button",
+      "x": 33.2,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_5",
+        "type": "note",
+        "ch": 16,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_6",
+      "fig": "custom_sample_playback_6",
+      "label": "SERATO SAMPLER S6 PLAYBACK",
+      "kind": "button",
+      "x": 41.0,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_6",
+        "type": "note",
+        "ch": 16,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_7",
+      "fig": "custom_sample_playback_7",
+      "label": "SERATO SAMPLER S7 PLAYBACK",
+      "kind": "button",
+      "x": 48.8,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_7",
+        "type": "note",
+        "ch": 16,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "roland-dj-505-custom_sample_playback_8",
+      "fig": "custom_sample_playback_8",
+      "label": "SERATO SAMPLER S8 PLAYBACK",
+      "kind": "button",
+      "x": 56.6,
+      "y": 192.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "custom_sample_playback_8",
+        "type": "note",
+        "ch": 16,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[custom_sample_playback_8] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

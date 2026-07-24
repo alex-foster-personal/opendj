@@ -1,0 +1,242 @@
+{
+  "source": "mixxx:Hercules DJ Console Mac Edition.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-dj-console-mac-edition/source/Hercules DJ Console Mac Edition.midi.xml",
+  "device": "Hercules DJ Console Mac Edition",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 39,
+      "notes": "Mixxx filterHigh [filter_high]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx filterMid [filter_mid]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx filterLow [filter_low]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "jog",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx jog [jog]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "prev_track",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx PrevTrack [prev_track]"
+    },
+    {
+      "name": "next_track",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx NextTrack [next_track]"
+    },
+    {
+      "name": "beatsync",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx beatsync [beatsync]"
+    },
+    {
+      "name": "rate_temp_up_small",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx rate_temp_up_small [rate_temp_up_small]"
+    },
+    {
+      "name": "rate_temp_down_small",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx rate_temp_down_small [rate_temp_down_small]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx filterHigh [filter_high_2]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx filterMid [filter_mid_2]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx filterLow [filter_low_2]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "jog_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 46,
+      "notes": "Mixxx jog [jog_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "prev_track_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx PrevTrack [prev_track_2]"
+    },
+    {
+      "name": "next_track_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx NextTrack [next_track_2]"
+    },
+    {
+      "name": "beatsync_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx beatsync [beatsync_2]"
+    },
+    {
+      "name": "rate_temp_up",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx rate_temp_up [rate_temp_up]"
+    },
+    {
+      "name": "rate_temp_down",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx rate_temp_down [rate_temp_down]"
+    }
+  ]
+}

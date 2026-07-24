@@ -1,0 +1,1500 @@
+{
+  "device": "Numark Mixstream Pro",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "numark-mixstream-pro-gain",
+      "fig": "gain",
+      "label": "Master Volume",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-booth_gain",
+      "fig": "booth_gain",
+      "label": "Booth Volume",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "booth_gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[booth_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-head_mix",
+      "fig": "head_mix",
+      "label": "Head Mix",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 16,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-head_gain",
+      "fig": "head_gain",
+      "label": "Head Mix Volume",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[head_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-effect_button",
+      "fig": "effect_button",
+      "label": "Effectbutton 1",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "effect_button",
+        "type": "note",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[effect_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-effect_button_2",
+      "fig": "effect_button_2",
+      "label": "Effectbutton 2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "effect_button_2",
+        "type": "note",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[effect_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-effect_button_3",
+      "fig": "effect_button_3",
+      "label": "Effectbutton 3",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "effect_button_3",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-effect_button_4",
+      "fig": "effect_button_4",
+      "label": "Effectbutton 4",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "effect_button_4",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[effect_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pregain",
+      "fig": "pregain",
+      "label": "Auxiliary 1 Volume - LSB",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-play_aux1",
+      "fig": "play_aux1",
+      "label": "Auxiliary 1 Play Button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "play_aux1",
+        "type": "note",
+        "ch": 16,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[play_aux1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pregain_2",
+      "fig": "pregain_2",
+      "label": "Auxiliary 1 Volume - MSB",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 16,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-parameter3",
+      "fig": "parameter3",
+      "label": "EqualizerRack1 Deck1 Effect1 Param3",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-parameter3_2",
+      "fig": "parameter3_2",
+      "label": "EqualizerRack1 Deck2 Effect1 Param3",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-parameter2",
+      "fig": "parameter2",
+      "label": "EqualizerRack1 Deck1 Effect1 Param2",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-parameter2_2",
+      "fig": "parameter2_2",
+      "label": "EqualizerRack1 Deck2 Effect1 Param2",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-parameter1",
+      "fig": "parameter1",
+      "label": "EqualizerRack1 Deck1 Effect1 Param1",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-parameter1_2",
+      "fig": "parameter1_2",
+      "label": "EqualizerRack1 Deck2 Effect1 Param1",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-load_track",
+      "fig": "load_track",
+      "label": "Deck1 Load Selected Track",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_track",
+        "type": "note",
+        "ch": 16,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[load_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-load_track_2",
+      "fig": "load_track_2",
+      "label": "Deck2 Load Selected Track",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_track_2",
+        "type": "note",
+        "ch": 16,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[load_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pregain_3",
+      "fig": "pregain_3",
+      "label": "Deck1 Volume",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pregain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pregain_4",
+      "fig": "pregain_4",
+      "label": "Deck2 Volume",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pregain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-effect_toggle_switch",
+      "fig": "effect_toggle_switch",
+      "label": "Deck1 Effect Toggle Switch",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "effect_toggle_switch",
+        "type": "note",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[effect_toggle_switch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-effect_toggle_switch_2",
+      "fig": "effect_toggle_switch_2",
+      "label": "Deck2 Effect Toggle Switch",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "effect_toggle_switch_2",
+        "type": "note",
+        "ch": 6,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[effect_toggle_switch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-move_vertical",
+      "fig": "move_vertical",
+      "label": "Library Browse",
+      "kind": "encoder",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_vertical",
+        "type": "cc",
+        "ch": 16,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[move_vertical] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-go_to_item",
+      "fig": "go_to_item",
+      "label": "Library GoToItem",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "go_to_item",
+        "type": "note",
+        "ch": 16,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[go_to_item] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-sync_enabled",
+      "fig": "sync_enabled",
+      "label": "Deck1 Sync Enabled",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-sync_enabled_2",
+      "fig": "sync_enabled_2",
+      "label": "Deck2 Sync Enabled",
+      "kind": "button",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_2",
+        "type": "note",
+        "ch": 4,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-cue",
+      "fig": "cue",
+      "label": "Deck1 Cue Button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-cue_2",
+      "fig": "cue_2",
+      "label": "Deck2 Cue Button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_2",
+        "type": "note",
+        "ch": 4,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[cue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-play",
+      "fig": "play",
+      "label": "Deck1 Play/Pause Button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 3,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-play_2",
+      "fig": "play_2",
+      "label": "Deck2 Play/Pause Button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 4,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_hot_cue_or_stems",
+      "fig": "toggle_hot_cue_or_stems",
+      "label": "Deck1 Hotcue Toggle Button",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_hot_cue_or_stems",
+        "type": "note",
+        "ch": 3,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[toggle_hot_cue_or_stems] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_hot_cue_or_stems_2",
+      "fig": "toggle_hot_cue_or_stems_2",
+      "label": "Deck2 Hotcue Toggle Button",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_hot_cue_or_stems_2",
+        "type": "note",
+        "ch": 4,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[toggle_hot_cue_or_stems_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-super1",
+      "fig": "super1",
+      "label": "Deck1 Super FX Filter Button",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[super1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-super1_2",
+      "fig": "super1_2",
+      "label": "Deck2 Super FX Filter Button",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[super1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_saved_loop",
+      "fig": "toggle_saved_loop",
+      "label": "Deck1 Saved Loop Toggle",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_saved_loop",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[toggle_saved_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_saved_loop_2",
+      "fig": "toggle_saved_loop_2",
+      "label": "Deck2 Saved Loop Toggle",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_saved_loop_2",
+        "type": "note",
+        "ch": 4,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[toggle_saved_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pfl",
+      "fig": "pfl",
+      "label": "Deck1 Pre-Fader Listen",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pfl_2",
+      "fig": "pfl_2",
+      "label": "Deck2 Pre-Fader Listen",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_roll_or_sampler",
+      "fig": "toggle_roll_or_sampler",
+      "label": "Deck1 Roll Toggle Button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_roll_or_sampler",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[toggle_roll_or_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_roll_or_sampler_2",
+      "fig": "toggle_roll_or_sampler_2",
+      "label": "Deck2 Roll Toggle Button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_roll_or_sampler_2",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[toggle_roll_or_sampler_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_autoloop",
+      "fig": "toggle_autoloop",
+      "label": "Deck1 Autoloop Toggle Button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_autoloop",
+        "type": "note",
+        "ch": 3,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[toggle_autoloop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_autoloop_2",
+      "fig": "toggle_autoloop_2",
+      "label": "Deck2 Autoloop Toggle Button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_autoloop_2",
+        "type": "note",
+        "ch": 4,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[toggle_autoloop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-volume",
+      "fig": "volume",
+      "label": "Deck1 Volume",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-volume_2",
+      "fig": "volume_2",
+      "label": "Deck2 Volume",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-crossfader",
+      "fig": "crossfader",
+      "label": "Cross Fader",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 16,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad",
+      "fig": "performance_pad",
+      "label": "Deck1 Pad1 Script",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad",
+        "type": "note",
+        "ch": 3,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[performance_pad] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_2",
+      "fig": "performance_pad_2",
+      "label": "Deck2 Pad1 Script",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_2",
+        "type": "note",
+        "ch": 4,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_3",
+      "fig": "performance_pad_3",
+      "label": "Deck1 Pad2 Script",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_3",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_4",
+      "fig": "performance_pad_4",
+      "label": "Deck2 Pad2 Script",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_4",
+        "type": "note",
+        "ch": 4,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-show_maximized_library",
+      "fig": "show_maximized_library",
+      "label": "View",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "show_maximized_library",
+        "type": "note",
+        "ch": 16,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[show_maximized_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-move_focus_forward",
+      "fig": "move_focus_forward",
+      "label": "Back",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_focus_forward",
+        "type": "note",
+        "ch": 16,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[move_focus_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_5",
+      "fig": "performance_pad_5",
+      "label": "Deck1 Pad3 Script",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_5",
+        "type": "note",
+        "ch": 3,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_6",
+      "fig": "performance_pad_6",
+      "label": "Deck2 Pad3 Script",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_6",
+        "type": "note",
+        "ch": 4,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_7",
+      "fig": "performance_pad_7",
+      "label": "Deck1 Pad4 Script",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_7",
+        "type": "note",
+        "ch": 3,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-performance_pad_8",
+      "fig": "performance_pad_8",
+      "label": "Deck2 Pad4 Script",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "performance_pad_8",
+        "type": "note",
+        "ch": 4,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[performance_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-shift_button",
+      "fig": "shift_button",
+      "label": "Deck1 shift Button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button",
+        "type": "note",
+        "ch": 3,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[shift_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-shift_button_2",
+      "fig": "shift_button_2",
+      "label": "Deck2 shift Button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_2",
+        "type": "note",
+        "ch": 4,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[shift_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pitch_bend",
+      "fig": "pitch_bend",
+      "label": "Deck1 Pitch Bend Down",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend",
+        "type": "note",
+        "ch": 3,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pitch_bend_2",
+      "fig": "pitch_bend_2",
+      "label": "Deck2 Pitch Bend Down",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend_2",
+        "type": "note",
+        "ch": 4,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pitch_bend_3",
+      "fig": "pitch_bend_3",
+      "label": "Deck1 Pitch Bend Up",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend_3",
+        "type": "note",
+        "ch": 3,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-pitch_bend_4",
+      "fig": "pitch_bend_4",
+      "label": "Deck2 Pitch Bend Up",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend_4",
+        "type": "note",
+        "ch": 4,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-input_msb",
+      "fig": "input_msb",
+      "label": "Deck1 Pitch Slider (Coarse)",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb",
+        "type": "cc",
+        "ch": 3,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[input_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-input_msb_2",
+      "fig": "input_msb_2",
+      "label": "Deck2 Pitch Slide (Coarse)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[input_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-input_lsb",
+      "fig": "input_lsb",
+      "label": "Deck1 Pitch Slider (Fine)",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb",
+        "type": "cc",
+        "ch": 3,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[input_lsb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-input_lsb_2",
+      "fig": "input_lsb_2",
+      "label": "Deck2 Slider (Fine)",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "Deck1 Wheel Touch",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 3,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "Deck2 Wheel Touch",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 4,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_scratch",
+      "fig": "toggle_scratch",
+      "label": "Deck1 Slip Enabled Toggle",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_scratch",
+        "type": "note",
+        "ch": 3,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[toggle_scratch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-toggle_scratch_2",
+      "fig": "toggle_scratch_2",
+      "label": "Deck2 Slip Enabled Toggle",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_scratch_2",
+        "type": "note",
+        "ch": 4,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[toggle_scratch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-jog_msb",
+      "fig": "jog_msb",
+      "label": "Deck1 JogWheel MSB",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_msb",
+        "type": "cc",
+        "ch": 3,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[jog_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-jog_msb_2",
+      "fig": "jog_msb_2",
+      "label": "Deck2 JogWheel MSB",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_msb_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[jog_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-jog_lsb",
+      "fig": "jog_lsb",
+      "label": "Deck1 JogWheel LSB",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_lsb",
+        "type": "cc",
+        "ch": 3,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[jog_lsb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-mixstream-pro-jog_lsb_2",
+      "fig": "jog_lsb_2",
+      "label": "Deck2 JogWheel LSB",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_lsb_2",
+        "type": "cc",
+        "ch": 4,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[jog_lsb_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

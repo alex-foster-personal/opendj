@@ -1,0 +1,600 @@
+{
+  "device": "Ion Discover DJ",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "ion-discover-dj-show_maximized_library",
+      "fig": "show_maximized_library",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "show_maximized_library",
+        "type": "note",
+        "ch": 1,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[show_maximized_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-filter_low",
+      "fig": "filter_low",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[filter_low] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-toggle_scratch_mode_on",
+      "fig": "toggle_scratch_mode_on",
+      "label": "toggle_scratch_mode_on",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "toggle_scratch_mode_on",
+        "type": "note",
+        "ch": 1,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[toggle_scratch_mode_on] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-reverse",
+      "fig": "reverse",
+      "label": "MIDI Learned from 6 messages.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse",
+        "type": "note",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[reverse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-filter_mid",
+      "fig": "filter_mid",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[filter_mid] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-cue_default",
+      "fig": "cue_default",
+      "label": "MIDI Learned from 4 messages.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-jog_touch",
+      "fig": "jog_touch",
+      "label": "jog_touch",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[jog_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-rate_perm_down",
+      "fig": "rate_perm_down",
+      "label": "MIDI Learned from 6 messages.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_down",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_down] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-jog_wheel",
+      "fig": "jog_wheel",
+      "label": "jog_wheel",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-reverse_2",
+      "fig": "reverse_2",
+      "label": "MIDI Learned from 8 messages.",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_2",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[reverse_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-jog_touch_2",
+      "fig": "jog_touch_2",
+      "label": "jog_touch",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_touch_2",
+        "type": "note",
+        "ch": 1,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[jog_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-filter_low_2",
+      "fig": "filter_low_2",
+      "label": "filterLow",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_low_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[filter_low_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-sync_enabled",
+      "fig": "sync_enabled",
+      "label": "MIDI Learned from 10 messages.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-jog_wheel_2",
+      "fig": "jog_wheel_2",
+      "label": "jog_wheel",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-rate_perm_up",
+      "fig": "rate_perm_up",
+      "label": "MIDI Learned from 8 messages.",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_up",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_up] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-sync_enabled_2",
+      "fig": "sync_enabled_2",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_2",
+        "type": "note",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-volume",
+      "fig": "volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-rate_perm_down_2",
+      "fig": "rate_perm_down_2",
+      "label": "MIDI Learned from 10 messages.",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_down_2",
+        "type": "note",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_down_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-filter_high",
+      "fig": "filter_high",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[filter_high] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 1,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-load_selected_track_ch1",
+      "fig": "load_selected_track_ch1",
+      "label": "LoadSelectedTrackCh1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_ch1",
+        "type": "note",
+        "ch": 1,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_ch1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-rate_perm_up_2",
+      "fig": "rate_perm_up_2",
+      "label": "MIDI Learned from 4 messages.",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_perm_up_2",
+        "type": "note",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[rate_perm_up_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-filter_high_2",
+      "fig": "filter_high_2",
+      "label": "filterHigh",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_high_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[filter_high_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-load_selected_track_ch2",
+      "fig": "load_selected_track_ch2",
+      "label": "LoadSelectedTrackCh2",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_ch2",
+        "type": "note",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_ch2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-filter_mid_2",
+      "fig": "filter_mid_2",
+      "label": "filterMid",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "filter_mid_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[filter_mid_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "ion-discover-dj-select_track_knob",
+      "fig": "select_track_knob",
+      "label": "SelectTrackKnob",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[select_track_knob] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

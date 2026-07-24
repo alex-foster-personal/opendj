@@ -1,0 +1,1320 @@
+{
+  "device": "DDJ-REV5",
+  "vendor": "AlphaTheta",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1118,
+    "height": 615
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "hid_screens",
+    "refine_shift_twins_pending"
+  ],
+  "controls": [
+    {
+      "id": "ddj-rev5-b1",
+      "fig": "B1",
+      "label": "B1",
+      "kind": "encoder",
+      "x": 3.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_b1",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[B1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-b2",
+      "fig": "B2",
+      "label": "B2",
+      "kind": "encoder",
+      "x": 12.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_b2",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[B2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-b3",
+      "fig": "B3",
+      "label": "B3",
+      "kind": "encoder",
+      "x": 22.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_b3",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[B3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-b4",
+      "fig": "B4",
+      "label": "B4",
+      "kind": "encoder",
+      "x": 31.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_b4",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[B4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-b6",
+      "fig": "B6",
+      "label": "B6",
+      "kind": "encoder",
+      "x": 41.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_b6",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[B6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d1",
+      "fig": "D1",
+      "label": "D1",
+      "kind": "button",
+      "x": 50.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d1",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[D1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d2",
+      "fig": "D2",
+      "label": "D2",
+      "kind": "button",
+      "x": 60.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d2",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[D2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d3",
+      "fig": "D3",
+      "label": "D3",
+      "kind": "button",
+      "x": 69.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d3",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[D3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d4",
+      "fig": "D4",
+      "label": "D4",
+      "kind": "button",
+      "x": 79.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d4",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[D4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d5",
+      "fig": "D5",
+      "label": "D5",
+      "kind": "button",
+      "x": 88.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d5",
+        "type": "note",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[D5] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d6",
+      "fig": "D6",
+      "label": "D6",
+      "kind": "button",
+      "x": 3.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d6",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[D6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d7",
+      "fig": "D7",
+      "label": "D7",
+      "kind": "button",
+      "x": 12.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d7",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[D7] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d8",
+      "fig": "D8",
+      "label": "D8",
+      "kind": "button",
+      "x": 22.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d8",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[D8] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d9",
+      "fig": "D9",
+      "label": "D9",
+      "kind": "button",
+      "x": 31.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d9",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[D9] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d10",
+      "fig": "D10",
+      "label": "D10",
+      "kind": "button",
+      "x": 41.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d10",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[D10] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d11",
+      "fig": "D11",
+      "label": "D11",
+      "kind": "button",
+      "x": 50.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d11",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[D11] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d12",
+      "fig": "D12",
+      "label": "D12",
+      "kind": "button",
+      "x": 60.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d12",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[D12] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d13",
+      "fig": "D13",
+      "label": "D13",
+      "kind": "button",
+      "x": 69.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d13",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[D13] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d14",
+      "fig": "D14",
+      "label": "D14",
+      "kind": "button",
+      "x": 79.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d14",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[D14] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d15",
+      "fig": "D15",
+      "label": "D15",
+      "kind": "button",
+      "x": 88.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d15",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[D15] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d16",
+      "fig": "D16",
+      "label": "D16",
+      "kind": "button",
+      "x": 3.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d16",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[D16] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d17",
+      "fig": "D17",
+      "label": "D17",
+      "kind": "button",
+      "x": 12.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d17",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[D17] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d18",
+      "fig": "D18",
+      "label": "D18",
+      "kind": "button",
+      "x": 22.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d18",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[D18] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d19",
+      "fig": "D19",
+      "label": "D19",
+      "kind": "button",
+      "x": 31.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d19",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[D19] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d20",
+      "fig": "D20",
+      "label": "D20",
+      "kind": "button",
+      "x": 41.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d20",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[D20] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d21",
+      "fig": "D21",
+      "label": "D21",
+      "kind": "button",
+      "x": 50.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d21",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[D21] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d22",
+      "fig": "D22",
+      "label": "D22",
+      "kind": "button",
+      "x": 60.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d22",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[D22] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d23",
+      "fig": "D23",
+      "label": "D23",
+      "kind": "button",
+      "x": 69.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d23",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[D23] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d24",
+      "fig": "D24",
+      "label": "D24",
+      "kind": "button",
+      "x": 79.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d24",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[D24] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d25",
+      "fig": "D25",
+      "label": "D25",
+      "kind": "button",
+      "x": 88.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d25",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[D25] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-d26",
+      "fig": "D26",
+      "label": "D26",
+      "kind": "button",
+      "x": 3.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_d26",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[D26] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-f4",
+      "fig": "F4",
+      "label": "F4",
+      "kind": "button",
+      "x": 12.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_f4",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[F4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-f7",
+      "fig": "F7",
+      "label": "F7",
+      "kind": "button",
+      "x": 22.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_f7",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[F7] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m1",
+      "fig": "M1",
+      "label": "M1",
+      "kind": "button",
+      "x": 31.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m1",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[M1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m2",
+      "fig": "M2",
+      "label": "M2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m2",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[M2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m3",
+      "fig": "M3",
+      "label": "M3",
+      "kind": "button",
+      "x": 50.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m3",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[M3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m4",
+      "fig": "M4",
+      "label": "M4",
+      "kind": "button",
+      "x": 60.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m4",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[M4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m5",
+      "fig": "M5",
+      "label": "M5",
+      "kind": "button",
+      "x": 69.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m5",
+        "type": "note",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[M5] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m6",
+      "fig": "M6",
+      "label": "M6",
+      "kind": "button",
+      "x": 79.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m6",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[M6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m7",
+      "fig": "M7",
+      "label": "M7",
+      "kind": "button",
+      "x": 88.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m7",
+        "type": "note",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[M7] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m8",
+      "fig": "M8",
+      "label": "M8",
+      "kind": "button",
+      "x": 3.0,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m8",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[M8] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m9",
+      "fig": "M9",
+      "label": "M9",
+      "kind": "button",
+      "x": 12.5,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m9",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[M9] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m10",
+      "fig": "M10",
+      "label": "M10",
+      "kind": "button",
+      "x": 22.0,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m10",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[M10] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m11",
+      "fig": "M11",
+      "label": "M11",
+      "kind": "button",
+      "x": 31.5,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m11",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[M11] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m12",
+      "fig": "M12",
+      "label": "M12",
+      "kind": "button",
+      "x": 41.0,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m12",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[M12] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m13",
+      "fig": "M13",
+      "label": "M13",
+      "kind": "button",
+      "x": 50.5,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m13",
+        "type": "note",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[M13] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m14",
+      "fig": "M14",
+      "label": "M14",
+      "kind": "button",
+      "x": 60.0,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m14",
+        "type": "note",
+        "ch": 1,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[M14] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m15",
+      "fig": "M15",
+      "label": "M15",
+      "kind": "button",
+      "x": 69.5,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m15",
+        "type": "note",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[M15] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m16",
+      "fig": "M16",
+      "label": "M16",
+      "kind": "button",
+      "x": 79.0,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m16",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[M16] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m17",
+      "fig": "M17",
+      "label": "M17",
+      "kind": "button",
+      "x": 88.5,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m17",
+        "type": "note",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[M17] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m18",
+      "fig": "M18",
+      "label": "M18",
+      "kind": "button",
+      "x": 3.0,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m18",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[M18] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m19",
+      "fig": "M19",
+      "label": "M19",
+      "kind": "button",
+      "x": 12.5,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m19",
+        "type": "note",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[M19] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m20",
+      "fig": "M20",
+      "label": "M20",
+      "kind": "button",
+      "x": 22.0,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m20",
+        "type": "note",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[M20] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m21",
+      "fig": "M21",
+      "label": "M21",
+      "kind": "button",
+      "x": 31.5,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m21",
+        "type": "note",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[M21] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m22",
+      "fig": "M22",
+      "label": "M22",
+      "kind": "button",
+      "x": 41.0,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m22",
+        "type": "note",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[M22] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m23",
+      "fig": "M23",
+      "label": "M23",
+      "kind": "button",
+      "x": 50.5,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m23",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[M23] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m24",
+      "fig": "M24",
+      "label": "M24",
+      "kind": "button",
+      "x": 60.0,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m24",
+        "type": "note",
+        "ch": 1,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[M24] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-m25",
+      "fig": "M25",
+      "label": "M25",
+      "kind": "button",
+      "x": 69.5,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_m25",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[M25] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p1",
+      "fig": "P1",
+      "label": "P1",
+      "kind": "pad",
+      "x": 79.0,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p1",
+        "type": "note",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[P1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p2",
+      "fig": "P2",
+      "label": "P2",
+      "kind": "pad",
+      "x": 88.5,
+      "y": 58,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p2",
+        "type": "note",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[P2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p3",
+      "fig": "P3",
+      "label": "P3",
+      "kind": "pad",
+      "x": 3.0,
+      "y": 68,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p3",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[P3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p4",
+      "fig": "P4",
+      "label": "P4",
+      "kind": "pad",
+      "x": 12.5,
+      "y": 68,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p4",
+        "type": "note",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[P4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p5",
+      "fig": "P5",
+      "label": "P5",
+      "kind": "pad",
+      "x": 22.0,
+      "y": 68,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p5",
+        "type": "note",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[P5] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p6",
+      "fig": "P6",
+      "label": "P6",
+      "kind": "pad",
+      "x": 31.5,
+      "y": 68,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p6",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[P6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-rev5-p7",
+      "fig": "P7",
+      "label": "P7",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 68,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_p7",
+        "type": "note",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[P7] bootstrap - refine coords against plate-top.png"
+    }
+  ],
+  "bootstrap": true
+}

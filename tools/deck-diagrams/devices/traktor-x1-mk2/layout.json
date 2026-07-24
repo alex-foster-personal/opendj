@@ -1,0 +1,1780 @@
+{
+  "device": "Traktor Kontrol X1 MK2",
+  "vendor": "Native Instruments",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "traktor-x1-mk2-knobs",
+      "fig": "knobs",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[knobs] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_2",
+      "fig": "knobs_2",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[knobs_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_3",
+      "fig": "knobs_3",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[knobs_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_4",
+      "fig": "knobs_4",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[knobs_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_5",
+      "fig": "knobs_5",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[knobs_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_6",
+      "fig": "knobs_6",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[knobs_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_7",
+      "fig": "knobs_7",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[knobs_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_8",
+      "fig": "knobs_8",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[knobs_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons",
+      "fig": "buttons",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[buttons] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_2",
+      "fig": "buttons_2",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[buttons_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_3",
+      "fig": "buttons_3",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[buttons_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_4",
+      "fig": "buttons_4",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[buttons_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_5",
+      "fig": "buttons_5",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[buttons_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_6",
+      "fig": "buttons_6",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[buttons_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_7",
+      "fig": "buttons_7",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[buttons_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_8",
+      "fig": "buttons_8",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[buttons_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders",
+      "fig": "encoders",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[encoders] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_2",
+      "fig": "encoders_2",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[encoders_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_3",
+      "fig": "encoders_3",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[encoders_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_4",
+      "fig": "encoders_4",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[encoders_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_9",
+      "fig": "buttons_9",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_9",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[buttons_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_10",
+      "fig": "buttons_10",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_10",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[buttons_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_11",
+      "fig": "buttons_11",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[buttons_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_12",
+      "fig": "buttons_12",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_12",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[buttons_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_13",
+      "fig": "buttons_13",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_13",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[buttons_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_14",
+      "fig": "buttons_14",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_14",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[buttons_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_15",
+      "fig": "buttons_15",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_15",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[buttons_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_16",
+      "fig": "buttons_16",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_16",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[buttons_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_17",
+      "fig": "buttons_17",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_17",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[buttons_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_18",
+      "fig": "buttons_18",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_18",
+        "type": "cc",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[buttons_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_19",
+      "fig": "buttons_19",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_19",
+        "type": "cc",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[buttons_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_20",
+      "fig": "buttons_20",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_20",
+        "type": "cc",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[buttons_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_21",
+      "fig": "buttons_21",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_21",
+        "type": "cc",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[buttons_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_22",
+      "fig": "buttons_22",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_22",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[buttons_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_23",
+      "fig": "buttons_23",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_23",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[buttons_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_24",
+      "fig": "buttons_24",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_24",
+        "type": "cc",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[buttons_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_25",
+      "fig": "buttons_25",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_25",
+        "type": "cc",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[buttons_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_26",
+      "fig": "buttons_26",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_26",
+        "type": "cc",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[buttons_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_27",
+      "fig": "buttons_27",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_27",
+        "type": "cc",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[buttons_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_28",
+      "fig": "buttons_28",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_28",
+        "type": "cc",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[buttons_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_29",
+      "fig": "buttons_29",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_29",
+        "type": "cc",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[buttons_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_30",
+      "fig": "buttons_30",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_30",
+        "type": "cc",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[buttons_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_31",
+      "fig": "buttons_31",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_31",
+        "type": "cc",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[buttons_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_32",
+      "fig": "buttons_32",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_32",
+        "type": "cc",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[buttons_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_9",
+      "fig": "knobs_9",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_9",
+        "type": "cc",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[knobs_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_10",
+      "fig": "knobs_10",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_10",
+        "type": "cc",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[knobs_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_11",
+      "fig": "knobs_11",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[knobs_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_12",
+      "fig": "knobs_12",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_12",
+        "type": "cc",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[knobs_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_13",
+      "fig": "knobs_13",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_13",
+        "type": "cc",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[knobs_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_14",
+      "fig": "knobs_14",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_14",
+        "type": "cc",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[knobs_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_15",
+      "fig": "knobs_15",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_15",
+        "type": "cc",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[knobs_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-knobs_16",
+      "fig": "knobs_16",
+      "label": "knobs",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "knobs_16",
+        "type": "cc",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[knobs_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_33",
+      "fig": "buttons_33",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_33",
+        "type": "cc",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[buttons_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_34",
+      "fig": "buttons_34",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_34",
+        "type": "cc",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[buttons_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_35",
+      "fig": "buttons_35",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_35",
+        "type": "cc",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[buttons_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_36",
+      "fig": "buttons_36",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_36",
+        "type": "cc",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[buttons_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_37",
+      "fig": "buttons_37",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_37",
+        "type": "cc",
+        "ch": 1,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[buttons_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_38",
+      "fig": "buttons_38",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_38",
+        "type": "cc",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[buttons_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_39",
+      "fig": "buttons_39",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_39",
+        "type": "cc",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[buttons_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_40",
+      "fig": "buttons_40",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_40",
+        "type": "cc",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[buttons_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_5",
+      "fig": "encoders_5",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[encoders_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_41",
+      "fig": "buttons_41",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_41",
+        "type": "cc",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[buttons_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_6",
+      "fig": "encoders_6",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[encoders_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_42",
+      "fig": "buttons_42",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_42",
+        "type": "cc",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[buttons_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_43",
+      "fig": "buttons_43",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_43",
+        "type": "cc",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[buttons_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_44",
+      "fig": "buttons_44",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_44",
+        "type": "cc",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[buttons_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_7",
+      "fig": "encoders_7",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[encoders_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-encoders_8",
+      "fig": "encoders_8",
+      "label": "encoders",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "encoders_8",
+        "type": "cc",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[encoders_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_45",
+      "fig": "buttons_45",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_45",
+        "type": "cc",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[buttons_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_46",
+      "fig": "buttons_46",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_46",
+        "type": "cc",
+        "ch": 1,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[buttons_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_47",
+      "fig": "buttons_47",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_47",
+        "type": "cc",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[buttons_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_48",
+      "fig": "buttons_48",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_48",
+        "type": "cc",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[buttons_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_49",
+      "fig": "buttons_49",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_49",
+        "type": "cc",
+        "ch": 1,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[buttons_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_50",
+      "fig": "buttons_50",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_50",
+        "type": "cc",
+        "ch": 1,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[buttons_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_51",
+      "fig": "buttons_51",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_51",
+        "type": "cc",
+        "ch": 1,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[buttons_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_52",
+      "fig": "buttons_52",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_52",
+        "type": "cc",
+        "ch": 1,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[buttons_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_53",
+      "fig": "buttons_53",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_53",
+        "type": "cc",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[buttons_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_54",
+      "fig": "buttons_54",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_54",
+        "type": "cc",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[buttons_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_55",
+      "fig": "buttons_55",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_55",
+        "type": "cc",
+        "ch": 1,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[buttons_55] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_56",
+      "fig": "buttons_56",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_56",
+        "type": "cc",
+        "ch": 1,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[buttons_56] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_57",
+      "fig": "buttons_57",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_57",
+        "type": "cc",
+        "ch": 1,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[buttons_57] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_58",
+      "fig": "buttons_58",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_58",
+        "type": "cc",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[buttons_58] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_59",
+      "fig": "buttons_59",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_59",
+        "type": "cc",
+        "ch": 1,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[buttons_59] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_60",
+      "fig": "buttons_60",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_60",
+        "type": "cc",
+        "ch": 1,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[buttons_60] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_61",
+      "fig": "buttons_61",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_61",
+        "type": "cc",
+        "ch": 1,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[buttons_61] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_62",
+      "fig": "buttons_62",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_62",
+        "type": "cc",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[buttons_62] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_63",
+      "fig": "buttons_63",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_63",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[buttons_63] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "traktor-x1-mk2-buttons_64",
+      "fig": "buttons_64",
+      "label": "buttons",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "buttons_64",
+        "type": "cc",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[buttons_64] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

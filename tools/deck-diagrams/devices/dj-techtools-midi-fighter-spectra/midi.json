@@ -1,0 +1,490 @@
+{
+  "source": "mixxx:DJ TechTools MIDI Fighter Spectra.midi.xml",
+  "archived": "tools/deck-diagrams/devices/dj-techtools-midi-fighter-spectra/source/DJ TechTools MIDI Fighter Spectra.midi.xml",
+  "device": "DJ TechTools MIDI Fighter Spectra",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel3_high_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 48,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[0].input [channel3_high_cutoff]"
+    },
+    {
+      "name": "channel1_high_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 49,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[1].input [channel1_high_cutoff]"
+    },
+    {
+      "name": "channel2_high_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 50,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[2].input [channel2_high_cutoff]"
+    },
+    {
+      "name": "channel4_high_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 51,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[3].input [channel4_high_cutoff]"
+    },
+    {
+      "name": "channel3_mid_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[4].input [channel3_mid_cutoff]"
+    },
+    {
+      "name": "channel1_mid_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 45,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[5].input [channel1_mid_cutoff]"
+    },
+    {
+      "name": "channel2_mid_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 46,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[6].input [channel2_mid_cutoff]"
+    },
+    {
+      "name": "channel4_mid_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 47,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[7].input [channel4_mid_cutoff]"
+    },
+    {
+      "name": "channel3_low_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 40,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[8].input [channel3_low_cutoff]"
+    },
+    {
+      "name": "channel1_low_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 41,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[9].input [channel1_low_cutoff]"
+    },
+    {
+      "name": "channel2_low_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 42,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[10].input [channel2_low_cutoff]"
+    },
+    {
+      "name": "channel4_low_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 43,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[11].input [channel4_low_cutoff]"
+    },
+    {
+      "name": "channel3_quick_effect_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 36,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[12].input [channel3_quick_effect_cutoff]"
+    },
+    {
+      "name": "channel1_quick_effect_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 37,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[13].input [channel1_quick_effect_cutoff]"
+    },
+    {
+      "name": "channel2_quick_effect_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 38,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[14].input [channel2_quick_effect_cutoff]"
+    },
+    {
+      "name": "channel4_quick_effect_cutoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 39,
+      "notes": "Mixxx MidiFighterSpectra.controller.eqLayer[15].input [channel4_quick_effect_cutoff]"
+    },
+    {
+      "name": "channel1_set_intro_start_marker",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 64,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[0].input [channel1_set_intro_start_marker]"
+    },
+    {
+      "name": "channel1_set_intro_end_marker",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 65,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[1].input [channel1_set_intro_end_marker]"
+    },
+    {
+      "name": "channel1_set_outro_start_marker",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 66,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[2].input [channel1_set_outro_start_marker]"
+    },
+    {
+      "name": "channel1_set_outro_end_marker",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 67,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[3].input [channel1_set_outro_end_marker]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 60,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[4].input [channel1_set_activate_hotcue_1]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 61,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[5].input [channel1_set_activate_hotcue_2]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 62,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[6].input [channel1_set_activate_hotcue_3]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 63,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[7].input [channel1_set_activate_hotcue_4]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 56,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[8].input [channel1_set_activate_hotcue_5]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 57,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[9].input [channel1_set_activate_hotcue_6]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 58,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[10].input [channel1_set_activate_hotcue_7]"
+    },
+    {
+      "name": "channel1_set_activate_hotcue_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 59,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.cueLayer[11].input [channel1_set_activate_hotcue_8]"
+    },
+    {
+      "name": "channel1_select_deck_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 52,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[0].input [channel1_select_deck_1]"
+    },
+    {
+      "name": "channel2_select_deck_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 53,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[1].input [channel2_select_deck_2]"
+    },
+    {
+      "name": "channel3_select_deck_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 54,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[2].input [channel3_select_deck_3]"
+    },
+    {
+      "name": "channel4_select_deck_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 55,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[3].input [channel4_select_deck_4]"
+    },
+    {
+      "name": "channel1_select_deck_1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 84,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[4].input [channel1_select_deck_1_2]"
+    },
+    {
+      "name": "channel2_select_deck_2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 85,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[5].input [channel2_select_deck_2_2]"
+    },
+    {
+      "name": "channel3_select_deck_3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 86,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[6].input [channel3_select_deck_3_2]"
+    },
+    {
+      "name": "channel4_select_deck_4_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 87,
+      "notes": "Mixxx MidiFighterSpectra.controller.selectDeck[7].input [channel4_select_deck_4_2]"
+    },
+    {
+      "name": "sampler1_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 80,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[0].input [sampler1_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler2_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 81,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[1].input [sampler2_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler3_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 82,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[2].input [sampler3_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler4_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 83,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[3].input [sampler4_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler5_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 76,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[4].input [sampler5_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler6_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 77,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[5].input [sampler6_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler7_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 78,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[6].input [sampler7_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler8_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 79,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[7].input [sampler8_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler9_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 72,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[8].input [sampler9_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler10_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 73,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[9].input [sampler10_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler11_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 74,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[10].input [sampler11_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler12_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 75,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[11].input [sampler12_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler13_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 68,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[12].input [sampler13_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler14_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 69,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[13].input [sampler14_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler15_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 70,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[14].input [sampler15_load_or_play_sampler]"
+    },
+    {
+      "name": "sampler16_load_or_play_sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 71,
+      "notes": "Mixxx MidiFighterSpectra.controller.samplerLayer[15].input [sampler16_load_or_play_sampler]"
+    },
+    {
+      "name": "channel1_stem1_activate_deactivate_stem",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 96,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[0].input [channel1_stem1_activate_deactivate_stem]"
+    },
+    {
+      "name": "channel1_stem2_activate_deactivate_stem",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 97,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[1].input [channel1_stem2_activate_deactivate_stem]"
+    },
+    {
+      "name": "channel1_stem3_activate_deactivate_stem",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 98,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[2].input [channel1_stem3_activate_deactivate_stem]"
+    },
+    {
+      "name": "channel1_stem4_activate_deactivate_stem",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 99,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[3].input [channel1_stem4_activate_deactivate_stem]"
+    },
+    {
+      "name": "channel1_stem1_activate_deactivate_stem_fx",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 92,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[4].input [channel1_stem1_activate_deactivate_stem_fx]"
+    },
+    {
+      "name": "channel1_stem2_activate_deactivate_stem_fx",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 93,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[5].input [channel1_stem2_activate_deactivate_stem_fx]"
+    },
+    {
+      "name": "channel1_stem3_activate_deactivate_stem_fx",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 94,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[6].input [channel1_stem3_activate_deactivate_stem_fx]"
+    },
+    {
+      "name": "channel1_stem4_activate_deactivate_stem_fx",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 95,
+      "notes": "Mixxx MidiFighterSpectra.controller.activeDeck.stemLayer[7].input [channel1_stem4_activate_deactivate_stem_fx]"
+    }
+  ]
+}

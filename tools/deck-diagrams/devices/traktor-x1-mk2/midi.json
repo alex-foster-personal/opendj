@@ -1,0 +1,714 @@
+{
+  "source": "mixxx:Traktor Kontrol X1.midi.xml",
+  "archived": "tools/deck-diagrams/devices/traktor-x1-mk2/source/Traktor Kontrol X1.midi.xml",
+  "device": "Traktor Kontrol X1 MK2",
+  "vendor": "Native Instruments",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "knobs",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx KontrolX1.knobs [knobs]"
+    },
+    {
+      "name": "knobs_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx KontrolX1.knobs [knobs_2]"
+    },
+    {
+      "name": "knobs_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx KontrolX1.knobs [knobs_3]"
+    },
+    {
+      "name": "knobs_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx KontrolX1.knobs [knobs_4]"
+    },
+    {
+      "name": "knobs_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx KontrolX1.knobs [knobs_5]"
+    },
+    {
+      "name": "knobs_6",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx KontrolX1.knobs [knobs_6]"
+    },
+    {
+      "name": "knobs_7",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx KontrolX1.knobs [knobs_7]"
+    },
+    {
+      "name": "knobs_8",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx KontrolX1.knobs [knobs_8]"
+    },
+    {
+      "name": "buttons",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx KontrolX1.buttons [buttons]"
+    },
+    {
+      "name": "buttons_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx KontrolX1.buttons [buttons_2]"
+    },
+    {
+      "name": "buttons_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx KontrolX1.buttons [buttons_3]"
+    },
+    {
+      "name": "buttons_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx KontrolX1.buttons [buttons_4]"
+    },
+    {
+      "name": "buttons_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx KontrolX1.buttons [buttons_5]"
+    },
+    {
+      "name": "buttons_6",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx KontrolX1.buttons [buttons_6]"
+    },
+    {
+      "name": "buttons_7",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx KontrolX1.buttons [buttons_7]"
+    },
+    {
+      "name": "buttons_8",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx KontrolX1.buttons [buttons_8]"
+    },
+    {
+      "name": "encoders",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx KontrolX1.encoders [encoders]"
+    },
+    {
+      "name": "encoders_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx KontrolX1.encoders [encoders_2]"
+    },
+    {
+      "name": "encoders_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx KontrolX1.encoders [encoders_3]"
+    },
+    {
+      "name": "encoders_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx KontrolX1.encoders [encoders_4]"
+    },
+    {
+      "name": "buttons_9",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx KontrolX1.buttons [buttons_9]"
+    },
+    {
+      "name": "buttons_10",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx KontrolX1.buttons [buttons_10]"
+    },
+    {
+      "name": "buttons_11",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx KontrolX1.buttons [buttons_11]"
+    },
+    {
+      "name": "buttons_12",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx KontrolX1.buttons [buttons_12]"
+    },
+    {
+      "name": "buttons_13",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx KontrolX1.buttons [buttons_13]"
+    },
+    {
+      "name": "buttons_14",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx KontrolX1.buttons [buttons_14]"
+    },
+    {
+      "name": "buttons_15",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx KontrolX1.buttons [buttons_15]"
+    },
+    {
+      "name": "buttons_16",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx KontrolX1.buttons [buttons_16]"
+    },
+    {
+      "name": "buttons_17",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx KontrolX1.buttons [buttons_17]"
+    },
+    {
+      "name": "buttons_18",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx KontrolX1.buttons [buttons_18]"
+    },
+    {
+      "name": "buttons_19",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx KontrolX1.buttons [buttons_19]"
+    },
+    {
+      "name": "buttons_20",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx KontrolX1.buttons [buttons_20]"
+    },
+    {
+      "name": "buttons_21",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx KontrolX1.buttons [buttons_21]"
+    },
+    {
+      "name": "buttons_22",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx KontrolX1.buttons [buttons_22]"
+    },
+    {
+      "name": "buttons_23",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx KontrolX1.buttons [buttons_23]"
+    },
+    {
+      "name": "buttons_24",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx KontrolX1.buttons [buttons_24]"
+    },
+    {
+      "name": "buttons_25",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx KontrolX1.buttons [buttons_25]"
+    },
+    {
+      "name": "buttons_26",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx KontrolX1.buttons [buttons_26]"
+    },
+    {
+      "name": "buttons_27",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx KontrolX1.buttons [buttons_27]"
+    },
+    {
+      "name": "buttons_28",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx KontrolX1.buttons [buttons_28]"
+    },
+    {
+      "name": "buttons_29",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx KontrolX1.buttons [buttons_29]"
+    },
+    {
+      "name": "buttons_30",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx KontrolX1.buttons [buttons_30]"
+    },
+    {
+      "name": "buttons_31",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx KontrolX1.buttons [buttons_31]"
+    },
+    {
+      "name": "buttons_32",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx KontrolX1.buttons [buttons_32]"
+    },
+    {
+      "name": "knobs_9",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx KontrolX1.knobs [knobs_9]"
+    },
+    {
+      "name": "knobs_10",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx KontrolX1.knobs [knobs_10]"
+    },
+    {
+      "name": "knobs_11",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx KontrolX1.knobs [knobs_11]"
+    },
+    {
+      "name": "knobs_12",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx KontrolX1.knobs [knobs_12]"
+    },
+    {
+      "name": "knobs_13",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx KontrolX1.knobs [knobs_13]"
+    },
+    {
+      "name": "knobs_14",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx KontrolX1.knobs [knobs_14]"
+    },
+    {
+      "name": "knobs_15",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx KontrolX1.knobs [knobs_15]"
+    },
+    {
+      "name": "knobs_16",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx KontrolX1.knobs [knobs_16]"
+    },
+    {
+      "name": "buttons_33",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx KontrolX1.buttons [buttons_33]"
+    },
+    {
+      "name": "buttons_34",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx KontrolX1.buttons [buttons_34]"
+    },
+    {
+      "name": "buttons_35",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx KontrolX1.buttons [buttons_35]"
+    },
+    {
+      "name": "buttons_36",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx KontrolX1.buttons [buttons_36]"
+    },
+    {
+      "name": "buttons_37",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx KontrolX1.buttons [buttons_37]"
+    },
+    {
+      "name": "buttons_38",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx KontrolX1.buttons [buttons_38]"
+    },
+    {
+      "name": "buttons_39",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx KontrolX1.buttons [buttons_39]"
+    },
+    {
+      "name": "buttons_40",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx KontrolX1.buttons [buttons_40]"
+    },
+    {
+      "name": "encoders_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx KontrolX1.encoders [encoders_5]"
+    },
+    {
+      "name": "buttons_41",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx KontrolX1.buttons [buttons_41]"
+    },
+    {
+      "name": "encoders_6",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx KontrolX1.encoders [encoders_6]"
+    },
+    {
+      "name": "buttons_42",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx KontrolX1.buttons [buttons_42]"
+    },
+    {
+      "name": "buttons_43",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx KontrolX1.buttons [buttons_43]"
+    },
+    {
+      "name": "buttons_44",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 69,
+      "notes": "Mixxx KontrolX1.buttons [buttons_44]"
+    },
+    {
+      "name": "encoders_7",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx KontrolX1.encoders [encoders_7]"
+    },
+    {
+      "name": "encoders_8",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 71,
+      "notes": "Mixxx KontrolX1.encoders [encoders_8]"
+    },
+    {
+      "name": "buttons_45",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx KontrolX1.buttons [buttons_45]"
+    },
+    {
+      "name": "buttons_46",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 65,
+      "notes": "Mixxx KontrolX1.buttons [buttons_46]"
+    },
+    {
+      "name": "buttons_47",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx KontrolX1.buttons [buttons_47]"
+    },
+    {
+      "name": "buttons_48",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx KontrolX1.buttons [buttons_48]"
+    },
+    {
+      "name": "buttons_49",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 72,
+      "notes": "Mixxx KontrolX1.buttons [buttons_49]"
+    },
+    {
+      "name": "buttons_50",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 73,
+      "notes": "Mixxx KontrolX1.buttons [buttons_50]"
+    },
+    {
+      "name": "buttons_51",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 74,
+      "notes": "Mixxx KontrolX1.buttons [buttons_51]"
+    },
+    {
+      "name": "buttons_52",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 75,
+      "notes": "Mixxx KontrolX1.buttons [buttons_52]"
+    },
+    {
+      "name": "buttons_53",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 76,
+      "notes": "Mixxx KontrolX1.buttons [buttons_53]"
+    },
+    {
+      "name": "buttons_54",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 77,
+      "notes": "Mixxx KontrolX1.buttons [buttons_54]"
+    },
+    {
+      "name": "buttons_55",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 78,
+      "notes": "Mixxx KontrolX1.buttons [buttons_55]"
+    },
+    {
+      "name": "buttons_56",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 79,
+      "notes": "Mixxx KontrolX1.buttons [buttons_56]"
+    },
+    {
+      "name": "buttons_57",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 80,
+      "notes": "Mixxx KontrolX1.buttons [buttons_57]"
+    },
+    {
+      "name": "buttons_58",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx KontrolX1.buttons [buttons_58]"
+    },
+    {
+      "name": "buttons_59",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 82,
+      "notes": "Mixxx KontrolX1.buttons [buttons_59]"
+    },
+    {
+      "name": "buttons_60",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 83,
+      "notes": "Mixxx KontrolX1.buttons [buttons_60]"
+    },
+    {
+      "name": "buttons_61",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 84,
+      "notes": "Mixxx KontrolX1.buttons [buttons_61]"
+    },
+    {
+      "name": "buttons_62",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 85,
+      "notes": "Mixxx KontrolX1.buttons [buttons_62]"
+    },
+    {
+      "name": "buttons_63",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx KontrolX1.buttons [buttons_63]"
+    },
+    {
+      "name": "buttons_64",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 87,
+      "notes": "Mixxx KontrolX1.buttons [buttons_64]"
+    }
+  ]
+}

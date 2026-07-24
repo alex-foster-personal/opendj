@@ -1,0 +1,210 @@
+{
+  "source": "mixxx:DJ-Tech Mix-101.midi.xml",
+  "archived": "tools/deck-diagrams/devices/dj-tech-mix-101/source/DJ-Tech Mix-101.midi.xml",
+  "device": "DJ-Tech MIX-101",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "head_volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx headVolume [head_volume]"
+    },
+    {
+      "name": "select_track_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx SelectTrackKnob [select_track_knob]"
+    },
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "jog",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx jog [jog]"
+    },
+    {
+      "name": "jog_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx jog [jog_2]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "play_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx play [play_3]"
+    },
+    {
+      "name": "play_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx play [play_4]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "load_selected_into_first_stopped",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx LoadSelectedIntoFirstStopped [load_selected_into_first_stopped]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx filterHigh [filter_high]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx filterHigh [filter_high_2]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx filterMid [filter_mid]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx filterMid [filter_mid_2]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx filterLow [filter_low]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx filterLow [filter_low_2]"
+    }
+  ]
+}

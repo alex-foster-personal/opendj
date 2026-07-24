@@ -1,0 +1,300 @@
+{
+  "device": "DJ-Tech CDJ-101",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "dj-tech-cdj-101-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-cue",
+      "fig": "cue",
+      "label": "cue",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-jogtouch",
+      "fig": "jogtouch",
+      "label": "jogtouch",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jogtouch",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[jogtouch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-jogouter",
+      "fig": "jogouter",
+      "label": "jogouter",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jogouter",
+        "type": "cc",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[jogouter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-jogtop",
+      "fig": "jogtop",
+      "label": "jogtop",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jogtop",
+        "type": "cc",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[jogtop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-push",
+      "fig": "push",
+      "label": "push",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "push",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[push] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-browse",
+      "fig": "browse",
+      "label": "browse",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "browse",
+        "type": "cc",
+        "ch": 1,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[browse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-cue_2",
+      "fig": "cue_2",
+      "label": "cue",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_2",
+        "type": "note",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[cue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-jogtouch_2",
+      "fig": "jogtouch_2",
+      "label": "jogtouch",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jogtouch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[jogtouch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-jogouter_2",
+      "fig": "jogouter_2",
+      "label": "jogouter",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jogouter_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[jogouter_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-jogtop_2",
+      "fig": "jogtop_2",
+      "label": "jogtop",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jogtop_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[jogtop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-push_2",
+      "fig": "push_2",
+      "label": "push",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "push_2",
+        "type": "note",
+        "ch": 2,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[push_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-cdj-101-browse_2",
+      "fig": "browse_2",
+      "label": "browse",
+      "kind": "encoder",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "browse_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[browse_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

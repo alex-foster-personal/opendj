@@ -1,0 +1,6100 @@
+{
+  "device": "NS6II",
+  "vendor": "Numark",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "numark-ns6ii-channel1_input",
+      "fig": "channel1_input",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input",
+      "fig": "channel2_input",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input",
+      "fig": "channel3_input",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input",
+        "type": "note",
+        "ch": 3,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel3_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input",
+      "fig": "channel4_input",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input",
+        "type": "note",
+        "ch": 4,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel4_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_2",
+      "fig": "channel1_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_2",
+        "type": "note",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_2",
+      "fig": "channel2_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_2",
+        "type": "note",
+        "ch": 6,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_2",
+      "fig": "channel3_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_2",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_2",
+      "fig": "channel4_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_2",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input",
+      "fig": "effect_rack1_effect_unit1_input",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input",
+        "type": "note",
+        "ch": 9,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input",
+      "fig": "effect_rack1_effect_unit2_input",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input",
+        "type": "note",
+        "ch": 10,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_2",
+      "fig": "effect_rack1_effect_unit1_input_2",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_2",
+      "fig": "effect_rack1_effect_unit2_input_2",
+      "label": "input",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_2",
+        "type": "cc",
+        "ch": 10,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input",
+      "fig": "ns6_ii_input",
+      "label": "input",
+      "kind": "encoder",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input",
+        "type": "cc",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_3",
+      "fig": "channel1_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_3",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_3",
+      "fig": "channel2_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_3",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_3",
+      "fig": "channel3_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_3",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_3",
+      "fig": "channel4_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_3",
+        "type": "note",
+        "ch": 4,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_3",
+      "fig": "effect_rack1_effect_unit1_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_3",
+        "type": "note",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_3",
+      "fig": "effect_rack1_effect_unit2_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_3",
+        "type": "note",
+        "ch": 10,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_4",
+      "fig": "effect_rack1_effect_unit1_input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_4",
+        "type": "cc",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_4",
+      "fig": "effect_rack1_effect_unit2_input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_4",
+        "type": "cc",
+        "ch": 10,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_2",
+      "fig": "ns6_ii_input_2",
+      "label": "input",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_2",
+        "type": "cc",
+        "ch": 16,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_4",
+      "fig": "channel1_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_4",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_4",
+      "fig": "channel2_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_4",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_4",
+      "fig": "channel3_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_4",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_4",
+      "fig": "channel4_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_4",
+        "type": "note",
+        "ch": 4,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_5",
+      "fig": "channel1_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_5",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_5",
+      "fig": "channel2_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_5",
+        "type": "note",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_5",
+      "fig": "channel3_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_5",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_5",
+      "fig": "channel4_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_5",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_5",
+      "fig": "effect_rack1_effect_unit1_input_5",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_5",
+        "type": "note",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_5",
+      "fig": "effect_rack1_effect_unit2_input_5",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_5",
+        "type": "note",
+        "ch": 10,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_3",
+      "fig": "ns6_ii_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_3",
+        "type": "note",
+        "ch": 16,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_6",
+      "fig": "effect_rack1_effect_unit1_input_6",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_6",
+        "type": "cc",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_6",
+      "fig": "effect_rack1_effect_unit2_input_6",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_6",
+        "type": "cc",
+        "ch": 10,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_6",
+      "fig": "channel1_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_6",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_6",
+      "fig": "channel2_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_6",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_6",
+      "fig": "channel3_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_6",
+        "type": "note",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_6",
+      "fig": "channel4_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_6",
+        "type": "note",
+        "ch": 4,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_4",
+      "fig": "ns6_ii_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_4",
+        "type": "note",
+        "ch": 16,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_7",
+      "fig": "effect_rack1_effect_unit1_input_7",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_7",
+        "type": "cc",
+        "ch": 9,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_7",
+      "fig": "effect_rack1_effect_unit2_input_7",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_7",
+        "type": "cc",
+        "ch": 10,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_7",
+      "fig": "channel1_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_7",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_7",
+      "fig": "channel2_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_7",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_7",
+      "fig": "channel3_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_7",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_7",
+      "fig": "channel4_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_7",
+        "type": "note",
+        "ch": 4,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_8",
+      "fig": "channel1_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_8",
+        "type": "note",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_8",
+      "fig": "channel2_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_8",
+        "type": "note",
+        "ch": 6,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_8",
+      "fig": "channel3_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_8",
+        "type": "note",
+        "ch": 7,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_8",
+      "fig": "channel4_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_8",
+        "type": "note",
+        "ch": 8,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_8",
+      "fig": "effect_rack1_effect_unit1_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_8",
+        "type": "note",
+        "ch": 9,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_8",
+      "fig": "effect_rack1_effect_unit2_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_8",
+        "type": "note",
+        "ch": 10,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_5",
+      "fig": "ns6_ii_input_5",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_5",
+        "type": "note",
+        "ch": 16,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_9",
+      "fig": "channel1_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_9",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_9",
+      "fig": "channel2_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_9",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_9",
+      "fig": "channel3_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_9",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_9",
+      "fig": "channel4_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_9",
+        "type": "note",
+        "ch": 4,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_9",
+      "fig": "effect_rack1_effect_unit1_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_9",
+        "type": "note",
+        "ch": 9,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_9",
+      "fig": "effect_rack1_effect_unit2_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_9",
+        "type": "note",
+        "ch": 10,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_6",
+      "fig": "ns6_ii_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_6",
+        "type": "note",
+        "ch": 16,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_touch",
+      "fig": "input_touch",
+      "label": "inputTouch",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_touch_2",
+      "fig": "input_touch_2",
+      "label": "inputTouch",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_touch_3",
+      "fig": "input_touch_3",
+      "label": "inputTouch",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_3",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_touch_4",
+      "fig": "input_touch_4",
+      "label": "inputTouch",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_10",
+      "fig": "effect_rack1_effect_unit1_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_10",
+        "type": "note",
+        "ch": 9,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_10",
+      "fig": "effect_rack1_effect_unit2_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_10",
+        "type": "note",
+        "ch": 10,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_7",
+      "fig": "ns6_ii_input_7",
+      "label": "input",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_7",
+        "type": "note",
+        "ch": 16,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_wheel",
+      "fig": "input_wheel",
+      "label": "inputWheel",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_wheel_2",
+      "fig": "input_wheel_2",
+      "label": "inputWheel",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_wheel_3",
+      "fig": "input_wheel_3",
+      "label": "inputWheel",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_wheel_4",
+      "fig": "input_wheel_4",
+      "label": "inputWheel",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_10",
+      "fig": "channel1_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_10",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_10",
+      "fig": "channel2_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_10",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_10",
+      "fig": "channel3_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_10",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_10",
+      "fig": "channel4_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_10",
+        "type": "note",
+        "ch": 4,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_11",
+      "fig": "effect_rack1_effect_unit1_input_11",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_11",
+        "type": "note",
+        "ch": 9,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_11",
+      "fig": "effect_rack1_effect_unit2_input_11",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_11",
+        "type": "note",
+        "ch": 10,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_12",
+      "fig": "effect_rack1_effect_unit1_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_12",
+        "type": "note",
+        "ch": 9,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_12",
+      "fig": "effect_rack1_effect_unit2_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_12",
+        "type": "note",
+        "ch": 10,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-master_input",
+      "fig": "master_input",
+      "label": "input",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_input",
+        "type": "cc",
+        "ch": 16,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[master_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_11",
+      "fig": "channel1_input_11",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_11",
+        "type": "note",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_11",
+      "fig": "channel2_input_11",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_11",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_11",
+      "fig": "channel3_input_11",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_11",
+        "type": "note",
+        "ch": 7,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_11",
+      "fig": "channel4_input_11",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_11",
+        "type": "note",
+        "ch": 8,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb",
+      "fig": "input_msb",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_2",
+      "fig": "input_msb_2",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_3",
+      "fig": "input_msb_3",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_4",
+      "fig": "input_msb_4",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_msb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-mixer_profile_input",
+      "fig": "mixer_profile_input",
+      "label": "input",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mixer_profile_input",
+        "type": "cc",
+        "ch": 16,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[mixer_profile_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_12",
+      "fig": "channel1_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_12",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_12",
+      "fig": "channel2_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_12",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_12",
+      "fig": "channel3_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_12",
+        "type": "note",
+        "ch": 3,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_12",
+      "fig": "channel4_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_12",
+        "type": "note",
+        "ch": 4,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_13",
+      "fig": "channel1_input_13",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_13",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_13",
+      "fig": "channel2_input_13",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_13",
+        "type": "note",
+        "ch": 6,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_13",
+      "fig": "channel3_input_13",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_13",
+        "type": "note",
+        "ch": 7,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_13",
+      "fig": "channel4_input_13",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_13",
+        "type": "note",
+        "ch": 8,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_13",
+      "fig": "effect_rack1_effect_unit1_input_13",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_13",
+        "type": "note",
+        "ch": 9,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_13",
+      "fig": "effect_rack1_effect_unit2_input_13",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_13",
+        "type": "note",
+        "ch": 10,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_14",
+      "fig": "channel1_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_14",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_14",
+      "fig": "channel2_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_14",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_14",
+      "fig": "channel3_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_14",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_14",
+      "fig": "channel4_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_14",
+        "type": "note",
+        "ch": 4,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_14",
+      "fig": "effect_rack1_effect_unit1_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_14",
+        "type": "note",
+        "ch": 9,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_14",
+      "fig": "effect_rack1_effect_unit2_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_14",
+        "type": "note",
+        "ch": 10,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_15",
+      "fig": "channel1_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_15",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_15",
+      "fig": "channel2_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_15",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_15",
+      "fig": "channel3_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_15",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_15",
+      "fig": "channel4_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_15",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_15",
+      "fig": "effect_rack1_effect_unit1_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_15",
+        "type": "note",
+        "ch": 9,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_15",
+      "fig": "effect_rack1_effect_unit2_input_15",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_15",
+        "type": "note",
+        "ch": 10,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_16",
+      "fig": "channel1_input_16",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_16",
+        "type": "note",
+        "ch": 5,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_16",
+      "fig": "channel2_input_16",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_16",
+        "type": "note",
+        "ch": 6,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_16",
+      "fig": "channel3_input_16",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_16",
+        "type": "note",
+        "ch": 7,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_16",
+      "fig": "channel4_input_16",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_16",
+        "type": "note",
+        "ch": 8,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_8",
+      "fig": "ns6_ii_input_8",
+      "label": "input",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_8",
+        "type": "note",
+        "ch": 16,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_17",
+      "fig": "channel1_input_17",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_17",
+        "type": "note",
+        "ch": 5,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_17",
+      "fig": "channel2_input_17",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_17",
+        "type": "note",
+        "ch": 6,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_17",
+      "fig": "channel3_input_17",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_17",
+        "type": "note",
+        "ch": 7,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_17",
+      "fig": "channel4_input_17",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_17",
+        "type": "note",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_9",
+      "fig": "ns6_ii_input_9",
+      "label": "input",
+      "kind": "encoder",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_9",
+        "type": "note",
+        "ch": 16,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_18",
+      "fig": "channel1_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_18",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_18",
+      "fig": "channel2_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_18",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_18",
+      "fig": "channel3_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_18",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_18",
+      "fig": "channel4_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_18",
+        "type": "note",
+        "ch": 4,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_19",
+      "fig": "channel1_input_19",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_19",
+        "type": "note",
+        "ch": 5,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_19",
+      "fig": "channel2_input_19",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_19",
+        "type": "note",
+        "ch": 6,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_19",
+      "fig": "channel3_input_19",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_19",
+        "type": "note",
+        "ch": 7,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_19",
+      "fig": "channel4_input_19",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_19",
+        "type": "note",
+        "ch": 8,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_10",
+      "fig": "ns6_ii_input_10",
+      "label": "input",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_10",
+        "type": "note",
+        "ch": 16,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_11",
+      "fig": "ns6_ii_input_11",
+      "label": "input",
+      "kind": "encoder",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_11",
+        "type": "note",
+        "ch": 16,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_12",
+      "fig": "ns6_ii_input_12",
+      "label": "input",
+      "kind": "encoder",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_12",
+        "type": "note",
+        "ch": 16,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_20",
+      "fig": "channel1_input_20",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_20",
+        "type": "note",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_20",
+      "fig": "channel2_input_20",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_20",
+        "type": "note",
+        "ch": 6,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_20",
+      "fig": "channel3_input_20",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_20",
+        "type": "note",
+        "ch": 7,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_20",
+      "fig": "channel4_input_20",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_20",
+        "type": "note",
+        "ch": 8,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_13",
+      "fig": "ns6_ii_input_13",
+      "label": "input",
+      "kind": "encoder",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_13",
+        "type": "note",
+        "ch": 16,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_21",
+      "fig": "channel1_input_21",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_21",
+        "type": "note",
+        "ch": 5,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_21",
+      "fig": "channel2_input_21",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_21",
+        "type": "note",
+        "ch": 6,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_21",
+      "fig": "channel3_input_21",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_21",
+        "type": "note",
+        "ch": 7,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_21",
+      "fig": "channel4_input_21",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_21",
+        "type": "note",
+        "ch": 8,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_22",
+      "fig": "channel1_input_22",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_22",
+        "type": "note",
+        "ch": 5,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_22",
+      "fig": "channel2_input_22",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_22",
+        "type": "note",
+        "ch": 6,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_22",
+      "fig": "channel3_input_22",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_22",
+        "type": "note",
+        "ch": 7,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_22",
+      "fig": "channel4_input_22",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_22",
+        "type": "note",
+        "ch": 8,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_23",
+      "fig": "channel1_input_23",
+      "label": "input",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_23",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_23",
+      "fig": "channel2_input_23",
+      "label": "input",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_23",
+        "type": "cc",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_23",
+      "fig": "channel3_input_23",
+      "label": "input",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_23",
+        "type": "cc",
+        "ch": 3,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_23",
+      "fig": "channel4_input_23",
+      "label": "input",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_23",
+        "type": "cc",
+        "ch": 4,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_24",
+      "fig": "channel1_input_24",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_24",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_24",
+      "fig": "channel2_input_24",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_24",
+        "type": "note",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_24",
+      "fig": "channel3_input_24",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_24",
+        "type": "note",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_24",
+      "fig": "channel4_input_24",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_24",
+        "type": "note",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_25",
+      "fig": "channel1_input_25",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_25",
+        "type": "note",
+        "ch": 5,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_25",
+      "fig": "channel2_input_25",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_25",
+        "type": "note",
+        "ch": 6,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_25",
+      "fig": "channel3_input_25",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_25",
+        "type": "note",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_25",
+      "fig": "channel4_input_25",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_25",
+        "type": "note",
+        "ch": 8,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_26",
+      "fig": "channel1_input_26",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_26",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_26",
+      "fig": "channel2_input_26",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_26",
+        "type": "cc",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_26",
+      "fig": "channel3_input_26",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_26",
+        "type": "cc",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_26",
+      "fig": "channel4_input_26",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_26",
+        "type": "cc",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_27",
+      "fig": "channel1_input_27",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_27",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_27",
+      "fig": "channel2_input_27",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_27",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_27",
+      "fig": "channel3_input_27",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_27",
+        "type": "note",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_27",
+      "fig": "channel4_input_27",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_27",
+        "type": "note",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_28",
+      "fig": "channel1_input_28",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_28",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_28",
+      "fig": "channel2_input_28",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_28",
+        "type": "note",
+        "ch": 6,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_28",
+      "fig": "channel3_input_28",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_28",
+        "type": "note",
+        "ch": 7,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_28",
+      "fig": "channel4_input_28",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_28",
+        "type": "note",
+        "ch": 8,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_29",
+      "fig": "channel1_input_29",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_29",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_29",
+      "fig": "channel2_input_29",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_29",
+        "type": "cc",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_29",
+      "fig": "channel3_input_29",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_29",
+        "type": "cc",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_29",
+      "fig": "channel4_input_29",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_29",
+        "type": "cc",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_30",
+      "fig": "channel1_input_30",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_30",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_30",
+      "fig": "channel2_input_30",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_30",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_30",
+      "fig": "channel3_input_30",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_30",
+        "type": "note",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_30",
+      "fig": "channel4_input_30",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_30",
+        "type": "note",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_31",
+      "fig": "channel1_input_31",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_31",
+        "type": "note",
+        "ch": 5,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_31",
+      "fig": "channel2_input_31",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_31",
+        "type": "note",
+        "ch": 6,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_31",
+      "fig": "channel3_input_31",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_31",
+        "type": "note",
+        "ch": 7,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_31",
+      "fig": "channel4_input_31",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_31",
+        "type": "note",
+        "ch": 8,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_32",
+      "fig": "channel1_input_32",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_32",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_32",
+      "fig": "channel2_input_32",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_32",
+        "type": "cc",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_32",
+      "fig": "channel3_input_32",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_32",
+        "type": "cc",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_32",
+      "fig": "channel4_input_32",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_32",
+        "type": "cc",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_33",
+      "fig": "channel1_input_33",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_33",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_33",
+      "fig": "channel2_input_33",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_33",
+        "type": "note",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_33",
+      "fig": "channel3_input_33",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_33",
+        "type": "note",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_33",
+      "fig": "channel4_input_33",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_33",
+        "type": "note",
+        "ch": 4,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_34",
+      "fig": "channel1_input_34",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_34",
+        "type": "note",
+        "ch": 5,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_34",
+      "fig": "channel2_input_34",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_34",
+        "type": "note",
+        "ch": 6,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_34",
+      "fig": "channel3_input_34",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_34",
+        "type": "note",
+        "ch": 7,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_34",
+      "fig": "channel4_input_34",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_34",
+        "type": "note",
+        "ch": 8,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_35",
+      "fig": "channel1_input_35",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_35",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_35",
+      "fig": "channel2_input_35",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_35",
+        "type": "cc",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_35",
+      "fig": "channel3_input_35",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_35",
+        "type": "cc",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_35",
+      "fig": "channel4_input_35",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_35",
+        "type": "cc",
+        "ch": 4,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_36",
+      "fig": "channel1_input_36",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_36",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_36",
+      "fig": "channel2_input_36",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_36",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_36",
+      "fig": "channel3_input_36",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_36",
+        "type": "note",
+        "ch": 3,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_36",
+      "fig": "channel4_input_36",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_36",
+        "type": "note",
+        "ch": 4,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_37",
+      "fig": "channel1_input_37",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_37",
+        "type": "note",
+        "ch": 5,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_37",
+      "fig": "channel2_input_37",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_37",
+        "type": "note",
+        "ch": 6,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_37",
+      "fig": "channel3_input_37",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_37",
+        "type": "note",
+        "ch": 7,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_37",
+      "fig": "channel4_input_37",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_37",
+        "type": "note",
+        "ch": 8,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_14",
+      "fig": "ns6_ii_input_14",
+      "label": "input",
+      "kind": "encoder",
+      "x": 9.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_14",
+        "type": "note",
+        "ch": 16,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_38",
+      "fig": "channel1_input_38",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_38",
+        "type": "note",
+        "ch": 5,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_38",
+      "fig": "channel2_input_38",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_38",
+        "type": "note",
+        "ch": 6,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_38",
+      "fig": "channel3_input_38",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_38",
+        "type": "note",
+        "ch": 7,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_38",
+      "fig": "channel4_input_38",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_38",
+        "type": "note",
+        "ch": 8,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-master_input_2",
+      "fig": "master_input_2",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_input_2",
+        "type": "note",
+        "ch": 16,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[master_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_39",
+      "fig": "channel1_input_39",
+      "label": "input",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 114.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_39",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_39",
+      "fig": "channel2_input_39",
+      "label": "input",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 114.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_39",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_40",
+      "fig": "channel1_input_40",
+      "label": "input",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 114.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_40",
+        "type": "cc",
+        "ch": 3,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_39",
+      "fig": "channel4_input_39",
+      "label": "input",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 114.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_39",
+        "type": "cc",
+        "ch": 4,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_41",
+      "fig": "channel1_input_41",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_41",
+        "type": "note",
+        "ch": 5,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_40",
+      "fig": "channel2_input_40",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_40",
+        "type": "note",
+        "ch": 6,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_39",
+      "fig": "channel3_input_39",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_39",
+        "type": "note",
+        "ch": 7,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_40",
+      "fig": "channel4_input_40",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_40",
+        "type": "note",
+        "ch": 8,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_42",
+      "fig": "channel1_input_42",
+      "label": "input",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_42",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_41",
+      "fig": "channel2_input_41",
+      "label": "input",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_41",
+        "type": "note",
+        "ch": 2,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_40",
+      "fig": "channel3_input_40",
+      "label": "input",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_40",
+        "type": "note",
+        "ch": 3,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_41",
+      "fig": "channel4_input_41",
+      "label": "input",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 121.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_41",
+        "type": "note",
+        "ch": 4,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_43",
+      "fig": "channel1_input_43",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_43",
+        "type": "note",
+        "ch": 5,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_42",
+      "fig": "channel2_input_42",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_42",
+        "type": "note",
+        "ch": 6,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_41",
+      "fig": "channel3_input_41",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_41",
+        "type": "note",
+        "ch": 7,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_42",
+      "fig": "channel4_input_42",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_42",
+        "type": "note",
+        "ch": 8,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_15",
+      "fig": "ns6_ii_input_15",
+      "label": "input",
+      "kind": "encoder",
+      "x": 87.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_15",
+        "type": "note",
+        "ch": 16,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_44",
+      "fig": "channel1_input_44",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_44",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_43",
+      "fig": "channel2_input_43",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_43",
+        "type": "note",
+        "ch": 2,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_42",
+      "fig": "channel3_input_42",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_42",
+        "type": "note",
+        "ch": 3,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_43",
+      "fig": "channel4_input_43",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_43",
+        "type": "note",
+        "ch": 4,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_45",
+      "fig": "channel1_input_45",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_45",
+        "type": "note",
+        "ch": 5,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_44",
+      "fig": "channel2_input_44",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_44",
+        "type": "note",
+        "ch": 6,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_43",
+      "fig": "channel3_input_43",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_43",
+        "type": "note",
+        "ch": 7,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_44",
+      "fig": "channel4_input_44",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_44",
+        "type": "note",
+        "ch": 8,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_46",
+      "fig": "channel1_input_46",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_46",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_45",
+      "fig": "channel2_input_45",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_45",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_47",
+      "fig": "channel1_input_47",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_47",
+        "type": "note",
+        "ch": 5,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_46",
+      "fig": "channel2_input_46",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_46",
+        "type": "note",
+        "ch": 6,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_44",
+      "fig": "channel3_input_44",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_44",
+        "type": "note",
+        "ch": 7,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_45",
+      "fig": "channel4_input_45",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_45",
+        "type": "note",
+        "ch": 8,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_16",
+      "fig": "effect_rack1_effect_unit1_input_16",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_16",
+        "type": "note",
+        "ch": 9,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_16",
+      "fig": "effect_rack1_effect_unit2_input_16",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_16",
+        "type": "note",
+        "ch": 10,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_48",
+      "fig": "channel1_input_48",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_48",
+        "type": "note",
+        "ch": 5,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_47",
+      "fig": "channel2_input_47",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_47",
+        "type": "note",
+        "ch": 6,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_45",
+      "fig": "channel3_input_45",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_45",
+        "type": "note",
+        "ch": 7,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_46",
+      "fig": "channel4_input_46",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_46",
+        "type": "note",
+        "ch": 8,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_17",
+      "fig": "effect_rack1_effect_unit1_input_17",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_17",
+        "type": "note",
+        "ch": 9,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_17",
+      "fig": "effect_rack1_effect_unit2_input_17",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_17",
+        "type": "note",
+        "ch": 10,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_49",
+      "fig": "channel1_input_49",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_49",
+        "type": "note",
+        "ch": 5,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_48",
+      "fig": "channel2_input_48",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_48",
+        "type": "note",
+        "ch": 6,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_46",
+      "fig": "channel3_input_46",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_46",
+        "type": "note",
+        "ch": 7,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_47",
+      "fig": "channel4_input_47",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_47",
+        "type": "note",
+        "ch": 8,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_18",
+      "fig": "effect_rack1_effect_unit1_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_18",
+        "type": "note",
+        "ch": 9,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_18",
+      "fig": "effect_rack1_effect_unit2_input_18",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_18",
+        "type": "note",
+        "ch": 10,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_50",
+      "fig": "channel1_input_50",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_50",
+        "type": "note",
+        "ch": 5,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_49",
+      "fig": "channel2_input_49",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_49",
+        "type": "note",
+        "ch": 6,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_47",
+      "fig": "channel3_input_47",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_47",
+        "type": "note",
+        "ch": 7,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_48",
+      "fig": "channel4_input_48",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_48",
+        "type": "note",
+        "ch": 8,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_51",
+      "fig": "channel1_input_51",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_51",
+        "type": "note",
+        "ch": 5,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_50",
+      "fig": "channel2_input_50",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_50",
+        "type": "note",
+        "ch": 6,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_48",
+      "fig": "channel3_input_48",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_48",
+        "type": "note",
+        "ch": 7,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_49",
+      "fig": "channel4_input_49",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_49",
+        "type": "note",
+        "ch": 8,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_52",
+      "fig": "channel1_input_52",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_52",
+        "type": "note",
+        "ch": 5,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_51",
+      "fig": "channel2_input_51",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_51",
+        "type": "note",
+        "ch": 6,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_49",
+      "fig": "channel3_input_49",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_49",
+        "type": "note",
+        "ch": 7,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_50",
+      "fig": "channel4_input_50",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 147.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_50",
+        "type": "note",
+        "ch": 8,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb",
+      "fig": "input_lsb",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb",
+        "type": "cc",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[input_lsb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_2",
+      "fig": "input_lsb_2",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_3",
+      "fig": "input_lsb_3",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_4",
+      "fig": "input_lsb_4",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_53",
+      "fig": "channel1_input_53",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_53",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_52",
+      "fig": "channel2_input_52",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_52",
+        "type": "note",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_50",
+      "fig": "channel3_input_50",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_50",
+        "type": "note",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_51",
+      "fig": "channel4_input_51",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_51",
+        "type": "note",
+        "ch": 4,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_5",
+      "fig": "input_msb_5",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[input_msb_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_6",
+      "fig": "input_msb_6",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[input_msb_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_7",
+      "fig": "input_msb_7",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_7",
+        "type": "cc",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[input_msb_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_msb_8",
+      "fig": "input_msb_8",
+      "label": "inputMSB",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_8",
+        "type": "cc",
+        "ch": 4,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[input_msb_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_54",
+      "fig": "channel1_input_54",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_54",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_53",
+      "fig": "channel2_input_53",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_53",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_51",
+      "fig": "channel3_input_51",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_51",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_52",
+      "fig": "channel4_input_52",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_52",
+        "type": "note",
+        "ch": 4,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit1_input_19",
+      "fig": "effect_rack1_effect_unit1_input_19",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit1_input_19",
+        "type": "note",
+        "ch": 9,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit1_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-effect_rack1_effect_unit2_input_19",
+      "fig": "effect_rack1_effect_unit2_input_19",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "effect_rack1_effect_unit2_input_19",
+        "type": "note",
+        "ch": 10,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[effect_rack1_effect_unit2_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel1_input_55",
+      "fig": "channel1_input_55",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_55",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_55] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel2_input_54",
+      "fig": "channel2_input_54",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_54",
+        "type": "note",
+        "ch": 2,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_52",
+      "fig": "channel3_input_52",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_52",
+        "type": "note",
+        "ch": 3,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_53",
+      "fig": "channel4_input_53",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_53",
+        "type": "note",
+        "ch": 4,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_5",
+      "fig": "input_lsb_5",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_6",
+      "fig": "input_lsb_6",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_7",
+      "fig": "input_lsb_7",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_7",
+        "type": "cc",
+        "ch": 3,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-input_lsb_8",
+      "fig": "input_lsb_8",
+      "label": "inputLSB",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_8",
+        "type": "cc",
+        "ch": 4,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel3_input_53",
+      "fig": "channel3_input_53",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_53",
+        "type": "note",
+        "ch": 16,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_16",
+      "fig": "ns6_ii_input_16",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_16",
+        "type": "note",
+        "ch": 16,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-ns6_ii_input_17",
+      "fig": "ns6_ii_input_17",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "ns6_ii_input_17",
+        "type": "note",
+        "ch": 16,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[ns6_ii_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-channel4_input_54",
+      "fig": "channel4_input_54",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_54",
+        "type": "note",
+        "ch": 16,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-deck_watcher_input",
+      "fig": "deck_watcher_input",
+      "label": "deckWatcherInput",
+      "kind": "button",
+      "x": 80.0,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_watcher_input",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[deck_watcher_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-deck_watcher_input_2",
+      "fig": "deck_watcher_input_2",
+      "label": "deckWatcherInput",
+      "kind": "button",
+      "x": 87.8,
+      "y": 160.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_watcher_input_2",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[deck_watcher_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-deck_watcher_input_3",
+      "fig": "deck_watcher_input_3",
+      "label": "deckWatcherInput",
+      "kind": "button",
+      "x": 2.0,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_watcher_input_3",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[deck_watcher_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-deck_watcher_input_4",
+      "fig": "deck_watcher_input_4",
+      "label": "deckWatcherInput",
+      "kind": "button",
+      "x": 9.8,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_watcher_input_4",
+        "type": "note",
+        "ch": 4,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[deck_watcher_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-pcselector_input",
+      "fig": "pcselector_input",
+      "label": "PCSelectorInput",
+      "kind": "button",
+      "x": 17.6,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "pcselector_input",
+        "type": "note",
+        "ch": 16,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[pcselector_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-ns6ii-pcselector_input_2",
+      "fig": "pcselector_input_2",
+      "label": "PCSelectorInput",
+      "kind": "button",
+      "x": 25.4,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "pcselector_input_2",
+        "type": "note",
+        "ch": 16,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[pcselector_input_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+{
+  "source": "mixxx:Pioneer CDJ-350 Ch1.midi.xml",
+  "archived": "tools/deck-diagrams/devices/pioneer-cdj-350-ch1/source/Pioneer CDJ-350 Ch1.midi.xml",
+  "device": "Pioneer CDJ-350 CH1",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx PioneerCDJ350.jog_wheel [jog_wheel]"
+    },
+    {
+      "name": "loop_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx loop_double [loop_double]"
+    },
+    {
+      "name": "loop_halve",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx loop_halve [loop_halve]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "beatsync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx beatsync [beatsync]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "end",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx end [end]"
+    },
+    {
+      "name": "start",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx start [start]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx loop_in [loop_in]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx loop_out [loop_out]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx reloop_exit [reloop_exit]"
+    },
+    {
+      "name": "toggle_playlist",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx PioneerCDJ350.toggle_playlist [toggle_playlist]"
+    },
+    {
+      "name": "exit_playlist",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx PioneerCDJ350.exit_playlist [exit_playlist]"
+    },
+    {
+      "name": "select_push",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx PioneerCDJ350.select_push [select_push]"
+    },
+    {
+      "name": "tempo_btn",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx PioneerCDJ350.tempo_btn [tempo_btn]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "select_turn",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 79,
+      "notes": "Mixxx PioneerCDJ350.select_turn [select_turn]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx PioneerCDJ350.jog_wheel [jog_wheel_2]"
+    }
+  ]
+}

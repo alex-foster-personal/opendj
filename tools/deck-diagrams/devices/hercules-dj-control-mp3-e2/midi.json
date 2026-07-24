@@ -1,0 +1,450 @@
+{
+  "source": "mixxx:Hercules DJ Control MP3 e2.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-dj-control-mp3-e2/source/Hercules DJ Control MP3 e2.midi.xml",
+  "device": "Hercules DJ Control MP3 e2 / MP3 LE / Glow",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "key_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button]"
+    },
+    {
+      "name": "key_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_2]"
+    },
+    {
+      "name": "key_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_3]"
+    },
+    {
+      "name": "key_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_4]"
+    },
+    {
+      "name": "key_button_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_5]"
+    },
+    {
+      "name": "key_button_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_6]"
+    },
+    {
+      "name": "key_button_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_7]"
+    },
+    {
+      "name": "key_button_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_8]"
+    },
+    {
+      "name": "pitchbend",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx HerculesMP3e2.pitchbend [pitchbend]"
+    },
+    {
+      "name": "pitchbend_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx HerculesMP3e2.pitchbend [pitchbend_2]"
+    },
+    {
+      "name": "wind",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx HerculesMP3e2.wind [wind]"
+    },
+    {
+      "name": "wind_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx HerculesMP3e2.wind [wind_2]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx HerculesMP3e2.cue [cue]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx HerculesMP3e2.play [play]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx HerculesMP3e2.pfl [pfl]"
+    },
+    {
+      "name": "load_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx HerculesMP3e2.loadTrack [load_track]"
+    },
+    {
+      "name": "sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx HerculesMP3e2.sync [sync]"
+    },
+    {
+      "name": "master_tempo",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx HerculesMP3e2.masterTempo [master_tempo]"
+    },
+    {
+      "name": "key_button_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_9]"
+    },
+    {
+      "name": "key_button_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_10]"
+    },
+    {
+      "name": "key_button_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_11]"
+    },
+    {
+      "name": "key_button_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_12]"
+    },
+    {
+      "name": "key_button_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_13]"
+    },
+    {
+      "name": "key_button_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_14]"
+    },
+    {
+      "name": "key_button_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_15]"
+    },
+    {
+      "name": "key_button_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx HerculesMP3e2.keyButton [key_button_16]"
+    },
+    {
+      "name": "pitchbend_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx HerculesMP3e2.pitchbend [pitchbend_3]"
+    },
+    {
+      "name": "pitchbend_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx HerculesMP3e2.pitchbend [pitchbend_4]"
+    },
+    {
+      "name": "wind_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx HerculesMP3e2.wind [wind_3]"
+    },
+    {
+      "name": "wind_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx HerculesMP3e2.wind [wind_4]"
+    },
+    {
+      "name": "cue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx HerculesMP3e2.cue [cue_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx HerculesMP3e2.play [play_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx HerculesMP3e2.pfl [pfl_2]"
+    },
+    {
+      "name": "load_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx HerculesMP3e2.loadTrack [load_track_2]"
+    },
+    {
+      "name": "sync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx HerculesMP3e2.sync [sync_2]"
+    },
+    {
+      "name": "master_tempo_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx HerculesMP3e2.masterTempo [master_tempo_2]"
+    },
+    {
+      "name": "select_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx HerculesMP3e2.selectTrack [select_track]"
+    },
+    {
+      "name": "mic",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx HerculesMP3e2.mic [mic]"
+    },
+    {
+      "name": "scroll",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx HerculesMP3e2.scroll [scroll]"
+    },
+    {
+      "name": "scroll_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx HerculesMP3e2.scroll [scroll_2]"
+    },
+    {
+      "name": "scratch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx HerculesMP3e2.scratch [scratch]"
+    },
+    {
+      "name": "automix",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx HerculesMP3e2.automix [automix]"
+    },
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx HerculesMP3e2.jogWheel [jog_wheel]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx HerculesMP3e2.jogWheel [jog_wheel_2]"
+    },
+    {
+      "name": "pitch",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx HerculesMP3e2.pitch [pitch]"
+    },
+    {
+      "name": "pitch_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx HerculesMP3e2.pitch [pitch_2]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx HerculesMP3e2.volume [volume]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx HerculesMP3e2.filterHigh [filter_high]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx HerculesMP3e2.filterMid [filter_mid]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx HerculesMP3e2.filterLow [filter_low]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx HerculesMP3e2.volume [volume_2]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx HerculesMP3e2.filterHigh [filter_high_2]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx HerculesMP3e2.filterMid [filter_mid_2]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx HerculesMP3e2.filterLow [filter_low_2]"
+    }
+  ]
+}

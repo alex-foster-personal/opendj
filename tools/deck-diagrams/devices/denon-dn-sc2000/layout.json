@@ -1,0 +1,1540 @@
+{
+  "device": "Denon DN SC2000",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "denon-dn-sc2000-change_deck",
+      "fig": "change_deck",
+      "label": "changeDeck",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "change_deck",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[change_deck] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-jog_touch",
+      "fig": "jog_touch",
+      "label": "jogTouch",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-jog",
+      "fig": "jog",
+      "label": "jog",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog",
+        "type": "cc",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-shift",
+      "fig": "shift",
+      "label": "shift",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift",
+        "type": "note",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues",
+      "fig": "loop_or_hotcues",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_2",
+      "fig": "loop_or_hotcues_2",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_2",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_3",
+      "fig": "loop_or_hotcues_3",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_3",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_4",
+      "fig": "loop_or_hotcues_4",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_4",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_5",
+      "fig": "loop_or_hotcues_5",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_5",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_6",
+      "fig": "loop_or_hotcues_6",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_6",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_7",
+      "fig": "loop_or_hotcues_7",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_7",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_8",
+      "fig": "loop_or_hotcues_8",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_8",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_9",
+      "fig": "loop_or_hotcues_9",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_9",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_10",
+      "fig": "loop_or_hotcues_10",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_10",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_11",
+      "fig": "loop_or_hotcues_11",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_11",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-move_loop_left",
+      "fig": "move_loop_left",
+      "label": "moveLoopLeft",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "move_loop_left",
+        "type": "note",
+        "ch": 1,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[move_loop_left] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-move_loop_right",
+      "fig": "move_loop_right",
+      "label": "moveLoopRight",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "move_loop_right",
+        "type": "note",
+        "ch": 1,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[move_loop_right] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-resize_loop",
+      "fig": "resize_loop",
+      "label": "resizeLoop",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "resize_loop",
+        "type": "cc",
+        "ch": 1,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[resize_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-select_prev_playlist",
+      "fig": "select_prev_playlist",
+      "label": "SelectPrevPlaylist",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_prev_playlist",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[select_prev_playlist] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-select_next_playlist",
+      "fig": "select_next_playlist",
+      "label": "SelectNextPlaylist",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_next_playlist",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[select_next_playlist] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "loadSelectedTrack",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-select_track",
+      "fig": "select_track",
+      "label": "selectTrack",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "select_track",
+        "type": "cc",
+        "ch": 1,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[select_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-fwd",
+      "fig": "fwd",
+      "label": "fwd",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[fwd] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-back",
+      "fig": "back",
+      "label": "back",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[back] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-cue",
+      "fig": "cue",
+      "label": "cue",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-key_lock",
+      "fig": "key_lock",
+      "label": "keyLock",
+      "kind": "button",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_lock",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[key_lock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-rate",
+      "fig": "rate",
+      "label": "rate",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate",
+        "type": "cc",
+        "ch": 1,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[rate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-beat_sync",
+      "fig": "beat_sync",
+      "label": "beatSync",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[beat_sync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-flanger",
+      "fig": "flanger",
+      "label": "flanger",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger",
+        "type": "note",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[flanger] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_depth",
+      "fig": "change_depth",
+      "label": "changeDepth",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "change_depth",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[change_depth] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_delay",
+      "fig": "change_delay",
+      "label": "changeDelay",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "change_delay",
+        "type": "cc",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[change_delay] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_lfo",
+      "fig": "change_lfo",
+      "label": "changeLFO",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "change_lfo",
+        "type": "cc",
+        "ch": 1,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[change_lfo] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-reset_depth",
+      "fig": "reset_depth",
+      "label": "resetDepth",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "reset_depth",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[reset_depth] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-reset_delay",
+      "fig": "reset_delay",
+      "label": "resetDelay",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "reset_delay",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[reset_delay] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-reset_lfo",
+      "fig": "reset_lfo",
+      "label": "resetLFO",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "reset_lfo",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[reset_lfo] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-pitch_bend",
+      "fig": "pitch_bend",
+      "label": "pitchBend",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-pitch_bend_2",
+      "fig": "pitch_bend_2",
+      "label": "pitchBend",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend_2",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_deck_2",
+      "fig": "change_deck_2",
+      "label": "changeDeck",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "change_deck_2",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[change_deck_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-jog_touch_2",
+      "fig": "jog_touch_2",
+      "label": "jogTouch",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-jog_2",
+      "fig": "jog_2",
+      "label": "jog",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[jog_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-shift_2",
+      "fig": "shift_2",
+      "label": "shift",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_2",
+        "type": "note",
+        "ch": 2,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_12",
+      "fig": "loop_or_hotcues_12",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_12",
+        "type": "note",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_13",
+      "fig": "loop_or_hotcues_13",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_13",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_14",
+      "fig": "loop_or_hotcues_14",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_14",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_15",
+      "fig": "loop_or_hotcues_15",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_15",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_16",
+      "fig": "loop_or_hotcues_16",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_16",
+        "type": "note",
+        "ch": 2,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_17",
+      "fig": "loop_or_hotcues_17",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_17",
+        "type": "note",
+        "ch": 2,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_18",
+      "fig": "loop_or_hotcues_18",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_18",
+        "type": "note",
+        "ch": 2,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_19",
+      "fig": "loop_or_hotcues_19",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_19",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_20",
+      "fig": "loop_or_hotcues_20",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_20",
+        "type": "note",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_21",
+      "fig": "loop_or_hotcues_21",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_21",
+        "type": "note",
+        "ch": 2,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-loop_or_hotcues_22",
+      "fig": "loop_or_hotcues_22",
+      "label": "loopOrHotcues",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_or_hotcues_22",
+        "type": "note",
+        "ch": 2,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[loop_or_hotcues_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-move_loop_left_2",
+      "fig": "move_loop_left_2",
+      "label": "moveLoopLeft",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "move_loop_left_2",
+        "type": "note",
+        "ch": 2,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[move_loop_left_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-move_loop_right_2",
+      "fig": "move_loop_right_2",
+      "label": "moveLoopRight",
+      "kind": "button",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "move_loop_right_2",
+        "type": "note",
+        "ch": 2,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[move_loop_right_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-resize_loop_2",
+      "fig": "resize_loop_2",
+      "label": "resizeLoop",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "resize_loop_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[resize_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-select_prev_playlist_2",
+      "fig": "select_prev_playlist_2",
+      "label": "SelectPrevPlaylist",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_prev_playlist_2",
+        "type": "note",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[select_prev_playlist_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-select_next_playlist_2",
+      "fig": "select_next_playlist_2",
+      "label": "SelectNextPlaylist",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_next_playlist_2",
+        "type": "note",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[select_next_playlist_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "loadSelectedTrack",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-select_track_2",
+      "fig": "select_track_2",
+      "label": "selectTrack",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "select_track_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[select_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-fwd_2",
+      "fig": "fwd_2",
+      "label": "fwd",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd_2",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[fwd_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-back_2",
+      "fig": "back_2",
+      "label": "back",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back_2",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[back_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-cue_2",
+      "fig": "cue_2",
+      "label": "cue",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_2",
+        "type": "note",
+        "ch": 2,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[cue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-key_lock_2",
+      "fig": "key_lock_2",
+      "label": "keyLock",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_lock_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[key_lock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-rate_2",
+      "fig": "rate_2",
+      "label": "rate",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[rate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-beat_sync_2",
+      "fig": "beat_sync_2",
+      "label": "beatSync",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beat_sync_2",
+        "type": "note",
+        "ch": 2,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[beat_sync_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-flanger_2",
+      "fig": "flanger_2",
+      "label": "flanger",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger_2",
+        "type": "note",
+        "ch": 2,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[flanger_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_depth_2",
+      "fig": "change_depth_2",
+      "label": "changeDepth",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "change_depth_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[change_depth_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_delay_2",
+      "fig": "change_delay_2",
+      "label": "changeDelay",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "change_delay_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[change_delay_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-change_lfo_2",
+      "fig": "change_lfo_2",
+      "label": "changeLFO",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "change_lfo_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[change_lfo_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-reset_depth_2",
+      "fig": "reset_depth_2",
+      "label": "resetDepth",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "reset_depth_2",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[reset_depth_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-reset_delay_2",
+      "fig": "reset_delay_2",
+      "label": "resetDelay",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "reset_delay_2",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[reset_delay_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-reset_lfo_2",
+      "fig": "reset_lfo_2",
+      "label": "resetLFO",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "reset_lfo_2",
+        "type": "note",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[reset_lfo_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-pitch_bend_3",
+      "fig": "pitch_bend_3",
+      "label": "pitchBend",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend_3",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-dn-sc2000-pitch_bend_4",
+      "fig": "pitch_bend_4",
+      "label": "pitchBend",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bend_4",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pitch_bend_4] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

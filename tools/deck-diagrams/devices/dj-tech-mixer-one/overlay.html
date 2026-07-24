@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>DJ-Tech Mixer One overlay (red recreation)</title>
+<style>
+:root {
+  --bg: #0e1114;
+  --ink: #e8eef2;
+  --muted: #8a9aa6;
+  --red: #ff2a2a;
+  --accent: #3dd6c6;
+  --panel: #1a2229;
+  --shift: #ffb020;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--ink);
+}
+header {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #2a3540;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+header .meta { color: var(--muted); font-size: 12px; }
+.toolbar button, .toolbar label {
+  background: #24303a; color: var(--ink); border: 1px solid #3a4a57;
+  border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.toolbar button.active, .toolbar button[aria-pressed="true"] {
+  background: var(--shift); color: #111; border-color: var(--shift); font-weight: 600;
+}
+.stage-wrap { padding: 12px; overflow: auto; }
+.stage {
+  position: relative; width: min(1200px, 100%);
+  margin: 0 auto; user-select: none;
+}
+.stage img.plate { width: 100%; height: auto; display: block; border-radius: 4px; }
+.control {
+  position: absolute; border: 2px solid var(--red); color: var(--red);
+  background: rgba(255, 40, 40, 0.12); font-size: 9px; line-height: 1.1;
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  padding: 1px 2px; overflow: hidden; cursor: pointer;
+}
+.control .tag { font-weight: 700; pointer-events: none; }
+.control.kind-jog { border-radius: 50%; }
+.control.kind-knob, .control.kind-encoder { border-radius: 50%; }
+.control.kind-fader { border-radius: 2px; }
+.control.kind-pad { border-radius: 3px; }
+.control.pressed, .control:active { background: rgba(255,40,40,0.45); }
+.control.shift-hot { border-color: var(--shift); color: var(--shift); background: rgba(255,176,32,0.18); }
+#readout {
+  position: sticky; bottom: 0; background: #12181e; border-top: 1px solid #2a3540;
+  padding: 10px 14px; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px; min-height: 52px;
+}
+#readout .k { color: var(--accent); }
+.legend { color: var(--muted); font-size: 11px; margin-left: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DJ-Tech Mixer One - red overlay</h1>
+  <span class="meta">Compare recreation vs official plate. Missing = no red box.</span>
+  <div class="toolbar">
+    <button type="button" id="shiftBtn" aria-pressed="false" title="Toggle SHIFT layer highlight">SHIFT</button>
+  </div>
+  <span class="legend">Hold keyboard Shift or click SHIFT · hover for MIDI</span>
+</header>
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+    <img class="plate" src="" alt="DJ-Tech Mixer One official plate"/>
+    <div class="control kind-fader" style="left:2.0%;top:4.0%;width:3.0%;height:8.0%;" data-fig="volume" data-label="volume" data-kind="fader" data-midi-name="volume" data-midi-type="cc" data-midi-ch="6" data-midi-code="11" data-shift-name="" data-layer="base" title="volume volume"><span class="tag">volume</span></div><div class="control kind-fader" style="left:9.8%;top:4.0%;width:3.0%;height:8.0%;" data-fig="volume_2" data-label="volume" data-kind="fader" data-midi-name="volume_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="11" data-shift-name="" data-layer="base" title="volume_2 volume"><span class="tag">volume_2</span></div><div class="control kind-fader" style="left:17.6%;top:4.0%;width:3.0%;height:8.0%;" data-fig="head_volume" data-label="headVolume" data-kind="fader" data-midi-name="head_volume" data-midi-type="cc" data-midi-ch="6" data-midi-code="12" data-shift-name="" data-layer="base" title="head_volume headVolume"><span class="tag">head_volume</span></div><div class="control kind-fader" style="left:25.4%;top:4.0%;width:3.0%;height:8.0%;" data-fig="head_volume_2" data-label="headVolume" data-kind="fader" data-midi-name="head_volume_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="12" data-shift-name="" data-layer="base" title="head_volume_2 headVolume"><span class="tag">head_volume_2</span></div><div class="control kind-knob" style="left:33.2%;top:4.0%;width:4.0%;height:4.5%;" data-fig="head_mix" data-label="headMix" data-kind="knob" data-midi-name="head_mix" data-midi-type="cc" data-midi-ch="6" data-midi-code="13" data-shift-name="" data-layer="base" title="head_mix headMix"><span class="tag">head_mix</span></div><div class="control kind-knob" style="left:41.0%;top:4.0%;width:4.0%;height:4.5%;" data-fig="head_mix_2" data-label="headMix" data-kind="knob" data-midi-name="head_mix_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="13" data-shift-name="" data-layer="base" title="head_mix_2 headMix"><span class="tag">head_mix_2</span></div><div class="control kind-fader" style="left:48.8%;top:4.0%;width:3.0%;height:8.0%;" data-fig="crossfader" data-label="crossfader" data-kind="fader" data-midi-name="crossfader" data-midi-type="cc" data-midi-ch="6" data-midi-code="15" data-shift-name="" data-layer="base" title="crossfader crossfader"><span class="tag">crossfader</span></div><div class="control kind-fader" style="left:56.6%;top:4.0%;width:3.0%;height:8.0%;" data-fig="crossfader_2" data-label="crossfader" data-kind="fader" data-midi-name="crossfader_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="15" data-shift-name="" data-layer="base" title="crossfader_2 crossfader"><span class="tag">crossfader_2</span></div><div class="control kind-fader" style="left:64.4%;top:4.0%;width:3.0%;height:8.0%;" data-fig="clear_volume_leds" data-label="clearVolumeLEDs" data-kind="fader" data-midi-name="clear_volume_leds" data-midi-type="note" data-midi-ch="8" data-midi-code="10" data-shift-name="" data-layer="base" title="clear_volume_leds clearVolumeLEDs"><span class="tag">clear_volume_leds</span></div><div class="control kind-fader" style="left:72.2%;top:4.0%;width:3.0%;height:8.0%;" data-fig="clear_volume_leds_2" data-label="clearVolumeLEDs" data-kind="fader" data-midi-name="clear_volume_leds_2" data-midi-type="note" data-midi-ch="6" data-midi-code="10" data-shift-name="" data-layer="base" title="clear_volume_leds_2 clearVolumeLEDs"><span class="tag">clear_volume_leds_2</span></div><div class="control kind-fader" style="left:80.0%;top:4.0%;width:3.0%;height:8.0%;" data-fig="xfader_curve" data-label="xfaderCurve" data-kind="fader" data-midi-name="xfader_curve" data-midi-type="cc" data-midi-ch="6" data-midi-code="14" data-shift-name="" data-layer="base" title="xfader_curve xfaderCurve"><span class="tag">xfader_curve</span></div><div class="control kind-fader" style="left:87.8%;top:4.0%;width:3.0%;height:8.0%;" data-fig="xfader_curve_2" data-label="xfaderCurve" data-kind="fader" data-midi-name="xfader_curve_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="14" data-shift-name="" data-layer="base" title="xfader_curve_2 xfaderCurve"><span class="tag">xfader_curve_2</span></div><div class="control kind-button" style="left:2.0%;top:10.5%;width:4.0%;height:4.5%;" data-fig="mute" data-label="mute" data-kind="button" data-midi-name="mute" data-midi-type="note" data-midi-ch="8" data-midi-code="5" data-shift-name="" data-layer="base" title="mute mute"><span class="tag">mute</span></div><div class="control kind-button" style="left:9.8%;top:10.5%;width:4.0%;height:4.5%;" data-fig="mute_2" data-label="mute" data-kind="button" data-midi-name="mute_2" data-midi-type="note" data-midi-ch="6" data-midi-code="5" data-shift-name="" data-layer="base" title="mute_2 mute"><span class="tag">mute_2</span></div><div class="control kind-fader" style="left:17.6%;top:10.5%;width:3.0%;height:8.0%;" data-fig="pregain" data-label="pregain" data-kind="fader" data-midi-name="pregain" data-midi-type="cc" data-midi-ch="6" data-midi-code="16" data-shift-name="" data-layer="base" title="pregain pregain"><span class="tag">pregain</span></div><div class="control kind-knob" style="left:25.4%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_high" data-label="filterHigh" data-kind="knob" data-midi-name="filter_high" data-midi-type="cc" data-midi-ch="6" data-midi-code="17" data-shift-name="" data-layer="base" title="filter_high filterHigh"><span class="tag">filter_high</span></div><div class="control kind-knob" style="left:33.2%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_mid" data-label="filterMid" data-kind="knob" data-midi-name="filter_mid" data-midi-type="cc" data-midi-ch="6" data-midi-code="18" data-shift-name="" data-layer="base" title="filter_mid filterMid"><span class="tag">filter_mid</span></div><div class="control kind-knob" style="left:41.0%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_low" data-label="filterLow" data-kind="knob" data-midi-name="filter_low" data-midi-type="cc" data-midi-ch="6" data-midi-code="19" data-shift-name="" data-layer="base" title="filter_low filterLow"><span class="tag">filter_low</span></div><div class="control kind-knob" style="left:48.8%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_low_kill" data-label="filterLowKill" data-kind="knob" data-midi-name="filter_low_kill" data-midi-type="note" data-midi-ch="6" data-midi-code="8" data-shift-name="" data-layer="base" title="filter_low_kill filterLowKill"><span class="tag">filter_low_kill</span></div><div class="control kind-knob" style="left:56.6%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_kill" data-label="filterMidKill" data-kind="knob" data-midi-name="filter_mid_kill" data-midi-type="note" data-midi-ch="6" data-midi-code="9" data-shift-name="" data-layer="base" title="filter_mid_kill filterMidKill"><span class="tag">filter_mid_kill</span></div><div class="control kind-knob" style="left:64.4%;top:10.5%;width:4.0%;height:4.5%;" data-fig="filter_high_kill" data-label="filterHighKill" data-kind="knob" data-midi-name="filter_high_kill" data-midi-type="note" data-midi-ch="6" data-midi-code="6" data-shift-name="" data-layer="base" title="filter_high_kill filterHighKill"><span class="tag">filter_high_kill</span></div><div class="control kind-button" style="left:72.2%;top:10.5%;width:4.0%;height:4.5%;" data-fig="pfl" data-label="pfl" data-kind="button" data-midi-name="pfl" data-midi-type="note" data-midi-ch="6" data-midi-code="7" data-shift-name="" data-layer="base" title="pfl pfl"><span class="tag">pfl</span></div><div class="control kind-fader" style="left:80.0%;top:10.5%;width:3.0%;height:8.0%;" data-fig="volume_3" data-label="volume" data-kind="fader" data-midi-name="volume_3" data-midi-type="cc" data-midi-ch="6" data-midi-code="20" data-shift-name="" data-layer="base" title="volume_3 volume"><span class="tag">volume_3</span></div><div class="control kind-fader" style="left:87.8%;top:10.5%;width:3.0%;height:8.0%;" data-fig="pregain_2" data-label="pregain" data-kind="fader" data-midi-name="pregain_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="16" data-shift-name="" data-layer="base" title="pregain_2 pregain"><span class="tag">pregain_2</span></div><div class="control kind-knob" style="left:2.0%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_high_2" data-label="filterHigh" data-kind="knob" data-midi-name="filter_high_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="17" data-shift-name="" data-layer="base" title="filter_high_2 filterHigh"><span class="tag">filter_high_2</span></div><div class="control kind-knob" style="left:9.8%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_mid_2" data-label="filterMid" data-kind="knob" data-midi-name="filter_mid_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="18" data-shift-name="" data-layer="base" title="filter_mid_2 filterMid"><span class="tag">filter_mid_2</span></div><div class="control kind-knob" style="left:17.6%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_low_2" data-label="filterLow" data-kind="knob" data-midi-name="filter_low_2" data-midi-type="cc" data-midi-ch="8" data-midi-code="19" data-shift-name="" data-layer="base" title="filter_low_2 filterLow"><span class="tag">filter_low_2</span></div><div class="control kind-knob" style="left:25.4%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_low_kill_2" data-label="filterLowKill" data-kind="knob" data-midi-name="filter_low_kill_2" data-midi-type="note" data-midi-ch="8" data-midi-code="8" data-shift-name="" data-layer="base" title="filter_low_kill_2 filterLowKill"><span class="tag">filter_low_kill_2</span></div><div class="control kind-knob" style="left:33.2%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_mid_kill_2" data-label="filterMidKill" data-kind="knob" data-midi-name="filter_mid_kill_2" data-midi-type="note" data-midi-ch="8" data-midi-code="9" data-shift-name="" data-layer="base" title="filter_mid_kill_2 filterMidKill"><span class="tag">filter_mid_kill_2</span></div><div class="control kind-knob" style="left:41.0%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_high_kill_2" data-label="filterHighKill" data-kind="knob" data-midi-name="filter_high_kill_2" data-midi-type="note" data-midi-ch="8" data-midi-code="6" data-shift-name="" data-layer="base" title="filter_high_kill_2 filterHighKill"><span class="tag">filter_high_kill_2</span></div><div class="control kind-button" style="left:48.8%;top:17.0%;width:4.0%;height:4.5%;" data-fig="pfl_2" data-label="pfl" data-kind="button" data-midi-name="pfl_2" data-midi-type="note" data-midi-ch="8" data-midi-code="7" data-shift-name="" data-layer="base" title="pfl_2 pfl"><span class="tag">pfl_2</span></div><div class="control kind-fader" style="left:56.6%;top:17.0%;width:3.0%;height:8.0%;" data-fig="volume_4" data-label="volume" data-kind="fader" data-midi-name="volume_4" data-midi-type="cc" data-midi-ch="8" data-midi-code="20" data-shift-name="" data-layer="base" title="volume_4 volume"><span class="tag">volume_4</span></div><div class="control kind-fader" style="left:64.4%;top:17.0%;width:3.0%;height:8.0%;" data-fig="pregain_3" data-label="pregain" data-kind="fader" data-midi-name="pregain_3" data-midi-type="cc" data-midi-ch="7" data-midi-code="21" data-shift-name="" data-layer="base" title="pregain_3 pregain"><span class="tag">pregain_3</span></div><div class="control kind-knob" style="left:72.2%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_high_3" data-label="filterHigh" data-kind="knob" data-midi-name="filter_high_3" data-midi-type="cc" data-midi-ch="7" data-midi-code="22" data-shift-name="" data-layer="base" title="filter_high_3 filterHigh"><span class="tag">filter_high_3</span></div><div class="control kind-knob" style="left:80.0%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_mid_3" data-label="filterMid" data-kind="knob" data-midi-name="filter_mid_3" data-midi-type="cc" data-midi-ch="7" data-midi-code="23" data-shift-name="" data-layer="base" title="filter_mid_3 filterMid"><span class="tag">filter_mid_3</span></div><div class="control kind-knob" style="left:87.8%;top:17.0%;width:4.0%;height:4.5%;" data-fig="filter_low_3" data-label="filterLow" data-kind="knob" data-midi-name="filter_low_3" data-midi-type="cc" data-midi-ch="7" data-midi-code="24" data-shift-name="" data-layer="base" title="filter_low_3 filterLow"><span class="tag">filter_low_3</span></div><div class="control kind-knob" style="left:2.0%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_low_kill_3" data-label="filterLowKill" data-kind="knob" data-midi-name="filter_low_kill_3" data-midi-type="note" data-midi-ch="7" data-midi-code="4" data-shift-name="" data-layer="base" title="filter_low_kill_3 filterLowKill"><span class="tag">filter_low_kill_3</span></div><div class="control kind-knob" style="left:9.8%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_kill_3" data-label="filterMidKill" data-kind="knob" data-midi-name="filter_mid_kill_3" data-midi-type="note" data-midi-ch="7" data-midi-code="1" data-shift-name="" data-layer="base" title="filter_mid_kill_3 filterMidKill"><span class="tag">filter_mid_kill_3</span></div><div class="control kind-knob" style="left:17.6%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_high_kill_3" data-label="filterHighKill" data-kind="knob" data-midi-name="filter_high_kill_3" data-midi-type="note" data-midi-ch="7" data-midi-code="2" data-shift-name="" data-layer="base" title="filter_high_kill_3 filterHighKill"><span class="tag">filter_high_kill_3</span></div><div class="control kind-button" style="left:25.4%;top:23.5%;width:4.0%;height:4.5%;" data-fig="pfl_3" data-label="pfl" data-kind="button" data-midi-name="pfl_3" data-midi-type="note" data-midi-ch="7" data-midi-code="3" data-shift-name="" data-layer="base" title="pfl_3 pfl"><span class="tag">pfl_3</span></div><div class="control kind-fader" style="left:33.2%;top:23.5%;width:3.0%;height:8.0%;" data-fig="volume_5" data-label="volume" data-kind="fader" data-midi-name="volume_5" data-midi-type="cc" data-midi-ch="7" data-midi-code="25" data-shift-name="" data-layer="base" title="volume_5 volume"><span class="tag">volume_5</span></div><div class="control kind-fader" style="left:41.0%;top:23.5%;width:3.0%;height:8.0%;" data-fig="pregain_4" data-label="pregain" data-kind="fader" data-midi-name="pregain_4" data-midi-type="cc" data-midi-ch="9" data-midi-code="21" data-shift-name="" data-layer="base" title="pregain_4 pregain"><span class="tag">pregain_4</span></div><div class="control kind-knob" style="left:48.8%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_high_4" data-label="filterHigh" data-kind="knob" data-midi-name="filter_high_4" data-midi-type="cc" data-midi-ch="9" data-midi-code="22" data-shift-name="" data-layer="base" title="filter_high_4 filterHigh"><span class="tag">filter_high_4</span></div><div class="control kind-knob" style="left:56.6%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_4" data-label="filterMid" data-kind="knob" data-midi-name="filter_mid_4" data-midi-type="cc" data-midi-ch="9" data-midi-code="23" data-shift-name="" data-layer="base" title="filter_mid_4 filterMid"><span class="tag">filter_mid_4</span></div><div class="control kind-knob" style="left:64.4%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_low_4" data-label="filterLow" data-kind="knob" data-midi-name="filter_low_4" data-midi-type="cc" data-midi-ch="9" data-midi-code="24" data-shift-name="" data-layer="base" title="filter_low_4 filterLow"><span class="tag">filter_low_4</span></div><div class="control kind-knob" style="left:72.2%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_low_kill_4" data-label="filterLowKill" data-kind="knob" data-midi-name="filter_low_kill_4" data-midi-type="note" data-midi-ch="9" data-midi-code="4" data-shift-name="" data-layer="base" title="filter_low_kill_4 filterLowKill"><span class="tag">filter_low_kill_4</span></div><div class="control kind-knob" style="left:80.0%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_mid_kill_4" data-label="filterMidKill" data-kind="knob" data-midi-name="filter_mid_kill_4" data-midi-type="note" data-midi-ch="9" data-midi-code="1" data-shift-name="" data-layer="base" title="filter_mid_kill_4 filterMidKill"><span class="tag">filter_mid_kill_4</span></div><div class="control kind-knob" style="left:87.8%;top:23.5%;width:4.0%;height:4.5%;" data-fig="filter_high_kill_4" data-label="filterHighKill" data-kind="knob" data-midi-name="filter_high_kill_4" data-midi-type="note" data-midi-ch="9" data-midi-code="2" data-shift-name="" data-layer="base" title="filter_high_kill_4 filterHighKill"><span class="tag">filter_high_kill_4</span></div><div class="control kind-button" style="left:2.0%;top:30.0%;width:4.0%;height:4.5%;" data-fig="pfl_4" data-label="pfl" data-kind="button" data-midi-name="pfl_4" data-midi-type="note" data-midi-ch="9" data-midi-code="3" data-shift-name="" data-layer="base" title="pfl_4 pfl"><span class="tag">pfl_4</span></div><div class="control kind-fader" style="left:9.8%;top:30.0%;width:3.0%;height:8.0%;" data-fig="volume_6" data-label="volume" data-kind="fader" data-midi-name="volume_6" data-midi-type="cc" data-midi-ch="9" data-midi-code="25" data-shift-name="" data-layer="base" title="volume_6 volume"><span class="tag">volume_6</span></div>
+  </div>
+</div>
+<div id="readout">Hover a control…</div>
+<script>
+const stage = document.getElementById('stage');
+const readout = document.getElementById('readout');
+const shiftBtn = document.getElementById('shiftBtn');
+let shift = false;
+const dials = new Map();
+
+function setShift(on) {
+  shift = on;
+  shiftBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  shiftBtn.classList.toggle('active', on);
+  document.querySelectorAll('.control').forEach(el => {
+    const has = !!el.dataset.shiftName;
+    el.classList.toggle('shift-hot', on && has);
+    if (on && has) {
+      const base = el.dataset.label;
+      el.querySelector('.tag').innerHTML = el.dataset.fig + '<br>SHIFT: ' + el.dataset.shiftName;
+      el.dataset._baseLabel = base;
+    } else if (el.dataset._baseHtml) {
+      el.querySelector('.tag').innerHTML = el.dataset._baseHtml;
+    }
+  });
+}
+
+document.querySelectorAll('.control').forEach(el => {
+  el.dataset._baseHtml = el.querySelector('.tag').innerHTML;
+  el.addEventListener('pointerenter', () => {
+    const sn = el.dataset.shiftName;
+    readout.innerHTML =
+      `<span class="k">${el.dataset.fig}</span> ${el.dataset.label} · ` +
+      `<span class="k">${el.dataset.midiType.toUpperCase()}</span> ch${el.dataset.midiCh} ` +
+      `code ${el.dataset.midiCode} · name <span class="k">${el.dataset.midiName}</span>` +
+      (sn ? ` · shift twin <span class="k">${sn}</span>` : ' · (no shift twin)') +
+      (shift && sn ? ' · <span class="k">SHIFT LAYER ACTIVE</span>' : '');
+  });
+  el.addEventListener('pointerdown', (ev) => {
+    el.classList.add('pressed');
+    if (el.dataset.kind === 'knob' || el.dataset.kind === 'encoder' || el.dataset.kind === 'fader') {
+      const id = el.dataset.fig;
+      let v = dials.get(id) ?? 64;
+      v = Math.max(0, Math.min(127, v + (ev.shiftKey ? -8 : 8)));
+      dials.set(id, v);
+      const dv = el.querySelector('.dial-value');
+      if (dv) { dv.hidden = false; dv.textContent = String(v); }
+      readout.innerHTML += ` · value <span class="k">${v}</span>`;
+    }
+  });
+  el.addEventListener('pointerup', () => el.classList.remove('pressed'));
+  el.addEventListener('pointerleave', () => el.classList.remove('pressed'));
+});
+
+shiftBtn?.addEventListener('click', () => setShift(!shift));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Shift') setShift(true);
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'Shift') setShift(false);
+});
+</script>
+</body>
+</html>

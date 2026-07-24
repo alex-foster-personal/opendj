@@ -1,0 +1,618 @@
+{
+  "source": "mixxx:Denon DN SC2000.midi.xml",
+  "archived": "tools/deck-diagrams/devices/denon-dn-sc2000/source/Denon DN SC2000.midi.xml",
+  "device": "Denon DN SC2000",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "change_deck",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx DenonDNSC2000.changeDeck [change_deck]"
+    },
+    {
+      "name": "jog_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DenonDNSC2000.jogTouch [jog_touch]"
+    },
+    {
+      "name": "jog",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DenonDNSC2000.jog [jog]"
+    },
+    {
+      "name": "shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "notes": "Mixxx DenonDNSC2000.shift [shift]"
+    },
+    {
+      "name": "loop_or_hotcues",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues]"
+    },
+    {
+      "name": "loop_or_hotcues_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_2]"
+    },
+    {
+      "name": "loop_or_hotcues_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_3]"
+    },
+    {
+      "name": "loop_or_hotcues_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_4]"
+    },
+    {
+      "name": "loop_or_hotcues_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_5]"
+    },
+    {
+      "name": "loop_or_hotcues_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_6]"
+    },
+    {
+      "name": "loop_or_hotcues_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_7]"
+    },
+    {
+      "name": "loop_or_hotcues_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_8]"
+    },
+    {
+      "name": "loop_or_hotcues_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_9]"
+    },
+    {
+      "name": "loop_or_hotcues_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_10]"
+    },
+    {
+      "name": "loop_or_hotcues_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_11]"
+    },
+    {
+      "name": "move_loop_left",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "notes": "Mixxx DenonDNSC2000.moveLoopLeft [move_loop_left]"
+    },
+    {
+      "name": "move_loop_right",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 106,
+      "notes": "Mixxx DenonDNSC2000.moveLoopRight [move_loop_right]"
+    },
+    {
+      "name": "resize_loop",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 93,
+      "notes": "Mixxx DenonDNSC2000.resizeLoop [resize_loop]"
+    },
+    {
+      "name": "select_prev_playlist",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx SelectPrevPlaylist [select_prev_playlist]"
+    },
+    {
+      "name": "select_next_playlist",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx SelectNextPlaylist [select_next_playlist]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx DenonDNSC2000.loadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "select_track",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 84,
+      "notes": "Mixxx DenonDNSC2000.selectTrack [select_track]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx DenonDNSC2000.play [play]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx DenonDNSC2000.cue [cue]"
+    },
+    {
+      "name": "key_lock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx DenonDNSC2000.keyLock [key_lock]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 95,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "beat_sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "notes": "Mixxx DenonDNSC2000.beatSync [beat_sync]"
+    },
+    {
+      "name": "flanger",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx DenonDNSC2000.flanger [flanger]"
+    },
+    {
+      "name": "change_depth",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx DenonDNSC2000.changeDepth [change_depth]"
+    },
+    {
+      "name": "change_delay",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 87,
+      "notes": "Mixxx DenonDNSC2000.changeDelay [change_delay]"
+    },
+    {
+      "name": "change_lfo",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 88,
+      "notes": "Mixxx DenonDNSC2000.changeLFO [change_lfo]"
+    },
+    {
+      "name": "reset_depth",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx DenonDNSC2000.resetDepth [reset_depth]"
+    },
+    {
+      "name": "reset_delay",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx DenonDNSC2000.resetDelay [reset_delay]"
+    },
+    {
+      "name": "reset_lfo",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx DenonDNSC2000.resetLFO [reset_lfo]"
+    },
+    {
+      "name": "pitch_bend",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx DenonDNSC2000.pitchBend [pitch_bend]"
+    },
+    {
+      "name": "pitch_bend_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx DenonDNSC2000.pitchBend [pitch_bend_2]"
+    },
+    {
+      "name": "change_deck_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx DenonDNSC2000.changeDeck [change_deck_2]"
+    },
+    {
+      "name": "jog_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DenonDNSC2000.jogTouch [jog_touch_2]"
+    },
+    {
+      "name": "jog_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DenonDNSC2000.jog [jog_2]"
+    },
+    {
+      "name": "shift_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 96,
+      "notes": "Mixxx DenonDNSC2000.shift [shift_2]"
+    },
+    {
+      "name": "loop_or_hotcues_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_12]"
+    },
+    {
+      "name": "loop_or_hotcues_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_13]"
+    },
+    {
+      "name": "loop_or_hotcues_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_14]"
+    },
+    {
+      "name": "loop_or_hotcues_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_15]"
+    },
+    {
+      "name": "loop_or_hotcues_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_16]"
+    },
+    {
+      "name": "loop_or_hotcues_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_17]"
+    },
+    {
+      "name": "loop_or_hotcues_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_18]"
+    },
+    {
+      "name": "loop_or_hotcues_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_19]"
+    },
+    {
+      "name": "loop_or_hotcues_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 55,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_20]"
+    },
+    {
+      "name": "loop_or_hotcues_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 57,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_21]"
+    },
+    {
+      "name": "loop_or_hotcues_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx DenonDNSC2000.loopOrHotcues [loop_or_hotcues_22]"
+    },
+    {
+      "name": "move_loop_left_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 105,
+      "notes": "Mixxx DenonDNSC2000.moveLoopLeft [move_loop_left_2]"
+    },
+    {
+      "name": "move_loop_right_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 106,
+      "notes": "Mixxx DenonDNSC2000.moveLoopRight [move_loop_right_2]"
+    },
+    {
+      "name": "resize_loop_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 93,
+      "notes": "Mixxx DenonDNSC2000.resizeLoop [resize_loop_2]"
+    },
+    {
+      "name": "select_prev_playlist_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 48,
+      "notes": "Mixxx SelectPrevPlaylist [select_prev_playlist_2]"
+    },
+    {
+      "name": "select_next_playlist_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx SelectNextPlaylist [select_next_playlist_2]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx DenonDNSC2000.loadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "select_track_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 84,
+      "notes": "Mixxx DenonDNSC2000.selectTrack [select_track_2]"
+    },
+    {
+      "name": "fwd_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx fwd [fwd_2]"
+    },
+    {
+      "name": "back_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx back [back_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 67,
+      "notes": "Mixxx DenonDNSC2000.play [play_2]"
+    },
+    {
+      "name": "cue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 66,
+      "notes": "Mixxx DenonDNSC2000.cue [cue_2]"
+    },
+    {
+      "name": "key_lock_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx DenonDNSC2000.keyLock [key_lock_2]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 95,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "beat_sync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 107,
+      "notes": "Mixxx DenonDNSC2000.beatSync [beat_sync_2]"
+    },
+    {
+      "name": "flanger_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 86,
+      "notes": "Mixxx DenonDNSC2000.flanger [flanger_2]"
+    },
+    {
+      "name": "change_depth_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 2,
+      "code": 86,
+      "notes": "Mixxx DenonDNSC2000.changeDepth [change_depth_2]"
+    },
+    {
+      "name": "change_delay_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 2,
+      "code": 87,
+      "notes": "Mixxx DenonDNSC2000.changeDelay [change_delay_2]"
+    },
+    {
+      "name": "change_lfo_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 2,
+      "code": 88,
+      "notes": "Mixxx DenonDNSC2000.changeLFO [change_lfo_2]"
+    },
+    {
+      "name": "reset_depth_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 18,
+      "notes": "Mixxx DenonDNSC2000.resetDepth [reset_depth_2]"
+    },
+    {
+      "name": "reset_delay_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx DenonDNSC2000.resetDelay [reset_delay_2]"
+    },
+    {
+      "name": "reset_lfo_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx DenonDNSC2000.resetLFO [reset_lfo_2]"
+    },
+    {
+      "name": "pitch_bend_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx DenonDNSC2000.pitchBend [pitch_bend_3]"
+    },
+    {
+      "name": "pitch_bend_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx DenonDNSC2000.pitchBend [pitch_bend_4]"
+    }
+  ]
+}

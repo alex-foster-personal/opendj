@@ -1,0 +1,418 @@
+{
+  "source": "mixxx:MVave-SMC-Mixer.midi.xml",
+  "archived": "tools/deck-diagrams/devices/mvave-smc-mixer/source/MVave-SMC-Mixer.midi.xml",
+  "device": "M-Vave SMC-Mixer",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "equalizer_rack1_channel3_effect1_first_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[0].midKillButton.input [equalizer_rack1_channel3_effect1_first_s_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_first_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[0].lowKillButton.input [equalizer_rack1_channel3_effect1_first_r_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_first_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[0].highKillButton.input [equalizer_rack1_channel3_effect1_first_m_button]"
+    },
+    {
+      "name": "quick_effect_rack1_channel3_first_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[0].quickEffectButton.input [quick_effect_rack1_channel3_first_square_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_second_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[1].midKillButton.input [equalizer_rack1_channel1_effect1_second_s_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_second_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[1].lowKillButton.input [equalizer_rack1_channel1_effect1_second_r_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_second_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[1].highKillButton.input [equalizer_rack1_channel1_effect1_second_m_button]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_second_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[1].quickEffectButton.input [quick_effect_rack1_channel1_second_square_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_third_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[2].midKillButton.input [equalizer_rack1_channel2_effect1_third_s_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_third_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[2].lowKillButton.input [equalizer_rack1_channel2_effect1_third_r_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_third_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[2].highKillButton.input [equalizer_rack1_channel2_effect1_third_m_button]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_third_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[2].quickEffectButton.input [quick_effect_rack1_channel2_third_square_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_fourth_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[3].midKillButton.input [equalizer_rack1_channel4_effect1_fourth_s_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_third_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[3].lowKillButton.input [equalizer_rack1_channel4_effect1_third_r_button]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_fourth_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[3].highKillButton.input [equalizer_rack1_channel4_effect1_fourth_m_button]"
+    },
+    {
+      "name": "quick_effect_rack1_channel4_fourth_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[3].quickEffectButton.input [quick_effect_rack1_channel4_fourth_square_button]"
+    },
+    {
+      "name": "channel3_fifth_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx SMCMixer.controller.slipButtons[0].input [channel3_fifth_m_button]"
+    },
+    {
+      "name": "channel1_sixth_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx SMCMixer.controller.slipButtons[1].input [channel1_sixth_m_button]"
+    },
+    {
+      "name": "channel2_seventh_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx SMCMixer.controller.slipButtons[2].input [channel2_seventh_m_button]"
+    },
+    {
+      "name": "channel4_eighth_m_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx SMCMixer.controller.slipButtons[3].input [channel4_eighth_m_button]"
+    },
+    {
+      "name": "channel3_fifth_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx SMCMixer.controller.quantizeButtons[0].input [channel3_fifth_s_button]"
+    },
+    {
+      "name": "channel1_sixth_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx SMCMixer.controller.quantizeButtons[1].input [channel1_sixth_s_button]"
+    },
+    {
+      "name": "channel2_seventh_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx SMCMixer.controller.quantizeButtons[2].input [channel2_seventh_s_button]"
+    },
+    {
+      "name": "channel4_eighth_s_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx SMCMixer.controller.quantizeButtons[3].input [channel4_eighth_s_button]"
+    },
+    {
+      "name": "channel3_fifth_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx SMCMixer.controller.keylockButtons[0].input [channel3_fifth_r_button]"
+    },
+    {
+      "name": "channel1_sixth_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx SMCMixer.controller.keylockButtons[1].input [channel1_sixth_r_button]"
+    },
+    {
+      "name": "channel2_seventh_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx SMCMixer.controller.keylockButtons[2].input [channel2_seventh_r_button]"
+    },
+    {
+      "name": "channel4_eighth_r_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx SMCMixer.controller.keylockButtons[3].input [channel4_eighth_r_button]"
+    },
+    {
+      "name": "channel3_fifth_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx SMCMixer.controller.pflButtons[0].input [channel3_fifth_square_button]"
+    },
+    {
+      "name": "channel1_sixth_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx SMCMixer.controller.pflButtons[1].input [channel1_sixth_square_button]"
+    },
+    {
+      "name": "channel2_seventh_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx SMCMixer.controller.pflButtons[2].input [channel2_seventh_square_button]"
+    },
+    {
+      "name": "channel4_eighth_square_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx SMCMixer.controller.pflButtons[3].input [channel4_eighth_square_button]"
+    },
+    {
+      "name": "channel3_knob_1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[0].knob.input [channel3_knob_1]"
+    },
+    {
+      "name": "channel1_knob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[1].knob.input [channel1_knob_2]"
+    },
+    {
+      "name": "channel2_knob_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[2].knob.input [channel2_knob_3]"
+    },
+    {
+      "name": "channel4_knob_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx SMCMixer.controller.eqButtons[3].knob.input [channel4_knob_3]"
+    },
+    {
+      "name": "master_knob_4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx SMCMixer.controller.gainKnob.input [master_knob_4]"
+    },
+    {
+      "name": "master_knob_5",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx SMCMixer.controller.balanceKnob.input [master_knob_5]"
+    },
+    {
+      "name": "master_knob_6",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx SMCMixer.controller.headGainKnob.input [master_knob_6]"
+    },
+    {
+      "name": "master_knob_7",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx SMCMixer.controller.headMixKnob.input [master_knob_7]"
+    },
+    {
+      "name": "channel1_channel_left_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx SMCMixer.controller.deckLeftButton.input [channel1_channel_left_button]"
+    },
+    {
+      "name": "channel1_channel_right_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx SMCMixer.controller.deckRightButton.input [channel1_channel_right_button]"
+    },
+    {
+      "name": "channel1_rewind_transport_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 91,
+      "notes": "Mixxx SMCMixer.controller.activeDeck.backButton.input [channel1_rewind_transport_button]"
+    },
+    {
+      "name": "channel1_fast_forward_transport_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 92,
+      "notes": "Mixxx SMCMixer.controller.activeDeck.forwardButton.input [channel1_fast_forward_transport_button]"
+    },
+    {
+      "name": "channel1_pause_transport_button_used_for_cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 93,
+      "notes": "Mixxx SMCMixer.controller.activeDeck.cueButton.input [channel1_pause_transport_button_used_for_cue]"
+    },
+    {
+      "name": "channel1_play_transport_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 94,
+      "notes": "Mixxx SMCMixer.controller.activeDeck.playButton.input [channel1_play_transport_button]"
+    },
+    {
+      "name": "recording_record_transport_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 95,
+      "notes": "Mixxx SMCMixer.controller.recordButton.input [recording_record_transport_button]"
+    },
+    {
+      "name": "channel1_down_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 97,
+      "notes": "Mixxx SMCMixer.controller.downButton.input [channel1_down_button]"
+    },
+    {
+      "name": "channel1_down_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "notes": "Mixxx SMCMixer.controller.upButton.input [channel1_down_button_2]"
+    },
+    {
+      "name": "channel1_left_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 98,
+      "notes": "Mixxx SMCMixer.controller.leftButton.input [channel1_left_button]"
+    },
+    {
+      "name": "channel1_right_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 99,
+      "notes": "Mixxx SMCMixer.controller.rightButton.input [channel1_right_button]"
+    }
+  ]
+}

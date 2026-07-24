@@ -1,0 +1,602 @@
+{
+  "source": "mixxx:Numark-Mixstream-Pro.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-mixstream-pro/source/Numark-Mixstream-Pro.midi.xml",
+  "device": "Numark Mixstream Pro",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 15,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "booth_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 17,
+      "notes": "Mixxx booth_gain [booth_gain]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 9,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 10,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "effect_button",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 0,
+      "notes": "Mixxx MixstreamPro.effectButton [effect_button]"
+    },
+    {
+      "name": "effect_button_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 1,
+      "notes": "Mixxx MixstreamPro.effectButton [effect_button_2]"
+    },
+    {
+      "name": "effect_button_3",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx MixstreamPro.effectButton [effect_button_3]"
+    },
+    {
+      "name": "effect_button_4",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx MixstreamPro.effectButton [effect_button_4]"
+    },
+    {
+      "name": "pregain",
+      "section": "other",
+      "type": "cc",
+      "ch": 16,
+      "code": 0,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "play_aux1",
+      "section": "other",
+      "type": "note",
+      "ch": 16,
+      "code": 7,
+      "notes": "Mixxx MixstreamPro.playAux1 [play_aux1]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 16,
+      "code": 18,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "parameter3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx parameter3 [parameter3]"
+    },
+    {
+      "name": "parameter3_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx parameter3 [parameter3_2]"
+    },
+    {
+      "name": "parameter2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx parameter2 [parameter2]"
+    },
+    {
+      "name": "parameter2_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx parameter2 [parameter2_2]"
+    },
+    {
+      "name": "parameter1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx parameter1 [parameter1]"
+    },
+    {
+      "name": "parameter1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx parameter1 [parameter1_2]"
+    },
+    {
+      "name": "load_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 1,
+      "notes": "Mixxx MixstreamPro.loadTrack [load_track]"
+    },
+    {
+      "name": "load_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 2,
+      "notes": "Mixxx MixstreamPro.loadTrack [load_track_2]"
+    },
+    {
+      "name": "pregain_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx pregain [pregain_3]"
+    },
+    {
+      "name": "pregain_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx pregain [pregain_4]"
+    },
+    {
+      "name": "effect_toggle_switch",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 4,
+      "notes": "Mixxx MixstreamPro.effectToggleSwitch [effect_toggle_switch]"
+    },
+    {
+      "name": "effect_toggle_switch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 4,
+      "notes": "Mixxx MixstreamPro.effectToggleSwitch [effect_toggle_switch_2]"
+    },
+    {
+      "name": "move_vertical",
+      "section": "browser",
+      "type": "cc",
+      "ch": 16,
+      "code": 5,
+      "notes": "Mixxx MoveVertical [move_vertical]"
+    },
+    {
+      "name": "go_to_item",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 6,
+      "notes": "Mixxx GoToItem [go_to_item]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 8,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx MixstreamPro.cue [cue]"
+    },
+    {
+      "name": "cue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 9,
+      "notes": "Mixxx MixstreamPro.cue [cue_2]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx MixstreamPro.play [play]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 10,
+      "notes": "Mixxx MixstreamPro.play [play_2]"
+    },
+    {
+      "name": "toggle_hot_cue_or_stems",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx MixstreamPro.toggleHotCueOrStems [toggle_hot_cue_or_stems]"
+    },
+    {
+      "name": "toggle_hot_cue_or_stems_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx MixstreamPro.toggleHotCueOrStems [toggle_hot_cue_or_stems_2]"
+    },
+    {
+      "name": "super1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx super1 [super1]"
+    },
+    {
+      "name": "super1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx super1 [super1_2]"
+    },
+    {
+      "name": "toggle_saved_loop",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx MixstreamPro.toggleSavedLoop [toggle_saved_loop]"
+    },
+    {
+      "name": "toggle_saved_loop_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "notes": "Mixxx MixstreamPro.toggleSavedLoop [toggle_saved_loop_2]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "toggle_roll_or_sampler",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 13,
+      "notes": "Mixxx MixstreamPro.toggleRollOrSampler [toggle_roll_or_sampler]"
+    },
+    {
+      "name": "toggle_roll_or_sampler_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 13,
+      "notes": "Mixxx MixstreamPro.toggleRollOrSampler [toggle_roll_or_sampler_2]"
+    },
+    {
+      "name": "toggle_autoloop",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 14,
+      "notes": "Mixxx MixstreamPro.toggleAutoloop [toggle_autoloop]"
+    },
+    {
+      "name": "toggle_autoloop_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 14,
+      "notes": "Mixxx MixstreamPro.toggleAutoloop [toggle_autoloop_2]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 14,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "performance_pad",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 15,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad]"
+    },
+    {
+      "name": "performance_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 15,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_2]"
+    },
+    {
+      "name": "performance_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 16,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_3]"
+    },
+    {
+      "name": "performance_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 16,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_4]"
+    },
+    {
+      "name": "show_maximized_library",
+      "section": "other",
+      "type": "note",
+      "ch": 16,
+      "code": 16,
+      "notes": "Mixxx show_maximized_library [show_maximized_library]"
+    },
+    {
+      "name": "move_focus_forward",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 3,
+      "notes": "Mixxx MoveFocusForward [move_focus_forward]"
+    },
+    {
+      "name": "performance_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 17,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_5]"
+    },
+    {
+      "name": "performance_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 17,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_6]"
+    },
+    {
+      "name": "performance_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 18,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_7]"
+    },
+    {
+      "name": "performance_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 18,
+      "notes": "Mixxx MixstreamPro.performancePad [performance_pad_8]"
+    },
+    {
+      "name": "shift_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 28,
+      "notes": "Mixxx MixstreamPro.shiftButton [shift_button]"
+    },
+    {
+      "name": "shift_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 28,
+      "notes": "Mixxx MixstreamPro.shiftButton [shift_button_2]"
+    },
+    {
+      "name": "pitch_bend",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 29,
+      "notes": "Mixxx MixstreamPro.pitchBend [pitch_bend]"
+    },
+    {
+      "name": "pitch_bend_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 29,
+      "notes": "Mixxx MixstreamPro.pitchBend [pitch_bend_2]"
+    },
+    {
+      "name": "pitch_bend_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 30,
+      "notes": "Mixxx MixstreamPro.pitchBend [pitch_bend_3]"
+    },
+    {
+      "name": "pitch_bend_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 30,
+      "notes": "Mixxx MixstreamPro.pitchBend [pitch_bend_4]"
+    },
+    {
+      "name": "input_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 31,
+      "notes": "Mixxx MixstreamPro.deck[1].pitchSlider.inputMSB [input_msb]"
+    },
+    {
+      "name": "input_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 31,
+      "notes": "Mixxx MixstreamPro.deck[2].pitchSlider.inputMSB [input_msb_2]"
+    },
+    {
+      "name": "input_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 75,
+      "notes": "Mixxx MixstreamPro.deck[1].pitchSlider.inputLSB [input_lsb]"
+    },
+    {
+      "name": "input_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 75,
+      "notes": "Mixxx MixstreamPro.deck[2].pitchSlider.inputLSB [input_lsb_2]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx MixstreamPro.WheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 33,
+      "notes": "Mixxx MixstreamPro.WheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "toggle_scratch",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 35,
+      "notes": "Mixxx MixstreamPro.toggleScratch [toggle_scratch]"
+    },
+    {
+      "name": "toggle_scratch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 35,
+      "notes": "Mixxx MixstreamPro.toggleScratch [toggle_scratch_2]"
+    },
+    {
+      "name": "jog_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 55,
+      "notes": "Mixxx MixstreamPro.JogMSB [jog_msb]"
+    },
+    {
+      "name": "jog_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 55,
+      "notes": "Mixxx MixstreamPro.JogMSB [jog_msb_2]"
+    },
+    {
+      "name": "jog_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 77,
+      "notes": "Mixxx MixstreamPro.JogLSB [jog_lsb]"
+    },
+    {
+      "name": "jog_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 77,
+      "notes": "Mixxx MixstreamPro.JogLSB [jog_lsb_2]"
+    }
+  ]
+}

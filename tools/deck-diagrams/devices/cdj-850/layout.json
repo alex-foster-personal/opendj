@@ -1,0 +1,1420 @@
+{
+  "device": "CDJ-850",
+  "vendor": "Pioneer DJ",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "cdj-850-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-back",
+      "fig": "back",
+      "label": "back",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[back] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-beats_translate_curpos",
+      "fig": "beats_translate_curpos",
+      "label": "beats_translate_curpos",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-beatsync",
+      "fig": "beatsync",
+      "label": "beatsync",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[beatsync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-bpm_tap",
+      "fig": "bpm_tap",
+      "label": "bpm_tap",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bpm_tap",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[bpm_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-cue_default",
+      "fig": "cue_default",
+      "label": "cue_default",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-eject",
+      "fig": "eject",
+      "label": "eject",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "eject",
+        "type": "note",
+        "ch": 1,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[eject] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-fwd",
+      "fig": "fwd",
+      "label": "fwd",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[fwd] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_last_delete",
+      "fig": "hotcue_last_delete",
+      "label": "hotcue_last_delete",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_last_delete",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[hotcue_last_delete] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_1_activate",
+      "fig": "hotcue_1_activate",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_1_activate_2",
+      "fig": "hotcue_1_activate_2",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_2_activate",
+      "fig": "hotcue_2_activate",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_2_activate_2",
+      "fig": "hotcue_2_activate_2",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_3_activate",
+      "fig": "hotcue_3_activate",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_3_activate_2",
+      "fig": "hotcue_3_activate_2",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_4_activate",
+      "fig": "hotcue_4_activate",
+      "label": "hotcue_4_activate",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_activate",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_4_activate_2",
+      "fig": "hotcue_4_activate_2",
+      "label": "hotcue_4_activate",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_activate_2",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-jog_wheel",
+      "fig": "jog_wheel",
+      "label": "jog_wheel",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel",
+        "type": "cc",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-keylock",
+      "fig": "keylock",
+      "label": "keylock",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_double",
+      "fig": "loop_double",
+      "label": "loop_double",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[loop_double] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_enabled",
+      "fig": "loop_enabled",
+      "label": "loop_enabled",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[loop_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_halve",
+      "fig": "loop_halve",
+      "label": "loop_halve",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[loop_halve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_in",
+      "fig": "loop_in",
+      "label": "loop_in",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_out",
+      "fig": "loop_out",
+      "label": "loop_out",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_scale",
+      "fig": "loop_scale",
+      "label": "loop_scale",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_scale",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[loop_scale] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-play",
+      "fig": "play",
+      "label": "play",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-pregain",
+      "fig": "pregain",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-rate",
+      "fig": "rate",
+      "label": "rate",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate",
+        "type": "cc",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[rate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-reloop_exit",
+      "fig": "reloop_exit",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-reverse_toggle",
+      "fig": "reverse_toggle",
+      "label": "reverse_toggle",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_toggle",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[reverse_toggle] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-jog_scratch",
+      "fig": "jog_scratch",
+      "label": "jog_scratch",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_scratch",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[jog_scratch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-scratch2_enable",
+      "fig": "scratch2_enable",
+      "label": "scratch2_enable",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch2_enable",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[scratch2_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-select_next_track",
+      "fig": "select_next_track",
+      "label": "SelectNextTrack",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_next_track",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[select_next_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-select_prev_track",
+      "fig": "select_prev_track",
+      "label": "SelectPrevTrack",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_prev_track",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[select_prev_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-select_track_knob",
+      "fig": "select_track_knob",
+      "label": "select_track_knob",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[select_track_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 2,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-back_2",
+      "fig": "back_2",
+      "label": "back",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "back_2",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[back_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-beats_translate_curpos_2",
+      "fig": "beats_translate_curpos_2",
+      "label": "beats_translate_curpos",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_2",
+        "type": "note",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-beatsync_2",
+      "fig": "beatsync_2",
+      "label": "beatsync",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync_2",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[beatsync_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-bpm_tap_2",
+      "fig": "bpm_tap_2",
+      "label": "bpm_tap",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bpm_tap_2",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[bpm_tap_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "cue_default",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-eject_2",
+      "fig": "eject_2",
+      "label": "eject",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "eject_2",
+        "type": "note",
+        "ch": 2,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[eject_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-fwd_2",
+      "fig": "fwd_2",
+      "label": "fwd",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "fwd_2",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[fwd_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_last_delete_2",
+      "fig": "hotcue_last_delete_2",
+      "label": "hotcue_last_delete",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_last_delete_2",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[hotcue_last_delete_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_1_activate_3",
+      "fig": "hotcue_1_activate_3",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate_3",
+        "type": "note",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_1_activate_4",
+      "fig": "hotcue_1_activate_4",
+      "label": "hotcue_1_activate",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_1_activate_4",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[hotcue_1_activate_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_2_activate_3",
+      "fig": "hotcue_2_activate_3",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate_3",
+        "type": "note",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_2_activate_4",
+      "fig": "hotcue_2_activate_4",
+      "label": "hotcue_2_activate",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_2_activate_4",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[hotcue_2_activate_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_3_activate_3",
+      "fig": "hotcue_3_activate_3",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate_3",
+        "type": "note",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_3_activate_4",
+      "fig": "hotcue_3_activate_4",
+      "label": "hotcue_3_activate",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_3_activate_4",
+        "type": "note",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[hotcue_3_activate_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_4_activate_3",
+      "fig": "hotcue_4_activate_3",
+      "label": "hotcue_4_activate",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_activate_3",
+        "type": "note",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_activate_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-hotcue_4_activate_4",
+      "fig": "hotcue_4_activate_4",
+      "label": "hotcue_4_activate",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hotcue_4_activate_4",
+        "type": "note",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[hotcue_4_activate_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-jog_wheel_2",
+      "fig": "jog_wheel_2",
+      "label": "jog_wheel",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_wheel_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[jog_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-keylock_2",
+      "fig": "keylock_2",
+      "label": "keylock",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_double_2",
+      "fig": "loop_double_2",
+      "label": "loop_double",
+      "kind": "button",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double_2",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[loop_double_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_enabled_2",
+      "fig": "loop_enabled_2",
+      "label": "loop_enabled",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_enabled_2",
+        "type": "note",
+        "ch": 2,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[loop_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_halve_2",
+      "fig": "loop_halve_2",
+      "label": "loop_halve",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve_2",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[loop_halve_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_in_2",
+      "fig": "loop_in_2",
+      "label": "loop_in",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[loop_in_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_out_2",
+      "fig": "loop_out_2",
+      "label": "loop_out",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_2",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[loop_out_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-loop_scale_2",
+      "fig": "loop_scale_2",
+      "label": "loop_scale",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_scale_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[loop_scale_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-play_2",
+      "fig": "play_2",
+      "label": "play",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-pregain_2",
+      "fig": "pregain_2",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-rate_2",
+      "fig": "rate_2",
+      "label": "rate",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[rate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-reloop_exit_2",
+      "fig": "reloop_exit_2",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_2",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-reverse_toggle_2",
+      "fig": "reverse_toggle_2",
+      "label": "reverse_toggle",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_toggle_2",
+        "type": "note",
+        "ch": 2,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[reverse_toggle_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-jog_scratch_2",
+      "fig": "jog_scratch_2",
+      "label": "jog_scratch",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "jog_scratch_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[jog_scratch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-scratch2_enable_2",
+      "fig": "scratch2_enable_2",
+      "label": "scratch2_enable",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch2_enable_2",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[scratch2_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-select_next_track_2",
+      "fig": "select_next_track_2",
+      "label": "SelectNextTrack",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_next_track_2",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[select_next_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-select_prev_track_2",
+      "fig": "select_prev_track_2",
+      "label": "SelectPrevTrack",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_prev_track_2",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[select_prev_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "cdj-850-select_track_knob_2",
+      "fig": "select_track_knob_2",
+      "label": "select_track_knob",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_knob_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[select_track_knob_2] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

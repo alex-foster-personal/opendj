@@ -1,0 +1,578 @@
+{
+  "source": "mixxx:Hercules DJ Control Steel.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-dj-control-steel/source/Hercules DJ Control Steel.midi.xml",
+  "device": "Hercules DJ Control Steel",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "head_phone_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx HerculesSteel.headPhoneMix [head_phone_mix]"
+    },
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx HerculesSteel.jog_wheel [jog_wheel]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx HerculesSteel.jog_wheel [jog_wheel_2]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "load",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx HerculesSteel.load [load]"
+    },
+    {
+      "name": "load_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx HerculesSteel.load [load_2]"
+    },
+    {
+      "name": "stop",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx HerculesSteel.stop [stop]"
+    },
+    {
+      "name": "stop_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx HerculesSteel.stop [stop_2]"
+    },
+    {
+      "name": "keypad1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx HerculesSteel.keypad1 [keypad1]"
+    },
+    {
+      "name": "keypad2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx HerculesSteel.keypad2 [keypad2]"
+    },
+    {
+      "name": "keypad3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx HerculesSteel.keypad3 [keypad3]"
+    },
+    {
+      "name": "keypad4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx HerculesSteel.keypad4 [keypad4]"
+    },
+    {
+      "name": "keypad5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx HerculesSteel.keypad5 [keypad5]"
+    },
+    {
+      "name": "keypad6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx HerculesSteel.keypad6 [keypad6]"
+    },
+    {
+      "name": "keypad7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 100,
+      "notes": "Mixxx HerculesSteel.keypad7 [keypad7]"
+    },
+    {
+      "name": "keypad8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 101,
+      "notes": "Mixxx HerculesSteel.keypad8 [keypad8]"
+    },
+    {
+      "name": "keypad9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 102,
+      "notes": "Mixxx HerculesSteel.keypad9 [keypad9]"
+    },
+    {
+      "name": "keypad10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 103,
+      "notes": "Mixxx HerculesSteel.keypad10 [keypad10]"
+    },
+    {
+      "name": "keypad11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 104,
+      "notes": "Mixxx HerculesSteel.keypad11 [keypad11]"
+    },
+    {
+      "name": "keypad12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 105,
+      "notes": "Mixxx HerculesSteel.keypad12 [keypad12]"
+    },
+    {
+      "name": "keypad1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx HerculesSteel.keypad1 [keypad1_2]"
+    },
+    {
+      "name": "keypad2_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx HerculesSteel.keypad2 [keypad2_2]"
+    },
+    {
+      "name": "keypad3_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx HerculesSteel.keypad3 [keypad3_2]"
+    },
+    {
+      "name": "keypad4_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx HerculesSteel.keypad4 [keypad4_2]"
+    },
+    {
+      "name": "keypad5_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx HerculesSteel.keypad5 [keypad5_2]"
+    },
+    {
+      "name": "keypad6_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx HerculesSteel.keypad6 [keypad6_2]"
+    },
+    {
+      "name": "keypad7_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 106,
+      "notes": "Mixxx HerculesSteel.keypad7 [keypad7_2]"
+    },
+    {
+      "name": "keypad8_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 107,
+      "notes": "Mixxx HerculesSteel.keypad8 [keypad8_2]"
+    },
+    {
+      "name": "keypad9_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 108,
+      "notes": "Mixxx HerculesSteel.keypad9 [keypad9_2]"
+    },
+    {
+      "name": "keypad10_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 109,
+      "notes": "Mixxx HerculesSteel.keypad10 [keypad10_2]"
+    },
+    {
+      "name": "keypad11_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 110,
+      "notes": "Mixxx HerculesSteel.keypad11 [keypad11_2]"
+    },
+    {
+      "name": "keypad12_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 111,
+      "notes": "Mixxx HerculesSteel.keypad12 [keypad12_2]"
+    },
+    {
+      "name": "cross_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx HerculesSteel.crossFader [cross_fader]"
+    },
+    {
+      "name": "balance",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx HerculesSteel.balance [balance]"
+    },
+    {
+      "name": "previous",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx HerculesSteel.previous [previous]"
+    },
+    {
+      "name": "next",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx HerculesSteel.next [next]"
+    },
+    {
+      "name": "deck_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx HerculesSteel.deckVolume [deck_volume]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx HerculesSteel.rate [rate]"
+    },
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx HerculesSteel.volume [volume]"
+    },
+    {
+      "name": "cue_select",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx HerculesSteel.cueSelect [cue_select]"
+    },
+    {
+      "name": "bass",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx HerculesSteel.bass [bass]"
+    },
+    {
+      "name": "medium",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx HerculesSteel.medium [medium]"
+    },
+    {
+      "name": "treble",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx HerculesSteel.treble [treble]"
+    },
+    {
+      "name": "kill_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx HerculesSteel.killLow [kill_low]"
+    },
+    {
+      "name": "kill_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx HerculesSteel.killMid [kill_mid]"
+    },
+    {
+      "name": "kill_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx HerculesSteel.killHigh [kill_high]"
+    },
+    {
+      "name": "previous_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx HerculesSteel.previous [previous_2]"
+    },
+    {
+      "name": "next_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx HerculesSteel.next [next_2]"
+    },
+    {
+      "name": "deck_volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx HerculesSteel.deckVolume [deck_volume_2]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx HerculesSteel.rate [rate_2]"
+    },
+    {
+      "name": "cue_select_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx HerculesSteel.cueSelect [cue_select_2]"
+    },
+    {
+      "name": "bass_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx HerculesSteel.bass [bass_2]"
+    },
+    {
+      "name": "medium_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx HerculesSteel.medium [medium_2]"
+    },
+    {
+      "name": "treble_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx HerculesSteel.treble [treble_2]"
+    },
+    {
+      "name": "kill_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx HerculesSteel.killLow [kill_low_2]"
+    },
+    {
+      "name": "kill_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx HerculesSteel.killMid [kill_mid_2]"
+    },
+    {
+      "name": "kill_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx HerculesSteel.killHigh [kill_high_2]"
+    },
+    {
+      "name": "gain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx HerculesSteel.gain [gain]"
+    },
+    {
+      "name": "gain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx HerculesSteel.gain [gain_2]"
+    },
+    {
+      "name": "beat_sync",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx HerculesSteel.beatSync [beat_sync]"
+    },
+    {
+      "name": "beat_sync_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx HerculesSteel.beatSync [beat_sync_2]"
+    },
+    {
+      "name": "rate_reset",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx HerculesSteel.rateReset [rate_reset]"
+    },
+    {
+      "name": "rate_reset_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx HerculesSteel.rateReset [rate_reset_2]"
+    },
+    {
+      "name": "scratch",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx HerculesSteel.scratch [scratch]"
+    },
+    {
+      "name": "up",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx HerculesSteel.up [up]"
+    },
+    {
+      "name": "down",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx HerculesSteel.down [down]"
+    },
+    {
+      "name": "left",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx HerculesSteel.left [left]"
+    },
+    {
+      "name": "right",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx HerculesSteel.right [right]"
+    }
+  ]
+}

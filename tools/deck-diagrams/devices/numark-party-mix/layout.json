@@ -1,0 +1,940 @@
+{
+  "device": "Party Mix",
+  "vendor": "Numark",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "numark-party-mix-gain",
+      "fig": "gain",
+      "label": "gain",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-head_mix",
+      "fig": "head_mix",
+      "label": "headMix",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 16,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-head_gain",
+      "fig": "head_gain",
+      "label": "headGain",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_gain",
+        "type": "cc",
+        "ch": 16,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[head_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 16,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input",
+      "fig": "channel1_input",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input",
+      "fig": "channel2_input",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_2",
+      "fig": "channel1_input_2",
+      "label": "input",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_2",
+      "fig": "channel2_input_2",
+      "label": "input",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_3",
+      "fig": "channel1_input_3",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_3",
+      "fig": "channel2_input_3",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_4",
+      "fig": "channel1_input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_4",
+      "fig": "channel2_input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_5",
+      "fig": "channel1_input_5",
+      "label": "input",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_5",
+      "fig": "channel2_input_5",
+      "label": "input",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_5",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_6",
+      "fig": "channel1_input_6",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_6",
+      "fig": "channel2_input_6",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_7",
+      "fig": "channel1_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_7",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_7",
+      "fig": "channel2_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_7",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_8",
+      "fig": "channel1_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_8",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_8",
+      "fig": "channel2_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_8",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_9",
+      "fig": "channel1_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_9",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_9",
+      "fig": "channel2_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_9",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_10",
+      "fig": "channel1_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_10",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_10",
+      "fig": "channel2_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_10",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_11",
+      "fig": "channel1_input_11",
+      "label": "input",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_11",
+      "fig": "channel2_input_11",
+      "label": "input",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_11",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press",
+      "fig": "mode_button_press",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press",
+        "type": "note",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_2",
+      "fig": "mode_button_press_2",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_2",
+        "type": "note",
+        "ch": 6,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_3",
+      "fig": "mode_button_press_3",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_3",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_4",
+      "fig": "mode_button_press_4",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_4",
+        "type": "note",
+        "ch": 6,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_5",
+      "fig": "mode_button_press_5",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_5",
+        "type": "note",
+        "ch": 5,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_6",
+      "fig": "mode_button_press_6",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_6",
+        "type": "note",
+        "ch": 6,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_7",
+      "fig": "mode_button_press_7",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_7",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-mode_button_press_8",
+      "fig": "mode_button_press_8",
+      "label": "modeButtonPress",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "mode_button_press_8",
+        "type": "note",
+        "ch": 6,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[mode_button_press_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press",
+      "fig": "pad_press",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press",
+        "type": "note",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_press] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_2",
+      "fig": "pad_press_2",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_2",
+        "type": "note",
+        "ch": 6,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_press_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_3",
+      "fig": "pad_press_3",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_3",
+        "type": "note",
+        "ch": 5,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_press_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_4",
+      "fig": "pad_press_4",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_4",
+        "type": "note",
+        "ch": 6,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_press_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_5",
+      "fig": "pad_press_5",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_5",
+        "type": "note",
+        "ch": 5,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_press_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_6",
+      "fig": "pad_press_6",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_6",
+        "type": "note",
+        "ch": 6,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_press_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_7",
+      "fig": "pad_press_7",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_7",
+        "type": "note",
+        "ch": 5,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_press_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-pad_press_8",
+      "fig": "pad_press_8",
+      "label": "padPress",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_press_8",
+        "type": "note",
+        "ch": 6,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_press_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-library_input",
+      "fig": "library_input",
+      "label": "input",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_input",
+        "type": "cc",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[library_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-library_input_2",
+      "fig": "library_input_2",
+      "label": "input",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "library_input_2",
+        "type": "note",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[library_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel1_input_12",
+      "fig": "channel1_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_12",
+        "type": "note",
+        "ch": 16,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-party-mix-channel2_input_12",
+      "fig": "channel2_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_12",
+        "type": "note",
+        "ch": 16,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_12] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

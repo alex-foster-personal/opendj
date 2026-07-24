@@ -1,0 +1,122 @@
+{
+  "source": "mixxx:DJ-Tech CDJ-101.midi.xml",
+  "archived": "tools/deck-diagrams/devices/dj-tech-cdj-101/source/DJ-Tech CDJ-101.midi.xml",
+  "device": "DJ-Tech CDJ-101",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx DJTechCDJ101.play [play]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx DJTechCDJ101.cue [cue]"
+    },
+    {
+      "name": "jogtouch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx DJTechCDJ101.jogtouch [jogtouch]"
+    },
+    {
+      "name": "jogouter",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx DJTechCDJ101.jogouter [jogouter]"
+    },
+    {
+      "name": "jogtop",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx DJTechCDJ101.jogtop [jogtop]"
+    },
+    {
+      "name": "push",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx DJTechCDJ101.push [push]"
+    },
+    {
+      "name": "browse",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx DJTechCDJ101.browse [browse]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx DJTechCDJ101.play [play_2]"
+    },
+    {
+      "name": "cue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx DJTechCDJ101.cue [cue_2]"
+    },
+    {
+      "name": "jogtouch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx DJTechCDJ101.jogtouch [jogtouch_2]"
+    },
+    {
+      "name": "jogouter_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 53,
+      "notes": "Mixxx DJTechCDJ101.jogouter [jogouter_2]"
+    },
+    {
+      "name": "jogtop_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 54,
+      "notes": "Mixxx DJTechCDJ101.jogtop [jogtop_2]"
+    },
+    {
+      "name": "push_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx DJTechCDJ101.push [push_2]"
+    },
+    {
+      "name": "browse_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 56,
+      "notes": "Mixxx DJTechCDJ101.browse [browse_2]"
+    }
+  ]
+}

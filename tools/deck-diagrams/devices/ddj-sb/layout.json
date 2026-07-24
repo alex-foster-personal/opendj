@@ -1,0 +1,860 @@
+{
+  "device": "DDJ-SB",
+  "vendor": "Pioneer DJ",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 3049,
+    "height": 1707
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "hid_screens",
+    "refine_shift_twins_pending"
+  ],
+  "controls": [
+    {
+      "id": "ddj-sb-1-1",
+      "fig": "1-1",
+      "label": "1-1",
+      "kind": "button",
+      "x": 3.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-1",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[1-1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-2",
+      "fig": "1-2",
+      "label": "1-2",
+      "kind": "button",
+      "x": 12.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-2",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[1-2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-3",
+      "fig": "1-3",
+      "label": "1-3",
+      "kind": "button",
+      "x": 22.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-3",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[1-3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-4",
+      "fig": "1-4",
+      "label": "1-4",
+      "kind": "button",
+      "x": 31.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-4",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[1-4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-5",
+      "fig": "1-5",
+      "label": "1-5",
+      "kind": "button",
+      "x": 41.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-5",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[1-5] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-6",
+      "fig": "1-6",
+      "label": "1-6",
+      "kind": "button",
+      "x": 50.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-6",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[1-6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-7",
+      "fig": "1-7",
+      "label": "1-7",
+      "kind": "button",
+      "x": 60.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-7",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[1-7] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-8",
+      "fig": "1-8",
+      "label": "1-8",
+      "kind": "button",
+      "x": 69.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-8",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[1-8] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-9",
+      "fig": "1-9",
+      "label": "1-9",
+      "kind": "button",
+      "x": 79.0,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-9",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[1-9] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-10",
+      "fig": "1-10",
+      "label": "1-10",
+      "kind": "button",
+      "x": 88.5,
+      "y": 8,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-10",
+        "type": "note",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[1-10] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-11",
+      "fig": "1-11",
+      "label": "1-11",
+      "kind": "button",
+      "x": 3.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-11",
+        "type": "note",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[1-11] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-1-12",
+      "fig": "1-12",
+      "label": "1-12",
+      "kind": "button",
+      "x": 12.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_1-12",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[1-12] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-2-1",
+      "fig": "2-1",
+      "label": "2-1",
+      "kind": "button",
+      "x": 22.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_2-1",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[2-1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-2-2",
+      "fig": "2-2",
+      "label": "2-2",
+      "kind": "button",
+      "x": 31.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_2-2",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[2-2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-2-3",
+      "fig": "2-3",
+      "label": "2-3",
+      "kind": "button",
+      "x": 41.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_2-3",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[2-3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-2-4",
+      "fig": "2-4",
+      "label": "2-4",
+      "kind": "button",
+      "x": 50.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_2-4",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[2-4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-1",
+      "fig": "3-1",
+      "label": "3-1",
+      "kind": "button",
+      "x": 60.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-1",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[3-1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-2",
+      "fig": "3-2",
+      "label": "3-2",
+      "kind": "button",
+      "x": 69.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-2",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[3-2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-3",
+      "fig": "3-3",
+      "label": "3-3",
+      "kind": "button",
+      "x": 79.0,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-3",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[3-3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-4",
+      "fig": "3-4",
+      "label": "3-4",
+      "kind": "button",
+      "x": 88.5,
+      "y": 18,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-4",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[3-4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-5",
+      "fig": "3-5",
+      "label": "3-5",
+      "kind": "button",
+      "x": 3.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-5",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[3-5] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-6",
+      "fig": "3-6",
+      "label": "3-6",
+      "kind": "button",
+      "x": 12.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-6",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[3-6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-7",
+      "fig": "3-7",
+      "label": "3-7",
+      "kind": "button",
+      "x": 22.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-7",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[3-7] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-8",
+      "fig": "3-8",
+      "label": "3-8",
+      "kind": "button",
+      "x": 31.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-8",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[3-8] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-9",
+      "fig": "3-9",
+      "label": "3-9",
+      "kind": "button",
+      "x": 41.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-9",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[3-9] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-10",
+      "fig": "3-10",
+      "label": "3-10",
+      "kind": "button",
+      "x": 50.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-10",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[3-10] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-11",
+      "fig": "3-11",
+      "label": "3-11",
+      "kind": "button",
+      "x": 60.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-11",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[3-11] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-3-12",
+      "fig": "3-12",
+      "label": "3-12",
+      "kind": "button",
+      "x": 69.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_3-12",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[3-12] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-4-1",
+      "fig": "4-1",
+      "label": "4-1",
+      "kind": "button",
+      "x": 79.0,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_4-1",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[4-1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-4-2",
+      "fig": "4-2",
+      "label": "4-2",
+      "kind": "button",
+      "x": 88.5,
+      "y": 28,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_4-2",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[4-2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-1",
+      "fig": "5-1",
+      "label": "5-1",
+      "kind": "button",
+      "x": 3.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-1",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[5-1] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-2",
+      "fig": "5-2",
+      "label": "5-2",
+      "kind": "button",
+      "x": 12.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-2",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[5-2] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-3",
+      "fig": "5-3",
+      "label": "5-3",
+      "kind": "button",
+      "x": 22.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-3",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[5-3] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-4",
+      "fig": "5-4",
+      "label": "5-4",
+      "kind": "button",
+      "x": 31.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-4",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[5-4] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-5",
+      "fig": "5-5",
+      "label": "5-5",
+      "kind": "button",
+      "x": 41.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-5",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[5-5] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-6",
+      "fig": "5-6",
+      "label": "5-6",
+      "kind": "button",
+      "x": 50.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-6",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[5-6] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-7",
+      "fig": "5-7",
+      "label": "5-7",
+      "kind": "button",
+      "x": 60.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-7",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[5-7] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-8",
+      "fig": "5-8",
+      "label": "5-8",
+      "kind": "button",
+      "x": 69.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-8",
+        "type": "note",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[5-8] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-9",
+      "fig": "5-9",
+      "label": "5-9",
+      "kind": "button",
+      "x": 79.0,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-9",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[5-9] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-10",
+      "fig": "5-10",
+      "label": "5-10",
+      "kind": "button",
+      "x": 88.5,
+      "y": 38,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-10",
+        "type": "note",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[5-10] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-11",
+      "fig": "5-11",
+      "label": "5-11",
+      "kind": "button",
+      "x": 3.0,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-11",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[5-11] bootstrap - refine coords against plate-top.png"
+    },
+    {
+      "id": "ddj-sb-5-12",
+      "fig": "5-12",
+      "label": "5-12",
+      "kind": "button",
+      "x": 12.5,
+      "y": 48,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "base",
+      "section": "unknown",
+      "midi": {
+        "name": "fig_5-12",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[5-12] bootstrap - refine coords against plate-top.png"
+    }
+  ],
+  "bootstrap": true
+}

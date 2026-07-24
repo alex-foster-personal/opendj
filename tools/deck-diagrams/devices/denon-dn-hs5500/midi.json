@@ -1,0 +1,410 @@
+{
+  "source": "mixxx:Denon DN HS5500.midi.xml",
+  "archived": "tools/deck-diagrams/devices/denon-dn-hs5500/source/Denon DN HS5500.midi.xml",
+  "device": "Denon HS5500",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx loop_in [loop_in]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "cue_gotoandstop",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "Mixxx cue_gotoandstop [cue_gotoandstop]"
+    },
+    {
+      "name": "keylock_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx keylock [keylock_2]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "wheel_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DNHS5500.wheelTurn [wheel_turn]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "notes": "Mixxx DNHS5500.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "platter_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 86,
+      "notes": "Mixxx DNHS5500.platterTurn [platter_turn]"
+    },
+    {
+      "name": "wheel_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DNHS5500.wheelTurn [wheel_turn_2]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 81,
+      "notes": "Mixxx DNHS5500.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "platter_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 86,
+      "notes": "Mixxx DNHS5500.platterTurn [platter_turn_2]"
+    },
+    {
+      "name": "back_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx back [back_2]"
+    },
+    {
+      "name": "play_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "Mixxx DNHS5500.playButton [play_button]"
+    },
+    {
+      "name": "play_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 67,
+      "notes": "Mixxx DNHS5500.playButton [play_button_2]"
+    },
+    {
+      "name": "fwd_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx fwd [fwd_2]"
+    },
+    {
+      "name": "rate_temp_down_small",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx rate_temp_down_small [rate_temp_down_small]"
+    },
+    {
+      "name": "loop_in_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 55,
+      "notes": "Mixxx loop_in [loop_in_2]"
+    },
+    {
+      "name": "cue_gotoandstop_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 66,
+      "notes": "Mixxx cue_gotoandstop [cue_gotoandstop_2]"
+    },
+    {
+      "name": "reverse",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx reverse [reverse]"
+    },
+    {
+      "name": "reverse_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 85,
+      "notes": "Mixxx reverse [reverse_2]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 85,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx reloop_exit [reloop_exit]"
+    },
+    {
+      "name": "rate_temp_up_small",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx rate_temp_up_small [rate_temp_up_small]"
+    },
+    {
+      "name": "rate_temp_down_small_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx rate_temp_down_small [rate_temp_down_small_2]"
+    },
+    {
+      "name": "select_track",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 84,
+      "notes": "Mixxx DNHS5500.selectTrack [select_track]"
+    },
+    {
+      "name": "select_track_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 2,
+      "code": 84,
+      "notes": "Mixxx DNHS5500.selectTrack [select_track_2]"
+    },
+    {
+      "name": "reverse_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 70,
+      "notes": "Mixxx reverse [reverse_3]"
+    },
+    {
+      "name": "bpm_tap",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx bpm_tap [bpm_tap]"
+    },
+    {
+      "name": "reloop_exit_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 64,
+      "notes": "Mixxx reloop_exit [reloop_exit_2]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx loop_out [loop_out]"
+    },
+    {
+      "name": "rate_temp_up_small_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx rate_temp_up_small [rate_temp_up_small_2]"
+    },
+    {
+      "name": "load_selected_into_first_stopped",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx LoadSelectedIntoFirstStopped [load_selected_into_first_stopped]"
+    },
+    {
+      "name": "load_selected_into_first_stopped_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx LoadSelectedIntoFirstStopped [load_selected_into_first_stopped_2]"
+    },
+    {
+      "name": "bpm_tap_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx bpm_tap [bpm_tap_2]"
+    },
+    {
+      "name": "loop_out_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 57,
+      "notes": "Mixxx loop_out [loop_out_2]"
+    },
+    {
+      "name": "eject",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx eject [eject]"
+    },
+    {
+      "name": "eject_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 48,
+      "notes": "Mixxx eject [eject_2]"
+    },
+    {
+      "name": "repeat",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx repeat [repeat]"
+    },
+    {
+      "name": "repeat_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 38,
+      "notes": "Mixxx repeat [repeat_2]"
+    },
+    {
+      "name": "hotcue_1_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate]"
+    },
+    {
+      "name": "hotcue_2_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate]"
+    },
+    {
+      "name": "hotcue_3_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate]"
+    },
+    {
+      "name": "hotcue_1_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate_2]"
+    },
+    {
+      "name": "hotcue_2_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate_2]"
+    },
+    {
+      "name": "hotcue_3_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate_2]"
+    },
+    {
+      "name": "wheel_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx DNHS5500.wheelTouch [wheel_touch_3]"
+    },
+    {
+      "name": "wheel_touch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx DNHS5500.wheelTouch [wheel_touch_4]"
+    },
+    {
+      "name": "brake",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "Mixxx DNHS5500.brake [brake]"
+    },
+    {
+      "name": "brake_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 68,
+      "notes": "Mixxx DNHS5500.brake [brake_2]"
+    }
+  ]
+}

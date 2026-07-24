@@ -1,0 +1,554 @@
+{
+  "source": "mixxx:Hercules DJ Control AIR.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-dj-control-air/source/Hercules DJ Control AIR.midi.xml",
+  "device": "Hercules DJ Control AIR",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx HerculesAir.headMix [head_mix]"
+    },
+    {
+      "name": "head_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx HerculesAir.headCue [head_cue]"
+    },
+    {
+      "name": "jog",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx HerculesAir.jog [jog]"
+    },
+    {
+      "name": "jog_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx HerculesAir.jog [jog_2]"
+    },
+    {
+      "name": "wheel_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx HerculesAir.wheelTurn [wheel_turn]"
+    },
+    {
+      "name": "flanger",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx flanger [flanger]"
+    },
+    {
+      "name": "wheel_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx HerculesAir.wheelTurn [wheel_turn_2]"
+    },
+    {
+      "name": "beats_translate_curpos",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "quantize",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx quantize [quantize]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "sampler",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx HerculesAir.sampler [sampler]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx filterHigh [filter_high]"
+    },
+    {
+      "name": "sampler_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx HerculesAir.sampler [sampler_2]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx filterMid [filter_mid]"
+    },
+    {
+      "name": "sampler_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx HerculesAir.sampler [sampler_3]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx filterLow [filter_low]"
+    },
+    {
+      "name": "sampler_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx HerculesAir.sampler [sampler_4]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx loop_in [loop_in]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx loop_out [loop_out]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx filterHigh [filter_high_2]"
+    },
+    {
+      "name": "loop_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx loop_double [loop_double]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx filterMid [filter_mid_2]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx reloop_exit [reloop_exit]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 62,
+      "notes": "Mixxx filterLow [filter_low_2]"
+    },
+    {
+      "name": "rate_perm_down",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx rate_perm_down [rate_perm_down]"
+    },
+    {
+      "name": "rate_perm_up",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx rate_perm_up [rate_perm_up]"
+    },
+    {
+      "name": "lfo_depth",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 63,
+      "notes": "Mixxx lfoDepth [lfo_depth]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "beatsync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx beatsync [beatsync]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "scratch_enable",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx HerculesAir.scratch_enable [scratch_enable]"
+    },
+    {
+      "name": "flanger_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx flanger [flanger_2]"
+    },
+    {
+      "name": "beats_translate_curpos_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos_2]"
+    },
+    {
+      "name": "quantize_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx quantize [quantize_2]"
+    },
+    {
+      "name": "keylock_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx keylock [keylock_2]"
+    },
+    {
+      "name": "sampler_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx HerculesAir.sampler [sampler_5]"
+    },
+    {
+      "name": "sampler_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx HerculesAir.sampler [sampler_6]"
+    },
+    {
+      "name": "sampler_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx HerculesAir.sampler [sampler_7]"
+    },
+    {
+      "name": "sampler_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx HerculesAir.sampler [sampler_8]"
+    },
+    {
+      "name": "loop_in_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx loop_in [loop_in_2]"
+    },
+    {
+      "name": "loop_out_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx loop_out [loop_out_2]"
+    },
+    {
+      "name": "loop_double_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx loop_double [loop_double_2]"
+    },
+    {
+      "name": "reloop_exit_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx reloop_exit [reloop_exit_2]"
+    },
+    {
+      "name": "rate_perm_down_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx rate_perm_down [rate_perm_down_2]"
+    },
+    {
+      "name": "rate_perm_up_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx rate_perm_up [rate_perm_up_2]"
+    },
+    {
+      "name": "back_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx back [back_2]"
+    },
+    {
+      "name": "fwd_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx fwd [fwd_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "beatsync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx beatsync [beatsync_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "scratch_enable_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx HerculesAir.scratch_enable [scratch_enable_2]"
+    },
+    {
+      "name": "shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 46,
+      "notes": "Mixxx HerculesAir.shift [shift]"
+    },
+    {
+      "name": "spinback",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx HerculesAir.spinback [spinback]"
+    },
+    {
+      "name": "select_prev_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx SelectPrevTrack [select_prev_track]"
+    },
+    {
+      "name": "select_next_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx SelectNextTrack [select_next_track]"
+    },
+    {
+      "name": "select_next_playlist",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx SelectNextPlaylist [select_next_playlist]"
+    },
+    {
+      "name": "select_prev_playlist",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx SelectPrevPlaylist [select_prev_playlist]"
+    }
+  ]
+}

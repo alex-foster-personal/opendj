@@ -1,0 +1,7060 @@
+{
+  "device": "Denon MC7000",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "denon-mc7000-pad_mode_cue",
+      "fig": "pad_mode_cue",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue",
+        "type": "note",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_2",
+      "fig": "pad_mode_cue_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_2",
+        "type": "note",
+        "ch": 6,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_3",
+      "fig": "pad_mode_cue_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_3",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_4",
+      "fig": "pad_mode_cue_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_4",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_loop",
+      "fig": "pad_mode_cue_loop",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_loop",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_loop_2",
+      "fig": "pad_mode_cue_loop_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_loop_2",
+        "type": "note",
+        "ch": 6,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_loop_3",
+      "fig": "pad_mode_cue_loop_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_loop_3",
+        "type": "note",
+        "ch": 7,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_loop_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_cue_loop_4",
+      "fig": "pad_mode_cue_loop_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_cue_loop_4",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_cue_loop_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_flip",
+      "fig": "pad_mode_flip",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_flip",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_flip] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_flip_2",
+      "fig": "pad_mode_flip_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_flip_2",
+        "type": "note",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_flip_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_flip_3",
+      "fig": "pad_mode_flip_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_flip_3",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_flip_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_flip_4",
+      "fig": "pad_mode_flip_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_flip_4",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_flip_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_roll",
+      "fig": "pad_mode_roll",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_roll",
+        "type": "note",
+        "ch": 5,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_roll] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_roll_2",
+      "fig": "pad_mode_roll_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_roll_2",
+        "type": "note",
+        "ch": 6,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_roll_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_roll_3",
+      "fig": "pad_mode_roll_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_roll_3",
+        "type": "note",
+        "ch": 7,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_roll_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_roll_4",
+      "fig": "pad_mode_roll_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_roll_4",
+        "type": "note",
+        "ch": 8,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_roll_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_saved_loop",
+      "fig": "pad_mode_saved_loop",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_saved_loop",
+        "type": "note",
+        "ch": 5,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_saved_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_saved_loop_2",
+      "fig": "pad_mode_saved_loop_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_saved_loop_2",
+        "type": "note",
+        "ch": 6,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_saved_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_saved_loop_3",
+      "fig": "pad_mode_saved_loop_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_saved_loop_3",
+        "type": "note",
+        "ch": 7,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_saved_loop_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_saved_loop_4",
+      "fig": "pad_mode_saved_loop_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_saved_loop_4",
+        "type": "note",
+        "ch": 8,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_saved_loop_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer",
+      "fig": "pad_mode_slicer",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer",
+        "type": "note",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_2",
+      "fig": "pad_mode_slicer_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_2",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_3",
+      "fig": "pad_mode_slicer_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_3",
+        "type": "note",
+        "ch": 7,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_4",
+      "fig": "pad_mode_slicer_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_4",
+        "type": "note",
+        "ch": 8,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_loop",
+      "fig": "pad_mode_slicer_loop",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_loop",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_loop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_loop_2",
+      "fig": "pad_mode_slicer_loop_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_loop_2",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_loop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_loop_3",
+      "fig": "pad_mode_slicer_loop_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_loop_3",
+        "type": "note",
+        "ch": 7,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_loop_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_slicer_loop_4",
+      "fig": "pad_mode_slicer_loop_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_slicer_loop_4",
+        "type": "note",
+        "ch": 8,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_slicer_loop_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_sampler",
+      "fig": "pad_mode_sampler",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_sampler",
+        "type": "note",
+        "ch": 5,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_sampler] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_sampler_2",
+      "fig": "pad_mode_sampler_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_sampler_2",
+        "type": "note",
+        "ch": 6,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_sampler_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_sampler_3",
+      "fig": "pad_mode_sampler_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_sampler_3",
+        "type": "note",
+        "ch": 7,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_sampler_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_sampler_4",
+      "fig": "pad_mode_sampler_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_sampler_4",
+        "type": "note",
+        "ch": 8,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_sampler_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_vel_samp",
+      "fig": "pad_mode_vel_samp",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_vel_samp",
+        "type": "note",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_vel_samp] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_vel_samp_2",
+      "fig": "pad_mode_vel_samp_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_vel_samp_2",
+        "type": "note",
+        "ch": 6,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_vel_samp_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_vel_samp_3",
+      "fig": "pad_mode_vel_samp_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_vel_samp_3",
+        "type": "note",
+        "ch": 7,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_vel_samp_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_vel_samp_4",
+      "fig": "pad_mode_vel_samp_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_vel_samp_4",
+        "type": "note",
+        "ch": 8,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_vel_samp_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_pitch",
+      "fig": "pad_mode_pitch",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_pitch",
+        "type": "note",
+        "ch": 5,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_pitch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_pitch_2",
+      "fig": "pad_mode_pitch_2",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_pitch_2",
+        "type": "note",
+        "ch": 6,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_pitch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_pitch_3",
+      "fig": "pad_mode_pitch_3",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_pitch_3",
+        "type": "note",
+        "ch": 7,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_pitch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_mode_pitch_4",
+      "fig": "pad_mode_pitch_4",
+      "label": "Pad Mode HotCues",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_mode_pitch_4",
+        "type": "note",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[pad_mode_pitch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-shift_button",
+      "fig": "shift_button",
+      "label": "Shift Button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[shift_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-shift_button_2",
+      "fig": "shift_button_2",
+      "label": "Shift Button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[shift_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-shift_button_3",
+      "fig": "shift_button_3",
+      "label": "Shift Button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[shift_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-shift_button_4",
+      "fig": "shift_button_4",
+      "label": "Shift Button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[shift_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_position",
+      "fig": "pitch_fader_position",
+      "label": "MIDI Learned from 180 messages.",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_position",
+        "type": "cc",
+        "ch": 1,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_position] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_position_2",
+      "fig": "pitch_fader_position_2",
+      "label": "MIDI Learned from 144 messages.",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_position_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_position_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_position_3",
+      "fig": "pitch_fader_position_3",
+      "label": "MIDI Learned from 150 messages.",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_position_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_position_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_position_4",
+      "fig": "pitch_fader_position_4",
+      "label": "MIDI Learned from 128 messages.",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_position_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_position_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_msb",
+      "fig": "pitch_fader_msb",
+      "label": "MIDI Learned from 180 messages.",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_msb_2",
+      "fig": "pitch_fader_msb_2",
+      "label": "MIDI Learned from 144 messages.",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_msb_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_msb_3",
+      "fig": "pitch_fader_msb_3",
+      "label": "MIDI Learned from 150 messages.",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_msb_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_msb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pitch_fader_msb_4",
+      "fig": "pitch_fader_msb_4",
+      "label": "MIDI Learned from 128 messages.",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_fader_msb_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[pitch_fader_msb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_select",
+      "fig": "key_select",
+      "label": "Pitch +/- needs tuning",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_select",
+        "type": "cc",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[key_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_select_2",
+      "fig": "key_select_2",
+      "label": "Pitch +/- needs tuning",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_select_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[key_select_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_select_3",
+      "fig": "key_select_3",
+      "label": "Pitch +/- needs tuning",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_select_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[key_select_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_select_4",
+      "fig": "key_select_4",
+      "label": "Pitch +/- needs tuning",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_select_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[key_select_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-crossfader_assign",
+      "fig": "crossfader_assign",
+      "label": "Ch1 THRU",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "crossfader_assign",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[crossfader_assign] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-crossfader_assign_2",
+      "fig": "crossfader_assign_2",
+      "label": "Ch2 THRU",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "crossfader_assign_2",
+        "type": "note",
+        "ch": 2,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[crossfader_assign_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-crossfader_assign_3",
+      "fig": "crossfader_assign_3",
+      "label": "Ch3 THRU",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "crossfader_assign_3",
+        "type": "note",
+        "ch": 3,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[crossfader_assign_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-crossfader_assign_4",
+      "fig": "crossfader_assign_4",
+      "label": "Ch4 THRU",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "crossfader_assign_4",
+        "type": "note",
+        "ch": 4,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[crossfader_assign_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-prev_rate_range",
+      "fig": "prev_rate_range",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "prev_rate_range",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[prev_rate_range] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-prev_rate_range_2",
+      "fig": "prev_rate_range_2",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "prev_rate_range_2",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[prev_rate_range_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-prev_rate_range_3",
+      "fig": "prev_rate_range_3",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "prev_rate_range_3",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[prev_rate_range_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-prev_rate_range_4",
+      "fig": "prev_rate_range_4",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "prev_rate_range_4",
+        "type": "note",
+        "ch": 4,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[prev_rate_range_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_rate_range",
+      "fig": "next_rate_range",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "next_rate_range",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[next_rate_range] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_rate_range_2",
+      "fig": "next_rate_range_2",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "next_rate_range_2",
+        "type": "note",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[next_rate_range_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_rate_range_3",
+      "fig": "next_rate_range_3",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "next_rate_range_3",
+        "type": "note",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[next_rate_range_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_rate_range_4",
+      "fig": "next_rate_range_4",
+      "label": "Toggle next Rate Range",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "next_rate_range_4",
+        "type": "note",
+        "ch": 4,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[next_rate_range_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch",
+      "fig": "needle_search_touch",
+      "label": "Touch detection for Needle Search",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 80,
+        "shift_name": "needle_search_touch_shift"
+      },
+      "notes": "[needle_search_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_shift",
+      "fig": "needle_search_touch_shift",
+      "label": "\"Shift\" + Touch detection for Needle Search",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_shift",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_msb",
+      "fig": "needle_search_msb",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[needle_search_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_strip_position",
+      "fig": "needle_search_strip_position",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_strip_position",
+        "type": "cc",
+        "ch": 1,
+        "code": 120,
+        "shift_name": null
+      },
+      "notes": "[needle_search_strip_position] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_2",
+      "fig": "needle_search_touch_2",
+      "label": "Touch detection for Needle Search",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_shift_2",
+      "fig": "needle_search_touch_shift_2",
+      "label": "\"Shift\" + Touch detection for Needle Search",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_shift_2",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_shift_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_msb_2",
+      "fig": "needle_search_msb_2",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_msb_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[needle_search_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_strip_position_2",
+      "fig": "needle_search_strip_position_2",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_strip_position_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 120,
+        "shift_name": null
+      },
+      "notes": "[needle_search_strip_position_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_3",
+      "fig": "needle_search_touch_3",
+      "label": "Touch detection for Needle Search",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_3",
+        "type": "note",
+        "ch": 3,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_shift_3",
+      "fig": "needle_search_touch_shift_3",
+      "label": "\"Shift\" + Touch detection for Needle Search",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_shift_3",
+        "type": "note",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_shift_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_msb_3",
+      "fig": "needle_search_msb_3",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_msb_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[needle_search_msb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_strip_position_3",
+      "fig": "needle_search_strip_position_3",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_strip_position_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 120,
+        "shift_name": null
+      },
+      "notes": "[needle_search_strip_position_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_4",
+      "fig": "needle_search_touch_4",
+      "label": "Touch detection for Needle Search",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_touch_shift_4",
+      "fig": "needle_search_touch_shift_4",
+      "label": "\"Shift\" + Touch detection for Needle Search",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_touch_shift_4",
+        "type": "note",
+        "ch": 4,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[needle_search_touch_shift_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_msb_4",
+      "fig": "needle_search_msb_4",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_msb_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[needle_search_msb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-needle_search_strip_position_4",
+      "fig": "needle_search_strip_position_4",
+      "label": "Jump to track position (Needle Search)",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "needle_search_strip_position_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 120,
+        "shift_name": null
+      },
+      "notes": "[needle_search_strip_position_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-switch_deck",
+      "fig": "switch_deck",
+      "label": "Switch to deck 1",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "switch_deck",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[switch_deck] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-switch_deck_2",
+      "fig": "switch_deck_2",
+      "label": "Switch to deck 2",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "switch_deck_2",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[switch_deck_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-switch_deck_3",
+      "fig": "switch_deck_3",
+      "label": "Switch to deck 3",
+      "kind": "button",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "switch_deck_3",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[switch_deck_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-switch_deck_4",
+      "fig": "switch_deck_4",
+      "label": "Switch to deck 4",
+      "kind": "button",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "switch_deck_4",
+        "type": "note",
+        "ch": 4,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[switch_deck_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-fx_wet_dry",
+      "fig": "fx_wet_dry",
+      "label": "fxWetDry",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_wet_dry",
+        "type": "cc",
+        "ch": 9,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[fx_wet_dry] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-fx_wet_dry_2",
+      "fig": "fx_wet_dry_2",
+      "label": "fxWetDry",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_wet_dry_2",
+        "type": "cc",
+        "ch": 10,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[fx_wet_dry_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sampler_level",
+      "fig": "sampler_level",
+      "label": "samplerLevel",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "sampler_level",
+        "type": "cc",
+        "ch": 16,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[sampler_level] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-cross_fader_curve",
+      "fig": "cross_fader_curve",
+      "label": "sets the Crossfader Curve",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "cross_fader_curve",
+        "type": "cc",
+        "ch": 16,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[cross_fader_curve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-vinyl_mode_toggle",
+      "fig": "vinyl_mode_toggle",
+      "label": "Vinyl toggle",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinyl_mode_toggle",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[vinyl_mode_toggle] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-vinyl_mode_toggle_2",
+      "fig": "vinyl_mode_toggle_2",
+      "label": "Vinyl toggle",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinyl_mode_toggle_2",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[vinyl_mode_toggle_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-vinyl_mode_toggle_3",
+      "fig": "vinyl_mode_toggle_3",
+      "label": "Vinyl toggle",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinyl_mode_toggle_3",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[vinyl_mode_toggle_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-vinyl_mode_toggle_4",
+      "fig": "vinyl_mode_toggle_4",
+      "label": "Vinyl toggle",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "vinyl_mode_toggle_4",
+        "type": "note",
+        "ch": 4,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[vinyl_mode_toggle_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_touch",
+      "fig": "wheel_touch",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_touch_2",
+      "fig": "wheel_touch_2",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_touch_3",
+      "fig": "wheel_touch_3",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_3",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_touch_4",
+      "fig": "wheel_touch_4",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_turn",
+      "fig": "wheel_turn",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_turn_2",
+      "fig": "wheel_turn_2",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_turn_3",
+      "fig": "wheel_turn_3",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-wheel_turn_4",
+      "fig": "wheel_turn_4",
+      "label": "MIDI Learned from 759 messages.",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "wheel_turn_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[wheel_turn_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter3",
+      "fig": "parameter3",
+      "label": "Hi Ch1",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter3_2",
+      "fig": "parameter3_2",
+      "label": "Hi Ch2",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter3_3",
+      "fig": "parameter3_3",
+      "label": "Hi Ch3",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[parameter3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter3_4",
+      "fig": "parameter3_4",
+      "label": "Hi Ch4",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[parameter3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter2",
+      "fig": "parameter2",
+      "label": "MID Ch1",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2",
+        "type": "cc",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter2_2",
+      "fig": "parameter2_2",
+      "label": "MID Ch2",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter2_3",
+      "fig": "parameter2_3",
+      "label": "MID Ch3",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[parameter2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter2_4",
+      "fig": "parameter2_4",
+      "label": "MID Ch4",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[parameter2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter1",
+      "fig": "parameter1",
+      "label": "LOW Ch1",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1",
+        "type": "cc",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter1_2",
+      "fig": "parameter1_2",
+      "label": "LOW Ch2",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter1_3",
+      "fig": "parameter1_3",
+      "label": "LOW Ch3",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[parameter1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter1_4",
+      "fig": "parameter1_4",
+      "label": "LOW Ch4",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[parameter1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-super1",
+      "fig": "super1",
+      "label": "Filter Ch1",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1",
+        "type": "cc",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[super1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-super1_2",
+      "fig": "super1_2",
+      "label": "Filter Ch2",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[super1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-super1_3",
+      "fig": "super1_3",
+      "label": "Filter Ch3",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[super1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-super1_4",
+      "fig": "super1_4",
+      "label": "Filter Ch4",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "super1_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[super1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pregain",
+      "fig": "pregain",
+      "label": "Level / Gain Ch1",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pregain_2",
+      "fig": "pregain_2",
+      "label": "Level / Gain Ch2",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pregain_3",
+      "fig": "pregain_3",
+      "label": "Level / Gain Ch3",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pregain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pregain_4",
+      "fig": "pregain_4",
+      "label": "Level / Gain Ch4",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pregain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-volume",
+      "fig": "volume",
+      "label": "Line Fader Ch1",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-volume_2",
+      "fig": "volume_2",
+      "label": "Line Fader Ch2",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-volume_3",
+      "fig": "volume_3",
+      "label": "Line Fader Ch3",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-volume_4",
+      "fig": "volume_4",
+      "label": "Line Fader Ch4",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-crossfader",
+      "fig": "crossfader",
+      "label": "Crossfader",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 16,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pfl",
+      "fig": "pfl",
+      "label": "PFL Ch1",
+      "kind": "button",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pfl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pfl_2",
+      "fig": "pfl_2",
+      "label": "PFL Ch2",
+      "kind": "button",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_2",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pfl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pfl_3",
+      "fig": "pfl_3",
+      "label": "PFL Ch3",
+      "kind": "button",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_3",
+        "type": "note",
+        "ch": 3,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pfl_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pfl_4",
+      "fig": "pfl_4",
+      "label": "PFL Ch4",
+      "kind": "button",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pfl_4",
+        "type": "note",
+        "ch": 4,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pfl_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play",
+      "fig": "play",
+      "label": "Play Ch1",
+      "kind": "button",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[play] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_2",
+      "fig": "play_2",
+      "label": "Play Ch2",
+      "kind": "button",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_2",
+        "type": "note",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[play_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_3",
+      "fig": "play_3",
+      "label": "Play Ch3",
+      "kind": "button",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_3",
+        "type": "note",
+        "ch": 3,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[play_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_4",
+      "fig": "play_4",
+      "label": "Play Ch4",
+      "kind": "button",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_4",
+        "type": "note",
+        "ch": 4,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[play_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_stutter",
+      "fig": "play_stutter",
+      "label": "Stutter play Ch1",
+      "kind": "button",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_stutter",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[play_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_stutter_2",
+      "fig": "play_stutter_2",
+      "label": "Stutter play Ch2",
+      "kind": "button",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_stutter_2",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[play_stutter_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_stutter_3",
+      "fig": "play_stutter_3",
+      "label": "Stutter play Ch3",
+      "kind": "button",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_stutter_3",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[play_stutter_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_stutter_4",
+      "fig": "play_stutter_4",
+      "label": "Stutter play Ch4",
+      "kind": "button",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_stutter_4",
+        "type": "note",
+        "ch": 4,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[play_stutter_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-play_5",
+      "fig": "play_5",
+      "label": "Play Preview Deck",
+      "kind": "button",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_5",
+        "type": "note",
+        "ch": 16,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[play_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-cue_default",
+      "fig": "cue_default",
+      "label": "CUE Ch1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "CUE Ch2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-cue_default_3",
+      "fig": "cue_default_3",
+      "label": "CUE Ch3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_3",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-cue_default_4",
+      "fig": "cue_default_4",
+      "label": "CUE Ch4",
+      "kind": "button",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_4",
+        "type": "note",
+        "ch": 4,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[cue_default_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-start_stop",
+      "fig": "start_stop",
+      "label": "start stop Ch1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "start_stop",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[start_stop] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-start_stop_2",
+      "fig": "start_stop_2",
+      "label": "start stop Ch2",
+      "kind": "button",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "start_stop_2",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[start_stop_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-start_stop_3",
+      "fig": "start_stop_3",
+      "label": "start stop Ch3",
+      "kind": "button",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "start_stop_3",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[start_stop_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-start_stop_4",
+      "fig": "start_stop_4",
+      "label": "start stop Ch4",
+      "kind": "button",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "start_stop_4",
+        "type": "note",
+        "ch": 4,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[start_stop_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_enabled",
+      "fig": "sync_enabled",
+      "label": "SYNC Ch1",
+      "kind": "button",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_enabled_2",
+      "fig": "sync_enabled_2",
+      "label": "SYNC Ch2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_2",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_enabled_3",
+      "fig": "sync_enabled_3",
+      "label": "SYNC Ch3",
+      "kind": "button",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_3",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_enabled_4",
+      "fig": "sync_enabled_4",
+      "label": "SYNC Ch4",
+      "kind": "button",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_enabled_4",
+        "type": "note",
+        "ch": 4,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[sync_enabled_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_curpos",
+      "fig": "beats_translate_curpos",
+      "label": "BeatGrid Adjust Ch1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos",
+        "type": "note",
+        "ch": 5,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_curpos_2",
+      "fig": "beats_translate_curpos_2",
+      "label": "BeatGrid Adjust Ch2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_2",
+        "type": "note",
+        "ch": 6,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_curpos_3",
+      "fig": "beats_translate_curpos_3",
+      "label": "BeatGrid Adjust Ch3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_3",
+        "type": "note",
+        "ch": 7,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_curpos_4",
+      "fig": "beats_translate_curpos_4",
+      "label": "BeatGrid Adjust Ch4",
+      "kind": "button",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_curpos_4",
+        "type": "note",
+        "ch": 8,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_curpos_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_match_alignment",
+      "fig": "beats_translate_match_alignment",
+      "label": "BeatGrid Slide Ch1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_match_alignment",
+        "type": "note",
+        "ch": 5,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_match_alignment] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_match_alignment_2",
+      "fig": "beats_translate_match_alignment_2",
+      "label": "BeatGrid Slide Ch2",
+      "kind": "button",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_match_alignment_2",
+        "type": "note",
+        "ch": 6,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_match_alignment_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_match_alignment_3",
+      "fig": "beats_translate_match_alignment_3",
+      "label": "BeatGrid Slide Ch3",
+      "kind": "button",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_match_alignment_3",
+        "type": "note",
+        "ch": 7,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_match_alignment_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beats_translate_match_alignment_4",
+      "fig": "beats_translate_match_alignment_4",
+      "label": "BeatGrid Slide Ch4",
+      "kind": "button",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beats_translate_match_alignment_4",
+        "type": "note",
+        "ch": 8,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[beats_translate_match_alignment_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-quantize",
+      "fig": "quantize",
+      "label": "Quantize",
+      "kind": "button",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize",
+        "type": "note",
+        "ch": 5,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[quantize] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-quantize_2",
+      "fig": "quantize_2",
+      "label": "Quantize",
+      "kind": "button",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize_2",
+        "type": "note",
+        "ch": 6,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[quantize_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-quantize_3",
+      "fig": "quantize_3",
+      "label": "Quantize",
+      "kind": "button",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize_3",
+        "type": "note",
+        "ch": 7,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[quantize_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-quantize_4",
+      "fig": "quantize_4",
+      "label": "Quantize",
+      "kind": "button",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "quantize_4",
+        "type": "note",
+        "ch": 8,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[quantize_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beatloop_activate",
+      "fig": "beatloop_activate",
+      "label": "AutoLoop Ch1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatloop_activate",
+        "type": "note",
+        "ch": 5,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[beatloop_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beatloop_activate_2",
+      "fig": "beatloop_activate_2",
+      "label": "AutoLoop Ch2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatloop_activate_2",
+        "type": "note",
+        "ch": 6,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[beatloop_activate_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beatloop_activate_3",
+      "fig": "beatloop_activate_3",
+      "label": "AutoLoop Ch3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatloop_activate_3",
+        "type": "note",
+        "ch": 7,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[beatloop_activate_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-beatloop_activate_4",
+      "fig": "beatloop_activate_4",
+      "label": "AutoLoop Ch4",
+      "kind": "button",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatloop_activate_4",
+        "type": "note",
+        "ch": 8,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[beatloop_activate_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_halve",
+      "fig": "loop_halve",
+      "label": "X1/2 Ch1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve",
+        "type": "note",
+        "ch": 5,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[loop_halve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_halve_2",
+      "fig": "loop_halve_2",
+      "label": "X1/2 Ch2",
+      "kind": "button",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve_2",
+        "type": "note",
+        "ch": 6,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[loop_halve_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_halve_3",
+      "fig": "loop_halve_3",
+      "label": "X1/2 Ch3",
+      "kind": "button",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve_3",
+        "type": "note",
+        "ch": 7,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[loop_halve_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_halve_4",
+      "fig": "loop_halve_4",
+      "label": "X1/2 Ch4",
+      "kind": "button",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve_4",
+        "type": "note",
+        "ch": 8,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[loop_halve_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_double",
+      "fig": "loop_double",
+      "label": "X2 Ch1",
+      "kind": "button",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double",
+        "type": "note",
+        "ch": 5,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[loop_double] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_double_2",
+      "fig": "loop_double_2",
+      "label": "X2 Ch2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double_2",
+        "type": "note",
+        "ch": 6,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[loop_double_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_double_3",
+      "fig": "loop_double_3",
+      "label": "X2 Ch3",
+      "kind": "button",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double_3",
+        "type": "note",
+        "ch": 7,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[loop_double_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_double_4",
+      "fig": "loop_double_4",
+      "label": "X2 Ch4",
+      "kind": "button",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double_4",
+        "type": "note",
+        "ch": 8,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[loop_double_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_in",
+      "fig": "loop_in",
+      "label": "Loop in Ch1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 5,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[loop_in] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_in_2",
+      "fig": "loop_in_2",
+      "label": "Loop in Ch2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_2",
+        "type": "note",
+        "ch": 6,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[loop_in_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_in_3",
+      "fig": "loop_in_3",
+      "label": "Loop in Ch3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_3",
+        "type": "note",
+        "ch": 7,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[loop_in_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_in_4",
+      "fig": "loop_in_4",
+      "label": "Loop in Ch4",
+      "kind": "button",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_4",
+        "type": "note",
+        "ch": 8,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[loop_in_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_out",
+      "fig": "loop_out",
+      "label": "Loop out Ch1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 5,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_out_2",
+      "fig": "loop_out_2",
+      "label": "Loop out Ch2",
+      "kind": "button",
+      "x": 25.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_2",
+        "type": "note",
+        "ch": 6,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_out_3",
+      "fig": "loop_out_3",
+      "label": "Loop out Ch3",
+      "kind": "button",
+      "x": 33.2,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_3",
+        "type": "note",
+        "ch": 7,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-loop_out_4",
+      "fig": "loop_out_4",
+      "label": "Loop out Ch4",
+      "kind": "button",
+      "x": 41.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_4",
+        "type": "note",
+        "ch": 8,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reloop_toggle",
+      "fig": "reloop_toggle",
+      "label": "Reloop Ch1",
+      "kind": "button",
+      "x": 48.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_toggle",
+        "type": "note",
+        "ch": 5,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[reloop_toggle] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reloop_toggle_2",
+      "fig": "reloop_toggle_2",
+      "label": "Reloop Ch2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_toggle_2",
+        "type": "note",
+        "ch": 6,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[reloop_toggle_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reloop_toggle_3",
+      "fig": "reloop_toggle_3",
+      "label": "Reloop Ch3",
+      "kind": "button",
+      "x": 64.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_toggle_3",
+        "type": "note",
+        "ch": 7,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[reloop_toggle_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reloop_toggle_4",
+      "fig": "reloop_toggle_4",
+      "label": "Reloop Ch4",
+      "kind": "button",
+      "x": 72.2,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_toggle_4",
+        "type": "note",
+        "ch": 8,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[reloop_toggle_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left",
+      "fig": "parameter_button_left",
+      "label": "parameterButtonLeft",
+      "kind": "button",
+      "x": 80.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left",
+        "type": "note",
+        "ch": 5,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right",
+      "fig": "parameter_button_right",
+      "label": "parameterButtonRight",
+      "kind": "button",
+      "x": 87.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right",
+        "type": "note",
+        "ch": 5,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_shifted",
+      "fig": "parameter_button_left_shifted",
+      "label": "parameterButtonLeftShifted",
+      "kind": "button",
+      "x": 2.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_shifted",
+        "type": "note",
+        "ch": 5,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_shifted",
+      "fig": "parameter_button_right_shifted",
+      "label": "parameterButtonRightShifted",
+      "kind": "button",
+      "x": 9.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_shifted",
+        "type": "note",
+        "ch": 5,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_shifted] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_2",
+      "fig": "parameter_button_left_2",
+      "label": "parameterButtonLeft",
+      "kind": "button",
+      "x": 17.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_2",
+        "type": "note",
+        "ch": 6,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_2",
+      "fig": "parameter_button_right_2",
+      "label": "parameterButtonRight",
+      "kind": "button",
+      "x": 25.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_2",
+        "type": "note",
+        "ch": 6,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_shifted_2",
+      "fig": "parameter_button_left_shifted_2",
+      "label": "parameterButtonLeftShifted",
+      "kind": "button",
+      "x": 33.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_shifted_2",
+        "type": "note",
+        "ch": 6,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_shifted_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_shifted_2",
+      "fig": "parameter_button_right_shifted_2",
+      "label": "parameterButtonRightShifted",
+      "kind": "button",
+      "x": 41.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_shifted_2",
+        "type": "note",
+        "ch": 6,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_shifted_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_3",
+      "fig": "parameter_button_left_3",
+      "label": "parameterButtonLeft",
+      "kind": "button",
+      "x": 48.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_3",
+        "type": "note",
+        "ch": 7,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_3",
+      "fig": "parameter_button_right_3",
+      "label": "parameterButtonRight",
+      "kind": "button",
+      "x": 56.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_3",
+        "type": "note",
+        "ch": 7,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_shifted_3",
+      "fig": "parameter_button_left_shifted_3",
+      "label": "parameterButtonLeftShifted",
+      "kind": "button",
+      "x": 64.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_shifted_3",
+        "type": "note",
+        "ch": 7,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_shifted_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_shifted_3",
+      "fig": "parameter_button_right_shifted_3",
+      "label": "parameterButtonRightShifted",
+      "kind": "button",
+      "x": 72.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_shifted_3",
+        "type": "note",
+        "ch": 7,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_shifted_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_4",
+      "fig": "parameter_button_left_4",
+      "label": "parameterButtonLeft",
+      "kind": "button",
+      "x": 80.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_4",
+        "type": "note",
+        "ch": 8,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_4",
+      "fig": "parameter_button_right_4",
+      "label": "parameterButtonRight",
+      "kind": "button",
+      "x": 87.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_4",
+        "type": "note",
+        "ch": 8,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_left_shifted_4",
+      "fig": "parameter_button_left_shifted_4",
+      "label": "parameterButtonLeftShifted",
+      "kind": "button",
+      "x": 2.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_left_shifted_4",
+        "type": "note",
+        "ch": 8,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_left_shifted_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-parameter_button_right_shifted_4",
+      "fig": "parameter_button_right_shifted_4",
+      "label": "parameterButtonRightShifted",
+      "kind": "button",
+      "x": 9.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter_button_right_shifted_4",
+        "type": "note",
+        "ch": 8,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[parameter_button_right_shifted_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-move_vertical",
+      "fig": "move_vertical",
+      "label": "Select line",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_vertical",
+        "type": "cc",
+        "ch": 16,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[move_vertical] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-scroll_vertical",
+      "fig": "scroll_vertical",
+      "label": "Select page",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "scroll_vertical",
+        "type": "cc",
+        "ch": 16,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[scroll_vertical] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-load_button",
+      "fig": "load_button",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 33.2,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_button",
+        "type": "note",
+        "ch": 16,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[load_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-load_button_2",
+      "fig": "load_button_2",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 41.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_button_2",
+        "type": "note",
+        "ch": 16,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[load_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-load_button_3",
+      "fig": "load_button_3",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 48.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_button_3",
+        "type": "note",
+        "ch": 16,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[load_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-load_button_4",
+      "fig": "load_button_4",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 56.6,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_button_4",
+        "type": "note",
+        "ch": 16,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[load_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-go_to_item",
+      "fig": "go_to_item",
+      "label": "Select Item",
+      "kind": "button",
+      "x": 64.4,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "go_to_item",
+        "type": "note",
+        "ch": 16,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[go_to_item] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-move_focus_forward",
+      "fig": "move_focus_forward",
+      "label": "change active panel",
+      "kind": "button",
+      "x": 72.2,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_focus_forward",
+        "type": "note",
+        "ch": 16,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[move_focus_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-move_focus_backward",
+      "fig": "move_focus_backward",
+      "label": "change active panel",
+      "kind": "button",
+      "x": 80.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_focus_backward",
+        "type": "note",
+        "ch": 16,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[move_focus_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "Load in Preview deck",
+      "kind": "button",
+      "x": 87.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 16,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-show",
+      "fig": "show",
+      "label": "Show Effect Rack",
+      "kind": "button",
+      "x": 2.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "show",
+        "type": "note",
+        "ch": 16,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[show] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-show_maximized_library",
+      "fig": "show_maximized_library",
+      "label": "Full screen Library",
+      "kind": "button",
+      "x": 9.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "show_maximized_library",
+        "type": "note",
+        "ch": 16,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[show_maximized_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sort_library",
+      "fig": "sort_library",
+      "label": "BPM",
+      "kind": "button",
+      "x": 17.6,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library",
+        "type": "note",
+        "ch": 16,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[sort_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sort_library_2",
+      "fig": "sort_library_2",
+      "label": "KEY",
+      "kind": "button",
+      "x": 25.4,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library_2",
+        "type": "note",
+        "ch": 16,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[sort_library_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sort_library_3",
+      "fig": "sort_library_3",
+      "label": "Artist",
+      "kind": "button",
+      "x": 33.2,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library_3",
+        "type": "note",
+        "ch": 16,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[sort_library_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sort_library_4",
+      "fig": "sort_library_4",
+      "label": "Title",
+      "kind": "button",
+      "x": 41.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "sort_library_4",
+        "type": "note",
+        "ch": 16,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[sort_library_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel1_enable",
+      "fig": "group_channel1_enable",
+      "label": "FX 1 to Ch1",
+      "kind": "button",
+      "x": 48.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel1_enable",
+        "type": "note",
+        "ch": 9,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[group_channel1_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel2_enable",
+      "fig": "group_channel2_enable",
+      "label": "FX 1 to Ch2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel2_enable",
+        "type": "note",
+        "ch": 9,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[group_channel2_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel3_enable",
+      "fig": "group_channel3_enable",
+      "label": "FX 1 to Ch3",
+      "kind": "button",
+      "x": 64.4,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel3_enable",
+        "type": "note",
+        "ch": 9,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[group_channel3_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel4_enable",
+      "fig": "group_channel4_enable",
+      "label": "FX 1 to Ch4",
+      "kind": "button",
+      "x": 72.2,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel4_enable",
+        "type": "note",
+        "ch": 9,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[group_channel4_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel1_enable_2",
+      "fig": "group_channel1_enable_2",
+      "label": "FX 2 to Ch1",
+      "kind": "button",
+      "x": 80.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel1_enable_2",
+        "type": "note",
+        "ch": 10,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[group_channel1_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel2_enable_2",
+      "fig": "group_channel2_enable_2",
+      "label": "FX 2 to Ch2",
+      "kind": "button",
+      "x": 87.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel2_enable_2",
+        "type": "note",
+        "ch": 10,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[group_channel2_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel3_enable_2",
+      "fig": "group_channel3_enable_2",
+      "label": "FX 2 to Ch3",
+      "kind": "button",
+      "x": 2.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel3_enable_2",
+        "type": "note",
+        "ch": 10,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[group_channel3_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_channel4_enable_2",
+      "fig": "group_channel4_enable_2",
+      "label": "FX 2 to Ch4",
+      "kind": "button",
+      "x": 9.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_channel4_enable_2",
+        "type": "note",
+        "ch": 10,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[group_channel4_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-enabled",
+      "fig": "enabled",
+      "label": "FX1 1 on",
+      "kind": "button",
+      "x": 17.6,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "enabled",
+        "type": "note",
+        "ch": 9,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-enabled_2",
+      "fig": "enabled_2",
+      "label": "FX1 2 on",
+      "kind": "button",
+      "x": 25.4,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "enabled_2",
+        "type": "note",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-enabled_3",
+      "fig": "enabled_3",
+      "label": "FX1 3 on",
+      "kind": "button",
+      "x": 33.2,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "enabled_3",
+        "type": "note",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[enabled_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-meta",
+      "fig": "meta",
+      "label": "FX1 Level 1",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "meta",
+        "type": "cc",
+        "ch": 9,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[meta] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-meta_2",
+      "fig": "meta_2",
+      "label": "FX1 Level 2",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "meta_2",
+        "type": "cc",
+        "ch": 9,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[meta_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-meta_3",
+      "fig": "meta_3",
+      "label": "FX1 Level 3",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "meta_3",
+        "type": "cc",
+        "ch": 9,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[meta_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-enabled_4",
+      "fig": "enabled_4",
+      "label": "FX2 1 on",
+      "kind": "button",
+      "x": 64.4,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "enabled_4",
+        "type": "note",
+        "ch": 10,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[enabled_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-enabled_5",
+      "fig": "enabled_5",
+      "label": "FX2 2 on",
+      "kind": "button",
+      "x": 72.2,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "enabled_5",
+        "type": "note",
+        "ch": 10,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[enabled_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-enabled_6",
+      "fig": "enabled_6",
+      "label": "FX2 3 on",
+      "kind": "button",
+      "x": 80.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "enabled_6",
+        "type": "note",
+        "ch": 10,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[enabled_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-meta_4",
+      "fig": "meta_4",
+      "label": "FX2 Level 1",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "meta_4",
+        "type": "cc",
+        "ch": 10,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[meta_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-meta_5",
+      "fig": "meta_5",
+      "label": "FX2 Level 2",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "meta_5",
+        "type": "cc",
+        "ch": 10,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[meta_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-meta_6",
+      "fig": "meta_6",
+      "label": "FX2 Level 3",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "meta_6",
+        "type": "cc",
+        "ch": 10,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[meta_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_effect",
+      "fig": "next_effect",
+      "label": "FX1 1",
+      "kind": "button",
+      "x": 17.6,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "next_effect",
+        "type": "note",
+        "ch": 9,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[next_effect] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_effect_2",
+      "fig": "next_effect_2",
+      "label": "FX2 1",
+      "kind": "button",
+      "x": 25.4,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "next_effect_2",
+        "type": "note",
+        "ch": 10,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[next_effect_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_effect_3",
+      "fig": "next_effect_3",
+      "label": "FX1 3",
+      "kind": "button",
+      "x": 33.2,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "next_effect_3",
+        "type": "note",
+        "ch": 9,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[next_effect_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_effect_4",
+      "fig": "next_effect_4",
+      "label": "FX1 2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "next_effect_4",
+        "type": "note",
+        "ch": 9,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[next_effect_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_effect_5",
+      "fig": "next_effect_5",
+      "label": "FX2 3",
+      "kind": "button",
+      "x": 48.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "next_effect_5",
+        "type": "note",
+        "ch": 10,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[next_effect_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-next_effect_6",
+      "fig": "next_effect_6",
+      "label": "FX2 2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "next_effect_6",
+        "type": "note",
+        "ch": 10,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[next_effect_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_master_enable",
+      "fig": "group_master_enable",
+      "label": "FX1 on master",
+      "kind": "button",
+      "x": 64.4,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_master_enable",
+        "type": "note",
+        "ch": 9,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[group_master_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_master_enable_2",
+      "fig": "group_master_enable_2",
+      "label": "FX2 on master",
+      "kind": "button",
+      "x": 72.2,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_master_enable_2",
+        "type": "note",
+        "ch": 10,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[group_master_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_headphone_enable",
+      "fig": "group_headphone_enable",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 80.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_headphone_enable",
+        "type": "note",
+        "ch": 9,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[group_headphone_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-group_headphone_enable_2",
+      "fig": "group_headphone_enable_2",
+      "label": "MIDI Learned from 2 messages.",
+      "kind": "button",
+      "x": 87.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "group_headphone_enable_2",
+        "type": "note",
+        "ch": 10,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[group_headphone_enable_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-slip_enabled",
+      "fig": "slip_enabled",
+      "label": "MIDI Learned from 12 messages.",
+      "kind": "button",
+      "x": 2.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-slip_enabled_2",
+      "fig": "slip_enabled_2",
+      "label": "MIDI Learned from 124 messages.",
+      "kind": "button",
+      "x": 9.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled_2",
+        "type": "note",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-slip_enabled_3",
+      "fig": "slip_enabled_3",
+      "label": "MIDI Learned from 70 messages.",
+      "kind": "button",
+      "x": 17.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled_3",
+        "type": "note",
+        "ch": 3,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-slip_enabled_4",
+      "fig": "slip_enabled_4",
+      "label": "MIDI Learned from 160 messages.",
+      "kind": "button",
+      "x": 25.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "slip_enabled_4",
+        "type": "note",
+        "ch": 4,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[slip_enabled_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-censor",
+      "fig": "censor",
+      "label": "Backspin Ch1",
+      "kind": "button",
+      "x": 33.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "censor",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[censor] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-censor_2",
+      "fig": "censor_2",
+      "label": "Backspin Ch2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "censor_2",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[censor_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-censor_3",
+      "fig": "censor_3",
+      "label": "Backspin Ch3",
+      "kind": "button",
+      "x": 48.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "censor_3",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[censor_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-censor_4",
+      "fig": "censor_4",
+      "label": "Backspin Ch4",
+      "kind": "button",
+      "x": 56.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "censor_4",
+        "type": "note",
+        "ch": 4,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[censor_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-stop_time",
+      "fig": "stop_time",
+      "label": "Stop Time Ch1",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_time",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[stop_time] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-stop_time_2",
+      "fig": "stop_time_2",
+      "label": "Stop Time Ch2",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_time_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[stop_time_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-stop_time_3",
+      "fig": "stop_time_3",
+      "label": "Stop Time Ch3",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_time_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[stop_time_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-stop_time_4",
+      "fig": "stop_time_4",
+      "label": "Stop Time Ch4",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "stop_time_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[stop_time_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reverse",
+      "fig": "reverse",
+      "label": "Reverse Ch1",
+      "kind": "button",
+      "x": 2.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[reverse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reverse_2",
+      "fig": "reverse_2",
+      "label": "Reverse Ch2",
+      "kind": "button",
+      "x": 9.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_2",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[reverse_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reverse_3",
+      "fig": "reverse_3",
+      "label": "Reverse Ch3",
+      "kind": "button",
+      "x": 17.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_3",
+        "type": "note",
+        "ch": 3,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[reverse_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-reverse_4",
+      "fig": "reverse_4",
+      "label": "Reverse Ch4",
+      "kind": "button",
+      "x": 25.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_4",
+        "type": "note",
+        "ch": 4,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[reverse_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-keylock",
+      "fig": "keylock",
+      "label": "Keylock Ch1",
+      "kind": "button",
+      "x": 33.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-keylock_2",
+      "fig": "keylock_2",
+      "label": "Keylock Ch2",
+      "kind": "button",
+      "x": 41.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-keylock_3",
+      "fig": "keylock_3",
+      "label": "Keylock Ch3",
+      "kind": "button",
+      "x": 48.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_3",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[keylock_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-keylock_4",
+      "fig": "keylock_4",
+      "label": "Keylock Ch4",
+      "kind": "button",
+      "x": 56.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_4",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[keylock_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_key",
+      "fig": "sync_key",
+      "label": "sync_key Ch1",
+      "kind": "button",
+      "x": 64.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_key",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[sync_key] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_key_2",
+      "fig": "sync_key_2",
+      "label": "sync_key Ch2",
+      "kind": "button",
+      "x": 72.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_key_2",
+        "type": "note",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[sync_key_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_key_3",
+      "fig": "sync_key_3",
+      "label": "sync_key Ch3",
+      "kind": "button",
+      "x": 80.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_key_3",
+        "type": "note",
+        "ch": 3,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[sync_key_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-sync_key_4",
+      "fig": "sync_key_4",
+      "label": "sync_key Ch4",
+      "kind": "button",
+      "x": 87.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "sync_key_4",
+        "type": "note",
+        "ch": 4,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[sync_key_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_reset",
+      "fig": "key_reset",
+      "label": "Default Key",
+      "kind": "button",
+      "x": 2.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_reset",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[key_reset] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_reset_2",
+      "fig": "key_reset_2",
+      "label": "Default Key",
+      "kind": "button",
+      "x": 9.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_reset_2",
+        "type": "note",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[key_reset_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_reset_3",
+      "fig": "key_reset_3",
+      "label": "Default Key",
+      "kind": "button",
+      "x": 17.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_reset_3",
+        "type": "note",
+        "ch": 3,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[key_reset_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-key_reset_4",
+      "fig": "key_reset_4",
+      "label": "Default Key",
+      "kind": "button",
+      "x": 25.4,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "key_reset_4",
+        "type": "note",
+        "ch": 4,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[key_reset_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_down_small",
+      "fig": "rate_temp_down_small",
+      "label": "Pitch Bend -",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_small",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_small] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_down_small_2",
+      "fig": "rate_temp_down_small_2",
+      "label": "Pitch Bend -",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_small_2",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_small_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_down_small_3",
+      "fig": "rate_temp_down_small_3",
+      "label": "Pitch Bend -",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_small_3",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_small_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_down_small_4",
+      "fig": "rate_temp_down_small_4",
+      "label": "Pitch Bend -",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_small_4",
+        "type": "note",
+        "ch": 4,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_small_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_up_small",
+      "fig": "rate_temp_up_small",
+      "label": "Pitch Bend +",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_small",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_small] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_up_small_2",
+      "fig": "rate_temp_up_small_2",
+      "label": "Pitch Bend +",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_small_2",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_small_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_up_small_3",
+      "fig": "rate_temp_up_small_3",
+      "label": "Pitch Bend +",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_small_3",
+        "type": "note",
+        "ch": 3,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_small_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-rate_temp_up_small_4",
+      "fig": "rate_temp_up_small_4",
+      "label": "Pitch Bend +",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_small_4",
+        "type": "note",
+        "ch": 4,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_small_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons",
+      "fig": "pad_buttons",
+      "label": "PAD-1",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons",
+        "type": "note",
+        "ch": 5,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_2",
+      "fig": "pad_buttons_2",
+      "label": "PAD-1",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_2",
+        "type": "note",
+        "ch": 6,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_3",
+      "fig": "pad_buttons_3",
+      "label": "PAD-1",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_3",
+        "type": "note",
+        "ch": 7,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_4",
+      "fig": "pad_buttons_4",
+      "label": "PAD-1",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_4",
+        "type": "note",
+        "ch": 8,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_5",
+      "fig": "pad_buttons_5",
+      "label": "PAD-2",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_5",
+        "type": "note",
+        "ch": 5,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_6",
+      "fig": "pad_buttons_6",
+      "label": "PAD-2",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_6",
+        "type": "note",
+        "ch": 6,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_7",
+      "fig": "pad_buttons_7",
+      "label": "PAD-2",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_7",
+        "type": "note",
+        "ch": 7,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_8",
+      "fig": "pad_buttons_8",
+      "label": "PAD-2",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_8",
+        "type": "note",
+        "ch": 8,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_9",
+      "fig": "pad_buttons_9",
+      "label": "PAD_3",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_9",
+        "type": "note",
+        "ch": 5,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_10",
+      "fig": "pad_buttons_10",
+      "label": "PAD_3",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_10",
+        "type": "note",
+        "ch": 6,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_11",
+      "fig": "pad_buttons_11",
+      "label": "PAD_3",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_11",
+        "type": "note",
+        "ch": 7,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_12",
+      "fig": "pad_buttons_12",
+      "label": "PAD_3",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 160.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_12",
+        "type": "note",
+        "ch": 8,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_13",
+      "fig": "pad_buttons_13",
+      "label": "PAD_4",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_13",
+        "type": "note",
+        "ch": 5,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_14",
+      "fig": "pad_buttons_14",
+      "label": "PAD_4",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_14",
+        "type": "note",
+        "ch": 6,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_15",
+      "fig": "pad_buttons_15",
+      "label": "PAD_4",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_15",
+        "type": "note",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_16",
+      "fig": "pad_buttons_16",
+      "label": "PAD_4",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_16",
+        "type": "note",
+        "ch": 8,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_17",
+      "fig": "pad_buttons_17",
+      "label": "PAD_5",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_17",
+        "type": "note",
+        "ch": 5,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_18",
+      "fig": "pad_buttons_18",
+      "label": "PAD_5",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_18",
+        "type": "note",
+        "ch": 6,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_19",
+      "fig": "pad_buttons_19",
+      "label": "PAD_5",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_19",
+        "type": "note",
+        "ch": 7,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_20",
+      "fig": "pad_buttons_20",
+      "label": "PAD_5",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_20",
+        "type": "note",
+        "ch": 8,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_21",
+      "fig": "pad_buttons_21",
+      "label": "PAD_6",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_21",
+        "type": "note",
+        "ch": 5,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_22",
+      "fig": "pad_buttons_22",
+      "label": "PAD_6",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_22",
+        "type": "note",
+        "ch": 6,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_23",
+      "fig": "pad_buttons_23",
+      "label": "PAD_6",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_23",
+        "type": "note",
+        "ch": 7,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_24",
+      "fig": "pad_buttons_24",
+      "label": "PAD_6",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 166.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_24",
+        "type": "note",
+        "ch": 8,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_25",
+      "fig": "pad_buttons_25",
+      "label": "PAD_7",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_25",
+        "type": "note",
+        "ch": 5,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_26",
+      "fig": "pad_buttons_26",
+      "label": "PAD_7",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_26",
+        "type": "note",
+        "ch": 6,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_27",
+      "fig": "pad_buttons_27",
+      "label": "PAD_7",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_27",
+        "type": "note",
+        "ch": 7,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_28",
+      "fig": "pad_buttons_28",
+      "label": "PAD_7",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_28",
+        "type": "note",
+        "ch": 8,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_29",
+      "fig": "pad_buttons_29",
+      "label": "PAD_8",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_29",
+        "type": "note",
+        "ch": 5,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_30",
+      "fig": "pad_buttons_30",
+      "label": "PAD_8",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_30",
+        "type": "note",
+        "ch": 6,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_31",
+      "fig": "pad_buttons_31",
+      "label": "PAD_8",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_31",
+        "type": "note",
+        "ch": 7,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_32",
+      "fig": "pad_buttons_32",
+      "label": "PAD_8",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_32",
+        "type": "note",
+        "ch": 8,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_33",
+      "fig": "pad_buttons_33",
+      "label": "CLEAR_PAD-1",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_33",
+        "type": "note",
+        "ch": 5,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_34",
+      "fig": "pad_buttons_34",
+      "label": "CLEAR_PAD-1",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_34",
+        "type": "note",
+        "ch": 6,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_35",
+      "fig": "pad_buttons_35",
+      "label": "CLEAR_PAD-1",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_35",
+        "type": "note",
+        "ch": 7,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_36",
+      "fig": "pad_buttons_36",
+      "label": "CLEAR_PAD-1",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 173.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_36",
+        "type": "note",
+        "ch": 8,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_37",
+      "fig": "pad_buttons_37",
+      "label": "CLEAR_PAD-2",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_37",
+        "type": "note",
+        "ch": 5,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_38",
+      "fig": "pad_buttons_38",
+      "label": "CLEAR_PAD-2",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_38",
+        "type": "note",
+        "ch": 6,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_39",
+      "fig": "pad_buttons_39",
+      "label": "CLEAR_PAD-2",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_39",
+        "type": "note",
+        "ch": 7,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_40",
+      "fig": "pad_buttons_40",
+      "label": "CLEAR_PAD-2",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_40",
+        "type": "note",
+        "ch": 8,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_41",
+      "fig": "pad_buttons_41",
+      "label": "CLEAR_PAD_3",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_41",
+        "type": "note",
+        "ch": 5,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_42",
+      "fig": "pad_buttons_42",
+      "label": "CLEAR_PAD_3",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_42",
+        "type": "note",
+        "ch": 6,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_43",
+      "fig": "pad_buttons_43",
+      "label": "CLEAR_PAD_3",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_43",
+        "type": "note",
+        "ch": 7,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_44",
+      "fig": "pad_buttons_44",
+      "label": "CLEAR_PAD_3",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_44",
+        "type": "note",
+        "ch": 8,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_45",
+      "fig": "pad_buttons_45",
+      "label": "CLEAR_PAD_4",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_45",
+        "type": "note",
+        "ch": 5,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_46",
+      "fig": "pad_buttons_46",
+      "label": "CLEAR_PAD_4",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_46",
+        "type": "note",
+        "ch": 6,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_47",
+      "fig": "pad_buttons_47",
+      "label": "CLEAR_PAD_4",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_47",
+        "type": "note",
+        "ch": 7,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_48",
+      "fig": "pad_buttons_48",
+      "label": "CLEAR_PAD_4",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 179.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_48",
+        "type": "note",
+        "ch": 8,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_49",
+      "fig": "pad_buttons_49",
+      "label": "CLEAR_PAD_5",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_49",
+        "type": "note",
+        "ch": 5,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_50",
+      "fig": "pad_buttons_50",
+      "label": "CLEAR_PAD_5",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_50",
+        "type": "note",
+        "ch": 6,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_51",
+      "fig": "pad_buttons_51",
+      "label": "CLEAR_PAD_5",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_51",
+        "type": "note",
+        "ch": 7,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_52",
+      "fig": "pad_buttons_52",
+      "label": "CLEAR_PAD_5",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_52",
+        "type": "note",
+        "ch": 8,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_53",
+      "fig": "pad_buttons_53",
+      "label": "CLEAR_PAD_6",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_53",
+        "type": "note",
+        "ch": 5,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_54",
+      "fig": "pad_buttons_54",
+      "label": "CLEAR_PAD_6",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_54",
+        "type": "note",
+        "ch": 6,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_55",
+      "fig": "pad_buttons_55",
+      "label": "CLEAR_PAD_6",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_55",
+        "type": "note",
+        "ch": 7,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_55] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_56",
+      "fig": "pad_buttons_56",
+      "label": "CLEAR_PAD_6",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_56",
+        "type": "note",
+        "ch": 8,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_56] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_57",
+      "fig": "pad_buttons_57",
+      "label": "CLEAR_PAD_7",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_57",
+        "type": "note",
+        "ch": 5,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_57] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_58",
+      "fig": "pad_buttons_58",
+      "label": "CLEAR_PAD_7",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_58",
+        "type": "note",
+        "ch": 6,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_58] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_59",
+      "fig": "pad_buttons_59",
+      "label": "CLEAR_PAD_7",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_59",
+        "type": "note",
+        "ch": 7,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_59] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_60",
+      "fig": "pad_buttons_60",
+      "label": "CLEAR_PAD_7",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 186.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_60",
+        "type": "note",
+        "ch": 8,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_60] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_61",
+      "fig": "pad_buttons_61",
+      "label": "CLEAR_PAD_8",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 192.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_61",
+        "type": "note",
+        "ch": 5,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_61] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_62",
+      "fig": "pad_buttons_62",
+      "label": "CLEAR_PAD_8",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 192.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_62",
+        "type": "note",
+        "ch": 6,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_62] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_63",
+      "fig": "pad_buttons_63",
+      "label": "CLEAR_PAD_8",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 192.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_63",
+        "type": "note",
+        "ch": 7,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_63] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc7000-pad_buttons_64",
+      "fig": "pad_buttons_64",
+      "label": "CLEAR_PAD_8",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 192.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pad_buttons_64",
+        "type": "note",
+        "ch": 8,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[pad_buttons_64] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

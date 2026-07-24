@@ -1,0 +1,658 @@
+{
+  "source": "mixxx:Korg-KAOSS-DJ.midi.xml",
+  "archived": "tools/deck-diagrams/devices/korg-kaoss-dj/source/Korg-KAOSS-DJ.midi.xml",
+  "device": "Korg KAOSS DJ",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "change_focus",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 7,
+      "notes": "Mixxx KAOSSDJ.changeFocus [change_focus]"
+    },
+    {
+      "name": "tap_button_callback",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "notes": "Mixxx KAOSSDJ.tapButtonCallback [tap_button_callback]"
+    },
+    {
+      "name": "fx_touch_move_horizontal",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 12,
+      "notes": "Mixxx KAOSSDJ.fxTouchMoveHorizontal [fx_touch_move_horizontal]"
+    },
+    {
+      "name": "fx_touch_move_vertical",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 13,
+      "notes": "Mixxx KAOSSDJ.fxTouchMoveVertical [fx_touch_move_vertical]"
+    },
+    {
+      "name": "load_callback",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "notes": "Mixxx KAOSSDJ.loadCallback [load_callback]"
+    },
+    {
+      "name": "load_callback_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 14,
+      "notes": "Mixxx KAOSSDJ.loadCallback [load_callback_2]"
+    },
+    {
+      "name": "wheel_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 14,
+      "notes": "Mixxx KAOSSDJ.wheelTurn [wheel_turn]"
+    },
+    {
+      "name": "wheel_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 14,
+      "notes": "Mixxx KAOSSDJ.wheelTurn [wheel_turn_2]"
+    },
+    {
+      "name": "loop_halve",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "notes": "Mixxx loop_halve [loop_halve]"
+    },
+    {
+      "name": "loop_halve_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 15,
+      "notes": "Mixxx loop_halve [loop_halve_2]"
+    },
+    {
+      "name": "wheel_turn_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 15,
+      "notes": "Mixxx KAOSSDJ.wheelTurnShift [wheel_turn_shift]"
+    },
+    {
+      "name": "wheel_turn_shift_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 15,
+      "notes": "Mixxx KAOSSDJ.wheelTurnShift [wheel_turn_shift_2]"
+    },
+    {
+      "name": "toggle_loop",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx KAOSSDJ.toggleLoop [toggle_loop]"
+    },
+    {
+      "name": "wheel_turn_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx KAOSSDJ.wheelTurn [wheel_turn_3]"
+    },
+    {
+      "name": "toggle_loop_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 16,
+      "notes": "Mixxx KAOSSDJ.toggleLoop [toggle_loop_2]"
+    },
+    {
+      "name": "wheel_turn_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 16,
+      "notes": "Mixxx KAOSSDJ.wheelTurn [wheel_turn_4]"
+    },
+    {
+      "name": "loop_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "notes": "Mixxx loop_double [loop_double]"
+    },
+    {
+      "name": "loop_double_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 17,
+      "notes": "Mixxx loop_double [loop_double_2]"
+    },
+    {
+      "name": "fx_touch_move_vertical_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 17,
+      "notes": "Mixxx KAOSSDJ.fxTouchMoveVerticalShift [fx_touch_move_vertical_shift]"
+    },
+    {
+      "name": "hotcue_1_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate]"
+    },
+    {
+      "name": "hotcue_1_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 18,
+      "notes": "Mixxx hotcue_1_activate [hotcue_1_activate_2]"
+    },
+    {
+      "name": "fx_touch_move_horizontal_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 18,
+      "notes": "Mixxx KAOSSDJ.fxTouchMoveHorizontalShift [fx_touch_move_horizontal_shift]"
+    },
+    {
+      "name": "hotcue_2_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 19,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate]"
+    },
+    {
+      "name": "hotcue_2_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 19,
+      "notes": "Mixxx hotcue_2_activate [hotcue_2_activate_2]"
+    },
+    {
+      "name": "hotcue_3_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 20,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate]"
+    },
+    {
+      "name": "hotcue_3_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 20,
+      "notes": "Mixxx hotcue_3_activate [hotcue_3_activate_2]"
+    },
+    {
+      "name": "rate_temp_down",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 21,
+      "notes": "Mixxx rate_temp_down [rate_temp_down]"
+    },
+    {
+      "name": "rate_temp_down_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 21,
+      "notes": "Mixxx rate_temp_down [rate_temp_down_2]"
+    },
+    {
+      "name": "scratch_mode",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "notes": "Mixxx KAOSSDJ.scratchMode [scratch_mode]"
+    },
+    {
+      "name": "scratch_mode_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 22,
+      "notes": "Mixxx KAOSSDJ.scratchMode [scratch_mode_2]"
+    },
+    {
+      "name": "rate_temp_up",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "notes": "Mixxx rate_temp_up [rate_temp_up]"
+    },
+    {
+      "name": "rate_temp_up_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 23,
+      "notes": "Mixxx rate_temp_up [rate_temp_up_2]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 23,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "fx_toggle_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx KAOSSDJ.fxToggleButton [fx_toggle_button]"
+    },
+    {
+      "name": "fx_toggle_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 24,
+      "notes": "Mixxx KAOSSDJ.fxToggleButton [fx_toggle_button_2]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 24,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 25,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 25,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "shift_left_callback",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx KAOSSDJ.shiftLeftCallback [shift_left_callback]"
+    },
+    {
+      "name": "shift_right_callback",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 26,
+      "notes": "Mixxx KAOSSDJ.shiftRightCallback [shift_right_callback]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 26,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 27,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "parameter3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx parameter3 [parameter3]"
+    },
+    {
+      "name": "parameter3_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 27,
+      "notes": "Mixxx parameter3 [parameter3_2]"
+    },
+    {
+      "name": "parameter2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 28,
+      "notes": "Mixxx parameter2 [parameter2]"
+    },
+    {
+      "name": "parameter2_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 28,
+      "notes": "Mixxx parameter2 [parameter2_2]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 29,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "parameter1",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 29,
+      "notes": "Mixxx parameter1 [parameter1]"
+    },
+    {
+      "name": "parameter1_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 29,
+      "notes": "Mixxx parameter1 [parameter1_2]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 30,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "browse_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 7,
+      "code": 30,
+      "notes": "Mixxx KAOSSDJ.browseKnob [browse_knob]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "notes": "Mixxx KAOSSDJ.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 31,
+      "notes": "Mixxx KAOSSDJ.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "fx_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 31,
+      "notes": "Mixxx KAOSSDJ.fxKnob [fx_knob]"
+    },
+    {
+      "name": "fx_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx KAOSSDJ.fxTouch [fx_touch]"
+    },
+    {
+      "name": "fx_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 32,
+      "notes": "Mixxx KAOSSDJ.fxTouch [fx_touch_2]"
+    },
+    {
+      "name": "playposition",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx playposition [playposition]"
+    },
+    {
+      "name": "playposition_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 33,
+      "notes": "Mixxx playposition [playposition_2]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 40,
+      "notes": "Mixxx loop_in [loop_in]"
+    },
+    {
+      "name": "loop_in_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 40,
+      "notes": "Mixxx loop_in [loop_in_2]"
+    },
+    {
+      "name": "reloop_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 41,
+      "notes": "Mixxx reloop_toggle [reloop_toggle]"
+    },
+    {
+      "name": "reloop_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 41,
+      "notes": "Mixxx reloop_toggle [reloop_toggle_2]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 42,
+      "notes": "Mixxx loop_out [loop_out]"
+    },
+    {
+      "name": "loop_out_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 42,
+      "notes": "Mixxx loop_out [loop_out_2]"
+    },
+    {
+      "name": "hotcue_1_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 43,
+      "notes": "Mixxx hotcue_1_clear [hotcue_1_clear]"
+    },
+    {
+      "name": "hotcue_1_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 43,
+      "notes": "Mixxx hotcue_1_clear [hotcue_1_clear_2]"
+    },
+    {
+      "name": "hotcue_2_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 44,
+      "notes": "Mixxx hotcue_2_clear [hotcue_2_clear]"
+    },
+    {
+      "name": "hotcue_2_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 44,
+      "notes": "Mixxx hotcue_2_clear [hotcue_2_clear_2]"
+    },
+    {
+      "name": "hotcue_3_clear",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 45,
+      "notes": "Mixxx hotcue_3_clear [hotcue_3_clear]"
+    },
+    {
+      "name": "hotcue_3_clear_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 45,
+      "notes": "Mixxx hotcue_3_clear [hotcue_3_clear_2]"
+    },
+    {
+      "name": "cue_gotoandplay",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 74,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay]"
+    },
+    {
+      "name": "cue_gotoandplay_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 75,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_2]"
+    },
+    {
+      "name": "cue_gotoandplay_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 76,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_3]"
+    },
+    {
+      "name": "cue_gotoandplay_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 77,
+      "notes": "Mixxx cue_gotoandplay [cue_gotoandplay_4]"
+    }
+  ]
+}

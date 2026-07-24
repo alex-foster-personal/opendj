@@ -1,0 +1,378 @@
+{
+  "source": "mixxx:Numark-Party-Mix.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-party-mix/source/Numark-Party-Mix.midi.xml",
+  "device": "Party Mix",
+  "vendor": "Numark",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 10,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 13,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 12,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 8,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx NumarkPartyMix.deck[0].headphoneButton.input [channel1_input]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx NumarkPartyMix.deck[1].headphoneButton.input [channel2_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx NumarkPartyMix.deck[0].gain.input [channel1_input_2]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx NumarkPartyMix.deck[1].gain.input [channel2_input_2]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx NumarkPartyMix.deck[0].treble.input [channel1_input_3]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx NumarkPartyMix.deck[1].treble.input [channel2_input_3]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx NumarkPartyMix.deck[0].bass.input [channel1_input_4]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx NumarkPartyMix.deck[1].bass.input [channel2_input_4]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx NumarkPartyMix.deck[0].volume.input [channel1_input_5]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx NumarkPartyMix.deck[1].volume.input [channel2_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx NumarkPartyMix.deck[0].pitch.input [channel1_input_6]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx NumarkPartyMix.deck[1].pitch.input [channel2_input_6]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx NumarkPartyMix.deck[0].syncButton.input [channel1_input_7]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx NumarkPartyMix.deck[1].syncButton.input [channel2_input_7]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx NumarkPartyMix.deck[0].cueButton.input [channel1_input_8]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx NumarkPartyMix.deck[1].cueButton.input [channel2_input_8]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx NumarkPartyMix.deck[0].playButton.input [channel1_input_9]"
+    },
+    {
+      "name": "channel2_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx NumarkPartyMix.deck[1].playButton.input [channel2_input_9]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx NumarkPartyMix.deck[0].scratchToggle.input [channel1_input_10]"
+    },
+    {
+      "name": "channel2_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx NumarkPartyMix.deck[1].scratchToggle.input [channel2_input_10]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx NumarkPartyMix.deck[0].wheelTurn.input [channel1_input_11]"
+    },
+    {
+      "name": "channel2_input_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx NumarkPartyMix.deck[1].wheelTurn.input [channel2_input_11]"
+    },
+    {
+      "name": "mode_button_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 0,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.modeButtonPress [mode_button_press]"
+    },
+    {
+      "name": "mode_button_press_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 0,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.modeButtonPress [mode_button_press_2]"
+    },
+    {
+      "name": "mode_button_press_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.modeButtonPress [mode_button_press_3]"
+    },
+    {
+      "name": "mode_button_press_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.modeButtonPress [mode_button_press_4]"
+    },
+    {
+      "name": "mode_button_press_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 14,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.modeButtonPress [mode_button_press_5]"
+    },
+    {
+      "name": "mode_button_press_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 14,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.modeButtonPress [mode_button_press_6]"
+    },
+    {
+      "name": "mode_button_press_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 24,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.modeButtonPress [mode_button_press_7]"
+    },
+    {
+      "name": "mode_button_press_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 24,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.modeButtonPress [mode_button_press_8]"
+    },
+    {
+      "name": "pad_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.padPress [pad_press]"
+    },
+    {
+      "name": "pad_press_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 20,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.padPress [pad_press_2]"
+    },
+    {
+      "name": "pad_press_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 21,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.padPress [pad_press_3]"
+    },
+    {
+      "name": "pad_press_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 21,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.padPress [pad_press_4]"
+    },
+    {
+      "name": "pad_press_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 22,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.padPress [pad_press_5]"
+    },
+    {
+      "name": "pad_press_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 22,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.padPress [pad_press_6]"
+    },
+    {
+      "name": "pad_press_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 23,
+      "notes": "Mixxx NumarkPartyMix.deck[0].padSection.padPress [pad_press_7]"
+    },
+    {
+      "name": "pad_press_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 23,
+      "notes": "Mixxx NumarkPartyMix.deck[1].padSection.padPress [pad_press_8]"
+    },
+    {
+      "name": "library_input",
+      "section": "browser",
+      "type": "cc",
+      "ch": 16,
+      "code": 0,
+      "notes": "Mixxx NumarkPartyMix.browse.knob.input [library_input]"
+    },
+    {
+      "name": "library_input_2",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 0,
+      "notes": "Mixxx NumarkPartyMix.browse.knobButton.input [library_input_2]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 2,
+      "notes": "Mixxx NumarkPartyMix.deck[0].loadButton.input [channel1_input_12]"
+    },
+    {
+      "name": "channel2_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 3,
+      "notes": "Mixxx NumarkPartyMix.deck[1].loadButton.input [channel2_input_12]"
+    }
+  ]
+}

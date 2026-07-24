@@ -1,0 +1,3658 @@
+{
+  "source": "mixxx:Allen and Heath Xone K2.midi.xml",
+  "archived": "tools/deck-diagrams/devices/allen-and-heath-xone-k2/source/Allen and Heath Xone K2.midi.xml",
+  "device": "Allen&Heath Xone K1/K2/K3",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "input",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].encoder.input [input]"
+    },
+    {
+      "name": "input_2",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].encoderPress.input [input_2]"
+    },
+    {
+      "name": "input_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].knobs[1].input [input_3]"
+    },
+    {
+      "name": "input_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].knobs[2].input [input_4]"
+    },
+    {
+      "name": "input_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].knobs[3].input [input_5]"
+    },
+    {
+      "name": "input_6",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].topButtons[1].input [input_6]"
+    },
+    {
+      "name": "input_7",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].topButtons[2].input [input_7]"
+    },
+    {
+      "name": "input_8",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].topButtons[3].input [input_8]"
+    },
+    {
+      "name": "input_9",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].fader.input [input_9]"
+    },
+    {
+      "name": "input_10",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].bottomButtons[1].input [input_10]"
+    },
+    {
+      "name": "input_11",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].bottomButtons[2].input [input_11]"
+    },
+    {
+      "name": "input_12",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].bottomButtons[3].input [input_12]"
+    },
+    {
+      "name": "input_13",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[1].bottomButtons[4].input [input_13]"
+    },
+    {
+      "name": "input_14",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].encoder.input [input_14]"
+    },
+    {
+      "name": "input_15",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].encoderPress.input [input_15]"
+    },
+    {
+      "name": "input_16",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].knobs[1].input [input_16]"
+    },
+    {
+      "name": "input_17",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].knobs[2].input [input_17]"
+    },
+    {
+      "name": "input_18",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].knobs[3].input [input_18]"
+    },
+    {
+      "name": "input_19",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].topButtons[1].input [input_19]"
+    },
+    {
+      "name": "input_20",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].topButtons[2].input [input_20]"
+    },
+    {
+      "name": "input_21",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].topButtons[3].input [input_21]"
+    },
+    {
+      "name": "input_22",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].fader.input [input_22]"
+    },
+    {
+      "name": "input_23",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].bottomButtons[1].input [input_23]"
+    },
+    {
+      "name": "input_24",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].bottomButtons[2].input [input_24]"
+    },
+    {
+      "name": "input_25",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].bottomButtons[3].input [input_25]"
+    },
+    {
+      "name": "input_26",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[2].bottomButtons[4].input [input_26]"
+    },
+    {
+      "name": "input_27",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].encoder.input [input_27]"
+    },
+    {
+      "name": "input_28",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].encoderPress.input [input_28]"
+    },
+    {
+      "name": "input_29",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].knobs[1].input [input_29]"
+    },
+    {
+      "name": "input_30",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].knobs[2].input [input_30]"
+    },
+    {
+      "name": "input_31",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].knobs[3].input [input_31]"
+    },
+    {
+      "name": "input_32",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].topButtons[1].input [input_32]"
+    },
+    {
+      "name": "input_33",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].topButtons[2].input [input_33]"
+    },
+    {
+      "name": "input_34",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].topButtons[3].input [input_34]"
+    },
+    {
+      "name": "input_35",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].fader.input [input_35]"
+    },
+    {
+      "name": "input_36",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].bottomButtons[1].input [input_36]"
+    },
+    {
+      "name": "input_37",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].bottomButtons[2].input [input_37]"
+    },
+    {
+      "name": "input_38",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].bottomButtons[3].input [input_38]"
+    },
+    {
+      "name": "input_39",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[3].bottomButtons[4].input [input_39]"
+    },
+    {
+      "name": "input_40",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].encoder.input [input_40]"
+    },
+    {
+      "name": "input_41",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].encoderPress.input [input_41]"
+    },
+    {
+      "name": "input_42",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].knobs[1].input [input_42]"
+    },
+    {
+      "name": "input_43",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].knobs[2].input [input_43]"
+    },
+    {
+      "name": "input_44",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].knobs[3].input [input_44]"
+    },
+    {
+      "name": "input_45",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].topButtons[1].input [input_45]"
+    },
+    {
+      "name": "input_46",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].topButtons[2].input [input_46]"
+    },
+    {
+      "name": "input_47",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].topButtons[3].input [input_47]"
+    },
+    {
+      "name": "input_48",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].fader.input [input_48]"
+    },
+    {
+      "name": "input_49",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].bottomButtons[1].input [input_49]"
+    },
+    {
+      "name": "input_50",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].bottomButtons[2].input [input_50]"
+    },
+    {
+      "name": "input_51",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].bottomButtons[3].input [input_51]"
+    },
+    {
+      "name": "input_52",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0xE].columns[4].bottomButtons[4].input [input_52]"
+    },
+    {
+      "name": "decks_layer_button",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 12,
+      "notes": "Mixxx XoneK2.decksLayerButton [decks_layer_button]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_press",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 13,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoderPress [decks_bottom_left_encoder_press]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_press",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 14,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoderPress [decks_bottom_right_encoder_press]"
+    },
+    {
+      "name": "shift_button",
+      "section": "other",
+      "type": "note",
+      "ch": 15,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button]"
+    },
+    {
+      "name": "decks_bottom_left_encoder",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 20,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoder [decks_bottom_left_encoder]"
+    },
+    {
+      "name": "decks_bottom_right_encoder",
+      "section": "other",
+      "type": "cc",
+      "ch": 15,
+      "code": 21,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoder [decks_bottom_right_encoder]"
+    },
+    {
+      "name": "input_53",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].encoder.input [input_53]"
+    },
+    {
+      "name": "input_54",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].encoderPress.input [input_54]"
+    },
+    {
+      "name": "input_55",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].knobs[1].input [input_55]"
+    },
+    {
+      "name": "input_56",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].knobs[2].input [input_56]"
+    },
+    {
+      "name": "input_57",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].knobs[3].input [input_57]"
+    },
+    {
+      "name": "input_58",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].topButtons[1].input [input_58]"
+    },
+    {
+      "name": "input_59",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].topButtons[2].input [input_59]"
+    },
+    {
+      "name": "input_60",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].topButtons[3].input [input_60]"
+    },
+    {
+      "name": "input_61",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].fader.input [input_61]"
+    },
+    {
+      "name": "input_62",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].bottomButtons[1].input [input_62]"
+    },
+    {
+      "name": "input_63",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].bottomButtons[2].input [input_63]"
+    },
+    {
+      "name": "input_64",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].bottomButtons[3].input [input_64]"
+    },
+    {
+      "name": "input_65",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[1].bottomButtons[4].input [input_65]"
+    },
+    {
+      "name": "input_66",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].encoder.input [input_66]"
+    },
+    {
+      "name": "input_67",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].encoderPress.input [input_67]"
+    },
+    {
+      "name": "input_68",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].knobs[1].input [input_68]"
+    },
+    {
+      "name": "input_69",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].knobs[2].input [input_69]"
+    },
+    {
+      "name": "input_70",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].knobs[3].input [input_70]"
+    },
+    {
+      "name": "input_71",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].topButtons[1].input [input_71]"
+    },
+    {
+      "name": "input_72",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].topButtons[2].input [input_72]"
+    },
+    {
+      "name": "input_73",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].topButtons[3].input [input_73]"
+    },
+    {
+      "name": "input_74",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].fader.input [input_74]"
+    },
+    {
+      "name": "input_75",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].bottomButtons[1].input [input_75]"
+    },
+    {
+      "name": "input_76",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].bottomButtons[2].input [input_76]"
+    },
+    {
+      "name": "input_77",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].bottomButtons[3].input [input_77]"
+    },
+    {
+      "name": "input_78",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[2].bottomButtons[4].input [input_78]"
+    },
+    {
+      "name": "input_79",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].encoder.input [input_79]"
+    },
+    {
+      "name": "input_80",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].encoderPress.input [input_80]"
+    },
+    {
+      "name": "input_81",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].knobs[1].input [input_81]"
+    },
+    {
+      "name": "input_82",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].knobs[2].input [input_82]"
+    },
+    {
+      "name": "input_83",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].knobs[3].input [input_83]"
+    },
+    {
+      "name": "input_84",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].topButtons[1].input [input_84]"
+    },
+    {
+      "name": "input_85",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].topButtons[2].input [input_85]"
+    },
+    {
+      "name": "input_86",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].topButtons[3].input [input_86]"
+    },
+    {
+      "name": "input_87",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].fader.input [input_87]"
+    },
+    {
+      "name": "input_88",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].bottomButtons[1].input [input_88]"
+    },
+    {
+      "name": "input_89",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].bottomButtons[2].input [input_89]"
+    },
+    {
+      "name": "input_90",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].bottomButtons[3].input [input_90]"
+    },
+    {
+      "name": "input_91",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[3].bottomButtons[4].input [input_91]"
+    },
+    {
+      "name": "input_92",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].encoder.input [input_92]"
+    },
+    {
+      "name": "input_93",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].encoderPress.input [input_93]"
+    },
+    {
+      "name": "input_94",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].knobs[1].input [input_94]"
+    },
+    {
+      "name": "input_95",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].knobs[2].input [input_95]"
+    },
+    {
+      "name": "input_96",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].knobs[3].input [input_96]"
+    },
+    {
+      "name": "input_97",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].topButtons[1].input [input_97]"
+    },
+    {
+      "name": "input_98",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].topButtons[2].input [input_98]"
+    },
+    {
+      "name": "input_99",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].topButtons[3].input [input_99]"
+    },
+    {
+      "name": "input_100",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].fader.input [input_100]"
+    },
+    {
+      "name": "input_101",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].bottomButtons[1].input [input_101]"
+    },
+    {
+      "name": "input_102",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].bottomButtons[2].input [input_102]"
+    },
+    {
+      "name": "input_103",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].bottomButtons[3].input [input_103]"
+    },
+    {
+      "name": "input_104",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0xD].columns[4].bottomButtons[4].input [input_104]"
+    },
+    {
+      "name": "decks_layer_button_2",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 12,
+      "notes": "Mixxx XoneK2.decksLayerButton [decks_layer_button_2]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_press_2",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 13,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoderPress [decks_bottom_left_encoder_press_2]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_press_2",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 14,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoderPress [decks_bottom_right_encoder_press_2]"
+    },
+    {
+      "name": "shift_button_2",
+      "section": "other",
+      "type": "note",
+      "ch": 14,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_2]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 20,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoder [decks_bottom_left_encoder_2]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 14,
+      "code": 21,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoder [decks_bottom_right_encoder_2]"
+    },
+    {
+      "name": "input_105",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].encoder.input [input_105]"
+    },
+    {
+      "name": "input_106",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].encoderPress.input [input_106]"
+    },
+    {
+      "name": "input_107",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].knobs[1].input [input_107]"
+    },
+    {
+      "name": "input_108",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].knobs[2].input [input_108]"
+    },
+    {
+      "name": "input_109",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].knobs[3].input [input_109]"
+    },
+    {
+      "name": "input_110",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].topButtons[1].input [input_110]"
+    },
+    {
+      "name": "input_111",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].topButtons[2].input [input_111]"
+    },
+    {
+      "name": "input_112",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].topButtons[3].input [input_112]"
+    },
+    {
+      "name": "input_113",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].fader.input [input_113]"
+    },
+    {
+      "name": "input_114",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].bottomButtons[1].input [input_114]"
+    },
+    {
+      "name": "input_115",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].bottomButtons[2].input [input_115]"
+    },
+    {
+      "name": "input_116",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].bottomButtons[3].input [input_116]"
+    },
+    {
+      "name": "input_117",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[1].bottomButtons[4].input [input_117]"
+    },
+    {
+      "name": "input_118",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].encoder.input [input_118]"
+    },
+    {
+      "name": "input_119",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].encoderPress.input [input_119]"
+    },
+    {
+      "name": "input_120",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].knobs[1].input [input_120]"
+    },
+    {
+      "name": "input_121",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].knobs[2].input [input_121]"
+    },
+    {
+      "name": "input_122",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].knobs[3].input [input_122]"
+    },
+    {
+      "name": "input_123",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].topButtons[1].input [input_123]"
+    },
+    {
+      "name": "input_124",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].topButtons[2].input [input_124]"
+    },
+    {
+      "name": "input_125",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].topButtons[3].input [input_125]"
+    },
+    {
+      "name": "input_126",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].fader.input [input_126]"
+    },
+    {
+      "name": "input_127",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].bottomButtons[1].input [input_127]"
+    },
+    {
+      "name": "input_128",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].bottomButtons[2].input [input_128]"
+    },
+    {
+      "name": "input_129",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].bottomButtons[3].input [input_129]"
+    },
+    {
+      "name": "input_130",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[2].bottomButtons[4].input [input_130]"
+    },
+    {
+      "name": "input_131",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].encoder.input [input_131]"
+    },
+    {
+      "name": "input_132",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].encoderPress.input [input_132]"
+    },
+    {
+      "name": "input_133",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].knobs[1].input [input_133]"
+    },
+    {
+      "name": "input_134",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].knobs[2].input [input_134]"
+    },
+    {
+      "name": "input_135",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].knobs[3].input [input_135]"
+    },
+    {
+      "name": "input_136",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].topButtons[1].input [input_136]"
+    },
+    {
+      "name": "input_137",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].topButtons[2].input [input_137]"
+    },
+    {
+      "name": "input_138",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].topButtons[3].input [input_138]"
+    },
+    {
+      "name": "input_139",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].fader.input [input_139]"
+    },
+    {
+      "name": "input_140",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].bottomButtons[1].input [input_140]"
+    },
+    {
+      "name": "input_141",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].bottomButtons[2].input [input_141]"
+    },
+    {
+      "name": "input_142",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].bottomButtons[3].input [input_142]"
+    },
+    {
+      "name": "input_143",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[3].bottomButtons[4].input [input_143]"
+    },
+    {
+      "name": "input_144",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].encoder.input [input_144]"
+    },
+    {
+      "name": "input_145",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].encoderPress.input [input_145]"
+    },
+    {
+      "name": "input_146",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].knobs[1].input [input_146]"
+    },
+    {
+      "name": "input_147",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].knobs[2].input [input_147]"
+    },
+    {
+      "name": "input_148",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].knobs[3].input [input_148]"
+    },
+    {
+      "name": "input_149",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].topButtons[1].input [input_149]"
+    },
+    {
+      "name": "input_150",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].topButtons[2].input [input_150]"
+    },
+    {
+      "name": "input_151",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].topButtons[3].input [input_151]"
+    },
+    {
+      "name": "input_152",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].fader.input [input_152]"
+    },
+    {
+      "name": "input_153",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].bottomButtons[1].input [input_153]"
+    },
+    {
+      "name": "input_154",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].bottomButtons[2].input [input_154]"
+    },
+    {
+      "name": "input_155",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].bottomButtons[3].input [input_155]"
+    },
+    {
+      "name": "input_156",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0xC].columns[4].bottomButtons[4].input [input_156]"
+    },
+    {
+      "name": "decks_layer_button_3",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 12,
+      "notes": "Mixxx XoneK2.decksLayerButton [decks_layer_button_3]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_press_3",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 13,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoderPress [decks_bottom_left_encoder_press_3]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_press_3",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 14,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoderPress [decks_bottom_right_encoder_press_3]"
+    },
+    {
+      "name": "shift_button_3",
+      "section": "other",
+      "type": "note",
+      "ch": 13,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_3]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 20,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoder [decks_bottom_left_encoder_3]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_3",
+      "section": "other",
+      "type": "cc",
+      "ch": 13,
+      "code": 21,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoder [decks_bottom_right_encoder_3]"
+    },
+    {
+      "name": "input_157",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].encoder.input [input_157]"
+    },
+    {
+      "name": "input_158",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].encoderPress.input [input_158]"
+    },
+    {
+      "name": "input_159",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].knobs[1].input [input_159]"
+    },
+    {
+      "name": "input_160",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].knobs[2].input [input_160]"
+    },
+    {
+      "name": "input_161",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].knobs[3].input [input_161]"
+    },
+    {
+      "name": "input_162",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].topButtons[1].input [input_162]"
+    },
+    {
+      "name": "input_163",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].topButtons[2].input [input_163]"
+    },
+    {
+      "name": "input_164",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].topButtons[3].input [input_164]"
+    },
+    {
+      "name": "input_165",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].fader.input [input_165]"
+    },
+    {
+      "name": "input_166",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].bottomButtons[1].input [input_166]"
+    },
+    {
+      "name": "input_167",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].bottomButtons[2].input [input_167]"
+    },
+    {
+      "name": "input_168",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].bottomButtons[3].input [input_168]"
+    },
+    {
+      "name": "input_169",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[1].bottomButtons[4].input [input_169]"
+    },
+    {
+      "name": "input_170",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].encoder.input [input_170]"
+    },
+    {
+      "name": "input_171",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].encoderPress.input [input_171]"
+    },
+    {
+      "name": "input_172",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].knobs[1].input [input_172]"
+    },
+    {
+      "name": "input_173",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].knobs[2].input [input_173]"
+    },
+    {
+      "name": "input_174",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].knobs[3].input [input_174]"
+    },
+    {
+      "name": "input_175",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].topButtons[1].input [input_175]"
+    },
+    {
+      "name": "input_176",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].topButtons[2].input [input_176]"
+    },
+    {
+      "name": "input_177",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].topButtons[3].input [input_177]"
+    },
+    {
+      "name": "input_178",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].fader.input [input_178]"
+    },
+    {
+      "name": "input_179",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].bottomButtons[1].input [input_179]"
+    },
+    {
+      "name": "input_180",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].bottomButtons[2].input [input_180]"
+    },
+    {
+      "name": "input_181",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].bottomButtons[3].input [input_181]"
+    },
+    {
+      "name": "input_182",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[2].bottomButtons[4].input [input_182]"
+    },
+    {
+      "name": "input_183",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].encoder.input [input_183]"
+    },
+    {
+      "name": "input_184",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].encoderPress.input [input_184]"
+    },
+    {
+      "name": "input_185",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].knobs[1].input [input_185]"
+    },
+    {
+      "name": "input_186",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].knobs[2].input [input_186]"
+    },
+    {
+      "name": "input_187",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].knobs[3].input [input_187]"
+    },
+    {
+      "name": "input_188",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].topButtons[1].input [input_188]"
+    },
+    {
+      "name": "input_189",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].topButtons[2].input [input_189]"
+    },
+    {
+      "name": "input_190",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].topButtons[3].input [input_190]"
+    },
+    {
+      "name": "input_191",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].fader.input [input_191]"
+    },
+    {
+      "name": "input_192",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].bottomButtons[1].input [input_192]"
+    },
+    {
+      "name": "input_193",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].bottomButtons[2].input [input_193]"
+    },
+    {
+      "name": "input_194",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].bottomButtons[3].input [input_194]"
+    },
+    {
+      "name": "input_195",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[3].bottomButtons[4].input [input_195]"
+    },
+    {
+      "name": "input_196",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].encoder.input [input_196]"
+    },
+    {
+      "name": "input_197",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].encoderPress.input [input_197]"
+    },
+    {
+      "name": "input_198",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].knobs[1].input [input_198]"
+    },
+    {
+      "name": "input_199",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].knobs[2].input [input_199]"
+    },
+    {
+      "name": "input_200",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].knobs[3].input [input_200]"
+    },
+    {
+      "name": "input_201",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].topButtons[1].input [input_201]"
+    },
+    {
+      "name": "input_202",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].topButtons[2].input [input_202]"
+    },
+    {
+      "name": "input_203",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].topButtons[3].input [input_203]"
+    },
+    {
+      "name": "input_204",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].fader.input [input_204]"
+    },
+    {
+      "name": "input_205",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].bottomButtons[1].input [input_205]"
+    },
+    {
+      "name": "input_206",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].bottomButtons[2].input [input_206]"
+    },
+    {
+      "name": "input_207",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].bottomButtons[3].input [input_207]"
+    },
+    {
+      "name": "input_208",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0xB].columns[4].bottomButtons[4].input [input_208]"
+    },
+    {
+      "name": "decks_layer_button_4",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 12,
+      "notes": "Mixxx XoneK2.decksLayerButton [decks_layer_button_4]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_press_4",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 13,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoderPress [decks_bottom_left_encoder_press_4]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_press_4",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 14,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoderPress [decks_bottom_right_encoder_press_4]"
+    },
+    {
+      "name": "shift_button_4",
+      "section": "other",
+      "type": "note",
+      "ch": 12,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_4]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 20,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoder [decks_bottom_left_encoder_4]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_4",
+      "section": "other",
+      "type": "cc",
+      "ch": 12,
+      "code": 21,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoder [decks_bottom_right_encoder_4]"
+    },
+    {
+      "name": "input_209",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].encoder.input [input_209]"
+    },
+    {
+      "name": "input_210",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].encoderPress.input [input_210]"
+    },
+    {
+      "name": "input_211",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].knobs[1].input [input_211]"
+    },
+    {
+      "name": "input_212",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].knobs[2].input [input_212]"
+    },
+    {
+      "name": "input_213",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].knobs[3].input [input_213]"
+    },
+    {
+      "name": "input_214",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].topButtons[1].input [input_214]"
+    },
+    {
+      "name": "input_215",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].topButtons[2].input [input_215]"
+    },
+    {
+      "name": "input_216",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].topButtons[3].input [input_216]"
+    },
+    {
+      "name": "input_217",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].fader.input [input_217]"
+    },
+    {
+      "name": "input_218",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].bottomButtons[1].input [input_218]"
+    },
+    {
+      "name": "input_219",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].bottomButtons[2].input [input_219]"
+    },
+    {
+      "name": "input_220",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].bottomButtons[3].input [input_220]"
+    },
+    {
+      "name": "input_221",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[1].bottomButtons[4].input [input_221]"
+    },
+    {
+      "name": "input_222",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].encoder.input [input_222]"
+    },
+    {
+      "name": "input_223",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].encoderPress.input [input_223]"
+    },
+    {
+      "name": "input_224",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].knobs[1].input [input_224]"
+    },
+    {
+      "name": "input_225",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].knobs[2].input [input_225]"
+    },
+    {
+      "name": "input_226",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].knobs[3].input [input_226]"
+    },
+    {
+      "name": "input_227",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].topButtons[1].input [input_227]"
+    },
+    {
+      "name": "input_228",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].topButtons[2].input [input_228]"
+    },
+    {
+      "name": "input_229",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].topButtons[3].input [input_229]"
+    },
+    {
+      "name": "input_230",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].fader.input [input_230]"
+    },
+    {
+      "name": "input_231",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].bottomButtons[1].input [input_231]"
+    },
+    {
+      "name": "input_232",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].bottomButtons[2].input [input_232]"
+    },
+    {
+      "name": "input_233",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].bottomButtons[3].input [input_233]"
+    },
+    {
+      "name": "input_234",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[2].bottomButtons[4].input [input_234]"
+    },
+    {
+      "name": "input_235",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].encoder.input [input_235]"
+    },
+    {
+      "name": "input_236",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].encoderPress.input [input_236]"
+    },
+    {
+      "name": "input_237",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].knobs[1].input [input_237]"
+    },
+    {
+      "name": "input_238",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].knobs[2].input [input_238]"
+    },
+    {
+      "name": "input_239",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].knobs[3].input [input_239]"
+    },
+    {
+      "name": "input_240",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].topButtons[1].input [input_240]"
+    },
+    {
+      "name": "input_241",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].topButtons[2].input [input_241]"
+    },
+    {
+      "name": "input_242",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].topButtons[3].input [input_242]"
+    },
+    {
+      "name": "input_243",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].fader.input [input_243]"
+    },
+    {
+      "name": "input_244",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].bottomButtons[1].input [input_244]"
+    },
+    {
+      "name": "input_245",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].bottomButtons[2].input [input_245]"
+    },
+    {
+      "name": "input_246",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].bottomButtons[3].input [input_246]"
+    },
+    {
+      "name": "input_247",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[3].bottomButtons[4].input [input_247]"
+    },
+    {
+      "name": "input_248",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].encoder.input [input_248]"
+    },
+    {
+      "name": "input_249",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].encoderPress.input [input_249]"
+    },
+    {
+      "name": "input_250",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].knobs[1].input [input_250]"
+    },
+    {
+      "name": "input_251",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].knobs[2].input [input_251]"
+    },
+    {
+      "name": "input_252",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].knobs[3].input [input_252]"
+    },
+    {
+      "name": "input_253",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].topButtons[1].input [input_253]"
+    },
+    {
+      "name": "input_254",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].topButtons[2].input [input_254]"
+    },
+    {
+      "name": "input_255",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].topButtons[3].input [input_255]"
+    },
+    {
+      "name": "input_256",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].fader.input [input_256]"
+    },
+    {
+      "name": "input_257",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].bottomButtons[1].input [input_257]"
+    },
+    {
+      "name": "input_258",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].bottomButtons[2].input [input_258]"
+    },
+    {
+      "name": "input_259",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].bottomButtons[3].input [input_259]"
+    },
+    {
+      "name": "input_260",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0xA].columns[4].bottomButtons[4].input [input_260]"
+    },
+    {
+      "name": "decks_layer_button_5",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 12,
+      "notes": "Mixxx XoneK2.decksLayerButton [decks_layer_button_5]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_press_5",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 13,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoderPress [decks_bottom_left_encoder_press_5]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_press_5",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 14,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoderPress [decks_bottom_right_encoder_press_5]"
+    },
+    {
+      "name": "shift_button_5",
+      "section": "other",
+      "type": "note",
+      "ch": 11,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_5]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 20,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoder [decks_bottom_left_encoder_5]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_5",
+      "section": "other",
+      "type": "cc",
+      "ch": 11,
+      "code": 21,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoder [decks_bottom_right_encoder_5]"
+    },
+    {
+      "name": "input_261",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].encoder.input [input_261]"
+    },
+    {
+      "name": "input_262",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].encoderPress.input [input_262]"
+    },
+    {
+      "name": "input_263",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].knobs[1].input [input_263]"
+    },
+    {
+      "name": "input_264",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].knobs[2].input [input_264]"
+    },
+    {
+      "name": "input_265",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].knobs[3].input [input_265]"
+    },
+    {
+      "name": "input_266",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].topButtons[1].input [input_266]"
+    },
+    {
+      "name": "input_267",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].topButtons[2].input [input_267]"
+    },
+    {
+      "name": "input_268",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].topButtons[3].input [input_268]"
+    },
+    {
+      "name": "input_269",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].fader.input [input_269]"
+    },
+    {
+      "name": "input_270",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].bottomButtons[1].input [input_270]"
+    },
+    {
+      "name": "input_271",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].bottomButtons[2].input [input_271]"
+    },
+    {
+      "name": "input_272",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].bottomButtons[3].input [input_272]"
+    },
+    {
+      "name": "input_273",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[1].bottomButtons[4].input [input_273]"
+    },
+    {
+      "name": "input_274",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].encoder.input [input_274]"
+    },
+    {
+      "name": "input_275",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].encoderPress.input [input_275]"
+    },
+    {
+      "name": "input_276",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].knobs[1].input [input_276]"
+    },
+    {
+      "name": "input_277",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].knobs[2].input [input_277]"
+    },
+    {
+      "name": "input_278",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].knobs[3].input [input_278]"
+    },
+    {
+      "name": "input_279",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].topButtons[1].input [input_279]"
+    },
+    {
+      "name": "input_280",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].topButtons[2].input [input_280]"
+    },
+    {
+      "name": "input_281",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].topButtons[3].input [input_281]"
+    },
+    {
+      "name": "input_282",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].fader.input [input_282]"
+    },
+    {
+      "name": "input_283",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].bottomButtons[1].input [input_283]"
+    },
+    {
+      "name": "input_284",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].bottomButtons[2].input [input_284]"
+    },
+    {
+      "name": "input_285",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].bottomButtons[3].input [input_285]"
+    },
+    {
+      "name": "input_286",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[2].bottomButtons[4].input [input_286]"
+    },
+    {
+      "name": "input_287",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].encoder.input [input_287]"
+    },
+    {
+      "name": "input_288",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].encoderPress.input [input_288]"
+    },
+    {
+      "name": "input_289",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].knobs[1].input [input_289]"
+    },
+    {
+      "name": "input_290",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].knobs[2].input [input_290]"
+    },
+    {
+      "name": "input_291",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].knobs[3].input [input_291]"
+    },
+    {
+      "name": "input_292",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].topButtons[1].input [input_292]"
+    },
+    {
+      "name": "input_293",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].topButtons[2].input [input_293]"
+    },
+    {
+      "name": "input_294",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].topButtons[3].input [input_294]"
+    },
+    {
+      "name": "input_295",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].fader.input [input_295]"
+    },
+    {
+      "name": "input_296",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].bottomButtons[1].input [input_296]"
+    },
+    {
+      "name": "input_297",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].bottomButtons[2].input [input_297]"
+    },
+    {
+      "name": "input_298",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].bottomButtons[3].input [input_298]"
+    },
+    {
+      "name": "input_299",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[3].bottomButtons[4].input [input_299]"
+    },
+    {
+      "name": "input_300",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].encoder.input [input_300]"
+    },
+    {
+      "name": "input_301",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].encoderPress.input [input_301]"
+    },
+    {
+      "name": "input_302",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].knobs[1].input [input_302]"
+    },
+    {
+      "name": "input_303",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].knobs[2].input [input_303]"
+    },
+    {
+      "name": "input_304",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].knobs[3].input [input_304]"
+    },
+    {
+      "name": "input_305",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].topButtons[1].input [input_305]"
+    },
+    {
+      "name": "input_306",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].topButtons[2].input [input_306]"
+    },
+    {
+      "name": "input_307",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].topButtons[3].input [input_307]"
+    },
+    {
+      "name": "input_308",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].fader.input [input_308]"
+    },
+    {
+      "name": "input_309",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].bottomButtons[1].input [input_309]"
+    },
+    {
+      "name": "input_310",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].bottomButtons[2].input [input_310]"
+    },
+    {
+      "name": "input_311",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].bottomButtons[3].input [input_311]"
+    },
+    {
+      "name": "input_312",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0x9].columns[4].bottomButtons[4].input [input_312]"
+    },
+    {
+      "name": "decks_layer_button_6",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 12,
+      "notes": "Mixxx XoneK2.decksLayerButton [decks_layer_button_6]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_press_6",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 13,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoderPress [decks_bottom_left_encoder_press_6]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_press_6",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 14,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoderPress [decks_bottom_right_encoder_press_6]"
+    },
+    {
+      "name": "shift_button_6",
+      "section": "other",
+      "type": "note",
+      "ch": 10,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_6]"
+    },
+    {
+      "name": "decks_bottom_left_encoder_6",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 20,
+      "notes": "Mixxx XoneK2.decksBottomLeftEncoder [decks_bottom_left_encoder_6]"
+    },
+    {
+      "name": "decks_bottom_right_encoder_6",
+      "section": "other",
+      "type": "cc",
+      "ch": 10,
+      "code": 21,
+      "notes": "Mixxx XoneK2.decksBottomRightEncoder [decks_bottom_right_encoder_6]"
+    },
+    {
+      "name": "input_313",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].encoder.input [input_313]"
+    },
+    {
+      "name": "input_314",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].encoderPress.input [input_314]"
+    },
+    {
+      "name": "input_315",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].knobs[1].input [input_315]"
+    },
+    {
+      "name": "input_316",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].knobs[2].input [input_316]"
+    },
+    {
+      "name": "input_317",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].knobs[3].input [input_317]"
+    },
+    {
+      "name": "input_318",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].topButtons[1].input [input_318]"
+    },
+    {
+      "name": "input_319",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].topButtons[2].input [input_319]"
+    },
+    {
+      "name": "input_320",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].topButtons[3].input [input_320]"
+    },
+    {
+      "name": "input_321",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].fader.input [input_321]"
+    },
+    {
+      "name": "input_322",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].bottomButtons[1].input [input_322]"
+    },
+    {
+      "name": "input_323",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].bottomButtons[2].input [input_323]"
+    },
+    {
+      "name": "input_324",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].bottomButtons[3].input [input_324]"
+    },
+    {
+      "name": "input_325",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[1].bottomButtons[4].input [input_325]"
+    },
+    {
+      "name": "input_326",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].encoder.input [input_326]"
+    },
+    {
+      "name": "input_327",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].encoderPress.input [input_327]"
+    },
+    {
+      "name": "input_328",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].knobs[1].input [input_328]"
+    },
+    {
+      "name": "input_329",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].knobs[2].input [input_329]"
+    },
+    {
+      "name": "input_330",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].knobs[3].input [input_330]"
+    },
+    {
+      "name": "input_331",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].topButtons[1].input [input_331]"
+    },
+    {
+      "name": "input_332",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].topButtons[2].input [input_332]"
+    },
+    {
+      "name": "input_333",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].topButtons[3].input [input_333]"
+    },
+    {
+      "name": "input_334",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].fader.input [input_334]"
+    },
+    {
+      "name": "input_335",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].bottomButtons[1].input [input_335]"
+    },
+    {
+      "name": "input_336",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].bottomButtons[2].input [input_336]"
+    },
+    {
+      "name": "input_337",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].bottomButtons[3].input [input_337]"
+    },
+    {
+      "name": "input_338",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[2].bottomButtons[4].input [input_338]"
+    },
+    {
+      "name": "input_339",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].encoder.input [input_339]"
+    },
+    {
+      "name": "input_340",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].encoderPress.input [input_340]"
+    },
+    {
+      "name": "input_341",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].knobs[1].input [input_341]"
+    },
+    {
+      "name": "input_342",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].knobs[2].input [input_342]"
+    },
+    {
+      "name": "input_343",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].knobs[3].input [input_343]"
+    },
+    {
+      "name": "input_344",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].topButtons[1].input [input_344]"
+    },
+    {
+      "name": "input_345",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].topButtons[2].input [input_345]"
+    },
+    {
+      "name": "input_346",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].topButtons[3].input [input_346]"
+    },
+    {
+      "name": "input_347",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].fader.input [input_347]"
+    },
+    {
+      "name": "input_348",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].bottomButtons[1].input [input_348]"
+    },
+    {
+      "name": "input_349",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].bottomButtons[2].input [input_349]"
+    },
+    {
+      "name": "input_350",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].bottomButtons[3].input [input_350]"
+    },
+    {
+      "name": "input_351",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[3].bottomButtons[4].input [input_351]"
+    },
+    {
+      "name": "input_352",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].encoder.input [input_352]"
+    },
+    {
+      "name": "input_353",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].encoderPress.input [input_353]"
+    },
+    {
+      "name": "input_354",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].knobs[1].input [input_354]"
+    },
+    {
+      "name": "input_355",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].knobs[2].input [input_355]"
+    },
+    {
+      "name": "input_356",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].knobs[3].input [input_356]"
+    },
+    {
+      "name": "input_357",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].topButtons[1].input [input_357]"
+    },
+    {
+      "name": "input_358",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].topButtons[2].input [input_358]"
+    },
+    {
+      "name": "input_359",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].topButtons[3].input [input_359]"
+    },
+    {
+      "name": "input_360",
+      "section": "other",
+      "type": "cc",
+      "ch": 9,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].fader.input [input_360]"
+    },
+    {
+      "name": "input_361",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].bottomButtons[1].input [input_361]"
+    },
+    {
+      "name": "input_362",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].bottomButtons[2].input [input_362]"
+    },
+    {
+      "name": "input_363",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].bottomButtons[3].input [input_363]"
+    },
+    {
+      "name": "input_364",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0x8].columns[4].bottomButtons[4].input [input_364]"
+    },
+    {
+      "name": "shift_button_7",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_7]"
+    },
+    {
+      "name": "effects_layer_button",
+      "section": "other",
+      "type": "note",
+      "ch": 9,
+      "code": 12,
+      "notes": "Mixxx XoneK2.effectsLayerButton [effects_layer_button]"
+    },
+    {
+      "name": "input_365",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 0,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].encoder.input [input_365]"
+    },
+    {
+      "name": "input_366",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 52,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].encoderPress.input [input_366]"
+    },
+    {
+      "name": "input_367",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 4,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].knobs[1].input [input_367]"
+    },
+    {
+      "name": "input_368",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 8,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].knobs[2].input [input_368]"
+    },
+    {
+      "name": "input_369",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 12,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].knobs[3].input [input_369]"
+    },
+    {
+      "name": "input_370",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].topButtons[1].input [input_370]"
+    },
+    {
+      "name": "input_371",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 44,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].topButtons[2].input [input_371]"
+    },
+    {
+      "name": "input_372",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 40,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].topButtons[3].input [input_372]"
+    },
+    {
+      "name": "input_373",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].fader.input [input_373]"
+    },
+    {
+      "name": "input_374",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 36,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].bottomButtons[1].input [input_374]"
+    },
+    {
+      "name": "input_375",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].bottomButtons[2].input [input_375]"
+    },
+    {
+      "name": "input_376",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 28,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].bottomButtons[3].input [input_376]"
+    },
+    {
+      "name": "input_377",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[1].bottomButtons[4].input [input_377]"
+    },
+    {
+      "name": "input_378",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 1,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].encoder.input [input_378]"
+    },
+    {
+      "name": "input_379",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 53,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].encoderPress.input [input_379]"
+    },
+    {
+      "name": "input_380",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 5,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].knobs[1].input [input_380]"
+    },
+    {
+      "name": "input_381",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 9,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].knobs[2].input [input_381]"
+    },
+    {
+      "name": "input_382",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 13,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].knobs[3].input [input_382]"
+    },
+    {
+      "name": "input_383",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 49,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].topButtons[1].input [input_383]"
+    },
+    {
+      "name": "input_384",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 45,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].topButtons[2].input [input_384]"
+    },
+    {
+      "name": "input_385",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 41,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].topButtons[3].input [input_385]"
+    },
+    {
+      "name": "input_386",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 17,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].fader.input [input_386]"
+    },
+    {
+      "name": "input_387",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 37,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].bottomButtons[1].input [input_387]"
+    },
+    {
+      "name": "input_388",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].bottomButtons[2].input [input_388]"
+    },
+    {
+      "name": "input_389",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].bottomButtons[3].input [input_389]"
+    },
+    {
+      "name": "input_390",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[2].bottomButtons[4].input [input_390]"
+    },
+    {
+      "name": "input_391",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 2,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].encoder.input [input_391]"
+    },
+    {
+      "name": "input_392",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 54,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].encoderPress.input [input_392]"
+    },
+    {
+      "name": "input_393",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 6,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].knobs[1].input [input_393]"
+    },
+    {
+      "name": "input_394",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 10,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].knobs[2].input [input_394]"
+    },
+    {
+      "name": "input_395",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 14,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].knobs[3].input [input_395]"
+    },
+    {
+      "name": "input_396",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].topButtons[1].input [input_396]"
+    },
+    {
+      "name": "input_397",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 46,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].topButtons[2].input [input_397]"
+    },
+    {
+      "name": "input_398",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 42,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].topButtons[3].input [input_398]"
+    },
+    {
+      "name": "input_399",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 18,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].fader.input [input_399]"
+    },
+    {
+      "name": "input_400",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 38,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].bottomButtons[1].input [input_400]"
+    },
+    {
+      "name": "input_401",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].bottomButtons[2].input [input_401]"
+    },
+    {
+      "name": "input_402",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].bottomButtons[3].input [input_402]"
+    },
+    {
+      "name": "input_403",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[3].bottomButtons[4].input [input_403]"
+    },
+    {
+      "name": "input_404",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 3,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].encoder.input [input_404]"
+    },
+    {
+      "name": "input_405",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 55,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].encoderPress.input [input_405]"
+    },
+    {
+      "name": "input_406",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 7,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].knobs[1].input [input_406]"
+    },
+    {
+      "name": "input_407",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].knobs[2].input [input_407]"
+    },
+    {
+      "name": "input_408",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 15,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].knobs[3].input [input_408]"
+    },
+    {
+      "name": "input_409",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 51,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].topButtons[1].input [input_409]"
+    },
+    {
+      "name": "input_410",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 47,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].topButtons[2].input [input_410]"
+    },
+    {
+      "name": "input_411",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 43,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].topButtons[3].input [input_411]"
+    },
+    {
+      "name": "input_412",
+      "section": "other",
+      "type": "cc",
+      "ch": 8,
+      "code": 19,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].fader.input [input_412]"
+    },
+    {
+      "name": "input_413",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 39,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].bottomButtons[1].input [input_413]"
+    },
+    {
+      "name": "input_414",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].bottomButtons[2].input [input_414]"
+    },
+    {
+      "name": "input_415",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].bottomButtons[3].input [input_415]"
+    },
+    {
+      "name": "input_416",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx XoneK2.controllers[0x7].columns[4].bottomButtons[4].input [input_416]"
+    },
+    {
+      "name": "shift_button_8",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "notes": "Mixxx XoneK2.shiftButton [shift_button_8]"
+    },
+    {
+      "name": "effects_layer_button_2",
+      "section": "other",
+      "type": "note",
+      "ch": 8,
+      "code": 12,
+      "notes": "Mixxx XoneK2.effectsLayerButton [effects_layer_button_2]"
+    }
+  ]
+}

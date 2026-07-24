@@ -1,0 +1,266 @@
+{
+  "source": "mixxx:Behringer CMD Micro.midi.xml",
+  "archived": "tools/deck-diagrams/devices/behringer-cmd-micro/source/Behringer CMD Micro.midi.xml",
+  "device": "Behringer CMD Micro",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "pitch",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx BehringerCMDMicro.pitch [pitch]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "pitch_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx BehringerCMDMicro.pitch [pitch_2]"
+    },
+    {
+      "name": "beatloop_4_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx beatloop_4_toggle [beatloop_4_toggle]"
+    },
+    {
+      "name": "sync_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx sync_enabled [sync_enabled]"
+    },
+    {
+      "name": "pitch_3",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx BehringerCMDMicro.pitch [pitch_3]"
+    },
+    {
+      "name": "select_next_playlist",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx SelectNextPlaylist [select_next_playlist]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "pitch_4",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx BehringerCMDMicro.pitch [pitch_4]"
+    },
+    {
+      "name": "sync_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx sync_enabled [sync_enabled_2]"
+    },
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "select_prev_playlist",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx SelectPrevPlaylist [select_prev_playlist]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "beatloop_8_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx beatloop_8_toggle [beatloop_8_toggle]"
+    },
+    {
+      "name": "beatloop_8_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx beatloop_8_toggle [beatloop_8_toggle_2]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx BehringerCMDMicro.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "wheel_tick",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx BehringerCMDMicro.wheelTick [wheel_tick]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "select_track_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx SelectTrackKnob [select_track_knob]"
+    },
+    {
+      "name": "beatloop_4_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx beatloop_4_toggle [beatloop_4_toggle_2]"
+    },
+    {
+      "name": "wheel_tick_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx BehringerCMDMicro.wheelTick [wheel_tick_2]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx BehringerCMDMicro.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx rate [rate_2]"
+    }
+  ]
+}

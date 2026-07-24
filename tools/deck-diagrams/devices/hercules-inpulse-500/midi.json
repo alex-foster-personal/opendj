@@ -1,0 +1,2634 @@
+{
+  "source": "mixxx:Hercules_DJControl_Inpulse_500.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-inpulse-500/source/Hercules_DJControl_Inpulse_500.midi.xml",
+  "device": "Inpulse 500",
+  "vendor": "Hercules",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "move_focus",
+      "section": "browser",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx MoveFocus [move_focus]"
+    },
+    {
+      "name": "enabled",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx enabled [enabled]"
+    },
+    {
+      "name": "crossfader_enable",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx DJCi500.crossfaderEnable [crossfader_enable]"
+    },
+    {
+      "name": "crossfader_set_curve",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx DJCi500.crossfaderSetCurve [crossfader_set_curve]"
+    },
+    {
+      "name": "channel1_play_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx DJCi500.deckA.playButton.input [channel1_play_button]"
+    },
+    {
+      "name": "channel1_cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx DJCi500.deckA.cueButton.input [channel1_cue_button]"
+    },
+    {
+      "name": "channel1_sync_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckA.syncButton.input [channel1_sync_button]"
+    },
+    {
+      "name": "channel1_pfl_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckA.pflButton.input [channel1_pfl_button]"
+    },
+    {
+      "name": "channel1_load_a_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx DJCi500.deckA.loadButton.input [channel1_load_a_button]"
+    },
+    {
+      "name": "channel1_load_a_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 13,
+      "notes": "Mixxx DJCi500.deckA.loadButton.input [channel1_load_a_button_2]"
+    },
+    {
+      "name": "channel1_shift_deck_a_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx DJCi500.deckA.shiftButton.input [channel1_shift_deck_a_button]"
+    },
+    {
+      "name": "channel1_slip_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx DJCi500.deckA.slipButton.input [channel1_slip_button]"
+    },
+    {
+      "name": "channel1_quantize_button_deck_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckA.quantButton.input [channel1_quantize_button_deck_1]"
+    },
+    {
+      "name": "channel1_keylock_button_shift_quant_deck_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckA.quantButton.input [channel1_keylock_button_shift_quant_deck_1]"
+    },
+    {
+      "name": "master_vinyl_deck_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckA.vinylButton.input [master_vinyl_deck_a]"
+    },
+    {
+      "name": "channel1_shift_vinyl_deck_a",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckA.vinylButton.input [channel1_shift_vinyl_deck_a]"
+    },
+    {
+      "name": "channel1_loop_in_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckA.loopInButton.input [channel1_loop_in_button]"
+    },
+    {
+      "name": "channel1_loop_out_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckA.loopOutButton.input [channel1_loop_out_button]"
+    },
+    {
+      "name": "channel1_s_loop_in_button_loop_in_goto",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckA.loopInButton.input [channel1_s_loop_in_button_loop_in_goto]"
+    },
+    {
+      "name": "channel1_s_loop_out_button_loop_out_goto",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckA.loopOutButton.input [channel1_s_loop_out_button_loop_out_goto]"
+    },
+    {
+      "name": "channel1_loop_encoder_push_button_deck_a_reloop_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx DJCi500.deckA.loopEncoderPush.input [channel1_loop_encoder_push_button_deck_a_reloop_toggle]"
+    },
+    {
+      "name": "channel1_loop_encoder_push_button_deck_a_4_beat_loop_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 44,
+      "notes": "Mixxx DJCi500.deckA.loopEncoderPush.input [channel1_loop_encoder_push_button_deck_a_4_beat_loop_activate]"
+    },
+    {
+      "name": "channel1_loop_halve_double_loop_knob_deck_a",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx DJCi500.deckA.loopEncoder.input [channel1_loop_halve_double_loop_knob_deck_a]"
+    },
+    {
+      "name": "channel2_play_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx DJCi500.deckB.playButton.input [channel2_play_button]"
+    },
+    {
+      "name": "channel2_cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx DJCi500.deckB.cueButton.input [channel2_cue_button]"
+    },
+    {
+      "name": "channel2_sync_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckB.syncButton.input [channel2_sync_button]"
+    },
+    {
+      "name": "channel2_pfl_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckB.pflButton.input [channel2_pfl_button]"
+    },
+    {
+      "name": "channel2_load_b_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 13,
+      "notes": "Mixxx DJCi500.deckB.loadButton.input [channel2_load_b_button]"
+    },
+    {
+      "name": "channel2_load_b_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 13,
+      "notes": "Mixxx DJCi500.deckB.loadButton.input [channel2_load_b_button_2]"
+    },
+    {
+      "name": "channel1_shift_deck_a_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx DJCi500.deckB.shiftButton.input [channel1_shift_deck_a_button_2]"
+    },
+    {
+      "name": "channel2_slip_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx DJCi500.deckB.slipButton.input [channel2_slip_button]"
+    },
+    {
+      "name": "channel2_quantize_button_deck_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckB.quantButton.input [channel2_quantize_button_deck_2]"
+    },
+    {
+      "name": "channel2_keylock_button_shift_quant_deck_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckB.quantButton.input [channel2_keylock_button_shift_quant_deck_2]"
+    },
+    {
+      "name": "master_vinyl_deck_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckB.vinylButton.input [master_vinyl_deck_b]"
+    },
+    {
+      "name": "channel2_shift_vinyl_deck_b",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckB.vinylButton.input [channel2_shift_vinyl_deck_b]"
+    },
+    {
+      "name": "channel2_loop_in_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckB.loopInButton.input [channel2_loop_in_button]"
+    },
+    {
+      "name": "channel2_loop_out_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckB.loopOutButton.input [channel2_loop_out_button]"
+    },
+    {
+      "name": "channel2_loop_in_button_loop_in_goto",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckB.loopInButton.input [channel2_loop_in_button_loop_in_goto]"
+    },
+    {
+      "name": "channel2_loop_out_button_loop_out_goto",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckB.loopOutButton.input [channel2_loop_out_button_loop_out_goto]"
+    },
+    {
+      "name": "channel2_loop_encoder_push_button_deck_b_reloop_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx DJCi500.deckB.loopEncoderPush.input [channel2_loop_encoder_push_button_deck_b_reloop_toggle]"
+    },
+    {
+      "name": "channel2_loop_encoder_push_button_deck_b_beatloop_4_activated",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 44,
+      "notes": "Mixxx DJCi500.deckB.loopEncoderPush.input [channel2_loop_encoder_push_button_deck_b_beatloop_4_activated]"
+    },
+    {
+      "name": "channel2_loop_halve_double_loop_knob_deck_b",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 14,
+      "notes": "Mixxx DJCi500.deckB.loopEncoder.input [channel2_loop_halve_double_loop_knob_deck_b]"
+    },
+    {
+      "name": "show_maximized_library",
+      "section": "other",
+      "type": "note",
+      "ch": 4,
+      "code": 0,
+      "notes": "Mixxx show_maximized_library [show_maximized_library]"
+    },
+    {
+      "name": "channel1_shift_play_play_stutter",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "notes": "Mixxx DJCi500.deckA.playButton.input [channel1_shift_play_play_stutter]"
+    },
+    {
+      "name": "channel1_shift_cue_rewind_to_beginning",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx DJCi500.deckA.cueButton.input [channel1_shift_cue_rewind_to_beginning]"
+    },
+    {
+      "name": "channel1_shift_sync_match_key",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckA.syncButton.input [channel1_shift_sync_match_key]"
+    },
+    {
+      "name": "channel2_shift_play_play_stutter",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "notes": "Mixxx DJCi500.deckB.playButton.input [channel2_shift_play_play_stutter]"
+    },
+    {
+      "name": "channel2_shift_cue_rewind_to_beginning",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx DJCi500.deckB.cueButton.input [channel2_shift_cue_rewind_to_beginning]"
+    },
+    {
+      "name": "channel2_shift_sync_sync_key",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckB.syncButton.input [channel2_shift_sync_sync_key]"
+    },
+    {
+      "name": "channel1_pad_select",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 15,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[1].input [channel1_pad_select]"
+    },
+    {
+      "name": "channel1_pad_select_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[2].input [channel1_pad_select_2]"
+    },
+    {
+      "name": "channel1_pad_select_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[3].input [channel1_pad_select_3]"
+    },
+    {
+      "name": "channel1_pad_select_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 18,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[4].input [channel1_pad_select_4]"
+    },
+    {
+      "name": "channel1_pad_select_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[5].input [channel1_pad_select_5]"
+    },
+    {
+      "name": "channel1_pad_select_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[6].input [channel1_pad_select_6]"
+    },
+    {
+      "name": "channel1_pad_select_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[7].input [channel1_pad_select_7]"
+    },
+    {
+      "name": "channel1_pad_select_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx DJCi500.deckA.padSelectButtons[8].input [channel1_pad_select_8]"
+    },
+    {
+      "name": "channel1_pad_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 0,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[1].input [channel1_pad_1]"
+    },
+    {
+      "name": "channel1_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 1,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[2].input [channel1_pad_2]"
+    },
+    {
+      "name": "channel1_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[3].input [channel1_pad_3]"
+    },
+    {
+      "name": "channel1_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[4].input [channel1_pad_4]"
+    },
+    {
+      "name": "channel1_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 4,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[5].input [channel1_pad_5]"
+    },
+    {
+      "name": "channel1_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[6].input [channel1_pad_6]"
+    },
+    {
+      "name": "channel1_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 6,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[7].input [channel1_pad_7]"
+    },
+    {
+      "name": "channel1_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 7,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[8].input [channel1_pad_8]"
+    },
+    {
+      "name": "channel1_pad_1_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[1].input [channel1_pad_1_l_shift]"
+    },
+    {
+      "name": "channel1_pad_2_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[2].input [channel1_pad_2_l_shift]"
+    },
+    {
+      "name": "channel1_pad_3_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[3].input [channel1_pad_3_l_shift]"
+    },
+    {
+      "name": "channel1_pad_4_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[4].input [channel1_pad_4_l_shift]"
+    },
+    {
+      "name": "channel1_pad_5_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[5].input [channel1_pad_5_l_shift]"
+    },
+    {
+      "name": "channel1_pad_6_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 13,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[6].input [channel1_pad_6_l_shift]"
+    },
+    {
+      "name": "channel1_pad_7_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 14,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[7].input [channel1_pad_7_l_shift]"
+    },
+    {
+      "name": "channel1_pad_8_l_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 15,
+      "notes": "Mixxx DJCi500.deckA.hotcueButtons[8].input [channel1_pad_8_l_shift]"
+    },
+    {
+      "name": "channel1_loop_1_8_beat_pad_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 16,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[1].input [channel1_loop_1_8_beat_pad_1]"
+    },
+    {
+      "name": "channel1_loop_1_4_beat_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 17,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[2].input [channel1_loop_1_4_beat_pad_2]"
+    },
+    {
+      "name": "channel1_loop_1_2_beat_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 18,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[3].input [channel1_loop_1_2_beat_pad_3]"
+    },
+    {
+      "name": "channel1_loop_1_beat_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 19,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[4].input [channel1_loop_1_beat_pad_4]"
+    },
+    {
+      "name": "channel1_loop_2_beat_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 20,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[5].input [channel1_loop_2_beat_pad_5]"
+    },
+    {
+      "name": "channel1_loop_4_beat_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 21,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[6].input [channel1_loop_4_beat_pad_6]"
+    },
+    {
+      "name": "channel1_loop_8_beat_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 22,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[7].input [channel1_loop_8_beat_pad_7]"
+    },
+    {
+      "name": "channel1_loop_16_beat_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 23,
+      "notes": "Mixxx DJCi500.deckA.loopButtons[8].input [channel1_loop_16_beat_pad_8]"
+    },
+    {
+      "name": "channel1_loop_3_4_beat_pad_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 24,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[1].input [channel1_loop_3_4_beat_pad_1]"
+    },
+    {
+      "name": "channel1_loop_5_4_beat_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 25,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[2].input [channel1_loop_5_4_beat_pad_2]"
+    },
+    {
+      "name": "channel1_loop_6_4_beat_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 26,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[3].input [channel1_loop_6_4_beat_pad_3]"
+    },
+    {
+      "name": "channel1_loop_7_4_beat_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 27,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[4].input [channel1_loop_7_4_beat_pad_4]"
+    },
+    {
+      "name": "channel1_loop_32_beat_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 28,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[5].input [channel1_loop_32_beat_pad_5]"
+    },
+    {
+      "name": "channel1_loop_64_beat_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 29,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[6].input [channel1_loop_64_beat_pad_6]"
+    },
+    {
+      "name": "channel1_loop_128_beat_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 30,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[7].input [channel1_loop_128_beat_pad_7]"
+    },
+    {
+      "name": "channel1_loop_256_beat_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 31,
+      "notes": "Mixxx DJCi500.deckA.loopShiftButtons[8].input [channel1_loop_256_beat_pad_8]"
+    },
+    {
+      "name": "channel1_pad_1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 32,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[1].input [channel1_pad_1_2]"
+    },
+    {
+      "name": "channel1_pad_2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 33,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[2].input [channel1_pad_2_2]"
+    },
+    {
+      "name": "channel1_pad_3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 34,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[3].input [channel1_pad_3_2]"
+    },
+    {
+      "name": "channel1_pad_4_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 35,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[4].input [channel1_pad_4_2]"
+    },
+    {
+      "name": "channel1_pad_5_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 36,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[5].input [channel1_pad_5_2]"
+    },
+    {
+      "name": "channel1_pad_6_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 37,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[6].input [channel1_pad_6_2]"
+    },
+    {
+      "name": "channel1_pad_7_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 38,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[7].input [channel1_pad_7_2]"
+    },
+    {
+      "name": "channel1_pad_8_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 39,
+      "notes": "Mixxx DJCi500.deckA.slicerButtons[8].input [channel1_pad_8_2]"
+    },
+    {
+      "name": "sampler1_pad_1",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 48,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[1].input [sampler1_pad_1]"
+    },
+    {
+      "name": "sampler2_pad_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 49,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[2].input [sampler2_pad_2]"
+    },
+    {
+      "name": "sampler3_pad_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 50,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[3].input [sampler3_pad_3]"
+    },
+    {
+      "name": "sampler4_pad_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 51,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[4].input [sampler4_pad_4]"
+    },
+    {
+      "name": "sampler5_pad_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 52,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[5].input [sampler5_pad_5]"
+    },
+    {
+      "name": "sampler6_pad_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 53,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[6].input [sampler6_pad_6]"
+    },
+    {
+      "name": "sampler7_pad_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 54,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[7].input [sampler7_pad_7]"
+    },
+    {
+      "name": "sampler8_pad_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 55,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[8].input [sampler8_pad_8]"
+    },
+    {
+      "name": "sampler1_pad_1_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 56,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[1].input [sampler1_pad_1_2]"
+    },
+    {
+      "name": "sampler2_pad_2_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 57,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[2].input [sampler2_pad_2_2]"
+    },
+    {
+      "name": "sampler3_pad_3_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 58,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[3].input [sampler3_pad_3_2]"
+    },
+    {
+      "name": "sampler4_pad_4_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 59,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[4].input [sampler4_pad_4_2]"
+    },
+    {
+      "name": "sampler5_pad_5_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 60,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[5].input [sampler5_pad_5_2]"
+    },
+    {
+      "name": "sampler6_pad_6_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 61,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[6].input [sampler6_pad_6_2]"
+    },
+    {
+      "name": "sampler7_pad_7_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 62,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[7].input [sampler7_pad_7_2]"
+    },
+    {
+      "name": "sampler8_pad_8_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 7,
+      "code": 63,
+      "notes": "Mixxx DJCi500.deckA.samplerButtons[8].input [sampler8_pad_8_2]"
+    },
+    {
+      "name": "channel1_pitch_down_tone",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 64,
+      "notes": "Mixxx DJCi500.deckA.pitchDownTone.input [channel1_pitch_down_tone]"
+    },
+    {
+      "name": "channel1_pitch_down_semitone",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 65,
+      "notes": "Mixxx DJCi500.deckA.pitchDownSemiTone.input [channel1_pitch_down_semitone]"
+    },
+    {
+      "name": "channel1_pitch_up_semitone",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 66,
+      "notes": "Mixxx DJCi500.deckA.pitchUpSemiTone.input [channel1_pitch_up_semitone]"
+    },
+    {
+      "name": "channel1_pitch_up_tone",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 67,
+      "notes": "Mixxx DJCi500.deckA.pitchUpTone.input [channel1_pitch_up_tone]"
+    },
+    {
+      "name": "channel1_pitch_slider_increase_resolution",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 70,
+      "notes": "Mixxx DJCi500.deckA.pitchSliderIncrease.input [channel1_pitch_slider_increase_resolution]"
+    },
+    {
+      "name": "channel1_pitch_slider_decrease_resolution",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 69,
+      "notes": "Mixxx DJCi500.deckA.pitchSliderDecrease.input [channel1_pitch_slider_decrease_resolution]"
+    },
+    {
+      "name": "channel1_pitch_slider_reset_resolution",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 68,
+      "notes": "Mixxx DJCi500.deckA.pitchSliderReset.input [channel1_pitch_slider_reset_resolution]"
+    },
+    {
+      "name": "channel1_loop_1_8_beat_pad_1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 80,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[1].input [channel1_loop_1_8_beat_pad_1_2]"
+    },
+    {
+      "name": "channel1_loop_1_4_beat_pad_2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 81,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[2].input [channel1_loop_1_4_beat_pad_2_2]"
+    },
+    {
+      "name": "channel1_loop_1_2_beat_pad_3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 82,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[3].input [channel1_loop_1_2_beat_pad_3_2]"
+    },
+    {
+      "name": "channel1_loop_1_beat_pad_4_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 83,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[4].input [channel1_loop_1_beat_pad_4_2]"
+    },
+    {
+      "name": "channel1_loop_2_beat_pad_5_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 84,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[5].input [channel1_loop_2_beat_pad_5_2]"
+    },
+    {
+      "name": "channel1_loop_2_beat_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 85,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[6].input [channel1_loop_2_beat_pad_6]"
+    },
+    {
+      "name": "channel1_loop_8_beat_pad_7_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 86,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[7].input [channel1_loop_8_beat_pad_7_2]"
+    },
+    {
+      "name": "channel1_loop_2_beat_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 87,
+      "notes": "Mixxx DJCi500.deckA.rollButtons[8].input [channel1_loop_2_beat_pad_8]"
+    },
+    {
+      "name": "channel1_pad_1_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 96,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[1].input [channel1_pad_1_3]"
+    },
+    {
+      "name": "channel1_pad_2_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 97,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[2].input [channel1_pad_2_3]"
+    },
+    {
+      "name": "channel1_pad_3_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 98,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[3].input [channel1_pad_3_3]"
+    },
+    {
+      "name": "channel1_pad_4_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 99,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[4].input [channel1_pad_4_3]"
+    },
+    {
+      "name": "channel1_pad_5_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 100,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[5].input [channel1_pad_5_3]"
+    },
+    {
+      "name": "channel1_pad_6_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 101,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[6].input [channel1_pad_6_3]"
+    },
+    {
+      "name": "channel1_pad_7_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 102,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[7].input [channel1_pad_7_3]"
+    },
+    {
+      "name": "channel1_pad_8_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 103,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[8].input [channel1_pad_8_3]"
+    },
+    {
+      "name": "channel1_pad_1_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 104,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[1].input [channel1_pad_1_4]"
+    },
+    {
+      "name": "channel1_pad_2_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 105,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[2].input [channel1_pad_2_4]"
+    },
+    {
+      "name": "channel1_pad_3_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 106,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[3].input [channel1_pad_3_4]"
+    },
+    {
+      "name": "channel1_pad_4_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 107,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[4].input [channel1_pad_4_4]"
+    },
+    {
+      "name": "channel1_pad_5_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 108,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[5].input [channel1_pad_5_4]"
+    },
+    {
+      "name": "channel1_pad_6_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 109,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[6].input [channel1_pad_6_4]"
+    },
+    {
+      "name": "channel1_pad_7_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 110,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[7].input [channel1_pad_7_4]"
+    },
+    {
+      "name": "channel1_pad_8_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 111,
+      "notes": "Mixxx DJCi500.deckA.effectButtons[8].input [channel1_pad_8_4]"
+    },
+    {
+      "name": "channel1_beat_jump_1_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 112,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[1].input [channel1_beat_jump_1_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_1_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 113,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[2].input [channel1_beat_jump_1_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_2_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 114,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[3].input [channel1_beat_jump_2_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_2_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 115,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[4].input [channel1_beat_jump_2_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_4_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 116,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[5].input [channel1_beat_jump_4_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_4_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 117,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[6].input [channel1_beat_jump_4_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_8_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 118,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[7].input [channel1_beat_jump_8_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_8_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 119,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[8].input [channel1_beat_jump_8_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_16_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 120,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[1].input [channel1_beat_jump_16_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_16_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 121,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[2].input [channel1_beat_jump_16_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_32_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 122,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[3].input [channel1_beat_jump_32_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_32_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 123,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[4].input [channel1_beat_jump_32_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_64_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 124,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[5].input [channel1_beat_jump_64_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_64_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 125,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[6].input [channel1_beat_jump_64_forward]"
+    },
+    {
+      "name": "channel1_beat_jump_128_backward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 126,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[7].input [channel1_beat_jump_128_backward]"
+    },
+    {
+      "name": "channel1_beat_jump_128_forward",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 127,
+      "notes": "Mixxx DJCi500.deckA.beatJumpButtons[8].input [channel1_beat_jump_128_forward]"
+    },
+    {
+      "name": "channel2_pad_select",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 15,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[1].input [channel2_pad_select]"
+    },
+    {
+      "name": "channel2_pad_select_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 16,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[2].input [channel2_pad_select_2]"
+    },
+    {
+      "name": "channel2_pad_select_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 17,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[3].input [channel2_pad_select_3]"
+    },
+    {
+      "name": "channel2_pad_select_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 18,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[4].input [channel2_pad_select_4]"
+    },
+    {
+      "name": "channel2_pad_select_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 19,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[5].input [channel2_pad_select_5]"
+    },
+    {
+      "name": "channel2_pad_select_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 20,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[6].input [channel2_pad_select_6]"
+    },
+    {
+      "name": "channel2_pad_select_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 21,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[7].input [channel2_pad_select_7]"
+    },
+    {
+      "name": "channel2_pad_select_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 22,
+      "notes": "Mixxx DJCi500.deckB.padSelectButtons[8].input [channel2_pad_select_8]"
+    },
+    {
+      "name": "channel2_pad_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[1].input [channel2_pad_1]"
+    },
+    {
+      "name": "channel2_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[2].input [channel2_pad_2]"
+    },
+    {
+      "name": "channel2_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[3].input [channel2_pad_3]"
+    },
+    {
+      "name": "channel2_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[4].input [channel2_pad_4]"
+    },
+    {
+      "name": "channel2_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 4,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[5].input [channel2_pad_5]"
+    },
+    {
+      "name": "channel2_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[6].input [channel2_pad_6]"
+    },
+    {
+      "name": "channel2_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[7].input [channel2_pad_7]"
+    },
+    {
+      "name": "channel2_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[8].input [channel2_pad_8]"
+    },
+    {
+      "name": "channel2_pad_1_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[1].input [channel2_pad_1_r_shift]"
+    },
+    {
+      "name": "channel2_pad_2_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[2].input [channel2_pad_2_r_shift]"
+    },
+    {
+      "name": "channel2_pad_3_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[3].input [channel2_pad_3_r_shift]"
+    },
+    {
+      "name": "channel2_pad_4_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[4].input [channel2_pad_4_r_shift]"
+    },
+    {
+      "name": "channel2_pad_5_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[5].input [channel2_pad_5_r_shift]"
+    },
+    {
+      "name": "channel2_pad_6_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 13,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[6].input [channel2_pad_6_r_shift]"
+    },
+    {
+      "name": "channel2_pad_7_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[7].input [channel2_pad_7_r_shift]"
+    },
+    {
+      "name": "channel2_pad_8_r_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "notes": "Mixxx DJCi500.deckB.hotcueButtons[8].input [channel2_pad_8_r_shift]"
+    },
+    {
+      "name": "channel2_loop_1_8_beat_pad_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[1].input [channel2_loop_1_8_beat_pad_1]"
+    },
+    {
+      "name": "channel2_loop_1_4_beat_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[2].input [channel2_loop_1_4_beat_pad_2]"
+    },
+    {
+      "name": "channel2_loop_1_2_beat_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[3].input [channel2_loop_1_2_beat_pad_3]"
+    },
+    {
+      "name": "channel2_loop_1_beat_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 19,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[4].input [channel2_loop_1_beat_pad_4]"
+    },
+    {
+      "name": "channel2_loop_2_beat_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 20,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[5].input [channel2_loop_2_beat_pad_5]"
+    },
+    {
+      "name": "channel2_loop_4_beat_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 21,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[6].input [channel2_loop_4_beat_pad_6]"
+    },
+    {
+      "name": "channel2_loop_8_beat_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[7].input [channel2_loop_8_beat_pad_7]"
+    },
+    {
+      "name": "channel2_loop_16_beat_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "notes": "Mixxx DJCi500.deckB.loopButtons[8].input [channel2_loop_16_beat_pad_8]"
+    },
+    {
+      "name": "channel2_loop_3_4_beat_pad_1",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[1].input [channel2_loop_3_4_beat_pad_1]"
+    },
+    {
+      "name": "channel2_loop_5_4_beat_pad_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[2].input [channel2_loop_5_4_beat_pad_2]"
+    },
+    {
+      "name": "channel2_loop_6_4_beat_pad_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[3].input [channel2_loop_6_4_beat_pad_3]"
+    },
+    {
+      "name": "channel2_loop_7_4_beat_pad_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[4].input [channel2_loop_7_4_beat_pad_4]"
+    },
+    {
+      "name": "channel2_loop_32_beat_pad_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 28,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[5].input [channel2_loop_32_beat_pad_5]"
+    },
+    {
+      "name": "channel2_loop_64_beat_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[6].input [channel2_loop_64_beat_pad_6]"
+    },
+    {
+      "name": "channel2_loop_128_beat_pad_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[7].input [channel2_loop_128_beat_pad_7]"
+    },
+    {
+      "name": "channel2_loop_256_beat_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "notes": "Mixxx DJCi500.deckB.loopShiftButtons[8].input [channel2_loop_256_beat_pad_8]"
+    },
+    {
+      "name": "channel2_pad_1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[1].input [channel2_pad_1_2]"
+    },
+    {
+      "name": "channel2_pad_2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[2].input [channel2_pad_2_2]"
+    },
+    {
+      "name": "channel2_pad_3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[3].input [channel2_pad_3_2]"
+    },
+    {
+      "name": "channel2_pad_4_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[4].input [channel2_pad_4_2]"
+    },
+    {
+      "name": "channel2_pad_5_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 36,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[5].input [channel2_pad_5_2]"
+    },
+    {
+      "name": "channel2_pad_6_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 37,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[6].input [channel2_pad_6_2]"
+    },
+    {
+      "name": "channel2_pad_7_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 38,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[7].input [channel2_pad_7_2]"
+    },
+    {
+      "name": "channel2_pad_8_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 39,
+      "notes": "Mixxx DJCi500.deckB.slicerButtons[8].input [channel2_pad_8_2]"
+    },
+    {
+      "name": "sampler1_pad_1_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[1].input [sampler1_pad_1_3]"
+    },
+    {
+      "name": "sampler2_pad_2_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 49,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[2].input [sampler2_pad_2_3]"
+    },
+    {
+      "name": "sampler3_pad_3_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[3].input [sampler3_pad_3_3]"
+    },
+    {
+      "name": "sampler4_pad_4_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 51,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[4].input [sampler4_pad_4_3]"
+    },
+    {
+      "name": "sampler5_pad_5_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 52,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[5].input [sampler5_pad_5_3]"
+    },
+    {
+      "name": "sampler6_pad_6_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 53,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[6].input [sampler6_pad_6_3]"
+    },
+    {
+      "name": "sampler7_pad_7_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 54,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[7].input [sampler7_pad_7_3]"
+    },
+    {
+      "name": "sampler8_pad_8_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 55,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[8].input [sampler8_pad_8_3]"
+    },
+    {
+      "name": "sampler1_pad_1_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 56,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[1].input [sampler1_pad_1_4]"
+    },
+    {
+      "name": "sampler2_pad_2_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 57,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[2].input [sampler2_pad_2_4]"
+    },
+    {
+      "name": "sampler3_pad_3_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 58,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[3].input [sampler3_pad_3_4]"
+    },
+    {
+      "name": "sampler4_pad_4_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 59,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[4].input [sampler4_pad_4_4]"
+    },
+    {
+      "name": "sampler5_pad_5_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 60,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[5].input [sampler5_pad_5_4]"
+    },
+    {
+      "name": "sampler6_pad_6_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 61,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[6].input [sampler6_pad_6_4]"
+    },
+    {
+      "name": "sampler7_pad_7_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 62,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[7].input [sampler7_pad_7_4]"
+    },
+    {
+      "name": "sampler8_pad_8_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 8,
+      "code": 63,
+      "notes": "Mixxx DJCi500.deckB.samplerButtons[8].input [sampler8_pad_8_4]"
+    },
+    {
+      "name": "channel2_pitch_up_semitone",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 66,
+      "notes": "Mixxx DJCi500.deckB.pitchUpSemiTone.input [channel2_pitch_up_semitone]"
+    },
+    {
+      "name": "channel2_pitch_down_semitone",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 65,
+      "notes": "Mixxx DJCi500.deckB.pitchDownSemiTone.input [channel2_pitch_down_semitone]"
+    },
+    {
+      "name": "channel2_pitch_up_tone",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 67,
+      "notes": "Mixxx DJCi500.deckB.pitchUpTone.input [channel2_pitch_up_tone]"
+    },
+    {
+      "name": "channel2_pitch_down_tone",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 64,
+      "notes": "Mixxx DJCi500.deckB.pitchDownTone.input [channel2_pitch_down_tone]"
+    },
+    {
+      "name": "channel2_pitch_slider_increase_resolution",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 70,
+      "notes": "Mixxx DJCi500.deckB.pitchSliderIncrease.input [channel2_pitch_slider_increase_resolution]"
+    },
+    {
+      "name": "channel2_pitch_slider_decrease_resolution",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 69,
+      "notes": "Mixxx DJCi500.deckB.pitchSliderDecrease.input [channel2_pitch_slider_decrease_resolution]"
+    },
+    {
+      "name": "channel2_pitch_slider_reset_resolution",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 68,
+      "notes": "Mixxx DJCi500.deckB.pitchSliderReset.input [channel2_pitch_slider_reset_resolution]"
+    },
+    {
+      "name": "channel2_loop_1_8_beat_pad_1_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 80,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[1].input [channel2_loop_1_8_beat_pad_1_2]"
+    },
+    {
+      "name": "channel2_loop_1_4_beat_pad_2_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 81,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[2].input [channel2_loop_1_4_beat_pad_2_2]"
+    },
+    {
+      "name": "channel2_loop_1_2_beat_pad_3_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 82,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[3].input [channel2_loop_1_2_beat_pad_3_2]"
+    },
+    {
+      "name": "channel2_loop_1_beat_pad_4_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 83,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[4].input [channel2_loop_1_beat_pad_4_2]"
+    },
+    {
+      "name": "channel2_loop_2_beat_pad_5_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 84,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[5].input [channel2_loop_2_beat_pad_5_2]"
+    },
+    {
+      "name": "channel2_loop_2_beat_pad_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 85,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[6].input [channel2_loop_2_beat_pad_6]"
+    },
+    {
+      "name": "channel2_loop_8_beat_pad_7_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 86,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[7].input [channel2_loop_8_beat_pad_7_2]"
+    },
+    {
+      "name": "channel2_loop_2_beat_pad_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 87,
+      "notes": "Mixxx DJCi500.deckB.rollButtons[8].input [channel2_loop_2_beat_pad_8]"
+    },
+    {
+      "name": "channel2_pad_1_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 96,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[1].input [channel2_pad_1_3]"
+    },
+    {
+      "name": "channel2_pad_2_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 97,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[2].input [channel2_pad_2_3]"
+    },
+    {
+      "name": "channel2_pad_3_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 98,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[3].input [channel2_pad_3_3]"
+    },
+    {
+      "name": "channel2_pad_4_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 99,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[4].input [channel2_pad_4_3]"
+    },
+    {
+      "name": "channel2_pad_5_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 100,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[5].input [channel2_pad_5_3]"
+    },
+    {
+      "name": "channel2_pad_6_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 101,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[6].input [channel2_pad_6_3]"
+    },
+    {
+      "name": "channel2_pad_7_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 102,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[7].input [channel2_pad_7_3]"
+    },
+    {
+      "name": "channel2_pad_8_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 103,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[8].input [channel2_pad_8_3]"
+    },
+    {
+      "name": "channel2_pad_1_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 104,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[1].input [channel2_pad_1_4]"
+    },
+    {
+      "name": "channel2_pad_2_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 105,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[2].input [channel2_pad_2_4]"
+    },
+    {
+      "name": "channel2_pad_3_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 106,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[3].input [channel2_pad_3_4]"
+    },
+    {
+      "name": "channel2_pad_4_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 107,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[4].input [channel2_pad_4_4]"
+    },
+    {
+      "name": "channel2_pad_5_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 108,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[5].input [channel2_pad_5_4]"
+    },
+    {
+      "name": "channel2_pad_6_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 109,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[6].input [channel2_pad_6_4]"
+    },
+    {
+      "name": "channel2_pad_7_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 110,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[7].input [channel2_pad_7_4]"
+    },
+    {
+      "name": "channel2_pad_8_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 111,
+      "notes": "Mixxx DJCi500.deckB.effectButtons[8].input [channel2_pad_8_4]"
+    },
+    {
+      "name": "channel1_beat_jump_1_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 112,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[1].input [channel1_beat_jump_1_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_1_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 113,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[2].input [channel1_beat_jump_1_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_2_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 114,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[3].input [channel1_beat_jump_2_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_2_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 115,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[4].input [channel1_beat_jump_2_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_4_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 116,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[5].input [channel1_beat_jump_4_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_4_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 117,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[6].input [channel1_beat_jump_4_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_8_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 118,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[7].input [channel1_beat_jump_8_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_8_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 119,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[8].input [channel1_beat_jump_8_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_16_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 120,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[1].input [channel1_beat_jump_16_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_16_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 121,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[2].input [channel1_beat_jump_16_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_32_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 122,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[3].input [channel1_beat_jump_32_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_32_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 123,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[4].input [channel1_beat_jump_32_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_64_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 124,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[5].input [channel1_beat_jump_64_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_64_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 125,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[6].input [channel1_beat_jump_64_forward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_128_backward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 126,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[7].input [channel1_beat_jump_128_backward_2]"
+    },
+    {
+      "name": "channel1_beat_jump_128_forward_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 127,
+      "notes": "Mixxx DJCi500.deckB.beatJumpButtons[8].input [channel1_beat_jump_128_forward_2]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx DJCi500.crossfader [crossfader]"
+    },
+    {
+      "name": "move_library",
+      "section": "browser",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx DJCi500.moveLibrary [move_library]"
+    },
+    {
+      "name": "move_horizontal",
+      "section": "browser",
+      "type": "cc",
+      "ch": 4,
+      "code": 1,
+      "notes": "Mixxx MoveHorizontal [move_horizontal]"
+    },
+    {
+      "name": "input_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx DJCi500.deckA.volume.inputMSB [input_msb]"
+    },
+    {
+      "name": "input_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx DJCi500.deckA.volume.inputLSB [input_lsb]"
+    },
+    {
+      "name": "input_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 0,
+      "notes": "Mixxx DJCi500.deckA.volume.inputMSB [input_msb_2]"
+    },
+    {
+      "name": "input_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 32,
+      "notes": "Mixxx DJCi500.deckA.volume.inputLSB [input_lsb_2]"
+    },
+    {
+      "name": "input_msb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckA.eqKnob[1].inputMSB [input_msb_3]"
+    },
+    {
+      "name": "input_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx DJCi500.deckA.eqKnob[1].inputLSB [input_lsb_3]"
+    },
+    {
+      "name": "input_msb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckA.eqKnob[2].inputMSB [input_msb_4]"
+    },
+    {
+      "name": "input_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx DJCi500.deckA.eqKnob[2].inputLSB [input_lsb_4]"
+    },
+    {
+      "name": "input_msb_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx DJCi500.deckA.eqKnob[3].inputMSB [input_msb_5]"
+    },
+    {
+      "name": "input_lsb_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 36,
+      "notes": "Mixxx DJCi500.deckA.eqKnob[3].inputLSB [input_lsb_5]"
+    },
+    {
+      "name": "input_msb_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckA.gainKnob.inputMSB [input_msb_6]"
+    },
+    {
+      "name": "input_lsb_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 37,
+      "notes": "Mixxx DJCi500.deckA.gainKnob.inputLSB [input_lsb_6]"
+    },
+    {
+      "name": "channel1_filter_deck_a",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx DJCi500.deckA.filterKnob.input [channel1_filter_deck_a]"
+    },
+    {
+      "name": "input_msb_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckA.pitchFader.inputMSB [input_msb_7]"
+    },
+    {
+      "name": "input_lsb_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx DJCi500.deckA.pitchFader.inputLSB [input_lsb_7]"
+    },
+    {
+      "name": "input_msb_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckA.pitchFader.inputMSB [input_msb_8]"
+    },
+    {
+      "name": "input_lsb_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 40,
+      "notes": "Mixxx DJCi500.deckA.pitchFader.inputLSB [input_lsb_8]"
+    },
+    {
+      "name": "input_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckA.jogWheel.inputTouch [input_touch]"
+    },
+    {
+      "name": "input_touch_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckA.jogWheel.inputTouch [input_touch_2]"
+    },
+    {
+      "name": "input_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckA.jogWheel.inputWheel [input_wheel]"
+    },
+    {
+      "name": "input_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckA.jogWheel.inputWheel [input_wheel_2]"
+    },
+    {
+      "name": "input_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckA.jogWheel.inputTouch [input_touch_3]"
+    },
+    {
+      "name": "input_touch_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckA.jogWheelShift.inputTouch [input_touch_4]"
+    },
+    {
+      "name": "input_wheel_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckA.jogWheelShift.inputWheel [input_wheel_3]"
+    },
+    {
+      "name": "input_wheel_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckA.jogWheelShift.inputWheel [input_wheel_4]"
+    },
+    {
+      "name": "input_msb_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 0,
+      "notes": "Mixxx DJCi500.deckB.volume.inputMSB [input_msb_9]"
+    },
+    {
+      "name": "input_lsb_9",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 32,
+      "notes": "Mixxx DJCi500.deckB.volume.inputLSB [input_lsb_9]"
+    },
+    {
+      "name": "input_msb_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 0,
+      "notes": "Mixxx DJCi500.deckB.volume.inputMSB [input_msb_10]"
+    },
+    {
+      "name": "input_lsb_10",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 32,
+      "notes": "Mixxx DJCi500.deckB.volume.inputLSB [input_lsb_10]"
+    },
+    {
+      "name": "input_msb_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx DJCi500.deckB.eqKnob[1].inputMSB [input_msb_11]"
+    },
+    {
+      "name": "input_lsb_11",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 34,
+      "notes": "Mixxx DJCi500.deckB.eqKnob[1].inputLSB [input_lsb_11]"
+    },
+    {
+      "name": "input_msb_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx DJCi500.deckB.eqKnob[2].inputMSB [input_msb_12]"
+    },
+    {
+      "name": "input_lsb_12",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 35,
+      "notes": "Mixxx DJCi500.deckB.eqKnob[2].inputLSB [input_lsb_12]"
+    },
+    {
+      "name": "input_msb_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx DJCi500.deckB.eqKnob[3].inputMSB [input_msb_13]"
+    },
+    {
+      "name": "input_lsb_13",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 36,
+      "notes": "Mixxx DJCi500.deckB.eqKnob[3].inputLSB [input_lsb_13]"
+    },
+    {
+      "name": "input_msb_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx DJCi500.deckB.gainKnob.inputMSB [input_msb_14]"
+    },
+    {
+      "name": "input_lsb_14",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 37,
+      "notes": "Mixxx DJCi500.deckB.gainKnob.inputLSB [input_lsb_14]"
+    },
+    {
+      "name": "channel2_filter_deck_b",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx DJCi500.deckB.filterKnob.input [channel2_filter_deck_b]"
+    },
+    {
+      "name": "input_msb_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckB.pitchFader.inputMSB [input_msb_15]"
+    },
+    {
+      "name": "input_lsb_15",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 40,
+      "notes": "Mixxx DJCi500.deckB.pitchFader.inputLSB [input_lsb_15]"
+    },
+    {
+      "name": "input_msb_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckB.pitchFader.inputMSB [input_msb_16]"
+    },
+    {
+      "name": "input_lsb_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 40,
+      "notes": "Mixxx DJCi500.deckB.pitchFader.inputLSB [input_lsb_16]"
+    },
+    {
+      "name": "input_touch_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckB.jogWheel.inputTouch [input_touch_5]"
+    },
+    {
+      "name": "input_touch_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckB.jogWheel.inputTouch [input_touch_6]"
+    },
+    {
+      "name": "input_wheel_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckB.jogWheel.inputWheel [input_wheel_5]"
+    },
+    {
+      "name": "input_wheel_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckB.jogWheel.inputWheel [input_wheel_6]"
+    },
+    {
+      "name": "input_touch_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "notes": "Mixxx DJCi500.deckB.jogWheel.inputTouch [input_touch_7]"
+    },
+    {
+      "name": "input_touch_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 12,
+      "notes": "Mixxx DJCi500.deckB.jogWheelShift.inputTouch [input_touch_8]"
+    },
+    {
+      "name": "input_wheel_7",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx DJCi500.deckB.jogWheelShift.inputWheel [input_wheel_7]"
+    },
+    {
+      "name": "input_wheel_8",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 9,
+      "notes": "Mixxx DJCi500.deckB.jogWheelShift.inputWheel [input_wheel_8]"
+    },
+    {
+      "name": "deck_selector",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Mixxx DJCi500.deckSelector [deck_selector]"
+    },
+    {
+      "name": "deck_selector_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx DJCi500.deckSelector [deck_selector_2]"
+    },
+    {
+      "name": "deck_selector_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx DJCi500.deckSelector [deck_selector_3]"
+    },
+    {
+      "name": "deck_selector_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx DJCi500.deckSelector [deck_selector_4]"
+    }
+  ]
+}

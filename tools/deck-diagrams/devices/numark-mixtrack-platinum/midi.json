@@ -1,0 +1,1874 @@
+{
+  "source": "mixxx:Numark Mixtrack Platinum.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-mixtrack-platinum/source/Numark Mixtrack Platinum.midi.xml",
+  "device": "Mixtrack Platinum",
+  "vendor": "Numark",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].play_button.input [channel1_input]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].play_button.input [channel2_input]"
+    },
+    {
+      "name": "channel3_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].play_button.input [channel3_input]"
+    },
+    {
+      "name": "channel4_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].play_button.input [channel4_input]"
+    },
+    {
+      "name": "enabled",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "notes": "Mixxx enabled [enabled]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect1_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].enableButtons[1].input [effect_rack1_effect_unit2_effect1_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect1_input",
+      "section": "effect",
+      "type": "cc",
+      "ch": 9,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].touch_strip.input [effect_rack1_effect_unit1_effect1_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect1_input_2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 10,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].touch_strip.input [effect_rack1_effect_unit2_effect1_input_2]"
+    },
+    {
+      "name": "library_input",
+      "section": "browser",
+      "type": "cc",
+      "ch": 16,
+      "code": 0,
+      "notes": "Mixxx MixtrackPlatinum.browse.knob.input [library_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].cue_button.input [channel1_input_2]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].cue_button.input [channel2_input_2]"
+    },
+    {
+      "name": "channel3_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].cue_button.input [channel3_input_2]"
+    },
+    {
+      "name": "channel4_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 1,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].cue_button.input [channel4_input_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect2_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].enableButtons[2].input [effect_rack1_effect_unit1_effect2_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect2_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 1,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].enableButtons[2].input [effect_rack1_effect_unit2_effect2_input]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].sync_button.input [channel1_input_3]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].sync_button.input [channel2_input_3]"
+    },
+    {
+      "name": "channel3_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].sync_button.input [channel3_input_3]"
+    },
+    {
+      "name": "channel4_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 2,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].sync_button.input [channel4_input_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect3_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].enableButtons[3].input [effect_rack1_effect_unit1_effect3_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect3_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 2,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].enableButtons[3].input [effect_rack1_effect_unit2_effect3_input]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].sync_button.input [channel1_input_4]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].sync_button.input [channel2_input_4]"
+    },
+    {
+      "name": "channel3_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].sync_button.input [channel3_input_4]"
+    },
+    {
+      "name": "channel4_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 3,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].sync_button.input [channel4_input_4]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input",
+      "section": "effect",
+      "type": "cc",
+      "ch": 9,
+      "code": 3,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].dryWetKnob.input [effect_rack1_effect_unit1_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input",
+      "section": "effect",
+      "type": "cc",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].dryWetKnob.input [effect_rack1_effect_unit2_input]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].play_button.input [channel1_input_5]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].play_button.input [channel2_input_5]"
+    },
+    {
+      "name": "channel3_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].play_button.input [channel3_input_5]"
+    },
+    {
+      "name": "channel4_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 4,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].play_button.input [channel4_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 4,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].bpmTap.input [channel1_input_6]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 10,
+      "code": 4,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].bpmTap.input [channel2_input_6]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].cue_button.input [channel1_input_7]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].cue_button.input [channel2_input_7]"
+    },
+    {
+      "name": "channel3_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].cue_button.input [channel3_input_6]"
+    },
+    {
+      "name": "channel4_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 5,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].cue_button.input [channel4_input_6]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "wheel_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTouch [wheel_touch_3]"
+    },
+    {
+      "name": "wheel_touch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTouch [wheel_touch_4]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pad_mode.input [channel1_input_8]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pad_mode.input [channel2_input_8]"
+    },
+    {
+      "name": "channel3_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pad_mode.input [channel3_input_7]"
+    },
+    {
+      "name": "channel4_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pad_mode.input [channel4_input_7]"
+    },
+    {
+      "name": "wheel_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTurn [wheel_turn]"
+    },
+    {
+      "name": "wheel_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTurn [wheel_turn_2]"
+    },
+    {
+      "name": "wheel_turn_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTurn [wheel_turn_3]"
+    },
+    {
+      "name": "wheel_turn_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx MixtrackPlatinum.wheelTurn [wheel_turn_4]"
+    },
+    {
+      "name": "wheel_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx MixtrackPlatinum.wheelToggle [wheel_toggle]"
+    },
+    {
+      "name": "wheel_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx MixtrackPlatinum.wheelToggle [wheel_toggle_2]"
+    },
+    {
+      "name": "wheel_toggle_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx MixtrackPlatinum.wheelToggle [wheel_toggle_3]"
+    },
+    {
+      "name": "wheel_toggle_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 7,
+      "notes": "Mixxx MixtrackPlatinum.wheelToggle [wheel_toggle_4]"
+    },
+    {
+      "name": "deck_switch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx MixtrackPlatinum.deckSwitch [deck_switch]"
+    },
+    {
+      "name": "deck_switch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx MixtrackPlatinum.deckSwitch [deck_switch_2]"
+    },
+    {
+      "name": "deck_switch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx MixtrackPlatinum.deckSwitch [deck_switch_3]"
+    },
+    {
+      "name": "deck_switch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 8,
+      "notes": "Mixxx MixtrackPlatinum.deckSwitch [deck_switch_4]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 8,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "input_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pitch.inputMSB [input_msb]"
+    },
+    {
+      "name": "input_msb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pitch.inputMSB [input_msb_2]"
+    },
+    {
+      "name": "input_msb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pitch.inputMSB [input_msb_3]"
+    },
+    {
+      "name": "input_msb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 9,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pitch.inputMSB [input_msb_4]"
+    },
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 10,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pitch_bend_up.input [channel1_input_9]"
+    },
+    {
+      "name": "channel2_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pitch_bend_up.input [channel2_input_9]"
+    },
+    {
+      "name": "channel3_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pitch_bend_up.input [channel3_input_8]"
+    },
+    {
+      "name": "channel4_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pitch_bend_up.input [channel4_input_8]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pad_mode.input [channel1_input_10]"
+    },
+    {
+      "name": "channel2_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pad_mode.input [channel2_input_10]"
+    },
+    {
+      "name": "channel3_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pad_mode.input [channel3_input_9]"
+    },
+    {
+      "name": "channel4_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pad_mode.input [channel4_input_9]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect1_shift_fx1",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].enableButtons[1].input [effect_rack1_effect_unit1_effect1_shift_fx1]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect1_shift_fx1",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 11,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].enableButtons[1].input [effect_rack1_effect_unit2_effect1_shift_fx1]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pitch_bend_down.input [channel1_input_11]"
+    },
+    {
+      "name": "channel2_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pitch_bend_down.input [channel2_input_11]"
+    },
+    {
+      "name": "channel3_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pitch_bend_down.input [channel3_input_10]"
+    },
+    {
+      "name": "channel4_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pitch_bend_down.input [channel4_input_10]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect2_shift_fx2",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].enableButtons[2].input [effect_rack1_effect_unit1_effect2_shift_fx2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect2_shift_fx2",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].enableButtons[2].input [effect_rack1_effect_unit2_effect2_shift_fx2]"
+    },
+    {
+      "name": "master_input",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 12,
+      "notes": "Mixxx MixtrackPlatinum.head_gain.input [master_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect3_shift_fx3",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 13,
+      "notes": "Mixxx MixtrackPlatinum.effects[1].enableButtons[3].input [effect_rack1_effect_unit1_effect3_shift_fx3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect3_shift_fx3",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 13,
+      "notes": "Mixxx MixtrackPlatinum.effects[2].enableButtons[3].input [effect_rack1_effect_unit2_effect3_shift_fx3]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 13,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 14,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pad_mode.input [channel1_input_12]"
+    },
+    {
+      "name": "channel2_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 14,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pad_mode.input [channel2_input_12]"
+    },
+    {
+      "name": "channel3_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 14,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pad_mode.input [channel3_input_11]"
+    },
+    {
+      "name": "channel4_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pad_mode.input [channel4_input_11]"
+    },
+    {
+      "name": "channel1_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].load.input [channel1_input_13]"
+    },
+    {
+      "name": "channel2_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].load.input [channel2_input_13]"
+    },
+    {
+      "name": "channel3_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 16,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].load.input [channel3_input_12]"
+    },
+    {
+      "name": "channel4_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 16,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].load.input [channel4_input_12]"
+    },
+    {
+      "name": "channel1_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.auto1.input [channel1_input_14]"
+    },
+    {
+      "name": "channel2_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 20,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.auto1.input [channel2_input_14]"
+    },
+    {
+      "name": "channel3_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 20,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.auto1.input [channel3_input_13]"
+    },
+    {
+      "name": "channel4_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 20,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.auto1.input [channel4_input_13]"
+    },
+    {
+      "name": "channel1_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 21,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.auto2.input [channel1_input_15]"
+    },
+    {
+      "name": "channel2_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 21,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.auto2.input [channel2_input_15]"
+    },
+    {
+      "name": "channel3_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 21,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.auto2.input [channel3_input_14]"
+    },
+    {
+      "name": "channel4_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 21,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.auto2.input [channel4_input_14]"
+    },
+    {
+      "name": "channel1_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.auto3.input [channel1_input_16]"
+    },
+    {
+      "name": "channel2_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.auto3.input [channel2_input_16]"
+    },
+    {
+      "name": "channel3_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.auto3.input [channel3_input_15]"
+    },
+    {
+      "name": "channel4_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.auto3.input [channel4_input_15]"
+    },
+    {
+      "name": "channel1_input_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].gain.input [channel1_input_17]"
+    },
+    {
+      "name": "channel2_input_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].gain.input [channel2_input_17]"
+    },
+    {
+      "name": "channel3_input_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].gain.input [channel3_input_16]"
+    },
+    {
+      "name": "channel4_input_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 22,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].gain.input [channel4_input_16]"
+    },
+    {
+      "name": "channel1_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.auto4.input [channel1_input_18]"
+    },
+    {
+      "name": "channel2_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.auto4.input [channel2_input_18]"
+    },
+    {
+      "name": "channel3_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.auto4.input [channel3_input_17]"
+    },
+    {
+      "name": "channel4_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.auto4.input [channel4_input_17]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].high_eq.input [equalizer_rack1_channel1_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].high_eq.input [equalizer_rack1_channel2_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].high_eq.input [equalizer_rack1_channel3_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 23,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].high_eq.input [equalizer_rack1_channel4_effect1_input]"
+    },
+    {
+      "name": "channel1_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[1].input [channel1_input_19]"
+    },
+    {
+      "name": "channel2_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[1].input [channel2_input_19]"
+    },
+    {
+      "name": "channel3_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[1].input [channel3_input_18]"
+    },
+    {
+      "name": "channel4_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[1].input [channel4_input_18]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].mid_eq.input [equalizer_rack1_channel1_effect1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].mid_eq.input [equalizer_rack1_channel2_effect1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].mid_eq.input [equalizer_rack1_channel3_effect1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 24,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].mid_eq.input [equalizer_rack1_channel4_effect1_input_2]"
+    },
+    {
+      "name": "channel1_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[2].input [channel1_input_20]"
+    },
+    {
+      "name": "channel2_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[2].input [channel2_input_20]"
+    },
+    {
+      "name": "channel3_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[2].input [channel3_input_19]"
+    },
+    {
+      "name": "channel4_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[2].input [channel4_input_19]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].low_eq.input [equalizer_rack1_channel1_effect1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].low_eq.input [equalizer_rack1_channel2_effect1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].low_eq.input [equalizer_rack1_channel3_effect1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 25,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].low_eq.input [equalizer_rack1_channel4_effect1_input_3]"
+    },
+    {
+      "name": "channel1_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[3].input [channel1_input_21]"
+    },
+    {
+      "name": "channel2_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[3].input [channel2_input_21]"
+    },
+    {
+      "name": "channel3_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[3].input [channel3_input_20]"
+    },
+    {
+      "name": "channel4_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[3].input [channel4_input_20]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].filter.input [quick_effect_rack1_channel1_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].filter.input [quick_effect_rack1_channel2_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel3_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].filter.input [quick_effect_rack1_channel3_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel4_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 26,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].filter.input [quick_effect_rack1_channel4_input]"
+    },
+    {
+      "name": "channel1_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pfl_button.input [channel1_input_22]"
+    },
+    {
+      "name": "channel2_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pfl_button.input [channel2_input_22]"
+    },
+    {
+      "name": "channel3_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pfl_button.input [channel3_input_21]"
+    },
+    {
+      "name": "channel4_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pfl_button.input [channel4_input_21]"
+    },
+    {
+      "name": "channel1_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[4].input [channel1_input_23]"
+    },
+    {
+      "name": "channel2_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[4].input [channel2_input_23]"
+    },
+    {
+      "name": "channel3_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[4].input [channel3_input_22]"
+    },
+    {
+      "name": "channel4_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[4].input [channel4_input_22]"
+    },
+    {
+      "name": "channel1_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 28,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.roll1.input [channel1_input_24]"
+    },
+    {
+      "name": "channel2_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 28,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.roll1.input [channel2_input_24]"
+    },
+    {
+      "name": "channel3_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 28,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.roll1.input [channel3_input_23]"
+    },
+    {
+      "name": "channel4_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 28,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.roll1.input [channel4_input_23]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 28,
+      "notes": "Mixxx volume [volume_4]"
+    },
+    {
+      "name": "volume_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 28,
+      "notes": "Mixxx volume [volume_5]"
+    },
+    {
+      "name": "channel1_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 29,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.roll2.input [channel1_input_25]"
+    },
+    {
+      "name": "channel2_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 29,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.roll2.input [channel2_input_25]"
+    },
+    {
+      "name": "channel3_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 29,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.roll2.input [channel3_input_24]"
+    },
+    {
+      "name": "channel4_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.roll2.input [channel4_input_24]"
+    },
+    {
+      "name": "channel1_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 30,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.roll3.input [channel1_input_26]"
+    },
+    {
+      "name": "channel2_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 30,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.roll3.input [channel2_input_26]"
+    },
+    {
+      "name": "channel3_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 30,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.roll3.input [channel3_input_25]"
+    },
+    {
+      "name": "channel4_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.roll3.input [channel4_input_25]"
+    },
+    {
+      "name": "channel1_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 31,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].autoloop.roll4.input [channel1_input_27]"
+    },
+    {
+      "name": "channel2_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 31,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].autoloop.roll4.input [channel2_input_27]"
+    },
+    {
+      "name": "channel3_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 31,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].autoloop.roll4.input [channel3_input_26]"
+    },
+    {
+      "name": "channel4_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].autoloop.roll4.input [channel4_input_26]"
+    },
+    {
+      "name": "library_input_2",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 31,
+      "notes": "Mixxx MixtrackPlatinum.browse.button.input [library_input_2]"
+    },
+    {
+      "name": "channel1_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 32,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[1].input [channel1_input_28]"
+    },
+    {
+      "name": "channel2_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 32,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[1].input [channel2_input_28]"
+    },
+    {
+      "name": "channel3_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 32,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[1].input [channel3_input_27]"
+    },
+    {
+      "name": "channel4_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[1].input [channel4_input_27]"
+    },
+    {
+      "name": "channel1_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 33,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[2].input [channel1_input_29]"
+    },
+    {
+      "name": "channel2_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 33,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[2].input [channel2_input_29]"
+    },
+    {
+      "name": "channel3_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 33,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[2].input [channel3_input_28]"
+    },
+    {
+      "name": "channel4_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[2].input [channel4_input_28]"
+    },
+    {
+      "name": "sampler1_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 33,
+      "notes": "Mixxx MixtrackPlatinum.sampler[1].input [sampler1_input]"
+    },
+    {
+      "name": "channel1_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 34,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[3].input [channel1_input_30]"
+    },
+    {
+      "name": "channel2_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 34,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[3].input [channel2_input_30]"
+    },
+    {
+      "name": "channel3_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 34,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[3].input [channel3_input_29]"
+    },
+    {
+      "name": "channel4_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[3].input [channel4_input_29]"
+    },
+    {
+      "name": "sampler2_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 34,
+      "notes": "Mixxx MixtrackPlatinum.sampler[2].input [sampler2_input]"
+    },
+    {
+      "name": "channel1_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 35,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].hotcues[4].input [channel1_input_31]"
+    },
+    {
+      "name": "channel2_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 35,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].hotcues[4].input [channel2_input_31]"
+    },
+    {
+      "name": "channel3_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 35,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].hotcues[4].input [channel3_input_30]"
+    },
+    {
+      "name": "channel4_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].hotcues[4].input [channel4_input_30]"
+    },
+    {
+      "name": "sampler3_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 35,
+      "notes": "Mixxx MixtrackPlatinum.sampler[3].input [sampler3_input]"
+    },
+    {
+      "name": "sampler4_input",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 36,
+      "notes": "Mixxx MixtrackPlatinum.sampler[4].input [sampler4_input]"
+    },
+    {
+      "name": "sampler1_input_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 40,
+      "notes": "Mixxx MixtrackPlatinum.sampler[1].input [sampler1_input_2]"
+    },
+    {
+      "name": "sampler2_input_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 41,
+      "notes": "Mixxx MixtrackPlatinum.sampler[2].input [sampler2_input_2]"
+    },
+    {
+      "name": "sampler3_input_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 42,
+      "notes": "Mixxx MixtrackPlatinum.sampler[3].input [sampler3_input_2]"
+    },
+    {
+      "name": "channel1_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].key_up.input [channel1_input_32]"
+    },
+    {
+      "name": "channel2_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].key_up.input [channel2_input_32]"
+    },
+    {
+      "name": "channel3_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 43,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].key_up.input [channel3_input_31]"
+    },
+    {
+      "name": "channel4_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 43,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].key_up.input [channel4_input_31]"
+    },
+    {
+      "name": "sampler4_input_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 16,
+      "code": 43,
+      "notes": "Mixxx MixtrackPlatinum.sampler[4].input [sampler4_input_2]"
+    },
+    {
+      "name": "channel1_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].key_down.input [channel1_input_33]"
+    },
+    {
+      "name": "channel2_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].key_down.input [channel2_input_33]"
+    },
+    {
+      "name": "channel3_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].key_down.input [channel3_input_32]"
+    },
+    {
+      "name": "channel4_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 44,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].key_down.input [channel4_input_32]"
+    },
+    {
+      "name": "playposition",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition]"
+    },
+    {
+      "name": "playposition_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition_2]"
+    },
+    {
+      "name": "playposition_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition_3]"
+    },
+    {
+      "name": "playposition_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition_4]"
+    },
+    {
+      "name": "channel1_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 50,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].manloop.loop_toggle.input [channel1_input_34]"
+    },
+    {
+      "name": "channel2_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 50,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].manloop.loop_toggle.input [channel2_input_34]"
+    },
+    {
+      "name": "channel3_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 50,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].manloop.loop_toggle.input [channel3_input_33]"
+    },
+    {
+      "name": "channel4_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].manloop.loop_toggle.input [channel4_input_33]"
+    },
+    {
+      "name": "shift_toggle",
+      "section": "other",
+      "type": "note",
+      "ch": 16,
+      "code": 50,
+      "notes": "Mixxx MixtrackPlatinum.shiftToggle [shift_toggle]"
+    },
+    {
+      "name": "channel1_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 52,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].manloop.loop_halve.input [channel1_input_35]"
+    },
+    {
+      "name": "channel2_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 52,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].manloop.loop_halve.input [channel2_input_35]"
+    },
+    {
+      "name": "channel3_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 52,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].manloop.loop_halve.input [channel3_input_34]"
+    },
+    {
+      "name": "channel4_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 52,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].manloop.loop_halve.input [channel4_input_34]"
+    },
+    {
+      "name": "channel1_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 53,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].manloop.loop_double.input [channel1_input_36]"
+    },
+    {
+      "name": "channel2_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 53,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].manloop.loop_double.input [channel2_input_36]"
+    },
+    {
+      "name": "channel3_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 53,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].manloop.loop_double.input [channel3_input_35]"
+    },
+    {
+      "name": "channel4_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 53,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].manloop.loop_double.input [channel4_input_35]"
+    },
+    {
+      "name": "channel1_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 56,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].manloop.loop_in.input [channel1_input_37]"
+    },
+    {
+      "name": "channel2_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 56,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].manloop.loop_in.input [channel2_input_37]"
+    },
+    {
+      "name": "channel3_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 56,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].manloop.loop_in.input [channel3_input_36]"
+    },
+    {
+      "name": "channel4_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 56,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].manloop.loop_in.input [channel4_input_36]"
+    },
+    {
+      "name": "channel1_input_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 57,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].manloop.loop_out.input [channel1_input_38]"
+    },
+    {
+      "name": "channel2_input_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 57,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].manloop.loop_out.input [channel2_input_38]"
+    },
+    {
+      "name": "channel3_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 57,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].manloop.loop_out.input [channel3_input_37]"
+    },
+    {
+      "name": "channel4_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 57,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].manloop.loop_out.input [channel4_input_37]"
+    },
+    {
+      "name": "elapsed_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "Mixxx MixtrackPlatinum.elapsedToggle [elapsed_toggle]"
+    },
+    {
+      "name": "elapsed_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 70,
+      "notes": "Mixxx MixtrackPlatinum.elapsedToggle [elapsed_toggle_2]"
+    },
+    {
+      "name": "elapsed_toggle_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 70,
+      "notes": "Mixxx MixtrackPlatinum.elapsedToggle [elapsed_toggle_3]"
+    },
+    {
+      "name": "elapsed_toggle_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 70,
+      "notes": "Mixxx MixtrackPlatinum.elapsedToggle [elapsed_toggle_4]"
+    },
+    {
+      "name": "input_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 119,
+      "notes": "Mixxx MixtrackPlatinum.decks[1].pitch.inputLSB [input_lsb]"
+    },
+    {
+      "name": "input_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 119,
+      "notes": "Mixxx MixtrackPlatinum.decks[2].pitch.inputLSB [input_lsb_2]"
+    },
+    {
+      "name": "input_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 119,
+      "notes": "Mixxx MixtrackPlatinum.decks[3].pitch.inputLSB [input_lsb_3]"
+    },
+    {
+      "name": "input_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 119,
+      "notes": "Mixxx MixtrackPlatinum.decks[4].pitch.inputLSB [input_lsb_4]"
+    }
+  ]
+}

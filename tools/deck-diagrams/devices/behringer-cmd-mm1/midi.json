@@ -1,0 +1,346 @@
+{
+  "source": "mixxx:Behringer CMD MM1.midi.xml",
+  "archived": "tools/deck-diagrams/devices/behringer-cmd-mm1/source/Behringer CMD MM1.midi.xml",
+  "device": "Behringer CMD MM-1",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "mixer_eq_knob_2_3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 15,
+      "notes": "Mixxx CMDMM.Decks[1].knobUnit.knobs[2].input [mixer_eq_knob_2_3]"
+    },
+    {
+      "name": "mixer_eq_knob_4_1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 9,
+      "notes": "Mixxx CMDMM.Decks[3].knobUnit.knobs[0].input [mixer_eq_knob_4_1]"
+    },
+    {
+      "name": "channel4_pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 51,
+      "notes": "Mixxx CMDMM.Decks[3].buttonCue.input [channel4_pfl]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_group_channel2_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 23,
+      "notes": "Mixxx CMDMM.Decks[1].button1.input [effect_rack1_effect_unit1_group_channel2_enable]"
+    },
+    {
+      "name": "channel1_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 48,
+      "notes": "Mixxx CMDMM.Decks[0].fader.input [channel1_volume]"
+    },
+    {
+      "name": "mixer_eq_knob_3_4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx CMDMM.Decks[2].knobUnit.knobs[3].input [mixer_eq_knob_3_4]"
+    },
+    {
+      "name": "master_shift_off",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 16,
+      "notes": "Mixxx CMDMM.shiftButton.input [master_shift_off]"
+    },
+    {
+      "name": "library_left_right_library_select_encoder",
+      "section": "browser",
+      "type": "cc",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx CMDMM.libraryEncoder.input [library_left_right_library_select_encoder]"
+    },
+    {
+      "name": "master_ctrl_on",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 17,
+      "notes": "Mixxx CMDMM.ctrlButton.input [master_ctrl_on]"
+    },
+    {
+      "name": "mixer_eq_knob_1_3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 14,
+      "notes": "Mixxx CMDMM.Decks[0].knobUnit.knobs[2].input [mixer_eq_knob_1_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_group_channel3_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 28,
+      "notes": "Mixxx CMDMM.Decks[2].button2.input [effect_rack1_effect_unit2_group_channel3_enable]"
+    },
+    {
+      "name": "master_crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 64,
+      "notes": "Mixxx CMDMM.crossfader.input [master_crossfader]"
+    },
+    {
+      "name": "mixer_eq_knob_3_1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 8,
+      "notes": "Mixxx CMDMM.Decks[2].knobUnit.knobs[0].input [mixer_eq_knob_3_1]"
+    },
+    {
+      "name": "channel3_pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 50,
+      "notes": "Mixxx CMDMM.Decks[2].buttonCue.input [channel3_pfl]"
+    },
+    {
+      "name": "mixer_eq_knob_2_4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 19,
+      "notes": "Mixxx CMDMM.Decks[1].knobUnit.knobs[3].input [mixer_eq_knob_2_4]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_master_gain",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx CMDMM.out2.input [effect_rack1_effect_unit2_master_gain]"
+    },
+    {
+      "name": "mixer_eq_knob_4_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 13,
+      "notes": "Mixxx CMDMM.Decks[3].knobUnit.knobs[1].input [mixer_eq_knob_4_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_group_channel3_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 27,
+      "notes": "Mixxx CMDMM.Decks[2].button1.input [effect_rack1_effect_unit1_group_channel3_enable]"
+    },
+    {
+      "name": "channel2_pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 49,
+      "notes": "Mixxx CMDMM.Decks[1].buttonCue.input [channel2_pfl]"
+    },
+    {
+      "name": "mixer_eq_knob_2_1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 7,
+      "notes": "Mixxx CMDMM.Decks[1].knobUnit.knobs[0].input [mixer_eq_knob_2_1]"
+    },
+    {
+      "name": "mixer_eq_knob_1_4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 18,
+      "notes": "Mixxx CMDMM.Decks[0].knobUnit.knobs[3].input [mixer_eq_knob_1_4]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_group_channel4_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 32,
+      "notes": "Mixxx CMDMM.Decks[3].button2.input [effect_rack1_effect_unit2_group_channel4_enable]"
+    },
+    {
+      "name": "master_master_balance",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 1,
+      "notes": "Mixxx CMDMM.out1.input [master_master_balance]"
+    },
+    {
+      "name": "mixer_eq_knob_3_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 12,
+      "notes": "Mixxx CMDMM.Decks[2].knobUnit.knobs[1].input [mixer_eq_knob_3_2]"
+    },
+    {
+      "name": "channel4_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 51,
+      "notes": "Mixxx CMDMM.Decks[3].fader.input [channel4_volume]"
+    },
+    {
+      "name": "channel1_pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 48,
+      "notes": "Mixxx CMDMM.Decks[0].buttonCue.input [channel1_pfl]"
+    },
+    {
+      "name": "mixer_eq_knob_1_1",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx CMDMM.Decks[0].knobUnit.knobs[0].input [mixer_eq_knob_1_1]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_group_channel1_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx CMDMM.Decks[0].button2.input [effect_rack1_effect_unit2_group_channel1_enable]"
+    },
+    {
+      "name": "mixer_eq_knob_4_3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 17,
+      "notes": "Mixxx CMDMM.Decks[3].knobUnit.knobs[2].input [mixer_eq_knob_4_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_group_channel4_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 31,
+      "notes": "Mixxx CMDMM.Decks[3].button1.input [effect_rack1_effect_unit1_group_channel4_enable]"
+    },
+    {
+      "name": "library_middle_click_library_encoder",
+      "section": "browser",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "notes": "Mixxx CMDMM.libraryButton.input [library_middle_click_library_encoder]"
+    },
+    {
+      "name": "mixer_eq_knob_2_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 11,
+      "notes": "Mixxx CMDMM.Decks[1].knobUnit.knobs[1].input [mixer_eq_knob_2_2]"
+    },
+    {
+      "name": "channel3_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 50,
+      "notes": "Mixxx CMDMM.Decks[2].fader.input [channel3_volume]"
+    },
+    {
+      "name": "master_script_pfl_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 5,
+      "notes": "Mixxx CMDMM.cueMix.input [master_script_pfl_mix]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_group_channel1_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 19,
+      "notes": "Mixxx CMDMM.Decks[0].button1.input [effect_rack1_effect_unit1_group_channel1_enable]"
+    },
+    {
+      "name": "mixer_eq_knob_3_3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 16,
+      "notes": "Mixxx CMDMM.Decks[2].knobUnit.knobs[2].input [mixer_eq_knob_3_3]"
+    },
+    {
+      "name": "mixer_eq_knob_1_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 10,
+      "notes": "Mixxx CMDMM.Decks[0].knobUnit.knobs[1].input [mixer_eq_knob_1_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_group_channel2_enable",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 24,
+      "notes": "Mixxx CMDMM.Decks[1].button2.input [effect_rack1_effect_unit2_group_channel2_enable]"
+    },
+    {
+      "name": "channel2_volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 49,
+      "notes": "Mixxx CMDMM.Decks[1].fader.input [channel2_volume]"
+    },
+    {
+      "name": "mixer_eq_knob_4_4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 21,
+      "notes": "Mixxx CMDMM.Decks[3].knobUnit.knobs[3].input [mixer_eq_knob_4_4]"
+    },
+    {
+      "name": "master_inscript_pfl_volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 5,
+      "code": 4,
+      "notes": "Mixxx CMDMM.cueVol.input [master_inscript_pfl_volume]"
+    },
+    {
+      "name": "master_button_in_the_middle_shift_on_other_mappings",
+      "section": "mixer",
+      "type": "note",
+      "ch": 5,
+      "code": 18,
+      "notes": "Mixxx CMDMM.middleButton.input [master_button_in_the_middle_shift_on_other_mappings]"
+    }
+  ]
+}

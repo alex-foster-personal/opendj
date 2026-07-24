@@ -1,0 +1,5360 @@
+{
+  "device": "Hercules P32 DJ",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "hercules-p32-dj-show_maximized_library",
+      "fig": "show_maximized_library",
+      "label": "show_maximized_library",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "show_maximized_library",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[show_maximized_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-head_split",
+      "fig": "head_split",
+      "label": "headSplit",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_split",
+        "type": "note",
+        "ch": 4,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[head_split] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-head_mix_encoder",
+      "fig": "head_mix_encoder",
+      "label": "headMixEncoder",
+      "kind": "encoder",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix_encoder",
+        "type": "cc",
+        "ch": 4,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[head_mix_encoder] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input",
+      "fig": "channel1_input",
+      "label": "input",
+      "kind": "encoder",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input",
+        "type": "cc",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_2",
+      "fig": "channel1_input_2",
+      "label": "input",
+      "kind": "encoder",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_3",
+      "fig": "channel1_input_3",
+      "label": "input",
+      "kind": "encoder",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_3",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_4",
+      "fig": "channel1_input_4",
+      "label": "input",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_4",
+        "type": "note",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_5",
+      "fig": "channel1_input_5",
+      "label": "input",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_5",
+        "type": "cc",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_6",
+      "fig": "channel1_input_6",
+      "label": "input",
+      "kind": "encoder",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_6",
+        "type": "cc",
+        "ch": 5,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_7",
+      "fig": "channel1_input_7",
+      "label": "input",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_7",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_8",
+      "fig": "channel1_input_8",
+      "label": "input",
+      "kind": "encoder",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_8",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_9",
+      "fig": "channel1_input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_9",
+        "type": "note",
+        "ch": 2,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_10",
+      "fig": "channel1_input_10",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_10",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_11",
+      "fig": "channel1_input_11",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_11",
+        "type": "note",
+        "ch": 2,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_12",
+      "fig": "channel1_input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_12",
+        "type": "note",
+        "ch": 5,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_13",
+      "fig": "channel1_input_13",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_13",
+        "type": "note",
+        "ch": 5,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_14",
+      "fig": "channel1_input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_14",
+        "type": "note",
+        "ch": 5,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_15",
+      "fig": "channel1_input_15",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_15",
+        "type": "note",
+        "ch": 2,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_16",
+      "fig": "channel1_input_16",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_16",
+        "type": "note",
+        "ch": 2,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_17",
+      "fig": "channel1_input_17",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_17",
+        "type": "note",
+        "ch": 2,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_18",
+      "fig": "channel1_input_18",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_18",
+        "type": "note",
+        "ch": 2,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_19",
+      "fig": "channel1_input_19",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_19",
+        "type": "note",
+        "ch": 2,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_20",
+      "fig": "channel1_input_20",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_20",
+        "type": "note",
+        "ch": 2,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_21",
+      "fig": "channel1_input_21",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_21",
+        "type": "note",
+        "ch": 2,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_22",
+      "fig": "channel1_input_22",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_22",
+        "type": "note",
+        "ch": 2,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_23",
+      "fig": "channel1_input_23",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_23",
+        "type": "note",
+        "ch": 2,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_24",
+      "fig": "channel1_input_24",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_24",
+        "type": "note",
+        "ch": 2,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_25",
+      "fig": "channel1_input_25",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_25",
+        "type": "note",
+        "ch": 2,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_26",
+      "fig": "channel1_input_26",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_26",
+        "type": "note",
+        "ch": 2,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_27",
+      "fig": "channel1_input_27",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_27",
+        "type": "note",
+        "ch": 2,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_28",
+      "fig": "channel1_input_28",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_28",
+        "type": "note",
+        "ch": 2,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_29",
+      "fig": "channel1_input_29",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_29",
+        "type": "note",
+        "ch": 2,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_30",
+      "fig": "channel1_input_30",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_30",
+        "type": "note",
+        "ch": 2,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_31",
+      "fig": "channel1_input_31",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_31",
+        "type": "note",
+        "ch": 5,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_32",
+      "fig": "channel1_input_32",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_32",
+        "type": "note",
+        "ch": 5,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_33",
+      "fig": "channel1_input_33",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_33",
+        "type": "note",
+        "ch": 5,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_34",
+      "fig": "channel1_input_34",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_34",
+        "type": "note",
+        "ch": 5,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_35",
+      "fig": "channel1_input_35",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_35",
+        "type": "note",
+        "ch": 5,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_36",
+      "fig": "channel1_input_36",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_36",
+        "type": "note",
+        "ch": 5,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_37",
+      "fig": "channel1_input_37",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_37",
+        "type": "note",
+        "ch": 5,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_38",
+      "fig": "channel1_input_38",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_38",
+        "type": "note",
+        "ch": 5,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_39",
+      "fig": "channel1_input_39",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_39",
+        "type": "note",
+        "ch": 5,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_40",
+      "fig": "channel1_input_40",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_40",
+        "type": "note",
+        "ch": 5,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_41",
+      "fig": "channel1_input_41",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_41",
+        "type": "note",
+        "ch": 5,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_42",
+      "fig": "channel1_input_42",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_42",
+        "type": "note",
+        "ch": 5,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_43",
+      "fig": "channel1_input_43",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_43",
+        "type": "note",
+        "ch": 5,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_44",
+      "fig": "channel1_input_44",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_44",
+        "type": "note",
+        "ch": 5,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_45",
+      "fig": "channel1_input_45",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_45",
+        "type": "note",
+        "ch": 5,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_46",
+      "fig": "channel1_input_46",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_46",
+        "type": "note",
+        "ch": 5,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_47",
+      "fig": "channel1_input_47",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_47",
+        "type": "cc",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_48",
+      "fig": "channel1_input_48",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_48",
+        "type": "cc",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_49",
+      "fig": "channel1_input_49",
+      "label": "input",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_49",
+        "type": "cc",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_50",
+      "fig": "channel1_input_50",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_50",
+        "type": "cc",
+        "ch": 5,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_51",
+      "fig": "channel1_input_51",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_51",
+        "type": "cc",
+        "ch": 5,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_52",
+      "fig": "channel1_input_52",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_52",
+        "type": "cc",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_53",
+      "fig": "channel1_input_53",
+      "label": "input",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_53",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_54",
+      "fig": "channel1_input_54",
+      "label": "input",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_54",
+        "type": "cc",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_55",
+      "fig": "channel1_input_55",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_55",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_55] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_56",
+      "fig": "channel1_input_56",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_56",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_56] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_57",
+      "fig": "channel1_input_57",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_57",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_57] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_58",
+      "fig": "channel1_input_58",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_58",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_58] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_59",
+      "fig": "channel1_input_59",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_59",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_59] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_60",
+      "fig": "channel1_input_60",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_60",
+        "type": "note",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_60] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_61",
+      "fig": "channel1_input_61",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_61",
+        "type": "note",
+        "ch": 5,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_61] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_62",
+      "fig": "channel1_input_62",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_62",
+        "type": "note",
+        "ch": 5,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_62] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_63",
+      "fig": "channel1_input_63",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_63",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_63] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_64",
+      "fig": "channel1_input_64",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_64",
+        "type": "note",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_64] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_65",
+      "fig": "channel1_input_65",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_65",
+        "type": "note",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_65] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_66",
+      "fig": "channel1_input_66",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_66",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_66] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_67",
+      "fig": "channel1_input_67",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_67",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_67] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_68",
+      "fig": "channel1_input_68",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_68",
+        "type": "note",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_68] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_69",
+      "fig": "channel1_input_69",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_69",
+        "type": "note",
+        "ch": 2,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_69] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_70",
+      "fig": "channel1_input_70",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_70",
+        "type": "note",
+        "ch": 5,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_70] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_71",
+      "fig": "channel1_input_71",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_71",
+        "type": "note",
+        "ch": 2,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_71] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_72",
+      "fig": "channel1_input_72",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_72",
+        "type": "note",
+        "ch": 5,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_72] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_73",
+      "fig": "channel1_input_73",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_73",
+        "type": "note",
+        "ch": 2,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_73] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_74",
+      "fig": "channel1_input_74",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_74",
+        "type": "note",
+        "ch": 5,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_74] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_75",
+      "fig": "channel1_input_75",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_75",
+        "type": "note",
+        "ch": 2,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_75] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_76",
+      "fig": "channel1_input_76",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_76",
+        "type": "note",
+        "ch": 2,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_76] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_77",
+      "fig": "channel1_input_77",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_77",
+        "type": "note",
+        "ch": 2,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_77] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_78",
+      "fig": "channel1_input_78",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_78",
+        "type": "note",
+        "ch": 2,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_78] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_79",
+      "fig": "channel1_input_79",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_79",
+        "type": "note",
+        "ch": 2,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_79] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_80",
+      "fig": "channel1_input_80",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_80",
+        "type": "note",
+        "ch": 5,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_80] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_81",
+      "fig": "channel1_input_81",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_81",
+        "type": "note",
+        "ch": 2,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_81] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_82",
+      "fig": "channel1_input_82",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_82",
+        "type": "note",
+        "ch": 5,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_82] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_83",
+      "fig": "channel1_input_83",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_83",
+        "type": "note",
+        "ch": 5,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_83] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_84",
+      "fig": "channel1_input_84",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_84",
+        "type": "note",
+        "ch": 2,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_84] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_85",
+      "fig": "channel1_input_85",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_85",
+        "type": "note",
+        "ch": 2,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_85] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_86",
+      "fig": "channel1_input_86",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_86",
+        "type": "note",
+        "ch": 5,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_86] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-shift_button",
+      "fig": "shift_button",
+      "label": "shiftButton",
+      "kind": "button",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[shift_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_87",
+      "fig": "channel1_input_87",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_87",
+        "type": "cc",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_87] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_88",
+      "fig": "channel1_input_88",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_88",
+        "type": "cc",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_88] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_89",
+      "fig": "channel1_input_89",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_89",
+        "type": "cc",
+        "ch": 5,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_89] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-browse_encoder",
+      "fig": "browse_encoder",
+      "label": "browseEncoder",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "browse_encoder",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[browse_encoder] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_90",
+      "fig": "channel1_input_90",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_90",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_90] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_91",
+      "fig": "channel1_input_91",
+      "label": "input",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_91",
+        "type": "cc",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_91] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_92",
+      "fig": "channel1_input_92",
+      "label": "input",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_92",
+        "type": "cc",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_92] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_93",
+      "fig": "channel1_input_93",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_93",
+        "type": "note",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_93] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_94",
+      "fig": "channel1_input_94",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_94",
+        "type": "note",
+        "ch": 5,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_94] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_95",
+      "fig": "channel1_input_95",
+      "label": "input",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_95",
+        "type": "cc",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_95] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_96",
+      "fig": "channel1_input_96",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_96",
+        "type": "cc",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_96] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-recording_input",
+      "fig": "recording_input",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recording_input",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[recording_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_97",
+      "fig": "channel1_input_97",
+      "label": "input",
+      "kind": "encoder",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_97",
+        "type": "cc",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_97] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_98",
+      "fig": "channel1_input_98",
+      "label": "input",
+      "kind": "encoder",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_98",
+        "type": "cc",
+        "ch": 6,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_98] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_99",
+      "fig": "channel1_input_99",
+      "label": "input",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_99",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_99] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_100",
+      "fig": "channel1_input_100",
+      "label": "input",
+      "kind": "encoder",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_100",
+        "type": "note",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_100] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_101",
+      "fig": "channel1_input_101",
+      "label": "input",
+      "kind": "encoder",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_101",
+        "type": "cc",
+        "ch": 3,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_101] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_102",
+      "fig": "channel1_input_102",
+      "label": "input",
+      "kind": "encoder",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_102",
+        "type": "cc",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_102] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_103",
+      "fig": "channel1_input_103",
+      "label": "input",
+      "kind": "encoder",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_103",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_103] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_104",
+      "fig": "channel1_input_104",
+      "label": "input",
+      "kind": "encoder",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_104",
+        "type": "note",
+        "ch": 6,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_104] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-recording_input_2",
+      "fig": "recording_input_2",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recording_input_2",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[recording_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_105",
+      "fig": "channel1_input_105",
+      "label": "input",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_105",
+        "type": "cc",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_105] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_106",
+      "fig": "channel1_input_106",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_106",
+        "type": "note",
+        "ch": 3,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_106] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_107",
+      "fig": "channel1_input_107",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_107",
+        "type": "note",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_107] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_108",
+      "fig": "channel1_input_108",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_108",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_108] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_109",
+      "fig": "channel1_input_109",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_109",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_109] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_110",
+      "fig": "channel1_input_110",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_110",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_110] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_111",
+      "fig": "channel1_input_111",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_111",
+        "type": "note",
+        "ch": 6,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_111] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-shift_button_2",
+      "fig": "shift_button_2",
+      "label": "shiftButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_2",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[shift_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_112",
+      "fig": "channel1_input_112",
+      "label": "input",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_112",
+        "type": "cc",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_112] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_113",
+      "fig": "channel1_input_113",
+      "label": "input",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_113",
+        "type": "cc",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_113] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_114",
+      "fig": "channel1_input_114",
+      "label": "input",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_114",
+        "type": "cc",
+        "ch": 6,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_114] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_115",
+      "fig": "channel1_input_115",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_115",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_115] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_116",
+      "fig": "channel1_input_116",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_116",
+        "type": "cc",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_116] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_117",
+      "fig": "channel1_input_117",
+      "label": "input",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_117",
+        "type": "cc",
+        "ch": 6,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_117] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_118",
+      "fig": "channel1_input_118",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_118",
+        "type": "note",
+        "ch": 3,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_118] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_119",
+      "fig": "channel1_input_119",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_119",
+        "type": "note",
+        "ch": 6,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_119] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_120",
+      "fig": "channel1_input_120",
+      "label": "input",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_120",
+        "type": "cc",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_120] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_121",
+      "fig": "channel1_input_121",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_121",
+        "type": "cc",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_121] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_122",
+      "fig": "channel1_input_122",
+      "label": "input",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_122",
+        "type": "cc",
+        "ch": 6,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_122] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_123",
+      "fig": "channel1_input_123",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_123",
+        "type": "note",
+        "ch": 3,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_123] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_124",
+      "fig": "channel1_input_124",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_124",
+        "type": "note",
+        "ch": 3,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_124] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_125",
+      "fig": "channel1_input_125",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_125",
+        "type": "note",
+        "ch": 3,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_125] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_126",
+      "fig": "channel1_input_126",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_126",
+        "type": "note",
+        "ch": 3,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_126] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_127",
+      "fig": "channel1_input_127",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_127",
+        "type": "note",
+        "ch": 3,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_127] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_128",
+      "fig": "channel1_input_128",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_128",
+        "type": "note",
+        "ch": 3,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_128] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_129",
+      "fig": "channel1_input_129",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_129",
+        "type": "note",
+        "ch": 3,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_129] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_130",
+      "fig": "channel1_input_130",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_130",
+        "type": "note",
+        "ch": 3,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_130] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_131",
+      "fig": "channel1_input_131",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_131",
+        "type": "note",
+        "ch": 3,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_131] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_132",
+      "fig": "channel1_input_132",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_132",
+        "type": "note",
+        "ch": 3,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_132] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_133",
+      "fig": "channel1_input_133",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_133",
+        "type": "note",
+        "ch": 3,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_133] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_134",
+      "fig": "channel1_input_134",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_134",
+        "type": "note",
+        "ch": 3,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_134] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_135",
+      "fig": "channel1_input_135",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_135",
+        "type": "note",
+        "ch": 3,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_135] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_136",
+      "fig": "channel1_input_136",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_136",
+        "type": "note",
+        "ch": 3,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_136] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_137",
+      "fig": "channel1_input_137",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_137",
+        "type": "note",
+        "ch": 3,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_137] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_138",
+      "fig": "channel1_input_138",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_138",
+        "type": "note",
+        "ch": 3,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_138] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_139",
+      "fig": "channel1_input_139",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_139",
+        "type": "note",
+        "ch": 6,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_139] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_140",
+      "fig": "channel1_input_140",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_140",
+        "type": "note",
+        "ch": 6,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_140] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_141",
+      "fig": "channel1_input_141",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_141",
+        "type": "note",
+        "ch": 6,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_141] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_142",
+      "fig": "channel1_input_142",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_142",
+        "type": "note",
+        "ch": 6,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_142] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_143",
+      "fig": "channel1_input_143",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_143",
+        "type": "note",
+        "ch": 6,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_143] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_144",
+      "fig": "channel1_input_144",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_144",
+        "type": "note",
+        "ch": 6,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_144] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_145",
+      "fig": "channel1_input_145",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_145",
+        "type": "note",
+        "ch": 6,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_145] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_146",
+      "fig": "channel1_input_146",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_146",
+        "type": "note",
+        "ch": 6,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_146] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_147",
+      "fig": "channel1_input_147",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_147",
+        "type": "note",
+        "ch": 6,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_147] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_148",
+      "fig": "channel1_input_148",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_148",
+        "type": "note",
+        "ch": 6,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_148] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_149",
+      "fig": "channel1_input_149",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_149",
+        "type": "note",
+        "ch": 6,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_149] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_150",
+      "fig": "channel1_input_150",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_150",
+        "type": "note",
+        "ch": 6,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_150] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_151",
+      "fig": "channel1_input_151",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_151",
+        "type": "note",
+        "ch": 6,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_151] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_152",
+      "fig": "channel1_input_152",
+      "label": "input",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_152",
+        "type": "note",
+        "ch": 6,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_152] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_153",
+      "fig": "channel1_input_153",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_153",
+        "type": "note",
+        "ch": 6,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_153] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_154",
+      "fig": "channel1_input_154",
+      "label": "input",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_154",
+        "type": "note",
+        "ch": 6,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_154] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_155",
+      "fig": "channel1_input_155",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_155",
+        "type": "cc",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_155] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_156",
+      "fig": "channel1_input_156",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_156",
+        "type": "cc",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_156] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_157",
+      "fig": "channel1_input_157",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_157",
+        "type": "cc",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_157] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_158",
+      "fig": "channel1_input_158",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_158",
+        "type": "cc",
+        "ch": 6,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_158] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_159",
+      "fig": "channel1_input_159",
+      "label": "input",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_159",
+        "type": "cc",
+        "ch": 6,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_159] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_160",
+      "fig": "channel1_input_160",
+      "label": "input",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_160",
+        "type": "cc",
+        "ch": 6,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_160] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_161",
+      "fig": "channel1_input_161",
+      "label": "input",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_161",
+        "type": "cc",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_161] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_162",
+      "fig": "channel1_input_162",
+      "label": "input",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_162",
+        "type": "cc",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_162] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_163",
+      "fig": "channel1_input_163",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_163",
+        "type": "note",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_163] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_164",
+      "fig": "channel1_input_164",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_164",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_164] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_165",
+      "fig": "channel1_input_165",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_165",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_165] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_166",
+      "fig": "channel1_input_166",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_166",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_166] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_167",
+      "fig": "channel1_input_167",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_167",
+        "type": "note",
+        "ch": 6,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_167] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_168",
+      "fig": "channel1_input_168",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_168",
+        "type": "note",
+        "ch": 6,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_168] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_169",
+      "fig": "channel1_input_169",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_169",
+        "type": "note",
+        "ch": 6,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_169] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_170",
+      "fig": "channel1_input_170",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_170",
+        "type": "note",
+        "ch": 6,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_170] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_171",
+      "fig": "channel1_input_171",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_171",
+        "type": "note",
+        "ch": 2,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_171] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_172",
+      "fig": "channel1_input_172",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_172",
+        "type": "note",
+        "ch": 2,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_172] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_173",
+      "fig": "channel1_input_173",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_173",
+        "type": "note",
+        "ch": 2,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_173] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_174",
+      "fig": "channel1_input_174",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_174",
+        "type": "note",
+        "ch": 2,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_174] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_175",
+      "fig": "channel1_input_175",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_175",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_175] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_176",
+      "fig": "channel1_input_176",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_176",
+        "type": "note",
+        "ch": 2,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_176] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_177",
+      "fig": "channel1_input_177",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_177",
+        "type": "note",
+        "ch": 2,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_177] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_178",
+      "fig": "channel1_input_178",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_178",
+        "type": "note",
+        "ch": 2,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_178] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_179",
+      "fig": "channel1_input_179",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_179",
+        "type": "note",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_179] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_180",
+      "fig": "channel1_input_180",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_180",
+        "type": "note",
+        "ch": 2,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_180] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_181",
+      "fig": "channel1_input_181",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_181",
+        "type": "note",
+        "ch": 2,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_181] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_182",
+      "fig": "channel1_input_182",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_182",
+        "type": "note",
+        "ch": 2,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_182] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_183",
+      "fig": "channel1_input_183",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_183",
+        "type": "note",
+        "ch": 2,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_183] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_184",
+      "fig": "channel1_input_184",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_184",
+        "type": "note",
+        "ch": 2,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_184] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_185",
+      "fig": "channel1_input_185",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_185",
+        "type": "note",
+        "ch": 2,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_185] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_186",
+      "fig": "channel1_input_186",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_186",
+        "type": "note",
+        "ch": 2,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_186] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_187",
+      "fig": "channel1_input_187",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_187",
+        "type": "note",
+        "ch": 5,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_187] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_188",
+      "fig": "channel1_input_188",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_188",
+        "type": "note",
+        "ch": 5,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_188] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_189",
+      "fig": "channel1_input_189",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_189",
+        "type": "note",
+        "ch": 5,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_189] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_190",
+      "fig": "channel1_input_190",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_190",
+        "type": "note",
+        "ch": 5,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_190] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_191",
+      "fig": "channel1_input_191",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_191",
+        "type": "note",
+        "ch": 5,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_191] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_192",
+      "fig": "channel1_input_192",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_192",
+        "type": "note",
+        "ch": 5,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_192] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_193",
+      "fig": "channel1_input_193",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_193",
+        "type": "note",
+        "ch": 5,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_193] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_194",
+      "fig": "channel1_input_194",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_194",
+        "type": "note",
+        "ch": 5,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_194] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_195",
+      "fig": "channel1_input_195",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 108.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_195",
+        "type": "note",
+        "ch": 5,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_195] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_196",
+      "fig": "channel1_input_196",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_196",
+        "type": "note",
+        "ch": 5,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_196] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_197",
+      "fig": "channel1_input_197",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_197",
+        "type": "note",
+        "ch": 5,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_197] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_198",
+      "fig": "channel1_input_198",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_198",
+        "type": "note",
+        "ch": 5,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_198] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_199",
+      "fig": "channel1_input_199",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_199",
+        "type": "note",
+        "ch": 5,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_199] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_200",
+      "fig": "channel1_input_200",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_200",
+        "type": "note",
+        "ch": 5,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_200] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_201",
+      "fig": "channel1_input_201",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_201",
+        "type": "note",
+        "ch": 5,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_201] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_202",
+      "fig": "channel1_input_202",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_202",
+        "type": "note",
+        "ch": 5,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_202] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_203",
+      "fig": "channel1_input_203",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_203",
+        "type": "note",
+        "ch": 3,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_203] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_204",
+      "fig": "channel1_input_204",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_204",
+        "type": "note",
+        "ch": 3,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_204] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_205",
+      "fig": "channel1_input_205",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_205",
+        "type": "note",
+        "ch": 3,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_205] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_206",
+      "fig": "channel1_input_206",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_206",
+        "type": "note",
+        "ch": 3,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_206] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_207",
+      "fig": "channel1_input_207",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 114.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_207",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_207] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_208",
+      "fig": "channel1_input_208",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_208",
+        "type": "note",
+        "ch": 3,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_208] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_209",
+      "fig": "channel1_input_209",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_209",
+        "type": "note",
+        "ch": 3,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_209] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_210",
+      "fig": "channel1_input_210",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_210",
+        "type": "note",
+        "ch": 3,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_210] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_211",
+      "fig": "channel1_input_211",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_211",
+        "type": "note",
+        "ch": 3,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_211] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_212",
+      "fig": "channel1_input_212",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_212",
+        "type": "note",
+        "ch": 3,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_212] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_213",
+      "fig": "channel1_input_213",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_213",
+        "type": "note",
+        "ch": 3,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_213] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_214",
+      "fig": "channel1_input_214",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_214",
+        "type": "note",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_214] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_215",
+      "fig": "channel1_input_215",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_215",
+        "type": "note",
+        "ch": 3,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_215] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_216",
+      "fig": "channel1_input_216",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_216",
+        "type": "note",
+        "ch": 3,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_216] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_217",
+      "fig": "channel1_input_217",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_217",
+        "type": "note",
+        "ch": 3,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_217] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_218",
+      "fig": "channel1_input_218",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_218",
+        "type": "note",
+        "ch": 3,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_218] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_219",
+      "fig": "channel1_input_219",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_219",
+        "type": "note",
+        "ch": 6,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_219] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_220",
+      "fig": "channel1_input_220",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_220",
+        "type": "note",
+        "ch": 6,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_220] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_221",
+      "fig": "channel1_input_221",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_221",
+        "type": "note",
+        "ch": 6,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_221] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_222",
+      "fig": "channel1_input_222",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_222",
+        "type": "note",
+        "ch": 6,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_222] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_223",
+      "fig": "channel1_input_223",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_223",
+        "type": "note",
+        "ch": 6,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_223] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_224",
+      "fig": "channel1_input_224",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_224",
+        "type": "note",
+        "ch": 6,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_224] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_225",
+      "fig": "channel1_input_225",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_225",
+        "type": "note",
+        "ch": 6,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_225] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_226",
+      "fig": "channel1_input_226",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_226",
+        "type": "note",
+        "ch": 6,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_226] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_227",
+      "fig": "channel1_input_227",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_227",
+        "type": "note",
+        "ch": 6,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_227] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_228",
+      "fig": "channel1_input_228",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_228",
+        "type": "note",
+        "ch": 6,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_228] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_229",
+      "fig": "channel1_input_229",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_229",
+        "type": "note",
+        "ch": 6,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_229] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_230",
+      "fig": "channel1_input_230",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_230",
+        "type": "note",
+        "ch": 6,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_230] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_231",
+      "fig": "channel1_input_231",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_231",
+        "type": "note",
+        "ch": 6,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_231] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_232",
+      "fig": "channel1_input_232",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_232",
+        "type": "note",
+        "ch": 6,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_232] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_233",
+      "fig": "channel1_input_233",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_233",
+        "type": "note",
+        "ch": 6,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_233] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_234",
+      "fig": "channel1_input_234",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_234",
+        "type": "note",
+        "ch": 6,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_234] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_235",
+      "fig": "channel1_input_235",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_235",
+        "type": "note",
+        "ch": 3,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_235] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_236",
+      "fig": "channel1_input_236",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_236",
+        "type": "note",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_236] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_237",
+      "fig": "channel1_input_237",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_237",
+        "type": "note",
+        "ch": 3,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_237] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_238",
+      "fig": "channel1_input_238",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_238",
+        "type": "note",
+        "ch": 6,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_238] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_239",
+      "fig": "channel1_input_239",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_239",
+        "type": "note",
+        "ch": 6,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_239] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_240",
+      "fig": "channel1_input_240",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_240",
+        "type": "note",
+        "ch": 6,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_240] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_241",
+      "fig": "channel1_input_241",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_241",
+        "type": "note",
+        "ch": 3,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_241] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_242",
+      "fig": "channel1_input_242",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_242",
+        "type": "note",
+        "ch": 6,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_242] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_243",
+      "fig": "channel1_input_243",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 134.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_243",
+        "type": "note",
+        "ch": 3,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_243] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_244",
+      "fig": "channel1_input_244",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_244",
+        "type": "note",
+        "ch": 6,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_244] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_245",
+      "fig": "channel1_input_245",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_245",
+        "type": "note",
+        "ch": 3,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_245] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_246",
+      "fig": "channel1_input_246",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_246",
+        "type": "note",
+        "ch": 6,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_246] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_247",
+      "fig": "channel1_input_247",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_247",
+        "type": "note",
+        "ch": 3,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_247] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_248",
+      "fig": "channel1_input_248",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_248",
+        "type": "note",
+        "ch": 3,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_248] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_249",
+      "fig": "channel1_input_249",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_249",
+        "type": "note",
+        "ch": 3,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_249] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_250",
+      "fig": "channel1_input_250",
+      "label": "input",
+      "kind": "button",
+      "x": 48.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_250",
+        "type": "note",
+        "ch": 3,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_250] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_251",
+      "fig": "channel1_input_251",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_251",
+        "type": "note",
+        "ch": 3,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_251] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_252",
+      "fig": "channel1_input_252",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_252",
+        "type": "note",
+        "ch": 6,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_252] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_253",
+      "fig": "channel1_input_253",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_253",
+        "type": "note",
+        "ch": 3,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_253] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_254",
+      "fig": "channel1_input_254",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_254",
+        "type": "note",
+        "ch": 6,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_254] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_255",
+      "fig": "channel1_input_255",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_255",
+        "type": "note",
+        "ch": 3,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_255] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_256",
+      "fig": "channel1_input_256",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_256",
+        "type": "note",
+        "ch": 6,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_256] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_257",
+      "fig": "channel1_input_257",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_257",
+        "type": "note",
+        "ch": 3,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_257] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-p32-dj-channel1_input_258",
+      "fig": "channel1_input_258",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_258",
+        "type": "note",
+        "ch": 6,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_258] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

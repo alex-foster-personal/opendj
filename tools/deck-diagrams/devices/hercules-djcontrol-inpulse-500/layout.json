@@ -1,0 +1,6580 @@
+{
+  "device": "Hercules DJControl Inpulse 500",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "hercules-djcontrol-inpulse-500-move_focus",
+      "fig": "move_focus",
+      "label": "Browser button",
+      "kind": "encoder",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_focus",
+        "type": "note",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[move_focus] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-enabled",
+      "fig": "enabled",
+      "label": "AutoDJ On/Off",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "enabled",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[enabled] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-crossfader_enable",
+      "fig": "crossfader_enable",
+      "label": "CROSS FADER ENABLE",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_enable",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[crossfader_enable] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-crossfader_set_curve",
+      "fig": "crossfader_set_curve",
+      "label": "CROSS FADER SET CURVE",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_set_curve",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[crossfader_set_curve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_play_button",
+      "fig": "channel1_play_button",
+      "label": "Play button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_play_button",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_play_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_cue_button",
+      "fig": "channel1_cue_button",
+      "label": "Cue button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_cue_button",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_cue_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_sync_button",
+      "fig": "channel1_sync_button",
+      "label": "Sync button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_sync_button",
+        "type": "note",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_sync_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pfl_button",
+      "fig": "channel1_pfl_button",
+      "label": "PFL button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pfl_button",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel1_pfl_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_load_a_button",
+      "fig": "channel1_load_a_button",
+      "label": "LOAD A button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_load_a_button",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel1_load_a_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_load_a_button_2",
+      "fig": "channel1_load_a_button_2",
+      "label": "LOAD A button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_load_a_button_2",
+        "type": "note",
+        "ch": 5,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel1_load_a_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_shift_deck_a_button",
+      "fig": "channel1_shift_deck_a_button",
+      "label": "Shift Deck A button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_shift_deck_a_button",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_shift_deck_a_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_slip_button",
+      "fig": "channel1_slip_button",
+      "label": "SLIP button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_slip_button",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_slip_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_quantize_button_deck_1",
+      "fig": "channel1_quantize_button_deck_1",
+      "label": "Quantize button - Deck 1",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_quantize_button_deck_1",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_quantize_button_deck_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_keylock_button_shift_quant_deck_1",
+      "fig": "channel1_keylock_button_shift_quant_deck_1",
+      "label": "Keylock button (shift+quant) - Deck 1",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_keylock_button_shift_quant_deck_1",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_keylock_button_shift_quant_deck_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-master_vinyl_deck_a",
+      "fig": "master_vinyl_deck_a",
+      "label": "Vinyl Deck A",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_vinyl_deck_a",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[master_vinyl_deck_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_shift_vinyl_deck_a",
+      "fig": "channel1_shift_vinyl_deck_a",
+      "label": "Shift + Vinyl Deck A",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_shift_vinyl_deck_a",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_shift_vinyl_deck_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_in_button",
+      "fig": "channel1_loop_in_button",
+      "label": "Loop In button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_in_button",
+        "type": "note",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_in_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_out_button",
+      "fig": "channel1_loop_out_button",
+      "label": "Loop Out button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_out_button",
+        "type": "note",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_out_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_s_loop_in_button_loop_in_goto",
+      "fig": "channel1_s_loop_in_button_loop_in_goto",
+      "label": "S+Loop In button (loop in goto)",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_s_loop_in_button_loop_in_goto",
+        "type": "note",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_s_loop_in_button_loop_in_goto] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_s_loop_out_button_loop_out_goto",
+      "fig": "channel1_s_loop_out_button_loop_out_goto",
+      "label": "S+Loop Out button (loop out goto)",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_s_loop_out_button_loop_out_goto",
+        "type": "note",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_s_loop_out_button_loop_out_goto] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_encoder_push_button_deck_a_reloop_toggle",
+      "fig": "channel1_loop_encoder_push_button_deck_a_reloop_toggle",
+      "label": "Loop Encoder Push button Deck A Reloop toggle",
+      "kind": "encoder",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_encoder_push_button_deck_a_reloop_toggle",
+        "type": "note",
+        "ch": 2,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_encoder_push_button_deck_a_reloop_toggle] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_encoder_push_button_deck_a_4_beat_loop_activate",
+      "fig": "channel1_loop_encoder_push_button_deck_a_4_beat_loop_activate",
+      "label": "Loop Encoder Push button Deck A 4 Beat loop activate",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_encoder_push_button_deck_a_4_beat_loop_activate",
+        "type": "note",
+        "ch": 5,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_encoder_push_button_deck_a_4_beat_loop_activate] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_halve_double_loop_knob_deck_a",
+      "fig": "channel1_loop_halve_double_loop_knob_deck_a",
+      "label": "Loop Halve/Double (Loop Knob Deck A)",
+      "kind": "encoder",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_halve_double_loop_knob_deck_a",
+        "type": "cc",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_halve_double_loop_knob_deck_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_play_button",
+      "fig": "channel2_play_button",
+      "label": "Play button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_play_button",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_play_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_cue_button",
+      "fig": "channel2_cue_button",
+      "label": "Cue button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_cue_button",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel2_cue_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_sync_button",
+      "fig": "channel2_sync_button",
+      "label": "Sync button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_sync_button",
+        "type": "note",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel2_sync_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pfl_button",
+      "fig": "channel2_pfl_button",
+      "label": "PFL button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pfl_button",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel2_pfl_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_load_b_button",
+      "fig": "channel2_load_b_button",
+      "label": "LOAD B button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_load_b_button",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel2_load_b_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_load_b_button_2",
+      "fig": "channel2_load_b_button_2",
+      "label": "LOAD B button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_load_b_button_2",
+        "type": "note",
+        "ch": 6,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel2_load_b_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_shift_deck_a_button_2",
+      "fig": "channel1_shift_deck_a_button_2",
+      "label": "Shift Deck A button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_shift_deck_a_button_2",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_shift_deck_a_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_slip_button",
+      "fig": "channel2_slip_button",
+      "label": "SLIP button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_slip_button",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_slip_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_quantize_button_deck_2",
+      "fig": "channel2_quantize_button_deck_2",
+      "label": "Quantize button - Deck 2",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_quantize_button_deck_2",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_quantize_button_deck_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_keylock_button_shift_quant_deck_2",
+      "fig": "channel2_keylock_button_shift_quant_deck_2",
+      "label": "Keylock button (shift+quant) - Deck 2",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_keylock_button_shift_quant_deck_2",
+        "type": "note",
+        "ch": 6,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_keylock_button_shift_quant_deck_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-master_vinyl_deck_b",
+      "fig": "master_vinyl_deck_b",
+      "label": "Vinyl Deck B",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_vinyl_deck_b",
+        "type": "note",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[master_vinyl_deck_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_shift_vinyl_deck_b",
+      "fig": "channel2_shift_vinyl_deck_b",
+      "label": "Shift + Vinyl Deck B",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_shift_vinyl_deck_b",
+        "type": "note",
+        "ch": 6,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_shift_vinyl_deck_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_in_button",
+      "fig": "channel2_loop_in_button",
+      "label": "Loop In button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_in_button",
+        "type": "note",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_in_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_out_button",
+      "fig": "channel2_loop_out_button",
+      "label": "Loop Out button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_out_button",
+        "type": "note",
+        "ch": 3,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_out_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_in_button_loop_in_goto",
+      "fig": "channel2_loop_in_button_loop_in_goto",
+      "label": "Loop In button (Loop In Goto)",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_in_button_loop_in_goto",
+        "type": "note",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_in_button_loop_in_goto] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_out_button_loop_out_goto",
+      "fig": "channel2_loop_out_button_loop_out_goto",
+      "label": "Loop Out button (loop out goto)",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_out_button_loop_out_goto",
+        "type": "note",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_out_button_loop_out_goto] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_encoder_push_button_deck_b_reloop_toggle",
+      "fig": "channel2_loop_encoder_push_button_deck_b_reloop_toggle",
+      "label": "Loop Encoder Push button Deck B (reloop toggle)",
+      "kind": "encoder",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_encoder_push_button_deck_b_reloop_toggle",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_encoder_push_button_deck_b_reloop_toggle] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_encoder_push_button_deck_b_beatloop_4_activated",
+      "fig": "channel2_loop_encoder_push_button_deck_b_beatloop_4_activated",
+      "label": "Loop Encoder Push button Deck B (beatloop 4 activated)",
+      "kind": "encoder",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_encoder_push_button_deck_b_beatloop_4_activated",
+        "type": "note",
+        "ch": 6,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_encoder_push_button_deck_b_beatloop_4_activated] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_halve_double_loop_knob_deck_b",
+      "fig": "channel2_loop_halve_double_loop_knob_deck_b",
+      "label": "Loop Halve/Double (Loop Knob Deck B)",
+      "kind": "encoder",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_halve_double_loop_knob_deck_b",
+        "type": "cc",
+        "ch": 3,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_halve_double_loop_knob_deck_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-show_maximized_library",
+      "fig": "show_maximized_library",
+      "label": "Browser button - Maximize Library view",
+      "kind": "encoder",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "show_maximized_library",
+        "type": "note",
+        "ch": 4,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[show_maximized_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_shift_play_play_stutter",
+      "fig": "channel1_shift_play_play_stutter",
+      "label": "SHIFT + Play: Play Stutter",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_shift_play_play_stutter",
+        "type": "note",
+        "ch": 5,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_shift_play_play_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_shift_cue_rewind_to_beginning",
+      "fig": "channel1_shift_cue_rewind_to_beginning",
+      "label": "SHIFT + Cue: REWIND to beginning",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_shift_cue_rewind_to_beginning",
+        "type": "note",
+        "ch": 5,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_shift_cue_rewind_to_beginning] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_shift_sync_match_key",
+      "fig": "channel1_shift_sync_match_key",
+      "label": "SHIFT + Sync: Match key",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_shift_sync_match_key",
+        "type": "note",
+        "ch": 5,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_shift_sync_match_key] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_shift_play_play_stutter",
+      "fig": "channel2_shift_play_play_stutter",
+      "label": "SHIFT + Play: Play Stutter",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_shift_play_play_stutter",
+        "type": "note",
+        "ch": 6,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_shift_play_play_stutter] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_shift_cue_rewind_to_beginning",
+      "fig": "channel2_shift_cue_rewind_to_beginning",
+      "label": "SHIFT + Cue: REWIND to beginning",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_shift_cue_rewind_to_beginning",
+        "type": "note",
+        "ch": 6,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel2_shift_cue_rewind_to_beginning] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_shift_sync_sync_key",
+      "fig": "channel2_shift_sync_sync_key",
+      "label": "SHIFT + Sync: Sync key",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_shift_sync_sync_key",
+        "type": "note",
+        "ch": 6,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel2_shift_sync_sync_key] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select",
+      "fig": "channel1_pad_select",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select",
+        "type": "note",
+        "ch": 2,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_2",
+      "fig": "channel1_pad_select_2",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_2",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_3",
+      "fig": "channel1_pad_select_3",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_3",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_4",
+      "fig": "channel1_pad_select_4",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_4",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_5",
+      "fig": "channel1_pad_select_5",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_5",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_6",
+      "fig": "channel1_pad_select_6",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_6",
+        "type": "note",
+        "ch": 2,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_7",
+      "fig": "channel1_pad_select_7",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_7",
+        "type": "note",
+        "ch": 2,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_select_8",
+      "fig": "channel1_pad_select_8",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_select_8",
+        "type": "note",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_select_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_1",
+      "fig": "channel1_pad_1",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_1",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_2",
+      "fig": "channel1_pad_2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_2",
+        "type": "note",
+        "ch": 7,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_3",
+      "fig": "channel1_pad_3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_3",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_4",
+      "fig": "channel1_pad_4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_4",
+        "type": "note",
+        "ch": 7,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_5",
+      "fig": "channel1_pad_5",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_5",
+        "type": "note",
+        "ch": 7,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_6",
+      "fig": "channel1_pad_6",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_6",
+        "type": "note",
+        "ch": 7,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_7",
+      "fig": "channel1_pad_7",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_7",
+        "type": "note",
+        "ch": 7,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_8",
+      "fig": "channel1_pad_8",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_8",
+        "type": "note",
+        "ch": 7,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_1_l_shift",
+      "fig": "channel1_pad_1_l_shift",
+      "label": "PAD 1 + L-Shift",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_1_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_1_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_2_l_shift",
+      "fig": "channel1_pad_2_l_shift",
+      "label": "PAD 2 + L-Shift",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_2_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_2_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_3_l_shift",
+      "fig": "channel1_pad_3_l_shift",
+      "label": "PAD 3 + L-Shift",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_3_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_3_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_4_l_shift",
+      "fig": "channel1_pad_4_l_shift",
+      "label": "PAD 4 + L-Shift",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_4_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_4_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_5_l_shift",
+      "fig": "channel1_pad_5_l_shift",
+      "label": "PAD 5 + L-Shift",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_5_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_5_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_6_l_shift",
+      "fig": "channel1_pad_6_l_shift",
+      "label": "PAD 6 + L-Shift",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_6_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_6_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_7_l_shift",
+      "fig": "channel1_pad_7_l_shift",
+      "label": "PAD 7 + L-Shift",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_7_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_7_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_8_l_shift",
+      "fig": "channel1_pad_8_l_shift",
+      "label": "PAD 8 + L-Shift",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_8_l_shift",
+        "type": "note",
+        "ch": 7,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_8_l_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_8_beat_pad_1",
+      "fig": "channel1_loop_1_8_beat_pad_1",
+      "label": "Loop 1/8 Beat (Pad 1)",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_8_beat_pad_1",
+        "type": "note",
+        "ch": 7,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_8_beat_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_4_beat_pad_2",
+      "fig": "channel1_loop_1_4_beat_pad_2",
+      "label": "Loop 1/4 Beat (Pad 2)",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_4_beat_pad_2",
+        "type": "note",
+        "ch": 7,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_4_beat_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_2_beat_pad_3",
+      "fig": "channel1_loop_1_2_beat_pad_3",
+      "label": "Loop 1/2 Beat (Pad 3)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_2_beat_pad_3",
+        "type": "note",
+        "ch": 7,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_2_beat_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_beat_pad_4",
+      "fig": "channel1_loop_1_beat_pad_4",
+      "label": "Loop 1 Beat (Pad 4)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_beat_pad_4",
+        "type": "note",
+        "ch": 7,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_beat_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_2_beat_pad_5",
+      "fig": "channel1_loop_2_beat_pad_5",
+      "label": "Loop 2 Beat (Pad 5)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_2_beat_pad_5",
+        "type": "note",
+        "ch": 7,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_2_beat_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_4_beat_pad_6",
+      "fig": "channel1_loop_4_beat_pad_6",
+      "label": "Loop 4 Beat (Pad 6)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_4_beat_pad_6",
+        "type": "note",
+        "ch": 7,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_4_beat_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_8_beat_pad_7",
+      "fig": "channel1_loop_8_beat_pad_7",
+      "label": "Loop 8 Beat (Pad 7)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_8_beat_pad_7",
+        "type": "note",
+        "ch": 7,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_8_beat_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_16_beat_pad_8",
+      "fig": "channel1_loop_16_beat_pad_8",
+      "label": "Loop 16 Beat (Pad 8)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_16_beat_pad_8",
+        "type": "note",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_16_beat_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_3_4_beat_pad_1",
+      "fig": "channel1_loop_3_4_beat_pad_1",
+      "label": "Loop 3/4 Beat (Pad 1)",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_3_4_beat_pad_1",
+        "type": "note",
+        "ch": 7,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_3_4_beat_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_5_4_beat_pad_2",
+      "fig": "channel1_loop_5_4_beat_pad_2",
+      "label": "Loop 5/4 Beat (Pad 2)",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_5_4_beat_pad_2",
+        "type": "note",
+        "ch": 7,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_5_4_beat_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_6_4_beat_pad_3",
+      "fig": "channel1_loop_6_4_beat_pad_3",
+      "label": "Loop 6/4 Beat (Pad 3)",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_6_4_beat_pad_3",
+        "type": "note",
+        "ch": 7,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_6_4_beat_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_7_4_beat_pad_4",
+      "fig": "channel1_loop_7_4_beat_pad_4",
+      "label": "Loop 7/4 Beat (Pad 4)",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_7_4_beat_pad_4",
+        "type": "note",
+        "ch": 7,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_7_4_beat_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_32_beat_pad_5",
+      "fig": "channel1_loop_32_beat_pad_5",
+      "label": "Loop 32 Beat (Pad 5)",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_32_beat_pad_5",
+        "type": "note",
+        "ch": 7,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_32_beat_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_64_beat_pad_6",
+      "fig": "channel1_loop_64_beat_pad_6",
+      "label": "Loop 64 Beat (Pad 6)",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_64_beat_pad_6",
+        "type": "note",
+        "ch": 7,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_64_beat_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_128_beat_pad_7",
+      "fig": "channel1_loop_128_beat_pad_7",
+      "label": "Loop 128 Beat (Pad 7)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_128_beat_pad_7",
+        "type": "note",
+        "ch": 7,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_128_beat_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_256_beat_pad_8",
+      "fig": "channel1_loop_256_beat_pad_8",
+      "label": "Loop 256 Beat (Pad 8)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_256_beat_pad_8",
+        "type": "note",
+        "ch": 7,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_256_beat_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_1_2",
+      "fig": "channel1_pad_1_2",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_1_2",
+        "type": "note",
+        "ch": 7,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_2_2",
+      "fig": "channel1_pad_2_2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_2_2",
+        "type": "note",
+        "ch": 7,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_3_2",
+      "fig": "channel1_pad_3_2",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_3_2",
+        "type": "note",
+        "ch": 7,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_4_2",
+      "fig": "channel1_pad_4_2",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_4_2",
+        "type": "note",
+        "ch": 7,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_5_2",
+      "fig": "channel1_pad_5_2",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_5_2",
+        "type": "note",
+        "ch": 7,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_5_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_6_2",
+      "fig": "channel1_pad_6_2",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_6_2",
+        "type": "note",
+        "ch": 7,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_6_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_7_2",
+      "fig": "channel1_pad_7_2",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_7_2",
+        "type": "note",
+        "ch": 7,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_7_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_8_2",
+      "fig": "channel1_pad_8_2",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_8_2",
+        "type": "note",
+        "ch": 7,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_8_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler1_pad_1",
+      "fig": "sampler1_pad_1",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler1_pad_1",
+        "type": "note",
+        "ch": 7,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[sampler1_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler2_pad_2",
+      "fig": "sampler2_pad_2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler2_pad_2",
+        "type": "note",
+        "ch": 7,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[sampler2_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler3_pad_3",
+      "fig": "sampler3_pad_3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler3_pad_3",
+        "type": "note",
+        "ch": 7,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[sampler3_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler4_pad_4",
+      "fig": "sampler4_pad_4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler4_pad_4",
+        "type": "note",
+        "ch": 7,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[sampler4_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler5_pad_5",
+      "fig": "sampler5_pad_5",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler5_pad_5",
+        "type": "note",
+        "ch": 7,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[sampler5_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler6_pad_6",
+      "fig": "sampler6_pad_6",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler6_pad_6",
+        "type": "note",
+        "ch": 7,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[sampler6_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler7_pad_7",
+      "fig": "sampler7_pad_7",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler7_pad_7",
+        "type": "note",
+        "ch": 7,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[sampler7_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler8_pad_8",
+      "fig": "sampler8_pad_8",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler8_pad_8",
+        "type": "note",
+        "ch": 7,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[sampler8_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler1_pad_1_2",
+      "fig": "sampler1_pad_1_2",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler1_pad_1_2",
+        "type": "note",
+        "ch": 7,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[sampler1_pad_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler2_pad_2_2",
+      "fig": "sampler2_pad_2_2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler2_pad_2_2",
+        "type": "note",
+        "ch": 7,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[sampler2_pad_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler3_pad_3_2",
+      "fig": "sampler3_pad_3_2",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler3_pad_3_2",
+        "type": "note",
+        "ch": 7,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[sampler3_pad_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler4_pad_4_2",
+      "fig": "sampler4_pad_4_2",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler4_pad_4_2",
+        "type": "note",
+        "ch": 7,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[sampler4_pad_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler5_pad_5_2",
+      "fig": "sampler5_pad_5_2",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler5_pad_5_2",
+        "type": "note",
+        "ch": 7,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[sampler5_pad_5_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler6_pad_6_2",
+      "fig": "sampler6_pad_6_2",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler6_pad_6_2",
+        "type": "note",
+        "ch": 7,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[sampler6_pad_6_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler7_pad_7_2",
+      "fig": "sampler7_pad_7_2",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler7_pad_7_2",
+        "type": "note",
+        "ch": 7,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[sampler7_pad_7_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler8_pad_8_2",
+      "fig": "sampler8_pad_8_2",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler8_pad_8_2",
+        "type": "note",
+        "ch": 7,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[sampler8_pad_8_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_down_tone",
+      "fig": "channel1_pitch_down_tone",
+      "label": "Pitch down - tone",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_down_tone",
+        "type": "note",
+        "ch": 7,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_down_tone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_down_semitone",
+      "fig": "channel1_pitch_down_semitone",
+      "label": "Pitch down - semitone",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_down_semitone",
+        "type": "note",
+        "ch": 7,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_down_semitone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_up_semitone",
+      "fig": "channel1_pitch_up_semitone",
+      "label": "Pitch up - semitone",
+      "kind": "button",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_up_semitone",
+        "type": "note",
+        "ch": 7,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_up_semitone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_up_tone",
+      "fig": "channel1_pitch_up_tone",
+      "label": "Pitch up - tone",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_up_tone",
+        "type": "note",
+        "ch": 7,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_up_tone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_slider_increase_resolution",
+      "fig": "channel1_pitch_slider_increase_resolution",
+      "label": "Pitch slider increase resolution",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_slider_increase_resolution",
+        "type": "note",
+        "ch": 7,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_slider_increase_resolution] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_slider_decrease_resolution",
+      "fig": "channel1_pitch_slider_decrease_resolution",
+      "label": "Pitch slider Decrease resolution",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_slider_decrease_resolution",
+        "type": "note",
+        "ch": 7,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_slider_decrease_resolution] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pitch_slider_reset_resolution",
+      "fig": "channel1_pitch_slider_reset_resolution",
+      "label": "Pitch slider Reset resolution",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pitch_slider_reset_resolution",
+        "type": "note",
+        "ch": 7,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[channel1_pitch_slider_reset_resolution] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_8_beat_pad_1_2",
+      "fig": "channel1_loop_1_8_beat_pad_1_2",
+      "label": "Loop 1/8 Beat (Pad 1)",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_8_beat_pad_1_2",
+        "type": "note",
+        "ch": 7,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_8_beat_pad_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_4_beat_pad_2_2",
+      "fig": "channel1_loop_1_4_beat_pad_2_2",
+      "label": "Loop 1/4 Beat (Pad 2)",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_4_beat_pad_2_2",
+        "type": "note",
+        "ch": 7,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_4_beat_pad_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_2_beat_pad_3_2",
+      "fig": "channel1_loop_1_2_beat_pad_3_2",
+      "label": "Loop 1/2 Beat (Pad 3)",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_2_beat_pad_3_2",
+        "type": "note",
+        "ch": 7,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_2_beat_pad_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_1_beat_pad_4_2",
+      "fig": "channel1_loop_1_beat_pad_4_2",
+      "label": "Loop 1 Beat (Pad 4)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_1_beat_pad_4_2",
+        "type": "note",
+        "ch": 7,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_1_beat_pad_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_2_beat_pad_5_2",
+      "fig": "channel1_loop_2_beat_pad_5_2",
+      "label": "Loop 2 Beat (Pad 5)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_2_beat_pad_5_2",
+        "type": "note",
+        "ch": 7,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_2_beat_pad_5_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_2_beat_pad_6",
+      "fig": "channel1_loop_2_beat_pad_6",
+      "label": "Loop 2 Beat (Pad 6)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_2_beat_pad_6",
+        "type": "note",
+        "ch": 7,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_2_beat_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_8_beat_pad_7_2",
+      "fig": "channel1_loop_8_beat_pad_7_2",
+      "label": "Loop 8 Beat (Pad 7)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_8_beat_pad_7_2",
+        "type": "note",
+        "ch": 7,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_8_beat_pad_7_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_loop_2_beat_pad_8",
+      "fig": "channel1_loop_2_beat_pad_8",
+      "label": "Loop 2 Beat (Pad 8)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_loop_2_beat_pad_8",
+        "type": "note",
+        "ch": 7,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel1_loop_2_beat_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_1_3",
+      "fig": "channel1_pad_1_3",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_1_3",
+        "type": "note",
+        "ch": 7,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_2_3",
+      "fig": "channel1_pad_2_3",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_2_3",
+        "type": "note",
+        "ch": 7,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_3_3",
+      "fig": "channel1_pad_3_3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_3_3",
+        "type": "note",
+        "ch": 7,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_4_3",
+      "fig": "channel1_pad_4_3",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_4_3",
+        "type": "note",
+        "ch": 7,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_4_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_5_3",
+      "fig": "channel1_pad_5_3",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_5_3",
+        "type": "note",
+        "ch": 7,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_5_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_6_3",
+      "fig": "channel1_pad_6_3",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_6_3",
+        "type": "note",
+        "ch": 7,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_6_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_7_3",
+      "fig": "channel1_pad_7_3",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_7_3",
+        "type": "note",
+        "ch": 7,
+        "code": 102,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_7_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_8_3",
+      "fig": "channel1_pad_8_3",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_8_3",
+        "type": "note",
+        "ch": 7,
+        "code": 103,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_8_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_1_4",
+      "fig": "channel1_pad_1_4",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_1_4",
+        "type": "note",
+        "ch": 7,
+        "code": 104,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_2_4",
+      "fig": "channel1_pad_2_4",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_2_4",
+        "type": "note",
+        "ch": 7,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_3_4",
+      "fig": "channel1_pad_3_4",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_3_4",
+        "type": "note",
+        "ch": 7,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_4_4",
+      "fig": "channel1_pad_4_4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_4_4",
+        "type": "note",
+        "ch": 7,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_4_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_5_4",
+      "fig": "channel1_pad_5_4",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_5_4",
+        "type": "note",
+        "ch": 7,
+        "code": 108,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_5_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_6_4",
+      "fig": "channel1_pad_6_4",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_6_4",
+        "type": "note",
+        "ch": 7,
+        "code": 109,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_6_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_7_4",
+      "fig": "channel1_pad_7_4",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_7_4",
+        "type": "note",
+        "ch": 7,
+        "code": 110,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_7_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_pad_8_4",
+      "fig": "channel1_pad_8_4",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_pad_8_4",
+        "type": "note",
+        "ch": 7,
+        "code": 111,
+        "shift_name": null
+      },
+      "notes": "[channel1_pad_8_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_1_backward",
+      "fig": "channel1_beat_jump_1_backward",
+      "label": "Beat jump 1 backward",
+      "kind": "button",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_1_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 112,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_1_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_1_forward",
+      "fig": "channel1_beat_jump_1_forward",
+      "label": "Beat jump 1 forward",
+      "kind": "button",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_1_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 113,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_1_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_2_backward",
+      "fig": "channel1_beat_jump_2_backward",
+      "label": "Beat jump 2 backward",
+      "kind": "button",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_2_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 114,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_2_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_2_forward",
+      "fig": "channel1_beat_jump_2_forward",
+      "label": "Beat jump 2 forward",
+      "kind": "button",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_2_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 115,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_2_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_4_backward",
+      "fig": "channel1_beat_jump_4_backward",
+      "label": "Beat jump 4 backward",
+      "kind": "button",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_4_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 116,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_4_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_4_forward",
+      "fig": "channel1_beat_jump_4_forward",
+      "label": "Beat jump 4 forward",
+      "kind": "button",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_4_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 117,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_4_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_8_backward",
+      "fig": "channel1_beat_jump_8_backward",
+      "label": "Beat jump 8 backward",
+      "kind": "button",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_8_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 118,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_8_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_8_forward",
+      "fig": "channel1_beat_jump_8_forward",
+      "label": "Beat jump 8 forward",
+      "kind": "button",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_8_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_8_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_16_backward",
+      "fig": "channel1_beat_jump_16_backward",
+      "label": "Beat jump 16 backward",
+      "kind": "button",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_16_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 120,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_16_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_16_forward",
+      "fig": "channel1_beat_jump_16_forward",
+      "label": "Beat jump 16 forward",
+      "kind": "button",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_16_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 121,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_16_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_32_backward",
+      "fig": "channel1_beat_jump_32_backward",
+      "label": "Beat jump 32 backward",
+      "kind": "button",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_32_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 122,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_32_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_32_forward",
+      "fig": "channel1_beat_jump_32_forward",
+      "label": "Beat jump 32 forward",
+      "kind": "button",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_32_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 123,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_32_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_64_backward",
+      "fig": "channel1_beat_jump_64_backward",
+      "label": "Beat jump 64 backward",
+      "kind": "button",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_64_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 124,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_64_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_64_forward",
+      "fig": "channel1_beat_jump_64_forward",
+      "label": "Beat jump 64 forward",
+      "kind": "button",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_64_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 125,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_64_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_128_backward",
+      "fig": "channel1_beat_jump_128_backward",
+      "label": "Beat jump 128 backward",
+      "kind": "button",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_128_backward",
+        "type": "note",
+        "ch": 7,
+        "code": 126,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_128_backward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_128_forward",
+      "fig": "channel1_beat_jump_128_forward",
+      "label": "Beat jump 128 forward",
+      "kind": "button",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_128_forward",
+        "type": "note",
+        "ch": 7,
+        "code": 127,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_128_forward] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select",
+      "fig": "channel2_pad_select",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select",
+        "type": "note",
+        "ch": 3,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_2",
+      "fig": "channel2_pad_select_2",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_2",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_3",
+      "fig": "channel2_pad_select_3",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_3",
+        "type": "note",
+        "ch": 3,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_4",
+      "fig": "channel2_pad_select_4",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_4",
+        "type": "note",
+        "ch": 3,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_5",
+      "fig": "channel2_pad_select_5",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_5",
+        "type": "note",
+        "ch": 3,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_6",
+      "fig": "channel2_pad_select_6",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_6",
+        "type": "note",
+        "ch": 3,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_7",
+      "fig": "channel2_pad_select_7",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_7",
+        "type": "note",
+        "ch": 3,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_select_8",
+      "fig": "channel2_pad_select_8",
+      "label": "PAD select",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_select_8",
+        "type": "note",
+        "ch": 3,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_select_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_1",
+      "fig": "channel2_pad_1",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_1",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_2",
+      "fig": "channel2_pad_2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_2",
+        "type": "note",
+        "ch": 8,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_3",
+      "fig": "channel2_pad_3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_3",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_4",
+      "fig": "channel2_pad_4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_4",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_5",
+      "fig": "channel2_pad_5",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_5",
+        "type": "note",
+        "ch": 8,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_6",
+      "fig": "channel2_pad_6",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_6",
+        "type": "note",
+        "ch": 8,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_7",
+      "fig": "channel2_pad_7",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_7",
+        "type": "note",
+        "ch": 8,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_8",
+      "fig": "channel2_pad_8",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_8",
+        "type": "note",
+        "ch": 8,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_1_r_shift",
+      "fig": "channel2_pad_1_r_shift",
+      "label": "PAD 1 + R-Shift",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_1_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_1_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_2_r_shift",
+      "fig": "channel2_pad_2_r_shift",
+      "label": "PAD 2 + R-Shift",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_2_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_2_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_3_r_shift",
+      "fig": "channel2_pad_3_r_shift",
+      "label": "PAD 3 + R-Shift",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_3_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_3_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_4_r_shift",
+      "fig": "channel2_pad_4_r_shift",
+      "label": "PAD 4 + R-Shift",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_4_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_4_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_5_r_shift",
+      "fig": "channel2_pad_5_r_shift",
+      "label": "PAD 5 + R-Shift",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_5_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_5_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_6_r_shift",
+      "fig": "channel2_pad_6_r_shift",
+      "label": "PAD 6 + R-Shift",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_6_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_6_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_7_r_shift",
+      "fig": "channel2_pad_7_r_shift",
+      "label": "PAD 7 + R-Shift",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_7_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_7_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_8_r_shift",
+      "fig": "channel2_pad_8_r_shift",
+      "label": "PAD 8 + R-Shift",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_8_r_shift",
+        "type": "note",
+        "ch": 8,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_8_r_shift] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_8_beat_pad_1",
+      "fig": "channel2_loop_1_8_beat_pad_1",
+      "label": "Loop 1/8 Beat (Pad 1)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_8_beat_pad_1",
+        "type": "note",
+        "ch": 8,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_8_beat_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_4_beat_pad_2",
+      "fig": "channel2_loop_1_4_beat_pad_2",
+      "label": "Loop 1/4 Beat (Pad 2)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_4_beat_pad_2",
+        "type": "note",
+        "ch": 8,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_4_beat_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_2_beat_pad_3",
+      "fig": "channel2_loop_1_2_beat_pad_3",
+      "label": "Loop 1/2 Beat (Pad 3)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_2_beat_pad_3",
+        "type": "note",
+        "ch": 8,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_2_beat_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_beat_pad_4",
+      "fig": "channel2_loop_1_beat_pad_4",
+      "label": "Loop 1 Beat (Pad 4)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_beat_pad_4",
+        "type": "note",
+        "ch": 8,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_beat_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_2_beat_pad_5",
+      "fig": "channel2_loop_2_beat_pad_5",
+      "label": "Loop 2 Beat (Pad 5)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_2_beat_pad_5",
+        "type": "note",
+        "ch": 8,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_2_beat_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_4_beat_pad_6",
+      "fig": "channel2_loop_4_beat_pad_6",
+      "label": "Loop 4 Beat (Pad 6)",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_4_beat_pad_6",
+        "type": "note",
+        "ch": 8,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_4_beat_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_8_beat_pad_7",
+      "fig": "channel2_loop_8_beat_pad_7",
+      "label": "Loop 8 Beat (Pad 7)",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_8_beat_pad_7",
+        "type": "note",
+        "ch": 8,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_8_beat_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_16_beat_pad_8",
+      "fig": "channel2_loop_16_beat_pad_8",
+      "label": "Loop 16 Beat (Pad 8)",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 101.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_16_beat_pad_8",
+        "type": "note",
+        "ch": 8,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_16_beat_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_3_4_beat_pad_1",
+      "fig": "channel2_loop_3_4_beat_pad_1",
+      "label": "Loop 3/4 Beat (Pad 1)",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_3_4_beat_pad_1",
+        "type": "note",
+        "ch": 8,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_3_4_beat_pad_1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_5_4_beat_pad_2",
+      "fig": "channel2_loop_5_4_beat_pad_2",
+      "label": "Loop 5/4 Beat (Pad 2)",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_5_4_beat_pad_2",
+        "type": "note",
+        "ch": 8,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_5_4_beat_pad_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_6_4_beat_pad_3",
+      "fig": "channel2_loop_6_4_beat_pad_3",
+      "label": "Loop 6/4 Beat (Pad 3)",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_6_4_beat_pad_3",
+        "type": "note",
+        "ch": 8,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_6_4_beat_pad_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_7_4_beat_pad_4",
+      "fig": "channel2_loop_7_4_beat_pad_4",
+      "label": "Loop 7/4 Beat (Pad 4)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_7_4_beat_pad_4",
+        "type": "note",
+        "ch": 8,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_7_4_beat_pad_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_32_beat_pad_5",
+      "fig": "channel2_loop_32_beat_pad_5",
+      "label": "Loop 32 Beat (Pad 5)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_32_beat_pad_5",
+        "type": "note",
+        "ch": 8,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_32_beat_pad_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_64_beat_pad_6",
+      "fig": "channel2_loop_64_beat_pad_6",
+      "label": "Loop 64 Beat (Pad 6)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_64_beat_pad_6",
+        "type": "note",
+        "ch": 8,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_64_beat_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_128_beat_pad_7",
+      "fig": "channel2_loop_128_beat_pad_7",
+      "label": "Loop 128 Beat (Pad 7)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_128_beat_pad_7",
+        "type": "note",
+        "ch": 8,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_128_beat_pad_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_256_beat_pad_8",
+      "fig": "channel2_loop_256_beat_pad_8",
+      "label": "Loop 256 Beat (Pad 8)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_256_beat_pad_8",
+        "type": "note",
+        "ch": 8,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_256_beat_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_1_2",
+      "fig": "channel2_pad_1_2",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_1_2",
+        "type": "note",
+        "ch": 8,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_2_2",
+      "fig": "channel2_pad_2_2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_2_2",
+        "type": "note",
+        "ch": 8,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_3_2",
+      "fig": "channel2_pad_3_2",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_3_2",
+        "type": "note",
+        "ch": 8,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_4_2",
+      "fig": "channel2_pad_4_2",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 108.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_4_2",
+        "type": "note",
+        "ch": 8,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_5_2",
+      "fig": "channel2_pad_5_2",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_5_2",
+        "type": "note",
+        "ch": 8,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_5_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_6_2",
+      "fig": "channel2_pad_6_2",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_6_2",
+        "type": "note",
+        "ch": 8,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_6_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_7_2",
+      "fig": "channel2_pad_7_2",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_7_2",
+        "type": "note",
+        "ch": 8,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_7_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_8_2",
+      "fig": "channel2_pad_8_2",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_8_2",
+        "type": "note",
+        "ch": 8,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_8_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler1_pad_1_3",
+      "fig": "sampler1_pad_1_3",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler1_pad_1_3",
+        "type": "note",
+        "ch": 8,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[sampler1_pad_1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler2_pad_2_3",
+      "fig": "sampler2_pad_2_3",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler2_pad_2_3",
+        "type": "note",
+        "ch": 8,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[sampler2_pad_2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler3_pad_3_3",
+      "fig": "sampler3_pad_3_3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler3_pad_3_3",
+        "type": "note",
+        "ch": 8,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[sampler3_pad_3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler4_pad_4_3",
+      "fig": "sampler4_pad_4_3",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler4_pad_4_3",
+        "type": "note",
+        "ch": 8,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[sampler4_pad_4_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler5_pad_5_3",
+      "fig": "sampler5_pad_5_3",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler5_pad_5_3",
+        "type": "note",
+        "ch": 8,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[sampler5_pad_5_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler6_pad_6_3",
+      "fig": "sampler6_pad_6_3",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler6_pad_6_3",
+        "type": "note",
+        "ch": 8,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[sampler6_pad_6_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler7_pad_7_3",
+      "fig": "sampler7_pad_7_3",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler7_pad_7_3",
+        "type": "note",
+        "ch": 8,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[sampler7_pad_7_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler8_pad_8_3",
+      "fig": "sampler8_pad_8_3",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 114.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler8_pad_8_3",
+        "type": "note",
+        "ch": 8,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[sampler8_pad_8_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler1_pad_1_4",
+      "fig": "sampler1_pad_1_4",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler1_pad_1_4",
+        "type": "note",
+        "ch": 8,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[sampler1_pad_1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler2_pad_2_4",
+      "fig": "sampler2_pad_2_4",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler2_pad_2_4",
+        "type": "note",
+        "ch": 8,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[sampler2_pad_2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler3_pad_3_4",
+      "fig": "sampler3_pad_3_4",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler3_pad_3_4",
+        "type": "note",
+        "ch": 8,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[sampler3_pad_3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler4_pad_4_4",
+      "fig": "sampler4_pad_4_4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler4_pad_4_4",
+        "type": "note",
+        "ch": 8,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[sampler4_pad_4_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler5_pad_5_4",
+      "fig": "sampler5_pad_5_4",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler5_pad_5_4",
+        "type": "note",
+        "ch": 8,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[sampler5_pad_5_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler6_pad_6_4",
+      "fig": "sampler6_pad_6_4",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler6_pad_6_4",
+        "type": "note",
+        "ch": 8,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[sampler6_pad_6_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler7_pad_7_4",
+      "fig": "sampler7_pad_7_4",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler7_pad_7_4",
+        "type": "note",
+        "ch": 8,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[sampler7_pad_7_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-sampler8_pad_8_4",
+      "fig": "sampler8_pad_8_4",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 121.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "sampler8_pad_8_4",
+        "type": "note",
+        "ch": 8,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[sampler8_pad_8_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_up_semitone",
+      "fig": "channel2_pitch_up_semitone",
+      "label": "Pitch up - semitone",
+      "kind": "button",
+      "x": 64.4,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_up_semitone",
+        "type": "note",
+        "ch": 8,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_up_semitone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_down_semitone",
+      "fig": "channel2_pitch_down_semitone",
+      "label": "Pitch down - semitone",
+      "kind": "button",
+      "x": 72.2,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_down_semitone",
+        "type": "note",
+        "ch": 8,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_down_semitone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_up_tone",
+      "fig": "channel2_pitch_up_tone",
+      "label": "Pitch up - tone",
+      "kind": "button",
+      "x": 80.0,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_up_tone",
+        "type": "note",
+        "ch": 8,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_up_tone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_down_tone",
+      "fig": "channel2_pitch_down_tone",
+      "label": "Pitch down - tone",
+      "kind": "button",
+      "x": 87.8,
+      "y": 121.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_down_tone",
+        "type": "note",
+        "ch": 8,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_down_tone] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_slider_increase_resolution",
+      "fig": "channel2_pitch_slider_increase_resolution",
+      "label": "Pitch slider increase resolution",
+      "kind": "button",
+      "x": 2.0,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_slider_increase_resolution",
+        "type": "note",
+        "ch": 8,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_slider_increase_resolution] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_slider_decrease_resolution",
+      "fig": "channel2_pitch_slider_decrease_resolution",
+      "label": "Pitch slider Decrease resolution",
+      "kind": "button",
+      "x": 9.8,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_slider_decrease_resolution",
+        "type": "note",
+        "ch": 8,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_slider_decrease_resolution] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pitch_slider_reset_resolution",
+      "fig": "channel2_pitch_slider_reset_resolution",
+      "label": "Pitch slider Reset resolution",
+      "kind": "button",
+      "x": 17.6,
+      "y": 127.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pitch_slider_reset_resolution",
+        "type": "note",
+        "ch": 8,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[channel2_pitch_slider_reset_resolution] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_8_beat_pad_1_2",
+      "fig": "channel2_loop_1_8_beat_pad_1_2",
+      "label": "Loop 1/8 Beat (Pad 1)",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_8_beat_pad_1_2",
+        "type": "note",
+        "ch": 8,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_8_beat_pad_1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_4_beat_pad_2_2",
+      "fig": "channel2_loop_1_4_beat_pad_2_2",
+      "label": "Loop 1/4 Beat (Pad 2)",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_4_beat_pad_2_2",
+        "type": "note",
+        "ch": 8,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_4_beat_pad_2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_2_beat_pad_3_2",
+      "fig": "channel2_loop_1_2_beat_pad_3_2",
+      "label": "Loop 1/2 Beat (Pad 3)",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_2_beat_pad_3_2",
+        "type": "note",
+        "ch": 8,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_2_beat_pad_3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_1_beat_pad_4_2",
+      "fig": "channel2_loop_1_beat_pad_4_2",
+      "label": "Loop 1 Beat (Pad 4)",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_1_beat_pad_4_2",
+        "type": "note",
+        "ch": 8,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_1_beat_pad_4_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_2_beat_pad_5_2",
+      "fig": "channel2_loop_2_beat_pad_5_2",
+      "label": "Loop 2 Beat (Pad 5)",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_2_beat_pad_5_2",
+        "type": "note",
+        "ch": 8,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_2_beat_pad_5_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_2_beat_pad_6",
+      "fig": "channel2_loop_2_beat_pad_6",
+      "label": "Loop 2 Beat (Pad 6)",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_2_beat_pad_6",
+        "type": "note",
+        "ch": 8,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_2_beat_pad_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_8_beat_pad_7_2",
+      "fig": "channel2_loop_8_beat_pad_7_2",
+      "label": "Loop 8 Beat (Pad 7)",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_8_beat_pad_7_2",
+        "type": "note",
+        "ch": 8,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_8_beat_pad_7_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_loop_2_beat_pad_8",
+      "fig": "channel2_loop_2_beat_pad_8",
+      "label": "Loop 2 Beat (Pad 8)",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_loop_2_beat_pad_8",
+        "type": "note",
+        "ch": 8,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[channel2_loop_2_beat_pad_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_1_3",
+      "fig": "channel2_pad_1_3",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 127.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_1_3",
+        "type": "note",
+        "ch": 8,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_2_3",
+      "fig": "channel2_pad_2_3",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_2_3",
+        "type": "note",
+        "ch": 8,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_3_3",
+      "fig": "channel2_pad_3_3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_3_3",
+        "type": "note",
+        "ch": 8,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_4_3",
+      "fig": "channel2_pad_4_3",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_4_3",
+        "type": "note",
+        "ch": 8,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_4_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_5_3",
+      "fig": "channel2_pad_5_3",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_5_3",
+        "type": "note",
+        "ch": 8,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_5_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_6_3",
+      "fig": "channel2_pad_6_3",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 33.2,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_6_3",
+        "type": "note",
+        "ch": 8,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_6_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_7_3",
+      "fig": "channel2_pad_7_3",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_7_3",
+        "type": "note",
+        "ch": 8,
+        "code": 102,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_7_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_8_3",
+      "fig": "channel2_pad_8_3",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 48.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_8_3",
+        "type": "note",
+        "ch": 8,
+        "code": 103,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_8_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_1_4",
+      "fig": "channel2_pad_1_4",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_1_4",
+        "type": "note",
+        "ch": 8,
+        "code": 104,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_2_4",
+      "fig": "channel2_pad_2_4",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_2_4",
+        "type": "note",
+        "ch": 8,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_3_4",
+      "fig": "channel2_pad_3_4",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_3_4",
+        "type": "note",
+        "ch": 8,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_4_4",
+      "fig": "channel2_pad_4_4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_4_4",
+        "type": "note",
+        "ch": 8,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_4_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_5_4",
+      "fig": "channel2_pad_5_4",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 134.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_5_4",
+        "type": "note",
+        "ch": 8,
+        "code": 108,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_5_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_6_4",
+      "fig": "channel2_pad_6_4",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_6_4",
+        "type": "note",
+        "ch": 8,
+        "code": 109,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_6_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_7_4",
+      "fig": "channel2_pad_7_4",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_7_4",
+        "type": "note",
+        "ch": 8,
+        "code": 110,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_7_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_pad_8_4",
+      "fig": "channel2_pad_8_4",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 140.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_pad_8_4",
+        "type": "note",
+        "ch": 8,
+        "code": 111,
+        "shift_name": null
+      },
+      "notes": "[channel2_pad_8_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_1_backward_2",
+      "fig": "channel1_beat_jump_1_backward_2",
+      "label": "Beat jump 1 backward",
+      "kind": "button",
+      "x": 25.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_1_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 112,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_1_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_1_forward_2",
+      "fig": "channel1_beat_jump_1_forward_2",
+      "label": "Beat jump 1 forward",
+      "kind": "button",
+      "x": 33.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_1_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 113,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_1_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_2_backward_2",
+      "fig": "channel1_beat_jump_2_backward_2",
+      "label": "Beat jump 2 backward",
+      "kind": "button",
+      "x": 41.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_2_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 114,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_2_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_2_forward_2",
+      "fig": "channel1_beat_jump_2_forward_2",
+      "label": "Beat jump 2 forward",
+      "kind": "button",
+      "x": 48.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_2_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 115,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_2_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_4_backward_2",
+      "fig": "channel1_beat_jump_4_backward_2",
+      "label": "Beat jump 4 backward",
+      "kind": "button",
+      "x": 56.6,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_4_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 116,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_4_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_4_forward_2",
+      "fig": "channel1_beat_jump_4_forward_2",
+      "label": "Beat jump 4 forward",
+      "kind": "button",
+      "x": 64.4,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_4_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 117,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_4_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_8_backward_2",
+      "fig": "channel1_beat_jump_8_backward_2",
+      "label": "Beat jump 8 backward",
+      "kind": "button",
+      "x": 72.2,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_8_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 118,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_8_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_8_forward_2",
+      "fig": "channel1_beat_jump_8_forward_2",
+      "label": "Beat jump 8 forward",
+      "kind": "button",
+      "x": 80.0,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_8_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_8_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_16_backward_2",
+      "fig": "channel1_beat_jump_16_backward_2",
+      "label": "Beat jump 16 backward",
+      "kind": "button",
+      "x": 87.8,
+      "y": 140.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_16_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 120,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_16_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_16_forward_2",
+      "fig": "channel1_beat_jump_16_forward_2",
+      "label": "Beat jump 16 forward",
+      "kind": "button",
+      "x": 2.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_16_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 121,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_16_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_32_backward_2",
+      "fig": "channel1_beat_jump_32_backward_2",
+      "label": "Beat jump 32 backward",
+      "kind": "button",
+      "x": 9.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_32_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 122,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_32_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_32_forward_2",
+      "fig": "channel1_beat_jump_32_forward_2",
+      "label": "Beat jump 32 forward",
+      "kind": "button",
+      "x": 17.6,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_32_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 123,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_32_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_64_backward_2",
+      "fig": "channel1_beat_jump_64_backward_2",
+      "label": "Beat jump 64 backward",
+      "kind": "button",
+      "x": 25.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_64_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 124,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_64_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_64_forward_2",
+      "fig": "channel1_beat_jump_64_forward_2",
+      "label": "Beat jump 64 forward",
+      "kind": "button",
+      "x": 33.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_64_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 125,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_64_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_128_backward_2",
+      "fig": "channel1_beat_jump_128_backward_2",
+      "label": "Beat jump 128 backward",
+      "kind": "button",
+      "x": 41.0,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_128_backward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 126,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_128_backward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_beat_jump_128_forward_2",
+      "fig": "channel1_beat_jump_128_forward_2",
+      "label": "Beat jump 128 forward",
+      "kind": "button",
+      "x": 48.8,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_beat_jump_128_forward_2",
+        "type": "note",
+        "ch": 8,
+        "code": 127,
+        "shift_name": null
+      },
+      "notes": "[channel1_beat_jump_128_forward_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-crossfader",
+      "fig": "crossfader",
+      "label": "Crossfader",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 147.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-move_library",
+      "fig": "move_library",
+      "label": "Move Vertical (Browser Knob)",
+      "kind": "encoder",
+      "x": 64.4,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_library",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[move_library] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-move_horizontal",
+      "fig": "move_horizontal",
+      "label": "Move Horizontal (Browser Knob)",
+      "kind": "encoder",
+      "x": 72.2,
+      "y": 147.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "browser",
+      "midi": {
+        "name": "move_horizontal",
+        "type": "cc",
+        "ch": 4,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[move_horizontal] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb",
+      "fig": "input_msb",
+      "label": "Volume Deck A",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 147.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb",
+        "type": "cc",
+        "ch": 2,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[input_msb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb",
+      "fig": "input_lsb",
+      "label": "Volume Deck A",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 147.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb",
+        "type": "cc",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[input_lsb] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_2",
+      "fig": "input_msb_2",
+      "label": "Volume Deck A",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[input_msb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_2",
+      "fig": "input_lsb_2",
+      "label": "Volume Deck A",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_2",
+        "type": "cc",
+        "ch": 5,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_3",
+      "fig": "input_msb_3",
+      "label": "EQ LOW Deck A",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[input_msb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_3",
+      "fig": "input_lsb_3",
+      "label": "EQ LOW Deck A",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_3",
+        "type": "cc",
+        "ch": 2,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_4",
+      "fig": "input_msb_4",
+      "label": "EQ MID Deck A",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[input_msb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_4",
+      "fig": "input_lsb_4",
+      "label": "EQ MID Deck A",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_4",
+        "type": "cc",
+        "ch": 2,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_5",
+      "fig": "input_msb_5",
+      "label": "EQ HIGH Deck A",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_5",
+        "type": "cc",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[input_msb_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_5",
+      "fig": "input_lsb_5",
+      "label": "EQ HIGH Deck A",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_5",
+        "type": "cc",
+        "ch": 2,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_6",
+      "fig": "input_msb_6",
+      "label": "Gain Deck A",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[input_msb_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_6",
+      "fig": "input_lsb_6",
+      "label": "Gain Deck A",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_6",
+        "type": "cc",
+        "ch": 2,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel1_filter_deck_a",
+      "fig": "channel1_filter_deck_a",
+      "label": "Filter Deck A",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 153.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_filter_deck_a",
+        "type": "cc",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel1_filter_deck_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_7",
+      "fig": "input_msb_7",
+      "label": "inputMSB",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 153.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_7",
+        "type": "cc",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_msb_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_7",
+      "fig": "input_lsb_7",
+      "label": "inputLSB",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 160.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_7",
+        "type": "cc",
+        "ch": 2,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_8",
+      "fig": "input_msb_8",
+      "label": "inputMSB",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 160.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_8",
+        "type": "cc",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_msb_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_8",
+      "fig": "input_lsb_8",
+      "label": "inputLSB",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 160.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_8",
+        "type": "cc",
+        "ch": 5,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch",
+      "fig": "input_touch",
+      "label": "Jog Wheel Touch Deck A",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_2",
+      "fig": "input_touch_2",
+      "label": "Jog Wheel Touch Deck A",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[input_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel",
+      "fig": "input_wheel",
+      "label": "Scratch Deck A (Jog-Wheel)",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel",
+        "type": "cc",
+        "ch": 2,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[input_wheel] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_2",
+      "fig": "input_wheel_2",
+      "label": "Pitch Bend Deck A (Jog-Wheel)",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_3",
+      "fig": "input_touch_3",
+      "label": "Jog Wheel Touch Deck A",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_3",
+        "type": "note",
+        "ch": 5,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_4",
+      "fig": "input_touch_4",
+      "label": "Jog Wheel Shift Touch Deck A",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_4",
+        "type": "cc",
+        "ch": 5,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[input_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_3",
+      "fig": "input_wheel_3",
+      "label": "Scratch Deck A (Jog-Wheel)",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_3",
+        "type": "cc",
+        "ch": 5,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_4",
+      "fig": "input_wheel_4",
+      "label": "Pitch Bend Deck A (Jog-Wheel)",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 160.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_4",
+        "type": "cc",
+        "ch": 5,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_9",
+      "fig": "input_msb_9",
+      "label": "Volume Deck B",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 160.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_9",
+        "type": "cc",
+        "ch": 3,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[input_msb_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_9",
+      "fig": "input_lsb_9",
+      "label": "Volume Deck B",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 166.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_9",
+        "type": "cc",
+        "ch": 6,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_10",
+      "fig": "input_msb_10",
+      "label": "Volume Deck B",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 166.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_10",
+        "type": "cc",
+        "ch": 6,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[input_msb_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_10",
+      "fig": "input_lsb_10",
+      "label": "Volume Deck B",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 166.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_10",
+        "type": "cc",
+        "ch": 3,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_11",
+      "fig": "input_msb_11",
+      "label": "EQ LOW Deck B",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_11",
+        "type": "cc",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[input_msb_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_11",
+      "fig": "input_lsb_11",
+      "label": "EQ LOW Deck B",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_11",
+        "type": "cc",
+        "ch": 3,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_12",
+      "fig": "input_msb_12",
+      "label": "EQ MID Deck B",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_12",
+        "type": "cc",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[input_msb_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_12",
+      "fig": "input_lsb_12",
+      "label": "EQ MID Deck B",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_12",
+        "type": "cc",
+        "ch": 3,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_13",
+      "fig": "input_msb_13",
+      "label": "EQ HIGH Deck B",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_13",
+        "type": "cc",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[input_msb_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_13",
+      "fig": "input_lsb_13",
+      "label": "EQ HIGH Deck B",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_13",
+        "type": "cc",
+        "ch": 3,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_14",
+      "fig": "input_msb_14",
+      "label": "Gain Deck A",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 166.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_14",
+        "type": "cc",
+        "ch": 3,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[input_msb_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_14",
+      "fig": "input_lsb_14",
+      "label": "Gain Deck A",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 166.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_14",
+        "type": "cc",
+        "ch": 3,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-channel2_filter_deck_b",
+      "fig": "channel2_filter_deck_b",
+      "label": "Filter Deck B",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 166.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_filter_deck_b",
+        "type": "cc",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[channel2_filter_deck_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_15",
+      "fig": "input_msb_15",
+      "label": "inputMSB",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 173.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_15",
+        "type": "cc",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_msb_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_15",
+      "fig": "input_lsb_15",
+      "label": "inputLSB",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 173.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_15",
+        "type": "cc",
+        "ch": 3,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_msb_16",
+      "fig": "input_msb_16",
+      "label": "inputMSB",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 173.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_msb_16",
+        "type": "cc",
+        "ch": 6,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_msb_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_lsb_16",
+      "fig": "input_lsb_16",
+      "label": "inputLSB",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 173.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_lsb_16",
+        "type": "cc",
+        "ch": 6,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[input_lsb_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_5",
+      "fig": "input_touch_5",
+      "label": "Jog Wheel Touch Deck B",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_5",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_touch_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_6",
+      "fig": "input_touch_6",
+      "label": "Jog Wheel Touch Deck B",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_6",
+        "type": "cc",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[input_touch_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_5",
+      "fig": "input_wheel_5",
+      "label": "Scratch Deck B (Jog-Wheel)",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_5",
+        "type": "cc",
+        "ch": 3,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_6",
+      "fig": "input_wheel_6",
+      "label": "Pitch Bend Deck B (Jog-Wheel)",
+      "kind": "jog",
+      "x": 56.6,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_6",
+        "type": "cc",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_7",
+      "fig": "input_touch_7",
+      "label": "Jog Wheel Touch Deck B",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_7",
+        "type": "note",
+        "ch": 6,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[input_touch_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_touch_8",
+      "fig": "input_touch_8",
+      "label": "Jog Wheel Shift Touch Deck B",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_touch_8",
+        "type": "cc",
+        "ch": 6,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[input_touch_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_7",
+      "fig": "input_wheel_7",
+      "label": "Scratch Deck B (Jog-Wheel)",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_7",
+        "type": "cc",
+        "ch": 6,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-input_wheel_8",
+      "fig": "input_wheel_8",
+      "label": "Pitch Bend Deck B (Jog-Wheel)",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 173.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "input_wheel_8",
+        "type": "cc",
+        "ch": 6,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[input_wheel_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-deck_selector",
+      "fig": "deck_selector",
+      "label": "Activate Deck1 (FX1 button)",
+      "kind": "button",
+      "x": 2.0,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_selector",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[deck_selector] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-deck_selector_2",
+      "fig": "deck_selector_2",
+      "label": "Activate Deck2 (FX2 button)",
+      "kind": "button",
+      "x": 9.8,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_selector_2",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[deck_selector_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-deck_selector_3",
+      "fig": "deck_selector_3",
+      "label": "Activate Deck3 (FX3 button)",
+      "kind": "button",
+      "x": 17.6,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_selector_3",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[deck_selector_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "hercules-djcontrol-inpulse-500-deck_selector_4",
+      "fig": "deck_selector_4",
+      "label": "Activate Deck4 (FX4 button)",
+      "kind": "button",
+      "x": 25.4,
+      "y": 179.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_selector_4",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[deck_selector_4] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

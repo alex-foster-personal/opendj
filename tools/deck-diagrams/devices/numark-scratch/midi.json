@@ -1,0 +1,482 @@
+{
+  "source": "mixxx:Numark-Scratch.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-scratch/source/Numark-Scratch.midi.xml",
+  "device": "Numark Scratch",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "set_channel_input",
+      "section": "mixer",
+      "type": "note",
+      "ch": 16,
+      "code": 87,
+      "notes": "Mixxx NumarkScratch.setChannelInput [set_channel_input]"
+    },
+    {
+      "name": "set_channel_input_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 16,
+      "code": 96,
+      "notes": "Mixxx NumarkScratch.setChannelInput [set_channel_input_2]"
+    },
+    {
+      "name": "master_input",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 8,
+      "notes": "Mixxx NumarkScratch.xfader.crossfader.input [master_input]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 13,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx NumarkScratch.deck[0].gain.input [channel1_input]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx NumarkScratch.deck[1].gain.input [channel2_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx NumarkScratch.deck[0].treble.input [equalizer_rack1_channel1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx NumarkScratch.deck[1].treble.input [equalizer_rack1_channel2_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx NumarkScratch.deck[0].mid.input [equalizer_rack1_channel1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx NumarkScratch.deck[1].mid.input [equalizer_rack1_channel2_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx NumarkScratch.deck[0].bass.input [equalizer_rack1_channel1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx NumarkScratch.deck[1].bass.input [equalizer_rack1_channel2_input_3]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx NumarkScratch.deck[0].filter.input [quick_effect_rack1_channel1_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx NumarkScratch.deck[1].filter.input [quick_effect_rack1_channel2_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx NumarkScratch.deck[0].volume.input [channel1_input_2]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx NumarkScratch.deck[1].volume.input [channel2_input_2]"
+    },
+    {
+      "name": "mixer_profile_input",
+      "section": "mixer",
+      "type": "note",
+      "ch": 16,
+      "code": 30,
+      "notes": "Mixxx NumarkScratch.xfader.xFaderReverse.input [mixer_profile_input]"
+    },
+    {
+      "name": "set_curve",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 9,
+      "notes": "Mixxx NumarkScratch.xfader.setCurve [set_curve]"
+    },
+    {
+      "name": "master_input_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 16,
+      "code": 50,
+      "notes": "Mixxx NumarkScratch.shiftButton.input [master_input_2]"
+    },
+    {
+      "name": "mode_button_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 0,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.modeButtonPress [mode_button_press]"
+    },
+    {
+      "name": "mode_button_press_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 0,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.modeButtonPress [mode_button_press_2]"
+    },
+    {
+      "name": "mode_button_press_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.modeButtonPress [mode_button_press_3]"
+    },
+    {
+      "name": "mode_button_press_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.modeButtonPress [mode_button_press_4]"
+    },
+    {
+      "name": "mode_button_press_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.modeButtonPress [mode_button_press_5]"
+    },
+    {
+      "name": "mode_button_press_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.modeButtonPress [mode_button_press_6]"
+    },
+    {
+      "name": "pad_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press]"
+    },
+    {
+      "name": "pad_press_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 20,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_2]"
+    },
+    {
+      "name": "pad_press_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 21,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_3]"
+    },
+    {
+      "name": "pad_press_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 21,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_4]"
+    },
+    {
+      "name": "pad_press_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 22,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_5]"
+    },
+    {
+      "name": "pad_press_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 22,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_6]"
+    },
+    {
+      "name": "pad_press_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 23,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_7]"
+    },
+    {
+      "name": "pad_press_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 23,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_8]"
+    },
+    {
+      "name": "pad_press_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 28,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_9]"
+    },
+    {
+      "name": "pad_press_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 28,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_10]"
+    },
+    {
+      "name": "pad_press_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 29,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_11]"
+    },
+    {
+      "name": "pad_press_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 29,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_12]"
+    },
+    {
+      "name": "pad_press_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 30,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_13]"
+    },
+    {
+      "name": "pad_press_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 30,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_14]"
+    },
+    {
+      "name": "pad_press_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 31,
+      "notes": "Mixxx NumarkScratch.deck[0].padSection.padPress [pad_press_15]"
+    },
+    {
+      "name": "pad_press_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 31,
+      "notes": "Mixxx NumarkScratch.deck[1].padSection.padPress [pad_press_16]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 52,
+      "notes": "Mixxx NumarkScratch.deck[0].loopMinus.input [channel1_input_3]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 53,
+      "notes": "Mixxx NumarkScratch.deck[0].loopPlus.input [channel1_input_4]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 52,
+      "notes": "Mixxx NumarkScratch.deck[1].loopMinus.input [channel2_input_3]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 53,
+      "notes": "Mixxx NumarkScratch.deck[1].loopPlus.input [channel2_input_4]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 63,
+      "notes": "Mixxx NumarkScratch.deck[0].loopButton.input [channel1_input_5]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 63,
+      "notes": "Mixxx NumarkScratch.deck[1].loopButton.input [channel2_input_5]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input",
+      "section": "effect",
+      "type": "cc",
+      "ch": 9,
+      "code": 4,
+      "notes": "Mixxx NumarkScratch.effect[0].dryWetKnob.input [effect_rack1_effect_unit1_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input",
+      "section": "effect",
+      "type": "cc",
+      "ch": 10,
+      "code": 4,
+      "notes": "Mixxx NumarkScratch.effect[1].dryWetKnob.input [effect_rack1_effect_unit2_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "notes": "Mixxx NumarkScratch.effect[0].effectButtons[0].input [effect_rack1_effect_unit1_input_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "notes": "Mixxx NumarkScratch.effect[0].effectButtons[1].input [effect_rack1_effect_unit1_input_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "notes": "Mixxx NumarkScratch.effect[0].effectButtons[2].input [effect_rack1_effect_unit1_input_4]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx NumarkScratch.effect[1].effectButtons[0].input [effect_rack1_effect_unit2_input_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input_3",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 4,
+      "notes": "Mixxx NumarkScratch.effect[1].effectButtons[1].input [effect_rack1_effect_unit2_input_3]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input_4",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 5,
+      "notes": "Mixxx NumarkScratch.effect[1].effectButtons[2].input [effect_rack1_effect_unit2_input_4]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input_5",
+      "section": "effect",
+      "type": "cc",
+      "ch": 9,
+      "code": 3,
+      "notes": "Mixxx NumarkScratch.effect[0].paddle.input [effect_rack1_effect_unit1_input_5]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input_5",
+      "section": "effect",
+      "type": "cc",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx NumarkScratch.effect[1].paddle.input [effect_rack1_effect_unit2_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx NumarkScratch.deck[0].pflButton.input [channel1_input_6]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx NumarkScratch.deck[1].pflButton.input [channel2_input_6]"
+    }
+  ]
+}

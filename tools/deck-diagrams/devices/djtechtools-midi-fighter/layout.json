@@ -1,0 +1,340 @@
+{
+  "device": "DJ TechTools MIDI Fighter",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "djtechtools-midi-fighter-button_down",
+      "fig": "button_down",
+      "label": "button_down",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down",
+        "type": "note",
+        "ch": 3,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[button_down] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_2",
+      "fig": "button_down_2",
+      "label": "button_down",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_2",
+        "type": "note",
+        "ch": 3,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[button_down_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_3",
+      "fig": "button_down_3",
+      "label": "button_down",
+      "kind": "button",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_3",
+        "type": "note",
+        "ch": 3,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[button_down_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_4",
+      "fig": "button_down_4",
+      "label": "button_down",
+      "kind": "button",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_4",
+        "type": "note",
+        "ch": 3,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[button_down_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_5",
+      "fig": "button_down_5",
+      "label": "button_down",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_5",
+        "type": "note",
+        "ch": 3,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[button_down_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_6",
+      "fig": "button_down_6",
+      "label": "button_down",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_6",
+        "type": "note",
+        "ch": 3,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[button_down_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_7",
+      "fig": "button_down_7",
+      "label": "button_down",
+      "kind": "button",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_7",
+        "type": "note",
+        "ch": 3,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[button_down_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_8",
+      "fig": "button_down_8",
+      "label": "button_down",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_8",
+        "type": "note",
+        "ch": 3,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[button_down_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_9",
+      "fig": "button_down_9",
+      "label": "button_down",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_9",
+        "type": "note",
+        "ch": 3,
+        "code": 44,
+        "shift_name": null
+      },
+      "notes": "[button_down_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_10",
+      "fig": "button_down_10",
+      "label": "button_down",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_10",
+        "type": "note",
+        "ch": 3,
+        "code": 45,
+        "shift_name": null
+      },
+      "notes": "[button_down_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_11",
+      "fig": "button_down_11",
+      "label": "button_down",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_11",
+        "type": "note",
+        "ch": 3,
+        "code": 46,
+        "shift_name": null
+      },
+      "notes": "[button_down_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_12",
+      "fig": "button_down_12",
+      "label": "button_down",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_12",
+        "type": "note",
+        "ch": 3,
+        "code": 47,
+        "shift_name": null
+      },
+      "notes": "[button_down_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_13",
+      "fig": "button_down_13",
+      "label": "button_down",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_13",
+        "type": "note",
+        "ch": 3,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[button_down_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_14",
+      "fig": "button_down_14",
+      "label": "button_down",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_14",
+        "type": "note",
+        "ch": 3,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[button_down_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_15",
+      "fig": "button_down_15",
+      "label": "button_down",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_15",
+        "type": "note",
+        "ch": 3,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[button_down_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "djtechtools-midi-fighter-button_down_16",
+      "fig": "button_down_16",
+      "label": "button_down",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "button_down_16",
+        "type": "note",
+        "ch": 3,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[button_down_16] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

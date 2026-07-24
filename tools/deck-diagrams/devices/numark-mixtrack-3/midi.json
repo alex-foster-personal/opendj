@@ -1,0 +1,746 @@
+{
+  "source": "mixxx:Numark-Mixtrack-3.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-mixtrack-3/source/Numark-Mixtrack-3.midi.xml",
+  "device": "Numark Mixtrack (Pro) 3",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx NumarkMixtrack3.volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx NumarkMixtrack3.volume [volume_2]"
+    },
+    {
+      "name": "gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx gain [gain]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "head_gain",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx headGain [head_gain]"
+    },
+    {
+      "name": "browse_button",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx NumarkMixtrack3.BrowseButton [browse_button]"
+    },
+    {
+      "name": "browse_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx NumarkMixtrack3.BrowseKnob [browse_knob]"
+    },
+    {
+      "name": "load_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx NumarkMixtrack3.LoadButton [load_button]"
+    },
+    {
+      "name": "load_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx NumarkMixtrack3.LoadButton [load_button_2]"
+    },
+    {
+      "name": "pad_mode_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx NumarkMixtrack3.PadModeButton [pad_mode_button]"
+    },
+    {
+      "name": "pad_mode_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 13,
+      "notes": "Mixxx NumarkMixtrack3.PadModeButton [pad_mode_button_2]"
+    },
+    {
+      "name": "bpm_tap",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx NumarkMixtrack3.bpmTap [bpm_tap]"
+    },
+    {
+      "name": "bpm_tap_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 10,
+      "notes": "Mixxx NumarkMixtrack3.bpmTap [bpm_tap_2]"
+    },
+    {
+      "name": "fxbutton",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx NumarkMixtrack3.FXButton [fxbutton]"
+    },
+    {
+      "name": "fxbutton_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx NumarkMixtrack3.FXButton [fxbutton_2]"
+    },
+    {
+      "name": "fxbutton_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx NumarkMixtrack3.FXButton [fxbutton_3]"
+    },
+    {
+      "name": "fxbutton_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx NumarkMixtrack3.FXButton [fxbutton_4]"
+    },
+    {
+      "name": "fxbutton_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx NumarkMixtrack3.FXButton [fxbutton_5]"
+    },
+    {
+      "name": "fxbutton_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx NumarkMixtrack3.FXButton [fxbutton_6]"
+    },
+    {
+      "name": "pflbutton",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx NumarkMixtrack3.PFLButton [pflbutton]"
+    },
+    {
+      "name": "pflbutton_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx NumarkMixtrack3.PFLButton [pflbutton_2]"
+    },
+    {
+      "name": "play_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx NumarkMixtrack3.PlayButton [play_button]"
+    },
+    {
+      "name": "play_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx NumarkMixtrack3.PlayButton [play_button_2]"
+    },
+    {
+      "name": "cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx NumarkMixtrack3.CueButton [cue_button]"
+    },
+    {
+      "name": "cue_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx NumarkMixtrack3.CueButton [cue_button_2]"
+    },
+    {
+      "name": "sync_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx NumarkMixtrack3.SyncButton [sync_button]"
+    },
+    {
+      "name": "sync_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx NumarkMixtrack3.SyncButton [sync_button_2]"
+    },
+    {
+      "name": "shift_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx NumarkMixtrack3.ShiftButton [shift_button]"
+    },
+    {
+      "name": "shift_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx NumarkMixtrack3.ShiftButton [shift_button_2]"
+    },
+    {
+      "name": "eqknob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx NumarkMixtrack3.EQKnob [eqknob]"
+    },
+    {
+      "name": "eqknob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx NumarkMixtrack3.EQKnob [eqknob_2]"
+    },
+    {
+      "name": "eqknob_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx NumarkMixtrack3.EQKnob [eqknob_3]"
+    },
+    {
+      "name": "eqknob_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx NumarkMixtrack3.EQKnob [eqknob_4]"
+    },
+    {
+      "name": "eqknob_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx NumarkMixtrack3.EQKnob [eqknob_5]"
+    },
+    {
+      "name": "eqknob_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx NumarkMixtrack3.EQKnob [eqknob_6]"
+    },
+    {
+      "name": "filter_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx NumarkMixtrack3.FilterKnob [filter_knob]"
+    },
+    {
+      "name": "filter_knob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx NumarkMixtrack3.FilterKnob [filter_knob_2]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx NumarkMixtrack3.loop_in [loop_in]"
+    },
+    {
+      "name": "loop_in_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 19,
+      "notes": "Mixxx NumarkMixtrack3.loop_in [loop_in_2]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "Mixxx NumarkMixtrack3.loop_out [loop_out]"
+    },
+    {
+      "name": "loop_out_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 20,
+      "notes": "Mixxx NumarkMixtrack3.loop_out [loop_out_2]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 21,
+      "notes": "Mixxx NumarkMixtrack3.reloop_exit [reloop_exit]"
+    },
+    {
+      "name": "reloop_exit_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 21,
+      "notes": "Mixxx NumarkMixtrack3.reloop_exit [reloop_exit_2]"
+    },
+    {
+      "name": "loop_halve_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx NumarkMixtrack3.LoopHalveButton [loop_halve_button]"
+    },
+    {
+      "name": "loop_halve_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 22,
+      "notes": "Mixxx NumarkMixtrack3.LoopHalveButton [loop_halve_button_2]"
+    },
+    {
+      "name": "padloop_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button]"
+    },
+    {
+      "name": "padloop_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 23,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_2]"
+    },
+    {
+      "name": "padloop_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_3]"
+    },
+    {
+      "name": "padloop_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_4]"
+    },
+    {
+      "name": "padloop_button_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_5]"
+    },
+    {
+      "name": "padloop_button_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 25,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_6]"
+    },
+    {
+      "name": "padloop_button_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_7]"
+    },
+    {
+      "name": "padloop_button_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx NumarkMixtrack3.PADLoopButton [padloop_button_8]"
+    },
+    {
+      "name": "hot_cue_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button]"
+    },
+    {
+      "name": "hot_cue_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 27,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_2]"
+    },
+    {
+      "name": "hot_cue_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_3]"
+    },
+    {
+      "name": "hot_cue_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 28,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_4]"
+    },
+    {
+      "name": "hot_cue_button_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_5]"
+    },
+    {
+      "name": "hot_cue_button_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 29,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_6]"
+    },
+    {
+      "name": "hot_cue_button_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_7]"
+    },
+    {
+      "name": "hot_cue_button_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 30,
+      "notes": "Mixxx NumarkMixtrack3.HotCueButton [hot_cue_button_8]"
+    },
+    {
+      "name": "wheel_move",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx NumarkMixtrack3.WheelMove [wheel_move]"
+    },
+    {
+      "name": "wheel_move_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 17,
+      "notes": "Mixxx NumarkMixtrack3.WheelMove [wheel_move_2]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx NumarkMixtrack3.WheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx NumarkMixtrack3.WheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "toggle_jog_mode",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx NumarkMixtrack3.toggleJogMode [toggle_jog_mode]"
+    },
+    {
+      "name": "toggle_jog_mode_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx NumarkMixtrack3.toggleJogMode [toggle_jog_mode_2]"
+    },
+    {
+      "name": "pitch_fader_high_value",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx NumarkMixtrack3.PitchFaderHighValue [pitch_fader_high_value]"
+    },
+    {
+      "name": "pitch_fader_high_value_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx NumarkMixtrack3.PitchFaderHighValue [pitch_fader_high_value_2]"
+    },
+    {
+      "name": "pitch_fader_low_value",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 56,
+      "notes": "Mixxx NumarkMixtrack3.PitchFaderLowValue [pitch_fader_low_value]"
+    },
+    {
+      "name": "pitch_fader_low_value_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 56,
+      "notes": "Mixxx NumarkMixtrack3.PitchFaderLowValue [pitch_fader_low_value_2]"
+    },
+    {
+      "name": "pitch_bend_plus_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx NumarkMixtrack3.PitchBendPlusButton [pitch_bend_plus_button]"
+    },
+    {
+      "name": "pitch_bend_plus_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx NumarkMixtrack3.PitchBendPlusButton [pitch_bend_plus_button_2]"
+    },
+    {
+      "name": "pitch_bend_minus_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx NumarkMixtrack3.PitchBendMinusButton [pitch_bend_minus_button]"
+    },
+    {
+      "name": "pitch_bend_minus_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx NumarkMixtrack3.PitchBendMinusButton [pitch_bend_minus_button_2]"
+    },
+    {
+      "name": "sampler_button",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button]"
+    },
+    {
+      "name": "sampler_button_2",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 32,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_2]"
+    },
+    {
+      "name": "sampler_button_3",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_3]"
+    },
+    {
+      "name": "sampler_button_4",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 33,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_4]"
+    },
+    {
+      "name": "sampler_button_5",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 34,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_5]"
+    },
+    {
+      "name": "sampler_button_6",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 34,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_6]"
+    },
+    {
+      "name": "sampler_button_7",
+      "section": "sampler",
+      "type": "note",
+      "ch": 2,
+      "code": 35,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_7]"
+    },
+    {
+      "name": "sampler_button_8",
+      "section": "sampler",
+      "type": "note",
+      "ch": 3,
+      "code": 35,
+      "notes": "Mixxx NumarkMixtrack3.SamplerButton [sampler_button_8]"
+    },
+    {
+      "name": "strip_touch_effect",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx NumarkMixtrack3.StripTouchEffect [strip_touch_effect]"
+    },
+    {
+      "name": "strip_touch_effect_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx NumarkMixtrack3.StripTouchEffect [strip_touch_effect_2]"
+    },
+    {
+      "name": "strip_touch_effect_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx NumarkMixtrack3.StripTouchEffect [strip_touch_effect_3]"
+    },
+    {
+      "name": "strip_touch_effect_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 27,
+      "notes": "Mixxx NumarkMixtrack3.StripTouchEffect [strip_touch_effect_4]"
+    },
+    {
+      "name": "instant_fxoff",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 31,
+      "notes": "Mixxx NumarkMixtrack3.InstantFXOff [instant_fxoff]"
+    },
+    {
+      "name": "instant_fxoff_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 31,
+      "notes": "Mixxx NumarkMixtrack3.InstantFXOff [instant_fxoff_2]"
+    },
+    {
+      "name": "beat_knob",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 19,
+      "notes": "Mixxx NumarkMixtrack3.BeatKnob [beat_knob]"
+    },
+    {
+      "name": "beat_knob_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 19,
+      "notes": "Mixxx NumarkMixtrack3.BeatKnob [beat_knob_2]"
+    }
+  ]
+}

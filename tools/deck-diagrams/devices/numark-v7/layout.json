@@ -1,0 +1,1800 @@
+{
+  "device": "Numark V7",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "numark-v7-flanger",
+      "fig": "flanger",
+      "label": "flanger",
+      "kind": "button",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger",
+        "type": "note",
+        "ch": 1,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[flanger] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-flanger_2",
+      "fig": "flanger_2",
+      "label": "flanger",
+      "kind": "button",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "flanger_2",
+        "type": "note",
+        "ch": 1,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[flanger_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_slider_acoarse",
+      "fig": "fx_slider_acoarse",
+      "label": "FxSliderACoarse",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_slider_acoarse",
+        "type": "cc",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[fx_slider_acoarse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_slider_afine",
+      "fig": "fx_slider_afine",
+      "label": "FxSliderAFine",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_slider_afine",
+        "type": "cc",
+        "ch": 1,
+        "code": 119,
+        "shift_name": null
+      },
+      "notes": "[fx_slider_afine] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_slider_bcoarse",
+      "fig": "fx_slider_bcoarse",
+      "label": "FxSliderBCoarse",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_slider_bcoarse",
+        "type": "cc",
+        "ch": 1,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[fx_slider_bcoarse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_slider_bfine",
+      "fig": "fx_slider_bfine",
+      "label": "FxSliderBFine",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_slider_bfine",
+        "type": "cc",
+        "ch": 1,
+        "code": 121,
+        "shift_name": null
+      },
+      "notes": "[fx_slider_bfine] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_param",
+      "fig": "fx_param",
+      "label": "FxParam",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_param",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[fx_param] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_param_2",
+      "fig": "fx_param_2",
+      "label": "FxParam",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_param_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[fx_param_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_select",
+      "fig": "fx_select",
+      "label": "FxSelect",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_select",
+        "type": "cc",
+        "ch": 1,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[fx_select] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_select_2",
+      "fig": "fx_select_2",
+      "label": "FxSelect",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_select_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[fx_select_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_select_3",
+      "fig": "fx_select_3",
+      "label": "FxSelect",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_select_3",
+        "type": "note",
+        "ch": 1,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[fx_select_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-fx_select_4",
+      "fig": "fx_select_4",
+      "label": "FxSelect",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "fx_select_4",
+        "type": "note",
+        "ch": 1,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[fx_select_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-bpm_tap",
+      "fig": "bpm_tap",
+      "label": "bpm_tap",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bpm_tap",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[bpm_tap] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-bpm_tap_2",
+      "fig": "bpm_tap_2",
+      "label": "bpm_tap",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "bpm_tap_2",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[bpm_tap_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reverse_a",
+      "fig": "reverse_a",
+      "label": "ReverseA",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_a",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[reverse_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reverse_a_2",
+      "fig": "reverse_a_2",
+      "label": "ReverseA",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_a_2",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[reverse_a_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reverse_b",
+      "fig": "reverse_b",
+      "label": "ReverseB",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_b",
+        "type": "note",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[reverse_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reverse_b_2",
+      "fig": "reverse_b_2",
+      "label": "ReverseB",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reverse_b_2",
+        "type": "note",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[reverse_b_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-motor_off_button_a",
+      "fig": "motor_off_button_a",
+      "label": "MotorOffButtonA",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "motor_off_button_a",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[motor_off_button_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-motor_off_button_b",
+      "fig": "motor_off_button_b",
+      "label": "MotorOffButtonB",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "motor_off_button_b",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[motor_off_button_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-motor_start_knob_a",
+      "fig": "motor_start_knob_a",
+      "label": "MotorStartKnobA",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "motor_start_knob_a",
+        "type": "cc",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[motor_start_knob_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-motor_start_knob_b",
+      "fig": "motor_start_knob_b",
+      "label": "MotorStartKnobB",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "motor_start_knob_b",
+        "type": "cc",
+        "ch": 1,
+        "code": 78,
+        "shift_name": null
+      },
+      "notes": "[motor_start_knob_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-motor_stop_knob_a",
+      "fig": "motor_stop_knob_a",
+      "label": "MotorStopKnobA",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "motor_stop_knob_a",
+        "type": "cc",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[motor_stop_knob_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-motor_stop_knob_b",
+      "fig": "motor_stop_knob_b",
+      "label": "MotorStopKnobB",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "motor_stop_knob_b",
+        "type": "cc",
+        "ch": 1,
+        "code": 79,
+        "shift_name": null
+      },
+      "notes": "[motor_stop_knob_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-play_a",
+      "fig": "play_a",
+      "label": "PlayA",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_a",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[play_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-cue_default",
+      "fig": "cue_default",
+      "label": "cue_default",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[cue_default] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-beatsync",
+      "fig": "beatsync",
+      "label": "beatsync",
+      "kind": "button",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[beatsync] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-play_b",
+      "fig": "play_b",
+      "label": "PlayB",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "play_b",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[play_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-cue_default_2",
+      "fig": "cue_default_2",
+      "label": "cue_default",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "cue_default_2",
+        "type": "note",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[cue_default_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-beatsync_2",
+      "fig": "beatsync_2",
+      "label": "beatsync",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "beatsync_2",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[beatsync_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-shift_a",
+      "fig": "shift_a",
+      "label": "ShiftA",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_a",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[shift_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-shift_b",
+      "fig": "shift_b",
+      "label": "ShiftB",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_b",
+        "type": "note",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[shift_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot1_a",
+      "fig": "hot1_a",
+      "label": "Hot1A",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot1_a",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[hot1_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot2_a",
+      "fig": "hot2_a",
+      "label": "Hot2A",
+      "kind": "button",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot2_a",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[hot2_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot3_a",
+      "fig": "hot3_a",
+      "label": "Hot3A",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot3_a",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[hot3_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot4_a",
+      "fig": "hot4_a",
+      "label": "Hot4A",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot4_a",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[hot4_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot5_a",
+      "fig": "hot5_a",
+      "label": "Hot5A",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot5_a",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[hot5_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot1_b",
+      "fig": "hot1_b",
+      "label": "Hot1B",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot1_b",
+        "type": "note",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[hot1_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot2_b",
+      "fig": "hot2_b",
+      "label": "Hot2B",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot2_b",
+        "type": "note",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[hot2_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot3_b",
+      "fig": "hot3_b",
+      "label": "Hot3B",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot3_b",
+        "type": "note",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[hot3_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot4_b",
+      "fig": "hot4_b",
+      "label": "Hot4B",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot4_b",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[hot4_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-hot5_b",
+      "fig": "hot5_b",
+      "label": "Hot5B",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "hot5_b",
+        "type": "note",
+        "ch": 1,
+        "code": 56,
+        "shift_name": null
+      },
+      "notes": "[hot5_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-rate_temp_down",
+      "fig": "rate_temp_down",
+      "label": "rate_temp_down",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-rate_temp_up",
+      "fig": "rate_temp_up",
+      "label": "rate_temp_up",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-rate_temp_down_2",
+      "fig": "rate_temp_down_2",
+      "label": "rate_temp_down",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_down_2",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_down_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-rate_temp_up_2",
+      "fig": "rate_temp_up_2",
+      "label": "rate_temp_up",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_temp_up_2",
+        "type": "note",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[rate_temp_up_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-pitch_acoarse",
+      "fig": "pitch_acoarse",
+      "label": "PitchACoarse",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_acoarse",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[pitch_acoarse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-pitch_afine",
+      "fig": "pitch_afine",
+      "label": "PitchAFine",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_afine",
+        "type": "cc",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[pitch_afine] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-pitch_bcoarse",
+      "fig": "pitch_bcoarse",
+      "label": "PitchBCoarse",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bcoarse",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[pitch_bcoarse] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-pitch_bfine",
+      "fig": "pitch_bfine",
+      "label": "PitchBFine",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pitch_bfine",
+        "type": "cc",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[pitch_bfine] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-rate_range_a",
+      "fig": "rate_range_a",
+      "label": "RateRangeA",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_range_a",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[rate_range_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-rate_range_b",
+      "fig": "rate_range_b",
+      "label": "RateRangeB",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "rate_range_b",
+        "type": "note",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[rate_range_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-keylock",
+      "fig": "keylock",
+      "label": "keylock",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[keylock] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-keylock_2",
+      "fig": "keylock_2",
+      "label": "keylock",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "keylock_2",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[keylock_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-select_track_knob",
+      "fig": "select_track_knob",
+      "label": "SelectTrackKnob",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_track_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[select_track_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-load_selected_into_first_stopped",
+      "fig": "load_selected_into_first_stopped",
+      "label": "LoadSelectedIntoFirstStopped",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "load_selected_into_first_stopped",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[load_selected_into_first_stopped] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-select_next_playlist",
+      "fig": "select_next_playlist",
+      "label": "SelectNextPlaylist",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_next_playlist",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[select_next_playlist] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-select_prev_playlist",
+      "fig": "select_prev_playlist",
+      "label": "SelectPrevPlaylist",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "select_prev_playlist",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[select_prev_playlist] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-load_selected_track",
+      "fig": "load_selected_track",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-load_selected_into_first_stopped_2",
+      "fig": "load_selected_into_first_stopped_2",
+      "label": "LoadSelectedIntoFirstStopped",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "load_selected_into_first_stopped_2",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[load_selected_into_first_stopped_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-load_selected_track_2",
+      "fig": "load_selected_track_2",
+      "label": "LoadSelectedTrack",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "load_selected_track_2",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[load_selected_track_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-strip_search_a",
+      "fig": "strip_search_a",
+      "label": "StripSearchA",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "strip_search_a",
+        "type": "cc",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[strip_search_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-strip_search_b",
+      "fig": "strip_search_b",
+      "label": "StripSearchB",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "strip_search_b",
+        "type": "cc",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[strip_search_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_mode_a",
+      "fig": "loop_mode_a",
+      "label": "LoopModeA",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_mode_a",
+        "type": "note",
+        "ch": 1,
+        "code": 39,
+        "shift_name": null
+      },
+      "notes": "[loop_mode_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_mode_b",
+      "fig": "loop_mode_b",
+      "label": "LoopModeB",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_mode_b",
+        "type": "note",
+        "ch": 1,
+        "code": 72,
+        "shift_name": null
+      },
+      "notes": "[loop_mode_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reloop_exit",
+      "fig": "reloop_exit",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reloop_exit_2",
+      "fig": "reloop_exit_2",
+      "label": "reloop_exit",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit_2",
+        "type": "note",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[reloop_exit_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_in_a",
+      "fig": "loop_in_a",
+      "label": "loop_inA",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_a",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[loop_in_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_out_a",
+      "fig": "loop_out_a",
+      "label": "loop_outA",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_a",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[loop_out_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_in_b",
+      "fig": "loop_in_b",
+      "label": "loop_inB",
+      "kind": "button",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_b",
+        "type": "note",
+        "ch": 1,
+        "code": 73,
+        "shift_name": null
+      },
+      "notes": "[loop_in_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_out_b",
+      "fig": "loop_out_b",
+      "label": "loop_outB",
+      "kind": "button",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_b",
+        "type": "note",
+        "ch": 1,
+        "code": 74,
+        "shift_name": null
+      },
+      "notes": "[loop_out_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_halve",
+      "fig": "loop_halve",
+      "label": "loop_halve",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[loop_halve] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_double",
+      "fig": "loop_double",
+      "label": "loop_double",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[loop_double] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_halve_2",
+      "fig": "loop_halve_2",
+      "label": "loop_halve",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_halve_2",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[loop_halve_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_double_2",
+      "fig": "loop_double_2",
+      "label": "loop_double",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_double_2",
+        "type": "note",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[loop_double_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-select_a",
+      "fig": "select_a",
+      "label": "SelectA",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "select_a",
+        "type": "note",
+        "ch": 1,
+        "code": 42,
+        "shift_name": null
+      },
+      "notes": "[select_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-select_b",
+      "fig": "select_b",
+      "label": "SelectB",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "select_b",
+        "type": "note",
+        "ch": 1,
+        "code": 75,
+        "shift_name": null
+      },
+      "notes": "[select_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reloop_a",
+      "fig": "reloop_a",
+      "label": "ReloopA",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_a",
+        "type": "note",
+        "ch": 1,
+        "code": 43,
+        "shift_name": null
+      },
+      "notes": "[reloop_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-reloop_b",
+      "fig": "reloop_b",
+      "label": "ReloopB",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_b",
+        "type": "note",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[reloop_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_shift_up_a",
+      "fig": "loop_shift_up_a",
+      "label": "LoopShiftUpA",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_shift_up_a",
+        "type": "note",
+        "ch": 1,
+        "code": 38,
+        "shift_name": null
+      },
+      "notes": "[loop_shift_up_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_shift_down_a",
+      "fig": "loop_shift_down_a",
+      "label": "LoopShiftDownA",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_shift_down_a",
+        "type": "note",
+        "ch": 1,
+        "code": 37,
+        "shift_name": null
+      },
+      "notes": "[loop_shift_down_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_shift_up_b",
+      "fig": "loop_shift_up_b",
+      "label": "LoopShiftUpB",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_shift_up_b",
+        "type": "note",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[loop_shift_up_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-loop_shift_down_b",
+      "fig": "loop_shift_down_b",
+      "label": "LoopShiftDownB",
+      "kind": "button",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_shift_down_b",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[loop_shift_down_b] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-deck_select_l",
+      "fig": "deck_select_l",
+      "label": "DeckSelectL",
+      "kind": "button",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_select_l",
+        "type": "note",
+        "ch": 1,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[deck_select_l] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-deck_select_r",
+      "fig": "deck_select_r",
+      "label": "DeckSelectR",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "deck_select_r",
+        "type": "note",
+        "ch": 1,
+        "code": 125,
+        "shift_name": null
+      },
+      "notes": "[deck_select_r] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-master_l",
+      "fig": "master_l",
+      "label": "MasterL",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "master_l",
+        "type": "note",
+        "ch": 1,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[master_l] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-master_r",
+      "fig": "master_r",
+      "label": "MasterR",
+      "kind": "button",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "master_r",
+        "type": "note",
+        "ch": 1,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[master_r] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-scratch_a",
+      "fig": "scratch_a",
+      "label": "ScratchA",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_a",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[scratch_a] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "numark-v7-scratch_b",
+      "fig": "scratch_b",
+      "label": "ScratchB",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "scratch_b",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[scratch_b] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

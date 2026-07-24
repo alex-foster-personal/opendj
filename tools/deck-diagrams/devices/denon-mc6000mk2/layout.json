@@ -1,0 +1,3680 @@
+{
+  "device": "Denon MC6000MK2",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "denon-mc6000mk2-channel1_input",
+      "fig": "channel1_input",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel1_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input",
+      "fig": "channel3_input",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input",
+        "type": "note",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel3_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input",
+      "fig": "channel2_input",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input",
+        "type": "note",
+        "ch": 3,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel2_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input",
+      "fig": "channel4_input",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input",
+        "type": "note",
+        "ch": 4,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[channel4_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button",
+      "fig": "recv_deck_button",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button",
+        "type": "note",
+        "ch": 1,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input",
+      "fig": "input",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input",
+        "type": "note",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_filter_button",
+      "fig": "recv_filter_button",
+      "label": "recvFilterButton",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_filter_button",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[recv_filter_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_2",
+      "fig": "input_2",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_2",
+        "type": "note",
+        "ch": 1,
+        "code": 83,
+        "shift_name": null
+      },
+      "notes": "[input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_2",
+      "fig": "channel1_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_2",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_2",
+      "fig": "channel3_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_2",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_2",
+      "fig": "channel2_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_2",
+        "type": "note",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_2",
+      "fig": "channel4_input_2",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_2",
+        "type": "note",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_vinyl",
+      "fig": "recv_jog_touch_vinyl",
+      "label": "recvJogTouchVinyl",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_vinyl",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_vinyl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_vinyl_2",
+      "fig": "recv_jog_touch_vinyl_2",
+      "label": "recvJogTouchVinyl",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_vinyl_2",
+        "type": "note",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_vinyl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_vinyl_3",
+      "fig": "recv_jog_touch_vinyl_3",
+      "label": "recvJogTouchVinyl",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_vinyl_3",
+        "type": "note",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_vinyl_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_vinyl_4",
+      "fig": "recv_jog_touch_vinyl_4",
+      "label": "recvJogTouchVinyl",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_vinyl_4",
+        "type": "note",
+        "ch": 4,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_vinyl_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_3",
+      "fig": "input_3",
+      "label": "input",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_filter_button_2",
+      "fig": "recv_filter_button_2",
+      "label": "recvFilterButton",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_filter_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[recv_filter_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_4",
+      "fig": "input_4",
+      "label": "input",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 89,
+        "shift_name": null
+      },
+      "notes": "[input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_area_button",
+      "fig": "recv_area_button",
+      "label": "recvAreaButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_area_button",
+        "type": "note",
+        "ch": 1,
+        "code": 77,
+        "shift_name": null
+      },
+      "notes": "[recv_area_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_5",
+      "fig": "input_5",
+      "label": "input",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 87,
+        "shift_name": null
+      },
+      "notes": "[input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_6",
+      "fig": "input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_6",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_7",
+      "fig": "input_7",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_7",
+        "type": "cc",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "[input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_tap_button",
+      "fig": "recv_tap_button",
+      "label": "recvTapButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_tap_button",
+        "type": "note",
+        "ch": 1,
+        "code": 71,
+        "shift_name": null
+      },
+      "notes": "[recv_tap_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_vinyl",
+      "fig": "recv_jog_spin_vinyl",
+      "label": "recvJogSpinVinyl",
+      "kind": "jog",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_vinyl",
+        "type": "cc",
+        "ch": 1,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_vinyl] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_vinyl_2",
+      "fig": "recv_jog_spin_vinyl_2",
+      "label": "recvJogSpinVinyl",
+      "kind": "jog",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_vinyl_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_vinyl_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_vinyl_3",
+      "fig": "recv_jog_spin_vinyl_3",
+      "label": "recvJogSpinVinyl",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_vinyl_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_vinyl_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_plus_button",
+      "fig": "recv_bend_plus_button",
+      "label": "recvBendPlusButton",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_plus_button",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_plus_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_vinyl_4",
+      "fig": "recv_jog_spin_vinyl_4",
+      "label": "recvJogSpinVinyl",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_vinyl_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 81,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_vinyl_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_plus_button_2",
+      "fig": "recv_bend_plus_button_2",
+      "label": "recvBendPlusButton",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_plus_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_plus_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_plus_button_3",
+      "fig": "recv_bend_plus_button_3",
+      "label": "recvBendPlusButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_plus_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_plus_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_plus_button_4",
+      "fig": "recv_bend_plus_button_4",
+      "label": "recvBendPlusButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_plus_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_plus_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-crossfader",
+      "fig": "crossfader",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[crossfader] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter1",
+      "fig": "parameter1",
+      "label": "parameter1",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1",
+        "type": "cc",
+        "ch": 1,
+        "code": 20,
+        "shift_name": null
+      },
+      "notes": "[parameter1] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_3",
+      "fig": "channel1_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_3",
+        "type": "note",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_3",
+      "fig": "channel3_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_3",
+        "type": "note",
+        "ch": 2,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_3",
+      "fig": "channel2_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_3",
+        "type": "note",
+        "ch": 3,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_3",
+      "fig": "channel4_input_3",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_3",
+        "type": "note",
+        "ch": 4,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter3",
+      "fig": "parameter3",
+      "label": "parameter3",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3",
+        "type": "cc",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[parameter3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_8",
+      "fig": "input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_8",
+        "type": "note",
+        "ch": 1,
+        "code": 65,
+        "shift_name": null
+      },
+      "notes": "[input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_2",
+      "fig": "recv_deck_button_2",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_2",
+        "type": "note",
+        "ch": 4,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-volume",
+      "fig": "volume",
+      "label": "volume",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume",
+        "type": "cc",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[volume] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_3",
+      "fig": "recv_deck_button_3",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter2",
+      "fig": "parameter2",
+      "label": "parameter2",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2",
+        "type": "cc",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[parameter2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_key_lock_button",
+      "fig": "recv_key_lock_button",
+      "label": "recvKeyLockButton",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_key_lock_button",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[recv_key_lock_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_key_lock_button_2",
+      "fig": "recv_key_lock_button_2",
+      "label": "recvKeyLockButton",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_key_lock_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[recv_key_lock_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_key_lock_button_3",
+      "fig": "recv_key_lock_button_3",
+      "label": "recvKeyLockButton",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_key_lock_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[recv_key_lock_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_key_lock_button_4",
+      "fig": "recv_key_lock_button_4",
+      "label": "recvKeyLockButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_key_lock_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[recv_key_lock_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_right_button",
+      "fig": "recv_xfader_assign_right_button",
+      "label": "recvXfaderAssignRightButton",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_right_button",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_right_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-pregain",
+      "fig": "pregain",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain",
+        "type": "cc",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[pregain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_contour_knob",
+      "fig": "recv_xfader_contour_knob",
+      "label": "recvXfaderContourKnob",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_xfader_contour_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 69,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_contour_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_vinyl_button",
+      "fig": "recv_vinyl_button",
+      "label": "recvVinylButton",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_vinyl_button",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[recv_vinyl_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_vinyl_button_2",
+      "fig": "recv_vinyl_button_2",
+      "label": "recvVinylButton",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_vinyl_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[recv_vinyl_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_vinyl_button_3",
+      "fig": "recv_vinyl_button_3",
+      "label": "recvVinylButton",
+      "kind": "jog",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_vinyl_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[recv_vinyl_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_vinyl_button_4",
+      "fig": "recv_vinyl_button_4",
+      "label": "recvVinylButton",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_vinyl_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[recv_vinyl_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_left_button",
+      "fig": "recv_xfader_assign_left_button",
+      "label": "recvXfaderAssignLeftButton",
+      "kind": "fader",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_left_button",
+        "type": "note",
+        "ch": 1,
+        "code": 61,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_left_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter1_2",
+      "fig": "parameter1_2",
+      "label": "parameter1",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 10,
+        "shift_name": null
+      },
+      "notes": "[parameter1_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-head_mix",
+      "fig": "head_mix",
+      "label": "headMix",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_mix",
+        "type": "cc",
+        "ch": 1,
+        "code": 67,
+        "shift_name": null
+      },
+      "notes": "[head_mix] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_cue_mix_button",
+      "fig": "recv_cue_mix_button",
+      "label": "recvCueMixButton",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_cue_mix_button",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[recv_cue_mix_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_thru_button",
+      "fig": "recv_xfader_assign_thru_button",
+      "label": "recvXfaderAssignThruButton",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_thru_button",
+        "type": "note",
+        "ch": 1,
+        "code": 59,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_thru_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter3_2",
+      "fig": "parameter3_2",
+      "label": "parameter3",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[parameter3_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_out_button_input",
+      "fig": "loop_out_button_input",
+      "label": "loopOutButtonInput",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_button_input",
+        "type": "note",
+        "ch": 3,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_button_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_out_button_input_2",
+      "fig": "loop_out_button_input_2",
+      "label": "loopOutButtonInput",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_button_input_2",
+        "type": "note",
+        "ch": 4,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_button_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_out_button_input_3",
+      "fig": "loop_out_button_input_3",
+      "label": "loopOutButtonInput",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_button_input_3",
+        "type": "note",
+        "ch": 1,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_button_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_out_button_input_4",
+      "fig": "loop_out_button_input_4",
+      "label": "loopOutButtonInput",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_button_input_4",
+        "type": "note",
+        "ch": 2,
+        "code": 57,
+        "shift_name": null
+      },
+      "notes": "[loop_out_button_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_in_button_input",
+      "fig": "loop_in_button_input",
+      "label": "loopInButtonInput",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_button_input",
+        "type": "note",
+        "ch": 3,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in_button_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_in_button_input_2",
+      "fig": "loop_in_button_input_2",
+      "label": "loopInButtonInput",
+      "kind": "button",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_button_input_2",
+        "type": "note",
+        "ch": 4,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in_button_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_in_button_input_3",
+      "fig": "loop_in_button_input_3",
+      "label": "loopInButtonInput",
+      "kind": "button",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_button_input_3",
+        "type": "note",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in_button_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-loop_in_button_input_4",
+      "fig": "loop_in_button_input_4",
+      "label": "loopInButtonInput",
+      "kind": "button",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_button_input_4",
+        "type": "note",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[loop_in_button_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter1_3",
+      "fig": "parameter1_3",
+      "label": "parameter1",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[parameter1_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_thru_button_2",
+      "fig": "recv_xfader_assign_thru_button_2",
+      "label": "recvXfaderAssignThruButton",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_thru_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_thru_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter3_3",
+      "fig": "parameter3_3",
+      "label": "parameter3",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[parameter3_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_plus_button",
+      "fig": "recv_loop_cut_plus_button",
+      "label": "recvLoopCutPlusButton",
+      "kind": "button",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_plus_button",
+        "type": "note",
+        "ch": 1,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_plus_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_plus_button_2",
+      "fig": "recv_loop_cut_plus_button_2",
+      "label": "recvLoopCutPlusButton",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_plus_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_plus_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_plus_button_3",
+      "fig": "recv_loop_cut_plus_button_3",
+      "label": "recvLoopCutPlusButton",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_plus_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_plus_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_plus_button_4",
+      "fig": "recv_loop_cut_plus_button_4",
+      "label": "recvLoopCutPlusButton",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_plus_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_plus_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_right_button_2",
+      "fig": "recv_xfader_assign_right_button_2",
+      "label": "recvXfaderAssignRightButton",
+      "kind": "fader",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_right_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 51,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_right_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_left_button_2",
+      "fig": "recv_xfader_assign_left_button_2",
+      "label": "recvXfaderAssignLeftButton",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_left_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 49,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_left_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_panel_button",
+      "fig": "recv_panel_button",
+      "label": "recvPanelButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_panel_button",
+        "type": "note",
+        "ch": 1,
+        "code": 100,
+        "shift_name": null
+      },
+      "notes": "[recv_panel_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_4",
+      "fig": "channel1_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_4",
+        "type": "note",
+        "ch": 1,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_4",
+      "fig": "channel3_input_4",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_4",
+        "type": "note",
+        "ch": 2,
+        "code": 98,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-shift_button_input",
+      "fig": "shift_button_input",
+      "label": "shiftButtonInput",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_input",
+        "type": "note",
+        "ch": 1,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[shift_button_input] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-shift_button_input_2",
+      "fig": "shift_button_input_2",
+      "label": "shiftButtonInput",
+      "kind": "button",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_input_2",
+        "type": "note",
+        "ch": 2,
+        "code": 96,
+        "shift_name": null
+      },
+      "notes": "[shift_button_input_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_fwd_button",
+      "fig": "recv_fwd_button",
+      "label": "recvFwdButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_fwd_button",
+        "type": "note",
+        "ch": 1,
+        "code": 41,
+        "shift_name": null
+      },
+      "notes": "[recv_fwd_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button",
+      "fig": "recv_sampler_button",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button",
+        "type": "note",
+        "ch": 1,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_2",
+      "fig": "recv_sampler_button_2",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_2",
+        "type": "note",
+        "ch": 3,
+        "code": 35,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_filter_knob",
+      "fig": "recv_filter_knob",
+      "label": "recvFilterKnob",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_filter_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 102,
+        "shift_name": null
+      },
+      "notes": "[recv_filter_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_3",
+      "fig": "recv_sampler_button_3",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_4",
+      "fig": "recv_deck_button_4",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 94,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_4",
+      "fig": "recv_sampler_button_4",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_4",
+        "type": "note",
+        "ch": 3,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_5",
+      "fig": "recv_deck_button_5",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_5",
+        "type": "note",
+        "ch": 1,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_6",
+      "fig": "recv_deck_button_6",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_6",
+        "type": "note",
+        "ch": 1,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch",
+      "fig": "recv_jog_touch",
+      "label": "recvJogTouch",
+      "kind": "jog",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch",
+        "type": "note",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_2",
+      "fig": "recv_jog_touch_2",
+      "label": "recvJogTouch",
+      "kind": "jog",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_2",
+        "type": "note",
+        "ch": 2,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_3",
+      "fig": "recv_jog_touch_3",
+      "label": "recvJogTouch",
+      "kind": "jog",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_3",
+        "type": "note",
+        "ch": 3,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_touch_4",
+      "fig": "recv_jog_touch_4",
+      "label": "recvJogTouch",
+      "kind": "jog",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_touch_4",
+        "type": "note",
+        "ch": 4,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_touch_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_7",
+      "fig": "recv_deck_button_7",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_7",
+        "type": "note",
+        "ch": 1,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_auto_loop_button",
+      "fig": "recv_auto_loop_button",
+      "label": "recvAutoLoopButton",
+      "kind": "button",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_auto_loop_button",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[recv_auto_loop_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_auto_loop_button_2",
+      "fig": "recv_auto_loop_button_2",
+      "label": "recvAutoLoopButton",
+      "kind": "button",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_auto_loop_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[recv_auto_loop_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_5",
+      "fig": "channel1_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_5",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_auto_loop_button_3",
+      "fig": "recv_auto_loop_button_3",
+      "label": "recvAutoLoopButton",
+      "kind": "button",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_auto_loop_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[recv_auto_loop_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_5",
+      "fig": "channel3_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_5",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_auto_loop_button_4",
+      "fig": "recv_auto_loop_button_4",
+      "label": "recvAutoLoopButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_auto_loop_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[recv_auto_loop_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_4",
+      "fig": "channel2_input_4",
+      "label": "input",
+      "kind": "pad",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_4",
+        "type": "note",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_4",
+      "fig": "channel4_input_4",
+      "label": "input",
+      "kind": "pad",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_4",
+        "type": "note",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_9",
+      "fig": "input_9",
+      "label": "input",
+      "kind": "button",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_9",
+        "type": "note",
+        "ch": 1,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[input_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_10",
+      "fig": "input_10",
+      "label": "input",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_10",
+        "type": "cc",
+        "ch": 1,
+        "code": 92,
+        "shift_name": null
+      },
+      "notes": "[input_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_6",
+      "fig": "channel1_input_6",
+      "label": "input",
+      "kind": "pad",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_6",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_6",
+      "fig": "channel3_input_6",
+      "label": "input",
+      "kind": "pad",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_6",
+        "type": "note",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_5",
+      "fig": "channel2_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_5",
+        "type": "note",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_5",
+      "fig": "channel4_input_5",
+      "label": "input",
+      "kind": "pad",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_5",
+        "type": "note",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_censor_button",
+      "fig": "recv_censor_button",
+      "label": "recvCensorButton",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_censor_button",
+        "type": "note",
+        "ch": 1,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[recv_censor_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_censor_button_2",
+      "fig": "recv_censor_button_2",
+      "label": "recvCensorButton",
+      "kind": "button",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_censor_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[recv_censor_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_censor_button_3",
+      "fig": "recv_censor_button_3",
+      "label": "recvCensorButton",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_censor_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[recv_censor_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_censor_button_4",
+      "fig": "recv_censor_button_4",
+      "label": "recvCensorButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_censor_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 80,
+        "shift_name": null
+      },
+      "notes": "[recv_censor_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_11",
+      "fig": "input_11",
+      "label": "input",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_11",
+        "type": "cc",
+        "ch": 1,
+        "code": 90,
+        "shift_name": null
+      },
+      "notes": "[input_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_12",
+      "fig": "input_12",
+      "label": "input",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_12",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[input_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_13",
+      "fig": "input_13",
+      "label": "input",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_13",
+        "type": "cc",
+        "ch": 1,
+        "code": 88,
+        "shift_name": null
+      },
+      "notes": "[input_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_14",
+      "fig": "input_14",
+      "label": "input",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_14",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[input_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_view_button",
+      "fig": "recv_view_button",
+      "label": "recvViewButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_view_button",
+        "type": "note",
+        "ch": 1,
+        "code": 76,
+        "shift_name": null
+      },
+      "notes": "[recv_view_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_15",
+      "fig": "input_15",
+      "label": "input",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_15",
+        "type": "cc",
+        "ch": 1,
+        "code": 86,
+        "shift_name": null
+      },
+      "notes": "[input_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_track_select_knob",
+      "fig": "recv_track_select_knob",
+      "label": "recvTrackSelectKnob",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_track_select_knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 84,
+        "shift_name": null
+      },
+      "notes": "[recv_track_select_knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin",
+      "fig": "recv_jog_spin",
+      "label": "recvJogSpin",
+      "kind": "jog",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin",
+        "type": "cc",
+        "ch": 1,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_2",
+      "fig": "recv_jog_spin_2",
+      "label": "recvJogSpin",
+      "kind": "jog",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_2",
+        "type": "cc",
+        "ch": 2,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_3",
+      "fig": "recv_jog_spin_3",
+      "label": "recvJogSpin",
+      "kind": "jog",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_3",
+        "type": "cc",
+        "ch": 3,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_minus_button",
+      "fig": "recv_bend_minus_button",
+      "label": "recvBendMinusButton",
+      "kind": "button",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_minus_button",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_minus_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_jog_spin_4",
+      "fig": "recv_jog_spin_4",
+      "label": "recvJogSpin",
+      "kind": "jog",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 6.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_jog_spin_4",
+        "type": "cc",
+        "ch": 4,
+        "code": 82,
+        "shift_name": null
+      },
+      "notes": "[recv_jog_spin_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_minus_button_2",
+      "fig": "recv_bend_minus_button_2",
+      "label": "recvBendMinusButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_minus_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_minus_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_minus_button_3",
+      "fig": "recv_bend_minus_button_3",
+      "label": "recvBendMinusButton",
+      "kind": "button",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_minus_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_minus_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_bend_minus_button_4",
+      "fig": "recv_bend_minus_button_4",
+      "label": "recvBendMinusButton",
+      "kind": "button",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_bend_minus_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[recv_bend_minus_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-crossfader_2",
+      "fig": "crossfader_2",
+      "label": "crossfader",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[crossfader_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_tap_button_2",
+      "fig": "recv_tap_button_2",
+      "label": "recvTapButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_tap_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "[recv_tap_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-volume_2",
+      "fig": "volume_2",
+      "label": "volume",
+      "kind": "fader",
+      "x": 2.0,
+      "y": 75.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[volume_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter2_2",
+      "fig": "parameter2_2",
+      "label": "parameter2",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[parameter2_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_7",
+      "fig": "channel1_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_7",
+        "type": "note",
+        "ch": 1,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_7",
+      "fig": "channel3_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_7",
+        "type": "note",
+        "ch": 2,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_6",
+      "fig": "channel2_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_6",
+        "type": "note",
+        "ch": 3,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_6",
+      "fig": "channel4_input_6",
+      "label": "input",
+      "kind": "button",
+      "x": 41.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_6",
+        "type": "note",
+        "ch": 4,
+        "code": 66,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-pregain_2",
+      "fig": "pregain_2",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 75.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[pregain_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-input_16",
+      "fig": "input_16",
+      "label": "input",
+      "kind": "button",
+      "x": 56.6,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "input_16",
+        "type": "note",
+        "ch": 1,
+        "code": 64,
+        "shift_name": null
+      },
+      "notes": "[input_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_8",
+      "fig": "recv_deck_button_8",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 64.4,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_8",
+        "type": "note",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter1_4",
+      "fig": "parameter1_4",
+      "label": "parameter1",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter1_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "[parameter1_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_cue_mix_button_2",
+      "fig": "recv_cue_mix_button_2",
+      "label": "recvCueMixButton",
+      "kind": "button",
+      "x": 80.0,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_cue_mix_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[recv_cue_mix_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter3_4",
+      "fig": "parameter3_4",
+      "label": "parameter3",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 75.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter3_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[parameter3_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_cue_mix_button_3",
+      "fig": "recv_cue_mix_button_3",
+      "label": "recvCueMixButton",
+      "kind": "button",
+      "x": 2.0,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_cue_mix_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[recv_cue_mix_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_thru_button_3",
+      "fig": "recv_xfader_assign_thru_button_3",
+      "label": "recvXfaderAssignThruButton",
+      "kind": "fader",
+      "x": 9.8,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_thru_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 62,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_thru_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-volume_3",
+      "fig": "volume_3",
+      "label": "volume",
+      "kind": "fader",
+      "x": 17.6,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[volume_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-head_gain",
+      "fig": "head_gain",
+      "label": "headGain",
+      "kind": "fader",
+      "x": 25.4,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "head_gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 68,
+        "shift_name": null
+      },
+      "notes": "[head_gain] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_9",
+      "fig": "recv_deck_button_9",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 33.2,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_9",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_right_button_3",
+      "fig": "recv_xfader_assign_right_button_3",
+      "label": "recvXfaderAssignRightButton",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_right_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_right_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter2_3",
+      "fig": "parameter2_3",
+      "label": "parameter2",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[parameter2_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_cue_mix_button_4",
+      "fig": "recv_cue_mix_button_4",
+      "label": "recvCueMixButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 82.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_cue_mix_button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[recv_cue_mix_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_left_button_3",
+      "fig": "recv_xfader_assign_left_button_3",
+      "label": "recvXfaderAssignLeftButton",
+      "kind": "fader",
+      "x": 64.4,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_left_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 58,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_left_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-pregain_3",
+      "fig": "pregain_3",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 72.2,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[pregain_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-volume_4",
+      "fig": "volume_4",
+      "label": "volume",
+      "kind": "fader",
+      "x": 80.0,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "volume_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": null
+      },
+      "notes": "[volume_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_right_button_4",
+      "fig": "recv_xfader_assign_right_button_4",
+      "label": "recvXfaderAssignRightButton",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 82.0,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_right_button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_right_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-parameter2_4",
+      "fig": "parameter2_4",
+      "label": "parameter2",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "parameter2_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[parameter2_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel1_input_8",
+      "fig": "channel1_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 9.8,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel1_input_8",
+        "type": "note",
+        "ch": 1,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[channel1_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel3_input_8",
+      "fig": "channel3_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel3_input_8",
+        "type": "note",
+        "ch": 2,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[channel3_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_7",
+      "fig": "channel2_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_7",
+        "type": "note",
+        "ch": 3,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_7",
+      "fig": "channel4_input_7",
+      "label": "input",
+      "kind": "button",
+      "x": 33.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_7",
+        "type": "note",
+        "ch": 4,
+        "code": 107,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_left_button_4",
+      "fig": "recv_xfader_assign_left_button_4",
+      "label": "recvXfaderAssignLeftButton",
+      "kind": "fader",
+      "x": 41.0,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_left_button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_left_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-pregain_4",
+      "fig": "pregain_4",
+      "label": "pregain",
+      "kind": "fader",
+      "x": 48.8,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "pregain_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[pregain_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_minus_button",
+      "fig": "recv_loop_cut_minus_button",
+      "label": "recvLoopCutMinusButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_minus_button",
+        "type": "note",
+        "ch": 1,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_minus_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_minus_button_2",
+      "fig": "recv_loop_cut_minus_button_2",
+      "label": "recvLoopCutMinusButton",
+      "kind": "button",
+      "x": 64.4,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_minus_button_2",
+        "type": "note",
+        "ch": 2,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_minus_button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_minus_button_3",
+      "fig": "recv_loop_cut_minus_button_3",
+      "label": "recvLoopCutMinusButton",
+      "kind": "button",
+      "x": 72.2,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_minus_button_3",
+        "type": "note",
+        "ch": 3,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_minus_button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_loop_cut_minus_button_4",
+      "fig": "recv_loop_cut_minus_button_4",
+      "label": "recvLoopCutMinusButton",
+      "kind": "button",
+      "x": 80.0,
+      "y": 88.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_loop_cut_minus_button_4",
+        "type": "note",
+        "ch": 4,
+        "code": 105,
+        "shift_name": null
+      },
+      "notes": "[recv_loop_cut_minus_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_xfader_assign_thru_button_4",
+      "fig": "recv_xfader_assign_thru_button_4",
+      "label": "recvXfaderAssignThruButton",
+      "kind": "fader",
+      "x": 87.8,
+      "y": 88.5,
+      "w": 3.0,
+      "h": 8.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_xfader_assign_thru_button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 50,
+        "shift_name": null
+      },
+      "notes": "[recv_xfader_assign_thru_button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_back_button",
+      "fig": "recv_back_button",
+      "label": "recvBackButton",
+      "kind": "button",
+      "x": 2.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_back_button",
+        "type": "note",
+        "ch": 1,
+        "code": 48,
+        "shift_name": null
+      },
+      "notes": "[recv_back_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_list_button",
+      "fig": "recv_list_button",
+      "label": "recvListButton",
+      "kind": "button",
+      "x": 9.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_list_button",
+        "type": "note",
+        "ch": 1,
+        "code": 101,
+        "shift_name": null
+      },
+      "notes": "[recv_list_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel2_input_8",
+      "fig": "channel2_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 17.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel2_input_8",
+        "type": "note",
+        "ch": 3,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel2_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-channel4_input_8",
+      "fig": "channel4_input_8",
+      "label": "input",
+      "kind": "button",
+      "x": 25.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "channel4_input_8",
+        "type": "note",
+        "ch": 4,
+        "code": 99,
+        "shift_name": null
+      },
+      "notes": "[channel4_input_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-shift_button_input_3",
+      "fig": "shift_button_input_3",
+      "label": "shiftButtonInput",
+      "kind": "button",
+      "x": 33.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_input_3",
+        "type": "note",
+        "ch": 3,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[shift_button_input_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-shift_button_input_4",
+      "fig": "shift_button_input_4",
+      "label": "shiftButtonInput",
+      "kind": "button",
+      "x": 41.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button_input_4",
+        "type": "note",
+        "ch": 4,
+        "code": 97,
+        "shift_name": null
+      },
+      "notes": "[shift_button_input_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_track_select_button",
+      "fig": "recv_track_select_button",
+      "label": "recvTrackSelectButton",
+      "kind": "button",
+      "x": 48.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_track_select_button",
+        "type": "note",
+        "ch": 1,
+        "code": 40,
+        "shift_name": null
+      },
+      "notes": "[recv_track_select_button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_5",
+      "fig": "recv_sampler_button_5",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 56.6,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_5",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_6",
+      "fig": "recv_sampler_button_6",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 64.4,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_6",
+        "type": "note",
+        "ch": 3,
+        "code": 36,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_filter_knob_2",
+      "fig": "recv_filter_knob_2",
+      "label": "recvFilterKnob",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "other",
+      "midi": {
+        "name": "recv_filter_knob_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 103,
+        "shift_name": null
+      },
+      "notes": "[recv_filter_knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_7",
+      "fig": "recv_sampler_button_7",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 80.0,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_7",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_10",
+      "fig": "recv_deck_button_10",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 87.8,
+      "y": 95.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_10",
+        "type": "note",
+        "ch": 1,
+        "code": 95,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_sampler_button_8",
+      "fig": "recv_sampler_button_8",
+      "label": "recvSamplerButton",
+      "kind": "button",
+      "x": 2.0,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "recv_sampler_button_8",
+        "type": "note",
+        "ch": 3,
+        "code": 34,
+        "shift_name": null
+      },
+      "notes": "[recv_sampler_button_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_11",
+      "fig": "recv_deck_button_11",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 9.8,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_11",
+        "type": "note",
+        "ch": 1,
+        "code": 93,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "denon-mc6000mk2-recv_deck_button_12",
+      "fig": "recv_deck_button_12",
+      "label": "recvDeckButton",
+      "kind": "button",
+      "x": 17.6,
+      "y": 101.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "recv_deck_button_12",
+        "type": "note",
+        "ch": 1,
+        "code": 91,
+        "shift_name": null
+      },
+      "notes": "[recv_deck_button_12] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}

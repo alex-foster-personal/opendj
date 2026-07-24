@@ -1,0 +1,410 @@
+{
+  "source": "mixxx:DJ-Tech Mixer One.midi.xml",
+  "archived": "tools/deck-diagrams/devices/dj-tech-mixer-one/source/DJ-Tech Mixer One.midi.xml",
+  "device": "DJ-Tech Mixer One",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 11,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "volume_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "head_volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 12,
+      "notes": "Mixxx headVolume [head_volume]"
+    },
+    {
+      "name": "head_volume_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 12,
+      "notes": "Mixxx headVolume [head_volume_2]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 13,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "head_mix_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 13,
+      "notes": "Mixxx headMix [head_mix_2]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 15,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "crossfader_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 15,
+      "notes": "Mixxx crossfader [crossfader_2]"
+    },
+    {
+      "name": "clear_volume_leds",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "notes": "Mixxx MIXER1.clearVolumeLEDs [clear_volume_leds]"
+    },
+    {
+      "name": "clear_volume_leds_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 10,
+      "notes": "Mixxx MIXER1.clearVolumeLEDs [clear_volume_leds_2]"
+    },
+    {
+      "name": "xfader_curve",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 6,
+      "code": 14,
+      "notes": "Mixxx MIXER1.xfaderCurve [xfader_curve]"
+    },
+    {
+      "name": "xfader_curve_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 8,
+      "code": 14,
+      "notes": "Mixxx MIXER1.xfaderCurve [xfader_curve_2]"
+    },
+    {
+      "name": "mute",
+      "section": "mixer",
+      "type": "note",
+      "ch": 8,
+      "code": 5,
+      "notes": "Mixxx MIXER1.mute [mute]"
+    },
+    {
+      "name": "mute_2",
+      "section": "mixer",
+      "type": "note",
+      "ch": 6,
+      "code": 5,
+      "notes": "Mixxx MIXER1.mute [mute_2]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 16,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 17,
+      "notes": "Mixxx filterHigh [filter_high]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 18,
+      "notes": "Mixxx filterMid [filter_mid]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 19,
+      "notes": "Mixxx filterLow [filter_low]"
+    },
+    {
+      "name": "filter_low_kill",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 8,
+      "notes": "Mixxx filterLowKill [filter_low_kill]"
+    },
+    {
+      "name": "filter_mid_kill",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 9,
+      "notes": "Mixxx filterMidKill [filter_mid_kill]"
+    },
+    {
+      "name": "filter_high_kill",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 6,
+      "notes": "Mixxx filterHighKill [filter_high_kill]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "notes": "Mixxx pfl [pfl]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 6,
+      "code": 20,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 16,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 17,
+      "notes": "Mixxx filterHigh [filter_high_2]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 18,
+      "notes": "Mixxx filterMid [filter_mid_2]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 19,
+      "notes": "Mixxx filterLow [filter_low_2]"
+    },
+    {
+      "name": "filter_low_kill_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "notes": "Mixxx filterLowKill [filter_low_kill_2]"
+    },
+    {
+      "name": "filter_mid_kill_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "notes": "Mixxx filterMidKill [filter_mid_kill_2]"
+    },
+    {
+      "name": "filter_high_kill_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "notes": "Mixxx filterHighKill [filter_high_kill_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "notes": "Mixxx pfl [pfl_2]"
+    },
+    {
+      "name": "volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 8,
+      "code": 20,
+      "notes": "Mixxx volume [volume_4]"
+    },
+    {
+      "name": "pregain_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 21,
+      "notes": "Mixxx pregain [pregain_3]"
+    },
+    {
+      "name": "filter_high_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 22,
+      "notes": "Mixxx filterHigh [filter_high_3]"
+    },
+    {
+      "name": "filter_mid_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 23,
+      "notes": "Mixxx filterMid [filter_mid_3]"
+    },
+    {
+      "name": "filter_low_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 24,
+      "notes": "Mixxx filterLow [filter_low_3]"
+    },
+    {
+      "name": "filter_low_kill_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 4,
+      "notes": "Mixxx filterLowKill [filter_low_kill_3]"
+    },
+    {
+      "name": "filter_mid_kill_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 1,
+      "notes": "Mixxx filterMidKill [filter_mid_kill_3]"
+    },
+    {
+      "name": "filter_high_kill_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 2,
+      "notes": "Mixxx filterHighKill [filter_high_kill_3]"
+    },
+    {
+      "name": "pfl_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 3,
+      "notes": "Mixxx pfl [pfl_3]"
+    },
+    {
+      "name": "volume_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 7,
+      "code": 25,
+      "notes": "Mixxx volume [volume_5]"
+    },
+    {
+      "name": "pregain_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 21,
+      "notes": "Mixxx pregain [pregain_4]"
+    },
+    {
+      "name": "filter_high_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 22,
+      "notes": "Mixxx filterHigh [filter_high_4]"
+    },
+    {
+      "name": "filter_mid_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 23,
+      "notes": "Mixxx filterMid [filter_mid_4]"
+    },
+    {
+      "name": "filter_low_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 24,
+      "notes": "Mixxx filterLow [filter_low_4]"
+    },
+    {
+      "name": "filter_low_kill_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 4,
+      "notes": "Mixxx filterLowKill [filter_low_kill_4]"
+    },
+    {
+      "name": "filter_mid_kill_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "notes": "Mixxx filterMidKill [filter_mid_kill_4]"
+    },
+    {
+      "name": "filter_high_kill_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "notes": "Mixxx filterHighKill [filter_high_kill_4]"
+    },
+    {
+      "name": "pfl_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 3,
+      "notes": "Mixxx pfl [pfl_4]"
+    },
+    {
+      "name": "volume_6",
+      "section": "deck",
+      "type": "cc",
+      "ch": 9,
+      "code": 25,
+      "notes": "Mixxx volume [volume_6]"
+    }
+  ]
+}

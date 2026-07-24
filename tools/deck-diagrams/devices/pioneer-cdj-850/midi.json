@@ -1,0 +1,570 @@
+{
+  "source": "mixxx:Pioneer CDJ-850.midi.xml",
+  "archived": "tools/deck-diagrams/devices/pioneer-cdj-850/source/Pioneer CDJ-850.midi.xml",
+  "device": "Pioneer CDJ-850",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "load_selected_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "beats_translate_curpos",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos]"
+    },
+    {
+      "name": "beatsync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx beatsync [beatsync]"
+    },
+    {
+      "name": "bpm_tap",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx bpm_tap [bpm_tap]"
+    },
+    {
+      "name": "cue_default",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx cue_default [cue_default]"
+    },
+    {
+      "name": "eject",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 47,
+      "notes": "Mixxx eject [eject]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "hotcue_last_delete",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx PioneerCDJ850.hotcue_last_delete [hotcue_last_delete]"
+    },
+    {
+      "name": "hotcue_1_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "Mixxx PioneerCDJ850.hotcue_1_activate [hotcue_1_activate]"
+    },
+    {
+      "name": "hotcue_1_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx PioneerCDJ850.hotcue_1_activate [hotcue_1_activate_2]"
+    },
+    {
+      "name": "hotcue_2_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx PioneerCDJ850.hotcue_2_activate [hotcue_2_activate]"
+    },
+    {
+      "name": "hotcue_2_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx PioneerCDJ850.hotcue_2_activate [hotcue_2_activate_2]"
+    },
+    {
+      "name": "hotcue_3_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx PioneerCDJ850.hotcue_3_activate [hotcue_3_activate]"
+    },
+    {
+      "name": "hotcue_3_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx PioneerCDJ850.hotcue_3_activate [hotcue_3_activate_2]"
+    },
+    {
+      "name": "hotcue_4_activate",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx PioneerCDJ850.hotcue_4_activate [hotcue_4_activate]"
+    },
+    {
+      "name": "hotcue_4_activate_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx PioneerCDJ850.hotcue_4_activate [hotcue_4_activate_2]"
+    },
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx PioneerCDJ850.jog_wheel [jog_wheel]"
+    },
+    {
+      "name": "keylock",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx keylock [keylock]"
+    },
+    {
+      "name": "loop_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx loop_double [loop_double]"
+    },
+    {
+      "name": "loop_enabled",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx loop_enabled [loop_enabled]"
+    },
+    {
+      "name": "loop_halve",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx loop_halve [loop_halve]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx loop_in [loop_in]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx loop_out [loop_out]"
+    },
+    {
+      "name": "loop_scale",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx loop_scale [loop_scale]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "pregain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx pregain [pregain]"
+    },
+    {
+      "name": "rate",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 29,
+      "notes": "Mixxx rate [rate]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx reloop_exit [reloop_exit]"
+    },
+    {
+      "name": "reverse_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx PioneerCDJ850.reverse_toggle [reverse_toggle]"
+    },
+    {
+      "name": "jog_scratch",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx PioneerCDJ850.jog_scratch [jog_scratch]"
+    },
+    {
+      "name": "scratch2_enable",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx scratch2_enable [scratch2_enable]"
+    },
+    {
+      "name": "select_next_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx SelectNextTrack [select_next_track]"
+    },
+    {
+      "name": "select_prev_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx SelectPrevTrack [select_prev_track]"
+    },
+    {
+      "name": "select_track_knob",
+      "section": "other",
+      "type": "cc",
+      "ch": 1,
+      "code": 79,
+      "notes": "Mixxx PioneerCDJ850.select_track_knob [select_track_knob]"
+    },
+    {
+      "name": "load_selected_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 51,
+      "notes": "Mixxx LoadSelectedTrack [load_selected_track_2]"
+    },
+    {
+      "name": "back_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx back [back_2]"
+    },
+    {
+      "name": "beats_translate_curpos_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 14,
+      "notes": "Mixxx beats_translate_curpos [beats_translate_curpos_2]"
+    },
+    {
+      "name": "beatsync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 10,
+      "notes": "Mixxx beatsync [beatsync_2]"
+    },
+    {
+      "name": "bpm_tap_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx bpm_tap [bpm_tap_2]"
+    },
+    {
+      "name": "cue_default_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx cue_default [cue_default_2]"
+    },
+    {
+      "name": "eject_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 47,
+      "notes": "Mixxx eject [eject_2]"
+    },
+    {
+      "name": "fwd_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx fwd [fwd_2]"
+    },
+    {
+      "name": "hotcue_last_delete_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 13,
+      "notes": "Mixxx PioneerCDJ850.hotcue_last_delete [hotcue_last_delete_2]"
+    },
+    {
+      "name": "hotcue_1_activate_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 40,
+      "notes": "Mixxx PioneerCDJ850.hotcue_1_activate [hotcue_1_activate_3]"
+    },
+    {
+      "name": "hotcue_1_activate_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx PioneerCDJ850.hotcue_1_activate [hotcue_1_activate_4]"
+    },
+    {
+      "name": "hotcue_2_activate_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx PioneerCDJ850.hotcue_2_activate [hotcue_2_activate_3]"
+    },
+    {
+      "name": "hotcue_2_activate_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx PioneerCDJ850.hotcue_2_activate [hotcue_2_activate_4]"
+    },
+    {
+      "name": "hotcue_3_activate_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 42,
+      "notes": "Mixxx PioneerCDJ850.hotcue_3_activate [hotcue_3_activate_3]"
+    },
+    {
+      "name": "hotcue_3_activate_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx PioneerCDJ850.hotcue_3_activate [hotcue_3_activate_4]"
+    },
+    {
+      "name": "hotcue_4_activate_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx PioneerCDJ850.hotcue_4_activate [hotcue_4_activate_3]"
+    },
+    {
+      "name": "hotcue_4_activate_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx PioneerCDJ850.hotcue_4_activate [hotcue_4_activate_4]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 48,
+      "notes": "Mixxx PioneerCDJ850.jog_wheel [jog_wheel_2]"
+    },
+    {
+      "name": "keylock_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 17,
+      "notes": "Mixxx keylock [keylock_2]"
+    },
+    {
+      "name": "loop_double_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx loop_double [loop_double_2]"
+    },
+    {
+      "name": "loop_enabled_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx loop_enabled [loop_enabled_2]"
+    },
+    {
+      "name": "loop_halve_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx loop_halve [loop_halve_2]"
+    },
+    {
+      "name": "loop_in_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx loop_in [loop_in_2]"
+    },
+    {
+      "name": "loop_out_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx loop_out [loop_out_2]"
+    },
+    {
+      "name": "loop_scale_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx loop_scale [loop_scale_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "pregain_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx pregain [pregain_2]"
+    },
+    {
+      "name": "rate_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 29,
+      "notes": "Mixxx rate [rate_2]"
+    },
+    {
+      "name": "reloop_exit_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx reloop_exit [reloop_exit_2]"
+    },
+    {
+      "name": "reverse_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 33,
+      "notes": "Mixxx PioneerCDJ850.reverse_toggle [reverse_toggle_2]"
+    },
+    {
+      "name": "jog_scratch_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 16,
+      "notes": "Mixxx PioneerCDJ850.jog_scratch [jog_scratch_2]"
+    },
+    {
+      "name": "scratch2_enable_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx scratch2_enable [scratch2_enable_2]"
+    },
+    {
+      "name": "select_next_track_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx SelectNextTrack [select_next_track_2]"
+    },
+    {
+      "name": "select_prev_track_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx SelectPrevTrack [select_prev_track_2]"
+    },
+    {
+      "name": "select_track_knob_2",
+      "section": "other",
+      "type": "cc",
+      "ch": 2,
+      "code": 79,
+      "notes": "Mixxx PioneerCDJ850.select_track_knob [select_track_knob_2]"
+    }
+  ]
+}

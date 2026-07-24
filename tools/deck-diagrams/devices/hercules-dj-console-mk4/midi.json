@@ -1,0 +1,450 @@
+{
+  "source": "mixxx:Hercules DJ Console Mk4.midi.xml",
+  "archived": "tools/deck-diagrams/devices/hercules-dj-console-mk4/source/Hercules DJ Console Mk4.midi.xml",
+  "device": "Hercules DJ Console MK4",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 61,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "scratch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx HerculesMk4.scratch [scratch]"
+    },
+    {
+      "name": "key_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button]"
+    },
+    {
+      "name": "key_button_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_2]"
+    },
+    {
+      "name": "key_button_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_3]"
+    },
+    {
+      "name": "key_button_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_4]"
+    },
+    {
+      "name": "key_button_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_5]"
+    },
+    {
+      "name": "key_button_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_6]"
+    },
+    {
+      "name": "key_button_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_7]"
+    },
+    {
+      "name": "key_button_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_8]"
+    },
+    {
+      "name": "key_button_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 21,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_9]"
+    },
+    {
+      "name": "key_button_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_10]"
+    },
+    {
+      "name": "key_button_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_11]"
+    },
+    {
+      "name": "key_button_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_12]"
+    },
+    {
+      "name": "key_button_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_13]"
+    },
+    {
+      "name": "key_button_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_14]"
+    },
+    {
+      "name": "key_button_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_15]"
+    },
+    {
+      "name": "key_button_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx HerculesMk4.keyButton [key_button_16]"
+    },
+    {
+      "name": "jog_wheel",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 48,
+      "notes": "Mixxx HerculesMk4.jogWheel [jog_wheel]"
+    },
+    {
+      "name": "jog_wheel_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 49,
+      "notes": "Mixxx HerculesMk4.jogWheel [jog_wheel_2]"
+    },
+    {
+      "name": "scroll",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx HerculesMk4.scroll [scroll]"
+    },
+    {
+      "name": "scroll_2",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx HerculesMk4.scroll [scroll_2]"
+    },
+    {
+      "name": "pitch",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 50,
+      "notes": "Mixxx HerculesMk4.pitch [pitch]"
+    },
+    {
+      "name": "pitch_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "Mixxx HerculesMk4.pitch [pitch_2]"
+    },
+    {
+      "name": "pitchbend",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx HerculesMk4.pitchbend [pitchbend]"
+    },
+    {
+      "name": "pitchbend_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 31,
+      "notes": "Mixxx HerculesMk4.pitchbend [pitchbend_2]"
+    },
+    {
+      "name": "pitchbend_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 10,
+      "notes": "Mixxx HerculesMk4.pitchbend [pitchbend_3]"
+    },
+    {
+      "name": "pitchbend_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx HerculesMk4.pitchbend [pitchbend_4]"
+    },
+    {
+      "name": "volume",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 52,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "filter_high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 53,
+      "notes": "Mixxx filterHigh [filter_high]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "filter_mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 54,
+      "notes": "Mixxx filterMid [filter_mid]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Mixxx HerculesMk4.cue [cue]"
+    },
+    {
+      "name": "filter_low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 55,
+      "notes": "Mixxx filterLow [filter_low]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 56,
+      "notes": "Mixxx crossfader [crossfader]"
+    },
+    {
+      "name": "pfl",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Mixxx HerculesMk4.pfl [pfl]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 57,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "filter_high_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 58,
+      "notes": "Mixxx filterHigh [filter_high_2]"
+    },
+    {
+      "name": "filter_mid_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 59,
+      "notes": "Mixxx filterMid [filter_mid_2]"
+    },
+    {
+      "name": "filter_low_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 60,
+      "notes": "Mixxx filterLow [filter_low_2]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "cue_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "Mixxx HerculesMk4.cue [cue_2]"
+    },
+    {
+      "name": "sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 18,
+      "notes": "Mixxx HerculesMk4.sync [sync]"
+    },
+    {
+      "name": "sync_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "Mixxx HerculesMk4.sync [sync_2]"
+    },
+    {
+      "name": "play",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Mixxx play [play]"
+    },
+    {
+      "name": "load_track",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "Mixxx HerculesMk4.loadTrack [load_track]"
+    },
+    {
+      "name": "load_track_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "Mixxx HerculesMk4.loadTrack [load_track_2]"
+    },
+    {
+      "name": "flanger",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Mixxx flanger [flanger]"
+    },
+    {
+      "name": "fwd_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 33,
+      "notes": "Mixxx fwd [fwd_2]"
+    },
+    {
+      "name": "play_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 35,
+      "notes": "Mixxx play [play_2]"
+    },
+    {
+      "name": "back_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx back [back_2]"
+    },
+    {
+      "name": "pfl_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "Mixxx HerculesMk4.pfl [pfl_2]"
+    },
+    {
+      "name": "flanger_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "Mixxx flanger [flanger_2]"
+    },
+    {
+      "name": "select_prev_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx SelectPrevTrack [select_prev_track]"
+    },
+    {
+      "name": "select_next_track",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "Mixxx SelectNextTrack [select_next_track]"
+    }
+  ]
+}

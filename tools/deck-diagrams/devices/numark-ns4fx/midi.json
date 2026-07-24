@@ -1,0 +1,1930 @@
+{
+  "source": "mixxx:Numark NS4FX.midi.xml",
+  "archived": "tools/deck-diagrams/devices/numark-ns4fx/source/Numark NS4FX.midi.xml",
+  "device": "Numark NS4FX",
+  "vendor": "unknown",
+  "doc_tier": 2,
+  "mixxx_gpl": true,
+  "controls": [
+    {
+      "name": "channel1_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[1].play_button.input [channel1_input]"
+    },
+    {
+      "name": "channel1_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mixxx NS4FX.decks[1].sync_button.input [channel1_input_2]"
+    },
+    {
+      "name": "channel2_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[2].play_button.input [channel2_input]"
+    },
+    {
+      "name": "channel3_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[3].play_button.input [channel3_input]"
+    },
+    {
+      "name": "channel4_input",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[4].play_button.input [channel4_input]"
+    },
+    {
+      "name": "channel1_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_hotcue.input [channel1_input_3]"
+    },
+    {
+      "name": "channel2_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[2].padMode.pad_hotcue.input [channel2_input_2]"
+    },
+    {
+      "name": "channel3_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[3].padMode.pad_hotcue.input [channel3_input_2]"
+    },
+    {
+      "name": "channel4_input_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "Mixxx NS4FX.decks[4].padMode.pad_hotcue.input [channel4_input_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect1_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "notes": "Mixxx NS4FX.effectUnit.effectButtons.hpf.input [effect_rack1_effect_unit1_effect1_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect1_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 0,
+      "notes": "Mixxx NS4FX.effects[2].enableButtons[1].input [effect_rack1_effect_unit2_effect1_input]"
+    },
+    {
+      "name": "library_input",
+      "section": "browser",
+      "type": "cc",
+      "ch": 16,
+      "code": 0,
+      "notes": "Mixxx NS4FX.browse.knob.input [library_input]"
+    },
+    {
+      "name": "channel1_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Mixxx NS4FX.decks[1].cue_button.input [channel1_input_4]"
+    },
+    {
+      "name": "channel2_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 1,
+      "notes": "Mixxx NS4FX.decks[2].cue_button.input [channel2_input_3]"
+    },
+    {
+      "name": "channel3_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 1,
+      "notes": "Mixxx NS4FX.decks[3].cue_button.input [channel3_input_3]"
+    },
+    {
+      "name": "channel4_input_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 1,
+      "notes": "Mixxx NS4FX.decks[4].cue_button.input [channel4_input_3]"
+    },
+    {
+      "name": "channel1_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "Mixxx NS4FX.decks[1].cue_button.input [channel1_input_5]"
+    },
+    {
+      "name": "channel2_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 5,
+      "notes": "Mixxx NS4FX.decks[2].cue_button.input [channel2_input_4]"
+    },
+    {
+      "name": "channel3_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 5,
+      "notes": "Mixxx NS4FX.decks[3].cue_button.input [channel3_input_4]"
+    },
+    {
+      "name": "channel4_input_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 5,
+      "notes": "Mixxx NS4FX.decks[4].cue_button.input [channel4_input_4]"
+    },
+    {
+      "name": "library_input_2",
+      "section": "browser",
+      "type": "cc",
+      "ch": 16,
+      "code": 1,
+      "notes": "Mixxx NS4FX.browse.knob.input [library_input_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect2_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "notes": "Mixxx NS4FX.effectUnit.effectButtons.lpf.input [effect_rack1_effect_unit1_effect2_input]"
+    },
+    {
+      "name": "channel2_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 2,
+      "notes": "Mixxx NS4FX.decks[2].sync_button.input [channel2_input_5]"
+    },
+    {
+      "name": "channel3_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 2,
+      "notes": "Mixxx NS4FX.decks[3].sync_button.input [channel3_input_5]"
+    },
+    {
+      "name": "channel4_input_5",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 2,
+      "notes": "Mixxx NS4FX.decks[4].sync_button.input [channel4_input_5]"
+    },
+    {
+      "name": "channel1_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_pitchplay.input [channel1_input_6]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect3_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "notes": "Mixxx NS4FX.effectUnit.effectButtons.flanger.input [effect_rack1_effect_unit1_effect3_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect3_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 2,
+      "notes": "Mixxx NS4FX.effects[2].enableButtons[3].input [effect_rack1_effect_unit2_effect3_input]"
+    },
+    {
+      "name": "channel1_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 2,
+      "notes": "Mixxx NS4FX.decks[1].load.input [channel1_input_7]"
+    },
+    {
+      "name": "channel1_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Mixxx NS4FX.decks[1].sync_button.input [channel1_input_8]"
+    },
+    {
+      "name": "channel2_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 3,
+      "notes": "Mixxx NS4FX.decks[2].sync_button.input [channel2_input_6]"
+    },
+    {
+      "name": "channel3_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 3,
+      "notes": "Mixxx NS4FX.decks[3].sync_button.input [channel3_input_6]"
+    },
+    {
+      "name": "channel4_input_6",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 3,
+      "notes": "Mixxx NS4FX.decks[4].sync_button.input [channel4_input_6]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect4_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx NS4FX.effectUnit.effectButtons.echo.input [effect_rack1_effect_unit1_effect4_input]"
+    },
+    {
+      "name": "channel2_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 3,
+      "notes": "Mixxx NS4FX.decks[2].load.input [channel2_input_7]"
+    },
+    {
+      "name": "left_switch",
+      "section": "effect",
+      "type": "cc",
+      "ch": 9,
+      "code": 3,
+      "notes": "Mixxx NS4FX.effectUnit.leftSwitch [left_switch]"
+    },
+    {
+      "name": "right_switch",
+      "section": "effect",
+      "type": "cc",
+      "ch": 10,
+      "code": 3,
+      "notes": "Mixxx NS4FX.effectUnit.rightSwitch [right_switch]"
+    },
+    {
+      "name": "channel1_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 9,
+      "code": 4,
+      "notes": "Mixxx NS4FX.effects[1].bpmTap.input [channel1_input_9]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect5_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 4,
+      "notes": "Mixxx NS4FX.effectUnit.effectButtons.reverb.input [effect_rack1_effect_unit1_effect5_input]"
+    },
+    {
+      "name": "channel3_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 4,
+      "notes": "Mixxx NS4FX.decks[3].load.input [channel3_input_7]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input",
+      "section": "effect",
+      "type": "cc",
+      "ch": 9,
+      "code": 4,
+      "notes": "Mixxx NS4FX.effectUnit.dryWetKnob.input [effect_rack1_effect_unit1_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_input_2",
+      "section": "effect",
+      "type": "note",
+      "ch": 9,
+      "code": 9,
+      "notes": "Mixxx NS4FX.effectUnit.bpmTap.input [effect_rack1_effect_unit1_input_2]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 9,
+      "notes": "Mixxx NS4FX.effectUnit.bpmTap.input [effect_rack1_effect_unit2_input]"
+    },
+    {
+      "name": "effect_rack1_effect_unit1_effect6_input",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 5,
+      "notes": "Mixxx NS4FX.effectUnit.effectButtons.phaser.input [effect_rack1_effect_unit1_effect6_input]"
+    },
+    {
+      "name": "channel4_input_7",
+      "section": "deck",
+      "type": "note",
+      "ch": 16,
+      "code": 5,
+      "notes": "Mixxx NS4FX.decks[4].load.input [channel4_input_7]"
+    },
+    {
+      "name": "wheel_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTouch [wheel_touch]"
+    },
+    {
+      "name": "wheel_touch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTouch [wheel_touch_2]"
+    },
+    {
+      "name": "wheel_touch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTouch [wheel_touch_3]"
+    },
+    {
+      "name": "wheel_touch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTouch [wheel_touch_4]"
+    },
+    {
+      "name": "channel1_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_roll.input [channel1_input_10]"
+    },
+    {
+      "name": "library_input_3",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 6,
+      "notes": "Mixxx NS4FX.browse.button.input [library_input_3]"
+    },
+    {
+      "name": "wheel_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTurn [wheel_turn]"
+    },
+    {
+      "name": "wheel_turn_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTurn [wheel_turn_2]"
+    },
+    {
+      "name": "wheel_turn_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTurn [wheel_turn_3]"
+    },
+    {
+      "name": "wheel_turn_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 6,
+      "notes": "Mixxx NS4FX.wheelTurn [wheel_turn_4]"
+    },
+    {
+      "name": "wheel_toggle",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Mixxx NS4FX.wheelToggle [wheel_toggle]"
+    },
+    {
+      "name": "wheel_toggle_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 7,
+      "notes": "Mixxx NS4FX.wheelToggle [wheel_toggle_2]"
+    },
+    {
+      "name": "wheel_toggle_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 7,
+      "notes": "Mixxx NS4FX.wheelToggle [wheel_toggle_3]"
+    },
+    {
+      "name": "wheel_toggle_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 7,
+      "notes": "Mixxx NS4FX.wheelToggle [wheel_toggle_4]"
+    },
+    {
+      "name": "channel1_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_fadercuts.input [channel1_input_11]"
+    },
+    {
+      "name": "channel2_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 7,
+      "notes": "Mixxx NS4FX.decks[2].padMode.pad_fadercuts.input [channel2_input_8]"
+    },
+    {
+      "name": "channel3_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 7,
+      "notes": "Mixxx NS4FX.decks[3].padMode.pad_fadercuts.input [channel3_input_8]"
+    },
+    {
+      "name": "channel4_input_8",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "notes": "Mixxx NS4FX.decks[4].padMode.pad_fadercuts.input [channel4_input_8]"
+    },
+    {
+      "name": "library_input_4",
+      "section": "browser",
+      "type": "note",
+      "ch": 16,
+      "code": 7,
+      "notes": "Mixxx NS4FX.browse.button.input [library_input_4]"
+    },
+    {
+      "name": "deck_switch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Mixxx NS4FX.deckSwitch [deck_switch]"
+    },
+    {
+      "name": "deck_switch_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 8,
+      "notes": "Mixxx NS4FX.deckSwitch [deck_switch_2]"
+    },
+    {
+      "name": "deck_switch_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 8,
+      "notes": "Mixxx NS4FX.deckSwitch [deck_switch_3]"
+    },
+    {
+      "name": "deck_switch_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 8,
+      "notes": "Mixxx NS4FX.deckSwitch [deck_switch_4]"
+    },
+    {
+      "name": "master_input",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 8,
+      "notes": "Mixxx NS4FX.crossfader.input [master_input]"
+    },
+    {
+      "name": "channel1_pitch_fader_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 9,
+      "notes": "Mixxx NS4FX.decks[1].pitch.input [channel1_pitch_fader_msb]"
+    },
+    {
+      "name": "channel2_pitch_fader_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 9,
+      "notes": "Mixxx NS4FX.decks[2].pitch.input [channel2_pitch_fader_msb]"
+    },
+    {
+      "name": "channel3_pitch_fader_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 9,
+      "notes": "Mixxx NS4FX.decks[3].pitch.input [channel3_pitch_fader_msb]"
+    },
+    {
+      "name": "channel4_pitch_fader_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 9,
+      "notes": "Mixxx NS4FX.decks[4].pitch.input [channel4_pitch_fader_msb]"
+    },
+    {
+      "name": "volume",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 10,
+      "notes": "Mixxx volume [volume]"
+    },
+    {
+      "name": "channel1_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[1].pitch_bend_up.input [channel1_input_12]"
+    },
+    {
+      "name": "channel2_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[2].pitch_bend_up.input [channel2_input_9]"
+    },
+    {
+      "name": "channel3_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[3].pitch_bend_up.input [channel3_input_9]"
+    },
+    {
+      "name": "channel4_input_9",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[4].pitch_bend_up.input [channel4_input_9]"
+    },
+    {
+      "name": "channel1_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_sampler.input [channel1_input_13]"
+    },
+    {
+      "name": "channel2_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[2].padMode.pad_sampler.input [channel2_input_10]"
+    },
+    {
+      "name": "channel3_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[3].padMode.pad_sampler.input [channel3_input_10]"
+    },
+    {
+      "name": "channel4_input_10",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "notes": "Mixxx NS4FX.decks[4].padMode.pad_sampler.input [channel4_input_10]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect1_shift_fx1",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 11,
+      "notes": "Mixxx NS4FX.effects[2].enableButtons[1].input [effect_rack1_effect_unit2_effect1_shift_fx1]"
+    },
+    {
+      "name": "channel1_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "Mixxx NS4FX.decks[1].pitch_bend_down.input [channel1_input_14]"
+    },
+    {
+      "name": "channel2_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 12,
+      "notes": "Mixxx NS4FX.decks[2].pitch_bend_down.input [channel2_input_11]"
+    },
+    {
+      "name": "channel3_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 12,
+      "notes": "Mixxx NS4FX.decks[3].pitch_bend_down.input [channel3_input_11]"
+    },
+    {
+      "name": "channel4_input_11",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 12,
+      "notes": "Mixxx NS4FX.decks[4].pitch_bend_down.input [channel4_input_11]"
+    },
+    {
+      "name": "effect_rack1_effect_unit2_effect2_shift_fx2",
+      "section": "effect",
+      "type": "note",
+      "ch": 10,
+      "code": 12,
+      "notes": "Mixxx NS4FX.effects[2].enableButtons[2].input [effect_rack1_effect_unit2_effect2_shift_fx2]"
+    },
+    {
+      "name": "master_input_2",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 12,
+      "notes": "Mixxx NS4FX.head_gain.input [master_input_2]"
+    },
+    {
+      "name": "channel1_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 13,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_autoloop.input [channel1_input_15]"
+    },
+    {
+      "name": "channel2_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 13,
+      "notes": "Mixxx NS4FX.decks[2].padMode.pad_autoloop.input [channel2_input_12]"
+    },
+    {
+      "name": "channel3_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 13,
+      "notes": "Mixxx NS4FX.decks[3].padMode.pad_autoloop.input [channel3_input_12]"
+    },
+    {
+      "name": "channel4_input_12",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 13,
+      "notes": "Mixxx NS4FX.decks[4].padMode.pad_autoloop.input [channel4_input_12]"
+    },
+    {
+      "name": "master_input_3",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 9,
+      "code": 5,
+      "notes": "Mixxx NS4FX.beatsKnob.input [master_input_3]"
+    },
+    {
+      "name": "master_input_4",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 10,
+      "code": 5,
+      "notes": "Mixxx NS4FX.beatsKnob.input [master_input_4]"
+    },
+    {
+      "name": "head_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 16,
+      "code": 13,
+      "notes": "Mixxx headMix [head_mix]"
+    },
+    {
+      "name": "channel1_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 14,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_slicer.input [channel1_input_16]"
+    },
+    {
+      "name": "channel1_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 15,
+      "notes": "Mixxx NS4FX.decks[1].padMode.pad_scratchbanks.input [channel1_input_17]"
+    },
+    {
+      "name": "channel1_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 20,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[1].input [channel1_input_18]"
+    },
+    {
+      "name": "channel2_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 20,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[1].input [channel2_input_13]"
+    },
+    {
+      "name": "channel3_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 20,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[1].input [channel3_input_13]"
+    },
+    {
+      "name": "channel4_input_13",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 20,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[1].input [channel4_input_13]"
+    },
+    {
+      "name": "channel1_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 21,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[2].input [channel1_input_19]"
+    },
+    {
+      "name": "channel2_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 21,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[2].input [channel2_input_14]"
+    },
+    {
+      "name": "channel3_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 21,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[2].input [channel3_input_14]"
+    },
+    {
+      "name": "channel4_input_14",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 21,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[2].input [channel4_input_14]"
+    },
+    {
+      "name": "channel1_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[3].input [channel1_input_20]"
+    },
+    {
+      "name": "channel2_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[3].input [channel2_input_15]"
+    },
+    {
+      "name": "channel3_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[3].input [channel3_input_15]"
+    },
+    {
+      "name": "channel4_input_15",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[3].input [channel4_input_15]"
+    },
+    {
+      "name": "channel3_input_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[1].gain.input [channel3_input_16]"
+    },
+    {
+      "name": "channel4_input_16",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[2].gain.input [channel4_input_16]"
+    },
+    {
+      "name": "channel3_input_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[3].gain.input [channel3_input_17]"
+    },
+    {
+      "name": "channel4_input_17",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 22,
+      "notes": "Mixxx NS4FX.decks[4].gain.input [channel4_input_17]"
+    },
+    {
+      "name": "channel1_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[4].input [channel1_input_21]"
+    },
+    {
+      "name": "channel2_input_16",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[4].input [channel2_input_16]"
+    },
+    {
+      "name": "channel3_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[4].input [channel3_input_18]"
+    },
+    {
+      "name": "channel4_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[4].input [channel4_input_18]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[1].high_eq.input [equalizer_rack1_channel1_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[2].high_eq.input [equalizer_rack1_channel2_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[3].high_eq.input [equalizer_rack1_channel3_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 23,
+      "notes": "Mixxx NS4FX.decks[4].high_eq.input [equalizer_rack1_channel4_effect1_input]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[1].mid_eq.input [equalizer_rack1_channel1_effect1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[2].mid_eq.input [equalizer_rack1_channel2_effect1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[3].mid_eq.input [equalizer_rack1_channel3_effect1_input_2]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_input_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[4].mid_eq.input [equalizer_rack1_channel4_effect1_input_2]"
+    },
+    {
+      "name": "start",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 25,
+      "notes": "Mixxx start [start]"
+    },
+    {
+      "name": "start_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 25,
+      "notes": "Mixxx start [start_2]"
+    },
+    {
+      "name": "start_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 25,
+      "notes": "Mixxx start [start_3]"
+    },
+    {
+      "name": "start_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "Mixxx start [start_4]"
+    },
+    {
+      "name": "channel1_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[1].transport_pad_1.input [channel1_input_22]"
+    },
+    {
+      "name": "channel2_input_17",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[2].transport_pad_1.input [channel2_input_17]"
+    },
+    {
+      "name": "channel3_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[3].transport_pad_1.input [channel3_input_19]"
+    },
+    {
+      "name": "channel4_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "Mixxx NS4FX.decks[4].transport_pad_1.input [channel4_input_19]"
+    },
+    {
+      "name": "equalizer_rack1_channel1_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 25,
+      "notes": "Mixxx NS4FX.decks[1].low_eq.input [equalizer_rack1_channel1_effect1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel2_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 25,
+      "notes": "Mixxx NS4FX.decks[2].low_eq.input [equalizer_rack1_channel2_effect1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel3_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 25,
+      "notes": "Mixxx NS4FX.decks[3].low_eq.input [equalizer_rack1_channel3_effect1_input_3]"
+    },
+    {
+      "name": "equalizer_rack1_channel4_effect1_input_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 25,
+      "notes": "Mixxx NS4FX.decks[4].low_eq.input [equalizer_rack1_channel4_effect1_input_3]"
+    },
+    {
+      "name": "back",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 26,
+      "notes": "Mixxx back [back]"
+    },
+    {
+      "name": "back_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 26,
+      "notes": "Mixxx back [back_2]"
+    },
+    {
+      "name": "back_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 26,
+      "notes": "Mixxx back [back_3]"
+    },
+    {
+      "name": "back_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "Mixxx back [back_4]"
+    },
+    {
+      "name": "quick_effect_rack1_channel1_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 26,
+      "notes": "Mixxx NS4FX.decks[1].filter.input [quick_effect_rack1_channel1_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel2_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 26,
+      "notes": "Mixxx NS4FX.decks[2].filter.input [quick_effect_rack1_channel2_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel3_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 26,
+      "notes": "Mixxx NS4FX.decks[3].filter.input [quick_effect_rack1_channel3_input]"
+    },
+    {
+      "name": "quick_effect_rack1_channel4_input",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 26,
+      "notes": "Mixxx NS4FX.decks[4].filter.input [quick_effect_rack1_channel4_input]"
+    },
+    {
+      "name": "fwd",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 27,
+      "notes": "Mixxx fwd [fwd]"
+    },
+    {
+      "name": "fwd_2",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 27,
+      "notes": "Mixxx fwd [fwd_2]"
+    },
+    {
+      "name": "fwd_3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 27,
+      "notes": "Mixxx fwd [fwd_3]"
+    },
+    {
+      "name": "fwd_4",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "Mixxx fwd [fwd_4]"
+    },
+    {
+      "name": "channel1_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "Mixxx NS4FX.decks[1].pfl_button.input [channel1_input_23]"
+    },
+    {
+      "name": "channel2_input_18",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 27,
+      "notes": "Mixxx NS4FX.decks[2].pfl_button.input [channel2_input_18]"
+    },
+    {
+      "name": "channel3_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 27,
+      "notes": "Mixxx NS4FX.decks[3].pfl_button.input [channel3_input_20]"
+    },
+    {
+      "name": "channel4_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 27,
+      "notes": "Mixxx NS4FX.decks[4].pfl_button.input [channel4_input_20]"
+    },
+    {
+      "name": "channel1_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 28,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[1].input [channel1_input_24]"
+    },
+    {
+      "name": "channel2_input_19",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 28,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[1].input [channel2_input_19]"
+    },
+    {
+      "name": "channel3_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 28,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[1].input [channel3_input_21]"
+    },
+    {
+      "name": "channel4_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 28,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[1].input [channel4_input_21]"
+    },
+    {
+      "name": "volume_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 28,
+      "notes": "Mixxx volume [volume_2]"
+    },
+    {
+      "name": "volume_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 28,
+      "notes": "Mixxx volume [volume_3]"
+    },
+    {
+      "name": "volume_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 28,
+      "notes": "Mixxx volume [volume_4]"
+    },
+    {
+      "name": "volume_5",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 28,
+      "notes": "Mixxx volume [volume_5]"
+    },
+    {
+      "name": "channel1_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 29,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[2].input [channel1_input_25]"
+    },
+    {
+      "name": "channel2_input_20",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 29,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[2].input [channel2_input_20]"
+    },
+    {
+      "name": "channel3_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 29,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[2].input [channel3_input_22]"
+    },
+    {
+      "name": "channel4_input_22",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[2].input [channel4_input_22]"
+    },
+    {
+      "name": "channel1_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[3].input [channel1_input_26]"
+    },
+    {
+      "name": "channel2_input_21",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[3].input [channel2_input_21]"
+    },
+    {
+      "name": "channel3_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[3].input [channel3_input_23]"
+    },
+    {
+      "name": "channel4_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[3].input [channel4_input_23]"
+    },
+    {
+      "name": "channel1_input_27",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[1].orientation.input [channel1_input_27]"
+    },
+    {
+      "name": "channel2_input_22",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[2].orientation.input [channel2_input_22]"
+    },
+    {
+      "name": "channel3_input_24",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[3].orientation.input [channel3_input_24]"
+    },
+    {
+      "name": "channel4_input_24",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 30,
+      "notes": "Mixxx NS4FX.decks[4].orientation.input [channel4_input_24]"
+    },
+    {
+      "name": "channel1_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 31,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[4].input [channel1_input_28]"
+    },
+    {
+      "name": "channel2_input_23",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 31,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[4].input [channel2_input_23]"
+    },
+    {
+      "name": "channel3_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 31,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[4].input [channel3_input_25]"
+    },
+    {
+      "name": "channel4_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[4].input [channel4_input_25]"
+    },
+    {
+      "name": "shift_toggle",
+      "section": "other",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "Mixxx NS4FX.shiftToggle [shift_toggle]"
+    },
+    {
+      "name": "shift_toggle_2",
+      "section": "other",
+      "type": "note",
+      "ch": 2,
+      "code": 32,
+      "notes": "Mixxx NS4FX.shiftToggle [shift_toggle_2]"
+    },
+    {
+      "name": "channel1_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 32,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[5].input [channel1_input_29]"
+    },
+    {
+      "name": "channel2_input_24",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 32,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[5].input [channel2_input_24]"
+    },
+    {
+      "name": "channel3_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 32,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[5].input [channel3_input_26]"
+    },
+    {
+      "name": "channel4_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[5].input [channel4_input_26]"
+    },
+    {
+      "name": "channel1_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 33,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[6].input [channel1_input_30]"
+    },
+    {
+      "name": "channel2_input_25",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 33,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[6].input [channel2_input_25]"
+    },
+    {
+      "name": "channel3_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 33,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[6].input [channel3_input_27]"
+    },
+    {
+      "name": "channel4_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[6].input [channel4_input_27]"
+    },
+    {
+      "name": "channel1_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 34,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[7].input [channel1_input_31]"
+    },
+    {
+      "name": "channel2_input_26",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 34,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[7].input [channel2_input_26]"
+    },
+    {
+      "name": "channel3_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 34,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[7].input [channel3_input_28]"
+    },
+    {
+      "name": "channel4_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[7].input [channel4_input_28]"
+    },
+    {
+      "name": "channel1_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 35,
+      "notes": "Mixxx NS4FX.decks[1].hotcues[8].input [channel1_input_32]"
+    },
+    {
+      "name": "channel2_input_27",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 35,
+      "notes": "Mixxx NS4FX.decks[2].hotcues[8].input [channel2_input_27]"
+    },
+    {
+      "name": "channel3_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 35,
+      "notes": "Mixxx NS4FX.decks[3].hotcues[8].input [channel3_input_29]"
+    },
+    {
+      "name": "channel4_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "Mixxx NS4FX.decks[4].hotcues[8].input [channel4_input_29]"
+    },
+    {
+      "name": "input_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "Mixxx NS4FX.decks[1].pitch.inputLSB [input_lsb]"
+    },
+    {
+      "name": "input_lsb_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 41,
+      "notes": "Mixxx NS4FX.decks[2].pitch.inputLSB [input_lsb_2]"
+    },
+    {
+      "name": "input_lsb_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 41,
+      "notes": "Mixxx NS4FX.decks[3].pitch.inputLSB [input_lsb_3]"
+    },
+    {
+      "name": "input_lsb_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 41,
+      "notes": "Mixxx NS4FX.decks[4].pitch.inputLSB [input_lsb_4]"
+    },
+    {
+      "name": "channel1_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "Mixxx NS4FX.decks[1].key_up.input [channel1_input_33]"
+    },
+    {
+      "name": "channel2_input_28",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 43,
+      "notes": "Mixxx NS4FX.decks[2].key_up.input [channel2_input_28]"
+    },
+    {
+      "name": "channel3_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 43,
+      "notes": "Mixxx NS4FX.decks[3].key_up.input [channel3_input_30]"
+    },
+    {
+      "name": "channel4_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 43,
+      "notes": "Mixxx NS4FX.decks[4].key_up.input [channel4_input_30]"
+    },
+    {
+      "name": "channel1_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "Mixxx NS4FX.decks[1].key_down.input [channel1_input_34]"
+    },
+    {
+      "name": "channel2_input_29",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 44,
+      "notes": "Mixxx NS4FX.decks[2].key_down.input [channel2_input_29]"
+    },
+    {
+      "name": "channel3_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 44,
+      "notes": "Mixxx NS4FX.decks[3].key_down.input [channel3_input_31]"
+    },
+    {
+      "name": "channel4_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 44,
+      "notes": "Mixxx NS4FX.decks[4].key_down.input [channel4_input_31]"
+    },
+    {
+      "name": "playposition",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition]"
+    },
+    {
+      "name": "playposition_2",
+      "section": "deck",
+      "type": "cc",
+      "ch": 2,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition_2]"
+    },
+    {
+      "name": "playposition_3",
+      "section": "deck",
+      "type": "cc",
+      "ch": 3,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition_3]"
+    },
+    {
+      "name": "playposition_4",
+      "section": "deck",
+      "type": "cc",
+      "ch": 4,
+      "code": 45,
+      "notes": "Mixxx playposition [playposition_4]"
+    },
+    {
+      "name": "channel1_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 52,
+      "notes": "Mixxx NS4FX.decks[1].loopControls.loop_halve.input [channel1_input_35]"
+    },
+    {
+      "name": "channel2_input_30",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 52,
+      "notes": "Mixxx NS4FX.decks[2].loopControls.loop_halve.input [channel2_input_30]"
+    },
+    {
+      "name": "channel3_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 52,
+      "notes": "Mixxx NS4FX.decks[3].loopControls.loop_halve.input [channel3_input_32]"
+    },
+    {
+      "name": "channel4_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 52,
+      "notes": "Mixxx NS4FX.decks[4].loopControls.loop_halve.input [channel4_input_32]"
+    },
+    {
+      "name": "channel1_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 53,
+      "notes": "Mixxx NS4FX.decks[1].loopControls.loop_double.input [channel1_input_36]"
+    },
+    {
+      "name": "channel2_input_31",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 53,
+      "notes": "Mixxx NS4FX.decks[2].loopControls.loop_double.input [channel2_input_31]"
+    },
+    {
+      "name": "channel3_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 53,
+      "notes": "Mixxx NS4FX.decks[3].loopControls.loop_double.input [channel3_input_33]"
+    },
+    {
+      "name": "channel4_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 53,
+      "notes": "Mixxx NS4FX.decks[4].loopControls.loop_double.input [channel4_input_33]"
+    },
+    {
+      "name": "channel1_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 54,
+      "notes": "Mixxx NS4FX.decks[1].loopControls.loop_in.input [channel1_input_37]"
+    },
+    {
+      "name": "channel2_input_32",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 54,
+      "notes": "Mixxx NS4FX.decks[2].loopControls.loop_out.input [channel2_input_32]"
+    },
+    {
+      "name": "channel3_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 54,
+      "notes": "Mixxx NS4FX.decks[3].loopControls.loop_in.input [channel3_input_34]"
+    },
+    {
+      "name": "channel4_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 54,
+      "notes": "Mixxx NS4FX.decks[4].loopControls.loop_out.input [channel4_input_34]"
+    },
+    {
+      "name": "channel1_input_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 55,
+      "notes": "Mixxx NS4FX.decks[1].loopControls.loop_out.input [channel1_input_38]"
+    },
+    {
+      "name": "channel2_input_33",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 55,
+      "notes": "Mixxx NS4FX.decks[2].loopControls.loop_in.input [channel2_input_33]"
+    },
+    {
+      "name": "channel3_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 55,
+      "notes": "Mixxx NS4FX.decks[3].loopControls.loop_out.input [channel3_input_35]"
+    },
+    {
+      "name": "channel4_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 55,
+      "notes": "Mixxx NS4FX.decks[4].loopControls.loop_in.input [channel4_input_35]"
+    },
+    {
+      "name": "channel1_input_39",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 64,
+      "notes": "Mixxx NS4FX.decks[1].loopControls.loop_toggle.input [channel1_input_39]"
+    },
+    {
+      "name": "channel2_input_34",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 64,
+      "notes": "Mixxx NS4FX.decks[2].loopControls.loop_toggle.input [channel2_input_34]"
+    },
+    {
+      "name": "channel3_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 64,
+      "notes": "Mixxx NS4FX.decks[3].loopControls.loop_toggle.input [channel3_input_36]"
+    },
+    {
+      "name": "channel4_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 64,
+      "notes": "Mixxx NS4FX.decks[4].loopControls.loop_toggle.input [channel4_input_36]"
+    },
+    {
+      "name": "channel1_input_40",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "Mixxx NS4FX.decks[1].play_button.input [channel1_input_40]"
+    },
+    {
+      "name": "channel2_input_35",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 4,
+      "notes": "Mixxx NS4FX.decks[2].play_button.input [channel2_input_35]"
+    },
+    {
+      "name": "channel3_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 4,
+      "notes": "Mixxx NS4FX.decks[3].play_button.input [channel3_input_37]"
+    },
+    {
+      "name": "channel4_input_37",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 4,
+      "notes": "Mixxx NS4FX.decks[4].play_button.input [channel4_input_37]"
+    },
+    {
+      "name": "channel1_input_41",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 65,
+      "notes": "Mixxx NS4FX.decks[1].loopControls.reloop.input [channel1_input_41]"
+    },
+    {
+      "name": "channel2_input_36",
+      "section": "deck",
+      "type": "note",
+      "ch": 6,
+      "code": 65,
+      "notes": "Mixxx NS4FX.decks[2].loopControls.reloop.input [channel2_input_36]"
+    },
+    {
+      "name": "channel3_input_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 65,
+      "notes": "Mixxx NS4FX.decks[3].loopControls.reloop.input [channel3_input_38]"
+    },
+    {
+      "name": "channel4_input_38",
+      "section": "deck",
+      "type": "note",
+      "ch": 8,
+      "code": 65,
+      "notes": "Mixxx NS4FX.decks[4].loopControls.reloop.input [channel4_input_38]"
+    }
+  ]
+}

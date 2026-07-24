@@ -1,0 +1,2660 @@
+{
+  "device": "DJ-Tech Kontrol One",
+  "vendor": "unknown",
+  "plate": {
+    "image": "",
+    "width": 0,
+    "height": 0
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "mixxx_script_bindings",
+    "hid_surfaces",
+    "plate_pending"
+  ],
+  "controls": [
+    {
+      "id": "dj-tech-kontrol-one-knob",
+      "fig": "knob",
+      "label": "knob",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob",
+        "type": "cc",
+        "ch": 1,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[knob] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_2",
+      "fig": "knob_2",
+      "label": "knob",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_2",
+        "type": "cc",
+        "ch": 1,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[knob_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_3",
+      "fig": "knob_3",
+      "label": "knob",
+      "kind": "knob",
+      "x": 17.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_3",
+        "type": "cc",
+        "ch": 1,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[knob_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_4",
+      "fig": "knob_4",
+      "label": "knob",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_4",
+        "type": "cc",
+        "ch": 1,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[knob_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_5",
+      "fig": "knob_5",
+      "label": "knob",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_5",
+        "type": "cc",
+        "ch": 1,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[knob_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button",
+      "fig": "button",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button",
+        "type": "note",
+        "ch": 1,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[button] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_6",
+      "fig": "knob_6",
+      "label": "knob",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_6",
+        "type": "cc",
+        "ch": 1,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[knob_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_2",
+      "fig": "button_2",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[button_2] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_3",
+      "fig": "button_3",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[button_3] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_4",
+      "fig": "button_4",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[button_4] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_5",
+      "fig": "button_5",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_5",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[button_5] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_6",
+      "fig": "button_6",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 4.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_6",
+        "type": "note",
+        "ch": 1,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[button_6] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_7",
+      "fig": "button_7",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_7",
+        "type": "note",
+        "ch": 1,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[button_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_8",
+      "fig": "button_8",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_8",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[button_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_9",
+      "fig": "button_9",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_9",
+        "type": "note",
+        "ch": 1,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[button_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_10",
+      "fig": "button_10",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_10",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[button_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_11",
+      "fig": "button_11",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_11",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[button_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_12",
+      "fig": "button_12",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_12",
+        "type": "note",
+        "ch": 1,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[button_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_13",
+      "fig": "button_13",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_13",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[button_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_14",
+      "fig": "button_14",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_14",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[button_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_15",
+      "fig": "button_15",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_15",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[button_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_16",
+      "fig": "button_16",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_16",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[button_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_17",
+      "fig": "button_17",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_17",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[button_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_18",
+      "fig": "button_18",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 10.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_18",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[button_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_19",
+      "fig": "button_19",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_19",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[button_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_20",
+      "fig": "button_20",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_20",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[button_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_21",
+      "fig": "button_21",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_21",
+        "type": "note",
+        "ch": 1,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[button_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_22",
+      "fig": "button_22",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_22",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[button_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_23",
+      "fig": "button_23",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_23",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[button_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_24",
+      "fig": "button_24",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_24",
+        "type": "note",
+        "ch": 1,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[button_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_25",
+      "fig": "button_25",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_25",
+        "type": "note",
+        "ch": 1,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[button_25] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_26",
+      "fig": "button_26",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_26",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[button_26] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_27",
+      "fig": "button_27",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_27",
+        "type": "note",
+        "ch": 1,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[button_27] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_7",
+      "fig": "knob_7",
+      "label": "knob",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_7",
+        "type": "cc",
+        "ch": 2,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[knob_7] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_8",
+      "fig": "knob_8",
+      "label": "knob",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_8",
+        "type": "cc",
+        "ch": 2,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[knob_8] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_9",
+      "fig": "knob_9",
+      "label": "knob",
+      "kind": "knob",
+      "x": 87.8,
+      "y": 17.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_9",
+        "type": "cc",
+        "ch": 2,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[knob_9] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_10",
+      "fig": "knob_10",
+      "label": "knob",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_10",
+        "type": "cc",
+        "ch": 2,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[knob_10] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_11",
+      "fig": "knob_11",
+      "label": "knob",
+      "kind": "knob",
+      "x": 9.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_11",
+        "type": "cc",
+        "ch": 2,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[knob_11] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_28",
+      "fig": "button_28",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_28",
+        "type": "note",
+        "ch": 2,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[button_28] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_12",
+      "fig": "knob_12",
+      "label": "knob",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_12",
+        "type": "cc",
+        "ch": 2,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[knob_12] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_29",
+      "fig": "button_29",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_29",
+        "type": "note",
+        "ch": 2,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[button_29] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_30",
+      "fig": "button_30",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_30",
+        "type": "note",
+        "ch": 2,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[button_30] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_31",
+      "fig": "button_31",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_31",
+        "type": "note",
+        "ch": 2,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[button_31] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_32",
+      "fig": "button_32",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_32",
+        "type": "note",
+        "ch": 2,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[button_32] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_33",
+      "fig": "button_33",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_33",
+        "type": "note",
+        "ch": 2,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[button_33] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_34",
+      "fig": "button_34",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_34",
+        "type": "note",
+        "ch": 2,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[button_34] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_35",
+      "fig": "button_35",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_35",
+        "type": "note",
+        "ch": 2,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[button_35] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_36",
+      "fig": "button_36",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 23.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_36",
+        "type": "note",
+        "ch": 2,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[button_36] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_37",
+      "fig": "button_37",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_37",
+        "type": "note",
+        "ch": 2,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[button_37] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_38",
+      "fig": "button_38",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_38",
+        "type": "note",
+        "ch": 2,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[button_38] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_39",
+      "fig": "button_39",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_39",
+        "type": "note",
+        "ch": 2,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[button_39] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_40",
+      "fig": "button_40",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_40",
+        "type": "note",
+        "ch": 2,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[button_40] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_41",
+      "fig": "button_41",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_41",
+        "type": "note",
+        "ch": 2,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[button_41] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_42",
+      "fig": "button_42",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_42",
+        "type": "note",
+        "ch": 2,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[button_42] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_43",
+      "fig": "button_43",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_43",
+        "type": "note",
+        "ch": 2,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[button_43] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_44",
+      "fig": "button_44",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_44",
+        "type": "note",
+        "ch": 2,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[button_44] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_45",
+      "fig": "button_45",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_45",
+        "type": "note",
+        "ch": 2,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[button_45] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_46",
+      "fig": "button_46",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_46",
+        "type": "note",
+        "ch": 2,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[button_46] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_47",
+      "fig": "button_47",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_47",
+        "type": "note",
+        "ch": 2,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[button_47] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_48",
+      "fig": "button_48",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 30.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_48",
+        "type": "note",
+        "ch": 2,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[button_48] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_49",
+      "fig": "button_49",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_49",
+        "type": "note",
+        "ch": 2,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[button_49] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_50",
+      "fig": "button_50",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_50",
+        "type": "note",
+        "ch": 2,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[button_50] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_51",
+      "fig": "button_51",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_51",
+        "type": "note",
+        "ch": 2,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[button_51] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_52",
+      "fig": "button_52",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_52",
+        "type": "note",
+        "ch": 2,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[button_52] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_53",
+      "fig": "button_53",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_53",
+        "type": "note",
+        "ch": 2,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[button_53] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_54",
+      "fig": "button_54",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_54",
+        "type": "note",
+        "ch": 2,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[button_54] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_13",
+      "fig": "knob_13",
+      "label": "knob",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_13",
+        "type": "cc",
+        "ch": 3,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[knob_13] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_14",
+      "fig": "knob_14",
+      "label": "knob",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_14",
+        "type": "cc",
+        "ch": 3,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[knob_14] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_15",
+      "fig": "knob_15",
+      "label": "knob",
+      "kind": "knob",
+      "x": 64.4,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_15",
+        "type": "cc",
+        "ch": 3,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[knob_15] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_16",
+      "fig": "knob_16",
+      "label": "knob",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_16",
+        "type": "cc",
+        "ch": 3,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[knob_16] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_17",
+      "fig": "knob_17",
+      "label": "knob",
+      "kind": "knob",
+      "x": 80.0,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_17",
+        "type": "cc",
+        "ch": 3,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[knob_17] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_55",
+      "fig": "button_55",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 36.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_55",
+        "type": "note",
+        "ch": 3,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[button_55] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_18",
+      "fig": "knob_18",
+      "label": "knob",
+      "kind": "knob",
+      "x": 2.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "knob_18",
+        "type": "cc",
+        "ch": 3,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[knob_18] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_56",
+      "fig": "button_56",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_56",
+        "type": "note",
+        "ch": 3,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[button_56] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_57",
+      "fig": "button_57",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_57",
+        "type": "note",
+        "ch": 3,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[button_57] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_58",
+      "fig": "button_58",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_58",
+        "type": "note",
+        "ch": 3,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[button_58] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_59",
+      "fig": "button_59",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_59",
+        "type": "note",
+        "ch": 3,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[button_59] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_60",
+      "fig": "button_60",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_60",
+        "type": "note",
+        "ch": 3,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[button_60] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_61",
+      "fig": "button_61",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_61",
+        "type": "note",
+        "ch": 3,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[button_61] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_62",
+      "fig": "button_62",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_62",
+        "type": "note",
+        "ch": 3,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[button_62] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_63",
+      "fig": "button_63",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_63",
+        "type": "note",
+        "ch": 3,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[button_63] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_64",
+      "fig": "button_64",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_64",
+        "type": "note",
+        "ch": 3,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[button_64] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_65",
+      "fig": "button_65",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_65",
+        "type": "note",
+        "ch": 3,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[button_65] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_66",
+      "fig": "button_66",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 43.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_66",
+        "type": "note",
+        "ch": 3,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[button_66] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_67",
+      "fig": "button_67",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_67",
+        "type": "note",
+        "ch": 3,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[button_67] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_68",
+      "fig": "button_68",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_68",
+        "type": "note",
+        "ch": 3,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[button_68] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_69",
+      "fig": "button_69",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_69",
+        "type": "note",
+        "ch": 3,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[button_69] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_70",
+      "fig": "button_70",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_70",
+        "type": "note",
+        "ch": 3,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[button_70] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_71",
+      "fig": "button_71",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_71",
+        "type": "note",
+        "ch": 3,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[button_71] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_72",
+      "fig": "button_72",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_72",
+        "type": "note",
+        "ch": 3,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[button_72] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_73",
+      "fig": "button_73",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_73",
+        "type": "note",
+        "ch": 3,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[button_73] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_74",
+      "fig": "button_74",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_74",
+        "type": "note",
+        "ch": 3,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[button_74] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_75",
+      "fig": "button_75",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_75",
+        "type": "note",
+        "ch": 3,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[button_75] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_76",
+      "fig": "button_76",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_76",
+        "type": "note",
+        "ch": 3,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[button_76] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_77",
+      "fig": "button_77",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_77",
+        "type": "note",
+        "ch": 3,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[button_77] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_78",
+      "fig": "button_78",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 49.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_78",
+        "type": "note",
+        "ch": 3,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[button_78] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_79",
+      "fig": "button_79",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_79",
+        "type": "note",
+        "ch": 3,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[button_79] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_80",
+      "fig": "button_80",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_80",
+        "type": "note",
+        "ch": 3,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[button_80] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_81",
+      "fig": "button_81",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "button_81",
+        "type": "note",
+        "ch": 3,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[button_81] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_19",
+      "fig": "knob_19",
+      "label": "knob",
+      "kind": "knob",
+      "x": 25.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "knob_19",
+        "type": "cc",
+        "ch": 4,
+        "code": 55,
+        "shift_name": null
+      },
+      "notes": "[knob_19] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_20",
+      "fig": "knob_20",
+      "label": "knob",
+      "kind": "knob",
+      "x": 33.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "knob_20",
+        "type": "cc",
+        "ch": 4,
+        "code": 54,
+        "shift_name": null
+      },
+      "notes": "[knob_20] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_21",
+      "fig": "knob_21",
+      "label": "knob",
+      "kind": "knob",
+      "x": 41.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "knob_21",
+        "type": "cc",
+        "ch": 4,
+        "code": 53,
+        "shift_name": null
+      },
+      "notes": "[knob_21] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_22",
+      "fig": "knob_22",
+      "label": "knob",
+      "kind": "knob",
+      "x": 48.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "knob_22",
+        "type": "cc",
+        "ch": 4,
+        "code": 52,
+        "shift_name": null
+      },
+      "notes": "[knob_22] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_23",
+      "fig": "knob_23",
+      "label": "knob",
+      "kind": "knob",
+      "x": 56.6,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "knob_23",
+        "type": "cc",
+        "ch": 4,
+        "code": 33,
+        "shift_name": null
+      },
+      "notes": "[knob_23] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_82",
+      "fig": "button_82",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_82",
+        "type": "note",
+        "ch": 4,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "[button_82] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-knob_24",
+      "fig": "knob_24",
+      "label": "knob",
+      "kind": "knob",
+      "x": 72.2,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "knob_24",
+        "type": "cc",
+        "ch": 4,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "[knob_24] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_83",
+      "fig": "button_83",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_83",
+        "type": "note",
+        "ch": 4,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "[button_83] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_84",
+      "fig": "button_84",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 56.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_84",
+        "type": "note",
+        "ch": 4,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[button_84] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_85",
+      "fig": "button_85",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_85",
+        "type": "note",
+        "ch": 4,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[button_85] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_86",
+      "fig": "button_86",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_86",
+        "type": "note",
+        "ch": 4,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[button_86] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_87",
+      "fig": "button_87",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_87",
+        "type": "note",
+        "ch": 4,
+        "code": 26,
+        "shift_name": null
+      },
+      "notes": "[button_87] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_88",
+      "fig": "button_88",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_88",
+        "type": "note",
+        "ch": 4,
+        "code": 25,
+        "shift_name": null
+      },
+      "notes": "[button_88] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_89",
+      "fig": "button_89",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_89",
+        "type": "note",
+        "ch": 4,
+        "code": 30,
+        "shift_name": null
+      },
+      "notes": "[button_89] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_90",
+      "fig": "button_90",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_90",
+        "type": "note",
+        "ch": 4,
+        "code": 29,
+        "shift_name": null
+      },
+      "notes": "[button_90] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_91",
+      "fig": "button_91",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_91",
+        "type": "note",
+        "ch": 4,
+        "code": 28,
+        "shift_name": null
+      },
+      "notes": "[button_91] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_92",
+      "fig": "button_92",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_92",
+        "type": "note",
+        "ch": 4,
+        "code": 27,
+        "shift_name": null
+      },
+      "notes": "[button_92] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_93",
+      "fig": "button_93",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_93",
+        "type": "note",
+        "ch": 4,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "[button_93] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_94",
+      "fig": "button_94",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_94",
+        "type": "note",
+        "ch": 4,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "[button_94] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_95",
+      "fig": "button_95",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_95",
+        "type": "note",
+        "ch": 4,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "[button_95] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_96",
+      "fig": "button_96",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 62.5,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_96",
+        "type": "note",
+        "ch": 4,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[button_96] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_97",
+      "fig": "button_97",
+      "label": "button",
+      "kind": "button",
+      "x": 2.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_97",
+        "type": "note",
+        "ch": 4,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "[button_97] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_98",
+      "fig": "button_98",
+      "label": "button",
+      "kind": "button",
+      "x": 9.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_98",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "[button_98] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_99",
+      "fig": "button_99",
+      "label": "button",
+      "kind": "button",
+      "x": 17.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_99",
+        "type": "note",
+        "ch": 4,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "[button_99] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_100",
+      "fig": "button_100",
+      "label": "button",
+      "kind": "button",
+      "x": 25.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_100",
+        "type": "note",
+        "ch": 4,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "[button_100] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_101",
+      "fig": "button_101",
+      "label": "button",
+      "kind": "button",
+      "x": 33.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_101",
+        "type": "note",
+        "ch": 4,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "[button_101] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_102",
+      "fig": "button_102",
+      "label": "button",
+      "kind": "button",
+      "x": 41.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_102",
+        "type": "note",
+        "ch": 4,
+        "code": 18,
+        "shift_name": null
+      },
+      "notes": "[button_102] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_103",
+      "fig": "button_103",
+      "label": "button",
+      "kind": "button",
+      "x": 48.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_103",
+        "type": "note",
+        "ch": 4,
+        "code": 17,
+        "shift_name": null
+      },
+      "notes": "[button_103] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_104",
+      "fig": "button_104",
+      "label": "button",
+      "kind": "button",
+      "x": 56.6,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_104",
+        "type": "note",
+        "ch": 4,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "[button_104] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_105",
+      "fig": "button_105",
+      "label": "button",
+      "kind": "button",
+      "x": 64.4,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_105",
+        "type": "note",
+        "ch": 4,
+        "code": 24,
+        "shift_name": null
+      },
+      "notes": "[button_105] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_106",
+      "fig": "button_106",
+      "label": "button",
+      "kind": "button",
+      "x": 72.2,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_106",
+        "type": "note",
+        "ch": 4,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "[button_106] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_107",
+      "fig": "button_107",
+      "label": "button",
+      "kind": "button",
+      "x": 80.0,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_107",
+        "type": "note",
+        "ch": 4,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "[button_107] Mixxx ingest - refine coords against plate"
+    },
+    {
+      "id": "dj-tech-kontrol-one-button_108",
+      "fig": "button_108",
+      "label": "button",
+      "kind": "button",
+      "x": 87.8,
+      "y": 69.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "sampler",
+      "midi": {
+        "name": "button_108",
+        "type": "note",
+        "ch": 4,
+        "code": 21,
+        "shift_name": null
+      },
+      "notes": "[button_108] Mixxx ingest - refine coords against plate"
+    }
+  ]
+}
