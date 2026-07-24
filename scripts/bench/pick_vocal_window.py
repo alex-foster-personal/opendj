@@ -45,7 +45,7 @@ def _hop_energy(path: Path, hop_s: float) -> tuple[np.ndarray, int]:
         raise RuntimeError(f"audio file does not exist: {path}")
     data, sr = sf.read(str(path), dtype="float64", always_2d=True)
     mono = data.mean(axis=1)
-    hop = int(round(sr * hop_s))
+    hop = round(sr * hop_s)
     n_hops = len(mono) // hop
     if n_hops == 0:
         raise RuntimeError(f"{path} is shorter than one {hop_s}s hop")
@@ -61,8 +61,8 @@ def pick_window(
     energy: np.ndarray, hop_s: float, length_s: float, step_s: float
 ) -> dict[str, float]:
     """Max-energy window of length_s, slid at step_s over the hop energy series."""
-    hops_per_window = int(round(length_s / hop_s))
-    hops_per_step = max(1, int(round(step_s / hop_s)))
+    hops_per_window = round(length_s / hop_s)
+    hops_per_step = max(1, round(step_s / hop_s))
     total_s = len(energy) * hop_s
     if len(energy) < hops_per_window:
         raise RuntimeError(

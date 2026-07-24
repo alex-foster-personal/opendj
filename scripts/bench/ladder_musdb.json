@@ -1,0 +1,349 @@
+{
+  "track": "Al James - Schoolboy Facination (MUSDB18-HQ)",
+  "reference": "clips-musdb/al-james-schoolboy-facination-truth-vocals.flac",
+  "window": {
+    "start_s": 123.0,
+    "end_s": 198.0,
+    "length_s": 75.0,
+    "rms_dbfs": -22.3,
+    "silent_frac": 0.007,
+    "source_duration_s": 200.5
+  },
+  "mixture_file": "clips-musdb/al-james-schoolboy-facination-mixture.flac",
+  "clips": [
+    {
+      "id": "rung-01",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-01.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-01.inst.flac",
+      "machine_score": 1,
+      "params": "mdx_q overlap=0.1",
+      "separate_s": 7.0,
+      "si_sdr": 6.09,
+      "si_sdr_pseudo": 13.395
+    },
+    {
+      "id": "rung-02",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-02.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-02.inst.flac",
+      "machine_score": 10,
+      "params": "mdx_extra_q overlap=0.1",
+      "separate_s": 6.5,
+      "si_sdr": 9.019,
+      "si_sdr_pseudo": 16.061
+    },
+    {
+      "id": "rung-03",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-03.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-03.inst.flac",
+      "machine_score": 5,
+      "params": "htdemucs overlap=0.1",
+      "separate_s": 4.7,
+      "si_sdr": 6.457,
+      "si_sdr_pseudo": 20.354
+    },
+    {
+      "id": "rung-04",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-04.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-04.inst.flac",
+      "machine_score": 4,
+      "params": "htdemucs overlap=0.25",
+      "separate_s": 5.6,
+      "si_sdr": 6.295,
+      "si_sdr_pseudo": 20.326
+    },
+    {
+      "id": "rung-05",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-05.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-05.inst.flac",
+      "machine_score": 3,
+      "params": "htdemucs overlap=0.5",
+      "separate_s": 5.8,
+      "si_sdr": 6.287,
+      "si_sdr_pseudo": 20.99
+    },
+    {
+      "id": "rung-06",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-06.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-06.inst.flac",
+      "machine_score": 2,
+      "params": "htdemucs overlap=0.25 shifts=2",
+      "separate_s": 7.7,
+      "si_sdr": 6.205,
+      "si_sdr_pseudo": 20.242
+    },
+    {
+      "id": "rung-07",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-07.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-07.inst.flac",
+      "machine_score": 7,
+      "params": "htdemucs_ft overlap=0.25",
+      "separate_s": 10.1,
+      "si_sdr": 6.984,
+      "si_sdr_pseudo": 27.642
+    },
+    {
+      "id": "rung-08",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-08.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-08.inst.flac",
+      "machine_score": 9,
+      "params": "htdemucs_ft overlap=0.5",
+      "separate_s": 13.1,
+      "si_sdr": 7.093,
+      "si_sdr_pseudo": 30.563
+    },
+    {
+      "id": "rung-09",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-09.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-09.inst.flac",
+      "machine_score": 8,
+      "params": "htdemucs_ft overlap=0.5 shifts=2",
+      "separate_s": 22.3,
+      "si_sdr": 7.012,
+      "si_sdr_pseudo": 31.199
+    },
+    {
+      "id": "rung-10",
+      "file": "clips-musdb/al-james-schoolboy-facination-rung-10.flac",
+      "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-10.inst.flac",
+      "machine_score": 6,
+      "params": "htdemucs_ft overlap=0.5 shifts=5",
+      "separate_s": 52.1,
+      "si_sdr": 6.95,
+      "si_sdr_pseudo": null
+    }
+  ],
+  "reference_kind": "true-stem",
+  "dataset": "MUSDB18-HQ test",
+  "tracks": [
+    {
+      "track": "Al James - Schoolboy Facination (MUSDB18-HQ)",
+      "reference": "clips-musdb/al-james-schoolboy-facination-truth-vocals.flac",
+      "window": {
+        "start_s": 123.0,
+        "end_s": 198.0,
+        "length_s": 75.0,
+        "rms_dbfs": -22.3,
+        "silent_frac": 0.007,
+        "source_duration_s": 200.5
+      },
+      "mixture_file": "clips-musdb/al-james-schoolboy-facination-mixture.flac",
+      "clips": [
+        {
+          "id": "rung-01",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-01.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-01.inst.flac",
+          "machine_score": 1,
+          "params": "mdx_q overlap=0.1",
+          "separate_s": 7.0,
+          "si_sdr": 6.09,
+          "si_sdr_pseudo": 13.395
+        },
+        {
+          "id": "rung-02",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-02.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-02.inst.flac",
+          "machine_score": 10,
+          "params": "mdx_extra_q overlap=0.1",
+          "separate_s": 6.5,
+          "si_sdr": 9.019,
+          "si_sdr_pseudo": 16.061
+        },
+        {
+          "id": "rung-03",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-03.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-03.inst.flac",
+          "machine_score": 5,
+          "params": "htdemucs overlap=0.1",
+          "separate_s": 4.7,
+          "si_sdr": 6.457,
+          "si_sdr_pseudo": 20.354
+        },
+        {
+          "id": "rung-04",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-04.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-04.inst.flac",
+          "machine_score": 4,
+          "params": "htdemucs overlap=0.25",
+          "separate_s": 5.6,
+          "si_sdr": 6.295,
+          "si_sdr_pseudo": 20.326
+        },
+        {
+          "id": "rung-05",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-05.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-05.inst.flac",
+          "machine_score": 3,
+          "params": "htdemucs overlap=0.5",
+          "separate_s": 5.8,
+          "si_sdr": 6.287,
+          "si_sdr_pseudo": 20.99
+        },
+        {
+          "id": "rung-06",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-06.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-06.inst.flac",
+          "machine_score": 2,
+          "params": "htdemucs overlap=0.25 shifts=2",
+          "separate_s": 7.7,
+          "si_sdr": 6.205,
+          "si_sdr_pseudo": 20.242
+        },
+        {
+          "id": "rung-07",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-07.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-07.inst.flac",
+          "machine_score": 7,
+          "params": "htdemucs_ft overlap=0.25",
+          "separate_s": 10.1,
+          "si_sdr": 6.984,
+          "si_sdr_pseudo": 27.642
+        },
+        {
+          "id": "rung-08",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-08.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-08.inst.flac",
+          "machine_score": 9,
+          "params": "htdemucs_ft overlap=0.5",
+          "separate_s": 13.1,
+          "si_sdr": 7.093,
+          "si_sdr_pseudo": 30.563
+        },
+        {
+          "id": "rung-09",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-09.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-09.inst.flac",
+          "machine_score": 8,
+          "params": "htdemucs_ft overlap=0.5 shifts=2",
+          "separate_s": 22.3,
+          "si_sdr": 7.012,
+          "si_sdr_pseudo": 31.199
+        },
+        {
+          "id": "rung-10",
+          "file": "clips-musdb/al-james-schoolboy-facination-rung-10.flac",
+          "inst_file": "clips-musdb/al-james-schoolboy-facination-rung-10.inst.flac",
+          "machine_score": 6,
+          "params": "htdemucs_ft overlap=0.5 shifts=5",
+          "separate_s": 52.1,
+          "si_sdr": 6.95,
+          "si_sdr_pseudo": null
+        }
+      ]
+    },
+    {
+      "track": "Zeno - Signs (MUSDB18-HQ)",
+      "reference": "clips-musdb/zeno-signs-truth-vocals.flac",
+      "window": {
+        "start_s": 137.0,
+        "end_s": 212.0,
+        "length_s": 75.0,
+        "rms_dbfs": -22.54,
+        "silent_frac": 0.113,
+        "source_duration_s": 234.0
+      },
+      "mixture_file": "clips-musdb/zeno-signs-mixture.flac",
+      "clips": [
+        {
+          "id": "rung-01",
+          "file": "clips-musdb/zeno-signs-rung-01.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-01.inst.flac",
+          "machine_score": 1,
+          "params": "mdx_q overlap=0.1",
+          "separate_s": 5.6,
+          "si_sdr": 8.044,
+          "si_sdr_pseudo": 13.395
+        },
+        {
+          "id": "rung-02",
+          "file": "clips-musdb/zeno-signs-rung-02.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-02.inst.flac",
+          "machine_score": 10,
+          "params": "mdx_extra_q overlap=0.1",
+          "separate_s": 4.9,
+          "si_sdr": 9.222,
+          "si_sdr_pseudo": 16.061
+        },
+        {
+          "id": "rung-03",
+          "file": "clips-musdb/zeno-signs-rung-03.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-03.inst.flac",
+          "machine_score": 2,
+          "params": "htdemucs overlap=0.1",
+          "separate_s": 1.3,
+          "si_sdr": 8.429,
+          "si_sdr_pseudo": 20.354
+        },
+        {
+          "id": "rung-04",
+          "file": "clips-musdb/zeno-signs-rung-04.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-04.inst.flac",
+          "machine_score": 4,
+          "params": "htdemucs overlap=0.25",
+          "separate_s": 1.5,
+          "si_sdr": 8.498,
+          "si_sdr_pseudo": 20.326
+        },
+        {
+          "id": "rung-05",
+          "file": "clips-musdb/zeno-signs-rung-05.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-05.inst.flac",
+          "machine_score": 6,
+          "params": "htdemucs overlap=0.5",
+          "separate_s": 4.5,
+          "si_sdr": 8.596,
+          "si_sdr_pseudo": 20.99
+        },
+        {
+          "id": "rung-06",
+          "file": "clips-musdb/zeno-signs-rung-06.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-06.inst.flac",
+          "machine_score": 3,
+          "params": "htdemucs overlap=0.25 shifts=2",
+          "separate_s": 3.0,
+          "si_sdr": 8.432,
+          "si_sdr_pseudo": 20.242
+        },
+        {
+          "id": "rung-07",
+          "file": "clips-musdb/zeno-signs-rung-07.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-07.inst.flac",
+          "machine_score": 7,
+          "params": "htdemucs_ft overlap=0.25",
+          "separate_s": 9.0,
+          "si_sdr": 8.644,
+          "si_sdr_pseudo": 27.642
+        },
+        {
+          "id": "rung-08",
+          "file": "clips-musdb/zeno-signs-rung-08.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-08.inst.flac",
+          "machine_score": 5,
+          "params": "htdemucs_ft overlap=0.5",
+          "separate_s": 9.0,
+          "si_sdr": 8.592,
+          "si_sdr_pseudo": 30.563
+        },
+        {
+          "id": "rung-09",
+          "file": "clips-musdb/zeno-signs-rung-09.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-09.inst.flac",
+          "machine_score": 8,
+          "params": "htdemucs_ft overlap=0.5 shifts=2",
+          "separate_s": 19.6,
+          "si_sdr": 8.651,
+          "si_sdr_pseudo": 31.199
+        },
+        {
+          "id": "rung-10",
+          "file": "clips-musdb/zeno-signs-rung-10.flac",
+          "inst_file": "clips-musdb/zeno-signs-rung-10.inst.flac",
+          "machine_score": 9,
+          "params": "htdemucs_ft overlap=0.5 shifts=5",
+          "separate_s": 43.8,
+          "si_sdr": 8.666,
+          "si_sdr_pseudo": null
+        }
+      ]
+    }
+  ]
+}
