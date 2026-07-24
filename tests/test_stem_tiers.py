@@ -77,45 +77,97 @@ def test_default_tier_is_a_real_tier():
     assert tiercfg.DEFAULT_TIER in tiercfg.TIERS
 
 
+# The farm is READ, NOT IMPORTED. ``scripts/modal_vocal_farm.py`` does a bare
+# ``import modal`` at module scope, and modal is deliberately not a repo
+# dependency -- every call site is `uv run --with modal`, and CI installs from
+# requirements.txt. Importing it here made three tests die with
+# ModuleNotFoundError in CI while passing locally.
+#
+# The obvious patch, pytest.importorskip("modal"), is NOT used: it turns the
+# suite green by silently switching off the only check that the tier ladder and
+# the farm still agree, which is a fallback masking a failure. Parsing the
+# literals out of the source proves the same property against the real file, in
+# any environment, and fails loudly if the constants stop being literals.
+def _farm_literals() -> dict:
+    """Top-level literal constants of the farm, via ast. No import, no modal."""
+    import ast
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "scripts/modal_vocal_farm.py"
+    tree = ast.parse(src.read_text())
+    out: dict = {}
+    for node in tree.body:
+        target = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+        if not isinstance(target, ast.Name) or node.value is None:
+            continue
+        try:
+            out[target.id] = ast.literal_eval(node.value)
+        except ValueError:
+            continue  # computed, not a literal -- not our business
+    return out
+
+
+def _farm_presets() -> dict:
+    """PRESETS as {tag: (model, overlap, shifts)}, read from the source.
+
+    PRESETS is a dict of Preset(...) CALLS, so literal_eval cannot take it;
+    the positional args are read directly instead.
+    """
+    import ast
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "scripts/modal_vocal_farm.py"
+    tree = ast.parse(src.read_text())
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (
+            node.targets[0] if isinstance(node, ast.Assign) and len(node.targets) == 1
+            else None
+        )
+        if not isinstance(target, ast.Name) or target.id != "PRESETS":
+            continue
+        presets = {}
+        for key, val in zip(node.value.keys, node.value.values):
+            args = [ast.literal_eval(a) for a in val.args]
+            presets[ast.literal_eval(key)] = (args[1], args[2], args[3])
+        return presets
+    raise AssertionError("PRESETS not found in scripts/modal_vocal_farm.py")
+
+
 def test_every_modal_rung_is_runnable_by_the_farm():
     """if a modal rung names a preset the farm cannot run, config broken
 
     LOCAL is excluded on purpose: it never touches the farm, so its preset tag
     is not one of the farm's and requiring it to be would be a false contract.
     """
-    modal = pytest.importorskip("modal")  # noqa: F841
-    from scripts.modal_vocal_farm import PRESETS
-
+    presets = _farm_presets()
     for tier in tiercfg.modal_tiers():
-        assert tier.preset_tag in PRESETS, (
+        assert tier.preset_tag in presets, (
             f"tier {tier.key} names {tier.preset_tag!r}, not in PRESETS"
         )
-        rung = PRESETS[tier.preset_tag]
-        assert (rung.model, rung.overlap, rung.shifts) == (
+        assert presets[tier.preset_tag] == (
             tier.model, tier.overlap, tier.shifts
-        )
+        ), f"tier {tier.key} disagrees with the farm preset of the same name"
 
 
 def test_every_modal_rung_model_is_baked_into_the_image():
     """if a modal rung's model is not baked, every cold container re-downloads"""
-    pytest.importorskip("modal")
-    from scripts.modal_vocal_farm import BAKED_MODELS
-
+    baked = _farm_literals()["BAKED_MODELS"]
     for tier in tiercfg.modal_tiers():
-        assert tier.model in BAKED_MODELS, (
-            f"tier {tier.key} needs {tier.model!r}, baked: {BAKED_MODELS}"
+        assert tier.model in baked, (
+            f"tier {tier.key} needs {tier.model!r}, baked: {baked}"
         )
 
 
 def test_farm_mirror_matches_tier_config():
     """if the farm's mirrored constants drift from tiers.py, mirror broken"""
-    pytest.importorskip("modal")
-    import scripts.modal_vocal_farm as farm
-
-    assert farm.GPU_USD_PER_S == tiercfg.GPU_USD_PER_S
-    assert farm.DEFAULT_GPU_KIND == tiercfg.DEFAULT_GPU
-    assert farm.DEFAULT_MAX_CONTAINERS == tiercfg.MAX_CONCURRENT_GPUS
-    farm._assert_tier_mirror_matches()
+    lits = _farm_literals()
+    assert lits["GPU_USD_PER_S"] == tiercfg.GPU_USD_PER_S
+    assert lits["DEFAULT_GPU_KIND"] == tiercfg.DEFAULT_GPU
+    assert lits["DEFAULT_MAX_CONTAINERS"] == tiercfg.MAX_CONCURRENT_GPUS
 
 
 def test_blackwell_cards_are_not_selectable():

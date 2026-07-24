@@ -1,6 +1,133 @@
 {
   "components": {
     "schemas": {
+      "AiApplyIn": {
+        "properties": {
+          "instruction": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instruction"
+        ],
+        "title": "AiApplyIn",
+        "type": "object"
+      },
+      "AiApplyOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiApplyProposal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "model"
+        ],
+        "title": "AiApplyOut",
+        "type": "object"
+      },
+      "AiApplyProposal": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "rationale"
+        ],
+        "title": "AiApplyProposal",
+        "type": "object"
+      },
+      "AiSearchIn": {
+        "properties": {
+          "catalog_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Catalog Ids",
+            "type": "array"
+          },
+          "query": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "AiSearchIn",
+        "type": "object"
+      },
+      "AiSearchOut": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ids",
+          "model"
+        ],
+        "title": "AiSearchOut",
+        "type": "object"
+      },
       "AnlzCueOut": {
         "description": "Same shape as one COMPONENT-MAP 2.3 cue row (rb_vendor.fetch_cues).",
         "properties": {
@@ -190,6 +317,27 @@
           "proposals"
         ],
         "title": "AutoCuesOut",
+        "type": "object"
+      },
+      "AutoSyncOut": {
+        "properties": {
+          "djay": {
+            "default": false,
+            "title": "Djay",
+            "type": "boolean"
+          },
+          "open_dj": {
+            "default": false,
+            "title": "Open Dj",
+            "type": "boolean"
+          },
+          "rekordbox": {
+            "default": false,
+            "title": "Rekordbox",
+            "type": "boolean"
+          }
+        },
+        "title": "AutoSyncOut",
         "type": "object"
       },
       "BeatgridFallbackOut": {
@@ -933,6 +1081,27 @@
         "title": "ErrorBody",
         "type": "object"
       },
+      "EstimateOut": {
+        "properties": {
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/TierEstimateOut"
+            },
+            "title": "Tiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "duration_s",
+          "tiers"
+        ],
+        "title": "EstimateOut",
+        "type": "object"
+      },
       "FallbackBeatOut": {
         "description": "Identical field set to one ANLZ beatgrid ``beats`` entry.",
         "properties": {
@@ -1210,6 +1379,24 @@
           "etag"
         ],
         "title": "FindReplaceRowOut",
+        "type": "object"
+      },
+      "GenerateIn": {
+        "properties": {
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "tier"
+        ],
+        "title": "GenerateIn",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3068,6 +3255,242 @@
         "title": "QueueOut",
         "type": "object"
       },
+      "RatingEntry": {
+        "additionalProperties": false,
+        "description": "One clip as the rater page exports it.\n\nShape matches the hand-exported artifact already in scripts/bench/ratings/;\nunrated clips carry nulls rather than being dropped, so the artifact always\nshows the full ladder.",
+        "properties": {
+          "file": {
+            "minLength": 1,
+            "title": "File",
+            "type": "string"
+          },
+          "human_inst_score": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Inst Score"
+          },
+          "human_score": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Score"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "inst_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inst File"
+          },
+          "machine_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Rank"
+          },
+          "machine_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Machine Score"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "params": {
+            "default": "",
+            "title": "Params",
+            "type": "string"
+          },
+          "si_sdr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Si Sdr"
+          }
+        },
+        "required": [
+          "id",
+          "file",
+          "machine_score"
+        ],
+        "title": "RatingEntry",
+        "type": "object"
+      },
+      "RatingsFile": {
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "rated_count": {
+            "title": "Rated Count",
+            "type": "integer"
+          },
+          "saved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved At"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "path",
+          "track",
+          "saved_at",
+          "rated_count",
+          "total_count",
+          "bytes"
+        ],
+        "title": "RatingsFile",
+        "type": "object"
+      },
+      "RatingsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "blind_mode": {
+            "title": "Blind Mode",
+            "type": "boolean"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/RatingEntry"
+            },
+            "minItems": 1,
+            "title": "Ratings",
+            "type": "array"
+          },
+          "track": {
+            "minLength": 1,
+            "title": "Track",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "blind_mode",
+          "ratings"
+        ],
+        "title": "RatingsIn",
+        "type": "object"
+      },
+      "RatingsSaved": {
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "rated_count": {
+            "title": "Rated Count",
+            "type": "integer"
+          },
+          "saved_at": {
+            "title": "Saved At",
+            "type": "string"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "filename",
+          "track",
+          "saved_at",
+          "rated_count",
+          "total_count",
+          "bytes"
+        ],
+        "title": "RatingsSaved",
+        "type": "object"
+      },
       "RbMetaOut": {
         "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).",
         "properties": {
@@ -4260,6 +4683,195 @@
         "title": "SuggestionOut",
         "type": "object"
       },
+      "TierEstimateOut": {
+        "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
+        "properties": {
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "gpu": {
+            "title": "Gpu",
+            "type": "string"
+          },
+          "measured": {
+            "title": "Measured",
+            "type": "boolean"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured At"
+          },
+          "n_tracks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Tracks"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "r_squared": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Squared"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "unavailable_because": {
+            "title": "Unavailable Because",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd"
+          },
+          "where": {
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "name",
+          "where",
+          "gpu",
+          "availability",
+          "unavailable_because",
+          "measured"
+        ],
+        "title": "TierEstimateOut",
+        "type": "object"
+      },
+      "TierOut": {
+        "description": "One separation product, with the evidence behind the choice.",
+        "properties": {
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "evidence_strength": {
+            "title": "Evidence Strength",
+            "type": "string"
+          },
+          "gpu": {
+            "title": "Gpu",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overlap": {
+            "title": "Overlap",
+            "type": "number"
+          },
+          "preset_tag": {
+            "title": "Preset Tag",
+            "type": "string"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "shifts": {
+            "title": "Shifts",
+            "type": "integer"
+          },
+          "unavailable_because": {
+            "title": "Unavailable Because",
+            "type": "string"
+          },
+          "where": {
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "where",
+          "preset_tag",
+          "model",
+          "overlap",
+          "shifts",
+          "gpu",
+          "purpose",
+          "evidence",
+          "evidence_strength",
+          "availability",
+          "unavailable_because",
+          "is_default"
+        ],
+        "title": "TierOut",
+        "type": "object"
+      },
       "TrackListItemOut": {
         "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).",
         "properties": {
@@ -4886,6 +5498,88 @@
           "items"
         ],
         "title": "TracksPage",
+        "type": "object"
+      },
+      "UiPrefsOut": {
+        "properties": {
+          "auto_sync": {
+            "$ref": "#/components/schemas/AutoSyncOut"
+          },
+          "confirm": {
+            "additionalProperties": true,
+            "title": "Confirm",
+            "type": "object"
+          },
+          "hide_todo_settings": {
+            "default": false,
+            "title": "Hide Todo Settings",
+            "type": "boolean"
+          },
+          "theme": {
+            "default": "dark",
+            "enum": [
+              "dark",
+              "light"
+            ],
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "title": "UiPrefsOut",
+        "type": "object"
+      },
+      "UiPrefsPatch": {
+        "properties": {
+          "auto_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutoSyncOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirm": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "hide_todo_settings": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Todo Settings"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "enum": [
+                  "dark",
+                  "light"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
+          }
+        },
+        "title": "UiPrefsPatch",
         "type": "object"
       },
       "ValidationError": {
@@ -5961,6 +6655,137 @@
         "summary": "Api Relabel",
         "tags": [
           "sets"
+        ]
+      }
+    },
+    "/api/v1/bench/kpi": {
+      "get": {
+        "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Kpi Ledger Api V1 Bench Kpi Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Kpi Ledger",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/ratings": {
+      "get": {
+        "operationId": "list_ratings_api_v1_bench_ratings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RatingsFile"
+                  },
+                  "title": "Response List Ratings Api V1 Bench Ratings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Ratings",
+        "tags": [
+          "bench"
+        ]
+      },
+      "post": {
+        "operationId": "save_ratings_api_v1_bench_ratings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingsSaved"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Ratings",
+        "tags": [
+          "bench"
+        ]
+      }
+    },
+    "/api/v1/bench/ratings/{filename}": {
+      "get": {
+        "operationId": "get_ratings_file_api_v1_bench_ratings__filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Ratings File Api V1 Bench Ratings  Filename  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ratings File",
+        "tags": [
+          "bench"
         ]
       }
     },
@@ -7837,6 +8662,88 @@
         ]
       }
     },
+    "/api/v1/settings/ai-apply": {
+      "post": {
+        "operationId": "ai_apply_api_v1_settings_ai_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Apply",
+        "tags": [
+          "settings-ai"
+        ]
+      }
+    },
+    "/api/v1/settings/ai-search": {
+      "post": {
+        "operationId": "ai_search_api_v1_settings_ai_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiSearchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Search",
+        "tags": [
+          "settings-ai"
+        ]
+      }
+    },
     "/api/v1/smartlists": {
       "get": {
         "operationId": "list_smartlists_api_v1_smartlists_get",
@@ -8061,6 +8968,260 @@
         "summary": "Get Pending Tracks",
         "tags": [
           "spotify"
+        ]
+      }
+    },
+    "/api/v1/stems/estimate": {
+      "get": {
+        "description": "Every tier costed for one track, so a UI needs one round trip not three.\n\nA tier with no benchmark returns ``measured: false`` and the reason rather\nthan a plausible-looking guess. Rendering a guess as a number is how an\nassumption becomes ground truth.",
+        "operationId": "estimate_api_v1_stems_estimate_get",
+        "parameters": [
+          {
+            "description": "track duration in seconds",
+            "in": "query",
+            "name": "seconds",
+            "required": true,
+            "schema": {
+              "description": "track duration in seconds",
+              "exclusiveMinimum": 0,
+              "title": "Seconds",
+              "type": "number"
+            }
+          },
+          {
+            "description": "override the card",
+            "in": "query",
+            "name": "gpu",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "override the card",
+              "title": "Gpu"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Estimate",
+        "tags": [
+          "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/estimate/batch": {
+      "get": {
+        "description": "Wall clock for a whole batch, packed longest-first across GPU slots.\n\nGPU-SIDE ONLY. It does not model the upload feeder, which has been the\nbinding constraint on real runs from this Mac. A floor, not a promise.",
+        "operationId": "estimate_batch_api_v1_stems_estimate_batch_get",
+        "parameters": [
+          {
+            "description": "repeat once per track",
+            "in": "query",
+            "name": "seconds",
+            "required": true,
+            "schema": {
+              "description": "repeat once per track",
+              "items": {
+                "type": "number"
+              },
+              "title": "Seconds",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "default": "M",
+              "title": "Tier",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gpu",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gpu"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Estimate Batch Api V1 Stems Estimate Batch Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Estimate Batch",
+        "tags": [
+          "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/generate": {
+      "post": {
+        "description": "Start a real separation for one track at one rung. No mocking.\n\nReturns immediately with a job id; the work runs as a subprocess. This is\nthe programmatic half of the right-click menu item, so an agent can drive\nthe identical flow (AGENT-NATIVE PARITY).",
+        "operationId": "generate_api_v1_stems_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Generate Api V1 Stems Generate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate",
+        "tags": [
+          "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/jobs/{job_id}": {
+      "get": {
+        "description": "Live state of one generate job. Reports the real returncode, not a guess.",
+        "operationId": "job_status_api_v1_stems_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Job Status Api V1 Stems Jobs  Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job Status",
+        "tags": [
+          "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/stems/tiers": {
+      "get": {
+        "operationId": "list_tiers_api_v1_stems_tiers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TierOut"
+                  },
+                  "title": "Response List Tiers Api V1 Stems Tiers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tiers",
+        "tags": [
+          "stem-tiers"
         ]
       }
     },
@@ -8350,7 +9511,7 @@
     },
     "/api/v1/tracks/{stable_id}/anlz": {
       "get": {
-        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.",
+        "description": "Waveform (preview + detail) / beatgrid / cues / phrases JSON.\n\nThe ``vocals`` field carries FOUR statuses: ``rekordbox`` (PVDI),\n``no_vocals`` (PVDI present, all zero), ``demucs`` (local detection\nfrom data/state/vocal-cache, merged when PVDI is absent), and\n``not_analyzed`` (NEITHER source exists).",
         "operationId": "get_track_anlz_api_v1_tracks__stable_id__anlz_get",
         "parameters": [
           {
@@ -8368,9 +9529,9 @@
             "name": "points",
             "required": false,
             "schema": {
-              "default": 2400,
+              "default": 38400,
               "description": "Max length of each waveform band array after downsampling",
-              "maximum": 2400,
+              "maximum": 38400,
               "minimum": 100,
               "title": "Points",
               "type": "integer"
@@ -9013,6 +10174,66 @@
         "summary": "Get Stem File",
         "tags": [
           "stems"
+        ]
+      }
+    },
+    "/api/v1/ui-prefs": {
+      "get": {
+        "operationId": "get_ui_prefs_api_v1_ui_prefs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiPrefsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ui Prefs",
+        "tags": [
+          "ui-prefs"
+        ]
+      },
+      "put": {
+        "operationId": "put_ui_prefs_api_v1_ui_prefs_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UiPrefsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UiPrefsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Ui Prefs",
+        "tags": [
+          "ui-prefs"
         ]
       }
     },
