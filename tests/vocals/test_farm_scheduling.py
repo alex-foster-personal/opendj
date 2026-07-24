@@ -178,3 +178,69 @@ def test_empty_gap_is_refused_not_divided_by_zero() -> None:
 
     with pytest.raises(SystemExit, match="empty gap"):
         project_gap_impact(2.0, 0.005, evicted=0, resident=0, gap_bytes=0)
+
+
+#----- production preset -------------------------------------------------------
+# Switching the default model is cheap to get wrong in two specific ways: the
+# weights silently not being in the image (a per-container download), and the
+# cache stamp naming a model that did not run.
+
+
+def test_default_preset_model_is_baked() -> None:
+    """if the default model is not baked then every cold container downloads it"""
+    from scripts.modal_vocal_farm import BAKED_MODELS, DEFAULT_PRESET, PRESETS
+
+    assert PRESETS[DEFAULT_PRESET].model in BAKED_MODELS
+
+
+def test_unbaked_model_is_refused_without_the_flag() -> None:
+    """if an unbaked model runs unflagged then cold downloads are paid silently"""
+    from scripts.modal_vocal_farm import _resolve_preset
+
+    with pytest.raises(SystemExit, match="not baked into the image"):
+        _resolve_preset("htdemucs_ft-ov0.25", allow_unbaked=False)
+    # ...and is still reachable when the caller accepts the cost.
+    assert _resolve_preset("htdemucs_ft-ov0.25", allow_unbaked=True).model == (
+        "htdemucs_ft"
+    )
+
+
+def test_every_baked_model_has_a_preset() -> None:
+    """if a model is baked with no preset then image weight is paid for nothing"""
+    from scripts.modal_vocal_farm import BAKED_MODELS, PRESETS
+
+    have = {preset.model for preset in PRESETS.values()}
+    assert set(BAKED_MODELS) <= have
+
+
+def test_old_rungs_stay_selectable() -> None:
+    """if the old ladder is dropped then a quality regression cannot be A/B tested"""
+    from scripts.modal_vocal_farm import PRESETS, _resolve_preset
+
+    for tag in ("htdemucs-ov0.1", "htdemucs-ov0.25", "htdemucs-ov0.5"):
+        assert tag in PRESETS
+        assert _resolve_preset(tag, allow_unbaked=False).tag == tag
+
+
+def test_preset_stamp_records_the_model_that_actually_ran() -> None:
+    """if the stamp does not name the real model then selective re-runs are blind"""
+    from scripts.modal_vocal_farm import (
+        DEFAULT_PRESET, PRESETS, region_params,
+    )
+
+    preset = PRESETS[DEFAULT_PRESET]
+    # cache 'source' is a family marker frozen at "demucs-htdemucs", so these
+    # two are the only honest record of which model produced the regions.
+    assert preset.stamp()["model"] == "hdemucs_mmi"
+    assert region_params(preset)["model"] == "hdemucs_mmi"
+
+
+def test_off_ladder_presets_do_not_invent_a_rung() -> None:
+    """if an off-ladder model claims a rung then it fakes a ladder measurement"""
+    from scripts.modal_vocal_farm import PRESETS
+
+    for preset in PRESETS.values():
+        if preset.model == "hdemucs_mmi":
+            assert preset.rung == 0, "hdemucs_mmi was never on the overlap ladder"
+        else:
+            assert preset.rung > 0
