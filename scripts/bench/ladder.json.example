@@ -1,0 +1,9 @@
+{
+  "track": "Example Track -- Artist Name",
+  "reference": "reference.flac",
+  "clips": [
+    { "id": "rung-01", "file": "clips/rung-01.flac", "machine_score": 3, "params": "mdx_q overlap=0.1" },
+    { "id": "rung-02", "file": "clips/rung-02.flac", "machine_score": 6, "params": "mdx_q overlap=0.25 shifts=2" },
+    { "id": "rung-03", "file": "clips/rung-03.flac", "machine_score": 9, "params": "htdemucs_ft overlap=0.5 shifts=5" }
+  ]
+}
