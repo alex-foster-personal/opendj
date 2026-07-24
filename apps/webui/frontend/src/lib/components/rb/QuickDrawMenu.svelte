@@ -56,6 +56,9 @@
 			});
 	});
 
+	/** The row the open menu belongs to, so a late estimate can refresh labels. */
+	let stemTargetId = $state<string | null>(null);
+
 	async function _loadStemEstimates(stableId: string): Promise<void> {
 		stemEstimateById = {};
 		const { track } = await getTrack(stableId);
@@ -72,6 +75,13 @@
 				: 'not measured';
 		}
 		stemEstimateById = next;
+		// The ctx array was built BEFORE this resolved, so rebuild it or the
+		// labels stay on their "..." placeholder forever. Only if the menu is
+		// still open on the same row -- a stale refresh would relabel a menu
+		// the user has since opened somewhere else.
+		if (open && stemTargetId === stableId) {
+			ctx = _contextItems(null, stableId);
+		}
 	}
 
 	function _stemItems(stableId: string): CtxItem[] {
@@ -118,10 +128,14 @@
 		return id !== null && id !== '' ? id : null;
 	}
 
-	function _contextItems(target: EventTarget | null): CtxItem[] {
-		const stableId = _stableIdFromTarget(target);
+	function _contextItems(
+		target: EventTarget | null,
+		knownStableId: string | null = null
+	): CtxItem[] {
+		const stableId = knownStableId ?? _stableIdFromTarget(target);
 		if (stableId !== null) {
-			void _loadStemEstimates(stableId).catch((e) => {
+			stemTargetId = stableId;
+			if (knownStableId === null) void _loadStemEstimates(stableId).catch((e) => {
 				console.error('[quick-draw] stem estimates unavailable', e);
 				stemEstimateById = { _error: String(e) };
 			});
