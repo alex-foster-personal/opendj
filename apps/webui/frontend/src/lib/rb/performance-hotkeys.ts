@@ -1,11 +1,15 @@
 // Shared keyboard shortcuts for /performance. Keep KISS: one module, window
 // keydown, ignore when typing in inputs. Loop targets track last interaction
 // (engage/resize/hover >250ms on a deck's loop cluster). Space toggles play
-// on the most recent channel (load / play / loop target).
+// on the most recent channel (load / play / loop target). Tab toggles library
+// next-only filter (Camelot + BPM window).
+// Cmd+, / Ctrl+, is owned by settings/hotkeys.ts (meta/ctrl ignored here).
 import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
+import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
 import type { DeckId } from '$lib/rb/types';
+import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
 const HOVER_ARM_MS = 250;
 const MIN_BEATS = 1;
@@ -101,10 +105,14 @@ async function _exitLast(): Promise<void> {
 
 export function installPerformanceHotkeys(): () => void {
 	const onKey = (e: KeyboardEvent): void => {
+		if (isSettingsOpen()) return;
 		if (_typingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
 		if (e.code === 'Space' || e.key === ' ') {
 			e.preventDefault();
 			void _toggleRecentPlay();
+		} else if (e.key === 'Tab') {
+			e.preventDefault();
+			toggleNextOnlyFilter();
 		} else if (e.key === '+' || e.key === '=') {
 			e.preventDefault();
 			void _resizeLast(2);

@@ -4,7 +4,10 @@
 	import { page } from '$app/stores';
 	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
+	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
+	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 
 	let { children } = $props();
 
@@ -13,10 +16,22 @@
 	// option (a). Toasts stay global as the app-wide error surface.
 	const isPerformance = $derived(isPerformanceRoutePath($page.url.pathname));
 
+	// Keep html[data-theme] in sync (prefs module also applies on load/set).
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		document.documentElement.dataset.theme = uiPrefs.theme;
+		document.documentElement.style.colorScheme = uiPrefs.theme;
+	});
+
 	onMount(() => {
 		refreshHealth();
+		void hydrateConfirmPrefsFromDisk();
+		const uninstallSettings = installSettingsHotkeys();
 		const id = setInterval(refreshHealth, 30_000);
-		return () => clearInterval(id);
+		return () => {
+			uninstallSettings();
+			clearInterval(id);
+		};
 	});
 </script>
 
@@ -41,7 +56,10 @@
 			<a href="/play-analytics">Play analytics</a>
 			<a href="/sets">Sessions / REC</a>
 			<a href="/progress-tree">Progress</a>
-			<a href="/settings">Settings</a>
+			<a href="/settings">Settings (daemon)</a>
+			<button type="button" class="nav-settings" onclick={() => openSettings()}>
+				Settings (Cmd+,)
+			</button>
 		</nav>
 	</aside>
 	<main>
@@ -70,8 +88,28 @@
 </div>
 {/if}
 
+<SettingsOverlay />
+
 <div class="toast-stack">
 	{#each toasts as toast (toast.id)}
 		<div class="toast" class:error={toast.kind === 'error'}>{toast.message}</div>
 	{/each}
 </div>
+
+<style>
+	.nav-settings {
+		display: block;
+		width: 100%;
+		margin-top: 0.15rem;
+		padding: 0.2rem 0;
+		border: none;
+		background: transparent;
+		color: var(--accent);
+		text-align: left;
+		font: inherit;
+		cursor: pointer;
+	}
+	.nav-settings:hover {
+		text-decoration: underline;
+	}
+</style>

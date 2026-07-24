@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getSettings, type SettingsOut } from '$lib/api';
+	import { openSettings } from '$lib/settings/hotkeys';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let settings = $state<SettingsOut | null>(null);
@@ -25,7 +26,10 @@
 
 <h2>Settings</h2>
 <p style="color: var(--muted);">
-	Read-only view of the daemon's effective runtime config. Values marked
+	Editable UI prefs open via
+	<button type="button" class="linkish" onclick={() => openSettings()}>Cmd+,</button>
+	(searchable overlay). This page remains a read-only dump of the daemon's
+	effective runtime config. Values marked
 	<span class="chip">TBD</span> are not yet introspectable or configurable.
 </p>
 
@@ -67,5 +71,15 @@
 		margin-bottom: 0.4rem;
 		color: var(--accent);
 		font-size: 0.95rem;
+	}
+	.linkish {
+		display: inline;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--accent);
+		font: inherit;
+		cursor: pointer;
+		text-decoration: underline;
 	}
 </style>

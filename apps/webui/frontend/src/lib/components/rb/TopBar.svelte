@@ -13,7 +13,8 @@
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
-	import { setBeatSyncMax, toggleTheme, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { setBeatSyncMax, uiPrefs } from '$lib/rb/prefs.svelte';
+	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
@@ -235,11 +236,9 @@
 	<button
 		type="button"
 		class="tb-icon theme-toggle"
-		class:on={uiPrefs.theme === 'light'}
-		title={uiPrefs.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-		aria-label={uiPrefs.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-		aria-pressed={uiPrefs.theme === 'light'}
-		onclick={() => toggleTheme()}
+		title="Settings (Cmd+,)"
+		aria-label="Open settings"
+		onclick={() => openSettings()}
 	>
 		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 			<circle cx="6" cy="6" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3" />
