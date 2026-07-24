@@ -32,6 +32,7 @@
 		deckHoverUi,
 		deckIdFromHoverEl
 	} from '$lib/rb/deck-hover.svelte';
+	import { formatLoadLatency } from '$lib/rb/format-load-latency';
 	import type { DeckId, DeckState, HotCueSlot, StemControl } from '$lib/rb/types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
@@ -402,6 +403,14 @@
 		</div>
 	{/if}
 
+	{#if deck.last_load_latency_ms !== null}
+		<span
+			class="load-latency"
+			title="Last deck load wall time (warm cache should drop fetchAudio ~1s)"
+		>
+			{formatLoadLatency(deck.last_load_latency_ms)}
+		</span>
+	{/if}
 </section>
 
 <style>
@@ -419,6 +428,18 @@
 		 * column chrome / stacked neighbour decks */
 		border: none;
 		box-shadow: inset 0 0 0 1px #3d4652;
+	}
+	.load-latency {
+		position: absolute;
+		right: 6px;
+		bottom: 3px;
+		z-index: 2;
+		font-size: 9px;
+		line-height: 1;
+		letter-spacing: 0.02em;
+		color: color-mix(in srgb, var(--rb-text-dim, #8b93a0) 85%, transparent);
+		pointer-events: none;
+		user-select: none;
 	}
 	.rb-deck.drop-hover {
 		outline: 1px solid var(--rb-accent);
