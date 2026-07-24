@@ -1,0 +1,344 @@
+{
+  "track": "Al James - Schoolboy Facination (MUSDB18-HQ, funk soul, sung male lead over live band) - 4-stem set",
+  "mode": "four-stem",
+  "blind_default": true,
+  "genre": "funk soul, sung male lead over live band, upright-register bass and full kit",
+  "dataset": "MUSDB18-HQ test",
+  "window": {
+    "start_s": 75.0,
+    "length_s": 60.0
+  },
+  "hardware": "Apple M3, CPU only",
+  "mixture_file": "clips-4stem/aljames-schoolboy-mixture.m4a",
+  "mixture_note": "the raw mixture, REFERENCE ONLY - it is not an arm and is not graded. Its SI-SDR against each true stem is that stem's do-nothing floor.",
+  "content_gate": {
+    "winner": {
+      "track": "Al James - Schoolboy Facination",
+      "start_s": 75.0,
+      "length_s": 60.0,
+      "weakest_energy_share": 0.1153,
+      "balance_db": -5.61,
+      "spectral_span_octaves": 4.78,
+      "hardness_db": 5.2,
+      "mixture_floor_si_sdr": {
+        "vocals": -1.666,
+        "drums": -6.351,
+        "bass": -3.782,
+        "other": -9.009
+      }
+    },
+    "stems": {
+      "vocals": {
+        "stem": "vocals",
+        "rms_dbfs": -23.92,
+        "peak_dbfs": -5.14,
+        "active_frac": 0.8758,
+        "energy_share": 0.4079,
+        "rms_below_loudest_db": 0.0,
+        "peak_below_loudest_db": 0.0,
+        "spectral_centroid_hz": 4126.4
+      },
+      "drums": {
+        "stem": "drums",
+        "rms_dbfs": -27.36,
+        "peak_dbfs": -10.46,
+        "active_frac": 0.9708,
+        "energy_share": 0.1848,
+        "rms_below_loudest_db": -3.44,
+        "peak_below_loudest_db": -5.33,
+        "spectral_centroid_hz": 6230.3
+      },
+      "bass": {
+        "stem": "bass",
+        "rms_dbfs": -25.37,
+        "peak_dbfs": -10.46,
+        "active_frac": 0.86,
+        "energy_share": 0.2921,
+        "rms_below_loudest_db": -1.45,
+        "peak_below_loudest_db": -5.32,
+        "spectral_centroid_hz": 226.3
+      },
+      "other": {
+        "stem": "other",
+        "rms_dbfs": -29.41,
+        "peak_dbfs": -10.74,
+        "active_frac": 0.9175,
+        "energy_share": 0.1153,
+        "rms_below_loudest_db": -5.49,
+        "peak_below_loudest_db": -5.61,
+        "spectral_centroid_hz": 4967.0
+      }
+    },
+    "candidates_measured": 8,
+    "candidates_rejected": [
+      {
+        "track": "AM Contra - Heart Peripheral",
+        "start_s": 55.0,
+        "failures": {
+          "bass": [
+            "never surfaces (peak -8.6 dB under the loudest peak < -8)"
+          ]
+        }
+      },
+      {
+        "track": "Detsky Sad - Walkie Talkie",
+        "start_s": 35.0,
+        "failures": {
+          "bass": [
+            "buried (-9.2 dB under the loudest stem < -8)",
+            "never surfaces (peak -13.9 dB under the loudest peak < -8)"
+          ],
+          "other": [
+            "never surfaces (peak -9.6 dB under the loudest peak < -8)"
+          ]
+        }
+      },
+      {
+        "track": "Punkdisco - Oral Hygiene",
+        "start_s": 35.0,
+        "failures": {
+          "vocals": [
+            "mostly gaps (32% active < 35%)",
+            "buried (-9.2 dB under the loudest stem < -8)"
+          ],
+          "other": [
+            "buried (-10.4 dB under the loudest stem < -8)"
+          ]
+        }
+      },
+      {
+        "track": "Timboz - Pony",
+        "start_s": 5.0,
+        "failures": {
+          "bass": [
+            "buried (-8.2 dB under the loudest stem < -8)",
+            "never surfaces (peak -8.9 dB under the loudest peak < -8)"
+          ]
+        }
+      }
+    ],
+    "bars": {
+      "window_s": 60.0,
+      "window_hop_s": 10.0,
+      "edge_trim_s": 5.0,
+      "frame_s": 0.05,
+      "active_floor_dbfs": -50.0,
+      "min_rms_dbfs": -40.0,
+      "min_active_frac": 0.35,
+      "min_energy_share": 0.03,
+      "min_rms_below_loudest_db": -8.0,
+      "min_peak_below_loudest_db": -8.0,
+      "energy_share_denominator": "sum of the four stems' energy, not the mixture"
+    }
+  },
+  "stems": [
+    {
+      "stem": "vocals",
+      "reference": "clips-4stem/aljames-schoolboy-truth-vocals.m4a",
+      "reference_kind": "TRUE MUSDB18-HQ stem",
+      "mixture_floor_si_sdr": -1.666,
+      "content": {
+        "rms_dbfs": -23.92,
+        "peak_dbfs": -5.14,
+        "active_frac": 0.8758,
+        "energy_share": 0.4079,
+        "rms_below_loudest_db": 0.0,
+        "peak_below_loudest_db": 0.0
+      }
+    },
+    {
+      "stem": "drums",
+      "reference": "clips-4stem/aljames-schoolboy-truth-drums.m4a",
+      "reference_kind": "TRUE MUSDB18-HQ stem",
+      "mixture_floor_si_sdr": -6.352,
+      "content": {
+        "rms_dbfs": -27.36,
+        "peak_dbfs": -10.46,
+        "active_frac": 0.9708,
+        "energy_share": 0.1848,
+        "rms_below_loudest_db": -3.44,
+        "peak_below_loudest_db": -5.33
+      }
+    },
+    {
+      "stem": "bass",
+      "reference": "clips-4stem/aljames-schoolboy-truth-bass.m4a",
+      "reference_kind": "TRUE MUSDB18-HQ stem",
+      "mixture_floor_si_sdr": -3.783,
+      "content": {
+        "rms_dbfs": -25.37,
+        "peak_dbfs": -10.46,
+        "active_frac": 0.86,
+        "energy_share": 0.2921,
+        "rms_below_loudest_db": -1.45,
+        "peak_below_loudest_db": -5.32
+      }
+    },
+    {
+      "stem": "other",
+      "reference": "clips-4stem/aljames-schoolboy-truth-other.m4a",
+      "reference_kind": "TRUE MUSDB18-HQ stem",
+      "mixture_floor_si_sdr": -9.009,
+      "content": {
+        "rms_dbfs": -29.41,
+        "peak_dbfs": -10.74,
+        "active_frac": 0.9175,
+        "energy_share": 0.1153,
+        "rms_below_loudest_db": -5.49,
+        "peak_below_loudest_db": -5.61
+      }
+    }
+  ],
+  "arms": [
+    {
+      "id": "hdemucs_mmi-ov0",
+      "params": "hdemucs_mmi, overlap 0, 44.1 kHz",
+      "separate_s": 11.33,
+      "s_per_stem_minute": 11.33,
+      "machine_score": 5,
+      "stems": {
+        "vocals": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov0-vocals.m4a",
+          "si_sdr": 8.787
+        },
+        "drums": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov0-drums.m4a",
+          "si_sdr": 6.546
+        },
+        "bass": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov0-bass.m4a",
+          "si_sdr": 8.647
+        },
+        "other": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov0-other.m4a",
+          "si_sdr": -0.106
+        }
+      }
+    },
+    {
+      "id": "hdemucs_mmi-ov25",
+      "params": "hdemucs_mmi, overlap 0.25, 44.1 kHz",
+      "separate_s": 12.48,
+      "s_per_stem_minute": 12.48,
+      "machine_score": 6,
+      "stems": {
+        "vocals": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov25-vocals.m4a",
+          "si_sdr": 8.963
+        },
+        "drums": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov25-drums.m4a",
+          "si_sdr": 6.554
+        },
+        "bass": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov25-bass.m4a",
+          "si_sdr": 8.665
+        },
+        "other": {
+          "file": "clips-4stem/aljames-schoolboy-hdemucs_mmi-ov25-other.m4a",
+          "si_sdr": 0.058
+        }
+      }
+    },
+    {
+      "id": "htdemucs-ov25",
+      "params": "htdemucs, overlap 0.25, 44.1 kHz",
+      "separate_s": 20.96,
+      "s_per_stem_minute": 20.96,
+      "machine_score": 4,
+      "stems": {
+        "vocals": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov25-vocals.m4a",
+          "si_sdr": 8.173
+        },
+        "drums": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov25-drums.m4a",
+          "si_sdr": 6.705
+        },
+        "bass": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov25-bass.m4a",
+          "si_sdr": 9.44
+        },
+        "other": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov25-other.m4a",
+          "si_sdr": -0.664
+        }
+      }
+    },
+    {
+      "id": "htdemucs-ov0-22k",
+      "params": "htdemucs, overlap 0, separated at 22.05 kHz",
+      "separate_s": 7.9,
+      "s_per_stem_minute": 7.9,
+      "machine_score": 1,
+      "stems": {
+        "vocals": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov0-22k-vocals.m4a",
+          "si_sdr": 6.293
+        },
+        "drums": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov0-22k-drums.m4a",
+          "si_sdr": 1.93
+        },
+        "bass": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov0-22k-bass.m4a",
+          "si_sdr": -4.576
+        },
+        "other": {
+          "file": "clips-4stem/aljames-schoolboy-htdemucs-ov0-22k-other.m4a",
+          "si_sdr": -6.261
+        }
+      }
+    },
+    {
+      "id": "rb7-stems",
+      "params": "rekordbox 7 STEMS, its own hdemucs.onnx, overlap 0.25, 44.1 kHz",
+      "separate_s": 10.51,
+      "s_per_stem_minute": 10.51,
+      "machine_score": 3,
+      "stems": {
+        "vocals": {
+          "file": "clips-4stem/aljames-schoolboy-rb7-stems-vocals.m4a",
+          "si_sdr": 7.482
+        },
+        "drums": {
+          "file": "clips-4stem/aljames-schoolboy-rb7-stems-drums.m4a",
+          "si_sdr": 6.096
+        },
+        "bass": {
+          "file": "clips-4stem/aljames-schoolboy-rb7-stems-bass.m4a",
+          "si_sdr": 8.376
+        },
+        "other": {
+          "file": "clips-4stem/aljames-schoolboy-rb7-stems-other.m4a",
+          "si_sdr": -1.295
+        }
+      }
+    },
+    {
+      "id": "rb6-spleeter",
+      "params": "rekordbox 6 Track Separation, its own Spleeter 4stems weights, 44.1 kHz",
+      "separate_s": 1.76,
+      "s_per_stem_minute": 1.76,
+      "machine_score": 2,
+      "stems": {
+        "vocals": {
+          "file": "clips-4stem/aljames-schoolboy-rb6-spleeter-vocals.m4a",
+          "si_sdr": 5.975
+        },
+        "drums": {
+          "file": "clips-4stem/aljames-schoolboy-rb6-spleeter-drums.m4a",
+          "si_sdr": 2.281
+        },
+        "bass": {
+          "file": "clips-4stem/aljames-schoolboy-rb6-spleeter-bass.m4a",
+          "si_sdr": 4.451
+        },
+        "other": {
+          "file": "clips-4stem/aljames-schoolboy-rb6-spleeter-other.m4a",
+          "si_sdr": -2.687
+        }
+      }
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 {
-  "track": "Timboz - Pony (MUSDB18-HQ, metal, screamed male over dense guitars) - 4-stem set",
-  "genre": "metal, screamed male over dense guitars",
+  "track": "Al James - Schoolboy Facination (MUSDB18-HQ, funk soul, sung male lead over live band) - 4-stem set",
+  "genre": "funk soul, sung male lead over live band, upright-register bass and full kit",
   "dataset": "MUSDB18-HQ test",
   "window": {
-    "start_s": 59.0,
+    "start_s": 75.0,
     "length_s": 60.0
   },
   "hardware": "Apple M3, CPU only",
@@ -14,10 +14,10 @@
     "other"
   ],
   "mixture_floor_si_sdr": {
-    "vocals": -8.376,
-    "drums": -5.481,
-    "bass": -10.627,
-    "other": 1.443
+    "vocals": -1.666,
+    "drums": -6.352,
+    "bass": -3.783,
+    "other": -9.009
   },
   "arms": [
     {
@@ -27,13 +27,13 @@
       "sep_rate": 44100,
       "params": "hdemucs_mmi, overlap 0, 44.1 kHz",
       "engine": "demucs",
-      "infer_s": 11.44,
-      "s_per_stem_minute": 11.44,
+      "infer_s": 11.33,
+      "s_per_stem_minute": 11.33,
       "si_sdr": {
-        "vocals": 4.152,
-        "drums": 3.688,
-        "bass": 0.416,
-        "other": 7.435
+        "vocals": 8.787,
+        "drums": 6.546,
+        "bass": 8.647,
+        "other": -0.106
       }
     },
     {
@@ -43,13 +43,13 @@
       "sep_rate": 44100,
       "params": "hdemucs_mmi, overlap 0.25, 44.1 kHz",
       "engine": "demucs",
-      "infer_s": 14.93,
-      "s_per_stem_minute": 14.93,
+      "infer_s": 12.48,
+      "s_per_stem_minute": 12.48,
       "si_sdr": {
-        "vocals": 4.16,
-        "drums": 3.778,
-        "bass": 0.535,
-        "other": 7.45
+        "vocals": 8.963,
+        "drums": 6.554,
+        "bass": 8.665,
+        "other": 0.058
       }
     },
     {
@@ -59,13 +59,13 @@
       "sep_rate": 44100,
       "params": "htdemucs, overlap 0.25, 44.1 kHz",
       "engine": "demucs",
-      "infer_s": 25.99,
-      "s_per_stem_minute": 25.99,
+      "infer_s": 20.96,
+      "s_per_stem_minute": 20.96,
       "si_sdr": {
-        "vocals": 4.133,
-        "drums": 3.953,
-        "bass": -0.035,
-        "other": 7.514
+        "vocals": 8.173,
+        "drums": 6.705,
+        "bass": 9.44,
+        "other": -0.664
       }
     },
     {
@@ -75,13 +75,13 @@
       "sep_rate": 22050,
       "params": "htdemucs, overlap 0, separated at 22.05 kHz",
       "engine": "demucs",
-      "infer_s": 8.91,
-      "s_per_stem_minute": 8.91,
+      "infer_s": 7.9,
+      "s_per_stem_minute": 7.9,
       "si_sdr": {
-        "vocals": -2.085,
-        "drums": -1.116,
-        "bass": -3.0,
-        "other": 3.365
+        "vocals": 6.293,
+        "drums": 1.93,
+        "bass": -4.576,
+        "other": -6.261
       }
     },
     {
@@ -91,13 +91,13 @@
       "model": "hdemucs.onnx",
       "overlap": 0.25,
       "sep_rate": 44100,
-      "infer_s": 10.45,
-      "s_per_stem_minute": 10.45,
+      "infer_s": 10.51,
+      "s_per_stem_minute": 10.51,
       "si_sdr": {
-        "vocals": 3.579,
-        "drums": 3.109,
-        "bass": -0.208,
-        "other": 6.882
+        "vocals": 7.482,
+        "drums": 6.096,
+        "bass": 8.376,
+        "other": -1.295
       }
     },
     {
@@ -107,13 +107,13 @@
       "model": "spleeter_4stems",
       "overlap": 0.0,
       "sep_rate": 44100,
-      "infer_s": 1.81,
-      "s_per_stem_minute": 1.81,
+      "infer_s": 1.76,
+      "s_per_stem_minute": 1.76,
       "si_sdr": {
-        "vocals": 0.593,
-        "drums": -0.875,
-        "bass": -4.619,
-        "other": 5.112
+        "vocals": 5.975,
+        "drums": 2.281,
+        "bass": 4.451,
+        "other": -2.687
       }
     }
   ]

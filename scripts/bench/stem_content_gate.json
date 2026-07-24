@@ -1,0 +1,539 @@
+{
+  "gate": {
+    "window_s": 60.0,
+    "window_hop_s": 10.0,
+    "edge_trim_s": 5.0,
+    "frame_s": 0.05,
+    "active_floor_dbfs": -50.0,
+    "min_rms_dbfs": -40.0,
+    "min_active_frac": 0.35,
+    "min_energy_share": 0.03,
+    "min_rms_below_loudest_db": -8.0,
+    "min_peak_below_loudest_db": -8.0,
+    "energy_share_denominator": "sum of the four stems' energy, not the mixture"
+  },
+  "windows_scanned": {
+    "AM Contra - Heart Peripheral": 15,
+    "Al James - Schoolboy Facination": 14,
+    "Detsky Sad - Walkie Talkie": 13,
+    "Punkdisco - Oral Hygiene": 16,
+    "The Easton Ellises - Falcon 69": 18,
+    "Timboz - Pony": 19,
+    "Triviul feat. The Fiend - Widow": 17,
+    "Zeno - Signs": 17
+  },
+  "candidates": [
+    {
+      "track": "AM Contra - Heart Peripheral",
+      "start_s": 55.0,
+      "length_s": 60.0,
+      "passed": false,
+      "failures": {
+        "bass": [
+          "never surfaces (peak -8.6 dB under the loudest peak < -8)"
+        ]
+      },
+      "weakest_energy_share": 0.1589,
+      "balance_db": -8.58,
+      "spectral_span_octaves": 5.12,
+      "hardness_db": 5.2,
+      "mixture_floor_si_sdr": {
+        "vocals": -5.517,
+        "drums": -0.665,
+        "bass": -7.058,
+        "other": -7.566
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -24.73,
+          "peak_dbfs": -7.84,
+          "active_frac": 0.7117,
+          "energy_share": 0.2185,
+          "rms_below_loudest_db": -3.21,
+          "peak_below_loudest_db": -0.49,
+          "spectral_centroid_hz": 3711.0
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -21.53,
+          "peak_dbfs": -7.35,
+          "active_frac": 0.9858,
+          "energy_share": 0.4572,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 8441.6
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -25.94,
+          "peak_dbfs": -15.93,
+          "active_frac": 0.5308,
+          "energy_share": 0.1654,
+          "rms_below_loudest_db": -4.42,
+          "peak_below_loudest_db": -8.58,
+          "spectral_centroid_hz": 242.3
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -26.12,
+          "peak_dbfs": -11.6,
+          "active_frac": 0.965,
+          "energy_share": 0.1589,
+          "rms_below_loudest_db": -4.59,
+          "peak_below_loudest_db": -4.24,
+          "spectral_centroid_hz": 2549.3
+        }
+      ]
+    },
+    {
+      "track": "Al James - Schoolboy Facination",
+      "start_s": 75.0,
+      "length_s": 60.0,
+      "passed": true,
+      "failures": {},
+      "weakest_energy_share": 0.1153,
+      "balance_db": -5.61,
+      "spectral_span_octaves": 4.78,
+      "hardness_db": 5.2,
+      "mixture_floor_si_sdr": {
+        "vocals": -1.666,
+        "drums": -6.351,
+        "bass": -3.782,
+        "other": -9.009
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -23.92,
+          "peak_dbfs": -5.14,
+          "active_frac": 0.8758,
+          "energy_share": 0.4079,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 4126.4
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -27.36,
+          "peak_dbfs": -10.46,
+          "active_frac": 0.9708,
+          "energy_share": 0.1848,
+          "rms_below_loudest_db": -3.44,
+          "peak_below_loudest_db": -5.33,
+          "spectral_centroid_hz": 6230.3
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -25.37,
+          "peak_dbfs": -10.46,
+          "active_frac": 0.86,
+          "energy_share": 0.2921,
+          "rms_below_loudest_db": -1.45,
+          "peak_below_loudest_db": -5.32,
+          "spectral_centroid_hz": 226.3
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -29.41,
+          "peak_dbfs": -10.74,
+          "active_frac": 0.9175,
+          "energy_share": 0.1153,
+          "rms_below_loudest_db": -5.49,
+          "peak_below_loudest_db": -5.61,
+          "spectral_centroid_hz": 4967.0
+        }
+      ]
+    },
+    {
+      "track": "Detsky Sad - Walkie Talkie",
+      "start_s": 35.0,
+      "length_s": 60.0,
+      "passed": false,
+      "failures": {
+        "bass": [
+          "buried (-9.2 dB under the loudest stem < -8)",
+          "never surfaces (peak -13.9 dB under the loudest peak < -8)"
+        ],
+        "other": [
+          "never surfaces (peak -9.6 dB under the loudest peak < -8)"
+        ]
+      },
+      "weakest_energy_share": 0.0659,
+      "balance_db": -13.94,
+      "spectral_span_octaves": 2.7,
+      "hardness_db": 6.13,
+      "mixture_floor_si_sdr": {
+        "vocals": -4.067,
+        "drums": 0.849,
+        "bass": -11.923,
+        "other": -9.389
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -24.04,
+          "peak_dbfs": -6.47,
+          "active_frac": 0.5075,
+          "energy_share": 0.2816,
+          "rms_below_loudest_db": -2.87,
+          "peak_below_loudest_db": -3.35,
+          "spectral_centroid_hz": 3540.2
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -21.17,
+          "peak_dbfs": -3.12,
+          "active_frac": 0.9525,
+          "energy_share": 0.5453,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 3877.0
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -30.35,
+          "peak_dbfs": -17.06,
+          "active_frac": 0.7392,
+          "energy_share": 0.0659,
+          "rms_below_loudest_db": -9.18,
+          "peak_below_loudest_db": -13.94,
+          "spectral_centroid_hz": 595.5
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -28.24,
+          "peak_dbfs": -12.72,
+          "active_frac": 0.75,
+          "energy_share": 0.1072,
+          "rms_below_loudest_db": -7.07,
+          "peak_below_loudest_db": -9.61,
+          "spectral_centroid_hz": 2028.0
+        }
+      ]
+    },
+    {
+      "track": "Punkdisco - Oral Hygiene",
+      "start_s": 35.0,
+      "length_s": 60.0,
+      "passed": false,
+      "failures": {
+        "vocals": [
+          "mostly gaps (32% active < 35%)",
+          "buried (-9.2 dB under the loudest stem < -8)"
+        ],
+        "other": [
+          "buried (-10.4 dB under the loudest stem < -8)"
+        ]
+      },
+      "weakest_energy_share": 0.0417,
+      "balance_db": -10.37,
+      "spectral_span_octaves": 0.28,
+      "hardness_db": 6.88,
+      "mixture_floor_si_sdr": {
+        "vocals": -12.301,
+        "drums": -0.953,
+        "bass": -1.015,
+        "other": -13.26
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -31.69,
+          "peak_dbfs": -8.18,
+          "active_frac": 0.3175,
+          "energy_share": 0.0545,
+          "rms_below_loudest_db": -9.21,
+          "peak_below_loudest_db": -3.67,
+          "spectral_centroid_hz": 4401.8
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -22.49,
+          "peak_dbfs": -4.51,
+          "active_frac": 0.6292,
+          "energy_share": 0.4546,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 3634.1
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -22.54,
+          "peak_dbfs": -7.68,
+          "active_frac": 0.8925,
+          "energy_share": 0.4492,
+          "rms_below_loudest_db": -0.05,
+          "peak_below_loudest_db": -3.17,
+          "spectral_centroid_hz": 3805.6
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -32.86,
+          "peak_dbfs": -10.59,
+          "active_frac": 0.9542,
+          "energy_share": 0.0417,
+          "rms_below_loudest_db": -10.37,
+          "peak_below_loudest_db": -6.08,
+          "spectral_centroid_hz": 3855.9
+        }
+      ]
+    },
+    {
+      "track": "The Easton Ellises - Falcon 69",
+      "start_s": 145.0,
+      "length_s": 60.0,
+      "passed": true,
+      "failures": {},
+      "weakest_energy_share": 0.1934,
+      "balance_db": -3.55,
+      "spectral_span_octaves": 2.48,
+      "hardness_db": 4.9,
+      "mixture_floor_si_sdr": {
+        "vocals": -5.666,
+        "drums": -3.329,
+        "bass": -4.275,
+        "other": -6.348
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -23.24,
+          "peak_dbfs": -8.2,
+          "active_frac": 0.9733,
+          "energy_share": 0.2139,
+          "rms_below_loudest_db": -1.7,
+          "peak_below_loudest_db": -3.24,
+          "spectral_centroid_hz": 2831.5
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -21.54,
+          "peak_dbfs": -4.95,
+          "active_frac": 0.9483,
+          "energy_share": 0.3166,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 4050.5
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -22.13,
+          "peak_dbfs": -8.5,
+          "active_frac": 0.9258,
+          "energy_share": 0.2761,
+          "rms_below_loudest_db": -0.59,
+          "peak_below_loudest_db": -3.55,
+          "spectral_centroid_hz": 726.4
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -23.68,
+          "peak_dbfs": -7.5,
+          "active_frac": 1.0,
+          "energy_share": 0.1934,
+          "rms_below_loudest_db": -2.14,
+          "peak_below_loudest_db": -2.55,
+          "spectral_centroid_hz": 2740.2
+        }
+      ]
+    },
+    {
+      "track": "Timboz - Pony",
+      "start_s": 5.0,
+      "length_s": 60.0,
+      "passed": false,
+      "failures": {
+        "bass": [
+          "buried (-8.2 dB under the loudest stem < -8)",
+          "never surfaces (peak -8.9 dB under the loudest peak < -8)"
+        ]
+      },
+      "weakest_energy_share": 0.0914,
+      "balance_db": -8.9,
+      "spectral_span_octaves": 2.76,
+      "hardness_db": 5.81,
+      "mixture_floor_si_sdr": {
+        "vocals": -9.285,
+        "drums": -6.147,
+        "bass": -9.565,
+        "other": 1.762
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -29.45,
+          "peak_dbfs": -6.46,
+          "active_frac": 0.5208,
+          "energy_share": 0.1062,
+          "rms_below_loudest_db": -7.55,
+          "peak_below_loudest_db": -0.5,
+          "spectral_centroid_hz": 3276.1
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -26.73,
+          "peak_dbfs": -5.96,
+          "active_frac": 0.9817,
+          "energy_share": 0.1986,
+          "rms_below_loudest_db": -4.83,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 4923.0
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -30.1,
+          "peak_dbfs": -14.87,
+          "active_frac": 0.9725,
+          "energy_share": 0.0914,
+          "rms_below_loudest_db": -8.2,
+          "peak_below_loudest_db": -8.9,
+          "spectral_centroid_hz": 727.4
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -21.9,
+          "peak_dbfs": -8.26,
+          "active_frac": 1.0,
+          "energy_share": 0.6038,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": -2.29,
+          "spectral_centroid_hz": 2212.1
+        }
+      ]
+    },
+    {
+      "track": "Triviul feat. The Fiend - Widow",
+      "start_s": 135.0,
+      "length_s": 60.0,
+      "passed": true,
+      "failures": {},
+      "weakest_energy_share": 0.1297,
+      "balance_db": -7.39,
+      "spectral_span_octaves": 2.72,
+      "hardness_db": 5.25,
+      "mixture_floor_si_sdr": {
+        "vocals": -0.402,
+        "drums": -8.051,
+        "bass": -4.675,
+        "other": -7.892
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -22.1,
+          "peak_dbfs": -4.92,
+          "active_frac": 0.9925,
+          "energy_share": 0.4784,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": -0.18,
+          "spectral_centroid_hz": 3096.4
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -27.77,
+          "peak_dbfs": -4.74,
+          "active_frac": 0.895,
+          "energy_share": 0.1297,
+          "rms_below_loudest_db": -5.67,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 6200.2
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -24.89,
+          "peak_dbfs": -12.13,
+          "active_frac": 0.7433,
+          "energy_share": 0.2513,
+          "rms_below_loudest_db": -2.8,
+          "peak_below_loudest_db": -7.39,
+          "spectral_centroid_hz": 944.0
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -27.42,
+          "peak_dbfs": -5.17,
+          "active_frac": 1.0,
+          "energy_share": 0.1406,
+          "rms_below_loudest_db": -5.32,
+          "peak_below_loudest_db": -0.43,
+          "spectral_centroid_hz": 3644.0
+        }
+      ]
+    },
+    {
+      "track": "Zeno - Signs",
+      "start_s": 35.0,
+      "length_s": 60.0,
+      "passed": true,
+      "failures": {},
+      "weakest_energy_share": 0.1113,
+      "balance_db": -7.26,
+      "spectral_span_octaves": 2.35,
+      "hardness_db": 5.18,
+      "mixture_floor_si_sdr": {
+        "vocals": -3.528,
+        "drums": -5.047,
+        "bass": -9.289,
+        "other": -2.842
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -23.19,
+          "peak_dbfs": -6.2,
+          "active_frac": 0.725,
+          "energy_share": 0.3047,
+          "rms_below_loudest_db": -0.55,
+          "peak_below_loudest_db": -0.09,
+          "spectral_centroid_hz": 4726.9
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -24.26,
+          "peak_dbfs": -6.11,
+          "active_frac": 1.0,
+          "energy_share": 0.2381,
+          "rms_below_loudest_db": -1.62,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 4297.5
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -27.56,
+          "peak_dbfs": -13.37,
+          "active_frac": 1.0,
+          "energy_share": 0.1113,
+          "rms_below_loudest_db": -4.92,
+          "peak_below_loudest_db": -7.26,
+          "spectral_centroid_hz": 925.7
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -22.63,
+          "peak_dbfs": -8.47,
+          "active_frac": 1.0,
+          "energy_share": 0.3459,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": -2.37,
+          "spectral_centroid_hz": 1875.5
+        }
+      ]
+    }
+  ],
+  "winner": {
+    "track": "Al James - Schoolboy Facination",
+    "start_s": 75.0,
+    "length_s": 60.0,
+    "weakest_energy_share": 0.1153,
+    "balance_db": -5.61,
+    "spectral_span_octaves": 4.78,
+    "hardness_db": 5.2,
+    "mixture_floor_si_sdr": {
+      "vocals": -1.666,
+      "drums": -6.351,
+      "bass": -3.782,
+      "other": -9.009
+    }
+  }
+}
