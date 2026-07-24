@@ -1201,6 +1201,41 @@
 	.tt-spacer td {
 		padding: 0;
 		border: none;
+		position: relative;
+		overflow: hidden;
+	}
+	/* Subtle TL→BR white sweep (same 135deg idea as Deck.svelte
+	 * .rb-deck.loading::after / deck-load-sweep) so blank row-pad gaps
+	 * feel alive while scrolling. Lower opacity + slower than deck load;
+	 * ::after only - must not change spacer height math (padding stays 0). */
+	.tt-spacer td::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background: linear-gradient(
+			135deg,
+			transparent 0%,
+			transparent 42%,
+			rgba(255, 255, 255, 0.045) 50%,
+			transparent 58%,
+			transparent 100%
+		);
+		background-size: 220% 220%;
+		animation: tt-spacer-sweep 2.4s ease-in-out infinite;
+	}
+	@keyframes tt-spacer-sweep {
+		0% {
+			background-position: 100% 100%;
+			opacity: 0.4;
+		}
+		50% {
+			opacity: 0.85;
+		}
+		100% {
+			background-position: 0% 0%;
+			opacity: 0.4;
+		}
 	}
 	tbody tr:hover:not(.rb-row-selected):not(.rb-row-menu):not(.rb-row-master) {
 		background: var(--rb-panel-raised);
