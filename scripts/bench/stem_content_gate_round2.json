@@ -1,0 +1,406 @@
+{
+  "purpose": "widen n on DRUMS: gate new MUSDB18-HQ test tracks on their own merits",
+  "selection_rule": "alphabetical order of the MUSDB18-HQ test split, skipping tracks with a committed row in stem_content_gate.json, first --limit taken. Fixed before any model score existed.",
+  "gate_bars": {
+    "window_s": 60.0,
+    "window_hop_s": 10.0,
+    "edge_trim_s": 5.0,
+    "frame_s": 0.05,
+    "active_floor_dbfs": -50.0,
+    "min_rms_dbfs": -40.0,
+    "min_active_frac": 0.35,
+    "min_energy_share": 0.03,
+    "min_rms_below_loudest_db": -8.0,
+    "min_peak_below_loudest_db": -8.0
+  },
+  "n_scanned": 6,
+  "n_drums_gated": 6,
+  "candidates": [
+    {
+      "track": "Angels In Amplifiers - I'm Alright",
+      "start_s": 65.0,
+      "length_s": 60.0,
+      "windows_scanned": 11,
+      "passed": true,
+      "drums_passed": true,
+      "failures": {},
+      "balance_db": -4.95,
+      "spectral_span_octaves": 4.63,
+      "hardness_db": 4.89,
+      "mixture_floor_si_sdr": {
+        "vocals": -3.362,
+        "drums": -5.978,
+        "bass": -6.594,
+        "other": -3.632
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -24.5,
+          "peak_dbfs": -6.96,
+          "active_frac": 0.7317,
+          "energy_share": 0.317,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 3726.8
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -26.55,
+          "peak_dbfs": -7.14,
+          "active_frac": 0.9742,
+          "energy_share": 0.1976,
+          "rms_below_loudest_db": -2.05,
+          "peak_below_loudest_db": -0.18,
+          "spectral_centroid_hz": 5940.9
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -27.03,
+          "peak_dbfs": -11.91,
+          "active_frac": 0.8608,
+          "energy_share": 0.1768,
+          "rms_below_loudest_db": -2.53,
+          "peak_below_loudest_db": -4.95,
+          "spectral_centroid_hz": 239.8
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -24.62,
+          "peak_dbfs": -8.25,
+          "active_frac": 0.9842,
+          "energy_share": 0.3086,
+          "rms_below_loudest_db": -0.12,
+          "peak_below_loudest_db": -1.28,
+          "spectral_centroid_hz": 3098.9
+        }
+      ],
+      "cut": true,
+      "cut_verification_problems": []
+    },
+    {
+      "track": "Arise - Run Run Run",
+      "start_s": 135.0,
+      "length_s": 60.0,
+      "windows_scanned": 15,
+      "passed": true,
+      "drums_passed": true,
+      "failures": {},
+      "balance_db": -7.99,
+      "spectral_span_octaves": 3.1,
+      "hardness_db": 5.49,
+      "mixture_floor_si_sdr": {
+        "vocals": -9.208,
+        "drums": -8.527,
+        "bass": -2.397,
+        "other": -1.826
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -26.16,
+          "peak_dbfs": -7.77,
+          "active_frac": 0.5508,
+          "energy_share": 0.1072,
+          "rms_below_loudest_db": -5.73,
+          "peak_below_loudest_db": -4.25,
+          "spectral_centroid_hz": 2074.3
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -25.57,
+          "peak_dbfs": -3.52,
+          "active_frac": 0.7992,
+          "energy_share": 0.1229,
+          "rms_below_loudest_db": -5.13,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 5165.8
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -20.79,
+          "peak_dbfs": -11.5,
+          "active_frac": 0.9567,
+          "energy_share": 0.3691,
+          "rms_below_loudest_db": -0.36,
+          "peak_below_loudest_db": -7.99,
+          "spectral_centroid_hz": 602.0
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -20.43,
+          "peak_dbfs": -4.67,
+          "active_frac": 0.9958,
+          "energy_share": 0.4008,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": -1.15,
+          "spectral_centroid_hz": 1327.2
+        }
+      ],
+      "cut": true,
+      "cut_verification_problems": []
+    },
+    {
+      "track": "BKS - Bulldozer",
+      "start_s": 35.0,
+      "length_s": 60.0,
+      "windows_scanned": 27,
+      "passed": false,
+      "drums_passed": true,
+      "failures": {
+        "vocals": [
+          "buried (-9.0 dB under the loudest stem < -8)"
+        ]
+      },
+      "balance_db": -8.99,
+      "spectral_span_octaves": 3.32,
+      "hardness_db": 5.82,
+      "mixture_floor_si_sdr": {
+        "vocals": -11.907,
+        "drums": -0.215,
+        "bass": -4.015,
+        "other": -7.132
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -31.55,
+          "peak_dbfs": -9.8,
+          "active_frac": 0.7258,
+          "energy_share": 0.0615,
+          "rms_below_loudest_db": -8.99,
+          "peak_below_loudest_db": -5.08,
+          "spectral_centroid_hz": 5317.7
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -22.56,
+          "peak_dbfs": -4.72,
+          "active_frac": 0.965,
+          "energy_share": 0.4877,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 3634.8
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -24.85,
+          "peak_dbfs": -9.99,
+          "active_frac": 0.93,
+          "energy_share": 0.2873,
+          "rms_below_loudest_db": -2.3,
+          "peak_below_loudest_db": -5.28,
+          "spectral_centroid_hz": 534.3
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -27.3,
+          "peak_dbfs": -10.27,
+          "active_frac": 0.9533,
+          "energy_share": 0.1635,
+          "rms_below_loudest_db": -4.75,
+          "peak_below_loudest_db": -5.55,
+          "spectral_centroid_hz": 1903.9
+        }
+      ],
+      "cut": true,
+      "cut_verification_problems": []
+    },
+    {
+      "track": "BKS - Too Much",
+      "start_s": 105.0,
+      "length_s": 60.0,
+      "windows_scanned": 16,
+      "passed": false,
+      "drums_passed": true,
+      "failures": {
+        "vocals": [
+          "mostly gaps (29% active < 35%)"
+        ],
+        "bass": [
+          "never surfaces (peak -12.3 dB under the loudest peak < -8)"
+        ],
+        "other": [
+          "never surfaces (peak -9.0 dB under the loudest peak < -8)"
+        ]
+      },
+      "balance_db": -12.29,
+      "spectral_span_octaves": 3.71,
+      "hardness_db": 5.11,
+      "mixture_floor_si_sdr": {
+        "vocals": -8.043,
+        "drums": -2.429,
+        "bass": -2.928,
+        "other": -7.037
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -28.1,
+          "peak_dbfs": -8.14,
+          "active_frac": 0.29,
+          "energy_share": 0.1378,
+          "rms_below_loudest_db": -4.17,
+          "peak_below_loudest_db": -4.86,
+          "spectral_centroid_hz": 2929.8
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -23.93,
+          "peak_dbfs": -3.28,
+          "active_frac": 0.9742,
+          "energy_share": 0.3598,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 5006.1
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -24.24,
+          "peak_dbfs": -15.57,
+          "active_frac": 0.9833,
+          "energy_share": 0.3351,
+          "rms_below_loudest_db": -0.31,
+          "peak_below_loudest_db": -12.29,
+          "spectral_centroid_hz": 383.1
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -27.26,
+          "peak_dbfs": -12.26,
+          "active_frac": 0.9808,
+          "energy_share": 0.1673,
+          "rms_below_loudest_db": -3.33,
+          "peak_below_loudest_db": -8.98,
+          "spectral_centroid_hz": 1823.4
+        }
+      ],
+      "cut": true,
+      "cut_verification_problems": []
+    },
+    {
+      "track": "Ben Carrigan - We'll Talk About It All Tonight",
+      "start_s": 65.0,
+      "length_s": 60.0,
+      "windows_scanned": 19,
+      "passed": true,
+      "drums_passed": true,
+      "failures": {},
+      "balance_db": -4.45,
+      "spectral_span_octaves": 4.64,
+      "hardness_db": 4.97,
+      "mixture_floor_si_sdr": {
+        "vocals": -7.561,
+        "drums": -4.892,
+        "bass": -3.164,
+        "other": -4.26
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -29.32,
+          "peak_dbfs": -9.22,
+          "active_frac": 0.6317,
+          "energy_share": 0.1458,
+          "rms_below_loudest_db": -3.54,
+          "peak_below_loudest_db": -4.25,
+          "spectral_centroid_hz": 2509.6
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -27.0,
+          "peak_dbfs": -4.97,
+          "active_frac": 0.4717,
+          "energy_share": 0.249,
+          "rms_below_loudest_db": -1.21,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 5357.3
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -25.79,
+          "peak_dbfs": -9.42,
+          "active_frac": 0.8417,
+          "energy_share": 0.3291,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": -4.45,
+          "spectral_centroid_hz": 215.1
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -26.55,
+          "peak_dbfs": -8.32,
+          "active_frac": 1.0,
+          "energy_share": 0.2762,
+          "rms_below_loudest_db": -0.76,
+          "peak_below_loudest_db": -3.35,
+          "spectral_centroid_hz": 3781.5
+        }
+      ],
+      "cut": true,
+      "cut_verification_problems": []
+    },
+    {
+      "track": "Bobby Nobody - Stitch Up",
+      "start_s": 25.0,
+      "length_s": 60.0,
+      "windows_scanned": 16,
+      "passed": true,
+      "drums_passed": true,
+      "failures": {},
+      "balance_db": -7.24,
+      "spectral_span_octaves": 4.27,
+      "hardness_db": 5.07,
+      "mixture_floor_si_sdr": {
+        "vocals": -4.352,
+        "drums": -8.669,
+        "bass": -3.058,
+        "other": -4.209
+      },
+      "stems": [
+        {
+          "stem": "vocals",
+          "rms_dbfs": -26.0,
+          "peak_dbfs": -7.38,
+          "active_frac": 0.8917,
+          "energy_share": 0.2698,
+          "rms_below_loudest_db": -0.9,
+          "peak_below_loudest_db": -3.27,
+          "spectral_centroid_hz": 4182.4
+        },
+        {
+          "stem": "drums",
+          "rms_dbfs": -29.4,
+          "peak_dbfs": -4.11,
+          "active_frac": 0.8017,
+          "energy_share": 0.1233,
+          "rms_below_loudest_db": -4.3,
+          "peak_below_loudest_db": 0.0,
+          "spectral_centroid_hz": 4347.2
+        },
+        {
+          "stem": "bass",
+          "rms_dbfs": -25.11,
+          "peak_dbfs": -11.33,
+          "active_frac": 0.8525,
+          "energy_share": 0.3316,
+          "rms_below_loudest_db": 0.0,
+          "peak_below_loudest_db": -7.22,
+          "spectral_centroid_hz": 225.4
+        },
+        {
+          "stem": "other",
+          "rms_dbfs": -25.91,
+          "peak_dbfs": -11.35,
+          "active_frac": 0.9858,
+          "energy_share": 0.2754,
+          "rms_below_loudest_db": -0.81,
+          "peak_below_loudest_db": -7.24,
+          "spectral_centroid_hz": 1661.4
+        }
+      ],
+      "cut": true,
+      "cut_verification_problems": []
+    }
+  ]
+}

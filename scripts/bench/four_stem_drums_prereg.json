@@ -1,0 +1,40 @@
+{
+  "written": "BEFORE any round-2 model score existed; see the commit that introduces this file",
+  "question": "Is the Punkdisco drums loss an OUTLIER or a CLASS?",
+  "background": {
+    "round_1": "n=5 tracks gated on BASS. htdemucs_ft beat the default on drums on 4 of 5, but lost Punkdisco - Oral Hygiene by 4.725 dB, dragging the mean to -0.374 while the median was +0.589.",
+    "why_it_matters": "If the loss is an outlier, the mean is the wrong statistic and the default switch stands. If it is a class, a predictable slice of the catalogue would regress on drums and the switch is unsafe."
+  },
+  "hypothesis_H1_class": {
+    "statement": "The htdemucs family loses drums on tracks where the DRUMS STEM DOMINATES its window, and hdemucs_mmi is more robust on exactly that material.",
+    "operational_predictors": [
+      "high drums energy_share (share of summed stem energy)",
+      "high drums mixture_floor_si_sdr (the do-nothing floor: a floor near or above 0 dB means the mixture already largely IS the drums)"
+    ],
+    "punkdisco_profile": {"drums_energy_share": 0.4553, "drums_mixture_floor_si_sdr": -0.953},
+    "tracks_matching_the_profile_in_the_widened_sample": [
+      {"track": "Detsky Sad - Walkie Talkie", "drums_energy_share": 0.5453, "drums_mixture_floor_si_sdr": 0.849},
+      {"track": "BKS - Bulldozer", "drums_energy_share": 0.488, "drums_mixture_floor_si_sdr": -0.215},
+      {"track": "AM Contra - Heart Peripheral", "drums_energy_share": 0.4572, "drums_mixture_floor_si_sdr": -0.665},
+      {"track": "BKS - Too Much", "drums_energy_share": 0.36, "drums_mixture_floor_si_sdr": -2.429}
+    ],
+    "prediction_if_TRUE": "htdemucs_ft loses drums to hdemucs_mmi on most of Detsky Sad, BKS - Bulldozer and AM Contra, and the per-track drums delta correlates negatively with drums energy_share and with the drums mixture floor.",
+    "prediction_if_FALSE": "Punkdisco stands alone: the other drum-dominant tracks behave like the rest of the sample, no correlation appears, and the median is the statistic to read."
+  },
+  "hypothesis_H0_outlier": {
+    "statement": "Punkdisco is a single anomalous track with no shared character, so the drums mean in round 1 was distorted by one point out of five."
+  },
+  "decision_rule_fixed_in_advance": {
+    "class": "If htdemucs_ft loses drums by more than the 0.2 dB audibility bar on a MAJORITY of the drum-dominant tracks, treat it as a class: do NOT recommend switching the default outright, and recommend per-stem routing or a content-conditional choice instead.",
+    "outlier": "If Punkdisco remains the only large loss and no correlation with the predictors appears, treat it as an outlier: the median is the statistic, and the default switch stands.",
+    "unresolved": "If the losses are neither concentrated in the predicted class nor confined to Punkdisco, report the drums question as still unsettled and do not let it block or force the switch."
+  },
+  "sample": {
+    "n_drums_gated_tracks": 14,
+    "round_1_bass_gated": 5,
+    "round_1_committed_gate_rows_added": 3,
+    "round_2_new_tracks": 6,
+    "round_2_selection_rule": "alphabetical order of the MUSDB18-HQ test split, skipping tracks with a committed gate row, first 6 taken; fixed before any score existed"
+  },
+  "protocol": "unchanged from round 1: 60 s gate-chosen windows cut on bifrost2 during transfer, verified against the gate's own statistics, overlap 0.25, shifts 0, 44.1 kHz, Modal H100 via scripts/modal_vocal_farm.py::separate_track, SI-SDR against TRUE MUSDB18-HQ stems, mixture floor as the do-nothing arm."
+}
