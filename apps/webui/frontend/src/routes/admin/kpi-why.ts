@@ -6,6 +6,10 @@
  * appended to the ledger's own kpi.title in the card's hover explainer.
  */
 export const KPI_WHY: Record<string, string> = {
+	stem_min_per_10min_wall:
+		'This is the one number to watch: it folds per-track speed, concurrency and track length ' +
+		'into a single throughput figure, so it moves whenever any of them moves, and it converts ' +
+		'straight into how long the remaining backlog takes.',
 	iter_latency_10trk_s:
 		'This is the number that made small iterations painfully slow on the GCP Spot VM path, ' +
 		'since a 265s VM boot dominates a batch this small.',
@@ -24,8 +28,14 @@ export const KPI_WHY: Record<string, string> = {
 	cost_per_track_usd:
 		'This decides whether farming the remaining backlog (over a thousand tracks) is affordable.',
 	max_parallel_gpus:
-		'More parallel GPUs clears the backlog faster; GCP capped this at a shared per-project ' +
-		'quota bucket, Modal does not.',
+		'Kept for historical continuity only. Every Modal reading here was copied from a config ' +
+		'constant, so it says what the farm was allowed to do, not what it did.',
+	observed_mean_concurrency:
+		'Held against the configured cap, this is what tells you whether the fan-out is actually ' +
+		'happening or whether the farm is quietly running near-serial.',
+	observed_peak_concurrency:
+		'The high-water mark the run really reached. Null means the run left no container-stamped ' +
+		'spans to sweep, which is different from a low peak.',
 	tracks_cached_total:
 		'This is the actual progress metric against the library backlog, independent of how fast ' +
 		'any single run was.',

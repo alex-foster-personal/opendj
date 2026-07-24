@@ -44,6 +44,12 @@
 		boot); that is not the same thing as unmeasured. Durations render as
 		<code>23m 24s</code> rather than raw seconds; sub-minute readings stay in seconds.
 	</p>
+	<p class="note">
+		Cards with no badge are <strong>derived</strong>: recomputed from per-track cache telemetry by
+		<code>scripts/bench/kpi_derive.py</code>, so nobody typed them. A <code>typed</code> badge means
+		hand-entered with no telemetry behind it, and <code>config</code> means the value was copied
+		from a config constant and is a ceiling, not a measurement. Hover for the exact origin.
+	</p>
 
 	{#if error}
 		<div class="fatal">

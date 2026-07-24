@@ -22,6 +22,14 @@ export interface KpiSnapshot {
 	ts: string;
 	label: string;
 	values: Record<string, number | null>;
+	/**
+	 * Per-key origin: "derived" (recomputed from per-track telemetry by
+	 * scripts/bench/kpi_derive.py), "hand"/"hand-unverifiable" (typed by a
+	 * human, no telemetry behind it), "configured-not-measured" (copied from a
+	 * config constant), "not-derivable" or "unmeasured". Empty for snapshots
+	 * written before provenance existed.
+	 */
+	provenance: Record<string, string>;
 	notes: string | null;
 }
 
@@ -75,10 +83,23 @@ function parseSnapshot(raw: unknown, index: number): KpiSnapshot {
 	if (notes !== undefined && notes !== null && typeof notes !== 'string') {
 		throw new Error(`kpi ledger: snapshots[${index}].notes is not a string or null`);
 	}
+	// Same tolerance for provenance: absent means a pre-provenance snapshot, but
+	// a non-string origin is corruption and must not render as a claim of origin.
+	const provenance: Record<string, string> = {};
+	if (obj.provenance !== undefined && obj.provenance !== null) {
+		const raw = asObject(obj.provenance, `snapshots[${index}].provenance`);
+		for (const [key, origin] of Object.entries(raw)) {
+			if (typeof origin !== 'string') {
+				throw new Error(`kpi ledger: snapshots[${index}].provenance.${key} is not a string`);
+			}
+			provenance[key] = origin;
+		}
+	}
 	return {
 		ts: asString(obj.ts, `snapshots[${index}].ts`),
 		label: asString(obj.label, `snapshots[${index}].label`),
 		values: parsed,
+		provenance,
 		notes: notes === undefined ? null : notes
 	};
 }

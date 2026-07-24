@@ -34,6 +34,22 @@
 	);
 	const why = $derived(KPI_WHY[metric] ?? '');
 
+	/** How the latest reading got here, so measured and typed never look alike. */
+	const ORIGIN_TEXT: Record<string, string> = {
+		derived: 'Origin: DERIVED from per-track cache telemetry by scripts/bench/kpi_derive.py.',
+		hand: 'Origin: HAND-ENTERED. Not reconstructable from telemetry, so nothing checks it.',
+		'hand-unverifiable':
+			'Origin: HAND-ENTERED and unverifiable. No telemetry survives for this run.',
+		'configured-not-measured':
+			'Origin: CONFIG CONSTANT, not a measurement. It is the ceiling the run was allowed, ' +
+			'not what it reached.'
+	};
+	const BADGE_TEXT: Record<string, string> = {
+		hand: 'typed',
+		'hand-unverifiable': 'typed',
+		'configured-not-measured': 'config'
+	};
+
 	const points = $derived(
 		snapshots
 			.map((snapshot, index) => ({ index, value: snapshot.values[metric] ?? null }))
@@ -44,6 +60,9 @@
 	const previous = $derived(points.length >= 2 ? points[points.length - 2] : null);
 	const delta = $derived(latest && previous ? latest.value - previous.value : 0);
 	const verdict = $derived<Verdict>(previous ? judge(delta, kpi.direction) : 'flat');
+	const originBadge = $derived(
+		latest ? (BADGE_TEXT[snapshots[latest.index].provenance[metric] ?? ''] ?? '') : ''
+	);
 
 	/** One consolidated explainer for the whole card. */
 	const cardTip = $derived.by((): TipContent => {
@@ -58,6 +77,8 @@
 			};
 		}
 		body.push(`Latest reading from ${snapshots[latest.index].label} (${snapshots[latest.index].ts}).`);
+		const origin = ORIGIN_TEXT[snapshots[latest.index].provenance[metric] ?? ''];
+		if (origin) body.push(origin);
 		const lines = previous
 			? [
 					{
@@ -77,7 +98,12 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="tile" tabindex="0" use:tip={cardTip}>
-	<div class="tile-label">{kpi.label}</div>
+	<div class="tile-label">
+		{kpi.label}
+		{#if latest && originBadge}
+			<span class="origin">{originBadge}</span>
+		{/if}
+	</div>
 
 	{#if !latest}
 		<div class="value nodata">no data yet</div>
@@ -124,6 +150,16 @@
 		font-size: 0.78rem;
 		color: var(--muted);
 		line-height: 1.25;
+	}
+	.origin {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		border: 1px solid var(--border);
+		border-radius: 3px;
+		padding: 0 0.25rem;
+		color: var(--muted);
+		white-space: nowrap;
 	}
 	.value-row {
 		display: flex;
