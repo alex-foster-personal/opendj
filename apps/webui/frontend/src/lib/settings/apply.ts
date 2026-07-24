@@ -1,0 +1,121 @@
+/**
+ * Allowlisted setting mutators. Used by the overlay controls and AI apply.
+ * Unknown keys throw (fail-loud).
+ */
+import {
+	setAutoSyncDestination,
+	setBeatSyncMax,
+	setConfirmPref,
+	setHideBrokenLinks,
+	setHideTodoSettings,
+	setLibraryDensity,
+	setNextOnlyFilter,
+	setTheme,
+	uiPrefs,
+	type AutoSyncDestination,
+	type LibraryDensity,
+	type UiTheme
+} from '$lib/rb/prefs.svelte';
+
+export const ALLOWED_SETTING_KEYS = [
+	'theme',
+	'hide_broken_links',
+	'library_density',
+	'beat_sync_max',
+	'next_only_filter',
+	'hide_todo_settings',
+	'auto_sync.rekordbox',
+	'auto_sync.djay',
+	'auto_sync.open_dj',
+	'confirm.delete_playlist',
+	'confirm.dblclick_load_play'
+] as const;
+
+export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
+
+export function isAllowedSettingKey(key: string): key is AllowedSettingKey {
+	return (ALLOWED_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+export type SettingValue = boolean | string;
+
+export function readSettingValue(key: AllowedSettingKey): SettingValue {
+	switch (key) {
+		case 'theme':
+			return uiPrefs.theme;
+		case 'hide_broken_links':
+			return uiPrefs.hide_broken_links;
+		case 'library_density':
+			return uiPrefs.library_density;
+		case 'beat_sync_max':
+			return uiPrefs.beat_sync_max;
+		case 'next_only_filter':
+			return uiPrefs.next_only_filter;
+		case 'hide_todo_settings':
+			return uiPrefs.hide_todo_settings;
+		case 'auto_sync.rekordbox':
+			return uiPrefs.auto_sync.rekordbox;
+		case 'auto_sync.djay':
+			return uiPrefs.auto_sync.djay;
+		case 'auto_sync.open_dj':
+			return uiPrefs.auto_sync.open_dj;
+		case 'confirm.delete_playlist':
+			return uiPrefs.confirm.delete_playlist !== false;
+		case 'confirm.dblclick_load_play':
+			return uiPrefs.confirm.dblclick_load_play !== false;
+	}
+}
+
+export function applySettingChange(key: string, value: SettingValue): void {
+	if (!isAllowedSettingKey(key)) {
+		throw new Error(`unknown or disallowed setting key: ${key}`);
+	}
+	switch (key) {
+		case 'theme': {
+			if (value !== 'dark' && value !== 'light') {
+				throw new Error(`theme must be dark|light, got ${String(value)}`);
+			}
+			setTheme(value as UiTheme);
+			return;
+		}
+		case 'hide_broken_links':
+			setHideBrokenLinks(_asBool(value, key));
+			return;
+		case 'library_density': {
+			if (value !== 'compact' && value !== 'cosy') {
+				throw new Error(`library_density must be compact|cosy, got ${String(value)}`);
+			}
+			setLibraryDensity(value as LibraryDensity);
+			return;
+		}
+		case 'beat_sync_max':
+			setBeatSyncMax(_asBool(value, key));
+			return;
+		case 'next_only_filter':
+			setNextOnlyFilter(_asBool(value, key));
+			return;
+		case 'hide_todo_settings':
+			setHideTodoSettings(_asBool(value, key));
+			return;
+		case 'auto_sync.rekordbox':
+		case 'auto_sync.djay':
+		case 'auto_sync.open_dj': {
+			const dest = key.slice('auto_sync.'.length) as AutoSyncDestination;
+			setAutoSyncDestination(dest, _asBool(value, key));
+			return;
+		}
+		case 'confirm.delete_playlist':
+			setConfirmPref('delete_playlist', _asBool(value, key));
+			return;
+		case 'confirm.dblclick_load_play':
+			setConfirmPref('dblclick_load_play', _asBool(value, key));
+			return;
+	}
+}
+
+function _asBool(value: SettingValue, key: string): boolean {
+	if (typeof value === 'boolean') return value;
+	if (value === 'true' || value === 'on' || value === '1') return true;
+	if (value === 'false' || value === 'off' || value === '0') return false;
+	throw new Error(`${key} expects a boolean, got ${String(value)}`);
+}
