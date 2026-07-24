@@ -1,0 +1,23 @@
+{
+  "sets": [
+    {
+      "set_uuid": "e7ed6b04-7a9e-529d-a3ad-406679d5b133",
+      "short_id": "stemset-e7ed6b04",
+      "content_sha256": "dfe46207faa7fee067e24e457abbbcfd173b8bfcd7ee4bb28f758a3e438dd42c",
+      "created": "2026-07-24T12:19:41.571699+00:00",
+      "git_sha": "533a396",
+      "track": "Al James - Schoolboy Facination (MUSDB18-HQ, funk soul, sung male lead over live band) - 4-stem set",
+      "source": "MUSDB18-HQ test set, 60s window, four true stems plus six separator arms",
+      "clip_count": 29,
+      "manifest": "scripts/bench/ladder_4stem_all.json",
+      "clips_dir": "scripts/bench/clips-4stem/",
+      "archive": "bifrost2 D:/asset-store/bench-evidence/ (see scripts/bench/EVIDENCE-PROVENANCE.md)",
+      "open_with": "uv run scripts/bench/serve.py 8791 then /vocal_quality_rater.html?manifest=ladder_4stem_all.json",
+      "palettes": {
+        "rekordbox": "vocals green",
+        "ni_okabe_ito": "vocals #56B4E9 blue, drums #009E73, bass #D55E00, other #CC79A7"
+      },
+      "licence_note": "MUSDB18-HQ is CC BY-NC-SA 4.0, non-commercial. Safe for a README or a technical write-up with attribution; check terms before any commercial use."
+    }
+  ]
+}
