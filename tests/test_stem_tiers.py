@@ -311,3 +311,62 @@ def test_generate_refuses_a_not_applicable_rung():
     r = client.post("/api/v1/stems/generate", json={"stable_id": "x", "tier": "S"})
     assert r.status_code == 409, r.text
     assert "NOT_APPLICABLE" in r.json()["detail"]
+
+
+def test_generate_refuses_a_second_local_job(monkeypatch):
+    """if two local jobs can run at once, one Mac gets torch twice over
+
+    Each local job spawns a torch process on the maintainer's machine. Two is not twice
+    the throughput, it is one slow laptop, and this endpoint cannot see what
+    else is running.
+    """
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from apps.webui.server.app import create_app
+    from apps.webui.server.routes import stem_tiers
+
+    class _LiveProc:
+        def poll(self):
+            return None  # still running
+
+    monkeypatch.setattr(
+        stem_tiers, "_JOBS",
+        {"existing": {"where": "local", "proc": _LiveProc(), "tier": "LOCAL"}},
+    )
+    # A REAL id: the endpoint validates the track before it checks capacity,
+    # which is the right order -- a 429 for a track that does not exist would
+    # send the caller looking at the wrong problem.
+    monkeypatch.setattr(
+        stem_tiers, "_generate_command", lambda *a, **k: ["true"]
+    )
+    import apps.stems.cli as stems_cli
+
+    monkeypatch.setattr(
+        stems_cli, "resolve_audio_path", lambda *a, **k: __import__("pathlib").Path("/tmp/x.mp3")
+    )
+    client = TestClient(create_app())
+    r = client.post(
+        "/api/v1/stems/generate", json={"stable_id": "whatever", "tier": "LOCAL"}
+    )
+    assert r.status_code == 429, r.text
+    assert "already running" in r.json()["detail"]
+
+
+def test_finished_jobs_are_reaped_but_running_ones_are_never_dropped(monkeypatch):
+    """if reaping drops a live job, its subprocess is orphaned and unknowable"""
+    from apps.webui.server.routes import stem_tiers
+
+    class _Proc:
+        def __init__(self, rc):
+            self._rc = rc
+
+        def poll(self):
+            return self._rc
+
+    table = {f"done{i}": {"where": "modal", "proc": _Proc(0)} for i in range(250)}
+    table["live"] = {"where": "modal", "proc": _Proc(None)}
+    monkeypatch.setattr(stem_tiers, "_JOBS", table)
+    stem_tiers._reap_jobs()
+    assert "live" in stem_tiers._JOBS, "a running job was dropped"
+    assert len(stem_tiers._JOBS) <= stem_tiers._MAX_JOB_HISTORY + 1

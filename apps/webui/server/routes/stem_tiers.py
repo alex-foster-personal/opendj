@@ -158,6 +158,42 @@ class GenerateIn(BaseModel):
 # exactly the invented state this codebase forbids.
 _JOBS: dict[str, dict] = {}
 
+# CONCURRENCY CAPS. This endpoint is live and agent-drivable, so "how many at
+# once" is a real question with two different answers.
+#
+# Modal rungs are capped at the plan's GPU allowance: going past it does not
+# fail, it queues, and a queued container still bills once it starts. The cap
+# makes the ceiling visible instead of discovering it on an invoice.
+#
+# LOCAL is capped at ONE. Each local job spawns a torch process on the maintainer's Mac;
+# two of those is not twice as fast, it is one slow machine, and this endpoint
+# has no idea what else is running.
+_MAX_LOCAL_JOBS: int = 1
+# Keep finished jobs around so a caller that polls late still gets the real
+# returncode, but bound the table so a long-lived server cannot grow forever.
+_MAX_JOB_HISTORY: int = 200
+
+
+def _reap_jobs() -> None:
+    """Drop the oldest FINISHED jobs once the table is over its bound.
+
+    Running jobs are never dropped: losing the handle would orphan a live
+    subprocess and make its status unknowable.
+    """
+    if len(_JOBS) <= _MAX_JOB_HISTORY:
+        return
+    finished = [k for k, j in _JOBS.items() if j["proc"].poll() is not None]
+    for key in finished[: len(_JOBS) - _MAX_JOB_HISTORY]:
+        _JOBS.pop(key, None)
+
+
+def _running_count(where: str) -> int:
+    return sum(
+        1
+        for j in _JOBS.values()
+        if j["where"] == where and j["proc"].poll() is None
+    )
+
 
 def _repo_root() -> "Path":
     from pathlib import Path
@@ -216,18 +252,40 @@ def generate(body: GenerateIn) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    _reap_jobs()
+    limit = _MAX_LOCAL_JOBS if tier.where == "local" else tiercfg.MAX_CONCURRENT_GPUS
+    running = _running_count(tier.where)
+    if running >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"{running} {tier.where} separation job(s) already running, "
+                f"limit {limit}. "
+                + (
+                    "Local jobs each spawn a torch process on this Mac; two at "
+                    "once is one slow machine, not twice the throughput."
+                    if tier.where == "local"
+                    else "Past the plan's GPU allowance Modal queues rather "
+                    "than fails, and a queued container still bills."
+                )
+            ),
+        )
+
     cmd = _generate_command(tier, body.stable_id, str(audio_path))
     job_id = uuid.uuid4().hex[:12]
     log = _repo_root() / ".tmp/stem-jobs" / f"{job_id}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    handle = log.open("w")
-    proc = subprocess.Popen(  # noqa: S603
-        cmd, cwd=str(_repo_root()), stdout=handle, stderr=subprocess.STDOUT
-    )
+    # The parent closes its copy as soon as the child owns one: leaving it open
+    # leaks a descriptor per job, and job_status reads the file by path anyway.
+    with log.open("w") as handle:
+        proc = subprocess.Popen(  # noqa: S603
+            cmd, cwd=str(_repo_root()), stdout=handle, stderr=subprocess.STDOUT
+        )
     _JOBS[job_id] = {
         "job_id": job_id,
         "stable_id": body.stable_id,
         "tier": tier.key,
+        "where": tier.where,
         "command": cmd,
         "log": str(log),
         "proc": proc,
