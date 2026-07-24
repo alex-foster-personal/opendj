@@ -1,0 +1,651 @@
+{
+  "dataset": "MUSDB18-HQ test",
+  "reference_kind": "true-stem",
+  "excerpt_len_s": 60.0,
+  "config": {
+    "overlap": 0.25,
+    "shifts": 0,
+    "gpu": "NVIDIA GeForce GTX 1660"
+  },
+  "models": [
+    "mdx_q",
+    "mdx",
+    "mdx_extra_q",
+    "mdx_extra",
+    "htdemucs",
+    "htdemucs_ft",
+    "hdemucs_mmi"
+  ],
+  "tracks": [
+    {
+      "track": "Al James - Schoolboy Facination",
+      "slug": "al-james-schoolboy-facination",
+      "genre": "hip-hop, rapped male lead",
+      "window": {
+        "start_s": 139.0,
+        "end_s": 199.0,
+        "length_s": 60.0,
+        "rms_dbfs": -22.16,
+        "silent_frac": 0.008,
+        "source_duration_s": 200.5
+      },
+      "baseline_mixture": {
+        "si_sdr": -0.382,
+        "corr_truth": 0.6914,
+        "corr_mixture": 1.0,
+        "lsd_db": 10.829
+      },
+      "results": {
+        "mdx_q": {
+          "separate_s": 9.0,
+          "load_s": 6.39,
+          "si_sdr": 6.419,
+          "si_sdr_to_mixture": -0.203,
+          "corr_truth": 0.9024,
+          "corr_mixture": 0.6988,
+          "lsd_db": 7.948,
+          "sdr_db": 7.026,
+          "sir_db": 16.283,
+          "sar_db": 7.675
+        },
+        "mdx": {
+          "separate_s": 8.6,
+          "load_s": 2.47,
+          "si_sdr": 6.156,
+          "si_sdr_to_mixture": -0.27,
+          "corr_truth": 0.8972,
+          "corr_mixture": 0.696,
+          "lsd_db": 7.768,
+          "sdr_db": 6.758,
+          "sir_db": 16.17,
+          "sar_db": 7.39
+        },
+        "mdx_extra_q": {
+          "separate_s": 9.83,
+          "load_s": 5.86,
+          "si_sdr": 9.115,
+          "si_sdr_to_mixture": 0.879,
+          "corr_truth": 0.9438,
+          "corr_mixture": 0.7419,
+          "lsd_db": 7.702,
+          "sdr_db": 9.31,
+          "sir_db": 15.159,
+          "sar_db": 10.749
+        },
+        "mdx_extra": {
+          "separate_s": 9.73,
+          "load_s": 2.52,
+          "si_sdr": 9.17,
+          "si_sdr_to_mixture": 0.871,
+          "corr_truth": 0.9445,
+          "corr_mixture": 0.7416,
+          "lsd_db": 7.589,
+          "sdr_db": 9.344,
+          "sir_db": 15.182,
+          "sar_db": 10.785
+        },
+        "htdemucs": {
+          "separate_s": 4.95,
+          "load_s": 0.44,
+          "si_sdr": 6.434,
+          "si_sdr_to_mixture": -0.213,
+          "corr_truth": 0.9027,
+          "corr_mixture": 0.6984,
+          "lsd_db": 7.928,
+          "sdr_db": 6.871,
+          "sir_db": 16.679,
+          "sar_db": 7.442
+        },
+        "htdemucs_ft": {
+          "separate_s": 14.96,
+          "load_s": 1.51,
+          "si_sdr": 7.047,
+          "si_sdr_to_mixture": -0.09,
+          "corr_truth": 0.9139,
+          "corr_mixture": 0.7034,
+          "lsd_db": 7.526,
+          "sdr_db": 7.432,
+          "sir_db": 16.832,
+          "sar_db": 8.051
+        },
+        "hdemucs_mmi": {
+          "separate_s": 2.39,
+          "load_s": 0.58,
+          "si_sdr": 6.937,
+          "si_sdr_to_mixture": 0.184,
+          "corr_truth": 0.9119,
+          "corr_mixture": 0.7145,
+          "lsd_db": 7.527,
+          "sdr_db": 7.305,
+          "sir_db": 15.635,
+          "sar_db": 8.112
+        }
+      }
+    },
+    {
+      "track": "Zeno - Signs",
+      "slug": "zeno-signs",
+      "genre": "pop rock, sung male lead",
+      "window": {
+        "start_s": 109.0,
+        "end_s": 169.0,
+        "length_s": 60.0,
+        "rms_dbfs": -22.54,
+        "silent_frac": 0.142,
+        "source_duration_s": 234.0
+      },
+      "baseline_mixture": {
+        "si_sdr": -3.225,
+        "corr_truth": 0.5678,
+        "corr_mixture": 1.0,
+        "lsd_db": 13.091
+      },
+      "results": {
+        "mdx_q": {
+          "separate_s": 8.64,
+          "load_s": 6.59,
+          "si_sdr": 9.149,
+          "si_sdr_to_mixture": -2.402,
+          "corr_truth": 0.9442,
+          "corr_mixture": 0.6043,
+          "lsd_db": 7.916,
+          "sdr_db": 9.367,
+          "sir_db": 18.362,
+          "sar_db": 10.015
+        },
+        "mdx": {
+          "separate_s": 8.81,
+          "load_s": 2.55,
+          "si_sdr": 9.266,
+          "si_sdr_to_mixture": -2.308,
+          "corr_truth": 0.9456,
+          "corr_mixture": 0.6084,
+          "lsd_db": 8.002,
+          "sdr_db": 9.437,
+          "sir_db": 18.001,
+          "sar_db": 10.156
+        },
+        "mdx_extra_q": {
+          "separate_s": 9.79,
+          "load_s": 6.11,
+          "si_sdr": 10.193,
+          "si_sdr_to_mixture": -2.512,
+          "corr_truth": 0.9554,
+          "corr_mixture": 0.5994,
+          "lsd_db": 6.619,
+          "sdr_db": 10.399,
+          "sir_db": 19.927,
+          "sar_db": 10.957
+        },
+        "mdx_extra": {
+          "separate_s": 9.72,
+          "load_s": 2.44,
+          "si_sdr": 10.37,
+          "si_sdr_to_mixture": -2.538,
+          "corr_truth": 0.957,
+          "corr_mixture": 0.5983,
+          "lsd_db": 6.369,
+          "sdr_db": 10.58,
+          "sir_db": 20.247,
+          "sar_db": 11.117
+        },
+        "htdemucs": {
+          "separate_s": 3.7,
+          "load_s": 0.37,
+          "si_sdr": 9.362,
+          "si_sdr_to_mixture": -2.574,
+          "corr_truth": 0.9467,
+          "corr_mixture": 0.5967,
+          "lsd_db": 6.824,
+          "sdr_db": 9.625,
+          "sir_db": 19.345,
+          "sar_db": 10.165
+        },
+        "htdemucs_ft": {
+          "separate_s": 15.0,
+          "load_s": 1.48,
+          "si_sdr": 8.958,
+          "si_sdr_to_mixture": -2.792,
+          "corr_truth": 0.9419,
+          "corr_mixture": 0.587,
+          "lsd_db": 6.494,
+          "sdr_db": 9.833,
+          "sir_db": 20.466,
+          "sar_db": 10.264
+        },
+        "hdemucs_mmi": {
+          "separate_s": 2.49,
+          "load_s": 0.59,
+          "si_sdr": 9.775,
+          "si_sdr_to_mixture": -2.635,
+          "corr_truth": 0.9512,
+          "corr_mixture": 0.594,
+          "lsd_db": 7.253,
+          "sdr_db": 9.974,
+          "sir_db": 20.019,
+          "sar_db": 10.47
+        }
+      }
+    },
+    {
+      "track": "Timboz - Pony",
+      "slug": "timboz-pony",
+      "genre": "metal, screamed male over dense guitars",
+      "window": {
+        "start_s": 59.0,
+        "end_s": 119.0,
+        "length_s": 60.0,
+        "rms_dbfs": -27.9,
+        "silent_frac": 0.075,
+        "source_duration_s": 253.0
+      },
+      "baseline_mixture": {
+        "si_sdr": -8.376,
+        "corr_truth": 0.3562,
+        "corr_mixture": 1.0,
+        "lsd_db": 10.253
+      },
+      "results": {
+        "mdx_q": {
+          "separate_s": 8.71,
+          "load_s": 6.36,
+          "si_sdr": 3.831,
+          "si_sdr_to_mixture": -5.813,
+          "corr_truth": 0.841,
+          "corr_mixture": 0.4558,
+          "lsd_db": 7.96,
+          "sdr_db": 4.359,
+          "sir_db": 11.897,
+          "sar_db": 5.473
+        },
+        "mdx": {
+          "separate_s": 8.72,
+          "load_s": 2.47,
+          "si_sdr": 3.717,
+          "si_sdr_to_mixture": -5.554,
+          "corr_truth": 0.8377,
+          "corr_mixture": 0.4666,
+          "lsd_db": 7.959,
+          "sdr_db": 4.174,
+          "sir_db": 11.501,
+          "sar_db": 5.36
+        },
+        "mdx_extra_q": {
+          "separate_s": 9.84,
+          "load_s": 5.99,
+          "si_sdr": 4.626,
+          "si_sdr_to_mixture": -6.788,
+          "corr_truth": 0.8624,
+          "corr_mixture": 0.4162,
+          "lsd_db": 8.252,
+          "sdr_db": 5.332,
+          "sir_db": 12.992,
+          "sar_db": 6.361
+        },
+        "mdx_extra": {
+          "separate_s": 9.92,
+          "load_s": 2.51,
+          "si_sdr": 4.628,
+          "si_sdr_to_mixture": -6.697,
+          "corr_truth": 0.8624,
+          "corr_mixture": 0.4198,
+          "lsd_db": 7.971,
+          "sdr_db": 5.313,
+          "sir_db": 13.2,
+          "sar_db": 6.288
+        },
+        "htdemucs": {
+          "separate_s": 3.93,
+          "load_s": 0.45,
+          "si_sdr": 4.133,
+          "si_sdr_to_mixture": -6.758,
+          "corr_truth": 0.8494,
+          "corr_mixture": 0.4174,
+          "lsd_db": 8.718,
+          "sdr_db": 4.788,
+          "sir_db": 13.583,
+          "sar_db": 5.589
+        },
+        "htdemucs_ft": {
+          "separate_s": 15.05,
+          "load_s": 1.47,
+          "si_sdr": 4.188,
+          "si_sdr_to_mixture": -6.807,
+          "corr_truth": 0.8509,
+          "corr_mixture": 0.4154,
+          "lsd_db": 8.591,
+          "sdr_db": 4.889,
+          "sir_db": 13.606,
+          "sar_db": 5.7
+        },
+        "hdemucs_mmi": {
+          "separate_s": 2.4,
+          "load_s": 0.6,
+          "si_sdr": 4.157,
+          "si_sdr_to_mixture": -6.583,
+          "corr_truth": 0.8501,
+          "corr_mixture": 0.4244,
+          "lsd_db": 8.158,
+          "sdr_db": 4.823,
+          "sir_db": 13.06,
+          "sar_db": 5.739
+        }
+      }
+    },
+    {
+      "track": "Sambasevam Shanmugam - Kaathaadi",
+      "slug": "sambasevam-shanmugam-kaathaadi",
+      "genre": "Tamil film, non-Western instrumentation",
+      "window": {
+        "start_s": 106.0,
+        "end_s": 166.0,
+        "length_s": 60.0,
+        "rms_dbfs": -20.02,
+        "silent_frac": 0.0,
+        "source_duration_s": 317.5
+      },
+      "baseline_mixture": {
+        "si_sdr": 0.56,
+        "corr_truth": 0.7295,
+        "corr_mixture": 1.0,
+        "lsd_db": 9.103
+      },
+      "results": {
+        "mdx_q": {
+          "separate_s": 8.78,
+          "load_s": 6.86,
+          "si_sdr": 15.201,
+          "si_sdr_to_mixture": 0.847,
+          "corr_truth": 0.9852,
+          "corr_mixture": 0.7407,
+          "lsd_db": 6.951,
+          "sdr_db": 15.32,
+          "sir_db": 22.92,
+          "sar_db": 16.172
+        },
+        "mdx": {
+          "separate_s": 8.74,
+          "load_s": 2.66,
+          "si_sdr": 15.241,
+          "si_sdr_to_mixture": 0.776,
+          "corr_truth": 0.9854,
+          "corr_mixture": 0.7379,
+          "lsd_db": 6.878,
+          "sdr_db": 15.342,
+          "sir_db": 23.852,
+          "sar_db": 16.02
+        },
+        "mdx_extra_q": {
+          "separate_s": 9.92,
+          "load_s": 5.89,
+          "si_sdr": 17.275,
+          "si_sdr_to_mixture": 0.782,
+          "corr_truth": 0.9908,
+          "corr_mixture": 0.7382,
+          "lsd_db": 6.035,
+          "sdr_db": 17.321,
+          "sir_db": 25.773,
+          "sar_db": 18.002
+        },
+        "mdx_extra": {
+          "separate_s": 9.88,
+          "load_s": 2.44,
+          "si_sdr": 17.447,
+          "si_sdr_to_mixture": 0.764,
+          "corr_truth": 0.9911,
+          "corr_mixture": 0.7375,
+          "lsd_db": 6.011,
+          "sdr_db": 17.489,
+          "sir_db": 26.147,
+          "sar_db": 18.136
+        },
+        "htdemucs": {
+          "separate_s": 3.7,
+          "load_s": 0.38,
+          "si_sdr": 16.38,
+          "si_sdr_to_mixture": 0.73,
+          "corr_truth": 0.9887,
+          "corr_mixture": 0.7361,
+          "lsd_db": 6.367,
+          "sdr_db": 16.458,
+          "sir_db": 25.85,
+          "sar_db": 17.0
+        },
+        "htdemucs_ft": {
+          "separate_s": 14.91,
+          "load_s": 1.46,
+          "si_sdr": 16.473,
+          "si_sdr_to_mixture": 0.697,
+          "corr_truth": 0.9889,
+          "corr_mixture": 0.7349,
+          "lsd_db": 6.204,
+          "sdr_db": 16.585,
+          "sir_db": 26.686,
+          "sar_db": 17.041
+        },
+        "hdemucs_mmi": {
+          "separate_s": 2.39,
+          "load_s": 0.6,
+          "si_sdr": 16.683,
+          "si_sdr_to_mixture": 0.75,
+          "corr_truth": 0.9894,
+          "corr_mixture": 0.7369,
+          "lsd_db": 6.19,
+          "sdr_db": 16.714,
+          "sir_db": 25.759,
+          "sar_db": 17.303
+        }
+      }
+    },
+    {
+      "track": "Enda Reilly - Cur An Long Ag Seol",
+      "slug": "enda-reilly-cur-an-long-ag-seol",
+      "genre": "Irish-Gaelic folk, sparse acoustic",
+      "window": {
+        "start_s": 92.0,
+        "end_s": 152.0,
+        "length_s": 60.0,
+        "rms_dbfs": -22.24,
+        "silent_frac": 0.2,
+        "source_duration_s": 186.5
+      },
+      "baseline_mixture": {
+        "si_sdr": -3.006,
+        "corr_truth": 0.5775,
+        "corr_mixture": 1.0,
+        "lsd_db": 12.085
+      },
+      "results": {
+        "mdx_q": {
+          "separate_s": 8.83,
+          "load_s": 6.54,
+          "si_sdr": 12.315,
+          "si_sdr_to_mixture": -2.531,
+          "corr_truth": 0.9719,
+          "corr_mixture": 0.5986,
+          "lsd_db": 5.279,
+          "sdr_db": 12.566,
+          "sir_db": 21.727,
+          "sar_db": 13.157
+        },
+        "mdx": {
+          "separate_s": 8.73,
+          "load_s": 2.6,
+          "si_sdr": 12.185,
+          "si_sdr_to_mixture": -2.582,
+          "corr_truth": 0.9711,
+          "corr_mixture": 0.5963,
+          "lsd_db": 5.308,
+          "sdr_db": 12.568,
+          "sir_db": 22.009,
+          "sar_db": 13.119
+        },
+        "mdx_extra_q": {
+          "separate_s": 9.78,
+          "load_s": 5.92,
+          "si_sdr": 13.06,
+          "si_sdr_to_mixture": -2.613,
+          "corr_truth": 0.9762,
+          "corr_mixture": 0.5949,
+          "lsd_db": 4.964,
+          "sdr_db": 13.277,
+          "sir_db": 23.201,
+          "sar_db": 13.764
+        },
+        "mdx_extra": {
+          "separate_s": 9.84,
+          "load_s": 2.54,
+          "si_sdr": 13.701,
+          "si_sdr_to_mixture": -2.638,
+          "corr_truth": 0.9793,
+          "corr_mixture": 0.5938,
+          "lsd_db": 4.929,
+          "sdr_db": 13.883,
+          "sir_db": 23.9,
+          "sar_db": 14.356
+        },
+        "htdemucs": {
+          "separate_s": 3.74,
+          "load_s": 0.39,
+          "si_sdr": 12.858,
+          "si_sdr_to_mixture": -2.624,
+          "corr_truth": 0.9751,
+          "corr_mixture": 0.5945,
+          "lsd_db": 5.125,
+          "sdr_db": 13.054,
+          "sir_db": 23.137,
+          "sar_db": 13.523
+        },
+        "htdemucs_ft": {
+          "separate_s": 15.04,
+          "load_s": 1.46,
+          "si_sdr": 13.439,
+          "si_sdr_to_mixture": -2.729,
+          "corr_truth": 0.9781,
+          "corr_mixture": 0.5898,
+          "lsd_db": 5.069,
+          "sdr_db": 13.683,
+          "sir_db": 24.876,
+          "sar_db": 14.04
+        },
+        "hdemucs_mmi": {
+          "separate_s": 2.39,
+          "load_s": 0.58,
+          "si_sdr": 13.296,
+          "si_sdr_to_mixture": -2.682,
+          "corr_truth": 0.9774,
+          "corr_mixture": 0.5919,
+          "lsd_db": 5.125,
+          "sdr_db": 13.512,
+          "sir_db": 24.032,
+          "sar_db": 13.932
+        }
+      }
+    },
+    {
+      "track": "Cristina Vane - So Easy",
+      "slug": "cristina-vane-so-easy",
+      "genre": "blues, female over slide guitar",
+      "window": {
+        "start_s": 184.0,
+        "end_s": 244.0,
+        "length_s": 60.0,
+        "rms_dbfs": -23.16,
+        "silent_frac": 0.075,
+        "source_duration_s": 254.0
+      },
+      "baseline_mixture": {
+        "si_sdr": -3.19,
+        "corr_truth": 0.5694,
+        "corr_mixture": 1.0,
+        "lsd_db": 10.022
+      },
+      "results": {
+        "mdx_q": {
+          "separate_s": 9.07,
+          "load_s": 7.48,
+          "si_sdr": 9.081,
+          "si_sdr_to_mixture": -2.518,
+          "corr_truth": 0.9434,
+          "corr_mixture": 0.5992,
+          "lsd_db": 6.161,
+          "sdr_db": 9.505,
+          "sir_db": 16.644,
+          "sar_db": 10.53
+        },
+        "mdx": {
+          "separate_s": 11.51,
+          "load_s": 3.0,
+          "si_sdr": 9.032,
+          "si_sdr_to_mixture": -2.658,
+          "corr_truth": 0.9428,
+          "corr_mixture": 0.5929,
+          "lsd_db": 6.192,
+          "sdr_db": 9.554,
+          "sir_db": 17.252,
+          "sar_db": 10.444
+        },
+        "mdx_extra_q": {
+          "separate_s": 14.07,
+          "load_s": 7.57,
+          "si_sdr": 10.002,
+          "si_sdr_to_mixture": -2.357,
+          "corr_truth": 0.9535,
+          "corr_mixture": 0.6062,
+          "lsd_db": 5.955,
+          "sdr_db": 10.255,
+          "sir_db": 16.523,
+          "sar_db": 11.521
+        },
+        "mdx_extra": {
+          "separate_s": 12.18,
+          "load_s": 4.14,
+          "si_sdr": 10.23,
+          "si_sdr_to_mixture": -2.448,
+          "corr_truth": 0.9557,
+          "corr_mixture": 0.6022,
+          "lsd_db": 5.823,
+          "sdr_db": 10.476,
+          "sir_db": 17.266,
+          "sar_db": 11.577
+        },
+        "htdemucs": {
+          "separate_s": 5.82,
+          "load_s": 0.41,
+          "si_sdr": 9.676,
+          "si_sdr_to_mixture": -2.567,
+          "corr_truth": 0.9501,
+          "corr_mixture": 0.597,
+          "lsd_db": 6.173,
+          "sdr_db": 9.919,
+          "sir_db": 17.422,
+          "sar_db": 10.846
+        },
+        "htdemucs_ft": {
+          "separate_s": 25.74,
+          "load_s": 1.47,
+          "si_sdr": 10.083,
+          "si_sdr_to_mixture": -2.755,
+          "corr_truth": 0.9543,
+          "corr_mixture": 0.5887,
+          "lsd_db": 6.012,
+          "sdr_db": 10.347,
+          "sir_db": 19.006,
+          "sar_db": 11.037
+        },
+        "hdemucs_mmi": {
+          "separate_s": 2.4,
+          "load_s": 0.59,
+          "si_sdr": 9.964,
+          "si_sdr_to_mixture": -2.558,
+          "corr_truth": 0.9531,
+          "corr_mixture": 0.5974,
+          "lsd_db": 5.822,
+          "sdr_db": 10.144,
+          "sir_db": 17.656,
+          "sar_db": 11.066
+        }
+      }
+    }
+  ]
+}
