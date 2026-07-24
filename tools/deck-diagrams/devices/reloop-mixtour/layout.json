@@ -1,0 +1,579 @@
+{
+  "device": "Reloop MIXTOUR",
+  "vendor": "Reloop",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1851,
+    "height": 2626
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "led_only_rows",
+    "vu_meter_velocity_tables"
+  ],
+  "controls": [
+    {
+      "id": "mixtour-gain",
+      "fig": "gain",
+      "label": "Gain",
+      "kind": "knob",
+      "x": 8,
+      "y": 8.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "gain",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": "gain_shift"
+      },
+      "notes": "[gain]"
+    },
+    {
+      "id": "mixtour-high",
+      "fig": "high",
+      "label": "High",
+      "kind": "knob",
+      "x": 30,
+      "y": 8.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "high",
+        "type": "cc",
+        "ch": 1,
+        "code": 1,
+        "shift_name": "high_shift"
+      },
+      "notes": "[high]"
+    },
+    {
+      "id": "mixtour-mid",
+      "fig": "mid",
+      "label": "Mid",
+      "kind": "knob",
+      "x": 8,
+      "y": 14.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "mid",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": "mid_shift"
+      },
+      "notes": "[mid]"
+    },
+    {
+      "id": "mixtour-low",
+      "fig": "low",
+      "label": "Low",
+      "kind": "knob",
+      "x": 30,
+      "y": 14.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "low",
+        "type": "cc",
+        "ch": 1,
+        "code": 3,
+        "shift_name": "low_shift"
+      },
+      "notes": "[low]"
+    },
+    {
+      "id": "mixtour-deck_filter_fx",
+      "fig": "deck_filter_fx",
+      "label": "Filter FX",
+      "kind": "knob",
+      "x": 8,
+      "y": 21.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "deck_filter_fx",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": "deck_filter_fx_shift"
+      },
+      "notes": "[deck_filter_fx]"
+    },
+    {
+      "id": "mixtour-deck_filter_fx_x",
+      "fig": "deck_filter_fx_x",
+      "label": "Filter FX",
+      "kind": "button",
+      "x": 30,
+      "y": 21.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "deck_filter_fx_x",
+        "type": "note",
+        "ch": 1,
+        "code": 1,
+        "shift_name": "deck_filter_fx_x_shift"
+      },
+      "notes": "[deck_filter_fx_x]"
+    },
+    {
+      "id": "mixtour-load",
+      "fig": "load",
+      "label": "Load",
+      "kind": "button",
+      "x": 8,
+      "y": 27.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "load",
+        "type": "note",
+        "ch": 1,
+        "code": 2,
+        "shift_name": "load_shift"
+      },
+      "notes": "[load]"
+    },
+    {
+      "id": "mixtour-cue",
+      "fig": "cue",
+      "label": "Cue",
+      "kind": "button",
+      "x": 30,
+      "y": 27.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 3,
+        "shift_name": "cue_shift"
+      },
+      "notes": "[cue]"
+    },
+    {
+      "id": "mixtour-deck_line_fader",
+      "fig": "deck_line_fader",
+      "label": "Line Fader",
+      "kind": "knob",
+      "x": 8,
+      "y": 34.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "deck_line_fader",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": "deck_line_fader_shift"
+      },
+      "notes": "[deck_line_fader]"
+    },
+    {
+      "id": "mixtour-t_mode_button",
+      "fig": "t_mode_button",
+      "label": "T-mode button",
+      "kind": "button",
+      "x": 30,
+      "y": 34.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "t_mode_button",
+        "type": "note",
+        "ch": 1,
+        "code": 4,
+        "shift_name": "t_mode_button_shift"
+      },
+      "notes": "[t_mode_button]"
+    },
+    {
+      "id": "mixtour-c_mode_button",
+      "fig": "c_mode_button",
+      "label": "C-mode button",
+      "kind": "button",
+      "x": 8,
+      "y": 40.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "c_mode_button",
+        "type": "note",
+        "ch": 1,
+        "code": 5,
+        "shift_name": "c_mode_button_shift"
+      },
+      "notes": "[c_mode_button]"
+    },
+    {
+      "id": "mixtour-shift",
+      "fig": "shift",
+      "label": "Shift",
+      "kind": "button",
+      "x": 8,
+      "y": 55.0,
+      "w": 20,
+      "h": 5,
+      "layer": "base",
+      "section": "global",
+      "midi": {
+        "name": "shift",
+        "type": "note",
+        "ch": 1,
+        "code": 6,
+        "shift_name": null
+      },
+      "notes": "[shift]"
+    },
+    {
+      "id": "mixtour-trax_knob_press",
+      "fig": "trax_knob_press",
+      "label": "Trax Knob (Press)",
+      "kind": "button",
+      "x": 30,
+      "y": 55.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "global",
+      "midi": {
+        "name": "trax_knob_press",
+        "type": "note",
+        "ch": 1,
+        "code": 7,
+        "shift_name": "trax_knob_press_shift"
+      },
+      "notes": "[trax_knob_press]"
+    },
+    {
+      "id": "mixtour-back",
+      "fig": "back",
+      "label": "Back",
+      "kind": "button",
+      "x": 8,
+      "y": 61.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "global",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 1,
+        "code": 8,
+        "shift_name": "back_shift"
+      },
+      "notes": "[back]"
+    },
+    {
+      "id": "mixtour-cue_mix",
+      "fig": "cue_mix",
+      "label": "Cue Mix",
+      "kind": "knob",
+      "x": 30,
+      "y": 61.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "global",
+      "midi": {
+        "name": "cue_mix",
+        "type": "cc",
+        "ch": 1,
+        "code": 6,
+        "shift_name": "cue_mix_shift"
+      },
+      "notes": "[cue_mix]"
+    },
+    {
+      "id": "mixtour-crossfader",
+      "fig": "crossfader",
+      "label": "Crossfader",
+      "kind": "knob",
+      "x": 8,
+      "y": 68.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "global",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 1,
+        "code": 8,
+        "shift_name": "crossfader_shift"
+      },
+      "notes": "[crossfader]"
+    },
+    {
+      "id": "mixtour-master_vol",
+      "fig": "master_vol",
+      "label": "Master Vol",
+      "kind": "knob",
+      "x": 30,
+      "y": 68.0,
+      "w": 20,
+      "h": 5,
+      "layer": "base",
+      "section": "global",
+      "midi": {
+        "name": "master_vol",
+        "type": "cc",
+        "ch": 5,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "[master_vol]"
+    },
+    {
+      "id": "mixtour-headphone_vol",
+      "fig": "headphone_vol",
+      "label": "Headphone Vol",
+      "kind": "knob",
+      "x": 8,
+      "y": 74.5,
+      "w": 20,
+      "h": 5,
+      "layer": "base",
+      "section": "global",
+      "midi": {
+        "name": "headphone_vol",
+        "type": "cc",
+        "ch": 5,
+        "code": 1,
+        "shift_name": null
+      },
+      "notes": "[headphone_vol]"
+    },
+    {
+      "id": "mixtour-fader_start_line_fader",
+      "fig": "fader_start_line_fader",
+      "label": "Line Fader",
+      "kind": "fader",
+      "x": 55,
+      "y": 70.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "fader_start",
+      "midi": {
+        "name": "fader_start_line_fader",
+        "type": "cc",
+        "ch": 1,
+        "code": 5,
+        "shift_name": "fader_start_line_fader_shift"
+      },
+      "notes": "[fader_start_line_fader]"
+    },
+    {
+      "id": "mixtour-line_fader_01_00",
+      "fig": "line_fader_01_00",
+      "label": "Line Fader (01->00)",
+      "kind": "button",
+      "x": 77,
+      "y": 70.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "fader_start",
+      "midi": {
+        "name": "line_fader_01_00",
+        "type": "note",
+        "ch": 1,
+        "code": 19,
+        "shift_name": "line_fader_01_00_shift"
+      },
+      "notes": "[line_fader_01_00]"
+    },
+    {
+      "id": "mixtour-line_fader_00_01",
+      "fig": "line_fader_00_01",
+      "label": "Line Fader (00->01)",
+      "kind": "button",
+      "x": 55,
+      "y": 76.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "fader_start",
+      "midi": {
+        "name": "line_fader_00_01",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": "line_fader_00_01_shift"
+      },
+      "notes": "[line_fader_00_01]"
+    },
+    {
+      "id": "mixtour-cmode_button_1",
+      "fig": "cmode_button_1",
+      "label": "Button 1",
+      "kind": "button",
+      "x": 55,
+      "y": 8.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "cmode",
+      "midi": {
+        "name": "cmode_button_1",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": "cmode_button_1_shift"
+      },
+      "notes": "[cmode_button_1]"
+    },
+    {
+      "id": "mixtour-cmode_button_2",
+      "fig": "cmode_button_2",
+      "label": "Button 2",
+      "kind": "button",
+      "x": 77,
+      "y": 8.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "cmode",
+      "midi": {
+        "name": "cmode_button_2",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": "cmode_button_2_shift"
+      },
+      "notes": "[cmode_button_2]"
+    },
+    {
+      "id": "mixtour-cmode_button_3",
+      "fig": "cmode_button_3",
+      "label": "Button 3",
+      "kind": "button",
+      "x": 55,
+      "y": 14.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "cmode",
+      "midi": {
+        "name": "cmode_button_3",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": "cmode_button_3_shift"
+      },
+      "notes": "[cmode_button_3]"
+    },
+    {
+      "id": "mixtour-cmode_button_4",
+      "fig": "cmode_button_4",
+      "label": "Button 4",
+      "kind": "button",
+      "x": 77,
+      "y": 14.5,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "cmode",
+      "midi": {
+        "name": "cmode_button_4",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": "cmode_button_4_shift"
+      },
+      "notes": "[cmode_button_4]"
+    },
+    {
+      "id": "mixtour-default",
+      "fig": "default",
+      "label": "Default",
+      "kind": "encoder",
+      "x": 55,
+      "y": 21.0,
+      "w": 20,
+      "h": 5,
+      "layer": "both",
+      "section": "cmode",
+      "midi": {
+        "name": "default",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": "default_shift"
+      },
+      "notes": "[default]"
+    },
+    {
+      "id": "mixtour-pfl",
+      "fig": "pfl",
+      "label": "PFL",
+      "kind": "button",
+      "x": 77,
+      "y": 21.0,
+      "w": 20,
+      "h": 5,
+      "layer": "base",
+      "section": "cmode",
+      "midi": {
+        "name": "pfl",
+        "type": "note",
+        "ch": 5,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "[pfl]"
+    },
+    {
+      "id": "mixtour-mst",
+      "fig": "mst",
+      "label": "MST",
+      "kind": "button",
+      "x": 55,
+      "y": 27.5,
+      "w": 20,
+      "h": 5,
+      "layer": "base",
+      "section": "cmode",
+      "midi": {
+        "name": "mst",
+        "type": "note",
+        "ch": 5,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "[mst]"
+    }
+  ]
+}

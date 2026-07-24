@@ -1,0 +1,10 @@
+{
+  "device": "Denon Prime 4",
+  "vendor": "Denon DJ",
+  "plate": {"image": "", "width": 0, "height": 0},
+  "layers": ["base", "shift"],
+  "out_of_scope": [],
+  "controls": [],
+  "bootstrap": true,
+  "blocked": "tier2_no_official_pdf"
+}

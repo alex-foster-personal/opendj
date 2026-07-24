@@ -1,0 +1,807 @@
+{
+  "source": "docs/controller/reference/DDJ-FLX6_MIDI_Message_List_E1.pdf",
+  "archived": "/Users/dev/Music/music-dj-tools/tools/deck-diagrams/devices/ddj-flx6/source/DDJ-FLX6_MIDI_Message_List_E1.pdf",
+  "device": "DDJ-FLX6",
+  "vendor": "AlphaTheta / Pioneer DJ",
+  "channel_conventions": {
+    "deck_rows": "PDF lists deck controls as one row for ch 1/2/3/4; entries carry ch=1 with note per-deck channels 1-4",
+    "pad_rows": "Pads ch8/10/12/14 unshifted and 9/11/13/15 shifted (deck1-4)",
+    "merge_fx": "ch5 left merge FX, ch6 right merge FX",
+    "browser_mixer": "ch7 browser, load, master, booth, phones, mic, crossfader",
+    "beat_fx": "ch5 FX1 bank, ch6 FX2 bank"
+  },
+  "controls": [
+    {
+      "name": "play_pause",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "per-deck channels 1-4; LED out same code [1-1]"
+    },
+    {
+      "name": "play_pause_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "shift variant of play_pause [1-1]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "per-deck channels 1-4 [1-2]"
+    },
+    {
+      "name": "cue_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "shift variant of cue [1-2]"
+    },
+    {
+      "name": "shift_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "notes": "hardware SHIFT; per-deck ch 1-4 [1-3]"
+    },
+    {
+      "name": "jog_platter_turn",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "Vinyl On CC34/35; shift CC41; touch note 54/103 [1-4]"
+    },
+    {
+      "name": "jog_platter_turn_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "shift variant of jog_platter_turn [1-4]"
+    },
+    {
+      "name": "deck_select",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "Deck1/3 toggle ch1/3; shift ch7 note 124 [1-5]"
+    },
+    {
+      "name": "deck_select_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 124,
+      "notes": "shift variant of deck_select [1-5]"
+    },
+    {
+      "name": "jog_cutter",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 28,
+      "notes": "per-deck ch 1-4 [1-6]"
+    },
+    {
+      "name": "jog_cutter_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 23,
+      "notes": "shift variant of jog_cutter [1-6]"
+    },
+    {
+      "name": "loop_in",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "long-press note 20; per-deck [1-7]"
+    },
+    {
+      "name": "loop_in_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "shift variant of loop_in [1-7]"
+    },
+    {
+      "name": "loop_out",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "per-deck ch 1-4 [1-8]"
+    },
+    {
+      "name": "loop_out_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 119,
+      "notes": "shift variant of loop_out [1-8]"
+    },
+    {
+      "name": "reloop_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "per-deck ch 1-4 [1-9]"
+    },
+    {
+      "name": "reloop_exit_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 80,
+      "notes": "shift variant of reloop_exit [1-9]"
+    },
+    {
+      "name": "cue_loop_call_prev",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "notes": "per-deck [1-10]"
+    },
+    {
+      "name": "cue_loop_call_prev_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 97,
+      "notes": "shift variant of cue_loop_call_prev [1-10]"
+    },
+    {
+      "name": "cue_loop_call_next",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "notes": "per-deck [1-11]"
+    },
+    {
+      "name": "cue_loop_call_next_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 98,
+      "notes": "shift variant of cue_loop_call_next [1-11]"
+    },
+    {
+      "name": "cue_loop_memory",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 61,
+      "notes": "per-deck [1-12]"
+    },
+    {
+      "name": "cue_loop_memory_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 62,
+      "notes": "shift variant of cue_loop_memory [1-12]"
+    },
+    {
+      "name": "merge_fx_preset",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 47,
+      "notes": "ch5 L / ch6 R [1-13]"
+    },
+    {
+      "name": "merge_fx_preset_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 5,
+      "code": 48,
+      "notes": "shift variant of merge_fx_preset [1-13]"
+    },
+    {
+      "name": "merge_fx_param",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 8,
+      "notes": "turn CC8/28 ch5/6; press note 46/49 [1-14]"
+    },
+    {
+      "name": "merge_fx_param_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 5,
+      "code": 40,
+      "notes": "shift variant of merge_fx_param [1-14]"
+    },
+    {
+      "name": "beat_sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 88,
+      "notes": "per-deck ch 1-4 [1-15]"
+    },
+    {
+      "name": "beat_sync_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 93,
+      "notes": "shift variant of beat_sync [1-15]"
+    },
+    {
+      "name": "master_tempo",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 92,
+      "notes": "per-deck ch 1-4 [1-16]"
+    },
+    {
+      "name": "master_tempo_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "notes": "shift variant of master_tempo [1-16]"
+    },
+    {
+      "name": "tempo_slider",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "14-bit MSB0/LSB32; shift MSB5/LSB37 per-deck [1-17]"
+    },
+    {
+      "name": "tempo_slider_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "shift variant of tempo_slider [1-17]"
+    },
+    {
+      "name": "bfx_select",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 112,
+      "notes": "cycles FX1-1..FX2-3; shift reverses cycle [2-1]"
+    },
+    {
+      "name": "bfx_select_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 112,
+      "notes": "shift variant of bfx_select [2-1]"
+    },
+    {
+      "name": "bfx_ch_select",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 28,
+      "notes": "CH1-4 + master select notes ch5/6 [2-2]"
+    },
+    {
+      "name": "bfx_ch_select_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 28,
+      "notes": "shift variant of bfx_ch_select [2-2]"
+    },
+    {
+      "name": "beat_fx_prev",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 6,
+      "notes": "FX1 ch5 / FX2 ch6 [2-3]"
+    },
+    {
+      "name": "beat_fx_prev_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 102,
+      "notes": "shift variant of beat_fx_prev [2-3]"
+    },
+    {
+      "name": "beat_fx_next",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 7,
+      "notes": "FX1 ch5 / FX2 ch6 [2-4]"
+    },
+    {
+      "name": "beat_fx_next_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 107,
+      "notes": "shift variant of beat_fx_next [2-4]"
+    },
+    {
+      "name": "bfx_level_depth",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 2,
+      "notes": "14-bit CC per FX slot; MSB2/4/6 ch5/6 [2-5]"
+    },
+    {
+      "name": "bfx_level_depth_shift",
+      "section": "effect",
+      "type": "cc",
+      "ch": 5,
+      "code": 34,
+      "notes": "shift variant of bfx_level_depth [2-5]"
+    },
+    {
+      "name": "bfx_on_off",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 71,
+      "notes": "FX1-3 slots; shift all-FX note [2-6]"
+    },
+    {
+      "name": "bfx_on_off_shift",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 67,
+      "notes": "shift variant of bfx_on_off [2-6]"
+    },
+    {
+      "name": "input_select",
+      "section": "mixer",
+      "type": "note",
+      "ch": 4,
+      "code": 13,
+      "notes": "CH4 deck/sampler ch4 note 13 [3-1]"
+    },
+    {
+      "name": "master_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 8,
+      "notes": "14-bit MSB8 LSB40 ch7 [3-2]"
+    },
+    {
+      "name": "master_level_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 40,
+      "notes": "shift variant of master_level [3-2]"
+    },
+    {
+      "name": "master_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 99,
+      "notes": "ch7 [3-3]"
+    },
+    {
+      "name": "master_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 98,
+      "notes": "shift variant of master_cue [3-3]"
+    },
+    {
+      "name": "booth_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 9,
+      "notes": "14-bit MSB9 LSB41 ch7 [3-4]"
+    },
+    {
+      "name": "booth_level_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 41,
+      "notes": "shift variant of booth_level [3-4]"
+    },
+    {
+      "name": "trim",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "14-bit MSB4 per-deck ch1-4 [3-5]"
+    },
+    {
+      "name": "trim_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "shift variant of trim [3-5]"
+    },
+    {
+      "name": "eq_hi",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "EQ Hi/Mid/Low share fig; MSB7/11/15 [3-6]"
+    },
+    {
+      "name": "eq_hi_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "shift variant of eq_hi [3-6]"
+    },
+    {
+      "name": "filter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 23,
+      "notes": "FILTER ch1-4 via ch7 MSB23-26 [3-7]"
+    },
+    {
+      "name": "filter_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 55,
+      "notes": "shift variant of filter [3-7]"
+    },
+    {
+      "name": "ch_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 84,
+      "notes": "per-deck ch 1-4 [3-8]"
+    },
+    {
+      "name": "ch_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 104,
+      "notes": "shift variant of ch_cue [3-8]"
+    },
+    {
+      "name": "ch_fader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "14-bit MSB19; shift cue-start note [3-9]"
+    },
+    {
+      "name": "ch_fader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 82,
+      "notes": "shift variant of ch_fader [3-9]"
+    },
+    {
+      "name": "crossfader",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 31,
+      "notes": "14-bit MSB31; shift xfader-start notes [3-10]"
+    },
+    {
+      "name": "crossfader_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 80,
+      "notes": "shift variant of crossfader [3-10]"
+    },
+    {
+      "name": "ch_level_meter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "MIDI OUT only ch1-4 CC2 [3-11]"
+    },
+    {
+      "name": "headphone_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 13,
+      "notes": "MSB13 LSB45 ch7 [3-12]"
+    },
+    {
+      "name": "headphone_level_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 45,
+      "notes": "shift variant of headphone_level [3-12]"
+    },
+    {
+      "name": "headphone_mix",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 12,
+      "notes": "MSB12 LSB44 ch7 [3-13]"
+    },
+    {
+      "name": "headphone_mix_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 44,
+      "notes": "shift variant of headphone_mix [3-13]"
+    },
+    {
+      "name": "mic_level",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 5,
+      "notes": "MSB5 LSB37 ch7 [3-14]"
+    },
+    {
+      "name": "mic_level_shift",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 37,
+      "notes": "shift variant of mic_level [3-14]"
+    },
+    {
+      "name": "browse_rotate",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 64,
+      "notes": "relative encoder; press load note 65/66 [4-1]"
+    },
+    {
+      "name": "browse_rotate_shift",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 100,
+      "notes": "shift variant of browse_rotate [4-1]"
+    },
+    {
+      "name": "back",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 101,
+      "notes": "ch7 [4-2]"
+    },
+    {
+      "name": "back_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 102,
+      "notes": "shift variant of back [4-2]"
+    },
+    {
+      "name": "view",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 122,
+      "notes": "long-press note 103 [4-3]"
+    },
+    {
+      "name": "view_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 104,
+      "notes": "shift variant of view [4-3]"
+    },
+    {
+      "name": "load_deck1",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 70,
+      "notes": "ch7 [4-4]"
+    },
+    {
+      "name": "load_deck1_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 88,
+      "notes": "shift variant of load_deck1 [4-4]"
+    },
+    {
+      "name": "load_deck2",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 71,
+      "notes": "ch7 [4-5]"
+    },
+    {
+      "name": "load_deck2_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 89,
+      "notes": "shift variant of load_deck2 [4-5]"
+    },
+    {
+      "name": "load_deck3",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 72,
+      "notes": "ch7 [4-6]"
+    },
+    {
+      "name": "load_deck3_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 96,
+      "notes": "shift variant of load_deck3 [4-6]"
+    },
+    {
+      "name": "load_deck4",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 73,
+      "notes": "ch7 [4-7]"
+    },
+    {
+      "name": "load_deck4_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 97,
+      "notes": "shift variant of load_deck4 [4-7]"
+    },
+    {
+      "name": "hot_cue_mode",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "per-deck ch 1-4 [5-1]"
+    },
+    {
+      "name": "hot_cue_mode_shift",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "notes": "shift variant of hot_cue_mode [5-1]"
+    },
+    {
+      "name": "pad_fx_mode",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "per-deck ch 1-4 [5-2]"
+    },
+    {
+      "name": "pad_fx_mode_shift",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 111,
+      "notes": "shift variant of pad_fx_mode [5-2]"
+    },
+    {
+      "name": "beat_jump_mode",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "per-deck [5-3]"
+    },
+    {
+      "name": "beat_jump_mode_shift",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 109,
+      "notes": "shift variant of beat_jump_mode [5-3]"
+    },
+    {
+      "name": "sampler_mode",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "per-deck [5-4]"
+    },
+    {
+      "name": "sampler_mode_shift",
+      "section": "performance",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "notes": "shift variant of sampler_mode [5-4]"
+    },
+    {
+      "name": "performance_pad1",
+      "section": "performance",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "pad grid ch8/10/12/14 unshifted; odd ch shifted; modes in midi rows [5-5]"
+    },
+    {
+      "name": "performance_pad1_shift",
+      "section": "performance",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "notes": "shift variant of performance_pad1 [5-5]"
+    },
+    {
+      "name": "hot_cue_pad_deck1",
+      "section": "performance",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "deck1 pad mode row; see performance pad table [5-5]"
+    },
+    {
+      "name": "pad_fx_pad_deck1",
+      "section": "performance",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "notes": "deck1 pad mode row; see performance pad table [5-5]"
+    },
+    {
+      "name": "beat_jump_pad_deck1",
+      "section": "performance",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "deck1 pad mode row; see performance pad table [5-5]"
+    },
+    {
+      "name": "sampler_pad_deck1",
+      "section": "performance",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "notes": "deck1 pad mode row; see performance pad table [5-5]"
+    }
+  ]
+}

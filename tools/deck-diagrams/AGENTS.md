@@ -1,0 +1,45 @@
+# deck-diagrams - agent entry
+
+Tracking: https://github.com/maintainer/music-dj-tools/issues/371
+
+## Skill (main workflow)
+
+**Read and follow:** [`.agents/skills/deck-diagram-recreate/SKILL.md`](../../.agents/skills/deck-diagram-recreate/SKILL.md)
+
+That skill is the functional entry point. This directory holds assets, schemas, HTML decks, and helpers the skill produces.
+
+## Quick use
+
+```sh
+# checksum a device against its MIDI expected map
+uv run python tools/deck-diagrams/scripts/checksum.py tools/deck-diagrams/devices/ddj-flx10
+
+# rebuild FLX10 layout.json from midi.json + plate positions
+uv run python tools/deck-diagrams/scripts/build_flx10_layout.py
+
+# open interactive surfaces (offline, no build)
+open tools/deck-diagrams/devices/ddj-flx10/overlay.html
+open tools/deck-diagrams/devices/ddj-flx10/deck.html
+```
+
+## Layout
+
+| Path | Role |
+|---|---|
+| `catalog/controllers.json` | All decks + rough popularity + status |
+| `schema/control-layout.schema.json` | `layout.json` contract |
+| `devices/<id>/` | Per-controller sources, layout, overlay, deck |
+| `scripts/` | Checksum + layout builders |
+| `../docs/controller/reference/` | Archived official PDFs (human-facing) |
+
+## Rules
+
+- Geometry lives here, **not** in runtime `apps/webui/.../midi/maps/*.ts`.
+- Diagrams **consume** MIDI expected maps; they do not invent note numbers.
+- SHIFT is a first-class layer. Pad modes are additional layers when present.
+- HID-only surfaces (jog screens, VU bitmaps) stay out of scope - list them in `footnotes.md`.
+- No U+2014 or U+2013 characters in files (repo hook).
+
+## Scale gate
+
+See skill `reference.md` section "Scale to 100". Do not fan out past 5 until FLX10 checksum + overlay gate passes and the skill backlog items for plate crop / fig parse are noted.

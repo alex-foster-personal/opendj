@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://music-dj-tools.local/schema/control-layout.schema.json",
+  "title": "DeckDiagramControlLayout",
+  "type": "object",
+  "required": ["device", "plate", "controls"],
+  "additionalProperties": false,
+  "properties": {
+    "device": { "type": "string" },
+    "vendor": { "type": "string" },
+    "plate": {
+      "type": "object",
+      "required": ["image", "width", "height"],
+      "properties": {
+        "image": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["base", "shift"]
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "fig", "label", "kind", "x", "y", "w", "h", "layer", "midi"],
+        "properties": {
+          "id": { "type": "string" },
+          "fig": { "type": "string", "description": "Vendor fig code: D1 / 1-1 / snake_case name (Reloop)" },
+          "label": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["button", "pad", "knob", "encoder", "fader", "jog", "switch", "meter", "other"]
+          },
+          "x": { "type": "number", "description": "Left % of plate" },
+          "y": { "type": "number", "description": "Top % of plate" },
+          "w": { "type": "number" },
+          "h": { "type": "number" },
+          "layer": { "type": "string", "enum": ["base", "shift", "both"] },
+          "section": { "type": "string" },
+          "midi": {
+            "type": "object",
+            "required": ["name", "type", "ch", "code"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string", "enum": ["note", "cc"] },
+              "ch": { "type": "integer" },
+              "code": { "type": "integer" },
+              "shift_name": { "type": ["string", "null"] }
+            }
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

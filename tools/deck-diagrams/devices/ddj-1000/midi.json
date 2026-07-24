@@ -1,0 +1,3621 @@
+{
+  "source": "docs/controller/reference/DDJ-1000_MIDI_Message_List_E1.pdf",
+  "archived": "tools/deck-diagrams/devices/ddj-1000/source/DDJ-1000_MIDI_Message_List_E1.pdf",
+  "device": "DDJ-1000",
+  "vendor": "AlphaTheta / Pioneer DJ",
+  "channel_conventions": {
+    "deck_rows": "PDF lists deck controls as one row for ch 1/2/3/4; entries carry ch=1 with note 'per-deck channels 1-4'",
+    "pad_rows": "PDF lists pads as one row for ch 8/10/12/14 (unshifted) and 9/11/13/15 (shifted); entries carry ch=8 or ch=9 with expansion in notes",
+    "channel_assignment": "ch1-4 deck 1-4 (non-pad), ch5 effect, ch6 unused, ch7 browser + global mixer, ch8-15 performance pads (deck1 8/9, deck2 10/11, deck3 12/13, deck4 14/15; odd = shifted), ch16 MIDI-OUT illumination control"
+  },
+  "controls": [
+    {
+      "name": "browse_rotate",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 64,
+      "notes": "relative encoder: CW 1-30 (0x01-0x1E), CCW 127-98 (0x7F-0x62) [B1]"
+    },
+    {
+      "name": "browse_rotate_shift",
+      "section": "browser",
+      "type": "cc",
+      "ch": 7,
+      "code": 100,
+      "notes": "shift variant of browse_rotate (CC 0x40) [B1]"
+    },
+    {
+      "name": "load_deck1",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 70,
+      "notes": "BROWSE press, deck1 selected on left deck [B1]"
+    },
+    {
+      "name": "load_deck1_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 93,
+      "notes": "shift variant of load_deck1 (note 0x46) [B1]"
+    },
+    {
+      "name": "load_deck2",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 71,
+      "notes": "BROWSE press, deck2 selected on right deck [B1]"
+    },
+    {
+      "name": "load_deck2_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 109,
+      "notes": "shift variant of load_deck2 (note 0x47) [B1]"
+    },
+    {
+      "name": "load_deck3",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 72,
+      "notes": "BROWSE press, deck3 selected on left deck [B1]"
+    },
+    {
+      "name": "load_deck3_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 94,
+      "notes": "shift variant of load_deck3 (note 0x48) [B1]"
+    },
+    {
+      "name": "load_deck4",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 73,
+      "notes": "BROWSE press, deck4 selected on right deck [B1]"
+    },
+    {
+      "name": "load_deck4_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 111,
+      "notes": "shift variant of load_deck4 (note 0x49) [B1]"
+    },
+    {
+      "name": "back",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 101,
+      "notes": "[B2]"
+    },
+    {
+      "name": "back_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 102,
+      "notes": "shift variant of back (note 0x65) [B2]"
+    },
+    {
+      "name": "view",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 122,
+      "notes": "[B3]"
+    },
+    {
+      "name": "view_long_press",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 103,
+      "notes": "long-press variant of view (note 0x7A) [B3]"
+    },
+    {
+      "name": "view_shift",
+      "section": "browser",
+      "type": "note",
+      "ch": 7,
+      "code": 104,
+      "notes": "shift variant of view (note 0x7A) [B3]"
+    },
+    {
+      "name": "play_pause",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 11,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D1]"
+    },
+    {
+      "name": "play_pause_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "shift variant of play_pause (note 0x0B); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D1]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 12,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D2]"
+    },
+    {
+      "name": "cue_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 72,
+      "notes": "shift variant of cue (note 0x0C); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D2]"
+    },
+    {
+      "name": "jog_platter_vinyl_on",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 34,
+      "notes": "relative: CW increases from 65 (0x41), CCW decreases from 63 (0x3F); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_platter_vinyl_off",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 35,
+      "notes": "jog platter rotate with vinyl mode off; relative; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_platter_4beat_jump",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 41,
+      "notes": "jog platter rotate while 4 BEAT JUMP held; relative; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_platter_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 31,
+      "notes": "shift variant of jog platter rotate (CC 0x22); relative; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_touch",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 54,
+      "notes": "jog platter touch; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_touch_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 103,
+      "notes": "shift variant of jog_touch (note 0x36); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_wheel_side",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 33,
+      "notes": "jog wheel-side rotate; relative; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "jog_wheel_side_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 38,
+      "notes": "shift variant of jog_wheel_side (CC 0x21); relative; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "name": "tempo_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "14-bit MSB, LSB pair partner 0x20; minus side = min, plus side = max; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D4]"
+    },
+    {
+      "name": "tempo_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 32,
+      "notes": "14-bit LSB, MSB pair partner 0x00; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D4]"
+    },
+    {
+      "name": "tempo_shift_msb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "shift variant of tempo; 14-bit MSB, LSB pair partner 0x25; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D4]"
+    },
+    {
+      "name": "tempo_shift_lsb",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 37,
+      "notes": "shift variant of tempo; 14-bit LSB, MSB pair partner 0x05; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D4]"
+    },
+    {
+      "name": "deck_select_3_1_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 114,
+      "notes": "left deck DECK SELECT 3/1 press always emits ch3 note 114 (status 92) [D5]"
+    },
+    {
+      "name": "deck_select_3_1_deck1_state",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 60,
+      "notes": "ch1 note 60 data2 0x7F = deck1 control on, 0x00 = off [D5]"
+    },
+    {
+      "name": "deck_select_3_1_deck3_state",
+      "section": "deck",
+      "type": "note",
+      "ch": 3,
+      "code": 60,
+      "notes": "ch3 note 60 data2 0x7F = deck3 control on, 0x00 = off [D5]"
+    },
+    {
+      "name": "deck_select_3_1_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 124,
+      "notes": "shift variant of DECK SELECT 3/1: ch7 note 124 [D5]"
+    },
+    {
+      "name": "deck_select_2_4_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 114,
+      "notes": "right deck DECK SELECT 2/4 press always emits ch4 note 114 (status 93) [D5]"
+    },
+    {
+      "name": "deck_select_2_4_deck2_state",
+      "section": "deck",
+      "type": "note",
+      "ch": 2,
+      "code": 60,
+      "notes": "ch2 note 60 data2 0x7F = deck2 control on, 0x00 = off [D5]"
+    },
+    {
+      "name": "deck_select_2_4_deck4_state",
+      "section": "deck",
+      "type": "note",
+      "ch": 4,
+      "code": 60,
+      "notes": "ch4 note 60 data2 0x7F = deck4 control on, 0x00 = off [D5]"
+    },
+    {
+      "name": "deck_select_2_4_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 125,
+      "notes": "shift variant of DECK SELECT 2/4: ch7 note 125 [D5]"
+    },
+    {
+      "name": "beat_sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 88,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D6]"
+    },
+    {
+      "name": "beat_sync_long_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 120,
+      "notes": "long-press variant of beat_sync (note 0x58); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D6]"
+    },
+    {
+      "name": "beat_sync_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 92,
+      "notes": "shift variant of beat_sync (note 0x58); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D6]"
+    },
+    {
+      "name": "tempo_reset",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D7]"
+    },
+    {
+      "name": "tempo_reset_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 96,
+      "notes": "shift variant of tempo_reset (note 0x41); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D7]"
+    },
+    {
+      "name": "key_sync",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 101,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D8]"
+    },
+    {
+      "name": "key_sync_long_press",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 26,
+      "notes": "long-press variant of key_sync (note 0x65); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D8]"
+    },
+    {
+      "name": "key_sync_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 100,
+      "notes": "shift variant of key_sync (note 0x65); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D8]"
+    },
+    {
+      "name": "active_part_drums",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D9]"
+    },
+    {
+      "name": "active_part_vocal",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D10]"
+    },
+    {
+      "name": "active_part_inst",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D11]"
+    },
+    {
+      "name": "active_part_drums_shift_deck1",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 36,
+      "notes": "shift+press-twice variant of active_part_drums (note 0x0D) for deck 1; ch7; LED out on same code [D9]"
+    },
+    {
+      "name": "active_part_vocal_shift_deck1",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 40,
+      "notes": "shift+press-twice variant of active_part_vocal (note 0x0E) for deck 1; ch7; LED out on same code [D10]"
+    },
+    {
+      "name": "active_part_inst_shift_deck1",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 44,
+      "notes": "shift+press-twice variant of active_part_inst (note 0x0F) for deck 1; ch7; LED out on same code [D11]"
+    },
+    {
+      "name": "active_part_drums_shift_deck2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 37,
+      "notes": "shift+press-twice variant of active_part_drums (note 0x0D) for deck 2; ch7; LED out on same code [D9]"
+    },
+    {
+      "name": "active_part_vocal_shift_deck2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 41,
+      "notes": "shift+press-twice variant of active_part_vocal (note 0x0E) for deck 2; ch7; LED out on same code [D10]"
+    },
+    {
+      "name": "active_part_inst_shift_deck2",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 45,
+      "notes": "shift+press-twice variant of active_part_inst (note 0x0F) for deck 2; ch7; LED out on same code [D11]"
+    },
+    {
+      "name": "active_part_drums_shift_deck3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 38,
+      "notes": "shift+press-twice variant of active_part_drums (note 0x0D) for deck 3; ch7; LED out on same code [D9]"
+    },
+    {
+      "name": "active_part_vocal_shift_deck3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 42,
+      "notes": "shift+press-twice variant of active_part_vocal (note 0x0E) for deck 3; ch7; LED out on same code [D10]"
+    },
+    {
+      "name": "active_part_inst_shift_deck3",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 46,
+      "notes": "shift+press-twice variant of active_part_inst (note 0x0F) for deck 3; ch7; LED out on same code [D11]"
+    },
+    {
+      "name": "active_part_drums_shift_deck4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 39,
+      "notes": "shift+press-twice variant of active_part_drums (note 0x0D) for deck 4; ch7; LED out on same code [D9]"
+    },
+    {
+      "name": "active_part_vocal_shift_deck4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 43,
+      "notes": "shift+press-twice variant of active_part_vocal (note 0x0E) for deck 4; ch7; LED out on same code [D10]"
+    },
+    {
+      "name": "active_part_inst_shift_deck4",
+      "section": "deck",
+      "type": "note",
+      "ch": 7,
+      "code": 47,
+      "notes": "shift+press-twice variant of active_part_inst (note 0x0F) for deck 4; ch7; LED out on same code [D11]"
+    },
+    {
+      "name": "cue_loop_call_left",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 81,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D12]"
+    },
+    {
+      "name": "cue_loop_call_left_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 61,
+      "notes": "shift variant of cue_loop_call_left (note 0x51); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D12]"
+    },
+    {
+      "name": "cue_loop_call_right",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 83,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D13]"
+    },
+    {
+      "name": "cue_loop_call_right_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 62,
+      "notes": "shift variant of cue_loop_call_right (note 0x53); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D13]"
+    },
+    {
+      "name": "loop_in_half",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "LOOP IN / 1/2X; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D14]"
+    },
+    {
+      "name": "loop_in_half_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "shift variant of loop_in_half (note 0x10); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D14]"
+    },
+    {
+      "name": "loop_out_double",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 17,
+      "notes": "LOOP OUT / 2X; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D15]"
+    },
+    {
+      "name": "loop_out_double_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "shift variant of loop_out_double (note 0x11); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D15]"
+    },
+    {
+      "name": "four_beat_exit",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "4 BEAT / EXIT; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D16]"
+    },
+    {
+      "name": "four_beat_exit_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 80,
+      "notes": "shift variant of four_beat_exit (note 0x14); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D16]"
+    },
+    {
+      "name": "mix_point_select_left",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 89,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D17]"
+    },
+    {
+      "name": "mix_point_select_left_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 73,
+      "notes": "shift variant of mix_point_select_left (note 0x59); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D17]"
+    },
+    {
+      "name": "mix_point_select_right",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 90,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D18]"
+    },
+    {
+      "name": "mix_point_select_right_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "shift variant of mix_point_select_right (note 0x5A); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D18]"
+    },
+    {
+      "name": "crossfader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 31,
+      "notes": "14-bit MSB, LSB pair partner 0x3F; min left, max right [M1]"
+    },
+    {
+      "name": "crossfader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 63,
+      "notes": "14-bit LSB, MSB pair partner 0x1F [M1]"
+    },
+    {
+      "name": "ch_fader_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 19,
+      "notes": "14-bit MSB, LSB pair partner 0x33; min bottom, max top; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M2]"
+    },
+    {
+      "name": "ch_fader_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 51,
+      "notes": "14-bit LSB, MSB pair partner 0x13; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M2]"
+    },
+    {
+      "name": "trim_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "14-bit MSB, LSB pair partner 0x24; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M3]"
+    },
+    {
+      "name": "trim_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 36,
+      "notes": "14-bit LSB, MSB pair partner 0x04; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M3]"
+    },
+    {
+      "name": "eq_hi_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "14-bit MSB, LSB pair partner 0x27; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M4]"
+    },
+    {
+      "name": "eq_hi_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 39,
+      "notes": "14-bit LSB, MSB pair partner 0x07; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M4]"
+    },
+    {
+      "name": "eq_mid_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 11,
+      "notes": "14-bit MSB, LSB pair partner 0x2B; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M5]"
+    },
+    {
+      "name": "eq_mid_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 43,
+      "notes": "14-bit LSB, MSB pair partner 0x0B; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M5]"
+    },
+    {
+      "name": "eq_low_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 15,
+      "notes": "14-bit MSB, LSB pair partner 0x2F; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M6]"
+    },
+    {
+      "name": "eq_low_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 47,
+      "notes": "14-bit LSB, MSB pair partner 0x0F; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M6]"
+    },
+    {
+      "name": "ch_cue_pfl",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 84,
+      "notes": "headphone cue (PFL); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [M7]"
+    },
+    {
+      "name": "ch_cue_pfl_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 57,
+      "notes": "shift variant of ch_cue_pfl (note 0x54); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [M7]"
+    },
+    {
+      "name": "master_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 8,
+      "notes": "14-bit MSB, LSB pair partner 0x28 [M8]"
+    },
+    {
+      "name": "master_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 40,
+      "notes": "14-bit LSB, MSB pair partner 0x08 [M8]"
+    },
+    {
+      "name": "master_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 99,
+      "notes": "[M9]"
+    },
+    {
+      "name": "master_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 98,
+      "notes": "shift variant of master_cue (note 0x63) [M9]"
+    },
+    {
+      "name": "booth_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 9,
+      "notes": "14-bit MSB, LSB pair partner 0x29 [M10]"
+    },
+    {
+      "name": "booth_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 41,
+      "notes": "14-bit LSB, MSB pair partner 0x09 [M10]"
+    },
+    {
+      "name": "crossfader_assign_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 22,
+      "notes": "3-pos switch; data2 0x7F when switched to A, 0x00 otherwise; always ch1 [M11]"
+    },
+    {
+      "name": "crossfader_assign_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 24,
+      "notes": "3-pos switch; data2 0x7F when switched to B, 0x00 otherwise; always ch1 [M11]"
+    },
+    {
+      "name": "crossfader_assign_thru",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 29,
+      "notes": "3-pos switch; data2 0x7F when switched to THRU, 0x00 otherwise; always ch1 [M11]"
+    },
+    {
+      "name": "headphones_mix_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 12,
+      "notes": "14-bit MSB, LSB pair partner 0x2C [M12]"
+    },
+    {
+      "name": "headphones_mix_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 44,
+      "notes": "14-bit LSB, MSB pair partner 0x0C [M12]"
+    },
+    {
+      "name": "headphones_level_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 13,
+      "notes": "14-bit MSB, LSB pair partner 0x2D [M13]"
+    },
+    {
+      "name": "headphones_level_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 45,
+      "notes": "14-bit LSB, MSB pair partner 0x0D [M13]"
+    },
+    {
+      "name": "mic_eq_hi_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 7,
+      "notes": "14-bit MSB, LSB pair partner 0x27; same codes as deck EQ HI but ch7 [M14]"
+    },
+    {
+      "name": "mic_eq_hi_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 39,
+      "notes": "14-bit LSB, MSB pair partner 0x07 [M14]"
+    },
+    {
+      "name": "mic_eq_low_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 15,
+      "notes": "14-bit MSB, LSB pair partner 0x2F; same codes as deck EQ LOW but ch7 [M15]"
+    },
+    {
+      "name": "mic_eq_low_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 47,
+      "notes": "14-bit LSB, MSB pair partner 0x0F [M15]"
+    },
+    {
+      "name": "line_phono_switch",
+      "section": "mixer",
+      "type": "note",
+      "ch": 3,
+      "code": 70,
+      "notes": "CH3/CH4 input switch, ch 3/4 only; PHONO=0x00, LINE=0x7F [M16]"
+    },
+    {
+      "name": "input_select_pc_a",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 85,
+      "notes": "data2 0x7F when input selector switched to PC-A, 0x00 otherwise; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M17]"
+    },
+    {
+      "name": "input_select_line_phono",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 86,
+      "notes": "data2 0x7F when input selector switched to LINE or PHONO/LINE, 0x00 otherwise; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M17]"
+    },
+    {
+      "name": "input_select_pc_b",
+      "section": "mixer",
+      "type": "note",
+      "ch": 1,
+      "code": 87,
+      "notes": "data2 0x7F when input selector switched to PC-B, 0x00 otherwise; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M17]"
+    },
+    {
+      "name": "mic_switch_off",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 106,
+      "notes": "3-pos MIC switch; data2 0x7F when switched to OFF, 0x00 otherwise [M18]"
+    },
+    {
+      "name": "mic_switch_on",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 107,
+      "notes": "3-pos MIC switch; data2 0x7F when switched to ON, 0x00 otherwise [M18]"
+    },
+    {
+      "name": "mic_switch_talkover",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 108,
+      "notes": "3-pos MIC switch; data2 0x7F when switched to TALKOVER, 0x00 otherwise [M18]"
+    },
+    {
+      "name": "sampler_cue",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 105,
+      "notes": "LED out on same code [M19]"
+    },
+    {
+      "name": "sampler_cue_shift",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 110,
+      "notes": "shift variant of sampler_cue (note 0x69); LED out on same code [M19]"
+    },
+    {
+      "name": "sampler_vol_msb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 3,
+      "notes": "14-bit MSB, LSB pair partner 0x23 [M20]"
+    },
+    {
+      "name": "sampler_vol_lsb",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 7,
+      "code": 35,
+      "notes": "14-bit LSB, MSB pair partner 0x03 [M20]"
+    },
+    {
+      "name": "ch_level_meter",
+      "section": "mixer",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "LED out only (MIDI-OUT status Bn); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); use when input selector is PC-A/PC-B; PDF NOTE/CC col says NOTE but status Bn is CC [M22]"
+    },
+    {
+      "name": "sound_color_fx_space",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 0,
+      "notes": "LED out on same code [F2]"
+    },
+    {
+      "name": "sound_color_fx_space_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 8,
+      "notes": "shift variant of sound_color_fx_space (note 0x00); LED out on same code [F2]"
+    },
+    {
+      "name": "sound_color_fx_d_echo",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 1,
+      "notes": "LED out on same code [F3]"
+    },
+    {
+      "name": "sound_color_fx_d_echo_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 9,
+      "notes": "shift variant of sound_color_fx_d_echo (note 0x01); LED out on same code [F3]"
+    },
+    {
+      "name": "sound_color_fx_crush",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 2,
+      "notes": "LED out on same code [F4]"
+    },
+    {
+      "name": "sound_color_fx_crush_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 10,
+      "notes": "shift variant of sound_color_fx_crush (note 0x02); LED out on same code [F4]"
+    },
+    {
+      "name": "sound_color_fx_pitch",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 3,
+      "notes": "LED out on same code [F5]"
+    },
+    {
+      "name": "sound_color_fx_pitch_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 11,
+      "notes": "shift variant of sound_color_fx_pitch (note 0x03); LED out on same code [F5]"
+    },
+    {
+      "name": "sound_color_fx_noise",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 4,
+      "notes": "LED out on same code [F6]"
+    },
+    {
+      "name": "sound_color_fx_noise_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 12,
+      "notes": "shift variant of sound_color_fx_noise (note 0x04); LED out on same code [F6]"
+    },
+    {
+      "name": "sound_color_fx_filter",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 5,
+      "notes": "LED out on same code [F7]"
+    },
+    {
+      "name": "sound_color_fx_filter_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 13,
+      "notes": "shift variant of sound_color_fx_filter (note 0x05); LED out on same code [F7]"
+    },
+    {
+      "name": "fx_part_select_inst",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 29,
+      "notes": "LED out on same code [F10]"
+    },
+    {
+      "name": "fx_part_select_inst_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 7,
+      "code": 32,
+      "notes": "shift variant of fx_part_select_inst (note 0x1D); LED out on same code [F10]"
+    },
+    {
+      "name": "beat_left",
+      "section": "fx",
+      "type": "note",
+      "ch": 5,
+      "code": 74,
+      "notes": "[F11]"
+    },
+    {
+      "name": "beat_left_shift",
+      "section": "fx",
+      "type": "note",
+      "ch": 5,
+      "code": 102,
+      "notes": "shift variant of beat_left (note 0x4A) [F11]"
+    },
+    {
+      "name": "pad1_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 0,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 0,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 1,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 1,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 2,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 2,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 3,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 3,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 4,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 4,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 5,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 5,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 6,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 6,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_hot_cue_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 7,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_hot_cue_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 7,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 8,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 8,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 9,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 9,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 10,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 10,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 11,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 11,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 12,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 12,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 13,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 13,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 14,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 14,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_hot_cue_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 15,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_hot_cue_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 15,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 16,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 16,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 17,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 17,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 18,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 18,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 19,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 19,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 20,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 20,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 21,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 21,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 22,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 22,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_pad_fx1_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 23,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_pad_fx1_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 23,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 24,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 24,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 25,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 25,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 26,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 26,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 27,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 27,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 28,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 28,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 29,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 29,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 30,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 30,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_pad_fx1_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 31,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_pad_fx1_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 31,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 32,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 32,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 33,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 33,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 34,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 34,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 35,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 35,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 36,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 36,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 37,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 37,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 38,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 38,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_beat_jump_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 39,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_beat_jump_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 39,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 40,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 40,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 41,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 41,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 42,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 42,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 43,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 43,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 44,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 44,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 45,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 45,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 46,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 46,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_beat_jump_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 47,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_beat_jump_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 47,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 48,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 48,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 49,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 49,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 50,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 50,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 51,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 51,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 52,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 52,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 53,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 53,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 54,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 54,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_sampler_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 55,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_sampler_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 55,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 56,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 56,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 57,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 57,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 58,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 58,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 59,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 59,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 60,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 60,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 61,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 61,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 62,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 62,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_sampler_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 63,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_sampler_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 63,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 64,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 64,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 65,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 65,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 66,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 66,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 67,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 67,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 68,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 68,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 69,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 69,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 70,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 70,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_keyboard_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 71,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_keyboard_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 71,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 72,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 72,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 73,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 73,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 74,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 74,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 75,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 75,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 76,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 76,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 77,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 77,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 78,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 78,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_keyboard_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 79,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_keyboard_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 79,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 80,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 80,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 81,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 81,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 82,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 82,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 83,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 83,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 84,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 84,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 85,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 85,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 86,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 86,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_pad_fx2_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 87,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_pad_fx2_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 87,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 88,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 88,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 89,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 89,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 90,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 90,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 91,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 91,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 92,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 92,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 93,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 93,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 94,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 94,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_pad_fx2_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 95,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_pad_fx2_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 95,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 96,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 96,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 97,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 97,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 98,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 98,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 99,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 99,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 100,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 100,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 101,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 101,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 102,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 102,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_beat_loop_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 103,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_beat_loop_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 103,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 104,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 104,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 105,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 105,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 106,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 106,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 107,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 107,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 108,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 108,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 109,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 109,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 110,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 110,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_beat_loop_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 111,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_beat_loop_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 111,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 112,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 112,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 113,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 113,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 114,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 114,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 115,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 115,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 116,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 116,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 117,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 117,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 118,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 118,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_key_shift_page1",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 119,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_key_shift_page1_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 119,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad1_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 120,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad1_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 120,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "name": "pad2_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 121,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad2_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 121,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "name": "pad3_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 122,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad3_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 122,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "name": "pad4_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 123,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad4_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 123,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "name": "pad5_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 124,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad5_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 124,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "name": "pad6_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 125,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad6_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 125,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "name": "pad7_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 126,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad7_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 126,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "name": "pad8_key_shift_page2",
+      "section": "pads",
+      "type": "note",
+      "ch": 8,
+      "code": 127,
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "pad8_key_shift_page2_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 9,
+      "code": 127,
+      "notes": "shift variant (same note, shifted channel); per-deck shifted pad channels 9/11/13/15 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "name": "hot_cue_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 27,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P9]"
+    },
+    {
+      "name": "hot_cue_mode_long_press",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 75,
+      "notes": "long-press variant of hot_cue_mode (note 0x1B); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P9]"
+    },
+    {
+      "name": "hot_cue_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 105,
+      "notes": "shift variant of hot_cue_mode (note 0x1B); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P9]"
+    },
+    {
+      "name": "pad_fx1_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 30,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P10]"
+    },
+    {
+      "name": "pad_fx1_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 107,
+      "notes": "shift variant of pad_fx1_mode (note 0x1E); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P10]"
+    },
+    {
+      "name": "beat_jump_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 32,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P11]"
+    },
+    {
+      "name": "beat_jump_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 109,
+      "notes": "shift variant of beat_jump_mode (note 0x20); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P11]"
+    },
+    {
+      "name": "sampler_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 34,
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P12]"
+    },
+    {
+      "name": "sampler_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 111,
+      "notes": "shift variant of sampler_mode (note 0x22); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P12]"
+    },
+    {
+      "name": "page_left_hot_cue_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 36,
+      "notes": "PAGE left pressed while in hot_cue mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_hot_cue_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "shift variant of page_left in hot_cue mode (note 0x24); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_hot_cue_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 44,
+      "notes": "PAGE right pressed while in hot_cue mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_hot_cue_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 9,
+      "notes": "shift variant of page_right in hot_cue mode (note 0x2C); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_pad_fx1_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 37,
+      "notes": "PAGE left pressed while in pad_fx1 mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_pad_fx1_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "shift variant of page_left in pad_fx1 mode (note 0x25); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_pad_fx1_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 45,
+      "notes": "PAGE right pressed while in pad_fx1 mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_pad_fx1_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 122,
+      "notes": "shift variant of page_right in pad_fx1 mode (note 0x2D); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_beat_jump_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 38,
+      "notes": "PAGE left pressed while in beat_jump mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_beat_jump_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "shift variant of page_left in beat_jump mode (note 0x26); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_beat_jump_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 46,
+      "notes": "PAGE right pressed while in beat_jump mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_beat_jump_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 123,
+      "notes": "shift variant of page_right in beat_jump mode (note 0x2E); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_sampler_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 39,
+      "notes": "PAGE left pressed while in sampler mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_sampler_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "shift variant of page_left in sampler mode (note 0x27); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_sampler_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 47,
+      "notes": "PAGE right pressed while in sampler mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_sampler_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 124,
+      "notes": "shift variant of page_right in sampler mode (note 0x2F); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_keyboard_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 40,
+      "notes": "PAGE left pressed while in keyboard mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_keyboard_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "shift variant of page_left in keyboard mode (note 0x28); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_keyboard_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 48,
+      "notes": "PAGE right pressed while in keyboard mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_keyboard_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 125,
+      "notes": "shift variant of page_right in keyboard mode (note 0x30); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_pad_fx2_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 41,
+      "notes": "PAGE left pressed while in pad_fx2 mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_pad_fx2_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "shift variant of page_left in pad_fx2 mode (note 0x29); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_pad_fx2_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 49,
+      "notes": "PAGE right pressed while in pad_fx2 mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_pad_fx2_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 126,
+      "notes": "shift variant of page_right in pad_fx2 mode (note 0x31); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_beat_loop_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 42,
+      "notes": "PAGE left pressed while in beat_loop mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_beat_loop_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "shift variant of page_left in beat_loop mode (note 0x2A); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_beat_loop_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 50,
+      "notes": "PAGE right pressed while in beat_loop mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_beat_loop_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 127,
+      "notes": "shift variant of page_right in beat_loop mode (note 0x32); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_left_key_shift_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 43,
+      "notes": "PAGE left pressed while in key_shift mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_left_key_shift_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "shift variant of page_left in key_shift mode (note 0x2B); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "name": "page_right_key_shift_mode",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 51,
+      "notes": "PAGE right pressed while in key_shift mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "page_right_key_shift_mode_shift",
+      "section": "pads",
+      "type": "note",
+      "ch": 1,
+      "code": 0,
+      "notes": "shift variant of page_right in key_shift mode (note 0x33); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    },
+    {
+      "name": "shift_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 63,
+      "notes": "SHIFT press; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D19]"
+    },
+    {
+      "name": "color_fx_ch1",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 23,
+      "notes": "14-bit MSB, LSB pair partner 0x37; COLOR FX parameter CH1 [F1]"
+    },
+    {
+      "name": "color_fx_ch1_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 55,
+      "notes": "14-bit LSB, MSB pair partner 0x17; COLOR FX parameter CH1 [F1]"
+    },
+    {
+      "name": "color_fx_ch2",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 24,
+      "notes": "14-bit MSB, LSB pair partner 0x38; COLOR FX parameter CH2 [F1]"
+    },
+    {
+      "name": "color_fx_ch2_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 56,
+      "notes": "14-bit LSB, MSB pair partner 0x18; COLOR FX parameter CH2 [F1]"
+    },
+    {
+      "name": "color_fx_ch3",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 25,
+      "notes": "14-bit MSB, LSB pair partner 0x39; COLOR FX parameter CH3 [F1]"
+    },
+    {
+      "name": "color_fx_ch3_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 57,
+      "notes": "14-bit LSB, MSB pair partner 0x19; COLOR FX parameter CH3 [F1]"
+    },
+    {
+      "name": "color_fx_ch4",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 26,
+      "notes": "14-bit MSB, LSB pair partner 0x3A; COLOR FX parameter CH4 [F1]"
+    },
+    {
+      "name": "color_fx_ch4_lsb",
+      "section": "effect",
+      "type": "cc",
+      "ch": 7,
+      "code": 58,
+      "notes": "14-bit LSB, MSB pair partner 0x1A; COLOR FX parameter CH4 [F1]"
+    },
+    {
+      "name": "fx_select_low_cut",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 32,
+      "notes": "FX SELECT rotate primary (LOW CUT); ch5 effect channel [F8]"
+    },
+    {
+      "name": "fx_select_echo",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 33,
+      "notes": "FX SELECT (ECHO) [F8]"
+    },
+    {
+      "name": "fx_select_mt_delay",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 34,
+      "notes": "FX SELECT (MT DELAY) [F8]"
+    },
+    {
+      "name": "fx_select_spiral",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 35,
+      "notes": "FX SELECT (SPIRAL) [F8]"
+    },
+    {
+      "name": "fx_select_reverb",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 36,
+      "notes": "FX SELECT (REVERB) [F8]"
+    },
+    {
+      "name": "fx_ch_select_ch1",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 16,
+      "notes": "CH SELECT (CH1) rotate [F9]"
+    },
+    {
+      "name": "fx_ch_select_ch2",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 17,
+      "notes": "CH SELECT (CH2) [F9]"
+    },
+    {
+      "name": "fx_ch_select_ch3",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 18,
+      "notes": "CH SELECT (CH3) [F9]"
+    },
+    {
+      "name": "fx_ch_select_ch4",
+      "section": "effect",
+      "type": "note",
+      "ch": 5,
+      "code": 19,
+      "notes": "CH SELECT (CH4) [F9]"
+    },
+    {
+      "name": "master_level_meter",
+      "section": "mixer",
+      "type": "note",
+      "ch": 7,
+      "code": 0,
+      "notes": "Master level meter LED display without MIDI-IN control [M21]"
+    }
+  ]
+}

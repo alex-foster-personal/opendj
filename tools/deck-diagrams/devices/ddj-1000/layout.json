@@ -1,0 +1,1400 @@
+{
+  "device": "DDJ-1000",
+  "vendor": "AlphaTheta / Pioneer DJ",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1118,
+    "height": 615
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "jog_screen_bitmap_hid",
+    "vu_meter_led_animation_hid",
+    "right_deck_mirror_labels_same_figs"
+  ],
+  "controls": [
+    {
+      "id": "ddj-1000-b1",
+      "fig": "B1",
+      "label": "BROWSE",
+      "kind": "encoder",
+      "x": 46.0,
+      "y": 3.5,
+      "w": 5.0,
+      "h": 7.0,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "browse_rotate",
+        "type": "cc",
+        "ch": 7,
+        "code": 64,
+        "shift_name": "browse_rotate_shift"
+      },
+      "notes": "relative encoder: CW 1-30 (0x01-0x1E), CCW 127-98 (0x7F-0x62) [B1]"
+    },
+    {
+      "id": "ddj-1000-b2",
+      "fig": "B2",
+      "label": "BACK",
+      "kind": "button",
+      "x": 51.0,
+      "y": 5.0,
+      "w": 3.2,
+      "h": 3.8,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 7,
+        "code": 101,
+        "shift_name": "back_shift"
+      },
+      "notes": "[B2]"
+    },
+    {
+      "id": "ddj-1000-b3",
+      "fig": "B3",
+      "label": "VIEW",
+      "kind": "button",
+      "x": 54.5,
+      "y": 5.0,
+      "w": 3.2,
+      "h": 3.8,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "view",
+        "type": "note",
+        "ch": 7,
+        "code": 122,
+        "shift_name": "view_shift"
+      },
+      "notes": "[B3]"
+    },
+    {
+      "id": "ddj-1000-d1",
+      "fig": "D1",
+      "label": "PLAY/PAUSE",
+      "kind": "button",
+      "x": 13.5,
+      "y": 78.5,
+      "w": 4.0,
+      "h": 5.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "play_pause",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": "play_pause_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D1]"
+    },
+    {
+      "id": "ddj-1000-d2",
+      "fig": "D2",
+      "label": "CUE",
+      "kind": "button",
+      "x": 9.0,
+      "y": 72.5,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": "cue_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D2]"
+    },
+    {
+      "id": "ddj-1000-d3",
+      "fig": "D3",
+      "label": "JOG",
+      "kind": "jog",
+      "x": 11.5,
+      "y": 38.0,
+      "w": 15.5,
+      "h": 30.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "jog_platter_vinyl_on",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "jog_platter_shift"
+      },
+      "notes": "relative: CW increases from 65 (0x41), CCW decreases from 63 (0x3F); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D3]"
+    },
+    {
+      "id": "ddj-1000-d4",
+      "fig": "D4",
+      "label": "TEMPO",
+      "kind": "fader",
+      "x": 29.5,
+      "y": 40.0,
+      "w": 2.8,
+      "h": 28.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x20; minus side = min, plus side = max; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D4]"
+    },
+    {
+      "id": "ddj-1000-d5",
+      "fig": "D5",
+      "label": "MASTER TEMPO",
+      "kind": "button",
+      "x": 3.5,
+      "y": 28.0,
+      "w": 4.0,
+      "h": 8.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "deck_select_3_1_press",
+        "type": "note",
+        "ch": 3,
+        "code": 114,
+        "shift_name": "deck_select_3_1_shift"
+      },
+      "notes": "left deck DECK SELECT 3/1 press always emits ch3 note 114 (status 92) [D5]"
+    },
+    {
+      "id": "ddj-1000-d6",
+      "fig": "D6",
+      "label": "DECK SELECT",
+      "kind": "button",
+      "x": 28.0,
+      "y": 70.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "beat_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 88,
+        "shift_name": "beat_sync_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D6]"
+    },
+    {
+      "id": "ddj-1000-d7",
+      "fig": "D7",
+      "label": "BEAT SYNC",
+      "kind": "button",
+      "x": 28.0,
+      "y": 75.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_reset",
+        "type": "note",
+        "ch": 1,
+        "code": 65,
+        "shift_name": "tempo_reset_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D7]"
+    },
+    {
+      "id": "ddj-1000-d8",
+      "fig": "D8",
+      "label": "KEY SYNC",
+      "kind": "button",
+      "x": 28.0,
+      "y": 79.5,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "key_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 101,
+        "shift_name": "key_sync_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D8]"
+    },
+    {
+      "id": "ddj-1000-d9",
+      "fig": "D9",
+      "label": "KEY RESET",
+      "kind": "button",
+      "x": 7.5,
+      "y": 8.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "active_part_drums",
+        "type": "note",
+        "ch": 1,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D9]"
+    },
+    {
+      "id": "ddj-1000-d10",
+      "fig": "D10",
+      "label": "LOOP IN",
+      "kind": "button",
+      "x": 11.5,
+      "y": 8.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "active_part_vocal",
+        "type": "note",
+        "ch": 1,
+        "code": 14,
+        "shift_name": null
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D10]"
+    },
+    {
+      "id": "ddj-1000-d11",
+      "fig": "D11",
+      "label": "LOOP OUT",
+      "kind": "button",
+      "x": 15.5,
+      "y": 8.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "active_part_inst",
+        "type": "note",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D11]"
+    },
+    {
+      "id": "ddj-1000-d12",
+      "fig": "D12",
+      "label": "4 BEAT LOOP/EXIT",
+      "kind": "button",
+      "x": 21.5,
+      "y": 8.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_call_left",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": "cue_loop_call_left_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D12]"
+    },
+    {
+      "id": "ddj-1000-d13",
+      "fig": "D13",
+      "label": "QUANTIZE",
+      "kind": "button",
+      "x": 25.5,
+      "y": 8.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_call_right",
+        "type": "note",
+        "ch": 1,
+        "code": 83,
+        "shift_name": "cue_loop_call_right_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D13]"
+    },
+    {
+      "id": "ddj-1000-d14",
+      "fig": "D14",
+      "label": "SLIP",
+      "kind": "button",
+      "x": 7.5,
+      "y": 13.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in_half",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": "loop_in_half_shift"
+      },
+      "notes": "LOOP IN / 1/2X; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D14]"
+    },
+    {
+      "id": "ddj-1000-d15",
+      "fig": "D15",
+      "label": "SLIP REVERSE",
+      "kind": "button",
+      "x": 11.5,
+      "y": 13.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out_double",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": "loop_out_double_shift"
+      },
+      "notes": "LOOP OUT / 2X; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D15]"
+    },
+    {
+      "id": "ddj-1000-d16",
+      "fig": "D16",
+      "label": "SEARCH <<",
+      "kind": "button",
+      "x": 15.5,
+      "y": 13.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "four_beat_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 20,
+        "shift_name": "four_beat_exit_shift"
+      },
+      "notes": "4 BEAT / EXIT; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [D16]"
+    },
+    {
+      "id": "ddj-1000-d17",
+      "fig": "D17",
+      "label": "SEARCH >>",
+      "kind": "button",
+      "x": 21.5,
+      "y": 13.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "mix_point_select_left",
+        "type": "note",
+        "ch": 1,
+        "code": 89,
+        "shift_name": "mix_point_select_left_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D17]"
+    },
+    {
+      "id": "ddj-1000-d18",
+      "fig": "D18",
+      "label": "MEMORY",
+      "kind": "button",
+      "x": 25.5,
+      "y": 13.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "mix_point_select_right",
+        "type": "note",
+        "ch": 1,
+        "code": 90,
+        "shift_name": "mix_point_select_right_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D18]"
+    },
+    {
+      "id": "ddj-1000-d19",
+      "fig": "D19",
+      "label": "SHIFT",
+      "kind": "button",
+      "x": 30.0,
+      "y": 13.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "SHIFT press; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [D19]"
+    },
+    {
+      "id": "ddj-1000-f1",
+      "fig": "F1",
+      "label": "COLOR FX",
+      "kind": "knob",
+      "x": 53.5,
+      "y": 40.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "color_fx_ch1",
+        "type": "cc",
+        "ch": 7,
+        "code": 23,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x37; COLOR FX parameter CH1 [F1]"
+    },
+    {
+      "id": "ddj-1000-f2",
+      "fig": "F2",
+      "label": "D-ECHO",
+      "kind": "button",
+      "x": 47.5,
+      "y": 36.0,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "sound_color_fx_space",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": "sound_color_fx_space_shift"
+      },
+      "notes": "LED out on same code [F2]"
+    },
+    {
+      "id": "ddj-1000-f3",
+      "fig": "F3",
+      "label": "PITCH",
+      "kind": "button",
+      "x": 50.5,
+      "y": 36.0,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "sound_color_fx_d_echo",
+        "type": "note",
+        "ch": 7,
+        "code": 1,
+        "shift_name": "sound_color_fx_d_echo_shift"
+      },
+      "notes": "LED out on same code [F3]"
+    },
+    {
+      "id": "ddj-1000-f4",
+      "fig": "F4",
+      "label": "NOISE",
+      "kind": "button",
+      "x": 47.5,
+      "y": 40.0,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "sound_color_fx_crush",
+        "type": "note",
+        "ch": 7,
+        "code": 2,
+        "shift_name": "sound_color_fx_crush_shift"
+      },
+      "notes": "LED out on same code [F4]"
+    },
+    {
+      "id": "ddj-1000-f5",
+      "fig": "F5",
+      "label": "FILTER",
+      "kind": "button",
+      "x": 50.5,
+      "y": 40.0,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "sound_color_fx_pitch",
+        "type": "note",
+        "ch": 7,
+        "code": 3,
+        "shift_name": "sound_color_fx_pitch_shift"
+      },
+      "notes": "LED out on same code [F5]"
+    },
+    {
+      "id": "ddj-1000-f6",
+      "fig": "F6",
+      "label": "BEAT <",
+      "kind": "button",
+      "x": 47.5,
+      "y": 44.0,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "sound_color_fx_noise",
+        "type": "note",
+        "ch": 7,
+        "code": 4,
+        "shift_name": "sound_color_fx_noise_shift"
+      },
+      "notes": "LED out on same code [F6]"
+    },
+    {
+      "id": "ddj-1000-f7",
+      "fig": "F7",
+      "label": "BEAT >",
+      "kind": "button",
+      "x": 50.5,
+      "y": 44.0,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "sound_color_fx_filter",
+        "type": "note",
+        "ch": 7,
+        "code": 5,
+        "shift_name": "sound_color_fx_filter_shift"
+      },
+      "notes": "LED out on same code [F7]"
+    },
+    {
+      "id": "ddj-1000-f8",
+      "fig": "F8",
+      "label": "FX SELECT",
+      "kind": "encoder",
+      "x": 69.5,
+      "y": 36.0,
+      "w": 3.0,
+      "h": 3.2,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_select_low_cut",
+        "type": "note",
+        "ch": 5,
+        "code": 32,
+        "shift_name": null
+      },
+      "notes": "FX SELECT rotate primary (LOW CUT); ch5 effect channel [F8]"
+    },
+    {
+      "id": "ddj-1000-f9",
+      "fig": "F9",
+      "label": "CH SELECT",
+      "kind": "button",
+      "x": 65.5,
+      "y": 48.0,
+      "w": 3.0,
+      "h": 3.2,
+      "layer": "base",
+      "section": "effect",
+      "midi": {
+        "name": "fx_ch_select_ch1",
+        "type": "note",
+        "ch": 5,
+        "code": 16,
+        "shift_name": null
+      },
+      "notes": "CH SELECT (CH1) rotate [F9]"
+    },
+    {
+      "id": "ddj-1000-f10",
+      "fig": "F10",
+      "label": "LEVEL/DEPTH",
+      "kind": "knob",
+      "x": 69.5,
+      "y": 48.0,
+      "w": 3.0,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "fx_part_select_inst",
+        "type": "note",
+        "ch": 7,
+        "code": 29,
+        "shift_name": "fx_part_select_inst_shift"
+      },
+      "notes": "LED out on same code [F10]"
+    },
+    {
+      "id": "ddj-1000-f11",
+      "fig": "F11",
+      "label": "FX ON/OFF",
+      "kind": "button",
+      "x": 65.5,
+      "y": 56.0,
+      "w": 3.0,
+      "h": 3.2,
+      "layer": "both",
+      "section": "fx",
+      "midi": {
+        "name": "beat_left",
+        "type": "note",
+        "ch": 5,
+        "code": 74,
+        "shift_name": "beat_left_shift"
+      },
+      "notes": "[F11]"
+    },
+    {
+      "id": "ddj-1000-m1",
+      "fig": "M1",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 47.5,
+      "y": 88.0,
+      "w": 12.0,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 31,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x3F; min left, max right [M1]"
+    },
+    {
+      "id": "ddj-1000-m2",
+      "fig": "M2",
+      "label": "CH FADER",
+      "kind": "fader",
+      "x": 41.5,
+      "y": 55.0,
+      "w": 2.5,
+      "h": 22.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_fader_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x33; min bottom, max top; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M2]"
+    },
+    {
+      "id": "ddj-1000-m3",
+      "fig": "M3",
+      "label": "TRIM",
+      "kind": "knob",
+      "x": 41.5,
+      "y": 28.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "trim_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x24; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M3]"
+    },
+    {
+      "id": "ddj-1000-m4",
+      "fig": "M4",
+      "label": "EQ HI",
+      "kind": "knob",
+      "x": 41.5,
+      "y": 34.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x27; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M4]"
+    },
+    {
+      "id": "ddj-1000-m5",
+      "fig": "M5",
+      "label": "EQ MID",
+      "kind": "knob",
+      "x": 41.5,
+      "y": 40.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_mid_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 11,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x2B; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M5]"
+    },
+    {
+      "id": "ddj-1000-m6",
+      "fig": "M6",
+      "label": "EQ LOW",
+      "kind": "knob",
+      "x": 41.5,
+      "y": 46.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_low_msb",
+        "type": "cc",
+        "ch": 1,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x2F; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M6]"
+    },
+    {
+      "id": "ddj-1000-m7",
+      "fig": "M7",
+      "label": "CUE",
+      "kind": "button",
+      "x": 41.5,
+      "y": 52.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_cue_pfl",
+        "type": "note",
+        "ch": 1,
+        "code": 84,
+        "shift_name": "ch_cue_pfl_shift"
+      },
+      "notes": "headphone cue (PFL); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [M7]"
+    },
+    {
+      "id": "ddj-1000-m8",
+      "fig": "M8",
+      "label": "MASTER LEVEL",
+      "kind": "knob",
+      "x": 69.5,
+      "y": 6.0,
+      "w": 3.5,
+      "h": 5.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 8,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x28 [M8]"
+    },
+    {
+      "id": "ddj-1000-m9",
+      "fig": "M9",
+      "label": "MASTER CUE",
+      "kind": "button",
+      "x": 69.5,
+      "y": 28.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "master_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 99,
+        "shift_name": "master_cue_shift"
+      },
+      "notes": "[M9]"
+    },
+    {
+      "id": "ddj-1000-m10",
+      "fig": "M10",
+      "label": "BOOTH LEVEL",
+      "kind": "knob",
+      "x": 69.5,
+      "y": 14.0,
+      "w": 3.5,
+      "h": 5.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "booth_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 9,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x29 [M10]"
+    },
+    {
+      "id": "ddj-1000-m11",
+      "fig": "M11",
+      "label": "CRF ASSIGN",
+      "kind": "switch",
+      "x": 44.5,
+      "y": 78.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader_assign_a",
+        "type": "note",
+        "ch": 1,
+        "code": 22,
+        "shift_name": null
+      },
+      "notes": "3-pos switch; data2 0x7F when switched to A, 0x00 otherwise; always ch1 [M11]"
+    },
+    {
+      "id": "ddj-1000-m12",
+      "fig": "M12",
+      "label": "HEADPHONES MIX",
+      "kind": "knob",
+      "x": 47.5,
+      "y": 72.0,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "headphones_mix_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 12,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x2C [M12]"
+    },
+    {
+      "id": "ddj-1000-m13",
+      "fig": "M13",
+      "label": "HEADPHONES LEVEL",
+      "kind": "knob",
+      "x": 52.0,
+      "y": 72.0,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "headphones_level_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x2D [M13]"
+    },
+    {
+      "id": "ddj-1000-m14",
+      "fig": "M14",
+      "label": "MIC EQ HI",
+      "kind": "knob",
+      "x": 45.5,
+      "y": 22.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic_eq_hi_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 7,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x27; same codes as deck EQ HI but ch7 [M14]"
+    },
+    {
+      "id": "ddj-1000-m15",
+      "fig": "M15",
+      "label": "MIC EQ LOW",
+      "kind": "knob",
+      "x": 49.5,
+      "y": 22.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic_eq_low_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 15,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x2F; same codes as deck EQ LOW but ch7 [M15]"
+    },
+    {
+      "id": "ddj-1000-m16",
+      "fig": "M16",
+      "label": "LINE/PHONO",
+      "kind": "switch",
+      "x": 84.0,
+      "y": 92.0,
+      "w": 8.0,
+      "h": 5.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "line_phono_switch",
+        "type": "note",
+        "ch": 3,
+        "code": 70,
+        "shift_name": null
+      },
+      "notes": "CH3/CH4 input switch, ch 3/4 only; PHONO=0x00, LINE=0x7F [M16]"
+    },
+    {
+      "id": "ddj-1000-m17",
+      "fig": "M17",
+      "label": "INPUT SELECT",
+      "kind": "switch",
+      "x": 45.5,
+      "y": 12.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "input_select_pc_a",
+        "type": "note",
+        "ch": 1,
+        "code": 85,
+        "shift_name": null
+      },
+      "notes": "data2 0x7F when input selector switched to PC-A, 0x00 otherwise; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4) [M17]"
+    },
+    {
+      "id": "ddj-1000-m18",
+      "fig": "M18",
+      "label": "MIC OFF/ON",
+      "kind": "switch",
+      "x": 45.5,
+      "y": 32.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "mic_switch_off",
+        "type": "note",
+        "ch": 7,
+        "code": 106,
+        "shift_name": null
+      },
+      "notes": "3-pos MIC switch; data2 0x7F when switched to OFF, 0x00 otherwise [M18]"
+    },
+    {
+      "id": "ddj-1000-m19",
+      "fig": "M19",
+      "label": "SAMPLER CUE",
+      "kind": "button",
+      "x": 47.5,
+      "y": 62.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "sampler_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 105,
+        "shift_name": "sampler_cue_shift"
+      },
+      "notes": "LED out on same code [M19]"
+    },
+    {
+      "id": "ddj-1000-m20",
+      "fig": "M20",
+      "label": "SAMPLER VOL",
+      "kind": "knob",
+      "x": 51.5,
+      "y": 62.0,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "sampler_vol_msb",
+        "type": "cc",
+        "ch": 7,
+        "code": 3,
+        "shift_name": null
+      },
+      "notes": "14-bit MSB, LSB pair partner 0x23 [M20]"
+    },
+    {
+      "id": "ddj-1000-m21",
+      "fig": "M21",
+      "label": "MASTER LEVEL METER",
+      "kind": "meter",
+      "x": 69.5,
+      "y": 20.0,
+      "w": 4.0,
+      "h": 6.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "master_level_meter",
+        "type": "note",
+        "ch": 7,
+        "code": 0,
+        "shift_name": null
+      },
+      "notes": "Master level meter LED display without MIDI-IN control [M21]"
+    },
+    {
+      "id": "ddj-1000-m22",
+      "fig": "M22",
+      "label": "CH LEVEL METER",
+      "kind": "meter",
+      "x": 41.5,
+      "y": 24.0,
+      "w": 3.0,
+      "h": 3.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_level_meter",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "LED out only (MIDI-OUT status Bn); per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); use when input selector is PC-A/PC-B; PDF NOTE/CC col says NOTE but status Bn is CC [M22]"
+    },
+    {
+      "id": "ddj-1000-p1",
+      "fig": "P1",
+      "label": "PAD 1",
+      "kind": "pad",
+      "x": 15.5,
+      "y": 72.0,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad1_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": "pad1_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P1]"
+    },
+    {
+      "id": "ddj-1000-p2",
+      "fig": "P2",
+      "label": "PAD 2",
+      "kind": "pad",
+      "x": 19.0,
+      "y": 72.0,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad2_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 1,
+        "shift_name": "pad2_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P2]"
+    },
+    {
+      "id": "ddj-1000-p3",
+      "fig": "P3",
+      "label": "PAD 3",
+      "kind": "pad",
+      "x": 22.5,
+      "y": 72.0,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad3_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 2,
+        "shift_name": "pad3_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P3]"
+    },
+    {
+      "id": "ddj-1000-p4",
+      "fig": "P4",
+      "label": "PAD 4",
+      "kind": "pad",
+      "x": 26.0,
+      "y": 72.0,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad4_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 3,
+        "shift_name": "pad4_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P4]"
+    },
+    {
+      "id": "ddj-1000-p5",
+      "fig": "P5",
+      "label": "PAD 5",
+      "kind": "pad",
+      "x": 15.5,
+      "y": 76.5,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad5_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 4,
+        "shift_name": "pad5_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P5]"
+    },
+    {
+      "id": "ddj-1000-p6",
+      "fig": "P6",
+      "label": "PAD 6",
+      "kind": "pad",
+      "x": 19.0,
+      "y": 76.5,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad6_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 5,
+        "shift_name": "pad6_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P6]"
+    },
+    {
+      "id": "ddj-1000-p7",
+      "fig": "P7",
+      "label": "PAD 7",
+      "kind": "pad",
+      "x": 22.5,
+      "y": 76.5,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad7_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 6,
+        "shift_name": "pad7_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P7]"
+    },
+    {
+      "id": "ddj-1000-p8",
+      "fig": "P8",
+      "label": "PAD 8",
+      "kind": "pad",
+      "x": 26.0,
+      "y": 76.5,
+      "w": 3.2,
+      "h": 4.0,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad8_hot_cue_page1",
+        "type": "note",
+        "ch": 8,
+        "code": 7,
+        "shift_name": "pad8_hot_cue_page1_shift"
+      },
+      "notes": "per-deck pad channels 8/10/12/14 (deck 1-4); PDF lists one row; RGB LED out on same note: velocity = color number 1-127, OFF = 0x00 (dimmer) [P8]"
+    },
+    {
+      "id": "ddj-1000-p9",
+      "fig": "P9",
+      "label": "HOT CUE MODE",
+      "kind": "button",
+      "x": 15.0,
+      "y": 66.5,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "hot_cue_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": "hot_cue_mode_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P9]"
+    },
+    {
+      "id": "ddj-1000-p10",
+      "fig": "P10",
+      "label": "PAD FX 1 MODE",
+      "kind": "button",
+      "x": 18.3,
+      "y": 66.5,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "pad_fx1_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": "pad_fx1_mode_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P10]"
+    },
+    {
+      "id": "ddj-1000-p11",
+      "fig": "P11",
+      "label": "BEAT JUMP MODE",
+      "kind": "button",
+      "x": 21.6,
+      "y": 66.5,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "beat_jump_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": "beat_jump_mode_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P11]"
+    },
+    {
+      "id": "ddj-1000-p12",
+      "fig": "P12",
+      "label": "SAMPLER MODE",
+      "kind": "button",
+      "x": 24.9,
+      "y": 66.5,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "sampler_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "sampler_mode_shift"
+      },
+      "notes": "per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P12]"
+    },
+    {
+      "id": "ddj-1000-p13",
+      "fig": "P13",
+      "label": "PAGE <",
+      "kind": "button",
+      "x": 28.2,
+      "y": 66.5,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "page_left_hot_cue_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 36,
+        "shift_name": "page_left_hot_cue_mode_shift"
+      },
+      "notes": "PAGE left pressed while in hot_cue mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P13]"
+    },
+    {
+      "id": "ddj-1000-p14",
+      "fig": "P14",
+      "label": "PAGE >",
+      "kind": "button",
+      "x": 31.5,
+      "y": 66.5,
+      "w": 2.8,
+      "h": 3.2,
+      "layer": "both",
+      "section": "pads",
+      "midi": {
+        "name": "page_right_hot_cue_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 44,
+        "shift_name": "page_right_hot_cue_mode_shift"
+      },
+      "notes": "PAGE right pressed while in hot_cue mode; per-deck channels 1-4 (PDF lists one row for ch 1/2/3/4); LED out on same code [P14]"
+    }
+  ]
+}

@@ -1,0 +1,416 @@
+{
+  "source": "https://www.reloop.com/media/custom/upload/Reloop-Mixtour_MIDI-Map.pdf",
+  "archived": "docs/controller/reference/Reloop-Mixtour_MIDI-Map.pdf",
+  "device": "Reloop MIXTOUR",
+  "vendor": "Reloop",
+  "controls": [
+    {
+      "name": "gain",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 0,
+      "notes": "Gain [gain]"
+    },
+    {
+      "name": "gain_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 64,
+      "notes": "shift of gain [gain]"
+    },
+    {
+      "name": "high",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 1,
+      "notes": "High [high]"
+    },
+    {
+      "name": "high_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 65,
+      "notes": "shift of high [high]"
+    },
+    {
+      "name": "mid",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 2,
+      "notes": "Mid [mid]"
+    },
+    {
+      "name": "mid_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 66,
+      "notes": "shift of mid [mid]"
+    },
+    {
+      "name": "low",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 3,
+      "notes": "Low [low]"
+    },
+    {
+      "name": "low_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 67,
+      "notes": "shift of low [low]"
+    },
+    {
+      "name": "deck_filter_fx",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 4,
+      "notes": "Filter FX [deck_filter_fx]"
+    },
+    {
+      "name": "deck_filter_fx_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 68,
+      "notes": "shift of deck_filter_fx [deck_filter_fx]"
+    },
+    {
+      "name": "deck_filter_fx_x",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 1,
+      "notes": "Filter FX [deck_filter_fx_x]"
+    },
+    {
+      "name": "deck_filter_fx_x_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 65,
+      "notes": "shift of deck_filter_fx_x [deck_filter_fx_x]"
+    },
+    {
+      "name": "load",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 2,
+      "notes": "Load [load]"
+    },
+    {
+      "name": "load_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 66,
+      "notes": "shift of load [load]"
+    },
+    {
+      "name": "cue",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 3,
+      "notes": "Cue [cue]"
+    },
+    {
+      "name": "cue_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 67,
+      "notes": "shift of cue [cue]"
+    },
+    {
+      "name": "deck_line_fader",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Line Fader [deck_line_fader]"
+    },
+    {
+      "name": "deck_line_fader_shift",
+      "section": "deck",
+      "type": "cc",
+      "ch": 1,
+      "code": 69,
+      "notes": "shift of deck_line_fader [deck_line_fader]"
+    },
+    {
+      "name": "t_mode_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 4,
+      "notes": "T-mode button [t_mode_button]"
+    },
+    {
+      "name": "t_mode_button_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 68,
+      "notes": "shift of t_mode_button [t_mode_button]"
+    },
+    {
+      "name": "c_mode_button",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 5,
+      "notes": "C-mode button [c_mode_button]"
+    },
+    {
+      "name": "c_mode_button_shift",
+      "section": "deck",
+      "type": "note",
+      "ch": 1,
+      "code": 69,
+      "notes": "shift of c_mode_button [c_mode_button]"
+    },
+    {
+      "name": "shift",
+      "section": "global",
+      "type": "note",
+      "ch": 1,
+      "code": 6,
+      "notes": "Shift [shift]"
+    },
+    {
+      "name": "trax_knob_press",
+      "section": "global",
+      "type": "note",
+      "ch": 1,
+      "code": 7,
+      "notes": "Trax Knob (Press) [trax_knob_press]"
+    },
+    {
+      "name": "trax_knob_press_shift",
+      "section": "global",
+      "type": "note",
+      "ch": 1,
+      "code": 70,
+      "notes": "shift of trax_knob_press [trax_knob_press]"
+    },
+    {
+      "name": "back",
+      "section": "global",
+      "type": "note",
+      "ch": 1,
+      "code": 8,
+      "notes": "Back [back]"
+    },
+    {
+      "name": "back_shift",
+      "section": "global",
+      "type": "note",
+      "ch": 1,
+      "code": 71,
+      "notes": "shift of back [back]"
+    },
+    {
+      "name": "cue_mix",
+      "section": "global",
+      "type": "cc",
+      "ch": 1,
+      "code": 6,
+      "notes": "Cue Mix [cue_mix]"
+    },
+    {
+      "name": "cue_mix_shift",
+      "section": "global",
+      "type": "cc",
+      "ch": 1,
+      "code": 70,
+      "notes": "shift of cue_mix [cue_mix]"
+    },
+    {
+      "name": "crossfader",
+      "section": "global",
+      "type": "cc",
+      "ch": 1,
+      "code": 8,
+      "notes": "Crossfader [crossfader]"
+    },
+    {
+      "name": "crossfader_shift",
+      "section": "global",
+      "type": "cc",
+      "ch": 1,
+      "code": 72,
+      "notes": "shift of crossfader [crossfader]"
+    },
+    {
+      "name": "master_vol",
+      "section": "global",
+      "type": "cc",
+      "ch": 5,
+      "code": 0,
+      "notes": "Master Vol [master_vol]"
+    },
+    {
+      "name": "headphone_vol",
+      "section": "global",
+      "type": "cc",
+      "ch": 5,
+      "code": 1,
+      "notes": "Headphone Vol [headphone_vol]"
+    },
+    {
+      "name": "fader_start_line_fader",
+      "section": "fader_start",
+      "type": "cc",
+      "ch": 1,
+      "code": 5,
+      "notes": "Line Fader [fader_start_line_fader]"
+    },
+    {
+      "name": "fader_start_line_fader_shift",
+      "section": "fader_start",
+      "type": "cc",
+      "ch": 1,
+      "code": 69,
+      "notes": "shift of fader_start_line_fader [fader_start_line_fader]"
+    },
+    {
+      "name": "line_fader_01_00",
+      "section": "fader_start",
+      "type": "note",
+      "ch": 1,
+      "code": 19,
+      "notes": "Line Fader (01->00) [line_fader_01_00]"
+    },
+    {
+      "name": "line_fader_01_00_shift",
+      "section": "fader_start",
+      "type": "note",
+      "ch": 2,
+      "code": 19,
+      "notes": "shift of line_fader_01_00 [line_fader_01_00]"
+    },
+    {
+      "name": "line_fader_00_01",
+      "section": "fader_start",
+      "type": "note",
+      "ch": 1,
+      "code": 20,
+      "notes": "Line Fader (00->01) [line_fader_00_01]"
+    },
+    {
+      "name": "line_fader_00_01_shift",
+      "section": "fader_start",
+      "type": "note",
+      "ch": 2,
+      "code": 20,
+      "notes": "shift of line_fader_00_01 [line_fader_00_01]"
+    },
+    {
+      "name": "cmode_button_1",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 13,
+      "notes": "Button 1 [cmode_button_1]"
+    },
+    {
+      "name": "cmode_button_1_shift",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 76,
+      "notes": "shift of cmode_button_1 [cmode_button_1]"
+    },
+    {
+      "name": "cmode_button_2",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 14,
+      "notes": "Button 2 [cmode_button_2]"
+    },
+    {
+      "name": "cmode_button_2_shift",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 77,
+      "notes": "shift of cmode_button_2 [cmode_button_2]"
+    },
+    {
+      "name": "cmode_button_3",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 15,
+      "notes": "Button 3 [cmode_button_3]"
+    },
+    {
+      "name": "cmode_button_3_shift",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 78,
+      "notes": "shift of cmode_button_3 [cmode_button_3]"
+    },
+    {
+      "name": "cmode_button_4",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 16,
+      "notes": "Button 4 [cmode_button_4]"
+    },
+    {
+      "name": "cmode_button_4_shift",
+      "section": "cmode",
+      "type": "note",
+      "ch": 1,
+      "code": 79,
+      "notes": "shift of cmode_button_4 [cmode_button_4]"
+    },
+    {
+      "name": "default",
+      "section": "cmode",
+      "type": "cc",
+      "ch": 1,
+      "code": 7,
+      "notes": "Default [default]"
+    },
+    {
+      "name": "default_shift",
+      "section": "cmode",
+      "type": "cc",
+      "ch": 1,
+      "code": 71,
+      "notes": "shift of default [default]"
+    },
+    {
+      "name": "pfl",
+      "section": "cmode",
+      "type": "note",
+      "ch": 5,
+      "code": 2,
+      "notes": "PFL [pfl]"
+    },
+    {
+      "name": "mst",
+      "section": "cmode",
+      "type": "note",
+      "ch": 5,
+      "code": 3,
+      "notes": "MST [mst]"
+    }
+  ]
+}

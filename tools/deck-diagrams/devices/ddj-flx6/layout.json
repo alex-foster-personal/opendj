@@ -1,0 +1,1002 @@
+{
+  "device": "DDJ-FLX6",
+  "vendor": "AlphaTheta / Pioneer DJ",
+  "plate": {
+    "image": "source/plate-top.png",
+    "width": 1118,
+    "height": 614
+  },
+  "layers": [
+    "base",
+    "shift"
+  ],
+  "out_of_scope": [
+    "jog_illumination_midi_out",
+    "merge_fx_illumination_midi_out",
+    "ch_level_meter_led_animation",
+    "performance_pad_mode_matrix_rows",
+    "right_deck_mirror_same_figs"
+  ],
+  "controls": [
+    {
+      "id": "ddj-flx6-1-1",
+      "fig": "1-1",
+      "label": "PLAY/PAUSE",
+      "kind": "button",
+      "x": 7.0,
+      "y": 74.0,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "play_pause",
+        "type": "note",
+        "ch": 1,
+        "code": 11,
+        "shift_name": "play_pause_shift"
+      },
+      "notes": "per-deck channels 1-4; LED out same code [1-1]"
+    },
+    {
+      "id": "ddj-flx6-1-2",
+      "fig": "1-2",
+      "label": "CUE",
+      "kind": "button",
+      "x": 11.5,
+      "y": 74.0,
+      "w": 4.0,
+      "h": 5.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue",
+        "type": "note",
+        "ch": 1,
+        "code": 12,
+        "shift_name": "cue_shift"
+      },
+      "notes": "per-deck channels 1-4 [1-2]"
+    },
+    {
+      "id": "ddj-flx6-1-3",
+      "fig": "1-3",
+      "label": "SHIFT",
+      "kind": "button",
+      "x": 15.5,
+      "y": 74.0,
+      "w": 4.0,
+      "h": 5.0,
+      "layer": "base",
+      "section": "deck",
+      "midi": {
+        "name": "shift_button",
+        "type": "note",
+        "ch": 1,
+        "code": 63,
+        "shift_name": null
+      },
+      "notes": "hardware SHIFT; per-deck ch 1-4 [1-3]"
+    },
+    {
+      "id": "ddj-flx6-1-4",
+      "fig": "1-4",
+      "label": "JOG DIAL",
+      "kind": "jog",
+      "x": 10.0,
+      "y": 38.0,
+      "w": 17.0,
+      "h": 30.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "jog_platter_turn",
+        "type": "cc",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "jog_platter_turn_shift"
+      },
+      "notes": "Vinyl On CC34/35; shift CC41; touch note 54/103 [1-4]"
+    },
+    {
+      "id": "ddj-flx6-1-5",
+      "fig": "1-5",
+      "label": "DECK",
+      "kind": "button",
+      "x": 3.5,
+      "y": 32.0,
+      "w": 4.5,
+      "h": 5.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "deck_select",
+        "type": "note",
+        "ch": 1,
+        "code": 60,
+        "shift_name": "deck_select_shift"
+      },
+      "notes": "Deck1/3 toggle ch1/3; shift ch7 note 124 [1-5]"
+    },
+    {
+      "id": "ddj-flx6-1-6",
+      "fig": "1-6",
+      "label": "JOG CUTTER",
+      "kind": "button",
+      "x": 14.0,
+      "y": 52.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "jog_cutter",
+        "type": "note",
+        "ch": 1,
+        "code": 28,
+        "shift_name": "jog_cutter_shift"
+      },
+      "notes": "per-deck ch 1-4 [1-6]"
+    },
+    {
+      "id": "ddj-flx6-1-7",
+      "fig": "1-7",
+      "label": "IN/-4BEAT",
+      "kind": "button",
+      "x": 4.0,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "loop_in",
+        "type": "note",
+        "ch": 1,
+        "code": 16,
+        "shift_name": "loop_in_shift"
+      },
+      "notes": "long-press note 20; per-deck [1-7]"
+    },
+    {
+      "id": "ddj-flx6-1-8",
+      "fig": "1-8",
+      "label": "OUT/+4BEAT",
+      "kind": "button",
+      "x": 7.5,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "loop_out",
+        "type": "note",
+        "ch": 1,
+        "code": 17,
+        "shift_name": "loop_out_shift"
+      },
+      "notes": "per-deck ch 1-4 [1-8]"
+    },
+    {
+      "id": "ddj-flx6-1-9",
+      "fig": "1-9",
+      "label": "RELOOP/EXIT",
+      "kind": "button",
+      "x": 11.0,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "reloop_exit",
+        "type": "note",
+        "ch": 1,
+        "code": 77,
+        "shift_name": "reloop_exit_shift"
+      },
+      "notes": "per-deck ch 1-4 [1-9]"
+    },
+    {
+      "id": "ddj-flx6-1-10",
+      "fig": "1-10",
+      "label": "CUE/LOOP CALL <",
+      "kind": "button",
+      "x": 14.5,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_call_prev",
+        "type": "note",
+        "ch": 1,
+        "code": 81,
+        "shift_name": "cue_loop_call_prev_shift"
+      },
+      "notes": "per-deck [1-10]"
+    },
+    {
+      "id": "ddj-flx6-1-11",
+      "fig": "1-11",
+      "label": "CUE/LOOP CALL >",
+      "kind": "button",
+      "x": 18.0,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_call_next",
+        "type": "note",
+        "ch": 1,
+        "code": 83,
+        "shift_name": "cue_loop_call_next_shift"
+      },
+      "notes": "per-deck [1-11]"
+    },
+    {
+      "id": "ddj-flx6-1-12",
+      "fig": "1-12",
+      "label": "CUE/LOOP MEMORY",
+      "kind": "button",
+      "x": 21.5,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "cue_loop_memory",
+        "type": "note",
+        "ch": 1,
+        "code": 61,
+        "shift_name": "cue_loop_memory_shift"
+      },
+      "notes": "per-deck [1-12]"
+    },
+    {
+      "id": "ddj-flx6-1-13",
+      "fig": "1-13",
+      "label": "MERGE FX PRESET",
+      "kind": "button",
+      "x": 25.0,
+      "y": 10.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "merge_fx_preset",
+        "type": "note",
+        "ch": 5,
+        "code": 47,
+        "shift_name": "merge_fx_preset_shift"
+      },
+      "notes": "ch5 L / ch6 R [1-13]"
+    },
+    {
+      "id": "ddj-flx6-1-14",
+      "fig": "1-14",
+      "label": "MERGE FX PARAM",
+      "kind": "knob",
+      "x": 34.0,
+      "y": 8.0,
+      "w": 6.5,
+      "h": 8.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "merge_fx_param",
+        "type": "cc",
+        "ch": 5,
+        "code": 8,
+        "shift_name": "merge_fx_param_shift"
+      },
+      "notes": "turn CC8/28 ch5/6; press note 46/49 [1-14]"
+    },
+    {
+      "id": "ddj-flx6-1-15",
+      "fig": "1-15",
+      "label": "BEAT SYNC",
+      "kind": "button",
+      "x": 30.0,
+      "y": 74.0,
+      "w": 4.0,
+      "h": 5.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "beat_sync",
+        "type": "note",
+        "ch": 1,
+        "code": 88,
+        "shift_name": "beat_sync_shift"
+      },
+      "notes": "per-deck ch 1-4 [1-15]"
+    },
+    {
+      "id": "ddj-flx6-1-16",
+      "fig": "1-16",
+      "label": "MASTER",
+      "kind": "button",
+      "x": 34.5,
+      "y": 74.0,
+      "w": 4.0,
+      "h": 5.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "master_tempo",
+        "type": "note",
+        "ch": 1,
+        "code": 92,
+        "shift_name": "master_tempo_shift"
+      },
+      "notes": "per-deck ch 1-4 [1-16]"
+    },
+    {
+      "id": "ddj-flx6-1-17",
+      "fig": "1-17",
+      "label": "TEMPO",
+      "kind": "fader",
+      "x": 39.0,
+      "y": 38.0,
+      "w": 3.0,
+      "h": 28.0,
+      "layer": "both",
+      "section": "deck",
+      "midi": {
+        "name": "tempo_slider",
+        "type": "cc",
+        "ch": 1,
+        "code": 0,
+        "shift_name": "tempo_slider_shift"
+      },
+      "notes": "14-bit MSB0/LSB32; shift MSB5/LSB37 per-deck [1-17]"
+    },
+    {
+      "id": "ddj-flx6-2-1",
+      "fig": "2-1",
+      "label": "BFX SELECT",
+      "kind": "button",
+      "x": 70.0,
+      "y": 8.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "bfx_select",
+        "type": "note",
+        "ch": 5,
+        "code": 112,
+        "shift_name": "bfx_select_shift"
+      },
+      "notes": "cycles FX1-1..FX2-3; shift reverses cycle [2-1]"
+    },
+    {
+      "id": "ddj-flx6-2-2",
+      "fig": "2-2",
+      "label": "BFX CH SELECT",
+      "kind": "button",
+      "x": 74.5,
+      "y": 8.0,
+      "w": 4.0,
+      "h": 4.5,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "bfx_ch_select",
+        "type": "note",
+        "ch": 5,
+        "code": 28,
+        "shift_name": "bfx_ch_select_shift"
+      },
+      "notes": "CH1-4 + master select notes ch5/6 [2-2]"
+    },
+    {
+      "id": "ddj-flx6-2-3",
+      "fig": "2-3",
+      "label": "BEAT <",
+      "kind": "button",
+      "x": 69.0,
+      "y": 16.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "beat_fx_prev",
+        "type": "note",
+        "ch": 5,
+        "code": 6,
+        "shift_name": "beat_fx_prev_shift"
+      },
+      "notes": "FX1 ch5 / FX2 ch6 [2-3]"
+    },
+    {
+      "id": "ddj-flx6-2-4",
+      "fig": "2-4",
+      "label": "BEAT >",
+      "kind": "button",
+      "x": 73.0,
+      "y": 16.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "beat_fx_next",
+        "type": "note",
+        "ch": 5,
+        "code": 7,
+        "shift_name": "beat_fx_next_shift"
+      },
+      "notes": "FX1 ch5 / FX2 ch6 [2-4]"
+    },
+    {
+      "id": "ddj-flx6-2-5",
+      "fig": "2-5",
+      "label": "LEVEL/DEPTH",
+      "kind": "knob",
+      "x": 77.5,
+      "y": 22.0,
+      "w": 4.0,
+      "h": 5.0,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "bfx_level_depth",
+        "type": "cc",
+        "ch": 5,
+        "code": 2,
+        "shift_name": "bfx_level_depth_shift"
+      },
+      "notes": "14-bit CC per FX slot; MSB2/4/6 ch5/6 [2-5]"
+    },
+    {
+      "id": "ddj-flx6-2-6",
+      "fig": "2-6",
+      "label": "BFX ON/OFF",
+      "kind": "button",
+      "x": 71.5,
+      "y": 28.0,
+      "w": 4.5,
+      "h": 4.5,
+      "layer": "both",
+      "section": "effect",
+      "midi": {
+        "name": "bfx_on_off",
+        "type": "note",
+        "ch": 5,
+        "code": 71,
+        "shift_name": "bfx_on_off_shift"
+      },
+      "notes": "FX1-3 slots; shift all-FX note [2-6]"
+    },
+    {
+      "id": "ddj-flx6-3-1",
+      "fig": "3-1",
+      "label": "INPUT SELECT",
+      "kind": "switch",
+      "x": 47.0,
+      "y": 52.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "input_select",
+        "type": "note",
+        "ch": 4,
+        "code": 13,
+        "shift_name": null
+      },
+      "notes": "CH4 deck/sampler ch4 note 13 [3-1]"
+    },
+    {
+      "id": "ddj-flx6-3-2",
+      "fig": "3-2",
+      "label": "MASTER LEVEL",
+      "kind": "knob",
+      "x": 56.0,
+      "y": 8.0,
+      "w": 4.0,
+      "h": 5.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "master_level",
+        "type": "cc",
+        "ch": 7,
+        "code": 8,
+        "shift_name": "master_level_shift"
+      },
+      "notes": "14-bit MSB8 LSB40 ch7 [3-2]"
+    },
+    {
+      "id": "ddj-flx6-3-3",
+      "fig": "3-3",
+      "label": "MASTER CUE",
+      "kind": "button",
+      "x": 60.5,
+      "y": 8.0,
+      "w": 3.5,
+      "h": 4.0,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "master_cue",
+        "type": "note",
+        "ch": 7,
+        "code": 99,
+        "shift_name": "master_cue_shift"
+      },
+      "notes": "ch7 [3-3]"
+    },
+    {
+      "id": "ddj-flx6-3-4",
+      "fig": "3-4",
+      "label": "BOOTH LEVEL",
+      "kind": "knob",
+      "x": 64.5,
+      "y": 8.0,
+      "w": 4.0,
+      "h": 5.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "booth_level",
+        "type": "cc",
+        "ch": 7,
+        "code": 9,
+        "shift_name": "booth_level_shift"
+      },
+      "notes": "14-bit MSB9 LSB41 ch7 [3-4]"
+    },
+    {
+      "id": "ddj-flx6-3-5",
+      "fig": "3-5",
+      "label": "TRIM",
+      "kind": "knob",
+      "x": 46.5,
+      "y": 16.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "trim",
+        "type": "cc",
+        "ch": 1,
+        "code": 4,
+        "shift_name": "trim_shift"
+      },
+      "notes": "14-bit MSB4 per-deck ch1-4 [3-5]"
+    },
+    {
+      "id": "ddj-flx6-3-6",
+      "fig": "3-6",
+      "label": "EQ",
+      "kind": "knob",
+      "x": 46.5,
+      "y": 26.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "eq_hi",
+        "type": "cc",
+        "ch": 1,
+        "code": 7,
+        "shift_name": "eq_hi_shift"
+      },
+      "notes": "EQ Hi/Mid/Low share fig; MSB7/11/15 [3-6]"
+    },
+    {
+      "id": "ddj-flx6-3-7",
+      "fig": "3-7",
+      "label": "FILTER",
+      "kind": "knob",
+      "x": 46.5,
+      "y": 36.0,
+      "w": 3.0,
+      "h": 4.0,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "filter",
+        "type": "cc",
+        "ch": 7,
+        "code": 23,
+        "shift_name": "filter_shift"
+      },
+      "notes": "FILTER ch1-4 via ch7 MSB23-26 [3-7]"
+    },
+    {
+      "id": "ddj-flx6-3-8",
+      "fig": "3-8",
+      "label": "CH CUE",
+      "kind": "button",
+      "x": 44.0,
+      "y": 48.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_cue",
+        "type": "note",
+        "ch": 1,
+        "code": 84,
+        "shift_name": "ch_cue_shift"
+      },
+      "notes": "per-deck ch 1-4 [3-8]"
+    },
+    {
+      "id": "ddj-flx6-3-9",
+      "fig": "3-9",
+      "label": "CH FADER",
+      "kind": "fader",
+      "x": 50.0,
+      "y": 48.0,
+      "w": 3.0,
+      "h": 22.0,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_fader",
+        "type": "cc",
+        "ch": 1,
+        "code": 19,
+        "shift_name": "ch_fader_shift"
+      },
+      "notes": "14-bit MSB19; shift cue-start note [3-9]"
+    },
+    {
+      "id": "ddj-flx6-3-10",
+      "fig": "3-10",
+      "label": "CROSSFADER",
+      "kind": "fader",
+      "x": 48.0,
+      "y": 82.0,
+      "w": 12.0,
+      "h": 4.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "crossfader",
+        "type": "cc",
+        "ch": 7,
+        "code": 31,
+        "shift_name": "crossfader_shift"
+      },
+      "notes": "14-bit MSB31; shift xfader-start notes [3-10]"
+    },
+    {
+      "id": "ddj-flx6-3-11",
+      "fig": "3-11",
+      "label": "CH LEVEL METER",
+      "kind": "meter",
+      "x": 52.0,
+      "y": 50.0,
+      "w": 8.0,
+      "h": 28.0,
+      "layer": "base",
+      "section": "mixer",
+      "midi": {
+        "name": "ch_level_meter",
+        "type": "cc",
+        "ch": 1,
+        "code": 2,
+        "shift_name": null
+      },
+      "notes": "MIDI OUT only ch1-4 CC2 [3-11]"
+    },
+    {
+      "id": "ddj-flx6-3-12",
+      "fig": "3-12",
+      "label": "HEADPHONE LEVEL",
+      "kind": "knob",
+      "x": 66.0,
+      "y": 72.0,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "headphone_level",
+        "type": "cc",
+        "ch": 7,
+        "code": 13,
+        "shift_name": "headphone_level_shift"
+      },
+      "notes": "MSB13 LSB45 ch7 [3-12]"
+    },
+    {
+      "id": "ddj-flx6-3-13",
+      "fig": "3-13",
+      "label": "HEADPHONE MIX",
+      "kind": "knob",
+      "x": 62.0,
+      "y": 72.0,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "headphone_mix",
+        "type": "cc",
+        "ch": 7,
+        "code": 12,
+        "shift_name": "headphone_mix_shift"
+      },
+      "notes": "MSB12 LSB44 ch7 [3-13]"
+    },
+    {
+      "id": "ddj-flx6-3-14",
+      "fig": "3-14",
+      "label": "MIC LEVEL",
+      "kind": "knob",
+      "x": 70.0,
+      "y": 48.0,
+      "w": 3.5,
+      "h": 4.5,
+      "layer": "both",
+      "section": "mixer",
+      "midi": {
+        "name": "mic_level",
+        "type": "cc",
+        "ch": 7,
+        "code": 5,
+        "shift_name": "mic_level_shift"
+      },
+      "notes": "MSB5 LSB37 ch7 [3-14]"
+    },
+    {
+      "id": "ddj-flx6-4-1",
+      "fig": "4-1",
+      "label": "BROWSE",
+      "kind": "encoder",
+      "x": 52.0,
+      "y": 4.0,
+      "w": 5.0,
+      "h": 7.0,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "browse_rotate",
+        "type": "cc",
+        "ch": 7,
+        "code": 64,
+        "shift_name": "browse_rotate_shift"
+      },
+      "notes": "relative encoder; press load note 65/66 [4-1]"
+    },
+    {
+      "id": "ddj-flx6-4-2",
+      "fig": "4-2",
+      "label": "BACK",
+      "kind": "button",
+      "x": 47.5,
+      "y": 5.5,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "back",
+        "type": "note",
+        "ch": 7,
+        "code": 101,
+        "shift_name": "back_shift"
+      },
+      "notes": "ch7 [4-2]"
+    },
+    {
+      "id": "ddj-flx6-4-3",
+      "fig": "4-3",
+      "label": "VIEW",
+      "kind": "button",
+      "x": 56.5,
+      "y": 5.5,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "view",
+        "type": "note",
+        "ch": 7,
+        "code": 122,
+        "shift_name": "view_shift"
+      },
+      "notes": "long-press note 103 [4-3]"
+    },
+    {
+      "id": "ddj-flx6-4-4",
+      "fig": "4-4",
+      "label": "LOAD D1",
+      "kind": "button",
+      "x": 45.0,
+      "y": 14.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "load_deck1",
+        "type": "note",
+        "ch": 7,
+        "code": 70,
+        "shift_name": "load_deck1_shift"
+      },
+      "notes": "ch7 [4-4]"
+    },
+    {
+      "id": "ddj-flx6-4-5",
+      "fig": "4-5",
+      "label": "LOAD D2",
+      "kind": "button",
+      "x": 49.0,
+      "y": 14.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "load_deck2",
+        "type": "note",
+        "ch": 7,
+        "code": 71,
+        "shift_name": "load_deck2_shift"
+      },
+      "notes": "ch7 [4-5]"
+    },
+    {
+      "id": "ddj-flx6-4-6",
+      "fig": "4-6",
+      "label": "LOAD D3",
+      "kind": "button",
+      "x": 53.0,
+      "y": 14.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "load_deck3",
+        "type": "note",
+        "ch": 7,
+        "code": 72,
+        "shift_name": "load_deck3_shift"
+      },
+      "notes": "ch7 [4-6]"
+    },
+    {
+      "id": "ddj-flx6-4-7",
+      "fig": "4-7",
+      "label": "LOAD D4",
+      "kind": "button",
+      "x": 57.0,
+      "y": 14.0,
+      "w": 3.5,
+      "h": 3.5,
+      "layer": "both",
+      "section": "browser",
+      "midi": {
+        "name": "load_deck4",
+        "type": "note",
+        "ch": 7,
+        "code": 73,
+        "shift_name": "load_deck4_shift"
+      },
+      "notes": "ch7 [4-7]"
+    },
+    {
+      "id": "ddj-flx6-5-1",
+      "fig": "5-1",
+      "label": "HOT CUE MODE",
+      "kind": "button",
+      "x": 18.0,
+      "y": 66.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "performance",
+      "midi": {
+        "name": "hot_cue_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 27,
+        "shift_name": "hot_cue_mode_shift"
+      },
+      "notes": "per-deck ch 1-4 [5-1]"
+    },
+    {
+      "id": "ddj-flx6-5-2",
+      "fig": "5-2",
+      "label": "PAD FX MODE",
+      "kind": "button",
+      "x": 21.5,
+      "y": 66.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "performance",
+      "midi": {
+        "name": "pad_fx_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 30,
+        "shift_name": "pad_fx_mode_shift"
+      },
+      "notes": "per-deck ch 1-4 [5-2]"
+    },
+    {
+      "id": "ddj-flx6-5-3",
+      "fig": "5-3",
+      "label": "BEAT JUMP MODE",
+      "kind": "button",
+      "x": 25.0,
+      "y": 66.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "performance",
+      "midi": {
+        "name": "beat_jump_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 32,
+        "shift_name": "beat_jump_mode_shift"
+      },
+      "notes": "per-deck [5-3]"
+    },
+    {
+      "id": "ddj-flx6-5-4",
+      "fig": "5-4",
+      "label": "SAMPLER MODE",
+      "kind": "button",
+      "x": 28.5,
+      "y": 66.0,
+      "w": 3.0,
+      "h": 3.5,
+      "layer": "both",
+      "section": "performance",
+      "midi": {
+        "name": "sampler_mode",
+        "type": "note",
+        "ch": 1,
+        "code": 34,
+        "shift_name": "sampler_mode_shift"
+      },
+      "notes": "per-deck [5-4]"
+    },
+    {
+      "id": "ddj-flx6-5-5",
+      "fig": "5-5",
+      "label": "PERFORMANCE PADS",
+      "kind": "pad",
+      "x": 16.0,
+      "y": 70.0,
+      "w": 14.0,
+      "h": 12.0,
+      "layer": "both",
+      "section": "performance",
+      "midi": {
+        "name": "performance_pad1",
+        "type": "note",
+        "ch": 8,
+        "code": 0,
+        "shift_name": "performance_pad1_shift"
+      },
+      "notes": "pad grid ch8/10/12/14 unshifted; odd ch shifted; modes in midi rows [5-5]"
+    }
+  ]
+}

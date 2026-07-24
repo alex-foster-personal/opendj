@@ -1,0 +1,498 @@
+{
+  "version": 1,
+  "updated": "2026-07-24",
+  "notes": "Quick popularity ranks (1=most). Harden later via deep research \u2014 see skill reference.md. Seeded from docs/controller/research/2026-07-22-map-availability-survey.md + brand heuristics.",
+  "issue": "https://github.com/maintainer/music-dj-tools/issues/371",
+  "controllers": [
+    {
+      "id": "ddj-flx10",
+      "brand": "AlphaTheta",
+      "model": "DDJ-FLX10",
+      "popularity_rank": 1,
+      "popularity_notes": "Flagship 4-deck; our HIL reference",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok"
+      }
+    },
+    {
+      "id": "ddj-flx4",
+      "brand": "AlphaTheta",
+      "model": "DDJ-FLX4",
+      "popularity_rank": 2,
+      "popularity_notes": "Best-seller entry 2-deck",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok"
+      }
+    },
+    {
+      "id": "ddj-flx6",
+      "brand": "AlphaTheta",
+      "model": "DDJ-FLX6",
+      "popularity_rank": 3,
+      "popularity_notes": "Popular 4-deck midrange (incl MK2)",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok"
+      }
+    },
+    {
+      "id": "ddj-1000",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-1000",
+      "popularity_rank": 4,
+      "popularity_notes": "Club-standard 4-channel",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok"
+      }
+    },
+    {
+      "id": "ddj-800",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-800",
+      "popularity_rank": 8,
+      "popularity_notes": "Portable 2-channel pro",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "ddj-rev5",
+      "brand": "AlphaTheta",
+      "model": "DDJ-REV5",
+      "popularity_rank": 6,
+      "popularity_notes": "Scratch / battle style",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "ddj-rev7",
+      "brand": "AlphaTheta",
+      "model": "DDJ-REV7",
+      "popularity_rank": 7,
+      "popularity_notes": "Motorized battle flagship",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok"
+      }
+    },
+    {
+      "id": "ddj-rev1",
+      "brand": "AlphaTheta",
+      "model": "DDJ-REV1",
+      "popularity_rank": 12,
+      "popularity_notes": "Entry scratch",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "xdj-xz",
+      "brand": "Pioneer DJ",
+      "model": "XDJ-XZ",
+      "popularity_rank": 9,
+      "popularity_notes": "All-in-one club; MIDI-out limited",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "xdj-rx3",
+      "brand": "AlphaTheta",
+      "model": "XDJ-RX3",
+      "popularity_rank": 10,
+      "popularity_notes": "Popular all-in-one",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "cdj-3000",
+      "brand": "AlphaTheta",
+      "model": "CDJ-3000",
+      "popularity_rank": 5,
+      "popularity_notes": "Club player standard; MIDI-out oriented",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "cdj-2000nxs2",
+      "brand": "Pioneer DJ",
+      "model": "CDJ-2000NXS2",
+      "popularity_rank": 11,
+      "popularity_notes": "Legacy club standard",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "djm-a9",
+      "brand": "AlphaTheta",
+      "model": "DJM-A9",
+      "popularity_rank": 13,
+      "popularity_notes": "Club mixer; MIDI-out",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "djm-900nxs2",
+      "brand": "Pioneer DJ",
+      "model": "DJM-900NXS2",
+      "popularity_rank": 14,
+      "popularity_notes": "Legacy club mixer",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "reloop-mixtour",
+      "brand": "Reloop",
+      "model": "MIXTOUR",
+      "popularity_rank": 15,
+      "popularity_notes": "Portable; official MIDI PDF; our 2nd HIL device",
+      "doc_tier": 1,
+      "status": {
+        "docs": "ok",
+        "midi": "ok",
+        "diagram": "ok",
+        "checksum": "ok"
+      }
+    },
+    {
+      "id": "reloop-mixtour-pro",
+      "brand": "Reloop",
+      "model": "MIXTOUR PRO",
+      "popularity_rank": 18,
+      "popularity_notes": "No official MIDI PDF \u2014 tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "reloop-mixon-8",
+      "brand": "Reloop",
+      "model": "Mixon 8 Pro",
+      "popularity_rank": 22,
+      "popularity_notes": "No official MIDI PDF \u2014 tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-s4-mk3",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol S4 MK3",
+      "popularity_rank": 16,
+      "popularity_notes": "Controller Editor / HID-first; tier2 Mixxx",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-s2-mk3",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol S2 MK3",
+      "popularity_rank": 17,
+      "popularity_notes": "Entry NI; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-s3",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol S3",
+      "popularity_rank": 20,
+      "popularity_notes": "4-channel NI; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-x1-mk2",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol X1 MK2",
+      "popularity_rank": 28,
+      "popularity_notes": "Addon; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "traktor-z2",
+      "brand": "Native Instruments",
+      "model": "Traktor Kontrol Z2",
+      "popularity_rank": 30,
+      "popularity_notes": "Mixer; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "denon-prime4",
+      "brand": "Denon DJ",
+      "model": "Prime 4",
+      "popularity_rank": 19,
+      "popularity_notes": "Standalone; no official MIDI chart \u2014 tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "blocked_tier2",
+        "midi": "pending",
+        "diagram": "stub",
+        "checksum": "n/a"
+      }
+    },
+    {
+      "id": "denon-sc6000",
+      "brand": "Denon DJ",
+      "model": "SC6000",
+      "popularity_rank": 21,
+      "popularity_notes": "Player; tier2",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "denon-lc6000",
+      "brand": "Denon DJ",
+      "model": "LC6000",
+      "popularity_rank": 35,
+      "popularity_notes": "Has official MIDI Spec v1.0",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-mixtrack-platinum-fx",
+      "brand": "Numark",
+      "model": "Mixtrack Platinum FX",
+      "popularity_rank": 23,
+      "popularity_notes": "Community maps only",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "numark-mixtrack-pro-fx",
+      "brand": "Numark",
+      "model": "Mixtrack Pro FX",
+      "popularity_rank": 24,
+      "popularity_notes": "Community maps only",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "hercules-inpulse-500",
+      "brand": "Hercules",
+      "model": "Inpulse 500",
+      "popularity_rank": 25,
+      "popularity_notes": "Closed DJUCED; community RE",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "roland-dj-707m",
+      "brand": "Roland",
+      "model": "DJ-707M",
+      "popularity_rank": 26,
+      "popularity_notes": "No MIDI implementation chart",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "roland-dj-202",
+      "brand": "Roland",
+      "model": "DJ-202",
+      "popularity_rank": 29,
+      "popularity_notes": "Entry Roland",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "rane-one",
+      "brand": "Rane",
+      "model": "One",
+      "popularity_rank": 27,
+      "popularity_notes": "Motorized; community WIP",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "rane-seventy-two",
+      "brand": "Rane",
+      "model": "Seventy-Two",
+      "popularity_rank": 31,
+      "popularity_notes": "Battle mixer",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "rane-twelve-mk2",
+      "brand": "Rane",
+      "model": "Twelve MK2",
+      "popularity_rank": 32,
+      "popularity_notes": "Motorized platter",
+      "doc_tier": 2,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "ddj-sb3",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-SB3",
+      "popularity_rank": 33,
+      "popularity_notes": "Legacy Serato entry (still common used)",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    },
+    {
+      "id": "ddj-400",
+      "brand": "Pioneer DJ",
+      "model": "DDJ-400",
+      "popularity_rank": 34,
+      "popularity_notes": "Legacy rekordbox entry",
+      "doc_tier": 1,
+      "status": {
+        "docs": "pending",
+        "midi": "pending",
+        "diagram": "pending",
+        "checksum": "pending"
+      }
+    }
+  ]
+}
