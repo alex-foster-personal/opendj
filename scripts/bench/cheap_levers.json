@@ -1,0 +1,416 @@
+[
+  {
+    "id": "rb7-stems",
+    "group": "baseline",
+    "isolates": "rekordbox 7 STEMS engine, its own hdemucs.onnx",
+    "s_per_stem_minute": 14.39,
+    "si_sdr": 8.39,
+    "meta": {
+      "engine": "rekordbox7-stems-hdemucs-onnx",
+      "segment_s": 8.0,
+      "overlap": 0.25,
+      "audio_s": 60.0,
+      "load_s": 0.43,
+      "infer_s": 14.39,
+      "realtime_factor": 4.17,
+      "s_per_stem_minute": 14.39,
+      "residual_frac": 0.03073
+    }
+  },
+  {
+    "id": "rb6-spleeter",
+    "group": "baseline",
+    "isolates": "rekordbox 6 Track Separation, its own Spleeter 4stems",
+    "s_per_stem_minute": 2.04,
+    "si_sdr": 4.426,
+    "meta": {
+      "label": "rb6-spleeter",
+      "engine": "rekordbox6-spleeter-4stems",
+      "sep_rate": 44100,
+      "mono": false,
+      "audio_s": 60.0,
+      "infer_s": 2.04,
+      "s_per_stem_minute": 2.04
+    }
+  },
+  {
+    "id": "floor-midside",
+    "group": "baseline",
+    "isolates": "no network at all, centre-channel extraction",
+    "s_per_stem_minute": 0.0169,
+    "si_sdr": -4.067,
+    "meta": {
+      "label": "floor-midside",
+      "engine": "mid-side-centre-extraction",
+      "audio_s": 60.0,
+      "infer_s": 0.0169,
+      "s_per_stem_minute": 0.0169
+    }
+  },
+  {
+    "id": "htdemucs-ov25",
+    "group": "model",
+    "isolates": "htdemucs at the shootout knobs, the known-good reference",
+    "s_per_stem_minute": 25.52,
+    "si_sdr": 8.516,
+    "meta": {
+      "label": "htdemucs-ov25",
+      "model": "htdemucs",
+      "overlap": 0.25,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 25.52,
+      "s_per_stem_minute": 25.52
+    }
+  },
+  {
+    "id": "hdemucs_mmi-ov25",
+    "group": "model",
+    "isolates": "hdemucs_mmi, best dB per second among clean models",
+    "s_per_stem_minute": 13.46,
+    "si_sdr": 9.027,
+    "meta": {
+      "label": "hdemucs_mmi-ov25",
+      "model": "hdemucs_mmi",
+      "overlap": 0.25,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 13.46,
+      "s_per_stem_minute": 13.46
+    }
+  },
+  {
+    "id": "mdx_q-ov0",
+    "group": "model",
+    "isolates": "mdx_q quantized at zero overlap, cheapest demucs config",
+    "s_per_stem_minute": 43.89,
+    "si_sdr": 8.112,
+    "meta": {
+      "label": "mdx_q-ov0",
+      "model": "mdx_q",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 43.89,
+      "s_per_stem_minute": 43.89
+    }
+  },
+  {
+    "id": "htdemucs-ov0",
+    "group": "overlap",
+    "isolates": "overlap 0 vs 0.25 on htdemucs",
+    "s_per_stem_minute": 15.64,
+    "si_sdr": 8.648,
+    "meta": {
+      "label": "htdemucs-ov0",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 15.64,
+      "s_per_stem_minute": 15.64
+    }
+  },
+  {
+    "id": "htdemucs-ov10",
+    "group": "overlap",
+    "isolates": "overlap 0.1 vs 0.25 on htdemucs",
+    "s_per_stem_minute": 17.73,
+    "si_sdr": 8.435,
+    "meta": {
+      "label": "htdemucs-ov10",
+      "model": "htdemucs",
+      "overlap": 0.1,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 17.73,
+      "s_per_stem_minute": 17.73
+    }
+  },
+  {
+    "id": "htdemucs-ov0-22k",
+    "group": "samplerate",
+    "isolates": "separate at 22.05 kHz then upsample",
+    "s_per_stem_minute": 7.93,
+    "si_sdr": 1.646,
+    "meta": {
+      "label": "htdemucs-ov0-22k",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 22050,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 7.93,
+      "s_per_stem_minute": 7.93
+    }
+  },
+  {
+    "id": "htdemucs-ov0-16k",
+    "group": "samplerate",
+    "isolates": "separate at 16 kHz then upsample",
+    "s_per_stem_minute": 6.06,
+    "si_sdr": -8.648,
+    "meta": {
+      "label": "htdemucs-ov0-16k",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 16000,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 6.06,
+      "s_per_stem_minute": 6.06
+    }
+  },
+  {
+    "id": "htdemucs-ov0-mono",
+    "group": "mono",
+    "isolates": "sum to mono before separation",
+    "s_per_stem_minute": 16.1,
+    "si_sdr": 8.209,
+    "meta": {
+      "label": "htdemucs-ov0-mono",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": true,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 16.1,
+      "s_per_stem_minute": 16.1
+    }
+  },
+  {
+    "id": "htdemucs-ov0-fp16",
+    "group": "precision",
+    "isolates": "float16 inference",
+    "failed": "RuntimeError: expected scalar type Double but found Half"
+  },
+  {
+    "id": "htdemucs-ov0-seg5",
+    "group": "segment",
+    "isolates": "5s segments instead of the default",
+    "s_per_stem_minute": 24.5,
+    "si_sdr": 7.558,
+    "meta": {
+      "label": "htdemucs-ov0-seg5",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "segment": 5.0,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 24.5,
+      "s_per_stem_minute": 24.5
+    }
+  },
+  {
+    "id": "mdx_q-ov0-mono-22k",
+    "group": "stacked",
+    "isolates": "cheapest demucs plus mono plus 22.05 kHz",
+    "s_per_stem_minute": 17.72,
+    "si_sdr": 4.013,
+    "meta": {
+      "label": "mdx_q-ov0-mono-22k",
+      "model": "mdx_q",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 22050,
+      "mono": true,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 17.72,
+      "s_per_stem_minute": 17.72
+    }
+  },
+  {
+    "id": "rb6-spleeter-22k",
+    "group": "stacked",
+    "isolates": "rekordbox 6 Spleeter at 22.05 kHz",
+    "s_per_stem_minute": 0.88,
+    "si_sdr": 2.575,
+    "meta": {
+      "label": "rb6-spleeter-22k",
+      "engine": "rekordbox6-spleeter-4stems",
+      "sep_rate": 22050,
+      "mono": false,
+      "audio_s": 60.0,
+      "infer_s": 0.88,
+      "s_per_stem_minute": 0.88
+    }
+  },
+  {
+    "id": "rb6-spleeter-mono-22k",
+    "group": "stacked",
+    "isolates": "rekordbox 6 Spleeter, mono, 22.05 kHz",
+    "s_per_stem_minute": 0.88,
+    "si_sdr": 2.732,
+    "meta": {
+      "label": "rb6-spleeter-mono-22k",
+      "engine": "rekordbox6-spleeter-4stems",
+      "sep_rate": 22050,
+      "mono": true,
+      "audio_s": 60.0,
+      "infer_s": 0.88,
+      "s_per_stem_minute": 0.88
+    }
+  },
+  {
+    "id": "cfg-mix",
+    "group": "baseline",
+    "isolates": "no separation at all, the do-nothing anchor",
+    "s_per_stem_minute": 0.0,
+    "si_sdr": -4.067,
+    "meta": {}
+  },
+  {
+    "id": "hdemucs_mmi-ov0",
+    "group": "model",
+    "isolates": "hdemucs_mmi at zero overlap, the cheap-fast candidate",
+    "s_per_stem_minute": 9.26,
+    "si_sdr": 8.959,
+    "meta": {
+      "label": "hdemucs_mmi-ov0",
+      "model": "hdemucs_mmi",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 9.26,
+      "s_per_stem_minute": 9.26
+    }
+  },
+  {
+    "id": "hdemucs_mmi-ov10",
+    "group": "model",
+    "isolates": "hdemucs_mmi at overlap 0.1",
+    "s_per_stem_minute": 10.91,
+    "si_sdr": 8.992,
+    "meta": {
+      "label": "hdemucs_mmi-ov10",
+      "model": "hdemucs_mmi",
+      "overlap": 0.1,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 10.91,
+      "s_per_stem_minute": 10.91
+    }
+  },
+  {
+    "id": "htdemucs-ov0-bf16",
+    "group": "precision",
+    "isolates": "bfloat16 autocast on htdemucs",
+    "s_per_stem_minute": 339.48,
+    "si_sdr": 8.651,
+    "meta": {
+      "label": "htdemucs-ov0-bf16",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "bf16",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 339.48,
+      "s_per_stem_minute": 339.48
+    }
+  },
+  {
+    "id": "hdemucs_mmi-ov0-bf16",
+    "group": "precision",
+    "isolates": "bfloat16 autocast on hdemucs_mmi",
+    "s_per_stem_minute": 274.21,
+    "si_sdr": 8.959,
+    "meta": {
+      "label": "hdemucs_mmi-ov0-bf16",
+      "model": "hdemucs_mmi",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "bf16",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 274.21,
+      "s_per_stem_minute": 274.21
+    }
+  },
+  {
+    "id": "hdemucs_mmi-ov0-fp16",
+    "group": "precision",
+    "isolates": "float16 autocast on hdemucs_mmi",
+    "s_per_stem_minute": 282.86,
+    "si_sdr": 0.0,
+    "meta": {
+      "label": "hdemucs_mmi-ov0-fp16",
+      "model": "hdemucs_mmi",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 44100,
+      "mono": false,
+      "dtype": "fp16",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 282.86,
+      "s_per_stem_minute": 282.86
+    }
+  },
+  {
+    "id": "hdemucs_mmi-ov0-32k",
+    "group": "samplerate",
+    "isolates": "hdemucs_mmi separating at 32 kHz",
+    "s_per_stem_minute": 9.4,
+    "si_sdr": 6.335,
+    "meta": {
+      "label": "hdemucs_mmi-ov0-32k",
+      "model": "hdemucs_mmi",
+      "overlap": 0.0,
+      "segment": null,
+      "sep_rate": 32000,
+      "mono": false,
+      "dtype": "fp32",
+      "device": "cpu",
+      "audio_s": 60.0,
+      "infer_s": 9.4,
+      "s_per_stem_minute": 9.4
+    }
+  }
+]

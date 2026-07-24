@@ -1,0 +1,113 @@
+{
+  "track": "Zeno - Signs (MUSDB18-HQ, pop rock, sung male lead) - cheap-floor ladder",
+  "reference": "clips-cheap/zeno-signs-truth-vocals.m4a",
+  "window": {
+    "start_s": 0.0,
+    "end_s": 60.0,
+    "length_s": 60.0,
+    "rms_dbfs": -23.51,
+    "silent_frac": 0.1333
+  },
+  "mixture_file": "clips-cheap/zeno-signs-mixture.m4a",
+  "mix_baseline_si_sdr": -4.067,
+  "acceptance_bar": {
+    "arm": "rb7-stems",
+    "si_sdr": 8.39,
+    "s_per_stem_minute": 11.08,
+    "note": "rekordbox 7's own STEMS engine, run from its own hdemucs.onnx. Anything at least this good is shippable."
+  },
+  "hardware": "Apple M3, 8 cores, CPU only (demucs cannot use MPS on this machine)",
+  "clips": [
+    {
+      "id": "cfg-mix",
+      "file": "clips-cheap/zeno-signs-mixture.m4a",
+      "inst_file": null,
+      "params": "no separation - the raw mixture graded as the vocal estimate (do-nothing anchor)",
+      "separate_s": 0.0,
+      "si_sdr": -4.067,
+      "s_per_stem_minute": 0.0,
+      "machine_score": 1
+    },
+    {
+      "id": "floor-midside",
+      "file": "clips-cheap/zeno-signs-floor-midside.m4a",
+      "inst_file": "clips-cheap/zeno-signs-floor-midside.inst.m4a",
+      "params": "centre-channel extraction, no neural network at all - EXPECTED TOO BAD [0.0169 s per stem-minute on Apple M3 CPU]",
+      "separate_s": 0.02,
+      "si_sdr": -4.067,
+      "s_per_stem_minute": 0.0169,
+      "machine_score": 2
+    },
+    {
+      "id": "rb6-spleeter-mono-22k",
+      "file": "clips-cheap/zeno-signs-rb6-spleeter-mono-22k.m4a",
+      "inst_file": "clips-cheap/zeno-signs-rb6-spleeter-mono-22k.inst.m4a",
+      "params": "rekordbox 6 Spleeter, mono, separated at 22.05 kHz [0.88 s per stem-minute on Apple M3 CPU]",
+      "separate_s": 0.88,
+      "si_sdr": 2.732,
+      "s_per_stem_minute": 0.88,
+      "machine_score": 4
+    },
+    {
+      "id": "rb6-spleeter",
+      "file": "clips-cheap/zeno-signs-rb6-spleeter.m4a",
+      "inst_file": "clips-cheap/zeno-signs-rb6-spleeter.inst.m4a",
+      "params": "rekordbox 6 Track Separation, its OWN Spleeter 4stems weights [2.04 s per stem-minute on Apple M3 CPU]",
+      "separate_s": 2.04,
+      "si_sdr": 4.426,
+      "s_per_stem_minute": 2.04,
+      "machine_score": 5
+    },
+    {
+      "id": "htdemucs-ov0-22k",
+      "file": "clips-cheap/zeno-signs-htdemucs-ov0-22k.m4a",
+      "inst_file": "clips-cheap/zeno-signs-htdemucs-ov0-22k.inst.m4a",
+      "params": "htdemucs overlap 0 separated at 22.05 kHz - the sample-rate lever [7.93 s per stem-minute on Apple M3 CPU]",
+      "separate_s": 7.93,
+      "si_sdr": 1.646,
+      "s_per_stem_minute": 7.93,
+      "machine_score": 3
+    },
+    {
+      "id": "hdemucs_mmi-ov0",
+      "file": "clips-cheap/zeno-signs-hdemucs_mmi-ov0.m4a",
+      "inst_file": "clips-cheap/zeno-signs-hdemucs_mmi-ov0.inst.m4a",
+      "params": "hdemucs_mmi overlap 0, cheapest demucs arm that still tracks the bar [11.83 s per stem-minute on Apple M3 CPU, median of 3 back-to-back runs]",
+      "separate_s": 11.83,
+      "si_sdr": 8.959,
+      "s_per_stem_minute": 11.83,
+      "machine_score": 8
+    },
+    {
+      "id": "rb7-stems",
+      "file": "clips-cheap/zeno-signs-rb7-stems.m4a",
+      "inst_file": "clips-cheap/zeno-signs-rb7-stems.inst.m4a",
+      "params": "REKORDBOX 7 STEMS, its OWN hdemucs.onnx - THIS IS THE BAR [11.08 s per stem-minute on Apple M3 CPU, median of 3 back-to-back runs]",
+      "separate_s": 11.08,
+      "si_sdr": 8.39,
+      "s_per_stem_minute": 11.08,
+      "machine_score": 6
+    },
+    {
+      "id": "hdemucs_mmi-ov25",
+      "file": "clips-cheap/zeno-signs-hdemucs_mmi-ov25.m4a",
+      "inst_file": "clips-cheap/zeno-signs-hdemucs_mmi-ov25.inst.m4a",
+      "params": "hdemucs_mmi overlap 0.25 [13.46 s per stem-minute on Apple M3 CPU]",
+      "separate_s": 13.46,
+      "si_sdr": 9.027,
+      "s_per_stem_minute": 13.46,
+      "machine_score": 9
+    },
+    {
+      "id": "htdemucs-ov25",
+      "file": "clips-cheap/zeno-signs-htdemucs-ov25.m4a",
+      "inst_file": "clips-cheap/zeno-signs-htdemucs-ov25.inst.m4a",
+      "params": "htdemucs overlap 0.25, the known-good reference [24.59 s per stem-minute on Apple M3 CPU, median of 3 back-to-back runs]",
+      "separate_s": 24.59,
+      "si_sdr": 8.516,
+      "s_per_stem_minute": 24.59,
+      "machine_score": 7
+    }
+  ],
+  "timing_note": "Seconds per stem-minute is inference only, model load excluded, on an Apple M3 CPU that was running several other agents. Arms timed minutes apart carry scheduling noise, so the three decisive arms (rb7-stems, hdemucs_mmi-ov0, htdemucs-ov25) were re-timed back to back three times and carry the median. The other arms keep their single-run timing and should be read as approximate. SI-SDR is deterministic and unaffected."
+}
