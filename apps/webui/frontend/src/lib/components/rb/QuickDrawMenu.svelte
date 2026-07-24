@@ -11,8 +11,23 @@
 	} from '$lib/rb/quick-draw-catalog';
 	import type { DeckId } from '$lib/rb/types';
 	import { setMenuHighlightStableId } from '$lib/rb/quick-draw-ui.svelte';
+	import {
+		fetchStemEstimates,
+		fetchStemTiers,
+		startStemGeneration,
+		type StemTier
+	} from '$lib/rb/api-rb';
+	import { getTrack } from '$lib/api';
+	import { pushToast } from '$lib/stores.svelte';
 
-	type CtxItem = { id: string; label: string; run: () => Promise<void> };
+	type CtxItem = {
+		id: string;
+		label: string;
+		run: () => Promise<void>;
+		/** Inert rungs render dimmed and explain themselves on hover. */
+		disabled?: boolean;
+		title?: string;
+	};
 	type Root = 'unload' | 'loop' | 'play';
 	type LoopLeaf = 'loop.start_8' | 'loop.exit';
 
@@ -23,6 +38,69 @@
 	let root = $state<Root>('unload');
 	let loopLeaf = $state<LoopLeaf | null>(null);
 	let menuEl: HTMLDivElement | undefined = $state();
+
+	// The stem ladder is static config, so fetch it once. Estimates are
+	// per-track and land asynchronously; until they do, the label says
+	// "measuring" rather than showing a number nobody measured.
+	let stemTiers = $state<StemTier[]>([]);
+	let stemEstimateById = $state<Record<string, string>>({});
+
+	onMount(() => {
+		void fetchStemTiers()
+			.then((t) => {
+				stemTiers = t;
+			})
+			.catch((e) => {
+				// Fail visibly: a silently empty ladder looks like "no stems here".
+				console.error('[quick-draw] stem ladder unavailable', e);
+			});
+	});
+
+	async function _loadStemEstimates(stableId: string): Promise<void> {
+		stemEstimateById = {};
+		const { track } = await getTrack(stableId);
+		const durationS = (track.duration_ms ?? 0) / 1000;
+		if (durationS <= 0) {
+			stemEstimateById = { _error: 'no duration on this track' };
+			return;
+		}
+		const { tiers } = await fetchStemEstimates(durationS);
+		const next: Record<string, string> = {};
+		for (const t of tiers) {
+			next[t.tier] = t.measured
+				? `${Math.round(t.seconds ?? 0)}s`
+				: 'not measured';
+		}
+		stemEstimateById = next;
+	}
+
+	function _stemItems(stableId: string): CtxItem[] {
+		return stemTiers.map((tier) => {
+			const est = stemEstimateById[tier.key];
+			const suffix = est === undefined ? '...' : est;
+			const inert = tier.availability !== 'AVAILABLE';
+			return {
+				id: `stems-${tier.key}-${stableId}`,
+				label: inert
+					? `Stems: ${tier.name} (n/a)`
+					: `Stems: ${tier.name} ~${suffix}`,
+				disabled: inert,
+				title: inert
+					? tier.unavailable_because
+					: `${tier.model} overlap ${tier.overlap}` +
+						(tier.where === 'modal' ? ` on ${tier.gpu}` : ' on this Mac') +
+						` -- ${tier.purpose}`,
+				run: async () => {
+					if (inert) return;
+					const job = await startStemGeneration(stableId, tier.key);
+					pushToast(
+						`Stems ${tier.name}: job ${job.job_id} started`,
+						'info'
+					);
+				}
+			};
+		});
+	}
 	/** Close-on-leave only after the pointer has entered the menu once. */
 	let leaveArmed = false;
 
@@ -43,7 +121,12 @@
 	function _contextItems(target: EventTarget | null): CtxItem[] {
 		const stableId = _stableIdFromTarget(target);
 		if (stableId !== null) {
-			return DECK_IDS.map((deck) => ({
+			void _loadStemEstimates(stableId).catch((e) => {
+				console.error('[quick-draw] stem estimates unavailable', e);
+				stemEstimateById = { _error: String(e) };
+			});
+			return [
+				...DECK_IDS.map((deck) => ({
 				id: `load-${deck}-${stableId}`,
 				label: `Load to CH${deck}`,
 				run: async () => {
@@ -52,7 +135,9 @@
 					}
 					await runPerformanceCommandFromUi({ type: 'load', deck, stable_id: stableId });
 				}
-			}));
+			})),
+				..._stemItems(stableId)
+			];
 		}
 		const deck = _deckFromTarget(target);
 		if (deck === null) return [];
@@ -259,8 +344,12 @@
 					<button
 						type="button"
 						class="qd-item"
+						class:qd-inert={item.disabled === true}
 						role="menuitem"
+						disabled={item.disabled === true}
+						title={item.title ?? null}
 						onclick={() => {
+							if (item.disabled === true) return;
 							_close();
 							void item.run();
 						}}
@@ -330,6 +419,11 @@
 		gap: 2px;
 		min-width: 140px;
 	}
+	.qd-inert {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+
 	.qd-item {
 		display: block;
 		width: 100%;

@@ -274,6 +274,45 @@ def cmd_one(args: argparse.Namespace) -> int:
     return 0
 
 
+# Derived, never typed. A hardcoded ("S","M","L") here was a FOURTH mirror of
+# the tier table, and it silently disagreed with the API: `estimate --tier
+# LOCAL` was rejected while GET /stems/estimate happily returned a LOCAL row.
+def _tier_choices() -> tuple[str, ...]:
+    from apps.stems.tiers import TIER_ORDER
+
+    return TIER_ORDER
+
+
+_TIER_CHOICES = _tier_choices()
+
+
+def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
+    """The on-disk audio file for a stable_id, or raise.
+
+    Public because the webui generate endpoint needs the SAME resolution the
+    CLI uses; two resolvers would eventually disagree about which file a job
+    ran on, and the manifest would not say which one was right.
+    """
+    import sqlite3
+
+    db = Path(data_dir) / "state" / "state.db"
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        row = conn.execute(
+            "SELECT file_path FROM tracks WHERE stable_id = ?", (stable_id,)
+        ).fetchone()
+    if row is None:
+        raise FileNotFoundError(f"no track {stable_id!r} in {db}")
+    if not row[0]:
+        raise FileNotFoundError(f"track {stable_id!r} has no file_path in {db}")
+    path = Path(row[0])
+    if not path.exists():
+        raise FileNotFoundError(
+            f"track {stable_id!r} points at {path}, which does not exist. "
+            "Relocate it before asking for stems."
+        )
+    return path
+
+
 def _duration_from_state(data_dir: Path, stable_id: str) -> float:
     """Track length in seconds from state.db. Raises if the row has none."""
     import sqlite3
@@ -348,9 +387,13 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         )
     unmeasured = [r for r in rows if not r["measured"]]
     if unmeasured:
-        print(f"\n{len(unmeasured)} tier(s) have no benchmark on this card:")
+        print(f"\n{len(unmeasured)} rung(s) have no benchmark on this card:")
         for row in unmeasured:
             print(f"  {row['tier']}: {row['unavailable_reason']}")
+    # Non-zero ONLY when the caller asked for one specific rung and that rung
+    # cannot be answered. Listing the whole ladder is informational, so failing
+    # it would make the common call look broken and train people to ignore it.
+    if args.tier and unmeasured:
         return 1
     return 0
 
@@ -397,8 +440,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="track duration; or use --stable-id to read it from state.db",
     )
     est.add_argument("--stable-id", default=None)
-    est.add_argument("--tier", choices=("S", "M", "L"), default=None,
-                     help="default: show all three")
+    est.add_argument("--tier", choices=_TIER_CHOICES, default=None,
+                     help="default: show every rung of the ladder")
     est.add_argument("--gpu", default=None, help="override the card")
     est.add_argument("--json", action="store_true")
     est.set_defaults(func=cmd_estimate)

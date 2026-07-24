@@ -466,6 +466,24 @@ export function artworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
 	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/artwork?size=${size}`;
 }
 
+/** Human label for rb_meta.artwork_status when the art cell is empty. */
+export function artworkStatusLabel(
+	status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing' | null | undefined
+): string | null {
+	switch (status) {
+		case 'no_image_path':
+			return 'no artwork path in library';
+		case 'unresolved':
+			return 'artwork path unresolved';
+		case 'file_missing':
+			return 'artwork file missing';
+		case 'ok':
+			return null;
+		default:
+			return null;
+	}
+}
+
 /** URL for GET /tracks/{sid}/audio (Range-capable stream). */
 export function audioUrl(stable_id: string): string {
 	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/audio`;
@@ -601,4 +619,85 @@ export async function probeVoiceCommand(text: string): Promise<VoiceProbeResult>
 	});
 	if (!r.ok) await _throwRbApiError(r);
 	return (await r.json()) as VoiceProbeResult;
+}
+
+// ---------------------------------------------- stem separation tier ladder
+// Backend: apps/webui/server/routes/stem_tiers.py, config: apps/stems/tiers.py.
+// The ladder is LOCAL -> quick -> optimal -> delicious. `quick` currently ships
+// NOT_APPLICABLE: it was measured and saves 0.7s over optimal, so it stays on
+// the ladder to record that the gap was looked at, and renders inert.
+
+export type StemTier = {
+	key: string;
+	name: string;
+	where: 'local' | 'modal';
+	preset_tag: string;
+	model: string;
+	overlap: number;
+	shifts: number;
+	gpu: string;
+	purpose: string;
+	evidence: string;
+	evidence_strength: 'MEASURED' | 'PARTIAL' | 'UNMEASURED';
+	availability: 'AVAILABLE' | 'NOT_APPLICABLE';
+	unavailable_because: string;
+	is_default: boolean;
+};
+
+export type StemTierEstimate = {
+	tier: string;
+	name: string;
+	where: 'local' | 'modal';
+	gpu: string;
+	availability: string;
+	unavailable_because: string;
+	/** false means NOT BENCHMARKED. Render the reason, never a guessed number. */
+	measured: boolean;
+	seconds: number | null;
+	usd: number | null;
+	measured_at: string | null;
+	n_tracks: number | null;
+	r_squared: number | null;
+	unavailable_reason: string | null;
+};
+
+export type StemJob = {
+	job_id: string;
+	stable_id: string;
+	tier: string;
+	state: 'running' | 'done' | 'failed';
+	returncode: number | null;
+	command: string;
+	log_tail: string;
+};
+
+/** GET /stems/tiers - the ladder in render order, NOT_APPLICABLE rungs included. */
+export async function fetchStemTiers(): Promise<StemTier[]> {
+	return _fetchJson<StemTier[]>('/api/v1/stems/tiers');
+}
+
+/** GET /stems/estimate - every rung costed for one track, one round trip. */
+export async function fetchStemEstimates(
+	durationSeconds: number
+): Promise<{ duration_s: number; tiers: StemTierEstimate[] }> {
+	return _fetchJson(`/api/v1/stems/estimate?seconds=${encodeURIComponent(durationSeconds)}`);
+}
+
+/** POST /stems/generate - start a REAL separation. Returns a job to poll. */
+export async function startStemGeneration(
+	stable_id: string,
+	tier: string
+): Promise<{ job_id: string; tier: string; command: string; poll: string }> {
+	const r = await fetch(`${RB_API_BASE}/api/v1/stems/generate`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ stable_id, tier })
+	});
+	if (!r.ok) await _throwRbApiError(r);
+	return await r.json();
+}
+
+/** GET /stems/jobs/{id} - live state, including the real returncode. */
+export async function fetchStemJob(job_id: string): Promise<StemJob> {
+	return _fetchJson<StemJob>(`/api/v1/stems/jobs/${encodeURIComponent(job_id)}`);
 }

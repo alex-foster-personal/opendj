@@ -6,12 +6,15 @@ estimate for a (tier, GPU) pair that has not been benchmarked.
 
 Mounted at ``/api/v1`` by the application integrator.
 
-  GET /api/v1/stems/tiers                  the three products and their evidence
-  GET /api/v1/stems/estimate?seconds=240   all three tiers costed for one track
-  GET /api/v1/stems/estimate/batch?...     wall clock for a whole batch
+  GET  /api/v1/stems/tiers                  the ladder and its evidence
+  GET  /api/v1/stems/estimate?seconds=240   every rung costed for one track
+  GET  /api/v1/stems/estimate/batch?...     wall clock for a whole batch
+  POST /api/v1/stems/generate               start one real separation
+  GET  /api/v1/stems/jobs/{id}              live state of a generate job
 
-AGENT-NATIVE PARITY: these mirror ``python -m apps.stems estimate`` exactly, so
-an agent can answer the same question the UI does without driving a browser.
+AGENT-NATIVE PARITY: every control the right-click menu offers is reachable
+here, and the estimate endpoints mirror ``python -m apps.stems estimate``
+exactly, so an agent can drive the identical flow without a browser.
 """
 from __future__ import annotations
 
@@ -32,6 +35,7 @@ class TierOut(BaseModel):
 
     key: str
     name: str
+    where: str
     preset_tag: str
     model: str
     overlap: float
@@ -40,6 +44,8 @@ class TierOut(BaseModel):
     purpose: str
     evidence: str
     evidence_strength: str
+    availability: str
+    unavailable_because: str
     is_default: bool
 
 
@@ -50,7 +56,10 @@ class TierEstimateOut(BaseModel):
 
     tier: str
     name: str
+    where: str
     gpu: str
+    availability: str
+    unavailable_because: str
     measured: bool
     seconds: Optional[float] = None
     usd: Optional[float] = None
@@ -81,6 +90,7 @@ def list_tiers() -> list[TierOut]:
         TierOut(
             key=t.key,
             name=t.name,
+            where=t.where,
             preset_tag=t.preset_tag,
             model=t.model,
             overlap=t.overlap,
@@ -89,9 +99,11 @@ def list_tiers() -> list[TierOut]:
             purpose=t.purpose,
             evidence=t.evidence,
             evidence_strength=t.evidence_strength,
+            availability=t.availability,
+            unavailable_because=t.unavailable_because,
             is_default=(t.key == tiercfg.DEFAULT_TIER),
         )
-        for t in tiercfg.TIERS.values()
+        for t in tiercfg.ladder()  # ladder order, NOT_APPLICABLE rungs included
     ]
 
 
@@ -108,26 +120,156 @@ def estimate(
     """
     _ensure_loaded()
     out: list[TierEstimateOut] = []
-    for tier in tiercfg.TIERS.values():
+    for tier in tiercfg.ladder():
         card = gpu or tier.gpu
         try:
             secs = tiercfg.estimate_seconds(seconds, tier.key, card)
             usd = tiercfg.estimate_usd(seconds, tier.key, card)
             tp = tiercfg.THROUGHPUT[f"{tier.key}@{card}"]
             out.append(TierEstimateOut(
-                tier=tier.key, name=tier.name, gpu=card, measured=True,
+                tier=tier.key, name=tier.name, where=tier.where, gpu=card,
+                availability=tier.availability,
+                unavailable_because=tier.unavailable_because, measured=True,
                 seconds=round(secs, 1), usd=round(usd, 4),
                 measured_at=tp.measured_at, n_tracks=tp.n_tracks,
                 r_squared=tp.r_squared,
             ))
         except tiercfg.ThroughputNotMeasured as exc:
             out.append(TierEstimateOut(
-                tier=tier.key, name=tier.name, gpu=card, measured=False,
+                tier=tier.key, name=tier.name, where=tier.where, gpu=card,
+                availability=tier.availability,
+                unavailable_because=tier.unavailable_because, measured=False,
                 unavailable_reason=str(exc),
             ))
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     return EstimateOut(duration_s=seconds, tiers=out)
+
+
+class GenerateIn(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    stable_id: str
+    tier: str
+
+
+# In-process job table. Deliberately NOT persisted: a job whose process died
+# with the server is not a job, and pretending otherwise on restart would be
+# exactly the invented state this codebase forbids.
+_JOBS: dict[str, dict] = {}
+
+
+def _repo_root() -> "Path":
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[4]
+
+
+def _generate_command(tier, stable_id: str, audio_path: str) -> list[str]:
+    """The exact argv for this tier. One place, so CLI and UI cannot diverge."""
+    root = _repo_root()
+    if tier.where == "local":
+        return [
+            "uv", "run", str(root / "scripts/stem_bundle_worker.py"),
+            "--audio", audio_path,
+            "--stable-id", stable_id,
+            "--out-dir", str(root / "data/state/stems"),
+        ]
+    return [
+        "uv", "run", "--with", "modal", "python", "-m",
+        "scripts.modal_vocal_farm",
+        "--tier", tier.key,
+        "--only-stable-id", stable_id,
+    ]
+
+
+@router.post("/generate", response_model=dict)
+def generate(body: GenerateIn) -> dict:
+    """Start a real separation for one track at one rung. No mocking.
+
+    Returns immediately with a job id; the work runs as a subprocess. This is
+    the programmatic half of the right-click menu item, so an agent can drive
+    the identical flow (AGENT-NATIVE PARITY).
+    """
+    import subprocess
+    import uuid
+
+    _ensure_loaded()
+    try:
+        tier = tiercfg.get_tier(body.tier)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if tier.availability != "AVAILABLE":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"tier {tier.key} is {tier.availability}: "
+                f"{tier.unavailable_because}"
+            ),
+        )
+
+    from apps.shared.paths import DATA_DIR
+    from apps.stems.cli import resolve_audio_path
+
+    try:
+        audio_path = resolve_audio_path(DATA_DIR, body.stable_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    cmd = _generate_command(tier, body.stable_id, str(audio_path))
+    job_id = uuid.uuid4().hex[:12]
+    log = _repo_root() / ".tmp/stem-jobs" / f"{job_id}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    handle = log.open("w")
+    proc = subprocess.Popen(  # noqa: S603
+        cmd, cwd=str(_repo_root()), stdout=handle, stderr=subprocess.STDOUT
+    )
+    _JOBS[job_id] = {
+        "job_id": job_id,
+        "stable_id": body.stable_id,
+        "tier": tier.key,
+        "command": cmd,
+        "log": str(log),
+        "proc": proc,
+    }
+    return {
+        "job_id": job_id,
+        "tier": tier.key,
+        "stable_id": body.stable_id,
+        "command": " ".join(cmd),
+        "log": str(log),
+        "poll": f"/api/v1/stems/jobs/{job_id}",
+    }
+
+
+@router.get("/jobs/{job_id}", response_model=dict)
+def job_status(job_id: str) -> dict:
+    """Live state of one generate job. Reports the real returncode, not a guess."""
+    from pathlib import Path
+
+    job = _JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"no job {job_id!r}")
+    rc = job["proc"].poll()
+    if rc is None:
+        state = "running"
+    elif rc == 0:
+        state = "done"
+    else:
+        state = "failed"
+    tail = ""
+    log_path = Path(job["log"])
+    if log_path.exists():
+        tail = log_path.read_text(errors="replace")[-4000:]
+    return {
+        "job_id": job_id,
+        "stable_id": job["stable_id"],
+        "tier": job["tier"],
+        "state": state,
+        "returncode": rc,
+        "command": " ".join(job["command"]),
+        "log_tail": tail,
+    }
 
 
 @router.get("/estimate/batch", response_model=dict)

@@ -44,11 +44,32 @@ def measured(monkeypatch):
 
 
 # ----- config coherence ------------------------------------------------------
-def test_three_tiers_exist_and_are_distinct():
-    """if the tier table has fewer than three distinct products, config broken"""
-    assert set(tiercfg.TIERS) == {"S", "M", "L"}
+def test_ladder_has_four_distinct_rungs():
+    """if the ladder loses a rung or two rungs share a preset, config broken"""
+    assert set(tiercfg.TIERS) == {"LOCAL", "S", "M", "L"}
     tags = [t.preset_tag for t in tiercfg.TIERS.values()]
-    assert len(set(tags)) == 3, f"tiers share a preset tag: {tags}"
+    assert len(set(tags)) == 4, f"rungs share a preset tag: {tags}"
+
+
+def test_tier_order_covers_every_rung():
+    """if a rung is missing from TIER_ORDER it is invisible in every UI"""
+    assert set(tiercfg.TIER_ORDER) == set(tiercfg.TIERS)
+    assert [t.key for t in tiercfg.ladder()] == list(tiercfg.TIER_ORDER)
+
+
+def test_quick_rung_is_not_applicable_with_a_stated_reason():
+    """if an empty rung ships with no reason, it invites re-proposing itself"""
+    quick = tiercfg.get_tier("S")
+    assert quick.availability == "NOT_APPLICABLE"
+    assert quick.unavailable_because.strip()
+
+
+def test_local_rung_names_no_gpu_and_costs_nothing():
+    """if the local rung is priced as cloud GPU time, the ladder lies"""
+    local = tiercfg.get_tier("LOCAL")
+    assert local.where == "local"
+    assert local.gpu == ""
+    assert local.key not in {t.key for t in tiercfg.modal_tiers()}
 
 
 def test_default_tier_is_a_real_tier():
@@ -56,12 +77,16 @@ def test_default_tier_is_a_real_tier():
     assert tiercfg.DEFAULT_TIER in tiercfg.TIERS
 
 
-def test_every_tier_preset_is_runnable_by_the_farm():
-    """if a tier names a preset the farm cannot run, config broken"""
+def test_every_modal_rung_is_runnable_by_the_farm():
+    """if a modal rung names a preset the farm cannot run, config broken
+
+    LOCAL is excluded on purpose: it never touches the farm, so its preset tag
+    is not one of the farm's and requiring it to be would be a false contract.
+    """
     modal = pytest.importorskip("modal")  # noqa: F841
     from scripts.modal_vocal_farm import PRESETS
 
-    for tier in tiercfg.TIERS.values():
+    for tier in tiercfg.modal_tiers():
         assert tier.preset_tag in PRESETS, (
             f"tier {tier.key} names {tier.preset_tag!r}, not in PRESETS"
         )
@@ -71,12 +96,12 @@ def test_every_tier_preset_is_runnable_by_the_farm():
         )
 
 
-def test_every_tier_model_is_baked_into_the_image():
-    """if a tier's model is not baked, every cold container re-downloads it"""
+def test_every_modal_rung_model_is_baked_into_the_image():
+    """if a modal rung's model is not baked, every cold container re-downloads"""
     pytest.importorskip("modal")
     from scripts.modal_vocal_farm import BAKED_MODELS
 
-    for tier in tiercfg.TIERS.values():
+    for tier in tiercfg.modal_tiers():
         assert tier.model in BAKED_MODELS, (
             f"tier {tier.key} needs {tier.model!r}, baked: {BAKED_MODELS}"
         )
@@ -187,7 +212,50 @@ def test_api_lists_every_tier_with_its_evidence():
 
     client = TestClient(create_app())
     rows = client.get("/api/v1/stems/tiers").json()
-    assert {r["key"] for r in rows} == {"S", "M", "L"}
+    assert {r["key"] for r in rows} == {"LOCAL", "S", "M", "L"}
+    assert [r["key"] for r in rows] == list(tiercfg.TIER_ORDER), "ladder order"
     for row in rows:
         assert row["evidence"].strip(), f"tier {row['key']} has no evidence"
         assert row["evidence_strength"] in {"MEASURED", "PARTIAL", "UNMEASURED"}
+
+
+def test_local_rung_does_not_break_the_whole_estimate_response(monkeypatch):
+    """if a rung with no GPU rate 400s the response, every tier disappears
+
+    Regression: estimate_usd checked `card not in GPU_USD_PER_S` before it
+    checked whether the rung even runs on a GPU, so once LOCAL had a measured
+    row it raised KeyError, which the route turned into a 400 for ALL tiers.
+    It looked like a frontend bug and was masked only by LOCAL being unmeasured.
+    """
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from apps.webui.server.app import create_app
+
+    table = {
+        "LOCAL@": _fake_throughput("LOCAL", ""),
+        "M@H100": _fake_throughput("M", "H100"),
+    }
+    monkeypatch.setattr(tiercfg, "THROUGHPUT", table)
+    assert tiercfg.estimate_usd(240.0, "LOCAL") == 0.0
+
+    client = TestClient(create_app())
+    r = client.get("/api/v1/stems/estimate", params={"seconds": 240})
+    assert r.status_code == 200, r.text
+    by_tier = {row["tier"]: row for row in r.json()["tiers"]}
+    assert set(by_tier) == set(tiercfg.TIER_ORDER)
+    assert by_tier["LOCAL"]["measured"] is True
+    assert by_tier["LOCAL"]["usd"] == 0.0
+
+
+def test_generate_refuses_a_not_applicable_rung():
+    """if the API runs a rung the project retired, the ladder is decorative"""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from apps.webui.server.app import create_app
+
+    client = TestClient(create_app())
+    r = client.post("/api/v1/stems/generate", json={"stable_id": "x", "tier": "S"})
+    assert r.status_code == 409, r.text
+    assert "NOT_APPLICABLE" in r.json()["detail"]
