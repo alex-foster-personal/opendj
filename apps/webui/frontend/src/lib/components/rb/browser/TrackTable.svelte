@@ -41,6 +41,7 @@
 		jobProgress,
 		type AnalysisBadge
 	} from '$lib/rb/job-progress.svelte';
+	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 
 	const DECKS: DeckId[] = [1, 2, 3, 4];
 	// Fixed row heights (virtualization window math requires constant height).
@@ -821,6 +822,19 @@
 						ondragover={onRowDragOver}
 						ondrop={(e) => onRowDrop(e, row)}
 					>
+						{#if audioPrefetchStatus(row.stable_id) === 'ready'}
+							<span
+								class="audio-cache-chevron"
+								title="Audio cached for fast deck load"
+								aria-hidden="true"
+							>▸</span>
+						{:else if audioPrefetchStatus(row.stable_id) === 'loading'}
+							<span
+								class="audio-cache-dot"
+								title="Prefetching audio"
+								aria-hidden="true"
+							></span>
+						{/if}
 						<td class="c-funnel">
 							<AnalysisDots badge={_badgeFor(row)} />
 						</td>
@@ -1131,6 +1145,30 @@
 		height: var(--tt-row-h);
 		cursor: default;
 		position: relative;
+	}
+	/* Prefetch markers - top-left of row (same corner as job wash). */
+	.audio-cache-chevron {
+		position: absolute;
+		top: 1px;
+		left: 2px;
+		z-index: 2;
+		font-size: 9px;
+		line-height: 1;
+		color: #f2f4f7;
+		pointer-events: none;
+		opacity: 0.85;
+	}
+	.audio-cache-dot {
+		position: absolute;
+		top: 4px;
+		left: 3px;
+		z-index: 2;
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: #e89a3c;
+		pointer-events: none;
+		box-shadow: 0 0 0 1px color-mix(in srgb, #e89a3c 35%, transparent);
 	}
 	/* Job progress overrides loaded/playing wash (full-row fill). */
 	tbody tr.rb-row-job {
