@@ -56,12 +56,12 @@ MIN_RATE_WINDOW_S: float = 1.0
 
 # A track's stages, in order. The reducer counts completions per stage and
 # infers in-flight as "finished the previous stage but not this one".
-STAGES: tuple[str, ...] = ("upload", "gpu", "stems", "written")
+STAGES: tuple[str, ...] = ("feed_stall", "gpu", "stems", "written")
 
 EVENT_TYPES: frozenset[str] = frozenset(
     {
         "run_start",   # {tracks, preset, dest, max_containers, source_bytes}
-        "upload",      # {stable_id, bytes, s}  local read + handed to Modal
+        "feed_stall",  # {stable_id, bytes, s}  feeder stall, NOT wire transfer
         "gpu",         # {stable_id, separate_s, container_s, coverage_pct, regions}
         "stems_queued",  # {stable_id, bytes}   accepted for transfer
         "stems",       # {stable_id, bytes, s, dest}  transfer complete
@@ -192,10 +192,10 @@ class FarmState:
 
     done: dict[str, int] = field(default_factory=lambda: {s: 0 for s in STAGES})
     bytes_done: dict[str, int] = field(
-        default_factory=lambda: {"upload": 0, "stems": 0}
+        default_factory=lambda: {"feed_stall": 0, "stems": 0}
     )
     seconds_in: dict[str, float] = field(
-        default_factory=lambda: {"upload": 0.0, "stems": 0.0}
+        default_factory=lambda: {"feed_stall": 0.0, "stems": 0.0}
     )
     stems_queued: int = 0
     container_s: float = 0.0
@@ -223,10 +223,10 @@ class FarmState:
             self.max_containers = event.get("max_containers", 0)
             self.source_bytes = event.get("source_bytes", 0)
             self.started_ts = event.get("ts", 0.0)
-        elif kind == "upload":
-            self.done["upload"] += 1
-            self.bytes_done["upload"] += event.get("bytes", 0)
-            self.seconds_in["upload"] += event.get("s", 0.0)
+        elif kind == "feed_stall":
+            self.done["feed_stall"] += 1
+            self.bytes_done["feed_stall"] += event.get("bytes", 0)
+            self.seconds_in["feed_stall"] += event.get("s", 0.0)
         elif kind == "gpu":
             self.done["gpu"] += 1
             self.container_s += event.get("container_s", 0.0)
@@ -281,11 +281,11 @@ class FarmState:
         later ones leaves a phantom backlog that never drains. That phantom is
         exactly what a reader would misread as a stalled transfer.
         """
-        if stage == "upload":
-            return max(0, self.tracks - self.done["upload"]
-                       - self.failed_at["upload"])
+        if stage == "feed_stall":
+            return max(0, self.tracks - self.done["feed_stall"]
+                       - self.failed_at["feed_stall"])
         if stage == "gpu":
-            return max(0, self.done["upload"] - self.done["gpu"]
+            return max(0, self.done["feed_stall"] - self.done["gpu"]
                        - self.failed_at["gpu"])
         if stage == "stems":
             return max(0, self.stems_queued - self.done["stems"]
