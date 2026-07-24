@@ -18,6 +18,8 @@ export interface Track {
 	album: string | null;
 	bpm: number | null;
 	key: string | null;
+	/** From TrackOut.duration_ms. Null when the file has never been probed. */
+	duration_ms: number | null;
 	rating: number | null;
 	tags: string[];
 	notes: string | null;

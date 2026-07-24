@@ -5,7 +5,7 @@
  *
  * One line of intent per test.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const SID = '0'.repeat(40);
 
@@ -42,7 +42,7 @@ const RB_META_BASE = {
 	cue_count: 0
 };
 
-async function mockTrackWithQuality(page, quality: Record<string, unknown>) {
+async function mockTrackWithQuality(page: Page, quality: Record<string, unknown>) {
 	await page.route(`**/api/v1/tracks/${SID}`, (route) =>
 		route.fulfill({
 			status: 200,
