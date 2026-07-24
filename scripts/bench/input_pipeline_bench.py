@@ -28,12 +28,17 @@ so both arms pay first-read materialisation. ``--verify-eviction`` additionally
 re-checks each sampled file's residency immediately before its arm runs and
 refuses to report if the sample warmed up in between.
 
-THIS BENCHMARK IS SELF-DEPLETING, so treat repeat runs with suspicion. Every
-run permanently materialises the files it samples: the evicted pool fell from
-282 to 199 over five runs. Successive runs therefore draw from a shrinking
-population, and a seed that once picked evicted files may not any more. Vary
-``--seed``, and if the evicted count is nearly exhausted, stop rather than
-quietly measuring warm files and calling them cold.
+THIS BENCHMARK IS SELF-DEPLETING AND IS NOW OFF BY DEFAULT. Every run
+permanently materialises the files it samples: the evicted pool fell from 282
+to 199 over five runs, about a third of the population the read-ahead exists to
+serve. That population is non-renewable here (only new imports or an iCloud
+purge restore it) and the farm's evicted-file smoke is drawn from it, so the
+timed arms REFUSE to run without ``--consume-evicted-files``. See
+``assert_consumption_allowed``. The conclusion is already recorded below; do
+not re-measure without coordinating first.
+
+Run (the projection needs no reads and is always safe):
+  uv run python scripts/bench/input_pipeline_bench.py --sample 24  # refuses
 
   ✔︎ ✅ 🎯 serial and prefetched arms read disjoint file sets of comparable
     size, both cold.
@@ -44,10 +49,6 @@ quietly measuring warm files and calling them cold.
     what Modal's feeder ceiling is denominated in.
     [if] prefetched items/s <= serial items/s on cold files [then] the fix
     bought nothing and the report says so
-
-Run:
-  uv run python scripts/bench/input_pipeline_bench.py --sample 24
-  uv run python scripts/bench/input_pipeline_bench.py --sample 24 --json out.json
 
 -Claude
 """
@@ -74,6 +75,13 @@ from apps.vocals.prefetch import (
 # by 128, but the 10-track smoke predates the instrumentation and contributed
 # no container_s, so it inflated the denominator and understated the figure.
 CONTAINER_S_PER_TRACK: float = 8.09
+# The BETTER scaling basis. separate_s is roughly proportional to track
+# duration, so projecting GPU cost by track count assumes the backlog has the
+# same mean duration as the measured sample, and it does not: the ledger's 118
+# tracks average 328.0s while the 989-track backlog averages 288.4s (verified
+# against state.db). Track-count scaling therefore overstates the GPU floor by
+# ~14%. 954.1 container-seconds over 645.1 stem-minutes of audio.
+CONTAINER_S_PER_AUDIO_S: float = 954.1 / (645.1 * 60)
 CONFIGURED_MAX_CONTAINERS: int = 10
 # Mac uplink, measured Fri 24 Jul 2026 by the throughput agent. The 25 MB/s in
 # the asset-store skill doc is stale. Used only to state the transfer floor
@@ -206,7 +214,7 @@ def _time_arm(
 
 def project_gap_impact(
     cold_item_s: float, warm_item_s: float, evicted: int, resident: int,
-    gap_bytes: int,
+    gap_bytes: int, gap_audio_s: float = 0.0,
 ) -> dict[str, Any]:
     """What the read-ahead is actually worth on the REAL batch, not this sample.
 
@@ -236,7 +244,15 @@ def project_gap_impact(
     serial_items_per_s = 1.0 / serial_item_s
     # Every evicted file's first touch is dead time for the WHOLE pipeline.
     freeze_s = evicted * cold_item_s
-    gpu_floor_s = total * CONTAINER_S_PER_TRACK / CONFIGURED_MAX_CONTAINERS
+    # Audio-seconds when we have them, track count only as a fallback: see
+    # CONTAINER_S_PER_AUDIO_S for why the two disagree by ~14%.
+    if gap_audio_s > 0:
+        gpu_s_total = gap_audio_s * CONTAINER_S_PER_AUDIO_S
+        gpu_basis = "audio-seconds"
+    else:
+        gpu_s_total = total * CONTAINER_S_PER_TRACK
+        gpu_basis = "track-count (overstates: assumes the sample's mean duration)"
+    gpu_floor_s = gpu_s_total / CONFIGURED_MAX_CONTAINERS
     upload_floor_s = gap_bytes / 1e6 / UPLINK_MB_S
     return {
         "gap_tracks": total,
@@ -250,6 +266,7 @@ def project_gap_impact(
         "pipeline_freeze_s": round(freeze_s, 0),
         "pipeline_freeze_min": round(freeze_s / 60, 1),
         "gpu_floor_min": round(gpu_floor_s / 60, 1),
+        "gpu_floor_basis": gpu_basis,
         "upload_floor_min": round(upload_floor_s / 60, 1),
         "freeze_pct_of_run": round(
             100 * freeze_s / max(gpu_floor_s, upload_floor_s), 0
@@ -257,8 +274,14 @@ def project_gap_impact(
     }
 
 
-def gap_composition(state_db: Path, cache_dir: Path) -> tuple[int, int, int]:
-    """(evicted, resident, bytes) over the tracks still to be farmed.
+def gap_composition(
+    state_db: Path, cache_dir: Path
+) -> tuple[int, int, int, float]:
+    """(evicted, resident, bytes, audio_seconds) over the tracks still to farm.
+
+    STATS ONLY, never reads. stat() on an iCloud placeholder returns local
+    metadata and does NOT materialise the file, so this is safe to call
+    repeatedly. Reading would consume the very population it measures.
 
     The already-farmed tracks are the wrong population to measure: farming a
     track reads it, and reading materialises it, so the cached set is only ~5%
@@ -267,7 +290,8 @@ def gap_composition(state_db: Path, cache_dir: Path) -> tuple[int, int, int]:
     connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
     try:
         rows = connection.execute(
-            "SELECT DISTINCT t.stable_id, t.file_path FROM playlist_memberships m "
+            "SELECT DISTINCT t.stable_id, t.file_path, t.duration_ms "
+            "FROM playlist_memberships m "
             "JOIN tracks t ON t.stable_id = m.stable_id "
             "WHERE t.file_path IS NOT NULL AND t.file_path != ''"
         ).fetchall()
@@ -275,7 +299,8 @@ def gap_composition(state_db: Path, cache_dir: Path) -> tuple[int, int, int]:
         connection.close()
     cached = {path.stem for path in cache_dir.glob("*.json")}
     evicted = resident = total_bytes = 0
-    for stable_id, file_path in rows:
+    audio_s = 0.0
+    for stable_id, file_path, duration_ms in rows:
         if stable_id in cached:
             continue
         path = Path(file_path)
@@ -284,11 +309,12 @@ def gap_composition(state_db: Path, cache_dir: Path) -> tuple[int, int, int]:
         except OSError:
             continue
         total_bytes += stat.st_size
+        audio_s += (duration_ms or 0) / 1000.0
         if stat.st_size > 0 and stat.st_blocks == 0:
             evicted += 1
         else:
             resident += 1
-    return evicted, resident, total_bytes
+    return evicted, resident, total_bytes, audio_s
 
 
 def _assert_cold(arm: str, paths: list[Path]) -> None:
@@ -299,6 +325,35 @@ def _assert_cold(arm: str, paths: list[Path]) -> None:
             f"already resident, so this arm would not pay materialisation and "
             f"the comparison would be meaningless. First: {warm[0]}"
         )
+
+
+def assert_consumption_allowed(consume_evicted: bool) -> None:
+    """Refuse the timed arms unless the caller has explicitly accepted the cost.
+
+    THE EVICTED POOL IS NON-RENEWABLE WITHIN THIS LIBRARY. Reading an iCloud
+    placeholder materialises it permanently; only new imports or an explicit
+    iCloud purge restore one. Five runs of this benchmark took the pool from
+    282 files to 199, i.e. roughly a third of the population the read-ahead
+    exists to serve, and the evicted-file smoke is a GATE on the 989-track
+    farm. Every further run makes that gate less meaningful.
+
+    So the default is REFUSE. This is a guard rather than a note in a docstring
+    because the failure mode is a well-meaning agent running it "just once
+    more" and quietly spending a shared, unrecoverable resource.
+    """
+    if consume_evicted:
+        return
+    raise SystemExit(
+        "refusing to run: the timed arms READ iCloud-evicted files, which "
+        "materialises them permanently and shrinks the population the "
+        "evicted-file farm smoke is drawn from (282 -> 199 across five prior "
+        "runs).\n"
+        "The measurement it produced is already recorded and its conclusion "
+        "is settled: input RATE was never binding on the real gap mix; what "
+        "the read-ahead removes is whole-pipeline freeze.\n"
+        "If you genuinely need to re-measure, coordinate first, then pass "
+        "--consume-evicted-files."
+    )
 
 
 def run_benchmark(
@@ -360,7 +415,7 @@ def run_benchmark(
     print(f"  {warm.arm}: {warm.items_per_s} items/s (control, no eviction)")
 
     speedup = prefetched.items_per_s / serial.items_per_s
-    evicted_n, resident_n, gap_bytes = gap_composition(
+    evicted_n, resident_n, gap_bytes, gap_audio_s = gap_composition(
         state_db, Path(str(state_db.parent / "vocal-cache"))
     )
     projection = project_gap_impact(
@@ -369,6 +424,7 @@ def run_benchmark(
         evicted=evicted_n,
         resident=resident_n,
         gap_bytes=gap_bytes,
+        gap_audio_s=gap_audio_s,
     )
     return {
         "container_s_per_track": CONTAINER_S_PER_TRACK,
@@ -416,6 +472,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-verify-eviction", dest="verify_eviction", action="store_false",
         help="skip the pre-arm residency check (only for a warm-only rerun)",
     )
+    parser.add_argument(
+        "--consume-evicted-files", action="store_true",
+        help="REQUIRED to run the timed arms. They permanently materialise the "
+             "evicted files they sample, shrinking a non-renewable pool that "
+             "the farm's evicted-file smoke is drawn from. Off by default.",
+    )
     parser.set_defaults(verify_eviction=True)
     return parser
 
@@ -429,6 +491,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         data_dir = DATA_DIR
 
+    assert_consumption_allowed(args.consume_evicted_files)
     report = run_benchmark(
         state_db=data_dir / "state" / "state.db",
         sample=args.sample,

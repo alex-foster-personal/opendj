@@ -244,3 +244,31 @@ def test_off_ladder_presets_do_not_invent_a_rung() -> None:
             assert preset.rung == 0, "hdemucs_mmi was never on the overlap ladder"
         else:
             assert preset.rung > 0
+
+
+def test_benchmark_refuses_to_consume_evicted_files_by_default() -> None:
+    """if the benchmark runs unflagged then a non-renewable pool is spent silently"""
+    from scripts.bench.input_pipeline_bench import assert_consumption_allowed
+
+    with pytest.raises(SystemExit, match="refusing to run"):
+        assert_consumption_allowed(consume_evicted=False)
+    assert_consumption_allowed(consume_evicted=True)  # explicit opt-in works
+
+
+def test_gpu_floor_uses_audio_minutes_when_available() -> None:
+    """if the floor scales by track count then it overstates by ~14%"""
+    from scripts.bench.input_pipeline_bench import project_gap_impact
+
+    # The real gap: 989 tracks, 4753.7 audio-min, verified against state.db.
+    by_audio = project_gap_impact(
+        2.24, 0.0046, evicted=174, resident=815, gap_bytes=9_160_000_000,
+        gap_audio_s=4753.7 * 60,
+    )
+    by_tracks = project_gap_impact(
+        2.24, 0.0046, evicted=174, resident=815, gap_bytes=9_160_000_000,
+    )
+    assert by_audio["gpu_floor_basis"] == "audio-seconds"
+    assert by_audio["gpu_floor_min"] == pytest.approx(11.7, abs=0.2)
+    assert by_tracks["gpu_floor_min"] == pytest.approx(13.3, abs=0.2)
+    # Track-count scaling assumes the sample's mean duration and overstates.
+    assert by_tracks["gpu_floor_min"] > by_audio["gpu_floor_min"]
