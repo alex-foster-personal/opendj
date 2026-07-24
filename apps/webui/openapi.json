@@ -8641,6 +8641,29 @@
         ]
       }
     },
+    "/api/v1/sentry/usage": {
+      "get": {
+        "operationId": "sentry_usage_api_v1_sentry_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sentry Usage Api V1 Sentry Usage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sentry Usage",
+        "tags": [
+          "sentry"
+        ]
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "operationId": "get_settings_api_v1_settings_get",
