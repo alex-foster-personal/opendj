@@ -28,6 +28,10 @@ Acceptance:
   [if] PATCH unknown node id [then ⛔️] 404
   [if] PATCH omits If-Match [then ⛔️] 428 without writing
   [if] PATCH presents a stale ledger ETag [then ⛔️] 409 without writing
+  [if] two processes PATCH from one ETag [then] exactly one commits and the
+       loser receives the winner's ETag in a 409 conflict
+  [if] a process exits while holding the ledger lock [then] the next writer
+       acquires the OS-released lock and commits
   [if] another host owns the write lock [then ⛔️] 503 without writing
 """
 from __future__ import annotations
@@ -39,9 +43,16 @@ import re
 import subprocess
 import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
@@ -54,7 +65,8 @@ router = APIRouter(prefix="/progress", tags=["progress"])
 logger = logging.getLogger(__name__)
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[4]
-# Module-level so tests can monkeypatch to a tmp copy of the seed file.
+# Canonical route dependency. Core transactions take an explicit path so tests
+# can exercise disposable production-format ledgers without replacing globals.
 PROGRESS_FILE: Path = REPO_ROOT / "data" / "progress-tree.yaml"
 
 STATUSES: tuple[str, ...] = (
@@ -222,13 +234,12 @@ def _append_note(node: dict[str, Any], segment: str) -> None:
     node["notes"] = f"{existing} | {segment}" if existing else segment
 
 
-def _load_tree() -> dict[str, Any]:
-    if not PROGRESS_FILE.is_file():
-        raise _http_error(
-            status.HTTP_500_INTERNAL_SERVER_ERROR, "progress_file_missing",
-            f"canonical ledger not found at {PROGRESS_FILE}",
-        )
-    tree = yaml.safe_load(PROGRESS_FILE.read_text(encoding="utf-8"))
+def _etag_for_payload(payload: bytes) -> str:
+    return f'"{hashlib.sha256(payload).hexdigest()}"'
+
+
+def _load_tree_payload(payload: bytes) -> dict[str, Any]:
+    tree = yaml.safe_load(payload.decode("utf-8"))
     if not isinstance(tree, dict) or "meta" not in tree or "areas" not in tree:
         raise _http_error(
             status.HTTP_500_INTERNAL_SERVER_ERROR, "progress_file_invalid",
@@ -262,10 +273,19 @@ def _load_tree() -> dict[str, Any]:
     return tree
 
 
-def _file_etag() -> str:
-    """Strong validator for the exact canonical-ledger bytes on disk."""
-    digest = hashlib.sha256(PROGRESS_FILE.read_bytes()).hexdigest()
-    return f'"{digest}"'
+def _read_tree_snapshot(progress_file: Path) -> tuple[dict[str, Any], str, str]:
+    """Read, parse, and hash one immutable ledger payload."""
+    if not progress_file.is_file():
+        raise _http_error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "progress_file_missing",
+            f"canonical ledger not found at {progress_file}",
+        )
+    payload = progress_file.read_bytes()
+    return (
+        _load_tree_payload(payload),
+        _etag_for_payload(payload),
+        payload.decode("utf-8"),
+    )
 
 
 def _header_comment_lines(text: str) -> list[str]:
@@ -279,28 +299,71 @@ def _header_comment_lines(text: str) -> list[str]:
     return lines
 
 
-def _dump_tree_atomic(tree: dict[str, Any]) -> None:
+def _dump_tree_atomic(
+    progress_file: Path,
+    tree: dict[str, Any],
+    current_text: str,
+) -> str:
     """Atomic write: tmp file in the same dir + os.replace.
 
     The leading comment block of the existing file (the schema doc) is
     re-emitted so PATCH rewrites never strip the documentation.
     """
-    header = _header_comment_lines(PROGRESS_FILE.read_text(encoding="utf-8"))
+    header = _header_comment_lines(current_text)
     body = yaml.safe_dump(
         tree, sort_keys=False, allow_unicode=True, default_flow_style=False,
     )
+    rendered = ("\n".join(header) + "\n" if header else "") + body
+    payload = rendered.encode("utf-8")
     fd, tmp_path = tempfile.mkstemp(
-        dir=str(PROGRESS_FILE.parent), prefix=".progress-tree.", suffix=".tmp",
+        dir=str(progress_file.parent), prefix=".progress-tree.", suffix=".tmp",
     )
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            if header:
-                fh.write("\n".join(header) + "\n")
-            fh.write(body)
-        os.replace(tmp_path, PROGRESS_FILE)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, progress_file)
+        if os.name != "nt":
+            directory_fd = os.open(progress_file.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     except BaseException:
         Path(tmp_path).unlink(missing_ok=True)
         raise
+    return _etag_for_payload(payload)
+
+
+@contextmanager
+def _progress_file_lock(progress_file: Path) -> Iterator[None]:
+    """Lock local threads, then processes, for one ledger transaction.
+
+    The adjacent sidecar is persistent by design. OS descriptor cleanup
+    releases the advisory lock even when a process exits abnormally.
+    """
+    with _WRITE_LOCK:
+        lock_path = progress_file.with_name(f"{progress_file.name}.lock")
+        with lock_path.open("a+b") as lock_handle:
+            if os.name == "nt":
+                lock_handle.seek(0, os.SEEK_END)
+                if lock_handle.tell() == 0:
+                    lock_handle.write(b"\0")
+                    lock_handle.flush()
+                    os.fsync(lock_handle.fileno())
+                lock_handle.seek(0)
+                msvcrt.locking(lock_handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if os.name == "nt":
+                    lock_handle.seek(0)
+                    msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -310,14 +373,14 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _file_git_provenance() -> dict[str, Optional[str]]:
+def _file_git_provenance(progress_file: Path) -> dict[str, Optional[str]]:
     """Last commit touching the ledger file; null fields when uncommitted.
 
-    A ledger outside REPO_ROOT (tests point PROGRESS_FILE at a tmp copy)
+    A ledger outside REPO_ROOT (tests use a tmp copy)
     has no git history by definition -> explicit nulls, not a git error.
     """
     try:
-        rel = str(PROGRESS_FILE.resolve().relative_to(REPO_ROOT))
+        rel = str(progress_file.resolve().relative_to(REPO_ROOT))
     except ValueError:
         return {"last_sha": None, "last_author": None, "last_date": None}
     proc = _git("log", "-1", "--format=%H%x1f%an%x1f%aI", "--", rel)
@@ -370,17 +433,128 @@ def _now_iso() -> str:
     )
 
 
+def _patch_progress_file(
+    progress_file: Path,
+    node_id: str,
+    patch: NodePatch,
+    if_match: str,
+) -> tuple[NodePatchOut, str]:
+    """Apply one complete interprocess compare-and-swap transaction."""
+    if not patch.model_dump(exclude_none=True):
+        raise _http_error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "empty_patch",
+            "provide at least one of status/note/commits_append/"
+            "tests_append/verified/build/links/buildable",
+        )
+    alias_used = patch.status in _DEPRECATED_STATUS_ALIASES
+    effective_status = _DEPRECATED_STATUS_ALIASES.get(patch.status, patch.status)
+
+    with _progress_file_lock(progress_file):
+        tree, current_etag, current_text = _read_tree_snapshot(progress_file)
+        if if_match != current_etag:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "conflict",
+                    "message": "If-Match does not match the current progress ledger ETag",
+                    "etag": current_etag,
+                },
+                headers={"ETag": current_etag},
+            )
+        for commit in patch.commits_append or []:
+            _require_resolvable_sha(commit.sha)
+
+        node = _find_node(tree, node_id)
+        status_changing = (
+            effective_status is not None and effective_status != node["status"]
+        )
+        if status_changing:
+            if (
+                effective_status not in _STATUSES_WITHOUT_COMMITS
+                and not patch.commits_append
+            ):
+                raise _http_error(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "status_change_needs_commits",
+                    f"changing status {node['status']!r} -> "
+                    f"{effective_status!r} requires commits_append (only "
+                    "missing/spiked are exempt: they carry no code to cite)",
+                )
+            if effective_status == "user-finalized" and patch.verified is None:
+                raise _http_error(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "user_finalized_needs_verified",
+                    "changing status to user-finalized requires a verified "
+                    "{by, method} block in the same PATCH -- it marks the maintainer's "
+                    "personal QA blessing, the top of the status lifecycle",
+                )
+            node["status"] = effective_status
+
+        if patch.note is not None:
+            node["notes"] = patch.note
+        if patch.commits_append:
+            node.setdefault("commits", [])
+            node["commits"].extend(
+                commit.model_dump() for commit in patch.commits_append
+            )
+        if patch.tests_append:
+            node.setdefault("tests", [])
+            node["tests"].extend(patch.tests_append)
+        if patch.verified is not None:
+            node["verified"] = {
+                "by": patch.verified.by,
+                "date": _now_iso(),
+                "method": patch.verified.method,
+            }
+        if patch.build is not None:
+            node.setdefault("build", {})
+            node["build"].update(patch.build.model_dump(exclude_none=True))
+            node["build"]["updated"] = _now_iso()
+        if patch.links is not None:
+            node.setdefault("links", {})
+            node["links"].update(patch.links.model_dump(exclude_none=True))
+        if patch.buildable is not None:
+            node["buildable"] = patch.buildable.model_dump()
+
+        # Preserve the deprecation note even when the same PATCH sets note.
+        if alias_used:
+            _append_note(
+                node,
+                "DEPRECATED: PATCH sent status 'working', coerced to 'built' "
+                "(alias sunset tracked in .planning/FANOUT-CONVENTIONS.md)",
+            )
+            logger.warning(
+                "progress PATCH %s: deprecated status alias 'working' "
+                "coerced to 'built'", node_id,
+            )
+
+        # Building without a branch/PR is a visible nag, not a write block.
+        if status_changing and effective_status == "building":
+            build = node.get("build") or {}
+            if not build.get("branch") and not build.get("pr"):
+                _append_note(node, "building without branch/pr recorded")
+
+        tree["meta"]["updated"] = _now_iso()
+        new_etag = _dump_tree_atomic(progress_file, tree, current_text)
+        output = NodePatchOut(node=node, meta_updated=tree["meta"]["updated"])
+        return output, new_etag
+
+
 # ----- routes -----------------------------------------------------------------
 
 @router.get("", responses={200: {"headers": _ETAG_RESPONSE_HEADER}})
 def get_progress(response: Response) -> dict[str, Any]:
     """Full parsed tree + ledger-file git provenance + per-area rollups."""
-    tree = _load_tree()
-    response.headers["ETag"] = _file_etag()
+    tree, etag, _text = _read_tree_snapshot(PROGRESS_FILE)
+    response.headers["ETag"] = etag
     rollups = {
         area["id"]: _rollup(area["nodes"]) for area in tree["areas"]
     }
-    return {**tree, "file_git": _file_git_provenance(), "rollups": rollups}
+    return {
+        **tree,
+        "file_git": _file_git_provenance(PROGRESS_FILE),
+        "rollups": rollups,
+    }
 
 
 @router.get("/schema")
@@ -430,107 +604,11 @@ def patch_progress_node(
             "precondition_required",
             "PATCH /progress/nodes/{node_id} requires If-Match header",
         )
-    fields_set = patch.model_dump(exclude_none=True)
-    if not fields_set:
-        raise _http_error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "empty_patch",
-            "provide at least one of status/note/commits_append/"
-            "tests_append/verified/build/links/buildable",
-        )
-    alias_used = patch.status in _DEPRECATED_STATUS_ALIASES
-    effective_status = _DEPRECATED_STATUS_ALIASES.get(patch.status, patch.status)
-
-    with _WRITE_LOCK:
-        current_etag = _file_etag()
-        if if_match != current_etag:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "error": "conflict",
-                    "message": "If-Match does not match the current progress ledger ETag",
-                    "etag": current_etag,
-                },
-                headers={"ETag": current_etag},
-            )
-        for commit in patch.commits_append or []:
-            _require_resolvable_sha(commit.sha)
-
-        tree = _load_tree()
-        node = _find_node(tree, node_id)
-
-        status_changing = (
-            effective_status is not None and effective_status != node["status"]
-        )
-        if status_changing:
-            if (
-                effective_status not in _STATUSES_WITHOUT_COMMITS
-                and not patch.commits_append
-            ):
-                raise _http_error(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    "status_change_needs_commits",
-                    f"changing status {node['status']!r} -> "
-                    f"{effective_status!r} requires commits_append (only "
-                    "missing/spiked are exempt: they carry no code to cite)",
-                )
-            if effective_status == "user-finalized" and patch.verified is None:
-                raise _http_error(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    "user_finalized_needs_verified",
-                    "changing status to user-finalized requires a verified "
-                    "{by, method} block in the same PATCH -- it marks the maintainer's "
-                    "personal QA blessing, the top of the status lifecycle",
-                )
-            node["status"] = effective_status
-
-        if patch.note is not None:
-            node["notes"] = patch.note
-        if patch.commits_append:
-            node.setdefault("commits", [])
-            node["commits"].extend(
-                c.model_dump() for c in patch.commits_append
-            )
-        if patch.tests_append:
-            node.setdefault("tests", [])
-            node["tests"].extend(patch.tests_append)
-        if patch.verified is not None:
-            node["verified"] = {
-                "by": patch.verified.by,
-                "date": _now_iso(),
-                "method": patch.verified.method,
-            }
-        if patch.build is not None:
-            node.setdefault("build", {})
-            node["build"].update(patch.build.model_dump(exclude_none=True))
-            node["build"]["updated"] = _now_iso()
-        if patch.links is not None:
-            node.setdefault("links", {})
-            node["links"].update(patch.links.model_dump(exclude_none=True))
-        if patch.buildable is not None:
-            node["buildable"] = patch.buildable.model_dump()
-
-        # Deprecation note appended AFTER note/build handling so it survives
-        # (and is never clobbered by) an explicit patch.note in the same call.
-        if alias_used:
-            _append_note(
-                node,
-                "DEPRECATED: PATCH sent status 'working', coerced to 'built' "
-                "(alias sunset tracked in .planning/FANOUT-CONVENTIONS.md)",
-            )
-            logger.warning(
-                "progress PATCH %s: deprecated status alias 'working' "
-                "coerced to 'built'", node_id,
-            )
-
-        # Friction nag, not a block: building without a branch/pr recorded
-        # is common early, but should stay visible in the ledger.
-        if status_changing and effective_status == "building":
-            build = node.get("build") or {}
-            if not build.get("branch") and not build.get("pr"):
-                _append_note(node, "building without branch/pr recorded")
-
-        tree["meta"]["updated"] = _now_iso()
-        _dump_tree_atomic(tree)
-        response.headers["ETag"] = _file_etag()
-
-    return NodePatchOut(node=node, meta_updated=tree["meta"]["updated"])
+    output, etag = _patch_progress_file(
+        PROGRESS_FILE,
+        node_id,
+        patch,
+        if_match,
+    )
+    response.headers["ETag"] = etag
+    return output
