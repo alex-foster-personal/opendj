@@ -6,20 +6,34 @@ validated by running the farm. But the fix is entirely local -- it changes how
 fast audio bytes reach ``.starmap`` -- so the thing to measure is the feeder in
 isolation, on the same real library paths, with no GPU and no network.
 
-WHAT IT PROVES: Modal's sync ``.starmap`` pulls its input iterator INLINE on
+WHAT IT MEASURES: Modal's sync ``.starmap`` pulls its input iterator INLINE on
 the event-loop thread (``sync_or_async_iter``, whose own comment warns it
-"could block the event loop"), so the feeder's items-per-second is a hard
-ceiling on container concurrency. If a container holds a GPU for C seconds and
-the feeder emits one item every F seconds, no more than C/F containers can ever
-be busy at once. Raising the feeder's rate raises that ceiling directly.
+"could block the event loop"), so time spent in the feeder is time the whole
+pipeline is frozen: no blob uploads, no dispatch, no output collection.
+
+READ THE PROJECTION, NOT JUST THE ARM RATES. The two timed arms run on a 100%
+iCloud-evicted sample, which is a WORST CASE and not the production
+population. Projected onto the real unfarmed gap (~16-18% evicted), a SERIAL
+feeder already implies far more containers than the cap, so input RATE was
+never the binding constraint on a representative batch. The claim that
+survives is narrower and different in kind: the read-ahead removes several
+minutes of WHOLE-PIPELINE freeze caused by first-touch materialisation. The
+report prints both, and ``verdict_on_real_gap`` is the one to quote.
 
 THE MEASUREMENT TRAP THIS AVOIDS: reading an iCloud-evicted file materialises
 it, so the SECOND arm of a naive A/B runs against warm files and the read-ahead
-looks 10x better than it is. Every timed comparison here therefore runs on
-DISJOINT, size-interleaved halves of the same evicted sample, so both arms pay
-first-read materialisation. ``--verify-eviction`` additionally re-checks each
-sampled file's residency immediately before its arm runs and refuses to report
-if the sample warmed up in between.
+looks hundreds of times better than it is. Every timed comparison here
+therefore runs on DISJOINT, size-interleaved halves of the same evicted sample,
+so both arms pay first-read materialisation. ``--verify-eviction`` additionally
+re-checks each sampled file's residency immediately before its arm runs and
+refuses to report if the sample warmed up in between.
+
+THIS BENCHMARK IS SELF-DEPLETING, so treat repeat runs with suspicion. Every
+run permanently materialises the files it samples: the evicted pool fell from
+282 to 199 over five runs. Successive runs therefore draw from a shrinking
+population, and a seed that once picked evicted files may not any more. Vary
+``--seed``, and if the evicted count is nearly exhausted, stop rather than
+quietly measuring warm files and calling them cold.
 
   ✔︎ ✅ 🎯 serial and prefetched arms read disjoint file sets of comparable
     size, both cold.
@@ -55,11 +69,17 @@ from apps.vocals.prefetch import (
     read_ahead,
 )
 
-# The container time one track holds a GPU for, measured over the 128-track
-# production run (954 container-seconds / 128 tracks). Used only to turn a
-# feeder rate into the container-concurrency ceiling it implies.
-CONTAINER_S_PER_TRACK: float = 7.45
+# Container time one track holds a GPU for: 954.1 container-seconds over the
+# 118 INSTRUMENTED entries of the 128-track run. An earlier 7.45 here divided
+# by 128, but the 10-track smoke predates the instrumentation and contributed
+# no container_s, so it inflated the denominator and understated the figure.
+CONTAINER_S_PER_TRACK: float = 8.09
 CONFIGURED_MAX_CONTAINERS: int = 10
+# Mac uplink, measured Fri 24 Jul 2026 by the throughput agent. The 25 MB/s in
+# the asset-store skill doc is stale. Used only to state the transfer floor
+# alongside the GPU floor, so nobody tunes the feeder past the point where
+# something else binds.
+UPLINK_MB_S: float = 14.6
 
 
 @dataclass(frozen=True)
@@ -184,6 +204,93 @@ def _time_arm(
     )
 
 
+def project_gap_impact(
+    cold_item_s: float, warm_item_s: float, evicted: int, resident: int,
+    gap_bytes: int,
+) -> dict[str, Any]:
+    """What the read-ahead is actually worth on the REAL batch, not this sample.
+
+    READ THIS BEFORE QUOTING THE ARM RATES ABOVE. Both timed arms run on a
+    100%-evicted sample, deliberately, because that is the only way to compare
+    like with like on first-touch cost. The production gap is nothing like
+    that: it is ~18% evicted and ~82% already resident, and a resident read is
+    roughly 500x faster. So the arm-to-arm speedup is a WORST-CASE figure and
+    must not be presented as the expected throughput gain.
+
+    Projected onto the real mix, a SERIAL feeder already clears the container
+    cap comfortably. That kills the throughput argument for this fix: input
+    RATE was not the binding constraint on a representative batch.
+
+    What survives, and is the honest reason to keep the read-ahead, is that a
+    blocking read does not merely delay its own input. Modal's sync .starmap
+    advances its event loop on the CALLING thread, so the read freezes blob
+    uploads, input dispatch and output collection TOO. The cost is therefore
+    (number of evicted files) x (first-touch seconds) of whole-pipeline
+    stall, whatever the average rate looks like.
+    """
+    total = evicted + resident
+    if total <= 0:
+        raise SystemExit("error: empty gap, nothing to project onto")
+    evicted_fraction = evicted / total
+    serial_item_s = evicted_fraction * cold_item_s + (1 - evicted_fraction) * warm_item_s
+    serial_items_per_s = 1.0 / serial_item_s
+    # Every evicted file's first touch is dead time for the WHOLE pipeline.
+    freeze_s = evicted * cold_item_s
+    gpu_floor_s = total * CONTAINER_S_PER_TRACK / CONFIGURED_MAX_CONTAINERS
+    upload_floor_s = gap_bytes / 1e6 / UPLINK_MB_S
+    return {
+        "gap_tracks": total,
+        "gap_gb": round(gap_bytes / 1e9, 2),
+        "evicted": evicted,
+        "evicted_pct": round(100 * evicted_fraction, 1),
+        "serial_items_per_s_mixed": round(serial_items_per_s, 2),
+        "serial_implied_containers_mixed": round(
+            serial_items_per_s * CONTAINER_S_PER_TRACK, 1
+        ),
+        "pipeline_freeze_s": round(freeze_s, 0),
+        "pipeline_freeze_min": round(freeze_s / 60, 1),
+        "gpu_floor_min": round(gpu_floor_s / 60, 1),
+        "upload_floor_min": round(upload_floor_s / 60, 1),
+        "freeze_pct_of_run": round(
+            100 * freeze_s / max(gpu_floor_s, upload_floor_s), 0
+        ),
+    }
+
+
+def gap_composition(state_db: Path, cache_dir: Path) -> tuple[int, int, int]:
+    """(evicted, resident, bytes) over the tracks still to be farmed.
+
+    The already-farmed tracks are the wrong population to measure: farming a
+    track reads it, and reading materialises it, so the cached set is only ~5%
+    evicted while the unfarmed set is ~18%.
+    """
+    connection = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
+    try:
+        rows = connection.execute(
+            "SELECT DISTINCT t.stable_id, t.file_path FROM playlist_memberships m "
+            "JOIN tracks t ON t.stable_id = m.stable_id "
+            "WHERE t.file_path IS NOT NULL AND t.file_path != ''"
+        ).fetchall()
+    finally:
+        connection.close()
+    cached = {path.stem for path in cache_dir.glob("*.json")}
+    evicted = resident = total_bytes = 0
+    for stable_id, file_path in rows:
+        if stable_id in cached:
+            continue
+        path = Path(file_path)
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        total_bytes += stat.st_size
+        if stat.st_size > 0 and stat.st_blocks == 0:
+            evicted += 1
+        else:
+            resident += 1
+    return evicted, resident, total_bytes
+
+
 def _assert_cold(arm: str, paths: list[Path]) -> None:
     warm = [p for p in paths if not is_evicted(p)]
     if warm:
@@ -253,16 +360,36 @@ def run_benchmark(
     print(f"  {warm.arm}: {warm.items_per_s} items/s (control, no eviction)")
 
     speedup = prefetched.items_per_s / serial.items_per_s
+    evicted_n, resident_n, gap_bytes = gap_composition(
+        state_db, Path(str(state_db.parent / "vocal-cache"))
+    )
+    projection = project_gap_impact(
+        cold_item_s=serial.mean_item_s,
+        warm_item_s=warm.mean_item_s,
+        evicted=evicted_n,
+        resident=resident_n,
+        gap_bytes=gap_bytes,
+    )
     return {
         "container_s_per_track": CONTAINER_S_PER_TRACK,
         "configured_max_containers": CONFIGURED_MAX_CONTAINERS,
         "prefetch": {"depth": depth, "workers": workers, "max_bytes": max_bytes},
         "arms": [asdict(serial), asdict(prefetched), asdict(warm)],
         "speedup_items_per_s": round(speedup, 2),
+        "gap_projection": projection,
         "verdict": (
-            "prefetch raises the feeder ceiling"
+            "prefetch raises the WORST-CASE feeder ceiling"
             if prefetched.implied_max_containers > serial.implied_max_containers
             else "NO IMPROVEMENT: prefetch did not raise the feeder ceiling"
+        ),
+        # The claim that actually survives contact with the real population.
+        "verdict_on_real_gap": (
+            f"input RATE was never binding on the real mix (a serial feeder "
+            f"already implies {projection['serial_implied_containers_mixed']} "
+            f"containers against a cap of {CONFIGURED_MAX_CONTAINERS}); the win "
+            f"is removing {projection['pipeline_freeze_min']} min of "
+            f"whole-pipeline freeze, {projection['freeze_pct_of_run']}% of a "
+            f"projected run"
         ),
     }
 
@@ -324,7 +451,31 @@ def main(argv: Optional[list[str]] = None) -> int:
         f"(cap is {CONFIGURED_MAX_CONTAINERS})"
     )
     print(f"warm control: {warm['items_per_s']} items/s")
-    print(f"verdict: {report['verdict']}")
+    print(f"verdict (worst case): {report['verdict']}")
+
+    gp = report["gap_projection"]
+    print(
+        f"\nPROJECTED ONTO THE REAL GAP ({gp['gap_tracks']} tracks, "
+        f"{gp['gap_gb']} GB, {gp['evicted_pct']}% evicted -- NOT the 100% "
+        f"evicted sample timed above):"
+    )
+    print(
+        f"  a SERIAL feeder on this mix already implies "
+        f"{gp['serial_implied_containers_mixed']} containers against a cap of "
+        f"{CONFIGURED_MAX_CONTAINERS}, so input RATE was never binding here"
+    )
+    print(
+        f"  what the read-ahead removes is {gp['pipeline_freeze_min']} min of "
+        f"WHOLE-PIPELINE freeze ({gp['evicted']} evicted files x "
+        f"{report['arms'][0]['mean_item_s']}s first touch), "
+        f"{gp['freeze_pct_of_run']}% of a projected run"
+    )
+    print(
+        f"  floors: GPU {gp['gpu_floor_min']} min at {CONFIGURED_MAX_CONTAINERS} "
+        f"containers, upload {gp['upload_floor_min']} min at {UPLINK_MB_S} MB/s "
+        "-- so a working 10x fan-out lands near the transfer floor and there is "
+        "nothing further to win from concurrency"
+    )
     if args.json is not None:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")

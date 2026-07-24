@@ -135,3 +135,46 @@ def test_serial_control_arm_is_reachable() -> None:
     stream = read_ahead([Path(__file__)], depth=1, workers=1)
     assert next(stream).path == Path(__file__)
     stream.close()
+
+
+#----- input-pipeline benchmark projection ------------------------------------
+# The arm rates in that benchmark are a 100%-evicted worst case. These pin the
+# projection onto the REAL gap, which is what corrected the headline claim from
+# "the feeder rate is binding" to "the feeder freezes the whole pipeline".
+
+
+def test_serial_feeder_already_clears_the_cap_on_the_real_mix() -> None:
+    """if the mixed-population rate is not projected then a worst case reads as typical"""
+    from scripts.bench.input_pipeline_bench import project_gap_impact
+
+    # Measured: ~2.2s per cold evicted file, ~0.005s per resident file.
+    out = project_gap_impact(
+        cold_item_s=2.24, warm_item_s=0.0046,
+        evicted=174, resident=815, gap_bytes=9_160_000_000,
+    )
+    assert out["evicted_pct"] == pytest.approx(17.6, abs=0.1)
+    # The point of the whole projection: rate was never the constraint here.
+    assert out["serial_implied_containers_mixed"] > 10
+
+
+def test_freeze_scales_with_evicted_count_not_batch_size() -> None:
+    """if freeze tracked batch size then adding resident files would fake a cost"""
+    from scripts.bench.input_pipeline_bench import project_gap_impact
+
+    few = project_gap_impact(2.0, 0.005, evicted=10, resident=100, gap_bytes=1)
+    many_resident = project_gap_impact(
+        2.0, 0.005, evicted=10, resident=10_000, gap_bytes=1
+    )
+    assert few["pipeline_freeze_s"] == many_resident["pipeline_freeze_s"] == 20.0
+    more_evicted = project_gap_impact(
+        2.0, 0.005, evicted=100, resident=100, gap_bytes=1
+    )
+    assert more_evicted["pipeline_freeze_s"] == 200.0
+
+
+def test_empty_gap_is_refused_not_divided_by_zero() -> None:
+    """if an empty gap divides by zero then the projection dies mid-report"""
+    from scripts.bench.input_pipeline_bench import project_gap_impact
+
+    with pytest.raises(SystemExit, match="empty gap"):
+        project_gap_impact(2.0, 0.005, evicted=0, resident=0, gap_bytes=0)
