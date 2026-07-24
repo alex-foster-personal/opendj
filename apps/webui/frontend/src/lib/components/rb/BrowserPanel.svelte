@@ -90,6 +90,7 @@
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import { fetchAllPages } from './browser/virtual-window';
+	import { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { ensureAnlz, getAnlzEntry } from './wave/anlz-cache.svelte';
 	import { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 	import SpotifySourcePanel from './browser/SpotifySourcePanel.svelte';
@@ -1108,6 +1109,9 @@
 		p.select(row.stable_id, extend, range, orderedIds);
 		// Warm /anlz so a subsequent deck load shares the in-flight fetch.
 		ensureAnlz(row.stable_id);
+		// Warm audio ArrayBuffer in background (never awaited - see
+		// audio-prefetch-cache.svelte.ts). Saves ~1s fetchAudio on warm load.
+		ensureAudioPrefetch(row.stable_id);
 	}
 
 	function setSearch(next: string): void {

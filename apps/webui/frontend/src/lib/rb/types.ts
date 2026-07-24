@@ -296,6 +296,9 @@ export interface DeckState {
 	 * when /anlz 404s. Renders the 'no analysis' treatment - never invented
 	 * waveforms. null = not attempted or succeeded. */
 	anlz_error: string | null;
+	/** Last successful load wall time in ms; null until a load completes.
+	 * UI shows a rounded form (e.g. 2.3s / ~300ms) - performance feature. */
+	last_load_latency_ms: number | null;
 	/** Globally exclusive MASTER deck state. */
 	is_master: boolean;
 }

@@ -70,7 +70,8 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
-import { recordPerfEvent } from '$lib/rb/perf-event-log';
+import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 	import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
@@ -183,6 +184,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		hot_cue_revisions: _emptyHotCueRevisions(),
 		anlz: null,
 		anlz_error: null,
+		last_load_latency_ms: null,
 		is_master: false
 	};
 }
@@ -3258,9 +3260,7 @@ class RbAudioEngine implements AudioEngine {
 		let latencySec = 0;
 		let processor: _DeckProcessor | null = null;
 		let candidateStemState: StemDeckState = unavailableStemDeckState();
-		// SPIKE-PERF: localStorage.setItem('mdt.perf','1') then reload - one breakdown log per load.
-		const perfOn =
-			typeof localStorage !== 'undefined' && localStorage.getItem('mdt.perf') === '1';
+		// Always-on stage timings -> recordPerfTiming / DevTools filter `[perf]`.
 		const perfT0 = performance.now();
 		const perfMs = (): number => Math.round(performance.now() - perfT0);
 		const stages: Record<string, number> = {};
@@ -3269,7 +3269,7 @@ class RbAudioEngine implements AudioEngine {
 			try {
 				return await work;
 			} finally {
-				if (perfOn) stages[name] = Math.round(performance.now() - t0);
+				stages[name] = Math.round(performance.now() - t0);
 			}
 		};
 		try {
@@ -3279,16 +3279,23 @@ class RbAudioEngine implements AudioEngine {
 			const anlzPromise: Promise<AnlzWithVocals> = anlzCached
 				? Promise.resolve(cachedAnlz.data as AnlzWithVocals)
 				: fetchAnlz(stable_id);
+			// Prefetch hit: copyPrefetchedAudio (slice) so decode cannot detach cache.
+			const prefetchedAudio = copyPrefetchedAudio(stable_id);
+			const audioPromise =
+				prefetchedAudio !== null
+					? Promise.resolve(prefetchedAudio)
+					: fetchAudioArrayBuffer(stable_id);
 			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots, stemProbe] =
 				await Promise.all([
 					time('getTrack', getTrack(stable_id)),
-					time('fetchAudio', fetchAudioArrayBuffer(stable_id)),
+					time(prefetchedAudio !== null ? 'fetchAudioCacheHit' : 'fetchAudio', audioPromise),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
 					time('fetchHotCues', fetchHotCueSlots(stable_id)),
 					time('probeStem', probeStemArtifact(stable_id))
 				]);
-			if (perfOn) stages.fetchWall = perfMs();
-			if (perfOn) stages.audioBytes = audioBytes.byteLength;
+			stages.fetchWall = perfMs();
+			stages.audioBytes = audioBytes.byteLength;
+			stages.audioPrefetchHit = prefetchedAudio !== null ? 1 : 0;
 			const ctx = _ensureGraph();
 			track = trackRes.track;
 			anlz = requiredAnlz;
@@ -3351,12 +3358,10 @@ class RbAudioEngine implements AudioEngine {
 				candidateStemState = unavailableStemDeckState(stemProbe.error);
 			}
 			latencySec = await time('processorLatency', processor.latencySec());
-			if (perfOn) stages.totalBeforeSwap = perfMs();
+			stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
-			if (perfOn) {
-				stages.failedAt = perfMs();
-				console.info(`[perf] load FAIL deck=${deck}`, stages, String(exc));
-			}
+			stages.failedAt = perfMs();
+			recordPerfTiming('deck-load-fail', stages, deck);
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
@@ -3452,10 +3457,9 @@ class RbAudioEngine implements AudioEngine {
 				}
 			}
 		});
-		if (perfOn) {
-			stages.total = perfMs();
-			console.info(`[perf] load deck=${deck} sid=${stable_id.slice(0, 12)}…`, stages);
-		}
+		stages.total = perfMs();
+		st.last_load_latency_ms = stages.total;
+		recordPerfTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck);
 	}
 
 	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR
