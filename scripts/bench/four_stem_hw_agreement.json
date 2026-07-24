@@ -1,0 +1,186 @@
+{
+  "question": "does the production card change per-stem SI-SDR, or only the clock?",
+  "gpu": "Modal H100",
+  "tolerance_db": 0.05,
+  "cells_compared": 16,
+  "cells_by_source": {
+    "ladder_4stem_all.json (committed, Apple M3 CPU)": 8,
+    ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)": 8
+  },
+  "n_disagreements": 0,
+  "max_abs_gpu_minus_cpu_db": 0.034,
+  "mean_abs_gpu_minus_cpu_db": 0.0105,
+  "worst_cell": {
+    "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+    "track": "Al James - Schoolboy Facination",
+    "model": "htdemucs",
+    "stem": "bass",
+    "cpu_si_sdr": 9.44,
+    "gpu_si_sdr": 9.406,
+    "gpu_minus_cpu_db": -0.034,
+    "agrees": true
+  },
+  "verdict": "AGREE: the card changes the clock, not the quality, so the GPU cube carries the per-stem verdict",
+  "cells": [
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "vocals",
+      "cpu_si_sdr": 8.963,
+      "gpu_si_sdr": 8.964,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "drums",
+      "cpu_si_sdr": 6.554,
+      "gpu_si_sdr": 6.527,
+      "gpu_minus_cpu_db": -0.027,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "bass",
+      "cpu_si_sdr": 8.665,
+      "gpu_si_sdr": 8.666,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "other",
+      "cpu_si_sdr": 0.058,
+      "gpu_si_sdr": 0.043,
+      "gpu_minus_cpu_db": -0.015,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "vocals",
+      "cpu_si_sdr": 8.173,
+      "gpu_si_sdr": 8.174,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "drums",
+      "cpu_si_sdr": 6.705,
+      "gpu_si_sdr": 6.703,
+      "gpu_minus_cpu_db": -0.002,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "bass",
+      "cpu_si_sdr": 9.44,
+      "gpu_si_sdr": 9.406,
+      "gpu_minus_cpu_db": -0.034,
+      "agrees": true
+    },
+    {
+      "source": "ladder_4stem_all.json (committed, Apple M3 CPU)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "other",
+      "cpu_si_sdr": -0.664,
+      "gpu_si_sdr": -0.667,
+      "gpu_minus_cpu_db": -0.003,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "vocals",
+      "cpu_si_sdr": 8.963,
+      "gpu_si_sdr": 8.964,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "drums",
+      "cpu_si_sdr": 6.554,
+      "gpu_si_sdr": 6.527,
+      "gpu_minus_cpu_db": -0.027,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "bass",
+      "cpu_si_sdr": 8.665,
+      "gpu_si_sdr": 8.666,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "stem": "other",
+      "cpu_si_sdr": 0.058,
+      "gpu_si_sdr": 0.043,
+      "gpu_minus_cpu_db": -0.015,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "vocals",
+      "cpu_si_sdr": 8.173,
+      "gpu_si_sdr": 8.174,
+      "gpu_minus_cpu_db": 0.001,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "drums",
+      "cpu_si_sdr": 6.705,
+      "gpu_si_sdr": 6.703,
+      "gpu_minus_cpu_db": -0.002,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "bass",
+      "cpu_si_sdr": 9.44,
+      "gpu_si_sdr": 9.406,
+      "gpu_minus_cpu_db": -0.034,
+      "agrees": true
+    },
+    {
+      "source": ".tmp/bench/4stem-matrix/cells.jsonl (local CPU re-run)",
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "stem": "other",
+      "cpu_si_sdr": -0.664,
+      "gpu_si_sdr": -0.667,
+      "gpu_minus_cpu_db": -0.003,
+      "agrees": true
+    }
+  ]
+}

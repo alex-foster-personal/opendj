@@ -1,0 +1,617 @@
+{
+  "question": "Does the per-stem model inversion in ladder_4stem_all.json (plain htdemucs wins bass by 0.775 dB, hdemucs_mmi wins vocals by 0.790) hold across tracks, and where does the never-scored htdemucs_ft land per stem?",
+  "dataset": "MUSDB18-HQ test",
+  "reference_kind": "TRUE MUSDB18-HQ stem",
+  "window_length_s": 60.0,
+  "windows_chosen_by": "scripts/bench/stem_content_gate.py, before any model score existed",
+  "windows_verified_by": ".tmp/bench/4stem-matrix/verify_fetch.py",
+  "knobs": {
+    "overlap": 0.25,
+    "shifts": 0,
+    "sample_rate_hz": 44100
+  },
+  "default_model": "hdemucs_mmi",
+  "models": [
+    "hdemucs_mmi",
+    "htdemucs",
+    "htdemucs_ft"
+  ],
+  "audibility_bar_db": 0.2,
+  "device": "cuda",
+  "hardware": "Modal H100",
+  "runner": "scripts/modal_vocal_farm.py::separate_track (the production entrypoint)",
+  "n_tracks": 5,
+  "measured_at": "2026-07-24T18:13:25+00:00",
+  "gate": {
+    "Al James - Schoolboy Facination": {
+      "window_start_s": 75.0,
+      "window_length_s": 60.0,
+      "track_passed": true,
+      "stem_passed": {
+        "vocals": true,
+        "drums": true,
+        "bass": true,
+        "other": true
+      },
+      "stem_failures": {
+        "vocals": [],
+        "drums": [],
+        "bass": [],
+        "other": []
+      },
+      "mixture_floor_si_sdr": {
+        "vocals": -1.666,
+        "drums": -6.351,
+        "bass": -3.782,
+        "other": -9.009
+      },
+      "stem_energy_share": {
+        "vocals": 0.4079,
+        "drums": 0.1848,
+        "bass": 0.2921,
+        "other": 0.1153
+      }
+    },
+    "Punkdisco - Oral Hygiene": {
+      "window_start_s": 35.0,
+      "window_length_s": 60.0,
+      "track_passed": false,
+      "stem_passed": {
+        "vocals": false,
+        "drums": true,
+        "bass": true,
+        "other": false
+      },
+      "stem_failures": {
+        "vocals": [
+          "mostly gaps (32% active < 35%)",
+          "buried (-9.2 dB under the loudest stem < -8)"
+        ],
+        "drums": [],
+        "bass": [],
+        "other": [
+          "buried (-10.4 dB under the loudest stem < -8)"
+        ]
+      },
+      "mixture_floor_si_sdr": {
+        "vocals": -12.301,
+        "drums": -0.953,
+        "bass": -1.015,
+        "other": -13.26
+      },
+      "stem_energy_share": {
+        "vocals": 0.0545,
+        "drums": 0.4546,
+        "bass": 0.4492,
+        "other": 0.0417
+      }
+    },
+    "The Easton Ellises - Falcon 69": {
+      "window_start_s": 145.0,
+      "window_length_s": 60.0,
+      "track_passed": true,
+      "stem_passed": {
+        "vocals": true,
+        "drums": true,
+        "bass": true,
+        "other": true
+      },
+      "stem_failures": {
+        "vocals": [],
+        "drums": [],
+        "bass": [],
+        "other": []
+      },
+      "mixture_floor_si_sdr": {
+        "vocals": -5.666,
+        "drums": -3.329,
+        "bass": -4.275,
+        "other": -6.348
+      },
+      "stem_energy_share": {
+        "vocals": 0.2139,
+        "drums": 0.3166,
+        "bass": 0.2761,
+        "other": 0.1934
+      }
+    },
+    "Triviul feat. The Fiend - Widow": {
+      "window_start_s": 135.0,
+      "window_length_s": 60.0,
+      "track_passed": true,
+      "stem_passed": {
+        "vocals": true,
+        "drums": true,
+        "bass": true,
+        "other": true
+      },
+      "stem_failures": {
+        "vocals": [],
+        "drums": [],
+        "bass": [],
+        "other": []
+      },
+      "mixture_floor_si_sdr": {
+        "vocals": -0.402,
+        "drums": -8.051,
+        "bass": -4.675,
+        "other": -7.892
+      },
+      "stem_energy_share": {
+        "vocals": 0.4784,
+        "drums": 0.1297,
+        "bass": 0.2513,
+        "other": 0.1406
+      }
+    },
+    "Zeno - Signs": {
+      "window_start_s": 35.0,
+      "window_length_s": 60.0,
+      "track_passed": true,
+      "stem_passed": {
+        "vocals": true,
+        "drums": true,
+        "bass": true,
+        "other": true
+      },
+      "stem_failures": {
+        "vocals": [],
+        "drums": [],
+        "bass": [],
+        "other": []
+      },
+      "mixture_floor_si_sdr": {
+        "vocals": -3.528,
+        "drums": -5.047,
+        "bass": -9.289,
+        "other": -2.842
+      },
+      "stem_energy_share": {
+        "vocals": 0.3047,
+        "drums": 0.2381,
+        "bass": 0.1113,
+        "other": 0.3459
+      }
+    }
+  },
+  "mixture_floor_si_sdr": {
+    "Al James - Schoolboy Facination": {
+      "vocals": -1.666,
+      "drums": -6.352,
+      "bass": -3.783,
+      "other": -9.009
+    },
+    "Punkdisco - Oral Hygiene": {
+      "vocals": -12.302,
+      "drums": -0.954,
+      "bass": -1.016,
+      "other": -13.261
+    },
+    "The Easton Ellises - Falcon 69": {
+      "vocals": -5.667,
+      "drums": -3.33,
+      "bass": -4.275,
+      "other": -6.348
+    },
+    "Triviul feat. The Fiend - Widow": {
+      "vocals": -0.402,
+      "drums": -8.052,
+      "bass": -4.676,
+      "other": -7.893
+    },
+    "Zeno - Signs": {
+      "vocals": -3.528,
+      "drums": -5.047,
+      "bass": -9.289,
+      "other": -2.842
+    }
+  },
+  "si_sdr": {
+    "Al James - Schoolboy Facination": {
+      "hdemucs_mmi": {
+        "vocals": 8.964,
+        "drums": 6.527,
+        "bass": 8.666,
+        "other": 0.043
+      },
+      "htdemucs": {
+        "vocals": 8.174,
+        "drums": 6.703,
+        "bass": 9.406,
+        "other": -0.667
+      },
+      "htdemucs_ft": {
+        "vocals": 8.751,
+        "drums": 7.116,
+        "bass": 9.839,
+        "other": 0.243
+      }
+    },
+    "Punkdisco - Oral Hygiene": {
+      "hdemucs_mmi": {
+        "vocals": 8.207,
+        "drums": 8.998,
+        "bass": -0.306,
+        "other": -8.197
+      },
+      "htdemucs": {
+        "vocals": 9.079,
+        "drums": 3.576,
+        "bass": 0.536,
+        "other": -1.528
+      },
+      "htdemucs_ft": {
+        "vocals": 9.051,
+        "drums": 4.273,
+        "bass": 4.209,
+        "other": -2.087
+      }
+    },
+    "The Easton Ellises - Falcon 69": {
+      "hdemucs_mmi": {
+        "vocals": 4.383,
+        "drums": 9.039,
+        "bass": 5.353,
+        "other": 0.883
+      },
+      "htdemucs": {
+        "vocals": 4.273,
+        "drums": 9.139,
+        "bass": 5.523,
+        "other": 0.958
+      },
+      "htdemucs_ft": {
+        "vocals": 4.984,
+        "drums": 9.333,
+        "bass": 5.603,
+        "other": 1.401
+      }
+    },
+    "Triviul feat. The Fiend - Widow": {
+      "hdemucs_mmi": {
+        "vocals": 9.371,
+        "drums": 6.486,
+        "bass": 13.963,
+        "other": 2.949
+      },
+      "htdemucs": {
+        "vocals": 9.314,
+        "drums": 7.177,
+        "bass": 14.519,
+        "other": 2.809
+      },
+      "htdemucs_ft": {
+        "vocals": 9.609,
+        "drums": 7.502,
+        "bass": 14.556,
+        "other": 3.388
+      }
+    },
+    "Zeno - Signs": {
+      "hdemucs_mmi": {
+        "vocals": 7.998,
+        "drums": 9.969,
+        "bass": 1.964,
+        "other": 5.001
+      },
+      "htdemucs": {
+        "vocals": 8.592,
+        "drums": 10.64,
+        "bass": 2.887,
+        "other": 5.684
+      },
+      "htdemucs_ft": {
+        "vocals": 8.752,
+        "drums": 10.926,
+        "bass": 3.494,
+        "other": 5.801
+      }
+    }
+  },
+  "paired_deltas_vs_default": [
+    {
+      "model": "htdemucs",
+      "vs": "hdemucs_mmi",
+      "stem": "vocals",
+      "n_gated": 4,
+      "mean_delta_db": -0.091,
+      "median_delta_db": -0.084,
+      "sd": 0.565,
+      "t": -0.32,
+      "min_delta_db": -0.79,
+      "max_delta_db": 0.594,
+      "tracks_favouring_challenger": 1,
+      "beats_audibility_bar": false,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": -0.79,
+        "The Easton Ellises - Falcon 69": -0.11,
+        "Triviul feat. The Fiend - Widow": -0.057,
+        "Zeno - Signs": 0.594
+      },
+      "per_track_ungated": {
+        "Punkdisco - Oral Hygiene": 0.872
+      }
+    },
+    {
+      "model": "htdemucs",
+      "vs": "hdemucs_mmi",
+      "stem": "drums",
+      "n_gated": 5,
+      "mean_delta_db": -0.757,
+      "median_delta_db": 0.176,
+      "sd": 2.622,
+      "t": -0.65,
+      "min_delta_db": -5.422,
+      "max_delta_db": 0.691,
+      "tracks_favouring_challenger": 4,
+      "beats_audibility_bar": true,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": 0.176,
+        "Punkdisco - Oral Hygiene": -5.422,
+        "The Easton Ellises - Falcon 69": 0.1,
+        "Triviul feat. The Fiend - Widow": 0.691,
+        "Zeno - Signs": 0.671
+      },
+      "per_track_ungated": {}
+    },
+    {
+      "model": "htdemucs",
+      "vs": "hdemucs_mmi",
+      "stem": "bass",
+      "n_gated": 5,
+      "mean_delta_db": 0.646,
+      "median_delta_db": 0.74,
+      "sd": 0.299,
+      "t": 4.83,
+      "min_delta_db": 0.17,
+      "max_delta_db": 0.923,
+      "tracks_favouring_challenger": 5,
+      "beats_audibility_bar": true,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": 0.74,
+        "Punkdisco - Oral Hygiene": 0.842,
+        "The Easton Ellises - Falcon 69": 0.17,
+        "Triviul feat. The Fiend - Widow": 0.556,
+        "Zeno - Signs": 0.923
+      },
+      "per_track_ungated": {}
+    },
+    {
+      "model": "htdemucs",
+      "vs": "hdemucs_mmi",
+      "stem": "other",
+      "n_gated": 4,
+      "mean_delta_db": -0.023,
+      "median_delta_db": -0.033,
+      "sd": 0.576,
+      "t": -0.08,
+      "min_delta_db": -0.71,
+      "max_delta_db": 0.683,
+      "tracks_favouring_challenger": 2,
+      "beats_audibility_bar": false,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": -0.71,
+        "The Easton Ellises - Falcon 69": 0.075,
+        "Triviul feat. The Fiend - Widow": -0.14,
+        "Zeno - Signs": 0.683
+      },
+      "per_track_ungated": {
+        "Punkdisco - Oral Hygiene": 6.669
+      }
+    },
+    {
+      "model": "htdemucs_ft",
+      "vs": "hdemucs_mmi",
+      "stem": "vocals",
+      "n_gated": 4,
+      "mean_delta_db": 0.345,
+      "median_delta_db": 0.419,
+      "sd": 0.43,
+      "t": 1.6,
+      "min_delta_db": -0.213,
+      "max_delta_db": 0.754,
+      "tracks_favouring_challenger": 3,
+      "beats_audibility_bar": true,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": -0.213,
+        "The Easton Ellises - Falcon 69": 0.601,
+        "Triviul feat. The Fiend - Widow": 0.238,
+        "Zeno - Signs": 0.754
+      },
+      "per_track_ungated": {
+        "Punkdisco - Oral Hygiene": 0.844
+      }
+    },
+    {
+      "model": "htdemucs_ft",
+      "vs": "hdemucs_mmi",
+      "stem": "drums",
+      "n_gated": 5,
+      "mean_delta_db": -0.374,
+      "median_delta_db": 0.589,
+      "sd": 2.45,
+      "t": -0.34,
+      "min_delta_db": -4.725,
+      "max_delta_db": 1.016,
+      "tracks_favouring_challenger": 4,
+      "beats_audibility_bar": true,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": 0.589,
+        "Punkdisco - Oral Hygiene": -4.725,
+        "The Easton Ellises - Falcon 69": 0.294,
+        "Triviul feat. The Fiend - Widow": 1.016,
+        "Zeno - Signs": 0.957
+      },
+      "per_track_ungated": {}
+    },
+    {
+      "model": "htdemucs_ft",
+      "vs": "hdemucs_mmi",
+      "stem": "bass",
+      "n_gated": 5,
+      "mean_delta_db": 1.612,
+      "median_delta_db": 1.173,
+      "sd": 1.697,
+      "t": 2.12,
+      "min_delta_db": 0.25,
+      "max_delta_db": 4.515,
+      "tracks_favouring_challenger": 5,
+      "beats_audibility_bar": true,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": 1.173,
+        "Punkdisco - Oral Hygiene": 4.515,
+        "The Easton Ellises - Falcon 69": 0.25,
+        "Triviul feat. The Fiend - Widow": 0.593,
+        "Zeno - Signs": 1.53
+      },
+      "per_track_ungated": {}
+    },
+    {
+      "model": "htdemucs_ft",
+      "vs": "hdemucs_mmi",
+      "stem": "other",
+      "n_gated": 4,
+      "mean_delta_db": 0.489,
+      "median_delta_db": 0.479,
+      "sd": 0.247,
+      "t": 3.96,
+      "min_delta_db": 0.2,
+      "max_delta_db": 0.8,
+      "tracks_favouring_challenger": 4,
+      "beats_audibility_bar": true,
+      "per_track_gated": {
+        "Al James - Schoolboy Facination": 0.2,
+        "The Easton Ellises - Falcon 69": 0.518,
+        "Triviul feat. The Fiend - Widow": 0.439,
+        "Zeno - Signs": 0.8
+      },
+      "per_track_ungated": {
+        "Punkdisco - Oral Hygiene": 6.11
+      }
+    }
+  ],
+  "timings": [
+    {
+      "track": "Al James - Schoolboy Facination",
+      "model": "hdemucs_mmi",
+      "separate_s": 3.0,
+      "load_s": 0.8,
+      "container_s": 11.5,
+      "gpu_s_per_audio_minute": 3.0
+    },
+    {
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs",
+      "separate_s": 3.7,
+      "load_s": 0.8,
+      "container_s": 5.2,
+      "gpu_s_per_audio_minute": 3.7
+    },
+    {
+      "track": "Al James - Schoolboy Facination",
+      "model": "htdemucs_ft",
+      "separate_s": 3.2,
+      "load_s": 3.7,
+      "container_s": 7.6,
+      "gpu_s_per_audio_minute": 3.2
+    },
+    {
+      "track": "Punkdisco - Oral Hygiene",
+      "model": "hdemucs_mmi",
+      "separate_s": 0.6,
+      "load_s": 0.6,
+      "container_s": 1.9,
+      "gpu_s_per_audio_minute": 0.6
+    },
+    {
+      "track": "Punkdisco - Oral Hygiene",
+      "model": "htdemucs",
+      "separate_s": 0.9,
+      "load_s": 0.4,
+      "container_s": 1.9,
+      "gpu_s_per_audio_minute": 0.9
+    },
+    {
+      "track": "Punkdisco - Oral Hygiene",
+      "model": "htdemucs_ft",
+      "separate_s": 3.3,
+      "load_s": 1.1,
+      "container_s": 5.0,
+      "gpu_s_per_audio_minute": 3.3
+    },
+    {
+      "track": "The Easton Ellises - Falcon 69",
+      "model": "hdemucs_mmi",
+      "separate_s": 0.6,
+      "load_s": 0.5,
+      "container_s": 1.7,
+      "gpu_s_per_audio_minute": 0.6
+    },
+    {
+      "track": "The Easton Ellises - Falcon 69",
+      "model": "htdemucs",
+      "separate_s": 0.9,
+      "load_s": 0.3,
+      "container_s": 1.8,
+      "gpu_s_per_audio_minute": 0.9
+    },
+    {
+      "track": "The Easton Ellises - Falcon 69",
+      "model": "htdemucs_ft",
+      "separate_s": 3.3,
+      "load_s": 1.2,
+      "container_s": 5.1,
+      "gpu_s_per_audio_minute": 3.3
+    },
+    {
+      "track": "Triviul feat. The Fiend - Widow",
+      "model": "hdemucs_mmi",
+      "separate_s": 0.6,
+      "load_s": 0.5,
+      "container_s": 1.9,
+      "gpu_s_per_audio_minute": 0.6
+    },
+    {
+      "track": "Triviul feat. The Fiend - Widow",
+      "model": "htdemucs",
+      "separate_s": 0.9,
+      "load_s": 0.3,
+      "container_s": 1.8,
+      "gpu_s_per_audio_minute": 0.9
+    },
+    {
+      "track": "Triviul feat. The Fiend - Widow",
+      "model": "htdemucs_ft",
+      "separate_s": 3.5,
+      "load_s": 1.2,
+      "container_s": 5.4,
+      "gpu_s_per_audio_minute": 3.5
+    },
+    {
+      "track": "Zeno - Signs",
+      "model": "hdemucs_mmi",
+      "separate_s": 0.6,
+      "load_s": 0.5,
+      "container_s": 1.8,
+      "gpu_s_per_audio_minute": 0.6
+    },
+    {
+      "track": "Zeno - Signs",
+      "model": "htdemucs",
+      "separate_s": 0.9,
+      "load_s": 0.2,
+      "container_s": 1.8,
+      "gpu_s_per_audio_minute": 0.9
+    },
+    {
+      "track": "Zeno - Signs",
+      "model": "htdemucs_ft",
+      "separate_s": 3.3,
+      "load_s": 1.1,
+      "container_s": 5.1,
+      "gpu_s_per_audio_minute": 3.3
+    }
+  ],
+  "container_s_total": 59.5,
+  "gpu_usd_spent": 0.0653
+}
