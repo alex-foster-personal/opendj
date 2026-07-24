@@ -66,7 +66,10 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[1]
 EVENT_KIND: str = "stem_split_assignment"
 # Bump when the arm set changes, so old rows stay interpretable rather than
 # being silently mixed with rows drawn from a different option space.
-EXPERIMENT_ID: str = "stem-split-v1"
+# v2 Fri 24 Jul 2026: the delicious arm moved flac -> opus. The arm set is part
+# of the experiment identity, so the id moves with it and v1 rows stay
+# interpretable rather than being silently pooled with a different option space.
+EXPERIMENT_ID: str = "stem-split-v2"
 
 
 @dataclass(frozen=True)
@@ -89,7 +92,17 @@ ARMS: tuple[Arm, ...] = (
     # which is larger than the vocal advantage the default rests on.
     Arm("htdemucs", "htdemucs-ov0.25", "opus", weight=2),
     # The quality ceiling, for a per-genre read on how much is being left.
-    Arm("delicious", "htdemucs_ft-ov0.25", "flac", weight=1),
+    # OPUS, NOT FLAC, for two reasons. It was the only arm whose codec differed,
+    # so any listening preference for it confounded model with codec -- you
+    # could not tell whether delicious sounded better because of htdemucs_ft or
+    # because it was lossless. And it was the only arm with a memory problem:
+    # flac bundles are ~2.7x the bytes, and publish holds queue-depth +
+    # queue-workers of them in RAM at once.
+    # Tier L in apps/stems/tiers.py KEEPS flac -- that is the scored control
+    # arm, where lossless genuinely matters because SI-SDR against a lossy stem
+    # measures the codec as well as the model. This is the coverage split, and
+    # a different question.
+    Arm("delicious", "htdemucs_ft-ov0.25", "opus", weight=1),
     # The cheap rung, to test whether overlap matters on real material rather
     # than on MUSDB.
     Arm("quick", "hdemucs_mmi-ov0.1", "opus", weight=1),
