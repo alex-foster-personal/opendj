@@ -7,7 +7,7 @@
 <script lang="ts">
 	// Browser track table (SCREENSHOT-SPEC 5c). Columns in screenshot order:
 	// funnel | cloud | # | Preview | Artwork | Track Title | Artist | K | B |
-	// Rating | Comments | Time | Genre. Preview strips + file_exists arrive
+	// Rating | Comments | Time | Venue (quality badge) | Genre. Preview strips + file_exists arrive
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
 	// Row states: yellow title+artist = loaded on a non-master deck; gold =
@@ -33,6 +33,7 @@
 	import type { DeckId } from '$lib/rb/types';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
+	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDots from './AnalysisDots.svelte';
 	import { computeVirtualWindow } from './virtual-window';
@@ -64,6 +65,7 @@
 		| 'rating'
 		| 'comments'
 		| 'time'
+		| 'quality'
 		| 'genre';
 
 	const COL_DEFAULTS: Record<ColId, number> = {
@@ -80,6 +82,7 @@
 		rating: 80,
 		comments: 110,
 		time: 48,
+		quality: 92,
 		genre: 90
 	};
 
@@ -652,6 +655,7 @@
 				<col style={`width:${colWidths.rating}px`} />
 				<col style={`width:${colWidths.comments}px`} />
 				<col style={`width:${colWidths.time}px`} />
+				<col style={`width:${colWidths.quality}px`} />
 				<col style={`width:${colWidths.genre}px`} />
 			</colgroup>
 			<thead>
@@ -784,13 +788,28 @@
 					{@render sortableTh('rating', 'Rating', 'rating')}
 					{@render sortableTh('comments', 'Comments', 'comments')}
 					{@render sortableTh('time', 'Time', 'time')}
+					<th
+						class="h-quality"
+						style={`width:${colWidths.quality}px`}
+						title="biggest venue this file survives - from effective bitrate (size over duration) and container. Hover a badge for the kbps"
+					>
+						<span class="th-label"><span>Venue</span></span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'quality')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 					{@render sortableTh('genre', 'Genre', 'genre')}
 				</tr>
 			</thead>
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan="14"></td>
+						<td colspan="15"></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
@@ -972,6 +991,9 @@
 							{/each}
 						</td>
 						<td class="c-time">{_fmtTime(row.duration_ms)}</td>
+						<td class="c-quality">
+							<QualityBadge quality={row.quality} />
+						</td>
 						<td class="c-genre">
 							{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
 								{#if i > 0}<span class="genre-sep">, </span>{/if}
@@ -1001,7 +1023,7 @@
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan="14"></td>
+						<td colspan="15"></td>
 					</tr>
 				{/if}
 			</tbody>
@@ -1343,6 +1365,10 @@
 	}
 	.c-plays {
 		font-size: 10px;
+	}
+	.c-quality {
+		overflow: hidden;
+		white-space: nowrap;
 	}
 	.c-order .grip {
 		margin-right: 2px;

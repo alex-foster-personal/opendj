@@ -31,6 +31,32 @@ class TrackOut(BaseModel):
     provenance: dict[str, ProvenanceOut] = {}
 
 
+class QualityOut(BaseModel):
+    """One rung of the venue ladder, or an honest unknown.
+
+    venue/rank/kbps are null when the file could not be measured; `blurb`
+    then carries the reason. The UI must never render a guessed rung.
+    """
+
+    venue: str | None
+    label: str
+    rank: int | None
+    of: int
+    blurb: str
+    kbps: int | None
+    container: str
+    lossless: bool
+
+
+class QualityRungOut(BaseModel):
+    """One legend entry from apps.shared.audio_quality.ladder()."""
+
+    rank: int
+    key: str
+    label: str
+    blurb: str
+
+
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
 
@@ -38,11 +64,14 @@ class TrackListItemOut(TrackOut):
     column (null = no ANLZ analysis). preview_max: per-track max band value
     for client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).
     file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
+    quality: venue rung from apps.shared.audio_quality (same stat pass, so
+    no extra cost per row); venue/rank are null when it cannot be measured.
     """
 
     preview_b64: str | None
     preview_max: int | None
     file_exists: bool
+    quality: QualityOut
 
 
 class TracksPage(BaseModel):
@@ -109,6 +138,7 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_exists: bool
     is_streaming: bool
+    quality: QualityOut
 
 
 class PlaylistDetail(BaseModel):

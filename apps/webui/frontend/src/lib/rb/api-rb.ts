@@ -15,7 +15,15 @@
 
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
-import type { AnlzCue, AnlzData, ArtworkSize, HotCueSlot, RbMeta } from './types';
+import type {
+	AnlzCue,
+	AnlzData,
+	ArtworkSize,
+	HotCueSlot,
+	QualityRung,
+	RbMeta,
+	TrackQuality
+} from './types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -249,6 +257,7 @@ export interface PlaylistTrackRowWire {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	quality: TrackQuality;
 }
 
 export interface PlaylistDetailHydrated extends PlaylistDetail {
@@ -326,6 +335,7 @@ export type TrackListItemWire = Track & {
 	preview_b64: string | null;
 	preview_max: number | null;
 	file_exists: boolean;
+	quality: TrackQuality;
 };
 
 export interface TracksPageHydrated {
@@ -386,6 +396,12 @@ export async function fetchAnlz(stable_id: string, points = 38400): Promise<Anlz
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);
+}
+
+/** GET /tracks/quality-ladder - the six venue rungs for the badge legend.
+ * Fetched, never hardcoded: the ladder lives in audio_quality.py. */
+export async function fetchQualityLadder(): Promise<QualityRung[]> {
+	return _fetchJson<QualityRung[]>('/api/v1/tracks/quality-ladder');
 }
 
 // ------------------------------------------ hot-cue SAVE (djmdCue Kind 1-8)
@@ -511,7 +527,7 @@ export interface StemArtifactManifest {
 	sample_rate_hz: number;
 	frame_count: number;
 	channel_count: number;
-	parts: Record<DemucsStemPart, { media_type: 'audio/wav' }>;
+	parts: Record<DemucsStemPart, { media_type: 'audio/wav' | 'audio/flac' }>;
 }
 
 export type StemArtifactProbe =
@@ -551,8 +567,9 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 		throw new Error(`stem manifest parts must contain exactly ${expectedPartKeys.join(', ')}`);
 	}
 	for (const part of DEMUCS_STEM_PARTS) {
-		if (manifest.parts[part]?.media_type !== 'audio/wav') {
-			throw new Error(`stem manifest ${part} media_type must be audio/wav`);
+		const media = manifest.parts[part]?.media_type;
+		if (media !== 'audio/wav' && media !== 'audio/flac') {
+			throw new Error(`stem manifest ${part} media_type must be audio/wav or audio/flac`);
 		}
 	}
 	return manifest as StemArtifactManifest;

@@ -46,6 +46,7 @@ import logging
 import os
 import secrets
 import sqlite3
+import stat as stat_module
 import struct
 import tempfile
 import threading
@@ -57,6 +58,7 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
+from apps.shared import audio_quality
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
 from apps.shared import platform_paths
 from apps.shared.platform_paths import MappedPath, resolve_library_path
@@ -127,9 +129,12 @@ _PVDI_RATE: int = 22050
 # for FILE_EXISTS_TTL_S so a listing request never stats 8k files -- one
 # bulk stat pass warms the cache, then repeats are dict lookups until the
 # TTL lapses (30 s keeps "file restored by reconcile" visible quickly).
+# The cache holds st_size (None = the file is not there), so the SAME stat
+# pass that answers file_exists also feeds audio_quality.classify -- adding
+# the quality badge to a listing therefore costs zero extra stats.
 FILE_EXISTS_TTL_S: float = 30.0
 _FILE_EXISTS_LOCK = threading.Lock()
-_FILE_EXISTS_CACHE: dict[str, tuple[float, bool]] = {}
+_FILE_EXISTS_CACHE: dict[str, tuple[float, Optional[int]]] = {}
 
 # Preview strips are immutable per (source file, mtime): cache the encoded
 # strip per AnalysisDataPath and revalidate with a single stat per hit.
@@ -874,8 +879,8 @@ def bulk_rb_meta(stable_ids: Sequence[str]) -> dict[str, RbRowMeta]:
     return out
 
 
-def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
-    """Disk-truth existence for library paths via the TTL'd stat cache.
+def bulk_file_size(paths: Iterable[str]) -> dict[str, Optional[int]]:
+    """Disk-truth size in bytes per library path (None = not on disk).
 
     FR-1 item 4: never stat 8k files per request. Each unique path is
     stat'ed at most once per :data:`FILE_EXISTS_TTL_S`; within the TTL,
@@ -884,7 +889,7 @@ def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
     """
     now = time.monotonic()
     wanted = {p for p in paths if p}
-    out: dict[str, bool] = {}
+    out: dict[str, Optional[int]] = {}
     stale: list[str] = []
     with _FILE_EXISTS_LOCK:
         for path in wanted:
@@ -895,12 +900,28 @@ def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
                 stale.append(path)
     for path in stale:
         mapped = resolve_asset_path(path)
-        out[path] = mapped.resolved is not None and mapped.resolved.is_file()
+        out[path] = _stat_size(mapped.resolved)
     if stale:
         with _FILE_EXISTS_LOCK:
             for path in stale:
                 _FILE_EXISTS_CACHE[path] = (now, out[path])
     return out
+
+
+def _stat_size(resolved: Optional[Path]) -> Optional[int]:
+    """st_size for a resolved path, or None when it is not a readable file."""
+    if resolved is None:
+        return None
+    try:
+        st = resolved.stat()
+    except OSError:
+        return None
+    return st.st_size if stat_module.S_ISREG(st.st_mode) else None
+
+
+def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
+    """Disk-truth existence per path, derived from the same cached stat."""
+    return {p: size is not None for p, size in bulk_file_size(paths).items()}
 
 
 def bulk_availability(
@@ -929,6 +950,44 @@ def bulk_availability(
     }
 
 
+def bulk_quality(
+    stable_ids: Sequence[str],
+    folder_by_sid: Mapping[str, Optional[str]],
+    duration_ms_by_sid: Mapping[str, Optional[int]],
+) -> dict[str, dict]:
+    """Venue-rung quality dict per stable_id (apps.shared.audio_quality).
+
+    Sizes come from :func:`bulk_file_size`, i.e. the SAME TTL'd stat pass
+    that already answers file_exists -- so a 1000-row listing pays no extra
+    stat for the badge. Streaming URIs and missing files get an honest
+    UNKNOWN rather than a guessed rung.
+    """
+    sizes = bulk_file_size(
+        path for path in folder_by_sid.values()
+        if path and not is_streaming_path(path)
+    )
+    out: dict[str, dict] = {}
+    for sid in stable_ids:
+        path = folder_by_sid.get(sid)
+        if not path:
+            out[sid] = audio_quality.classify(None, None).as_dict()
+        elif is_streaming_path(path):
+            out[sid] = audio_quality.Quality(
+                None, None, "", False, "streaming track, no local file"
+            ).as_dict()
+        else:
+            size = sizes.get(path)
+            if size is None:
+                out[sid] = audio_quality.Quality(
+                    None, None, Path(path).suffix.lower(), False, "file missing"
+                ).as_dict()
+            else:
+                out[sid] = audio_quality.classify(
+                    path, duration_ms_by_sid.get(sid), size
+                ).as_dict()
+    return out
+
+
 def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
     """Hydrated track rows (contract item 4) for playlist detail + listings.
 
@@ -938,7 +997,7 @@ def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
     old 29x per-row GET fan-out. Field names match the shared API
     contract exactly: title, artist, key, bpm, rating, duration_ms,
     genre, comments, etag, preview_b64, preview_max, file_exists,
-    is_streaming.
+    is_streaming, quality.
     """
     from .etag import compute_etag
 
@@ -946,6 +1005,17 @@ def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
     metas = bulk_rb_meta(stable_ids)
     available = bulk_availability(
         stable_ids, {t.stable_id: t.file_path for t in tracks}, metas,
+    )
+    folder_by_sid = {
+        t.stable_id: (
+            metas[t.stable_id].folder_path
+            if metas.get(t.stable_id) is not None else t.file_path
+        )
+        for t in tracks
+    }
+    quality = bulk_quality(
+        stable_ids, folder_by_sid,
+        {t.stable_id: t.duration_ms for t in tracks},
     )
     rows: list[dict[str, Any]] = []
     for track in tracks:
@@ -970,6 +1040,7 @@ def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
             "preview_max": preview_max,
             "file_exists": available[track.stable_id],
             "is_streaming": is_streaming_path(folder),
+            "quality": quality[track.stable_id],
         })
     return rows
 

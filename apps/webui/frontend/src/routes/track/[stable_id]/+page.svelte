@@ -6,12 +6,18 @@
 	import ConflictDialog from '$lib/components/ConflictDialog.svelte';
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
 	import { pushToast } from '$lib/stores.svelte';
+	import QualityBadge from '$lib/components/rb/QualityBadge.svelte';
+	import { fetchRbMeta } from '$lib/rb/api-rb';
+	import type { TrackQuality } from '$lib/rb/types';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');
 	let pendingPatch = $state<Record<string, unknown> | null>(null);
 	let conflictServer = $state<Track | null>(null);
 	let newTag = $state('');
+	// Venue-rung quality rides along on rb-meta (one extra GET on this
+	// single-track route; the badge stays absent until it lands, never a guess).
+	let quality = $state<TrackQuality | null>(null);
 
 	async function load(): Promise<void> {
 		const stable = $page.params.stable_id;
@@ -19,6 +25,7 @@
 		const res = await getTrack(stable);
 		track = res.track;
 		etag = res.etag;
+		quality = (await fetchRbMeta(stable)).quality;
 	}
 
 	async function applyPatch(patch: Record<string, unknown>): Promise<void> {
@@ -71,6 +78,7 @@
 	<h2><ProvenanceTooltip {track} field="title">{track.title ?? '(untitled)'}</ProvenanceTooltip></h2>
 	<p><ProvenanceTooltip {track} field="artist">{track.artist ?? ''}</ProvenanceTooltip></p>
 	<p>BPM: {track.bpm ?? '?'} · Key: {track.key ?? '?'}</p>
+	{#if quality}<p><QualityBadge {quality} /></p>{/if}
 	<p>Rating: <StarRating rating={track.rating ?? 0} onchange={(n) => applyPatch({ rating: n })} /></p>
 
 	<h3>Tags</h3>

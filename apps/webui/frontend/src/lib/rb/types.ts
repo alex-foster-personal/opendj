@@ -128,6 +128,40 @@ export interface AnlzData {
 // ---------------------------------------------- /rb-meta response payload
 // Mirrors GET /api/v1/tracks/{stable_id}/rb-meta (COMPONENT-MAP 2.4) exactly.
 
+/** Venue-rung audio quality for one file (apps/shared/audio_quality.py).
+ *
+ * `venue`/`rank`/`kbps` are null when it could NOT be measured (missing
+ * file, no duration, streaming URI, unknown container); `blurb` then
+ * carries the reason. Render that as an explicit unknown - never fall
+ * back to a guessed rung. */
+export interface TrackQuality {
+	/** Ladder key, e.g. 'warehouse'; null = unknown. */
+	venue: string | null;
+	/** Human label, e.g. 'Warehouse'; 'Unknown' when venue is null. */
+	label: string;
+	/** 0 (naughty step) .. 5 (stadium); null = unknown. */
+	rank: number | null;
+	/** Total rungs on the ladder (6), for the "rank of of" readout. */
+	of: number;
+	/** Rung description, or the reason it is unknown. */
+	blurb: string;
+	/** Effective kbps (size over duration), rounded; null = unknown. */
+	kbps: number | null;
+	/** Lowercased file extension including the dot, e.g. '.mp3'. */
+	container: string;
+	/** True when the container is a lossless one. */
+	lossless: boolean;
+}
+
+/** The six ladder rungs, from GET /tracks/quality-ladder (legend source
+ * of truth - the UI must not keep a second hardcoded copy). */
+export interface QualityRung {
+	rank: number;
+	key: string;
+	label: string;
+	blurb: string;
+}
+
 export interface RbMeta {
 	/** 40-hex stable id. */
 	stable_id: string;
@@ -153,6 +187,8 @@ export interface RbMeta {
 	analysis_available: boolean;
 	/** Live djmdCue row count for the track. */
 	cue_count: number;
+	/** Venue-rung quality from the same stat that answered file_exists. */
+	quality: TrackQuality;
 }
 
 // -------------------------------------------------------------- deck state

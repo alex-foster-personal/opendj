@@ -28,7 +28,7 @@
  */
 
 import type { PreviewStripData } from '$lib/rb/api-rb';
-import type { RbMeta } from '$lib/rb/types';
+import type { RbMeta, TrackQuality } from '$lib/rb/types';
 
 // ------------------------------------------------------------ row types
 
@@ -70,6 +70,9 @@ export interface BrowserRow {
 	genre: string | null;
 	/** Disk truth from the bulk server-side stat pass (contract 1/4). */
 	file_exists: boolean;
+	/** Venue-rung quality, inline on every row from the SAME stat pass.
+	 * null only for synthesized rows that never came off the wire. */
+	quality: TrackQuality | null;
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;

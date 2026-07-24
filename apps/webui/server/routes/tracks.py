@@ -10,8 +10,9 @@ from ..backend import StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
-from ..models import (ProvenanceOut, TrackListItemOut, TrackOut, TrackPatch,
-                      TracksPage)
+from ..models import (ProvenanceOut, QualityRungOut, TrackListItemOut,
+                      TrackOut, TrackPatch, TracksPage)
+from apps.shared import audio_quality
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
@@ -81,8 +82,16 @@ def list_tracks(
             preview_b64=row["preview_b64"],
             preview_max=row["preview_max"],
             file_exists=row["file_exists"],
+            quality=row["quality"],
         ))
     return TracksPage(items=items, next_cursor=page.next_cursor)
+
+
+# Declared BEFORE /{stable_id} so "quality-ladder" is not swallowed as an id.
+@router.get("/quality-ladder", response_model=list[QualityRungOut])
+def get_quality_ladder() -> list[QualityRungOut]:
+    """The six venue rungs, so the UI legend is not a second copy of them."""
+    return [QualityRungOut(**rung) for rung in audio_quality.ladder()]
 
 
 @router.get("/{stable_id}", response_model=TrackOut)

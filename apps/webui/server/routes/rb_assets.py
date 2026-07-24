@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
+from ..models import QualityOut
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -42,6 +43,7 @@ class RbMetaOut(BaseModel):
     artwork_available: bool
     analysis_available: bool
     cue_count: int
+    quality: QualityOut
 
 
 @router.get("/{stable_id}/audio", response_class=FileResponse)
@@ -123,6 +125,13 @@ def get_track_rb_meta(
         content.analysis_data_path is not None
         and rb_vendor.resolve_share_path(content.analysis_data_path).is_file()
     )
+    # One track, so a direct stat is fine -- and it reuses the bulk cache,
+    # which the listing has usually already warmed for this path.
+    quality = rb_vendor.bulk_quality(
+        [content.stable_id],
+        {content.stable_id: content.folder_path},
+        {content.stable_id: (content.length_s or 0) * 1000 or None},
+    )[content.stable_id]
     return RbMetaOut(
         stable_id=content.stable_id,
         vendor="rekordbox",
@@ -136,4 +145,5 @@ def get_track_rb_meta(
         artwork_available=artwork_available,
         analysis_available=analysis_available,
         cue_count=rb_vendor.count_cues(content.vendor_id),
+        quality=QualityOut(**quality),
     )
