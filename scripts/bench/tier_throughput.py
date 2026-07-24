@@ -67,7 +67,7 @@ TARGET_DURATIONS_S: tuple[float, ...] = (150.0, 330.0, 600.0)
 DURATION_TOLERANCE: float = 0.45  # accept a track within +/-45% of target
 MIN_DISTINCT_DURATIONS: int = 3
 MIN_R_SQUARED: float = 0.90
-REPEATS: int = 1  # per (tier, duration); raise to separate noise from slope
+REPEATS: int = 1  # per (tier, duration); --repeats raises it
 
 
 # ----- fit -------------------------------------------------------------------
@@ -121,12 +121,36 @@ def _pick_tracks(data_dir: Path, wanted: tuple[float, ...]) -> list[Any]:
 
 
 # ----- run -------------------------------------------------------------------
-def _measure_tier(farm: Any, tier: Any, tracks: list[Any]) -> list[dict[str, Any]]:
+def _warmup(farm: Any, tier: Any, track: Any) -> None:
+    """One discarded separation, to take the cold start out of the fit.
+
+    EARNED THE HARD WAY. The first run of this benchmark measured tier S first,
+    so S's first track paid container cold start and weight load while the later
+    tiers ran warm. The fit came back with a NEGATIVE slope (longer tracks
+    cheaper) at r^2 0.27, which is physically impossible and was caught only
+    because MIN_R_SQUARED gates the result. Without the gate it would have
+    shipped as an estimate.
+    """
+    print(f"  [warmup {tier.key}] discarded, removes cold start from the fit",
+          flush=True)
+    farm.separate_track.remote(
+        track.audio_path.read_bytes(), track.stable_id, track.audio_path.name,
+        tier.model, tier.overlap, tier.shifts, "none", str(track.audio_path),
+        {"tag": tier.preset_tag, "model": tier.model, "overlap": tier.overlap,
+         "shifts": tier.shifts, "rung": -1},
+        "",
+    )
+
+
+def _measure_tier(
+    farm: Any, tier: Any, tracks: list[Any], repeats: int = REPEATS
+) -> list[dict[str, Any]]:
+    _warmup(farm, tier, tracks[0])
     rows: list[dict[str, Any]] = []
     for track in tracks:
         audio = track.audio_path.read_bytes()
         dur_s = track.duration_ms / 1000.0
-        for rep in range(REPEATS):
+        for rep in range(repeats):
             t0 = time.perf_counter()
             result = farm.separate_track.remote(
                 audio,
@@ -167,6 +191,16 @@ def _measure_tier(farm: Any, tier: Any, tracks: list[Any]) -> list[dict[str, Any
 
 
 def _fit(tier_key: str, gpu: str, rows: list[dict[str, Any]], cmd: str) -> dict:
+    """Fit over the MEDIAN of each duration's repeats, not every raw point.
+
+    WHY MEDIAN. Wall clock carries client-side network noise that container time
+    does not: one run showed wall 10.0s against a container time of 2.9s, a
+    local hiccup with no GPU meaning, and fitting it raw dropped r^2 to 0.61.
+    The median of repeats is the robust summary; a mean would have absorbed the
+    outlier and quietly inflated the estimate instead of being caught.
+
+    With --repeats 1 this is identical to fitting the raw points.
+    """
     distinct = {r["duration_s"] for r in rows}
     if len(distinct) < MIN_DISTINCT_DURATIONS:
         raise SystemExit(
@@ -174,9 +208,20 @@ def _fit(tier_key: str, gpu: str, rows: list[dict[str, Any]], cmd: str) -> dict:
             f"({sorted(distinct)}), need {MIN_DISTINCT_DURATIONS}. A line "
             "through fewer points cannot separate fixed cost from slope."
         )
-    xs = [r["audio_minutes"] for r in rows]
-    wall_fixed, wall_slope, wall_r2 = _least_squares(xs, [r["wall_s"] for r in rows])
-    gpu_fixed, gpu_slope, _ = _least_squares(xs, [r["container_s"] for r in rows])
+    by_duration: dict[float, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_duration.setdefault(row["duration_s"], []).append(row)
+    points = sorted(
+        (
+            reps[0]["audio_minutes"],
+            statistics.median(r["wall_s"] for r in reps),
+            statistics.median(r["container_s"] for r in reps),
+        )
+        for reps in by_duration.values()
+    )
+    xs = [p[0] for p in points]
+    wall_fixed, wall_slope, wall_r2 = _least_squares(xs, [p[1] for p in points])
+    gpu_fixed, gpu_slope, _ = _least_squares(xs, [p[2] for p in points])
     note = ""
     if wall_r2 < MIN_R_SQUARED:
         note = (
@@ -200,6 +245,27 @@ def _fit(tier_key: str, gpu: str, rows: list[dict[str, Any]], cmd: str) -> dict:
     }
 
 
+def _refit(gpu: str) -> int:
+    """Re-derive the fits from raw rows on disk. No GPU, same sample."""
+    blob = json.loads(OUT_JSON.read_text())
+    raw = blob["raw"]
+    prior = {m["tier_key"]: m for m in blob["measurements"]}
+    out = []
+    for tier_key in sorted({r["tier"] for r in raw}):
+        rows = [r for r in raw if r["tier"] == tier_key]
+        cmd = prior.get(tier_key, {}).get("measured_by", "unknown") + " (refit)"
+        out.append(_fit(tier_key, gpu, rows, cmd))
+    blob["measurements"] = out
+    OUT_JSON.write_text(json.dumps(blob, indent=2) + "\n")
+    for m in out:
+        print(
+            f"  {m['tier_key']}@{m['gpu']}: wall {m['wall_fixed_s']}s + "
+            f"{m['wall_s_per_audio_minute']}s/audio-min (r^2 {m['r_squared']})"
+            f"{' ' + m['note'] if m['note'] else ''}"
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.bench.tier_throughput")
     parser.add_argument("--gpu", default=None, help="Modal card (default: tier's)")
@@ -208,6 +274,17 @@ def main(argv: list[str] | None = None) -> int:
         help="repeatable; default is all three",
     )
     parser.add_argument("--data-dir", type=Path, default=None)
+    parser.add_argument(
+        "--repeats", type=int, default=REPEATS,
+        help="runs per (tier, duration). Raise when two tiers land close "
+             "enough that n=1 cannot tell them apart from noise.",
+    )
+    parser.add_argument(
+        "--refit", action="store_true",
+        help="recompute the fit from the raw rows already in the JSON. "
+             "Changing HOW a number is derived should not cost GPU time, "
+             "and re-running would silently change the sample too.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
@@ -224,6 +301,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             dict(os.environ, MDT_FARM_GPU=gpu),
         )
+
+    if args.refit:
+        return _refit(gpu)
 
     import modal  # noqa: F401  (import proves the dep before any GPU spend)
     from apps.shared.paths import DATA_DIR
@@ -270,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     with farm.app.run():
         for tier in chosen:
             print(f"[tier {tier.key}] {tier.preset_tag} on {gpu}")
-            rows = _measure_tier(farm, tier, tracks)
+            rows = _measure_tier(farm, tier, tracks, args.repeats)
             raw.extend(rows)
             measurements.append(_fit(tier.key, gpu, rows, cmd))
 

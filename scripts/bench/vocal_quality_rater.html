@@ -1,0 +1,3268 @@
+<!doctype html>
+<!--
+=============================================================================
+STEM QUALITY RATER -- mini-PRD
+=============================================================================
+A standalone, no-build listening harness for putting a HUMAN EAR on stem
+separation output, so machine scores (SI-SDR, region-IoU) can be calibrated
+against human listening judgments.
+
+Serve it with `uv run scripts/bench/serve.py <port>`, then open
+`/vocal_quality_rater.html?manifest=<name>.json`. NEVER `python -m http.server`
+-- no range support, so audio will not seek. See scripts/bench/CLAUDE.md.
+
+Status key: `→` out of scope | `?` todo | `✔︎` done | `✔︎ ✅` done + ran + works
+as expected | `✔︎ ✅ 🎯` done + working + regression tests.
+
+-----------------------------------------------------------------------------
+R1. STANDALONE, REUSABLE, IN THE APP'S VISUAL LANGUAGE                 ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  Design tokens are lifted from apps/webui/frontend/src/app.css and INLINED on
+  purpose. One file, no build step, no imports, no network beyond the clips.
+  [if] the file is copied to another machine with only the clips [then] it
+       renders and rates identically
+  [if] a token drifts from app.css [then] this page still renders -- it is a
+       snapshot, not a live dependency, and that is deliberate
+  [if] any external stylesheet, font or CDN script is added [then ⛔️] the
+       asset is no longer standalone
+
+-----------------------------------------------------------------------------
+R2. BLIND CAPTURE OF A 1-10 SCORE PER ARM                              ✔︎ ✅
+-----------------------------------------------------------------------------
+  Arms are anonymised and shuffled so the rating measures the AUDIO, not the
+  label. An early set shipped with `blind_mode: false` and arm labels reading
+  "THIS IS THE BAR", which is exactly the confound this exists to kill.
+  [if] blind mode is on [then] no arm name, model name or preset is visible
+       anywhere in the DOM before a score is committed
+  [if] the same arm appears twice in one manifest [then] it gets two
+       independent slots and the spread is a within-rater noise estimate
+  [if] a score is recorded while the arm identity was on screen [then ⛔️] the
+       output must carry blind_mode false so downstream analysis can discount it
+
+-----------------------------------------------------------------------------
+R3. SAVE BUTTON, WITH DOWNLOAD AS THE FAILSAFE                         ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  Ratings post to the local server AND fall to a file download, because a lost
+  labelling session costs an hour of the only scarce input in the loop.
+  [if] the server write succeeds [then] the JSON lands in scripts/bench/ratings/
+  [if] the server is unreachable [then] the browser still downloads the JSON
+       and the button says so rather than silently failing
+  [if] the page is closed mid-session with unsaved scores [then ⛔️] work is
+       lost -- autosave to localStorage covers this
+
+-----------------------------------------------------------------------------
+R4. ALL FOUR STEMS IN ONE PASS, COLOUR CODED                           ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  Two palettes ship: `rekordbox` (vocals green, matching the rekordbox deck convention)
+  and `ni_okabe_ito` (vocals #56B4E9 blue, colour-blind safe). Blue-for-vocals
+  is the Native Instruments convention, green-for-vocals is Pioneer's, so the
+  page carries both rather than picking a side.
+  [if] the manifest has four stems [then] one scroll rates all four, not four
+       separate sessions
+  [if] a stem is near-silent in the chosen window [then] it is flagged, because
+       an unratable stem produces a score that regresses to the mean and
+       pollutes the result (see stem_content_gate.py)
+  [if] vocals render in a colour that clashes with the deck convention in use
+       [then ⛔️] the palette selector is broken
+
+-----------------------------------------------------------------------------
+R5. THE WAVEFORM IS THE PLAYER -- NO NATIVE TRANSPORT                  ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  The <audio> element stays in the DOM because it is what actually decodes, but
+  it renders nothing. Click a waveform to seek and play. Playback is EXCLUSIVE:
+  starting one stops every other, because two stems playing at once is not an
+  A/B, it is a mixdown.
+  [if] the page is loaded fresh [then] zero native player bars are visible
+  [if] a waveform is clicked at x [then] exactly one audio element is playing
+       and its currentTime maps to x
+  [if] a second waveform is clicked [then] the first stops -- still exactly one
+       sounding
+  [if] `controls` is ever set true on a new render path [then ⛔️] the
+       `display: none !important` rule is the backstop, but the render path is
+       still wrong
+
+-----------------------------------------------------------------------------
+R6. CMD+CLICK PLAYS THE TRUTH AT THE SAME POSITION                     ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  Plain click plays the CANDIDATE, cmd+click plays the GROUND TRUTH at the
+  identical timestamp. The whole judgement is "is this the same as the real
+  thing", so the switch has to be one modifier key, not a scroll.
+  [if] cmd+click at x on a candidate [then] the true stem plays from the same
+       position, not from zero
+  [if] the manifest has no truth stem for that arm [then] cmd+click is inert
+       and says why, rather than silently playing the candidate
+  [if] cmd+click plays the candidate [then ⛔️] the A/B is measuring nothing
+
+-----------------------------------------------------------------------------
+R7. REFERENCE STAYS REACHABLE WHILE SCROLLING                          ✔︎ ✅
+-----------------------------------------------------------------------------
+  [if] the page is scrolled past the reference card [then] a compact reference
+       row sticks to the top and remains playable
+  [if] the viewport is short [then] the sticky row does not eat more than one
+       arm's height
+  [if] the reference is only reachable by scrolling back up [then ⛔️] the
+       comparison costs more attention than the judgement is worth
+
+-----------------------------------------------------------------------------
+R8. A INDEPENDENT VIEW FIRST, THEN 1-2 TARGETED QUESTIONS                 ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  Each set carries a stated machine prediction plus focus questions naming
+  WHAT TO LISTEN FOR and WHY it is uncertain. the listener's answer is then scored as
+  hit or miss against the prediction, which is what makes a labelling session
+  informative rather than merely confirmatory.
+  [if] a set is generated [then] it carries a prediction and at most two focus
+       questions
+  [if] the listener's answer contradicts the prediction [then] it renders as a MISS and
+       the miss is the finding
+  [if] the page asks for a full calibration sweep with no prior view [then ⛔️]
+       it is spending the scarcest resource in the loop on something a machine
+       could have answered
+
+-----------------------------------------------------------------------------
+R9. MANY EXPERIMENTS, ONE PAGE                                         ✔︎ ✅
+-----------------------------------------------------------------------------
+
+  `?manifest=` selects the set, so a backlog of ladders can queue up against
+  one asset. Sets are content-addressed in scripts/bench/stem-sets.json with a
+  UUID, so a rating can always be traced back to the exact audio it judged.
+  [if] `?manifest=ladder_4stem_all.json` is passed [then] that set loads with
+       no code change
+  [if] a manifest names a clip that is not on disk [then ⛔️] fail loudly at
+       load, never render a silent arm as a ratable one
+  [if] a rating file is found later [then] its set UUID resolves to one exact
+       clip set
+
+-----------------------------------------------------------------------------
+OUT OF SCOPE
+-----------------------------------------------------------------------------
+  → Computing SI-SDR in the browser. Scoring lives in separation_metrics.py;
+    this page is the human channel only.
+  → Editing or re-rendering stems. It rates what it is given.
+  → Auth, multi-user, or persistence beyond a local JSON file.
+
+-----------------------------------------------------------------------------
+KNOWN TRAPS (earned the hard way)
+-----------------------------------------------------------------------------
+  * A correct file can still render wrong. serve.py had no `Cache-Control`, so
+    Chrome served a stale pre-fix page under heuristic freshness while every
+    agent test passed against a cold fetch. HTML is now `no-store`.
+  * 13MB FLACs stall late clips. Clips are AAC; `preload="none"` is load-
+    bearing.
+  * A tie between arms can be predicted by acoustics alone. Check how alike the
+    arms are before reading a tie as "the models are equivalent".
+=============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stem Quality Rater</title>
+<style>
+  /* Design tokens lifted from apps/webui/frontend/src/app.css (rekordbox-dark).
+   * Inlined on purpose -- this asset is standalone, no build step, no imports.
+   * Waveform palette matches rb/deck/StripWaveform.svelte: near-black bed,
+   * blue bars, white playhead. */
+  :root {
+    --bg: #0b0d11;
+    --fg: #e6e9ef;
+    --muted: #9aa4b2;
+    --accent: #ffb43a;
+    --accent-dim: #7a5a1f;
+    --danger: #ff5a5a;
+    --ok: #4ecb8c;
+    --border: #1c222c;
+    --surface: #121720;
+    --surface-hover: #1a212c;
+    --surface-raised: #222a38;
+    --chip-bg: #1a212c;
+    --button-fg-on-accent: #0b0d11;
+    --wave-bed: #080a0d;
+    color-scheme: dark;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text",
+      "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    min-height: 100vh;
+  }
+  body { padding: 1.5rem; max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 1.2rem; color: var(--accent); margin: 0 0 0.25rem 0; }
+  h2 { font-size: 1rem; margin: 0 0 0.75rem 0; color: var(--fg); }
+  h3 { color: var(--fg); }
+  p { color: var(--fg); }
+  .sub { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem 0; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    color: var(--fg);
+  }
+  .reference-card { border-color: var(--accent-dim); }
+  .focus-card { border-color: var(--accent); border-width: 2px; }
+  .focus-q { border-top: 1px solid var(--border); padding-top: 0.75rem; margin-top: 0.75rem; }
+  .focus-q-text { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .focus-listen { font-size: 0.9rem; opacity: 0.95; margin-bottom: 0.25rem; }
+  .focus-why { font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.5rem; }
+  .focus-answers { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+  .focus-pick.picked { background: var(--accent); color: #fff; }
+  .focus-note { width: 100%; }
+  .pred-hit { color: #4caf50; }
+  .pred-miss { color: #e05252; font-weight: 600; }
+  .reference-card h2 { color: var(--accent); }
+
+  /* The WAVEFORM is the player. The native transport is gone entirely: the
+   * element stays in the DOM because it is what actually decodes and plays,
+   * but it renders nothing. Still preload="none" -- hiding it changes no
+   * loading behaviour, and the peaks are fetched separately. */
+  audio { display: none !important; }
+
+  /* ---- top toolbar ---- */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  button {
+    background: var(--surface-hover);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 0.45rem 0.9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+  }
+  button:hover { background: var(--surface-raised); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent);
+    color: var(--button-fg-on-accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  button.toggle-on {
+    background: var(--accent);
+    color: var(--button-fg-on-accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .progress { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+
+  /* ---- save cluster ---- */
+  .save-cluster { display: flex; flex-direction: column; gap: 0.15rem; }
+  .save-caption { font-size: 0.7rem; color: var(--muted); max-width: 15rem; line-height: 1.3; }
+  .save-lines {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+  .save-status { color: var(--muted); }
+  .save-status.busy { color: var(--accent); }
+  .save-status.ok { color: var(--ok); }
+  .save-status.err { color: var(--danger); font-weight: 600; }
+  .save-local { color: var(--muted); }
+
+  /* ---- clip card ---- */
+  .clip-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .clip-label { font-size: 1.05rem; font-weight: 600; color: var(--fg); }
+  .rank-badge {
+    display: inline-block;
+    margin-right: 0.5rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: var(--chip-bg);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    vertical-align: 0.1rem;
+  }
+  .rank-badge.best {
+    background: var(--ok);
+    color: #05170e;
+    border-color: var(--ok);
+  }
+  .rank-badge.worst {
+    background: var(--danger);
+    color: #1e0000;
+    border-color: var(--danger);
+  }
+  .clip-status { font-size: 0.75rem; color: var(--muted); }
+  .clip-status.missing { color: var(--danger); font-weight: 600; }
+  .meta-row {
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.9rem;
+  }
+  .meta-row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .meta-row code {
+    color: var(--fg);
+    background: var(--bg);
+    padding: 0.05rem 0.3rem;
+    border-radius: 4px;
+  }
+  .sub-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: 0.9rem;
+    color: var(--fg);
+  }
+  .chip-row-label { font-size: 0.8rem; color: var(--muted); margin: 0.5rem 0 0 0; }
+
+  /* ---- waveform ---- */
+  .wave {
+    position: relative;
+    width: 100%;
+    height: 56px;
+    margin-top: 0.4rem;
+    background: var(--wave-bed);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: pointer;
+    display: block;
+    padding: 0;
+  }
+  .wave canvas { display: block; width: 100%; height: 100%; }
+  .wave .playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    left: 0;
+    background: #ffffff;
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.7);
+    pointer-events: none;
+    z-index: 2;
+  }
+  .wave .wave-note {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    text-align: center;
+    padding: 0 0.5rem;
+  }
+  .wave .wave-note.failed { color: var(--danger); font-weight: 600; }
+
+  /* ---- waveform as the transport ----
+   * There is no native player any more, so everything the transport used to
+   * say has to be said on the strip itself: how far in we are, which strip is
+   * the one making the sound, and whether a modifier would retarget the click. */
+  .wave .wave-time {
+    position: absolute;
+    right: 4px;
+    bottom: 2px;
+    z-index: 3;
+    padding: 0 0.25rem;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .wave .wave-badge,
+  .wave .wave-truth-cue {
+    position: absolute;
+    top: 3px;
+    z-index: 3;
+    display: none;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+  }
+  .wave .wave-badge { left: 4px; background: var(--fg); color: var(--bg); }
+  .wave.is-truth .wave-badge { background: var(--accent); color: var(--button-fg-on-accent); }
+  .wave .wave-truth-cue { right: 4px; background: var(--accent); color: var(--button-fg-on-accent); }
+
+  /* The sounding strip has to be unmistakable: an arm stem and its true stem
+   * are the same colour and the same shape, so only this ring says which one
+   * your ears are hearing. */
+  .wave.sounding { outline: 2px solid var(--fg); outline-offset: -2px; }
+  .wave.sounding.is-truth { outline-color: var(--accent); }
+  .wave.sounding .wave-badge { display: block; }
+  .wave.linked { outline: 2px dashed var(--accent); outline-offset: -2px; }
+  .wave.linked .wave-truth-cue { display: block; }
+  body.mod-held .wave[data-truth] { cursor: crosshair; }
+  body.mod-held .wave[data-truth]:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+  body.mod-held .wave[data-truth]:hover .wave-truth-cue { display: block; }
+
+  .hint-line {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--accent-dim);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.45rem 0.65rem;
+    margin: 0 0 1rem 0;
+  }
+  .hint-line b { color: var(--accent); }
+
+  /* ---- sticky reference strip ----
+   * Zero-height sticky anchor: the bar overflows it, so showing and hiding the
+   * bar never reflows the page and the full reference card keeps its own space. */
+  .ref-mini-anchor {
+    position: sticky;
+    top: var(--sticky-top, 52px);
+    height: 0;
+    z-index: 15;
+  }
+  .ref-mini { display: none; }
+  .ref-mini-anchor.on .ref-mini { display: flex; }
+  .ref-mini {
+    gap: 0.35rem;
+    align-items: stretch;
+    background: var(--surface);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    padding: 0.3rem 0.4rem;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  }
+  .ref-mini-label {
+    flex: 0 0 auto;
+    align-self: center;
+    max-width: 4.5rem;
+    color: var(--accent);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.15;
+    text-transform: uppercase;
+  }
+  .ref-mini-item {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 3px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--stem);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .ref-mini-item:hover { background: var(--surface-hover); }
+  .ref-mini-item.playing { border-color: var(--accent); background: var(--surface-raised); }
+  .ref-mini-name {
+    color: var(--stem);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+  }
+  .ref-mini-wave {
+    position: relative;
+    height: 22px;
+    background: var(--wave-bed);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .ref-mini-wave canvas { display: block; width: 100%; height: 100%; }
+  .ref-mini-head {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: #ffffff;
+    pointer-events: none;
+  }
+  /* Any programmatic scrollIntoView has to clear the sticky toolbar plus the
+   * sticky reference strip, or the card it scrolls to lands underneath them. */
+  .card { scroll-margin-top: calc(var(--sticky-top, 52px) + 68px); }
+
+  /* ---- rating chips ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.6rem 0 0.4rem 0; }
+  .rate-chip {
+    min-width: 2.2rem;
+    padding: 0.35rem 0.5rem;
+    text-align: center;
+    border-radius: 6px;
+    background: var(--chip-bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.9rem;
+  }
+  .rate-chip:hover { background: var(--surface-raised); }
+  .rate-chip.selected {
+    background: var(--accent);
+    color: var(--button-fg-on-accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  input[type="text"], textarea {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    font: inherit;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+  input[type="text"]::placeholder { color: var(--muted); }
+
+  .fatal {
+    background: var(--danger);
+    color: #140000;
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 600;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+  .fatal code { background: rgba(0, 0, 0, 0.22); padding: 0.05rem 0.35rem; border-radius: 4px; }
+
+  /* Explicit colours on every table part: without them a quirks-mode engine
+   * (WebKit) drops the inherited colour and renders black on the dark card. */
+  table.summary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    color: var(--fg);
+    background: var(--surface);
+  }
+  table.summary th, table.summary td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+    background: var(--surface);
+  }
+  table.summary th { color: var(--muted); font-weight: 600; }
+  table.summary td { font-variant-numeric: tabular-nums; }
+  table.summary td.delta-pos { color: var(--ok); }
+  table.summary td.delta-neg { color: var(--danger); }
+  table.summary td.delta-zero { color: var(--muted); }
+  table.summary td.best-row { color: var(--ok); font-weight: 600; }
+  table.summary td.worst-row { color: var(--danger); font-weight: 600; }
+  .summary-line { margin-top: 0.75rem; font-size: 0.9rem; color: var(--fg); }
+  .summary-line b { font-variant-numeric: tabular-nums; }
+
+  .instructions { font-size: 0.85rem; line-height: 1.55; }
+  .instructions ol { margin: 0.4rem 0 0 1.1rem; padding: 0; color: var(--fg); }
+  .instructions li { margin-bottom: 0.2rem; color: var(--fg); }
+  .instructions .how { margin: 0.75rem 0 0 0; color: var(--accent); }
+
+  details.clues summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--fg);
+    list-style-position: outside;
+  }
+  details.clues summary::marker { color: var(--muted); }
+  .clue-group { margin-top: 0.85rem; }
+  .clue-group h3 {
+    font-size: 0.8rem;
+    margin: 0 0 0.3rem 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .clue-bad h3 { color: var(--danger); }
+  .clue-good h3 { color: var(--ok); }
+  .clue-inst h3 { color: var(--accent); }
+  .clue-group ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; line-height: 1.5; color: var(--fg); }
+  .clue-group li { margin-bottom: 0.15rem; color: var(--fg); }
+  .clue-group p { margin: 0; font-size: 0.85rem; line-height: 1.5; color: var(--fg); }
+  .clue-note { margin-top: 0.85rem; font-size: 0.82rem; color: var(--muted); font-style: italic; }
+
+/*----- four-stem mode -------------------------------------------------------*/
+/* One page, every stem. Each arm is one card holding all four of its stems,
+   colour-coded, each with its own true-stem reference and its own 1-10 score. */
+.stem-row { border-left: 4px solid var(--stem); padding: 10px 0 10px 12px; margin: 14px 0; }
+.stem-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.stem-swatch { width: 14px; height: 14px; border-radius: 3px; background: var(--stem);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.25); flex: 0 0 auto; }
+.stem-name { color: var(--stem); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  font-size: 13px; }
+.stem-facts { color: #8fa2b8; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.arm-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  border-bottom: 1px solid #23303f; padding-bottom: 8px; margin-bottom: 4px; }
+.arm-title { font-size: 19px; font-weight: 700; }
+.arm-sub { color: #8fa2b8; font-size: 12px; }
+.stem-legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin: 6px 0 2px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #c8d6e5; }
+.palette-pick { font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1 id="page-title">Stem Quality Rater</h1>
+<p class="sub" id="page-sub">Rate each clip 1-10 on how clean the isolated stem sounds. Default order is the
+machine ranking: best first, worst second, then the rest in descending order, so the extremes
+are easy to A/B.</p>
+
+<p class="hint-line" id="hint-line" title="There is no separate player on this page. Every waveform is its own transport, and the modifier key retargets a click at the true stem so an A/B lands on the same instant.">
+  <b>The waveform is the player.</b> Click anywhere on a strip to play from that point, click it
+  again to pause. <b>Cmd+click</b> (Ctrl+click on Windows or Linux) any arm stem to hear the
+  <b>TRUE stem of the same colour at the same instant</b>, or hold Cmd/Ctrl while an arm plays to
+  swap to the truth live and back on release. The strip that is sounding carries a ring and a
+  badge: white for an arm, orange for the truth.
+</p>
+
+<div class="toolbar" id="toolbar"></div>
+
+<div class="ref-mini-anchor" id="ref-mini-anchor" hidden>
+  <div class="ref-mini" id="ref-mini"></div>
+</div>
+
+<div class="card instructions" id="instructions">
+  <h2>How this works</h2>
+  <ol>
+    <li id="how-order">Clips are laid out in <b>machine-score order</b>: best, then worst, then ranks 2 downward. Scores, SI-SDR and demucs settings are on show.</li>
+    <li id="how-rate">Rate <b>every</b> clip 1-10 for the stem under test, and 1-10 for the instrumental wherever an instrumental player is shown.</li>
+    <li id="how-blind">Want an unbiased test instead? Hit <b>Blind mode</b> at the top: scores and settings hide, the order shuffles, and clips become anonymous letters.</li>
+    <li id="how-summary">The summary table pairs <b>your score with the machine score</b> and the delta. In blind mode it stays hidden until every clip is rated.</li>
+  </ol>
+  <p class="how" id="how-to-rate">How to rate: play the reference at the top, then each clip, and judge how close that clip gets to the reference. The reference is what a 10 sounds like.</p>
+</div>
+
+<details class="card clues" id="clues">
+  <summary>What to listen for</summary>
+
+  <div class="clue-group clue-bad" id="clue-bad">
+    <h3>Bad, mark down for these</h3>
+    <ul>
+      <li>metallic / robotic / phasey ringing (aliasing) on sustained notes</li>
+      <li>warbling or underwater smearing, especially on held vowels</li>
+      <li>pre-echo: a faint ghost of a word just before it lands</li>
+      <li>smeared or lisping consonants; lost sibilance ("s" turning to mush)</li>
+      <li>dropouts: quiet vocal phrases deleted entirely, or gating/pumping between words</li>
+      <li>bleed: kick, hats, bass or synth stabs audible in the vocal stem</li>
+      <li>hollow/comb-filtered tone, like the vocal is in a pipe</li>
+      <li>abruptly truncated reverb or delay tails (cut off rather than decaying)</li>
+    </ul>
+  </div>
+
+  <div class="clue-group clue-good" id="clue-good">
+    <h3>Good, do not mark down for these</h3>
+    <ul>
+      <li>the vocal's own reverb and delay tails decaying naturally, a good stem keeps them</li>
+      <li>breaths, lip noise, room tone around the voice</li>
+      <li>natural sibilance and consonant bite</li>
+      <li>background/harmony vocals and adlibs kept with the lead</li>
+    </ul>
+  </div>
+
+  <div class="clue-group clue-inst" id="clue-inst">
+    <h3>Rating the instrumental</h3>
+    <p>Judge it for vocal bleed left behind (words or syllables still audible in the music) and for holes where the vocal was carved out of the backing.</p>
+  </div>
+
+  <p class="clue-note" id="clue-note">Reverb and echo that belong to the voice are part of the vocal: a stem that strips them is worse, not cleaner.</p>
+</details>
+
+<div id="app"></div>
+
+<script>
+"use strict";
+
+//----- config + fail-fast helpers -------------------------------------------
+
+const QUERY = new URLSearchParams(window.location.search);
+// ?manifest=ladder_edge.json swaps the ladder without editing this file.
+const MANIFEST_URL = QUERY.get("manifest") || "ladder.json";
+// The rater is usually opened from scripts/bench/serve.py (a static server with
+// no API), so the save endpoint is addressed absolutely. ?api= overrides it for
+// worktree daemons on other ports.
+const API_BASE = (QUERY.get("api") || "http://localhost:8585/api/v1").replace(/\/+$/, "");
+const RATINGS_ENDPOINT = API_BASE + "/bench/ratings";
+const RATINGS_DIR_REL = "scripts/bench/ratings";
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+// Waveform canvas backing resolution; CSS stretches it to the card width.
+const WAVE_W = 1200;
+const WAVE_H = 120;
+const WAVE_BLUE = "rgba(61, 125, 217, 0.85)";
+const WAVE_CORE = "rgba(207, 224, 242, 0.55)";
+
+//----- stem colours ----------------------------------------------------------
+// NOT invented here. There is no single cross-industry convention -- rekordbox,
+// Native Instruments and djay disagree on all four stems -- so this ships the
+// rekordbox palette as the default and NI's as the switchable alternative, and
+// records where each number came from. These are the colours the app will reuse,
+// so the source matters more than the taste.
+//
+// DEFAULT: rekordbox 7. Sampled from the STEM ISO knob arcs and the ACTIVE STEM
+// button row in the official manual, rekordbox7.2.16_manual_EN.pdf pp.212-214
+// (https://cdn.rekordbox.com/files/20260706162433/rekordbox7.2.16_manual_EN.pdf).
+// Stem order and naming corroborated locally by
+// /Applications/rekordbox 7/rekordbox.app/Contents/Resources/pad/Stems.pad.csv,
+// which fixes VOCAL, INST, BASS, DRUMS. Chosen as the default because this repo
+// is a rekordbox-parity UI, and because the same four colours are reinforced on
+// CDJ-3000, OPUS-QUAD and DDJ-FLX10 pads and jog rings, so DJs already read them
+// without a legend. Hues are rekordbox's; lightness is lifted for legibility as a
+// thin waveform stroke on this page's near-black background (all four clear 4.5:1).
+//
+// ALTERNATIVE: the Native Instruments Stem format default, which is the
+// Okabe-Ito colourblind-safe palette. It is stored per stem inside every
+// .stem.mp4, and NI's own packaging defaults are reproduced verbatim in
+// https://github.com/acolombier/stemgen (src/constant.rs) and
+// https://github.com/axeldelafosse/stemgen (stemgen/metadata.json).
+// Offered because rekordbox's red INST against green VOCAL is the worst possible
+// pair for deuteranopia.
+//
+// Deliberately NOT a source: Serato DJ Pro. Its Stems pad page is monochrome grey
+// with a single blue highlight on the selected pad (official screenshot at
+// https://serato.com/dj/pro/stems), so it expresses no per-stem convention and
+// citing it either way would be inventing evidence.
+const STEM_PALETTES = {
+  rekordbox: {
+    label: "rekordbox 7",
+    source: "rekordbox 7.2.16 manual pp.212-214, ACTIVE STEM / STEM ISO / STEM FX controls",
+    colors: {
+      vocals: { hex: "#3ED16A", name: "green",   as_shipped: "#45BF50", role: "VOCAL" },
+      drums:  { hex: "#7A78FF", name: "blue-violet", as_shipped: "#5B5EED", role: "DRUMS" },
+      bass:   { hex: "#FF45B8", name: "magenta", as_shipped: "#A31384", role: "BASS" },
+      other:  { hex: "#FF4438", name: "red",     as_shipped: "#F4200A", role: "INST" },
+    },
+  },
+  ni_stems: {
+    label: "NI Stem format (Okabe-Ito, colourblind-safe)",
+    source: "ni-stem packaging defaults, reproduced in acolombier/stemgen and axeldelafosse/stemgen",
+    colors: {
+      vocals: { hex: "#56B4E9", name: "sky blue",   as_shipped: "#56B4E9", role: "Vox" },
+      drums:  { hex: "#009E73", name: "green-teal", as_shipped: "#009E73", role: "Drums" },
+      bass:   { hex: "#D55E00", name: "vermillion", as_shipped: "#D55E00", role: "Bass" },
+      other:  { hex: "#CC79A7", name: "mauve pink", as_shipped: "#CC79A7", role: "Other" },
+    },
+  },
+};
+const PALETTE_KEY = "vqr:palette";
+
+function paletteName() {
+  const stored = localStorage.getItem(PALETTE_KEY);
+  return (stored !== null && STEM_PALETTES[stored] !== undefined) ? stored : "rekordbox";
+}
+
+function stemColor(stem) {
+  const palette = STEM_PALETTES[paletteName()].colors;
+  const entry = palette[stem];
+  assert(entry !== undefined,
+    "no stem colour defined for <code>" + stem + "</code>: the manifest names a stem the "
+    + "palette does not cover, and guessing a colour would defeat the point of a convention");
+  return entry;
+}
+
+/** Waveform fill and RMS core derived from a stem colour, so the strip reads as that stem. */
+function waveColors(stem) {
+  if (stem === null) return { fill: WAVE_BLUE, core: WAVE_CORE };
+  const hex = stemColor(stem).hex;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return {
+    fill: "rgba(" + r + ", " + g + ", " + b + ", 0.85)",
+    core: "rgba(255, 255, 255, 0.45)",
+  };
+}
+
+let fatalRaised = false;
+
+function fatal(msg) {
+  fatalRaised = true;
+  document.getElementById("instructions").hidden = true;
+  document.getElementById("clues").hidden = true;
+  document.getElementById("toolbar").hidden = true;
+  document.getElementById("hint-line").hidden = true;
+  document.getElementById("ref-mini-anchor").hidden = true;
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "fatal";
+  box.innerHTML = "LOAD FAILED\n\n" + msg;
+  app.appendChild(box);
+  throw new Error(msg.replace(/<[^>]+>/g, ""));
+}
+
+function assert(cond, msg) { if (!cond) fatal(msg); }
+
+//----- persistence -----------------------------------------------------------
+
+// Two tiers, and the UI must never blur them: localStorage is an autosave in
+// THIS browser, the API write is the copy that lands in the repo.
+
+function storageKey(track) { return "vqr:" + track; }
+function stampKey(track) { return "vqr:ts:" + track; }
+const BLIND_KEY = "vqr:blind";
+function blindKey(track) { return "vqr:blind:" + track; }
+
+/**
+ * A manifest may ask to open blind (`blind_default: true`) when its arms are
+ * close enough that a visible label would decide the rating for the listener.
+ * A choice the rater made ON THIS manifest always wins, so the toggle is never
+ * overridden by the file; the global toggle is the fallback for manifests that
+ * express no preference.
+ */
+function resolveBlind(m) {
+  const perTrack = localStorage.getItem(blindKey(m.track));
+  if (perTrack !== null) return perTrack === "1";
+  if (m.blind_default === true) return true;
+  return localStorage.getItem(BLIND_KEY) === "1";
+}
+
+function focusKey(track) { return "vqr:focus:" + track; }
+
+function loadFocus(track) {
+  const raw = localStorage.getItem(focusKey(track));
+  if (raw === null) return {};
+  try { return JSON.parse(raw); } catch (_e) { return {}; }
+}
+
+function saveFocus(track, focus) {
+  localStorage.setItem(focusKey(track), JSON.stringify(focus));
+}
+
+function loadRatings(track) {
+  const raw = localStorage.getItem(storageKey(track));
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch (_e) { return {}; }
+}
+
+function loadLocalStamp(track) {
+  const raw = localStorage.getItem(stampKey(track));
+  return raw === null ? null : raw;
+}
+
+function saveRatings(track, ratings) {
+  const at = new Date().toISOString();
+  localStorage.setItem(storageKey(track), JSON.stringify(ratings));
+  localStorage.setItem(stampKey(track), at);
+  state.localSavedAt = at;
+  state.dirtySinceServerSave = true;
+  refreshSaveStatus();
+}
+
+//----- ordering --------------------------------------------------------------
+
+function shuffled(arr) {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** Machine ranking, best first. Rank 1 = highest machine_score. */
+function rankedByMachine(clips) {
+  return clips.slice()
+    .sort((a, b) => b.machine_score - a.machine_score)
+    .map((c, i) => Object.assign({}, c, { _rank: i + 1, _rankTotal: clips.length }));
+}
+
+/** Best, then worst, then the middle ranks in order -- extremes sit adjacent. */
+function extremesFirst(ranked) {
+  if (ranked.length < 3) return ranked.slice();
+  const best = ranked[0];
+  const worst = ranked[ranked.length - 1];
+  return [best, worst].concat(ranked.slice(1, ranked.length - 1));
+}
+
+//----- rank agreement (Spearman) ---------------------------------------------
+
+function rankOf(values) {
+  const idx = values.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+  const ranks = new Array(values.length);
+  let i = 0;
+  while (i < idx.length) {
+    let j = i;
+    while (j + 1 < idx.length && idx[j + 1][0] === idx[i][0]) j++;
+    const avg = (i + j) / 2 + 1;
+    for (let k = i; k <= j; k++) ranks[idx[k][1]] = avg;
+    i = j + 1;
+  }
+  return ranks;
+}
+
+function spearman(a, b) {
+  assert(a.length === b.length, "rank arrays differ in length");
+  const n = a.length;
+  if (n < 2) return 1;
+  const ra = rankOf(a), rb = rankOf(b);
+  const ma = ra.reduce((s, v) => s + v, 0) / n;
+  const mb = rb.reduce((s, v) => s + v, 0) / n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    const xa = ra[i] - ma, xb = rb[i] - mb;
+    num += xa * xb; da += xa * xa; db += xb * xb;
+  }
+  if (da === 0 || db === 0) return 0;
+  return num / Math.sqrt(da * db);
+}
+
+//----- app state -------------------------------------------------------------
+
+const state = {
+  manifest: null,
+  ranked: [],       // machine order, best first, carries _rank
+  order: [],        // what the page currently renders
+  ratings: {},      // clip id -> {human_score, human_inst_score, note}
+  focus: {},        // focus question id -> {answer, verdict, note}
+  blind: false,
+  // save bookkeeping -- every field below exists so the status line can only
+  // claim things that actually happened.
+  savePhase: "idle",        // idle | saving | saved | failed
+  saveMessage: "",          // terminal-state detail, verbatim from the attempt
+  serverPath: null,         // relative path the API reported, null until a 2xx
+  localSavedAt: null,       // ISO of the last localStorage autosave
+  dirtySinceServerSave: false,
+};
+
+//----- exclusive playback ----------------------------------------------------
+// Every <audio> we create lands in this registry. A capture-phase document
+// listener is required because 'play' does not bubble; on any play we pause
+// every other registered element, including ones scrolled out of view.
+
+const audioRegistry = new Set();
+
+document.addEventListener("play", (ev) => {
+  audioRegistry.forEach((el) => {
+    if (el !== ev.target && !el.paused) el.pause();
+  });
+}, true);
+
+function stopAllAudio() {
+  audioRegistry.forEach((el) => { el.pause(); });
+}
+
+function resetAudioRegistry() {
+  stopAllAudio();
+  audioRegistry.clear();
+}
+
+//----- waveform --------------------------------------------------------------
+// Peaks come from WebAudio decodeAudioData, never synthesised. Every strip
+// starts decoding as soon as the manifest renders, so a waveform is on screen
+// before anything is played and a click lands on a real target immediately.
+//
+// That decode is a plain fetch() for peak data and is deliberately NOT the audio
+// element's own loading: every <audio> stays preload="none", because 20+ players
+// each eagerly buffering a multi-MB stem is what made later clips look
+// unplayable. One serial queue (below) keeps the eager decodes from saturating
+// the server, and the peak cache means a re-render redraws without refetching.
+
+let sharedAudioCtx = null;
+function audioCtx() {
+  if (sharedAudioCtx === null) {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    assert(typeof Ctor === "function", "this browser has no WebAudio AudioContext, waveforms cannot be drawn");
+    sharedAudioCtx = new Ctor();
+  }
+  return sharedAudioCtx;
+}
+
+// Serial decode queue: two 13MB decodes at once starve the audio element that
+// is actually playing.
+let decodeChain = Promise.resolve();
+
+// url -> peaks, so toggling blind mode (which rebuilds every card) redraws from
+// memory instead of refetching the whole manifest's audio.
+const peakCache = new Map();
+
+// url -> callbacks waiting on that decode. The sticky reference strip draws the
+// same peaks as the full-size strip, and must never trigger a second fetch.
+const peakWaiters = new Map();
+
+function onPeaks(url, cb) {
+  const cached = peakCache.get(url);
+  if (cached !== undefined) { cb(cached); return; }
+  const list = peakWaiters.get(url) || [];
+  list.push(cb);
+  peakWaiters.set(url, list);
+}
+
+function publishPeaks(url, peaks) {
+  peakCache.set(url, peaks);
+  const list = peakWaiters.get(url);
+  if (list === undefined) return;
+  peakWaiters.delete(url);
+  list.forEach((cb) => cb(peaks));
+}
+
+function computePeaks(buffer, buckets) {
+  const chans = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+  const step = Math.max(1, Math.floor(buffer.length / buckets));
+  const mins = new Float32Array(buckets);
+  const maxs = new Float32Array(buckets);
+  const rms = new Float32Array(buckets);
+  for (let b = 0; b < buckets; b++) {
+    const start = b * step;
+    const end = Math.min(buffer.length, start + step);
+    let lo = 0, hi = 0, sq = 0, n = 0;
+    for (let i = start; i < end; i++) {
+      let v = 0;
+      for (let c = 0; c < chans.length; c++) v += chans[c][i];
+      v /= chans.length;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+      sq += v * v;
+      n++;
+    }
+    mins[b] = lo;
+    maxs[b] = hi;
+    rms[b] = n > 0 ? Math.sqrt(sq / n) : 0;
+  }
+  return { mins: mins, maxs: maxs, rms: rms };
+}
+
+/** Draws into whatever backing size the canvas already has, so the full-size
+ *  strip and the 22px sticky strip share one painter. */
+function drawPeaks(canvas, peaks, colors) {
+  const ctx = canvas.getContext("2d");
+  assert(ctx !== null, "canvas 2d context unavailable, waveforms cannot be drawn");
+  const cw = canvas.width;
+  const ch = canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+  const mid = ch / 2;
+  const n = peaks.mins.length;
+  const w = cw / n;
+  const paint = colors || { fill: WAVE_BLUE, core: WAVE_CORE };
+  ctx.fillStyle = paint.fill;
+  for (let i = 0; i < n; i++) {
+    const top = mid - Math.min(1, peaks.maxs[i]) * mid;
+    const bot = mid - Math.max(-1, peaks.mins[i]) * mid;
+    ctx.fillRect(i * w, top, Math.max(w, 1), Math.max(bot - top, 1));
+  }
+  ctx.fillStyle = paint.core;
+  for (let i = 0; i < n; i++) {
+    const h = Math.min(1, peaks.rms[i]) * mid;
+    ctx.fillRect(i * w, mid - h, Math.max(w, 1), Math.max(h * 2, 1));
+  }
+}
+
+//----- truth compare (cmd+click A/B) -----------------------------------------
+// The comparison that actually discriminates is "this arm's vocals at 4.2s"
+// against "the TRUE vocals at 4.2s". Plain click plays the arm; cmd+click (or
+// ctrl+click) plays the true stem of the same type at the identical position,
+// and holding the modifier while an arm plays swaps to the truth live.
+//
+// Registry key is the stem name in four-stem mode, "__reference" on the
+// single-stem manifests, "mixture" for the unseparated source. It is rebuilt on
+// every render(), because a re-render creates brand new audio elements.
+
+const truthRegistry = new Map();
+let activeWave = null;   // handle whose audio is currently sounding
+let linkedWave = null;   // arm handle whose truth is being auditioned
+let holdSwap = null;     // {arm, truth} while the modifier is held down
+
+function clamp01(v) { return Math.min(1, Math.max(0, v)); }
+
+function clock(sec) {
+  if (!isFinite(sec) || sec < 0) return "--:--";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m + ":" + (s < 10 ? "0" : "") + s;
+}
+
+function markLinked(handle) {
+  clearLinked();
+  linkedWave = handle;
+  handle.el.classList.add("linked");
+  handle.setCue("TRUTH PLAYING");
+}
+
+function clearLinked() {
+  if (linkedWave === null) return;
+  linkedWave.el.classList.remove("linked");
+  linkedWave.setCue("TRUTH");
+  linkedWave = null;
+}
+
+/** cmd+click on an arm strip: the true stem of the same type, same instant. */
+function playTruthAt(source, ratio) {
+  const key = source.el.dataset.truth;
+  if (key === undefined) {
+    source.note("no true reference exists for this row, so there is nothing to A/B against");
+    return null;
+  }
+  const truth = truthRegistry.get(key);
+  if (truth === undefined) {
+    source.note("the true " + key + " reference is not on this page");
+    return null;
+  }
+  // An explicit cmd+click owns the transport: releasing the key must not yank
+  // playback back to the arm as it would during a hold-to-compare.
+  holdSwap = null;
+  markLinked(source);
+  const dur = source.audio.duration;
+  if (isFinite(dur) && dur > 0) truth.seekSeconds(ratio * dur); else truth.seekRatio(ratio);
+  truth.play();
+  return truth;
+}
+
+/** Modifier held while an arm plays: swap to the truth at the same instant. */
+function beginHoldSwap() {
+  if (holdSwap !== null) return;
+  const src = activeWave;
+  if (src === null || src.audio.paused) return;
+  const key = src.el.dataset.truth;
+  if (key === undefined) return;
+  const truth = truthRegistry.get(key);
+  if (truth === undefined) return;
+  // A cold reference cannot start in-place: preload="none" means the first play
+  // is a network fetch, and a half-second gap is not an A/B. Say so, do not fake it.
+  if (truth.audio.readyState < 2) {
+    src.note("hold to A/B needs the true stem loaded: cmd+click it once first");
+    return;
+  }
+  holdSwap = { arm: src, truth: truth };
+  markLinked(src);
+  truth.seekSeconds(src.audio.currentTime);
+  truth.play();
+}
+
+function endHoldSwap() {
+  if (holdSwap === null) return;
+  const arm = holdSwap.arm;
+  const truth = holdSwap.truth;
+  holdSwap = null;
+  clearLinked();
+  if (truth.audio.paused) return;
+  arm.seekSeconds(truth.audio.currentTime);
+  arm.play();
+}
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Meta" && ev.key !== "Control") return;
+  document.body.classList.add("mod-held");
+  if (ev.repeat) return;
+  beginHoldSwap();
+});
+
+document.addEventListener("keyup", (ev) => {
+  if (ev.key !== "Meta" && ev.key !== "Control") return;
+  document.body.classList.remove("mod-held");
+  endHoldSwap();
+});
+
+// A modifier released while the window is unfocused never fires keyup here, and
+// a stuck "mod-held" would silently retarget the next plain click.
+window.addEventListener("blur", () => {
+  document.body.classList.remove("mod-held");
+  endHoldSwap();
+});
+
+/**
+ * Waveform strip bound to an audio element, and the only transport on the page:
+ * lazy decode, click to play from that point, click again to pause, playhead
+ * and elapsed/duration tracked live, cmd+click to hear the true stem there.
+ *
+ * opts: {truthKey, registerTruth, isTruth} -- truthKey is the registry entry a
+ * cmd+click on this strip should reach for, registerTruth publishes this strip
+ * AS that entry.
+ */
+function makeWaveform(audioEl, url, title, stem, opts) {
+  const o = opts || {};
+  const paint = waveColors(stem === undefined ? null : stem);
+  const wrap = document.createElement("div");
+  wrap.className = "wave" + (o.isTruth === true ? " is-truth" : "");
+  wrap.setAttribute("role", "button");
+  wrap.tabIndex = 0;
+  wrap.title = title + (typeof o.truthKey === "string"
+    ? ". Cmd or Ctrl click to hear the TRUE " + o.truthKey + " at the same instant" : "");
+  if (typeof o.truthKey === "string") wrap.dataset.truth = o.truthKey;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = WAVE_W;
+  canvas.height = WAVE_H;
+  wrap.appendChild(canvas);
+
+  const head = document.createElement("span");
+  head.className = "playhead";
+  wrap.appendChild(head);
+
+  const badge = document.createElement("span");
+  badge.className = "wave-badge";
+  badge.textContent = o.isTruth === true ? "TRUTH SOUNDING" : "SOUNDING";
+  wrap.appendChild(badge);
+
+  const cue = document.createElement("span");
+  cue.className = "wave-truth-cue";
+  cue.textContent = "TRUTH";
+  wrap.appendChild(cue);
+
+  const time = document.createElement("span");
+  time.className = "wave-time";
+  time.title = "Elapsed time and total length of this clip, minutes:seconds. "
+    + "The elapsed value is where a click landed and where playback has reached.";
+  time.textContent = "0:00 / --:--";
+  wrap.appendChild(time);
+
+  const note = document.createElement("span");
+  note.className = "wave-note";
+  note.textContent = "click to play from that point";
+  wrap.appendChild(note);
+
+  let decodeState = "idle";  // idle | loading | drawn | failed
+  let pendingSeekRatio = null;
+  let pendingSeekSeconds = null;
+  let noteTimer = null;
+
+  function finishDrawn(peaks) {
+    drawPeaks(canvas, peaks, paint);
+    decodeState = "drawn";
+    note.textContent = "";
+    note.hidden = true;
+  }
+
+  function ensureDecoded() {
+    if (decodeState !== "idle") return;
+    const cached = peakCache.get(url);
+    if (cached !== undefined) { finishDrawn(cached); return; }
+    decodeState = "loading";
+    note.textContent = "drawing waveform...";
+    decodeChain = decodeChain.then(() =>
+      fetch(url)
+        .then((resp) => {
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          return resp.arrayBuffer();
+        })
+        .then((buf) => audioCtx().decodeAudioData(buf))
+        .then((decoded) => {
+          const peaks = computePeaks(decoded, WAVE_W);
+          publishPeaks(url, peaks);
+          finishDrawn(peaks);
+        })
+        .catch((err) => {
+          decodeState = "failed";
+          note.className = "wave-note failed";
+          note.textContent = "waveform decode failed: " + err.message;
+        })
+    );
+  }
+
+  /** Transient message over the strip. Never used to report a success. */
+  function showNote(msg) {
+    note.hidden = false;
+    note.className = "wave-note failed";
+    note.textContent = msg;
+    if (noteTimer !== null) clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+      noteTimer = null;
+      if (decodeState === "drawn") { note.hidden = true; note.className = "wave-note"; note.textContent = ""; }
+    }, 3000);
+  }
+
+  function paintTime() {
+    const dur = audioEl.duration;
+    time.textContent = clock(audioEl.currentTime) + " / " + clock(dur);
+    if (isFinite(dur) && dur > 0) head.style.left = ((audioEl.currentTime / dur) * 100) + "%";
+  }
+
+  function seekRatio(ratio) {
+    if (audioEl.readyState >= 1 && isFinite(audioEl.duration) && audioEl.duration > 0) {
+      audioEl.currentTime = ratio * audioEl.duration;
+      paintTime();
+      return true;
+    }
+    pendingSeekSeconds = null;
+    pendingSeekRatio = ratio;
+    head.style.left = (ratio * 100) + "%";
+    return false;
+  }
+
+  function seekSeconds(sec) {
+    if (audioEl.readyState >= 1 && isFinite(audioEl.duration) && audioEl.duration > 0) {
+      audioEl.currentTime = Math.min(sec, audioEl.duration);
+      paintTime();
+      return true;
+    }
+    pendingSeekRatio = null;
+    pendingSeekSeconds = sec;
+    return false;
+  }
+
+  function play() {
+    ensureDecoded();
+    const p = audioEl.play();
+    if (p && typeof p.catch === "function") p.catch((err) => showNote("playback blocked: " + err.message));
+  }
+
+  audioEl.addEventListener("loadedmetadata", () => {
+    if (pendingSeekRatio !== null) {
+      audioEl.currentTime = pendingSeekRatio * audioEl.duration;
+      pendingSeekRatio = null;
+    } else if (pendingSeekSeconds !== null) {
+      audioEl.currentTime = Math.min(pendingSeekSeconds, audioEl.duration);
+      pendingSeekSeconds = null;
+    }
+    paintTime();
+  });
+
+  const handle = {
+    el: wrap,
+    audio: audioEl,
+    url: url,
+    isTruth: o.isTruth === true,
+    seekRatio: seekRatio,
+    seekSeconds: seekSeconds,
+    play: play,
+    note: showNote,
+    setCue: (text) => { cue.textContent = text; },
+  };
+  wrap.waveApi = handle;
+  if (typeof o.registerTruth === "string") truthRegistry.set(o.registerTruth, handle);
+
+  // The strip IS the transport: plain click plays from the clicked point or
+  // pauses what is already running, modifier click retargets at the truth.
+  wrap.addEventListener("click", (ev) => {
+    const rect = wrap.getBoundingClientRect();
+    const ratio = clamp01((ev.clientX - rect.left) / rect.width);
+    if (ev.metaKey || ev.ctrlKey) { playTruthAt(handle, ratio); return; }
+    if (!audioEl.paused) { audioEl.pause(); return; }
+    seekRatio(ratio);
+    play();
+  });
+
+  wrap.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    ev.preventDefault();
+    if (audioEl.paused) play(); else audioEl.pause();
+  });
+
+  // Decode on 'playing' rather than 'play' so the streaming request wins the
+  // race for bandwidth and audio starts immediately.
+  audioEl.addEventListener("playing", ensureDecoded);
+  audioEl.addEventListener("playing", () => {
+    activeWave = handle;
+    wrap.classList.add("sounding");
+    if (linkedWave === handle) clearLinked();
+  });
+  audioEl.addEventListener("pause", () => { wrap.classList.remove("sounding"); });
+  audioEl.addEventListener("ended", () => {
+    wrap.classList.remove("sounding");
+    if (linkedWave !== null && holdSwap === null) clearLinked();
+  });
+
+  let rafId = null;
+  function tick() {
+    paintTime();
+    rafId = audioEl.paused ? null : requestAnimationFrame(tick);
+  }
+  audioEl.addEventListener("play", () => { if (rafId === null) tick(); });
+  audioEl.addEventListener("pause", () => {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    tick();
+  });
+  audioEl.addEventListener("seeked", () => { if (audioEl.paused) tick(); });
+
+  // Draw now, not on first play. The strip has to be a visible target before
+  // anyone clicks it, and the audio element still loads nothing until play.
+  ensureDecoded();
+
+  return wrap;
+}
+
+//----- sticky reference strip -------------------------------------------------
+// Scrolling past the references used to mean the thing every score is measured
+// against was off screen. This pins a compact row of the same true stems under
+// the toolbar, drawn from the cached peaks and driving the same audio elements,
+// so nothing is fetched or decoded twice.
+
+function stickyTop() {
+  const bar = document.getElementById("toolbar");
+  return (bar === null || bar.hidden ? 0 : bar.offsetHeight) + 6;
+}
+
+function syncStickyTop() {
+  document.documentElement.style.setProperty("--sticky-top", stickyTop() + "px");
+}
+
+function miniLabel(key) {
+  if (key === "__reference") return "reference";
+  return key;
+}
+
+function refMiniItem(key, handle, color) {
+  const item = document.createElement("button");
+  item.className = "ref-mini-item";
+  item.dataset.truth = key;
+  item.style.setProperty("--stem", color);
+  item.title = "TRUE " + miniLabel(key) + ": click anywhere to play the reference from that "
+    + "point, click again to pause. This is the same clip as the full strip at the top of the page.";
+
+  const name = document.createElement("span");
+  name.className = "ref-mini-name";
+  name.textContent = miniLabel(key);
+  item.appendChild(name);
+
+  const box = document.createElement("span");
+  box.className = "ref-mini-wave";
+  const canvas = document.createElement("canvas");
+  canvas.width = 300;
+  canvas.height = 44;
+  box.appendChild(canvas);
+  const head = document.createElement("span");
+  head.className = "ref-mini-head";
+  box.appendChild(head);
+  item.appendChild(box);
+
+  onPeaks(handle.url, (peaks) => drawPeaks(canvas, peaks, {
+    fill: color, core: "rgba(255, 255, 255, 0.45)",
+  }));
+
+  item.addEventListener("click", (ev) => {
+    const rect = box.getBoundingClientRect();
+    const ratio = clamp01((ev.clientX - rect.left) / rect.width);
+    if (!handle.audio.paused) { handle.audio.pause(); return; }
+    handle.seekRatio(ratio);
+    handle.play();
+  });
+
+  const move = () => {
+    const dur = handle.audio.duration;
+    if (isFinite(dur) && dur > 0) head.style.left = ((handle.audio.currentTime / dur) * 100) + "%";
+  };
+  handle.audio.addEventListener("timeupdate", move);
+  handle.audio.addEventListener("seeked", move);
+  handle.audio.addEventListener("playing", () => item.classList.add("playing"));
+  handle.audio.addEventListener("pause", () => item.classList.remove("playing"));
+  return item;
+}
+
+function buildRefMini() {
+  const anchor = document.getElementById("ref-mini-anchor");
+  const bar = document.getElementById("ref-mini");
+  bar.innerHTML = "";
+  anchor.classList.remove("on");
+  if (truthRegistry.size === 0) { anchor.hidden = true; return; }
+  anchor.hidden = false;
+
+  const label = document.createElement("span");
+  label.className = "ref-mini-label";
+  label.textContent = "true stems";
+  label.title = "The reference block, pinned. Same files, same players as the full References "
+    + "card at the top of the page: this row only appears once that card has scrolled away.";
+  bar.appendChild(label);
+
+  truthRegistry.forEach((handle, key) => {
+    const color = (key === "mixture" || key === "__reference")
+      ? "#8fa2b8" : stemColor(key).hex;
+    bar.appendChild(refMiniItem(key, handle, color));
+  });
+  syncStickyTop();
+  refMiniSync();
+}
+
+/** Show the pinned row only once the full reference card is off the top. */
+function refMiniSync() {
+  const anchor = document.getElementById("ref-mini-anchor");
+  if (anchor === null || anchor.hidden) return;
+  const card = document.getElementById("reference-card");
+  if (card === null) { anchor.classList.remove("on"); return; }
+  anchor.classList.toggle("on", card.getBoundingClientRect().bottom < stickyTop());
+}
+
+let refMiniFrame = null;
+window.addEventListener("scroll", () => {
+  if (refMiniFrame !== null) return;
+  refMiniFrame = requestAnimationFrame(() => { refMiniFrame = null; refMiniSync(); });
+}, { passive: true });
+window.addEventListener("resize", () => { syncStickyTop(); refMiniSync(); });
+
+
+//----- four-stem mode --------------------------------------------------------
+// Four-stem mode compares one arm's four outputs on one card. The content
+// gate rejects near-empty stems before encoding; per-stem content measurements
+// travel in the caller-supplied manifest and appear on screen. Private selection
+// and listening histories are not included in this public copy.
+// Everything the single-stem path guarantees still holds: blind by default,
+// exclusive playback across every player, waveforms drawn on load with
+// preload="none", flat factual params strings.
+
+function isFourStem(m) { return m && m.mode === "four-stem"; }
+
+/** Composite rating key. A score belongs to an (arm, stem) pair, not an arm. */
+function cellKey(armId, stem) { return armId + "::" + stem; }
+
+function fourStemCells() {
+  const out = [];
+  state.ranked.forEach((arm) => {
+    state.manifest.stems.forEach((group) => { out.push({ arm: arm, stem: group.stem }); });
+  });
+  return out;
+}
+
+function fourStemRated(cell) {
+  const r = state.ratings[cellKey(cell.arm.id, cell.stem)];
+  return !!r && typeof r.human_score === "number";
+}
+
+function stemGroup(stem) {
+  const group = state.manifest.stems.filter((g) => g.stem === stem)[0];
+  assert(group !== undefined, "manifest has no stem group for <code>" + stem + "</code>");
+  return group;
+}
+
+/** 1-10 chips for one (arm, stem) cell. */
+function stemChips(armId, stem, displayName) {
+  const key = cellKey(armId, stem);
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  chips.dataset.cell = key;
+  for (let n = 1; n <= 10; n++) {
+    const chip = document.createElement("button");
+    chip.className = "rate-chip";
+    chip.textContent = n;
+    chip.title = "Rate the " + stem + " stem of " + displayName + " a " + n + " out of 10";
+    const current = state.ratings[key] || {};
+    if (current.human_score === n) chip.classList.add("selected");
+    chip.addEventListener("click", () => {
+      const r = state.ratings[key] || {};
+      r.human_score = n;
+      state.ratings[key] = r;
+      saveRatings(state.manifest.track, state.ratings);
+      Array.prototype.forEach.call(chips.children, (c, i) => {
+        c.classList.toggle("selected", i + 1 === n);
+      });
+      refreshProgress();
+      refreshSummary();
+    });
+    chips.appendChild(chip);
+  }
+  return chips;
+}
+
+/**
+ * One stem row: swatch, name, its own factual params line, a waveform in the
+ * stem's colour, a player and a 1-10 score. Used for both graded arms and the
+ * true-stem references, so a reference always looks like the thing it references.
+ */
+function stemRow(opts) {
+  const color = stemColor(opts.stem);
+  const row = document.createElement("div");
+  row.className = "stem-row";
+  row.style.setProperty("--stem", color.hex);
+  row.dataset.stem = opts.stem;
+  if (opts.armId) row.dataset.cell = cellKey(opts.armId, opts.stem);
+
+  const head = document.createElement("div");
+  head.className = "stem-head";
+  const swatch = document.createElement("span");
+  swatch.className = "stem-swatch";
+  swatch.title = opts.stem + " is " + color.name + " " + color.hex + " -- "
+    + STEM_PALETTES[paletteName()].label + " convention (" + color.role + ")";
+  head.appendChild(swatch);
+  const name = document.createElement("span");
+  name.className = "stem-name";
+  name.textContent = opts.stem;
+  name.title = swatch.title;
+  head.appendChild(name);
+
+  const status = document.createElement("span");
+  status.className = "clip-status";
+  status.title = "Playback status for this file";
+  status.textContent = "not loaded";
+  head.appendChild(status);
+  row.appendChild(head);
+
+  if (opts.facts) {
+    const facts = document.createElement("div");
+    facts.className = "stem-facts";
+    facts.title = opts.factsTitle || "Measured facts about this file, stated flat";
+    facts.textContent = opts.facts;
+    row.appendChild(facts);
+  }
+
+  const audio = makeAudio(opts.file, () => {
+    status.className = "clip-status missing";
+    status.textContent = "file missing: " + opts.file;
+  });
+  audio.dataset.stem = opts.stem;
+  if (opts.armId) audio.dataset.armId = opts.armId;
+  audio.addEventListener("playing", () => { status.className = "clip-status"; status.textContent = "playing"; });
+  audio.addEventListener("pause", () => { status.className = "clip-status"; status.textContent = "paused"; });
+  // A row with no armId is a TRUE stem, so it publishes itself as the reference
+  // for its stem; a row with one is an arm, so it points at that reference.
+  const isReference = !opts.armId;
+  row.appendChild(makeWaveform(audio, opts.file,
+    (isReference ? "TRUE " : "") + opts.stem + " waveform -- click to play from that point, "
+    + "click again to pause", opts.stem,
+    isReference ? { registerTruth: opts.stem, isTruth: true } : { truthKey: opts.stem }));
+  row.appendChild(audio);
+
+  if (opts.armId) row.appendChild(stemChips(opts.armId, opts.stem, opts.displayName));
+  return row;
+}
+
+/** Legend plus the palette switch, so the colour convention is stated on the page. */
+function stemLegend() {
+  const wrap = document.createElement("div");
+  wrap.className = "stem-legend";
+  state.manifest.stems.forEach((g) => {
+    const c = stemColor(g.stem);
+    const item = document.createElement("span");
+    item.className = "legend-item";
+    const sw = document.createElement("span");
+    sw.className = "stem-swatch";
+    sw.style.background = c.hex;
+    item.appendChild(sw);
+    const txt = document.createElement("span");
+    txt.textContent = g.stem + " " + c.hex;
+    item.appendChild(txt);
+    item.title = g.stem + " is " + c.name + ", " + STEM_PALETTES[paletteName()].label
+      + " calls it " + c.role + ". Source: " + STEM_PALETTES[paletteName()].source
+      + ". Shipped value " + c.as_shipped + "; this page lifts lightness for contrast on black.";
+    wrap.appendChild(item);
+  });
+
+  const pick = document.createElement("select");
+  pick.className = "palette-pick";
+  pick.id = "palette-pick";
+  pick.title = "Which product's stem colour convention to use. There is no single "
+    + "cross-industry standard: rekordbox, Native Instruments and djay disagree on all four "
+    + "stems, and Serato ships no per-stem colours at all. rekordbox is the default because "
+    + "this is a rekordbox-parity UI and its palette is reinforced on CDJ and DDJ hardware.";
+  Object.keys(STEM_PALETTES).forEach((key) => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = STEM_PALETTES[key].label;
+    if (key === paletteName()) opt.selected = true;
+    pick.appendChild(opt);
+  });
+  pick.addEventListener("change", () => {
+    localStorage.setItem(PALETTE_KEY, pick.value);
+    peakCache.clear();
+    render();
+  });
+  wrap.appendChild(pick);
+  return wrap;
+}
+
+/** References: the four true stems and the raw mixture. Never graded. */
+function referenceCard() {
+  const m = state.manifest;
+  const card = document.createElement("div");
+  card.className = "card reference-card";
+  card.id = "reference-card";
+
+  const h = document.createElement("h2");
+  h.textContent = "References -- the TRUE stems (what a 10 sounds like) and the raw mixture";
+  card.appendChild(h);
+
+  const why = document.createElement("div");
+  why.className = "clip-status";
+  why.title = "Why these are here and not in the graded list";
+  why.textContent = "Each true stem is the reference for the arm rows of the same colour below. "
+    + "The mixture is the unseparated source: it is NOT an arm and is not scored.";
+  card.appendChild(why);
+  card.appendChild(stemLegend());
+
+  m.stems.forEach((g) => {
+    const parts = [];
+    if (g.content) {
+      parts.push(g.content.rms_dbfs.toFixed(1) + " dBFS RMS");
+      parts.push(g.content.peak_dbfs.toFixed(1) + " dBFS peak");
+      parts.push((g.content.active_frac * 100).toFixed(0) + "% of frames active");
+      parts.push((g.content.energy_share * 100).toFixed(1) + "% of stem energy");
+      parts.push(g.content.rms_below_loudest_db.toFixed(1) + " dB under the loudest stem");
+    }
+    if (!state.blind && typeof g.mixture_floor_si_sdr === "number") {
+      parts.push("do-nothing floor " + g.mixture_floor_si_sdr.toFixed(2) + " dB SI-SDR");
+    }
+    card.appendChild(stemRow({
+      stem: g.stem,
+      file: g.reference,
+      facts: parts.length > 0 ? parts.join("  |  ") : g.reference,
+      factsTitle: "Content measured on this true stem by stem_content_gate.py before any "
+        + "clip was encoded. Every one of these cleared the gate, which is why this track "
+        + "replaced one whose bass stem had virtually nothing in it.",
+    }));
+  });
+
+  if (typeof m.mixture_file === "string" && m.mixture_file.length > 0) {
+    const mixWrap = document.createElement("div");
+    mixWrap.className = "stem-row";
+    mixWrap.style.setProperty("--stem", "#8fa2b8");
+    mixWrap.id = "mixture-reference";
+    const mh = document.createElement("div");
+    mh.className = "stem-head";
+    const mn = document.createElement("span");
+    mn.className = "stem-name";
+    mn.style.color = "#c8d6e5";
+    mn.textContent = "raw mixture (not graded)";
+    mh.appendChild(mn);
+    mixWrap.appendChild(mh);
+    const audio = makeAudio(m.mixture_file, () => { mn.textContent = "file missing: " + m.mixture_file; });
+    mixWrap.appendChild(makeWaveform(audio, m.mixture_file,
+      "Mixture waveform -- click to play from that point, click again to pause", undefined,
+      { registerTruth: "mixture", isTruth: true }));
+    mixWrap.appendChild(audio);
+    card.appendChild(mixWrap);
+  }
+  return card;
+}
+
+/** One arm, all four of its stems, each with its own score. */
+function armCard(arm) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.dataset.armId = arm.id;
+
+  const head = document.createElement("div");
+  head.className = "arm-head";
+  const title = document.createElement("span");
+  title.className = "arm-title";
+  const displayName = state.blind ? "Arm " + arm._letter : arm.id;
+  if (state.blind) {
+    title.textContent = displayName;
+    title.title = "Anonymous arm. Which config this is, its machine scores and its SI-SDR "
+      + "are hidden until you turn blind mode off.";
+  } else {
+    const badge = document.createElement("span");
+    const isBest = arm._rank === 1;
+    const isWorst = arm._rank === arm._rankTotal;
+    badge.className = "rank-badge" + (isBest ? " best" : (isWorst ? " worst" : ""));
+    badge.textContent = isBest ? "BEST" : (isWorst ? "WORST" : "#" + arm._rank);
+    badge.title = "Machine rank " + arm._rank + " of " + arm._rankTotal
+      + ", averaged over all four stems";
+    title.appendChild(badge);
+    title.appendChild(document.createTextNode(arm.id));
+  }
+  head.appendChild(title);
+
+  const sub = document.createElement("span");
+  sub.className = "arm-sub";
+  sub.title = "Score all four stems of this arm. Each has its own true-stem reference above, "
+    + "in the same colour.";
+  sub.textContent = "all four stems from one separation pass -- score each one";
+  head.appendChild(sub);
+  card.appendChild(head);
+
+  if (!state.blind) {
+    const meta = document.createElement("div");
+    meta.className = "meta-row";
+    meta.appendChild(metaItem("machine ", String(arm.machine_score),
+      "Machine quality score for this arm across all four stems, 1-10, higher is better"));
+    meta.appendChild(metaItem("cost ", arm.s_per_stem_minute.toFixed(2) + " s",
+      "Seconds of separation per stem-minute of audio on Apple M3 CPU, all four stems "
+      + "from one pass. Lower is cheaper."));
+    const params = document.createElement("span");
+    params.title = "Model and settings that produced all four of this arm's stems";
+    params.appendChild(document.createTextNode("settings "));
+    const code = document.createElement("code");
+    code.textContent = arm.params;
+    params.appendChild(code);
+    meta.appendChild(params);
+    card.appendChild(meta);
+  }
+
+  state.manifest.stems.forEach((g) => {
+    const cell = arm.stems[g.stem];
+    assert(cell !== undefined,
+      "arm <code>" + arm.id + "</code> has no <code>" + g.stem + "</code> stem");
+    const facts = [];
+    if (!state.blind) {
+      facts.push("SI-SDR " + cell.si_sdr.toFixed(2) + " dB");
+      facts.push("floor " + g.mixture_floor_si_sdr.toFixed(2) + " dB");
+      facts.push("gain over doing nothing " + (cell.si_sdr - g.mixture_floor_si_sdr).toFixed(2) + " dB");
+    }
+    card.appendChild(stemRow({
+      stem: g.stem,
+      file: cell.file,
+      armId: arm.id,
+      displayName: displayName,
+      facts: facts.length > 0 ? facts.join("  |  ") : null,
+      factsTitle: "SI-SDR of this stem against the true stem of the same colour above, the "
+        + "do-nothing floor for that stem, and the difference between them.",
+    }));
+  });
+
+  const noteKey = cellKey(arm.id, "_note");
+  const current = state.ratings[noteKey] || {};
+  const note = document.createElement("input");
+  note.type = "text";
+  note.placeholder = "optional one-line note on this arm (which stem let it down, what you heard)";
+  note.value = current.note || "";
+  note.addEventListener("input", () => {
+    const r = state.ratings[noteKey] || {};
+    r.note = note.value;
+    state.ratings[noteKey] = r;
+    saveRatings(state.manifest.track, state.ratings);
+  });
+  card.appendChild(note);
+  return card;
+}
+
+function renderFourStem() {
+  const app = document.getElementById("app");
+  const m = state.manifest;
+
+  state.order = state.blind
+    ? shuffled(state.ranked).map((a, i) => Object.assign({}, a, { _letter: LETTERS[i] || ("#" + (i + 1)) }))
+    : extremesFirst(state.ranked);
+
+  renderToolbar();
+  app.appendChild(referenceCard());
+  if (m.prediction) app.appendChild(focusCard(m.prediction));
+  state.order.forEach((arm) => app.appendChild(armCard(arm)));
+  app.appendChild(summaryCard());
+}
+
+/** Per-stem agreement table. One row per (arm, stem) is unreadable at 24 rows,
+ *  so this is arms down the side and stems across, with your score in each cell. */
+function fillFourStemSummary(body) {
+  const cells = fourStemCells();
+  const missing = cells.filter((c) => !fourStemRated(c)).length;
+  if (state.blind && missing > 0) {
+    const p = document.createElement("p");
+    p.className = "sub";
+    p.title = "In blind mode the comparison stays hidden until every stem of every arm has a "
+      + "score, so nothing biases you";
+    p.textContent = "Blind mode: " + missing + " of " + cells.length
+      + " stem scores still to go. The comparison unlocks when they are all in.";
+    body.appendChild(p);
+    return;
+  }
+
+  const stems = state.manifest.stems.map((g) => g.stem);
+  const table = document.createElement("table");
+  table.className = "summary";
+  const thead = document.createElement("thead");
+  const hrow = document.createElement("tr");
+  [["arm", "Arm id from the manifest"]].concat(stems.map((s) => [s, "Your 1-10 score for the "
+    + s + " stem, and the arm's SI-SDR on it"])).concat([["mean", "Mean of your four scores"]])
+    .forEach(([text, title]) => {
+      const th = document.createElement("th");
+      th.textContent = text;
+      th.title = title;
+      hrow.appendChild(th);
+    });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  const machine = [], human = [];
+  state.ranked.forEach((arm) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(cell(arm.id, "Arm id from the manifest"));
+    let sum = 0, n = 0;
+    stems.forEach((stem) => {
+      const r = state.ratings[cellKey(arm.id, stem)] || {};
+      const h = typeof r.human_score === "number" ? r.human_score : null;
+      const sd = arm.stems[stem].si_sdr;
+      tr.appendChild(cell(h === null ? "-" : h + "  (" + sd.toFixed(1) + " dB)",
+        h === null ? "Not rated yet, SI-SDR " + sd.toFixed(2) + " dB"
+                   : "Your score " + h + ", SI-SDR " + sd.toFixed(2) + " dB"));
+      if (h !== null) { sum += h; n++; }
+    });
+    const mean = n > 0 ? sum / n : null;
+    tr.appendChild(cell(mean === null ? "-" : mean.toFixed(2),
+      mean === null ? "No stem of this arm is rated yet" : "Mean of your " + n + " scores"));
+    if (mean !== null) { machine.push(arm.machine_score); human.push(mean); }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  body.appendChild(table);
+
+  const line = document.createElement("div");
+  line.className = "summary-line";
+  line.title = "Rank agreement is a Spearman correlation between the machine's overall ranking "
+    + "and your mean-of-four-stems ranking (1 = identical order, 0 = unrelated, -1 = reversed).";
+  line.textContent = machine.length < 2
+    ? "Rate at least two arms for a rank agreement."
+    : "Rated " + machine.length + " of " + state.ranked.length + " arms -- rank agreement "
+      + "(Spearman) " + spearman(machine, human).toFixed(2);
+  body.appendChild(line);
+  if (state.manifest.prediction) body.appendChild(predictionReveal(state.manifest.prediction));
+}
+
+function validateFourStem(m) {
+  assert(Array.isArray(m.stems) && m.stems.length > 0,
+    "four-stem manifest needs a non-empty <code>stems</code> array");
+  assert(Array.isArray(m.arms) && m.arms.length > 0,
+    "four-stem manifest needs a non-empty <code>arms</code> array");
+  const names = [];
+  m.stems.forEach((g, i) => {
+    const where = "stems[" + i + "]";
+    assert(g && typeof g.stem === "string" && g.stem.length > 0,
+      where + " missing string <code>stem</code>");
+    assert(typeof g.reference === "string" && g.reference.length > 0,
+      where + " missing its own <code>reference</code>: a stem graded against another stem's "
+      + "reference is the exact mistake the four separate manifests existed to avoid");
+    assert(typeof g.mixture_floor_si_sdr === "number",
+      where + " missing numeric <code>mixture_floor_si_sdr</code>");
+    names.push(g.stem);
+  });
+  assert(new Set(names).size === names.length, "duplicate stem names in <code>stems</code>");
+  const ids = m.arms.map((a) => a.id);
+  assert(new Set(ids).size === ids.length, "duplicate arm <code>id</code> values");
+  const scores = m.arms.map((a) => a.machine_score);
+  assert(new Set(scores).size === scores.length,
+    "duplicate <code>machine_score</code> values across arms: best/worst would be ambiguous");
+  m.arms.forEach((a, i) => {
+    const where = "arms[" + i + "]";
+    assert(typeof a.id === "string" && a.id.length > 0, where + " missing string <code>id</code>");
+    assert(typeof a.params === "string" && a.params.length > 0,
+      where + " missing <code>params</code>");
+    assert(typeof a.machine_score === "number", where + " missing numeric <code>machine_score</code>");
+    assert(typeof a.s_per_stem_minute === "number",
+      where + " missing numeric <code>s_per_stem_minute</code>");
+    assert(a.stems && typeof a.stems === "object", where + " missing <code>stems</code> object");
+    names.forEach((stem) => {
+      const c = a.stems[stem];
+      assert(c && typeof c === "object", where + " has no <code>" + stem + "</code> stem");
+      assert(typeof c.file === "string" && c.file.length > 0,
+        where + "." + stem + " missing string <code>file</code>");
+      assert(typeof c.si_sdr === "number",
+        where + "." + stem + " missing numeric <code>si_sdr</code>");
+    });
+  });
+  if (m.prediction !== undefined && m.prediction !== null) validatePrediction(m.prediction, ids);
+}
+
+function buildFourStemPayload() {
+  const p = state.manifest.prediction || null;
+  const rows = [];
+  state.ranked.forEach((arm) => {
+    state.manifest.stems.forEach((g) => {
+      const r = state.ratings[cellKey(arm.id, g.stem)] || {};
+      rows.push({
+        id: arm.id,
+        stem: g.stem,
+        file: arm.stems[g.stem].file,
+        reference: g.reference,
+        params: arm.params,
+        machine_score: arm.machine_score,
+        machine_rank: arm._rank,
+        si_sdr: arm.stems[g.stem].si_sdr,
+        mixture_floor_si_sdr: g.mixture_floor_si_sdr,
+        human_score: typeof r.human_score === "number" ? r.human_score : null,
+        note: (state.ratings[cellKey(arm.id, "_note")] || {}).note || "",
+      });
+    });
+  });
+  return {
+    track: state.manifest.track,
+    mode: "four-stem",
+    palette: paletteName(),
+    blind_mode: state.blind,
+    manifest: MANIFEST_URL,
+    prediction: p,
+    focus_answers: p === null ? [] : p.focus_questions.map((q) => {
+      const f = state.focus[q.id] || {};
+      return {
+        id: q.id, judgement_id: q.judgement_id, question: q.question, our_view: q.our_view,
+        answer: f.answer === undefined ? null : f.answer,
+        verdict: f.answer === undefined ? null : f.verdict,
+        note: f.note || "",
+      };
+    }),
+    ledger_updates: computeLedgerUpdates(),
+    ratings: rows,
+  };
+}
+
+//----- render ----------------------------------------------------------------
+
+function clipRated(clip) {
+  const r = state.ratings[clip.id];
+  if (!r || typeof r.human_score !== "number") return false;
+  if (clip.inst_file && typeof r.human_inst_score !== "number") return false;
+  return true;
+}
+
+function ratedCount() {
+  if (isFourStem(state.manifest)) return fourStemCells().filter(fourStemRated).length;
+  return state.order.filter(clipRated).length;
+}
+
+/** Denominator for the progress line: stem scores in four-stem mode, clips otherwise. */
+function rateableCount() {
+  if (isFourStem(state.manifest)) return fourStemCells().length;
+  return state.order.length;
+}
+
+function makeAudio(src, onError) {
+  const el = document.createElement("audio");
+  // No native transport anywhere on this page: the waveform is the player, and
+  // browser chrome next to it gave two controls for one clip. The element still
+  // does the playback, it just does not draw.
+  el.controls = false;
+  // preload="none" is load-bearing: the manifest is 20+ files of ~13MB, and
+  // preloading them all saturates the server so later clips never start.
+  el.preload = "none";
+  el.src = src;
+  el.addEventListener("error", onError);
+  audioRegistry.add(el);
+  return el;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  resetAudioRegistry();
+  // A re-render builds new audio elements, so every handle in the registry is
+  // stale. Clearing it here is what stops a cmd+click reaching a dead player.
+  truthRegistry.clear();
+  clearLinked();
+  activeWave = null;
+  holdSwap = null;
+  app.innerHTML = "";
+
+  const m = state.manifest;
+  applyStemCopy();
+  if (isFourStem(m)) { renderFourStem(); buildRefMini(); return; }
+  state.order = state.blind
+    ? shuffled(state.ranked).map((c, i) => Object.assign({}, c, { _letter: LETTERS[i] || ("#" + (i + 1)) }))
+    : extremesFirst(state.ranked);
+
+  renderToolbar();
+
+  // reference player
+  const ref = document.createElement("div");
+  ref.className = "card reference-card";
+  ref.id = "reference-card";
+  const refHead = document.createElement("h2");
+  refHead.textContent = typeof m.reference_kind === "string" && m.reference_kind.length > 0
+    ? "Reference -- " + m.reference_kind + " (what a 10 sounds like)"
+    : "Reference -- best available (what a 10 sounds like)";
+  ref.appendChild(refHead);
+  const refPath = document.createElement("div");
+  refPath.className = "clip-status";
+  refPath.title = "Path to the reference stem from the manifest";
+  refPath.textContent = m.reference;
+  ref.appendChild(refPath);
+  const refAudio = makeAudio(m.reference, () => {
+    refPath.className = "clip-status missing";
+    refPath.textContent = "file missing: " + m.reference;
+  });
+  ref.appendChild(makeWaveform(refAudio, m.reference,
+    "TRUE reference waveform -- click to play from that point, click again to pause",
+    undefined, { registerTruth: "__reference", isTruth: true }));
+  ref.appendChild(refAudio);
+  app.appendChild(ref);
+
+  // The raw mixture is a REFERENCE, never an arm. Grading "no separation at all"
+  // as if it were a separator output is not a comparison anyone can make, so it
+  // sits here with no score chips, purely so the source material can be heard.
+  if (typeof m.mixture_file === "string" && m.mixture_file.length > 0) {
+    app.appendChild(mixtureCard(m));
+  }
+
+  // The focused questions go ABOVE the clips: they are the reason this round
+  // exists, and he should know what to listen for before he starts playing.
+  // Our predicted scores and stated judgements deliberately do NOT appear here -
+  // they would anchor exactly the answer we are trying to measure. They unlock
+  // in the reveal alongside the summary.
+  if (m.prediction) app.appendChild(focusCard(m.prediction));
+
+  state.order.forEach((clip) => app.appendChild(clipCard(clip)));
+
+  app.appendChild(summaryCard());
+  buildRefMini();
+}
+
+//----- focused questions (uncertainty sampling) ------------------------------
+
+/**
+ * The 1-2 things we genuinely cannot call. Everything else we are confident
+ * about is asserted in the prediction block and never put to him, because a
+ * question we can already answer spends his ears for nothing.
+ */
+function focusCard(p) {
+  const card = document.createElement("div");
+  card.className = "card focus-card";
+  card.id = "focus-card";
+
+  const h = document.createElement("h2");
+  h.textContent = p.focus_questions.length === 0
+    ? "Nothing to ask -- we are confident on every axis in this round"
+    : "What we actually need from you (" + p.focus_questions.length
+      + (p.focus_questions.length === 1 ? " question)" : " questions)");
+  card.appendChild(h);
+
+  const intro = document.createElement("p");
+  intro.className = "sub";
+  intro.title = "We commit to a full prediction before you listen. These are only the parts "
+    + "our own judgement is genuinely uncertain about, or has never been checked against you.";
+  intro.textContent = p.focus_questions.length === 0
+    ? "We recorded a prediction for every arm and have no open question. Score the clips if "
+      + "you want, but this round is here to test us, not you."
+    : "We have already predicted every score in this round. Scoring the clips is optional. "
+      + "These questions are the only places our judgement is uncertain or unverified against you.";
+  card.appendChild(intro);
+
+  p.focus_questions.forEach((q) => card.appendChild(focusQuestion(q)));
+  return card;
+}
+
+function focusQuestion(q) {
+  const wrap = document.createElement("div");
+  wrap.className = "focus-q";
+
+  const qt = document.createElement("div");
+  qt.className = "focus-q-text";
+  qt.textContent = q.question;
+  qt.title = "Answering this updates judgement type " + q.judgement_id
+    + " in judgement-calibration.json";
+  wrap.appendChild(qt);
+
+  const guide = document.createElement("div");
+  guide.className = "focus-listen";
+  guide.title = "Concrete listening guidance: which clips, which seconds, and what to attend to";
+  guide.textContent = "Listen to: " + q.listen_to;
+  wrap.appendChild(guide);
+
+  if (typeof q.why === "string" && q.why.length > 0) {
+    const why = document.createElement("div");
+    why.className = "focus-why";
+    why.title = "Why we cannot settle this ourselves";
+    why.textContent = "Why we are asking: " + q.why;
+    wrap.appendChild(why);
+  }
+
+  const current = state.focus[q.id] || {};
+  const row = document.createElement("div");
+  row.className = "focus-answers";
+  q.answers.forEach((a) => {
+    const btn = document.createElement("button");
+    btn.className = current.answer === a.value ? "focus-pick picked" : "focus-pick";
+    btn.textContent = a.value;
+    btn.title = "Picking this records a '" + a.verdict + "' against judgement type "
+      + q.judgement_id + ". The verdict was decided before you answered, not after.";
+    btn.addEventListener("click", () => {
+      const f = state.focus[q.id] || {};
+      f.answer = a.value;
+      f.verdict = a.verdict;
+      state.focus[q.id] = f;
+      saveFocus(state.manifest.track, state.focus);
+      render();
+    });
+    row.appendChild(btn);
+  });
+  wrap.appendChild(row);
+
+  const note = document.createElement("input");
+  note.type = "text";
+  note.className = "focus-note";
+  note.placeholder = "in your own words (optional, but this is usually the useful part)";
+  note.value = current.note || "";
+  note.addEventListener("input", () => {
+    const f = state.focus[q.id] || {};
+    f.note = note.value;
+    state.focus[q.id] = f;
+    saveFocus(state.manifest.track, state.focus);
+  });
+  wrap.appendChild(note);
+  return wrap;
+}
+
+/**
+ * Which source this manifest is about. Manifests that predate the four-stem
+ * split carry no `stem` field and are all vocals, so that is the fallback.
+ */
+function stemLabel() {
+  const stem = state.manifest && state.manifest.stem;
+  if (typeof stem !== "string" || stem.length === 0) return "Vocal";
+  return stem.charAt(0).toUpperCase() + stem.slice(1);
+}
+
+// What a bad and a good example of each source sounds like. The vocal lists stay
+// in the markup as the default; the other three replace them, because telling a
+// listener to check sibilance on a bass stem is worse than telling him nothing.
+const STEM_CLUES = {
+  drums: {
+    bad: ["smeared or softened transients: the stick hit loses its crack",
+          "cymbals turned to hiss, or hats swishing and phasing",
+          "bass or guitar thumps left inside the kick",
+          "reverb tail of the snare cut off abruptly",
+          "ghost notes and quiet hats deleted entirely"],
+    good: ["room and overhead bleed that belongs to the kit",
+           "the natural ring and decay of the snare and toms",
+           "cymbal wash that sits under the whole bar"],
+    note: "A drum stem is judged on transient sharpness first. Anything that dulls the attack is the fault that matters in a mashup.",
+  },
+  bass: {
+    bad: ["kick drum thump left inside the bass line",
+          "notes dropping out or pumping in and out",
+          "buzzy upper-harmonic residue that does not belong to the bass",
+          "pitch smearing on fast runs so the line stops being followable"],
+    good: ["the string or synth grit that is genuinely part of the bass tone",
+           "sustained notes ringing on under a chord change"],
+    note: "Bass and kick occupy the same octave, so leakage between them is the usual failure. Listen for the kick, not for artifacts.",
+  },
+  other: {
+    bad: ["vocal words or syllables leaking into the instruments",
+          "guitars or keys turned watery, phasey or underwater",
+          "chords gated in and out between hits",
+          "cymbals or snare bleeding in from the drum kit"],
+    good: ["reverb and delay that belong to the instruments",
+           "guitar amp noise, pick attack, key click and pedal noise"],
+    note: "'Other' is everything that is not vocals, drums or bass: guitars, keys, pads, strings, synths. Judge it as the harmonic bed.",
+  },
+};
+
+function _replaceList(container, items) {
+  const ul = container.querySelector("ul");
+  if (ul === null) return;
+  ul.innerHTML = "";
+  items.forEach((text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    ul.appendChild(li);
+  });
+}
+
+/** Retitle the page for the stem under test, so nothing says "vocal" over drums. */
+function applyStemCopy() {
+  if (isFourStem(state.manifest)) { applyFourStemCopy(); return; }
+  document.getElementById("clues").hidden = false;
+  const stem = stemLabel();
+  document.getElementById("page-title").textContent = stem + " Quality Rater";
+  document.getElementById("page-sub").textContent =
+    "Rate each clip 1-10 on how clean the isolated " + stem.toLowerCase()
+    + " sounds. Default order is the machine ranking: best first, worst second, then the "
+    + "rest in descending order, so the extremes are easy to A/B.";
+  document.title = stem + " quality rater";
+
+  // Step 1 describes the layout, so it has to describe the layout actually in
+  // force. This manifest can open blind, and an instruction that says the scores
+  // are on show while they are hidden reads as a broken page.
+  document.getElementById("how-order").innerHTML = state.blind
+    ? "Clips are <b>shuffled into anonymous letters</b>, and every machine score, "
+      + "SI-SDR and setting is hidden. That is deliberate: this manifest opens blind "
+      + "because a visible label decides the rating for you."
+    : "Clips are laid out in <b>machine-score order</b>: best, then worst, then ranks "
+      + "2 downward. Scores, SI-SDR and demucs settings are on show.";
+
+  const clues = STEM_CLUES[stem.toLowerCase()];
+  if (clues === undefined) return;
+  _replaceList(document.getElementById("clue-bad"), clues.bad);
+  _replaceList(document.getElementById("clue-good"), clues.good);
+  document.getElementById("clue-note").textContent = clues.note;
+  // No instrumental channel on a per-stem manifest: every clip is graded against
+  // its own true stem, so there is nothing to say about an instrumental here.
+  document.getElementById("clue-inst").hidden =
+    !state.ranked.some((c) => typeof c.inst_file === "string" && c.inst_file.length > 0);
+}
+
+
+/** Page copy for the four-stem page: it is about all four stems at once, so it
+ *  must not be retitled after any one of them. */
+function applyFourStemCopy() {
+  document.getElementById("page-title").textContent = "Four-Stem Quality Rater";
+  document.getElementById("page-sub").textContent =
+    "One page, every stem. Each card is ONE anonymous separator arm showing all four of its "
+    + "stems, colour-coded, each with its own true-stem reference at the top of the page and "
+    + "its own 1-10 score. Score every stem of every arm.";
+  document.title = "Four-stem quality rater";
+  document.getElementById("how-order").innerHTML = state.blind
+    ? "Arms are <b>shuffled into anonymous letters</b>, and every machine score, SI-SDR and "
+      + "setting is hidden. Inside each arm the four stems are always in the same order, so "
+      + "you can compare like with like across cards."
+    : "Arms are in <b>machine-score order</b>: best, then worst, then ranks 2 downward. "
+      + "Scores, SI-SDR and settings are on show.";
+  document.getElementById("how-rate").innerHTML =
+    "Rate <b>all four stems of every arm</b>, 1-10 each. There are "
+    + (state.ranked.length * state.manifest.stems.length) + " scores in total, and each one is "
+    + "against the true stem of the same colour at the top of the page -- never against another "
+    + "stem's reference.";
+  document.getElementById("how-blind").innerHTML = state.blind
+    ? "Blind mode is <b>already on</b>, which is how this manifest opens. Turn it off at the top "
+      + "if you want to see which arm is which, but do that after you have scored, not before."
+    : "Blind mode is <b>off</b>: arm names, machine scores and SI-SDR are on show, which will "
+      + "colour your judgement. Turn it back on at the top for an unbiased pass.";
+  document.getElementById("how-summary").innerHTML =
+    "The summary is <b>arms down the side, stems across</b>, pairing your score with each arm's "
+    + "SI-SDR on that stem. In blind mode it stays hidden until all "
+    + (state.ranked.length * state.manifest.stems.length) + " scores are in.";
+  document.getElementById("how-to-rate").textContent =
+    "How to rate: play the true stem of a colour at the top, then the row of that colour inside "
+    + "each arm, and judge how close the arm gets to it. The true stem is what a 10 sounds like. "
+    + "Every stem on this page was checked for content before it was encoded, so a low score "
+    + "means the separator failed, not that there was nothing there to separate.";
+  // The clue lists are written for one stem at a time, so on this page they would
+  // be wrong for three stems out of four. Each stem row carries its own facts instead.
+  document.getElementById("clues").hidden = true;
+}
+
+/** The unseparated source, for context only. No chips: it is not graded. */
+function mixtureCard(m) {
+  const card = document.createElement("div");
+  card.className = "card reference-card";
+  card.id = "mixture-reference";
+
+  const head = document.createElement("h2");
+  head.textContent = "Reference -- raw mixture (no separation, NOT graded)";
+  card.appendChild(head);
+
+  const why = document.createElement("div");
+  why.className = "clip-status";
+  why.title = "Why the mixture is here and not in the graded list";
+  why.textContent = typeof m.mixture_note === "string" && m.mixture_note.length > 0
+    ? m.mixture_note
+    : "The unseparated source, for context. It is not a separator output, so it is not scored.";
+  card.appendChild(why);
+
+  if (!state.blind && typeof m.mixture_floor_si_sdr === "number") {
+    const floor = document.createElement("div");
+    floor.className = "meta-row";
+    floor.appendChild(metaItem(
+      "do-nothing floor ", m.mixture_floor_si_sdr.toFixed(2) + " dB",
+      "SI-SDR of the raw mixture against this true stem: the score a config gets "
+      + "for doing nothing at all. Every graded arm should beat it."));
+    card.appendChild(floor);
+  }
+
+  const path = document.createElement("div");
+  path.className = "clip-status";
+  path.title = "Path to the mixture from the manifest";
+  path.textContent = m.mixture_file;
+  card.appendChild(path);
+
+  const audio = makeAudio(m.mixture_file, () => {
+    path.className = "clip-status missing";
+    path.textContent = "file missing: " + m.mixture_file;
+  });
+  card.appendChild(makeWaveform(audio, m.mixture_file,
+    "Mixture waveform -- click to play from that point, click again to pause", undefined,
+    { registerTruth: "mixture", isTruth: true }));
+  card.appendChild(audio);
+  return card;
+}
+
+function renderToolbar() {
+  const bar = document.getElementById("toolbar");
+  bar.innerHTML = "";
+
+  const blindBtn = document.createElement("button");
+  blindBtn.id = "blind-toggle";
+  blindBtn.className = state.blind ? "toggle-on" : "";
+  blindBtn.textContent = state.blind ? "Blind mode: ON" : "Blind mode: hide scores and shuffle";
+  blindBtn.title = state.blind
+    ? "Blind mode is on: scores, SI-SDR and settings are hidden and the clip order is shuffled. Click to go back to machine-score order."
+    : "Hide every machine score, SI-SDR and demucs setting, and shuffle the clips into a random order for an unbiased test.";
+  blindBtn.addEventListener("click", () => {
+    state.blind = !state.blind;
+    localStorage.setItem(BLIND_KEY, state.blind ? "1" : "0");
+    localStorage.setItem(blindKey(state.manifest.track), state.blind ? "1" : "0");
+    render();
+  });
+  bar.appendChild(blindBtn);
+
+  const stopBtn = document.createElement("button");
+  stopBtn.id = "stop-all";
+  stopBtn.textContent = "Stop audio";
+  stopBtn.title = "Pause every player on the page";
+  stopBtn.addEventListener("click", stopAllAudio);
+  bar.appendChild(stopBtn);
+
+  const saveCluster = document.createElement("div");
+  saveCluster.className = "save-cluster";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.id = "save-download";
+  saveBtn.textContent = "Save (& download)";
+  saveBtn.title = "POST your ratings to " + RATINGS_ENDPOINT + " (writes a file in "
+    + RATINGS_DIR_REL + "/) and download the same JSON as a local copy";
+  saveBtn.addEventListener("click", saveAndDownload);
+  saveCluster.appendChild(saveBtn);
+  const caption = document.createElement("span");
+  caption.className = "save-caption";
+  caption.id = "save-caption";
+  caption.textContent = "download is just a failsafe - do not want data lost in the next few minutes";
+  saveCluster.appendChild(caption);
+  bar.appendChild(saveCluster);
+
+  const prog = document.createElement("span");
+  prog.className = "progress";
+  prog.id = "progress";
+  prog.title = "Clips fully rated out of the total in the manifest";
+  bar.appendChild(prog);
+
+  const lines = document.createElement("div");
+  lines.className = "save-lines";
+  const status = document.createElement("span");
+  status.className = "save-status";
+  status.id = "save-status";
+  lines.appendChild(status);
+  const local = document.createElement("span");
+  local.className = "save-local";
+  local.id = "save-local";
+  local.title = "localStorage lives in this browser profile only. It is not the repo, "
+    + "and clearing site data deletes it.";
+  lines.appendChild(local);
+  bar.appendChild(lines);
+
+  refreshProgress();
+  refreshSaveStatus();
+  // The pinned reference strip parks directly under this bar, so its offset is
+  // whatever the bar actually measures after it has been filled.
+  syncStickyTop();
+}
+
+//----- honest save status -----------------------------------------------------
+// Rule for this whole section: the line describes what was observed. A failed
+// POST never renders as success, and a localStorage write is never described
+// as a save to the repo.
+
+function scoredCount() {
+  return Object.keys(state.ratings)
+    .filter((id) => typeof state.ratings[id].human_score === "number").length;
+}
+
+function localTime(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d.toLocaleTimeString();
+}
+
+function refreshSaveStatus() {
+  const status = document.getElementById("save-status");
+  const local = document.getElementById("save-local");
+  if (status === null || local === null) return;
+
+  const scored = scoredCount();
+  const at = localTime(state.localSavedAt);
+  if (scored === 0) {
+    local.textContent = "browser autosave: nothing stored for this track yet.";
+  } else {
+    local.textContent = "browser autosave: " + scored + " clip score(s) in this browser's"
+      + " localStorage" + (at ? " (last write " + at + ")" : "")
+      + " -- that is not the repo and not a server.";
+  }
+
+  status.className = "save-status";
+  if (state.savePhase === "saving") {
+    status.className = "save-status busy";
+    status.textContent = "saving...";
+    return;
+  }
+  if (state.savePhase === "failed") {
+    status.className = "save-status err";
+    status.textContent = state.saveMessage;
+    return;
+  }
+  if (state.savePhase === "saved") {
+    status.className = "save-status " + (state.dirtySinceServerSave ? "" : "ok");
+    status.textContent = state.dirtySinceServerSave
+      ? "changed since the last save -- " + state.serverPath + " is now out of date."
+      : state.saveMessage;
+    return;
+  }
+  status.textContent = scored === 0 ? "" : "not saved yet -- nothing has been sent to the server.";
+}
+
+function setSavePhase(phase, message) {
+  state.savePhase = phase;
+  state.saveMessage = message;
+  refreshSaveStatus();
+}
+
+function refreshProgress() {
+  const prog = document.getElementById("progress");
+  if (prog === null) return;
+  prog.textContent = ratedCount() + " / " + rateableCount()
+    + (isFourStem(state.manifest) ? " stem scores in" : " rated");
+}
+
+function scoreChips(clip, kind) {
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  const field = kind === "inst" ? "human_inst_score" : "human_score";
+  const what = kind === "inst" ? " instrumental" : "";
+  const name = state.blind ? "clip " + clip._letter : clip.id;
+  for (let n = 1; n <= 10; n++) {
+    const chip = document.createElement("button");
+    chip.className = "rate-chip";
+    chip.textContent = n;
+    chip.title = "Rate " + name + what + " a " + n + " out of 10";
+    const current = state.ratings[clip.id] || {};
+    if (current[field] === n) chip.classList.add("selected");
+    chip.addEventListener("click", () => {
+      const r = state.ratings[clip.id] || {};
+      r[field] = n;
+      state.ratings[clip.id] = r;
+      saveRatings(state.manifest.track, state.ratings);
+      Array.prototype.forEach.call(chips.children, (c, i) => {
+        c.classList.toggle("selected", i + 1 === n);
+      });
+      refreshProgress();
+      refreshSummary();
+    });
+    chips.appendChild(chip);
+  }
+  return chips;
+}
+
+function clipCard(clip) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.dataset.clipId = clip.id;
+
+  const head = document.createElement("div");
+  head.className = "clip-head";
+  const label = document.createElement("span");
+  label.className = "clip-label";
+
+  if (state.blind) {
+    label.textContent = "Clip " + clip._letter;
+  } else {
+    const badge = document.createElement("span");
+    const isBest = clip._rank === 1;
+    const isWorst = clip._rank === clip._rankTotal;
+    badge.className = "rank-badge" + (isBest ? " best" : (isWorst ? " worst" : ""));
+    badge.textContent = isBest ? "BEST" : (isWorst ? "WORST" : "#" + clip._rank);
+    badge.title = "Machine rank " + clip._rank + " of " + clip._rankTotal
+      + " (rank 1 is the highest machine score)";
+    label.appendChild(badge);
+    label.appendChild(document.createTextNode(clip.id));
+  }
+  head.appendChild(label);
+
+  const status = document.createElement("span");
+  status.className = "clip-status";
+  status.title = "Playback status for this clip file";
+  status.textContent = "not loaded";
+  head.appendChild(status);
+  card.appendChild(head);
+
+  if (!state.blind) {
+    const meta = document.createElement("div");
+    meta.className = "meta-row";
+    meta.appendChild(metaItem(
+      "machine ", String(clip.machine_score),
+      "Machine quality score for this clip, 1-10, higher is better"));
+    meta.appendChild(metaItem(
+      "SI-SDR ",
+      typeof clip.si_sdr === "number" ? clip.si_sdr.toFixed(2) + " dB" : "n/a",
+      typeof clip.si_sdr === "number"
+        ? "Scale-invariant signal-to-distortion ratio in dB against the reference stem, higher is cleaner"
+        : "No si_sdr value in the manifest for this clip (the reference cannot be scored against itself)"));
+    const params = document.createElement("span");
+    params.title = "Demucs model and settings that produced this clip";
+    params.appendChild(document.createTextNode("settings "));
+    const code = document.createElement("code");
+    code.textContent = clip.params || "(none recorded)";
+    params.appendChild(code);
+    meta.appendChild(params);
+    card.appendChild(meta);
+  }
+
+  const vocalLabel = document.createElement("div");
+  vocalLabel.className = "sub-label";
+  vocalLabel.textContent = stemLabel();
+  card.appendChild(vocalLabel);
+
+  const audio = makeAudio(clip.file, () => {
+    status.className = "clip-status missing";
+    status.textContent = "file missing: " + clip.file;
+  });
+  audio.dataset.role = "vocal";
+  audio.dataset.clipId = clip.id;
+  audio.addEventListener("playing", () => { status.className = "clip-status"; status.textContent = "playing"; });
+  audio.addEventListener("pause", () => { status.className = "clip-status"; status.textContent = "paused"; });
+  card.appendChild(makeWaveform(audio, clip.file,
+    stemLabel() + " waveform -- click to play from that point, click again to pause",
+    undefined, { truthKey: "__reference" }));
+  card.appendChild(audio);
+  card.appendChild(scoreChips(clip, "vocal"));
+
+  if (clip.inst_file) {
+    const instLabel = document.createElement("div");
+    instLabel.className = "sub-label";
+    instLabel.textContent = "Instrumental";
+    card.appendChild(instLabel);
+
+    const instAudio = makeAudio(clip.inst_file, () => {
+      instLabel.textContent = "Instrumental (file missing: " + clip.inst_file + ")";
+    });
+    instAudio.dataset.role = "inst";
+    instAudio.dataset.clipId = clip.id;
+    // No truthKey: there is no true instrumental in these manifests, and a
+    // cmd+click that quietly played the vocal reference would be a lie.
+    card.appendChild(makeWaveform(instAudio, clip.inst_file,
+      "Instrumental waveform -- click to play from that point, click again to pause"));
+    card.appendChild(instAudio);
+
+    const instChipLabel = document.createElement("div");
+    instChipLabel.className = "chip-row-label";
+    instChipLabel.textContent = "Instrumental quality (vocal bleed left behind, holes where the vocal was carved out)";
+    instChipLabel.title = "Mark down for words or syllables still audible in the music, and for gaps where the backing was gouged out with the vocal";
+    card.appendChild(instChipLabel);
+    card.appendChild(scoreChips(clip, "inst"));
+  }
+
+  const current = state.ratings[clip.id] || {};
+  const note = document.createElement("input");
+  note.type = "text";
+  note.placeholder = "optional one-line note (artifacts, bleed, muffling...)";
+  note.value = current.note || "";
+  note.addEventListener("input", () => {
+    const r = state.ratings[clip.id] || {};
+    r.note = note.value;
+    state.ratings[clip.id] = r;
+    saveRatings(state.manifest.track, state.ratings);
+  });
+  card.appendChild(note);
+
+  return card;
+}
+
+function metaItem(labelText, valueText, titleText) {
+  const span = document.createElement("span");
+  span.title = titleText;
+  span.appendChild(document.createTextNode(labelText));
+  const b = document.createElement("b");
+  b.textContent = valueText;
+  span.appendChild(b);
+  return span;
+}
+
+//----- summary ---------------------------------------------------------------
+
+function summaryVisible() {
+  return !state.blind || state.order.every(clipRated);
+}
+
+function summaryCard() {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.id = "summary-card";
+  const h = document.createElement("h2");
+  h.textContent = "Machine vs human";
+  card.appendChild(h);
+
+  const body = document.createElement("div");
+  body.id = "summary-body";
+  card.appendChild(body);
+  fillSummary(body);
+  return card;
+}
+
+function refreshSummary() {
+  const body = document.getElementById("summary-body");
+  if (body === null) return;
+  body.innerHTML = "";
+  fillSummary(body);
+}
+
+function fillSummary(body) {
+  if (isFourStem(state.manifest)) { fillFourStemSummary(body); return; }
+  if (!summaryVisible()) {
+    const left = state.order.filter((c) => !clipRated(c)).length;
+    const p = document.createElement("p");
+    p.className = "sub";
+    p.title = "In blind mode the comparison stays hidden until every clip has a score, so nothing biases you";
+    p.textContent = "Blind mode: " + left + " of " + state.order.length
+      + " clips still need a score. The comparison unlocks when they are all in.";
+    body.appendChild(p);
+    return;
+  }
+
+  const hasInst = state.ranked.some((c) => c.inst_file);
+  const table = document.createElement("table");
+  table.className = "summary";
+
+  const thead = document.createElement("thead");
+  const hrow = document.createElement("tr");
+  const cols = [
+    ["rank", "Machine rank, 1 is the best machine score"],
+    ["id", "Clip id from the manifest"],
+    ["machine", "Machine quality score, 1-10"],
+    ["SI-SDR", "Scale-invariant signal-to-distortion ratio in dB, higher is cleaner"],
+    ["human", "Your " + stemLabel().toLowerCase() + " score, 1-10"],
+    ["delta", "Your score minus the machine score"],
+  ];
+  if (hasInst) cols.push(["inst", "Your instrumental score (blank if this clip has no instrumental)"]);
+  cols.forEach(([text, title]) => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    th.title = title;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  const machineScores = [], humanScores = [];
+  let absSum = 0, rated = 0;
+
+  state.ranked.forEach((clip) => {
+    const r = state.ratings[clip.id] || {};
+    const h = typeof r.human_score === "number" ? r.human_score : null;
+    const tr = document.createElement("tr");
+    const isBest = clip._rank === 1;
+    const isWorst = clip._rank === clip._rankTotal;
+
+    const rankCell = document.createElement("td");
+    rankCell.className = isBest ? "best-row" : (isWorst ? "worst-row" : "");
+    rankCell.textContent = isBest ? "BEST" : (isWorst ? "WORST" : "#" + clip._rank);
+    rankCell.title = "Machine rank " + clip._rank + " of " + clip._rankTotal;
+    tr.appendChild(rankCell);
+
+    tr.appendChild(cell(clip.id, "Clip id from the manifest"));
+    tr.appendChild(cell(String(clip.machine_score), "Machine quality score, 1-10"));
+    tr.appendChild(cell(
+      typeof clip.si_sdr === "number" ? clip.si_sdr.toFixed(2) : "n/a",
+      typeof clip.si_sdr === "number" ? "SI-SDR in dB against the reference" : "No si_sdr in the manifest for this clip"));
+    tr.appendChild(cell(h === null ? "-" : String(h), h === null ? "Not rated yet" : "Your " + stemLabel().toLowerCase() + " score"));
+
+    const deltaCell = document.createElement("td");
+    if (h === null) {
+      deltaCell.className = "delta-zero";
+      deltaCell.textContent = "-";
+      deltaCell.title = "Needs a human score before a delta exists";
+    } else {
+      const delta = h - clip.machine_score;
+      deltaCell.className = delta > 0 ? "delta-pos" : (delta < 0 ? "delta-neg" : "delta-zero");
+      deltaCell.textContent = (delta > 0 ? "+" : "") + delta;
+      deltaCell.title = "Your score minus the machine score";
+      machineScores.push(clip.machine_score);
+      humanScores.push(h);
+      absSum += Math.abs(delta);
+      rated++;
+    }
+    tr.appendChild(deltaCell);
+
+    if (hasInst) {
+      const iv = r.human_inst_score;
+      tr.appendChild(cell(
+        clip.inst_file ? (typeof iv === "number" ? String(iv) : "-") : "n/a",
+        clip.inst_file ? "Your instrumental score" : "This clip has no instrumental file in the manifest"));
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  body.appendChild(table);
+
+  const line = document.createElement("div");
+  line.className = "summary-line";
+  line.title = "Mean absolute delta is the average gap between your score and the machine score; "
+    + "rank agreement is a Spearman correlation of the two orderings (1 = identical order, 0 = unrelated, -1 = reversed). "
+    + "Both are computed over the clips you have rated so far.";
+  if (rated === 0) {
+    line.textContent = "No clips rated yet, so there is no delta or rank agreement to report.";
+  } else {
+    const mad = (absSum / rated).toFixed(2);
+    const rho = spearman(machineScores, humanScores).toFixed(2);
+    line.appendChild(document.createTextNode("Rated " + rated + " of " + state.ranked.length
+      + " -- mean absolute delta "));
+    const b1 = document.createElement("b");
+    b1.textContent = mad;
+    line.appendChild(b1);
+    line.appendChild(document.createTextNode(", rank agreement (Spearman) "));
+    const b2 = document.createElement("b");
+    b2.textContent = rho;
+    line.appendChild(b2);
+  }
+  body.appendChild(line);
+
+  if (state.manifest.prediction) body.appendChild(predictionReveal(state.manifest.prediction));
+}
+
+//----- prediction reveal + ledger update -------------------------------------
+
+/**
+ * Scores US, not him. We committed a ranking, a per-arm score and an answer to
+ * every focus question before he listened; this is where that bet settles.
+ * Returns the DOM for the reveal.
+ */
+function predictionReveal(p) {
+  const wrap = document.createElement("div");
+
+  const h = document.createElement("h2");
+  h.textContent = "Our prediction vs your answers";
+  h.title = "Committed at " + p.predicted_at + " by " + p.predicted_by
+    + ", before you heard anything. This section scores us.";
+  wrap.appendChild(h);
+
+  const stamp = document.createElement("p");
+  stamp.className = "sub";
+  stamp.textContent = "Committed " + p.predicted_at + " by " + p.predicted_by
+    + " at confidence " + p.confidence.toFixed(2) + ".";
+  wrap.appendChild(stamp);
+
+  // per-arm predicted vs actual
+  const rated = state.ranked.filter((c) => typeof (state.ratings[c.id] || {}).human_score === "number");
+  if (rated.length > 0) {
+    const t = document.createElement("table");
+    t.className = "summary";
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    [["id", "Clip id"], ["we said", "The score we predicted before you listened"],
+     ["you said", "Your score"], ["miss", "Our predicted score minus yours"]]
+      .forEach(([txt, ttl]) => {
+        const th = document.createElement("th"); th.textContent = txt; th.title = ttl; hr.appendChild(th);
+      });
+    thead.appendChild(hr); t.appendChild(thead);
+    const tb = document.createElement("tbody");
+    let absSum = 0, n = 0, within1 = 0;
+    rated.forEach((c) => {
+      const pred = p.predicted_scores[c.id];
+      const got = state.ratings[c.id].human_score;
+      const tr = document.createElement("tr");
+      tr.appendChild(cell(c.id, "Clip id"));
+      tr.appendChild(cell(typeof pred === "number" ? String(pred) : "-",
+        typeof pred === "number" ? "Our predicted score" : "We did not predict this clip"));
+      tr.appendChild(cell(String(got), "Your score"));
+      const md = document.createElement("td");
+      if (typeof pred === "number") {
+        const miss = pred - got;
+        md.className = Math.abs(miss) <= 1 ? "pred-hit" : "pred-miss";
+        md.textContent = (miss > 0 ? "+" : "") + miss;
+        md.title = Math.abs(miss) <= 1
+          ? "Within 1 point: we called this one"
+          : "Off by more than a point: our judgement on this arm is not trustworthy";
+        absSum += Math.abs(miss); n++;
+        if (Math.abs(miss) <= 1) within1++;
+      } else {
+        md.textContent = "-"; md.title = "No prediction recorded for this clip";
+      }
+      tr.appendChild(md);
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    wrap.appendChild(t);
+
+    const score = document.createElement("div");
+    score.className = "summary-line";
+    score.title = "How good our own judgement was. If we are consistently within a point, "
+      + "future rounds on this axis can be decided without spending your ears at all.";
+    if (n > 0) {
+      const predRanks = p.predicted_ranking.filter((id) => rated.some((c) => c.id === id));
+      const humanForPred = predRanks.map((id) => state.ratings[id].human_score);
+      const ourOrder = predRanks.map((_id, i) => -i);
+      score.textContent = "We were within 1 point on " + within1 + " of " + n
+        + " arms, mean absolute miss " + (absSum / n).toFixed(2)
+        + ", our predicted ranking vs yours (Spearman) "
+        + (predRanks.length >= 2 ? spearman(ourOrder, humanForPred).toFixed(2) : "n/a");
+    } else {
+      score.textContent = "No overlap between our predicted arms and the ones you scored.";
+    }
+    wrap.appendChild(score);
+  }
+
+  // stated judgements: what we asserted instead of asking
+  if (Array.isArray(p.stated_judgements) && p.stated_judgements.length > 0) {
+    const sh = document.createElement("h2");
+    sh.textContent = "What we decided ourselves (and did not ask you)";
+    wrap.appendChild(sh);
+    const ul = document.createElement("ul");
+    p.stated_judgements.forEach((s) => {
+      const li = document.createElement("li");
+      li.title = "Not asked because the agreement ledger already scores this judgement type "
+        + "confidently. If you disagree, say so - that is a ledger contradiction and it matters.";
+      li.textContent = s.claim + "  [confidence " + s.confidence.toFixed(2)
+        + (s.judgement_id ? ", " + s.judgement_id : "") + "]";
+      ul.appendChild(li);
+    });
+    wrap.appendChild(ul);
+  }
+
+  // focus questions: our view vs his answer, and the resulting ledger movement
+  const updates = computeLedgerUpdates();
+  if (p.focus_questions.length > 0) {
+    const qh = document.createElement("h2");
+    qh.textContent = "Ledger movement from your answers";
+    wrap.appendChild(qh);
+    p.focus_questions.forEach((q) => {
+      const f = state.focus[q.id] || {};
+      const div = document.createElement("div");
+      div.className = "focus-q";
+      const line1 = document.createElement("div");
+      line1.className = "focus-q-text";
+      line1.textContent = q.question;
+      div.appendChild(line1);
+      const line2 = document.createElement("div");
+      line2.className = "focus-listen";
+      line2.textContent = "We said: " + q.our_view;
+      div.appendChild(line2);
+      const line3 = document.createElement("div");
+      line3.className = f.answer === undefined ? "focus-why"
+        : (f.verdict === "confirms" ? "focus-listen pred-hit" : (f.verdict === "contradicts" ? "focus-listen pred-miss" : "focus-listen"));
+      line3.textContent = f.answer === undefined
+        ? "You have not answered this one, so " + q.judgement_id + " does not move."
+        : "You said: " + f.answer + (f.note ? " (" + f.note + ")" : "")
+          + "  ->  " + q.judgement_id + " " + f.verdict.toUpperCase();
+      line3.title = "This verdict was fixed in the manifest before you answered, so we cannot "
+        + "reinterpret a contradiction into a confirmation after the fact.";
+      div.appendChild(line3);
+      wrap.appendChild(div);
+    });
+  }
+
+  const foot = document.createElement("div");
+  foot.className = "summary-line";
+  foot.title = "These updates ride along in the saved ratings JSON. Apply them with "
+    + "scripts/bench/apply_ledger_updates.py to move judgement-calibration.json.";
+  foot.textContent = updates.length === 0
+    ? "No ledger updates yet: answer a focus question and this fills in."
+    : updates.length + " ledger update" + (updates.length === 1 ? "" : "s")
+      + " will be saved with your ratings: "
+      + updates.map((u) => u.judgement_id + " " + u.verdict).join(", ");
+  wrap.appendChild(foot);
+  return wrap;
+}
+
+/**
+ * Turns answered focus questions into ledger deltas. The verdict comes from the
+ * manifest, decided before he answered, so this is bookkeeping and not a place
+ * where a disappointing answer can be talked into a confirmation.
+ */
+function computeLedgerUpdates() {
+  const p = state.manifest.prediction;
+  if (!p) return [];
+  const out = [];
+  p.focus_questions.forEach((q) => {
+    const f = state.focus[q.id] || {};
+    if (f.answer === undefined || f.verdict === "neither") return;
+    out.push({
+      judgement_id: q.judgement_id,
+      verdict: f.verdict,
+      question_id: q.id,
+      question: q.question,
+      our_view: q.our_view,
+      his_answer: f.answer,
+      his_note: f.note || "",
+    });
+  });
+  return out;
+}
+
+function cell(text, title) {
+  const td = document.createElement("td");
+  td.textContent = text;
+  td.title = title;
+  return td;
+}
+
+//----- save + export ---------------------------------------------------------
+
+function buildPayload() {
+  if (isFourStem(state.manifest)) return buildFourStemPayload();
+  const p = state.manifest.prediction || null;
+  return {
+    track: state.manifest.track,
+    blind_mode: state.blind,
+    manifest: MANIFEST_URL,
+    // Our committed view travels WITH his labels, so the pair can never drift
+    // apart and nobody can later claim we predicted something else.
+    prediction: p,
+    focus_answers: p === null ? [] : p.focus_questions.map((q) => {
+      const f = state.focus[q.id] || {};
+      return {
+        id: q.id,
+        judgement_id: q.judgement_id,
+        question: q.question,
+        our_view: q.our_view,
+        answer: f.answer === undefined ? null : f.answer,
+        verdict: f.answer === undefined ? null : f.verdict,
+        note: f.note || "",
+      };
+    }),
+    ledger_updates: computeLedgerUpdates(),
+    ratings: state.ranked.map((clip) => {
+      const r = state.ratings[clip.id] || {};
+      return {
+        id: clip.id,
+        file: clip.file,
+        inst_file: clip.inst_file || null,
+        params: clip.params || "",
+        machine_score: clip.machine_score,
+        machine_rank: clip._rank,
+        predicted_score: (p && typeof p.predicted_scores[clip.id] === "number")
+          ? p.predicted_scores[clip.id] : null,
+        si_sdr: typeof clip.si_sdr === "number" ? clip.si_sdr : null,
+        human_score: (typeof r.human_score === "number") ? r.human_score : null,
+        human_inst_score: (typeof r.human_inst_score === "number") ? r.human_inst_score : null,
+        note: r.note || "",
+      };
+    }),
+  };
+}
+
+/** Fires the browser download. Returns the filename it asked for. */
+function downloadJson(json, filename) {
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).catch(() => {});
+  }
+  return filename;
+}
+
+/**
+ * Download first, then POST. The order is the failsafe: if the API is
+ * unreachable (the usual case, since scripts/bench/serve.py is static), the
+ * local copy has already left the building before anything can fail.
+ */
+function saveAndDownload() {
+  const btn = document.getElementById("save-download");
+  const payload = buildPayload();
+  const scored = payload.ratings.filter((r) => r.human_score !== null).length;
+  if (scored === 0) {
+    setSavePhase("failed", "nothing to save: no clip has a score yet, so no file was written or downloaded.");
+    return;
+  }
+
+  const json = JSON.stringify(payload, null, 2);
+  const filename = downloadJson(json, "ratings-" + slug(state.manifest.track) + ".json");
+  if (btn !== null) btn.disabled = true;
+  setSavePhase("saving", "saving...");
+
+  fetch(RATINGS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: json,
+  })
+    .then((resp) => resp.text().then((text) => ({ resp: resp, text: text })))
+    .then(({ resp, text }) => {
+      if (!resp.ok) {
+        throw new Error("HTTP " + resp.status + " " + serverReason(text));
+      }
+      let body;
+      try { body = JSON.parse(text); }
+      catch (e) { throw new Error("server returned unparseable JSON: " + e.message); }
+      if (typeof body.path !== "string") {
+        throw new Error("server response has no 'path', so where it landed is unknown");
+      }
+      state.serverPath = body.path;
+      state.dirtySinceServerSave = false;
+      setSavePhase("saved", "saved to " + body.path + " (" + body.rated_count + " of "
+        + body.total_count + " clips scored). Download of " + filename + " also fired.");
+    })
+    .catch((err) => {
+      // "Failed to fetch" is what a dead port, a CORS refusal or a daemon that
+      // predates this endpoint all look like from here -- say so, do not guess.
+      const reason = err.message === "Failed to fetch"
+        ? "could not reach " + RATINGS_ENDPOINT + ", so the daemon is down, on another port, or too old to have this endpoint"
+        : err.message;
+      setSavePhase("failed", "server save FAILED: " + reason + ". Nothing was written to "
+        + RATINGS_DIR_REL + "/. The downloaded " + filename + " is your failsafe -- keep it.");
+    })
+    .then(() => { if (btn !== null) btn.disabled = false; });
+}
+
+/** Pull the API's own error message out of a non-2xx body, or fall back to it verbatim. */
+function serverReason(text) {
+  try {
+    const body = JSON.parse(text);
+    const detail = body.detail;
+    if (detail && typeof detail.message === "string") return detail.message;
+    return JSON.stringify(detail === undefined ? body : detail);
+  } catch (_e) {
+    return text.slice(0, 200);
+  }
+}
+
+function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+
+//----- boot ------------------------------------------------------------------
+
+function validateManifest(m) {
+  assert(m && typeof m === "object", "manifest is not a JSON object");
+  assert(typeof m.track === "string" && m.track.length > 0,
+    "manifest missing string field <code>track</code>");
+  // A four-stem manifest carries one reference PER STEM, so the single-reference
+  // shape below does not apply to it and must not be demanded of it.
+  if (isFourStem(m)) { validateFourStem(m); return; }
+  assert(typeof m.reference === "string" && m.reference.length > 0,
+    "manifest missing string field <code>reference</code>");
+  assert(Array.isArray(m.clips) && m.clips.length > 0,
+    "manifest <code>clips</code> must be a non-empty array");
+  m.clips.forEach((c, i) => {
+    const where = "clips[" + i + "]";
+    assert(c && typeof c === "object", where + " is not an object");
+    assert(typeof c.id === "string" && c.id.length > 0, where + " missing string <code>id</code>");
+    assert(typeof c.file === "string" && c.file.length > 0, where + " missing string <code>file</code>");
+    assert(typeof c.machine_score === "number", where + " missing numeric <code>machine_score</code>");
+    if (c.inst_file !== undefined && c.inst_file !== null) {
+      assert(typeof c.inst_file === "string" && c.inst_file.length > 0,
+        where + " has invalid <code>inst_file</code>");
+    }
+    if (c.si_sdr !== undefined && c.si_sdr !== null) {
+      assert(typeof c.si_sdr === "number", where + " has non-numeric <code>si_sdr</code>");
+    }
+  });
+  const ids = m.clips.map((c) => c.id);
+  assert(new Set(ids).size === ids.length, "duplicate clip <code>id</code> values in manifest");
+  const scores = m.clips.map((c) => c.machine_score);
+  assert(new Set(scores).size === scores.length,
+    "duplicate <code>machine_score</code> values in manifest: the best/worst ordering would be ambiguous");
+  if (m.prediction !== undefined && m.prediction !== null) validatePrediction(m.prediction, ids);
+}
+
+/**
+ * A `prediction` block is OUR view, committed before the maintainer hears anything. It is
+ * optional (older manifests predate it) but if present it is validated hard:
+ * a half-filled prediction is worse than none, because the reveal would score us
+ * against a guess we never actually made.
+ */
+function validatePrediction(p, clipIds) {
+  assert(p && typeof p === "object", "manifest <code>prediction</code> is not an object");
+  assert(typeof p.predicted_by === "string" && p.predicted_by.length > 0,
+    "<code>prediction.predicted_by</code> must name who committed it");
+  assert(typeof p.predicted_at === "string" && p.predicted_at.length > 0,
+    "<code>prediction.predicted_at</code> must be an ISO timestamp, so 'predicted before he listened' is checkable");
+  assert(Array.isArray(p.predicted_ranking) && p.predicted_ranking.length > 0,
+    "<code>prediction.predicted_ranking</code> must be a non-empty array of clip ids, best first");
+  p.predicted_ranking.forEach((id) => {
+    assert(clipIds.indexOf(id) !== -1,
+      "<code>prediction.predicted_ranking</code> names unknown clip id <code>" + id + "</code>");
+  });
+  assert(new Set(p.predicted_ranking).size === p.predicted_ranking.length,
+    "<code>prediction.predicted_ranking</code> repeats a clip id");
+  assert(p.predicted_scores && typeof p.predicted_scores === "object",
+    "<code>prediction.predicted_scores</code> must be an object of clip id -> predicted 1-10 score");
+  Object.keys(p.predicted_scores).forEach((id) => {
+    assert(clipIds.indexOf(id) !== -1,
+      "<code>prediction.predicted_scores</code> names unknown clip id <code>" + id + "</code>");
+    const v = p.predicted_scores[id];
+    assert(typeof v === "number" && v >= 1 && v <= 10,
+      "<code>prediction.predicted_scores." + id + "</code> must be a number 1-10");
+  });
+  assert(typeof p.confidence === "number" && p.confidence >= 0 && p.confidence <= 1,
+    "<code>prediction.confidence</code> must be a number 0-1");
+  assert(Array.isArray(p.focus_questions),
+    "<code>prediction.focus_questions</code> must be an array (empty means we are asking him nothing, which is legal but should be deliberate)");
+  assert(p.focus_questions.length <= 2,
+    "<code>prediction.focus_questions</code> has " + p.focus_questions.length
+    + " questions. The whole point of this format is to ask 1-2 things, not to run a survey. "
+    + "Everything we are confident about belongs in <code>stated_judgements</code>, not in a question.");
+  p.focus_questions.forEach((q, i) => {
+    const where = "focus_questions[" + i + "]";
+    assert(q && typeof q === "object", where + " is not an object");
+    assert(typeof q.id === "string" && q.id.length > 0, where + " missing string <code>id</code>");
+    assert(typeof q.question === "string" && q.question.length > 0,
+      where + " missing string <code>question</code>");
+    assert(typeof q.listen_to === "string" && q.listen_to.length > 0,
+      where + " missing <code>listen_to</code>: a question without concrete listening guidance "
+      + "(which clips, which seconds, what to attend to) wastes the slot");
+    assert(typeof q.our_view === "string" && q.our_view.length > 0,
+      where + " missing <code>our_view</code>: we must commit to an answer before asking");
+    assert(typeof q.judgement_id === "string" && /^J\d+[a-z]?$/.test(q.judgement_id),
+      where + " missing <code>judgement_id</code> (for example J03) linking it to a row in "
+      + "judgement-calibration.json. A question that updates no judgement type is a question "
+      + "we cannot learn from.");
+    assert(Array.isArray(q.answers) && q.answers.length >= 2,
+      where + " needs an <code>answers</code> array of at least two choices");
+    q.answers.forEach((a, k) => {
+      assert(a && typeof a.value === "string" && a.value.length > 0,
+        where + ".answers[" + k + "] missing string <code>value</code>");
+      assert(a.verdict === "confirms" || a.verdict === "contradicts" || a.verdict === "neither",
+        where + ".answers[" + k + "] <code>verdict</code> must be confirms, contradicts or neither, "
+        + "so the ledger update is decided BEFORE we see which one he picks");
+    });
+  });
+  if (p.stated_judgements !== undefined) {
+    assert(Array.isArray(p.stated_judgements),
+      "<code>prediction.stated_judgements</code> must be an array");
+    p.stated_judgements.forEach((s, i) => {
+      assert(s && typeof s.claim === "string" && s.claim.length > 0,
+        "stated_judgements[" + i + "] missing <code>claim</code>");
+      assert(typeof s.confidence === "number",
+        "stated_judgements[" + i + "] missing numeric <code>confidence</code>");
+    });
+  }
+}
+
+function boot() {
+  if (!/^[A-Za-z0-9._-]+\.json$/.test(MANIFEST_URL)) {
+    // fatal() throws by design; inside a promise chain that is swallowed, but
+    // here it would surface as an uncaught page error on top of the banner.
+    try {
+      fatal("<code>?manifest=" + MANIFEST_URL + "</code> is not a bare <code>*.json</code> "
+        + "filename next to this page. Try <code>?manifest=ladder_edge.json</code>.");
+    } catch (_e) { /* the banner is the output */ }
+    return;
+  }
+  fetch(MANIFEST_URL, { cache: "no-store" })
+    .then((resp) => {
+      if (!resp.ok) {
+        fatal("Could not fetch <code>" + MANIFEST_URL + "</code> (HTTP " + resp.status + ").\n" +
+          "Serve this directory over HTTP -- <code>file://</code> fetch is blocked.\n" +
+          "Try: <code>uv run scripts/bench/serve.py 8791</code> then open " +
+          "<code>http://localhost:8791/vocal_quality_rater.html</code>");
+      }
+      return resp.text();
+    })
+    .then((text) => {
+      let m;
+      try { m = JSON.parse(text); }
+      catch (e) { fatal("<code>" + MANIFEST_URL + "</code> is not valid JSON: " + e.message); }
+      validateManifest(m);
+      state.manifest = m;
+      state.ratings = loadRatings(m.track);
+      state.focus = loadFocus(m.track);
+      state.localSavedAt = loadLocalStamp(m.track);
+      state.blind = resolveBlind(m);
+      state.ranked = rankedByMachine(isFourStem(m) ? m.arms : m.clips);
+      render();
+    })
+    .catch((err) => {
+      // A network-level failure (e.g. file://) lands here, and so does a fatal()
+      // re-thrown from the chain above, which must not overwrite its own message.
+      if (!fatalRaised) {
+        fatal("Failed to load <code>" + MANIFEST_URL + "</code>: " + err.message + "\n" +
+          "This page must be served over HTTP. Run <code>uv run scripts/bench/serve.py 8791</code> " +
+          "and open it via <code>http://localhost:8791/</code>.");
+      }
+    });
+}
+
+boot();
+</script>
+</body>
+</html>
