@@ -1,0 +1,94 @@
+{
+  "track": "Timboz - Pony (MUSDB18-HQ, metal, screamed male over dense guitars) - 4-stem set",
+  "genre": "metal, screamed male over dense guitars",
+  "dataset": "MUSDB18-HQ test",
+  "window": {
+    "start_s": 59.0,
+    "length_s": 60.0
+  },
+  "hardware": "Apple M3, CPU only",
+  "note": "INDEX, not a rater manifest. vocal_quality_rater.html carries one reference per manifest, so each stem is rated from its own file below, each pointed at its own TRUE stem.",
+  "manifests": [
+    {
+      "stem": "vocals",
+      "manifest": "ladder_4stem_vocals.json",
+      "open": "vocal_quality_rater.html?manifest=ladder_4stem_vocals.json"
+    },
+    {
+      "stem": "drums",
+      "manifest": "ladder_4stem_drums.json",
+      "open": "vocal_quality_rater.html?manifest=ladder_4stem_drums.json"
+    },
+    {
+      "stem": "bass",
+      "manifest": "ladder_4stem_bass.json",
+      "open": "vocal_quality_rater.html?manifest=ladder_4stem_bass.json"
+    },
+    {
+      "stem": "other",
+      "manifest": "ladder_4stem_other.json",
+      "open": "vocal_quality_rater.html?manifest=ladder_4stem_other.json"
+    }
+  ],
+  "references": {
+    "true_stems": [
+      "clips-4stem/timboz-pony-truth-vocals.m4a",
+      "clips-4stem/timboz-pony-truth-drums.m4a",
+      "clips-4stem/timboz-pony-truth-bass.m4a",
+      "clips-4stem/timboz-pony-truth-other.m4a"
+    ],
+    "mixture": "clips-4stem/timboz-pony-mixture.m4a"
+  },
+  "si_sdr_matrix": {
+    "hdemucs_mmi-ov0": {
+      "vocals": 4.152,
+      "drums": 3.688,
+      "bass": 0.416,
+      "other": 7.435
+    },
+    "hdemucs_mmi-ov25": {
+      "vocals": 4.16,
+      "drums": 3.778,
+      "bass": 0.535,
+      "other": 7.45
+    },
+    "htdemucs-ov25": {
+      "vocals": 4.133,
+      "drums": 3.953,
+      "bass": -0.035,
+      "other": 7.514
+    },
+    "htdemucs-ov0-22k": {
+      "vocals": -2.085,
+      "drums": -1.116,
+      "bass": -3.0,
+      "other": 3.365
+    },
+    "rb7-stems": {
+      "vocals": 3.579,
+      "drums": 3.109,
+      "bass": -0.208,
+      "other": 6.882
+    },
+    "rb6-spleeter": {
+      "vocals": 0.593,
+      "drums": -0.875,
+      "bass": -4.619,
+      "other": 5.112
+    }
+  },
+  "mixture_floor_si_sdr": {
+    "vocals": -8.376,
+    "drums": -5.481,
+    "bass": -10.627,
+    "other": 1.443
+  },
+  "cost": {
+    "hdemucs_mmi-ov0": 11.44,
+    "hdemucs_mmi-ov25": 14.93,
+    "htdemucs-ov25": 25.99,
+    "htdemucs-ov0-22k": 8.91,
+    "rb7-stems": 10.45,
+    "rb6-spleeter": 1.81
+  }
+}

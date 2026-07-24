@@ -95,12 +95,15 @@ def main() -> None:
         stems[k] = _istft(full, n)
     infer_s = time.perf_counter() - t0
 
-    vocals = _resample(stems["vocals"], args.sep_rate, sr)[:orig_n]
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    # All four stems, not just vocals: this is a 4stems model and the other three
+    # were being discarded, which is exactly the blind spot the 4-stem ladder exists
+    # to close.
+    for name in STEMS:
+        sf.write(str(args.out_dir / f"{name}.wav"),
+                 _resample(stems[name], args.sep_rate, sr)[:orig_n], sr)
     inst = _resample(stems["drums"] + stems["bass"] + stems["other"],
                      args.sep_rate, sr)[:orig_n]
-
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    sf.write(str(args.out_dir / "vocals.wav"), vocals, sr)
     sf.write(str(args.out_dir / "instrumental.wav"), inst, sr)
 
     dur = orig_n / sr

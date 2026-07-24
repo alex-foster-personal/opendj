@@ -1,0 +1,120 @@
+{
+  "track": "Timboz - Pony (MUSDB18-HQ, metal, screamed male over dense guitars) - 4-stem set",
+  "genre": "metal, screamed male over dense guitars",
+  "dataset": "MUSDB18-HQ test",
+  "window": {
+    "start_s": 59.0,
+    "length_s": 60.0
+  },
+  "hardware": "Apple M3, CPU only",
+  "stems": [
+    "vocals",
+    "drums",
+    "bass",
+    "other"
+  ],
+  "mixture_floor_si_sdr": {
+    "vocals": -8.376,
+    "drums": -5.481,
+    "bass": -10.627,
+    "other": 1.443
+  },
+  "arms": [
+    {
+      "id": "hdemucs_mmi-ov0",
+      "model": "hdemucs_mmi",
+      "overlap": 0.0,
+      "sep_rate": 44100,
+      "params": "hdemucs_mmi, overlap 0, 44.1 kHz",
+      "engine": "demucs",
+      "infer_s": 11.44,
+      "s_per_stem_minute": 11.44,
+      "si_sdr": {
+        "vocals": 4.152,
+        "drums": 3.688,
+        "bass": 0.416,
+        "other": 7.435
+      }
+    },
+    {
+      "id": "hdemucs_mmi-ov25",
+      "model": "hdemucs_mmi",
+      "overlap": 0.25,
+      "sep_rate": 44100,
+      "params": "hdemucs_mmi, overlap 0.25, 44.1 kHz",
+      "engine": "demucs",
+      "infer_s": 14.93,
+      "s_per_stem_minute": 14.93,
+      "si_sdr": {
+        "vocals": 4.16,
+        "drums": 3.778,
+        "bass": 0.535,
+        "other": 7.45
+      }
+    },
+    {
+      "id": "htdemucs-ov25",
+      "model": "htdemucs",
+      "overlap": 0.25,
+      "sep_rate": 44100,
+      "params": "htdemucs, overlap 0.25, 44.1 kHz",
+      "engine": "demucs",
+      "infer_s": 25.99,
+      "s_per_stem_minute": 25.99,
+      "si_sdr": {
+        "vocals": 4.133,
+        "drums": 3.953,
+        "bass": -0.035,
+        "other": 7.514
+      }
+    },
+    {
+      "id": "htdemucs-ov0-22k",
+      "model": "htdemucs",
+      "overlap": 0.0,
+      "sep_rate": 22050,
+      "params": "htdemucs, overlap 0, separated at 22.05 kHz",
+      "engine": "demucs",
+      "infer_s": 8.91,
+      "s_per_stem_minute": 8.91,
+      "si_sdr": {
+        "vocals": -2.085,
+        "drums": -1.116,
+        "bass": -3.0,
+        "other": 3.365
+      }
+    },
+    {
+      "id": "rb7-stems",
+      "params": "rekordbox 7 STEMS, its own hdemucs.onnx, overlap 0.25, 44.1 kHz",
+      "engine": "rekordbox7-onnx",
+      "model": "hdemucs.onnx",
+      "overlap": 0.25,
+      "sep_rate": 44100,
+      "infer_s": 10.45,
+      "s_per_stem_minute": 10.45,
+      "si_sdr": {
+        "vocals": 3.579,
+        "drums": 3.109,
+        "bass": -0.208,
+        "other": 6.882
+      }
+    },
+    {
+      "id": "rb6-spleeter",
+      "params": "rekordbox 6 Track Separation, its own Spleeter 4stems weights, 44.1 kHz",
+      "engine": "rekordbox6-spleeter",
+      "model": "spleeter_4stems",
+      "overlap": 0.0,
+      "sep_rate": 44100,
+      "infer_s": 1.81,
+      "s_per_stem_minute": 1.81,
+      "si_sdr": {
+        "vocals": 0.593,
+        "drums": -0.875,
+        "bass": -4.619,
+        "other": 5.112
+      }
+    }
+  ]
+}

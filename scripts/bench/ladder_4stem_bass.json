@@ -1,0 +1,79 @@
+{
+  "track": "Timboz - Pony (MUSDB18-HQ, metal, screamed male over dense guitars) - 4-stem set -- BASS stem",
+  "stem": "bass",
+  "blind_default": true,
+  "genre": "metal, screamed male over dense guitars",
+  "dataset": "MUSDB18-HQ test",
+  "reference": "clips-4stem/timboz-pony-truth-bass.m4a",
+  "reference_kind": "TRUE MUSDB18-HQ stem",
+  "mixture_file": "clips-4stem/timboz-pony-mixture.m4a",
+  "mixture_note": "the raw mixture, REFERENCE ONLY - it is not an arm and is not graded. Its SI-SDR against this true stem is the do-nothing floor.",
+  "mixture_floor_si_sdr": -10.627,
+  "window": {
+    "start_s": 59.0,
+    "length_s": 60.0
+  },
+  "hardware": "Apple M3, CPU only",
+  "clips": [
+    {
+      "id": "hdemucs_mmi-ov0",
+      "file": "clips-4stem/timboz-pony-hdemucs_mmi-ov0-bass.m4a",
+      "inst_file": null,
+      "params": "hdemucs_mmi, overlap 0, 44.1 kHz [11.44 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "separate_s": 11.44,
+      "si_sdr": 0.416,
+      "s_per_stem_minute": 11.44,
+      "machine_score": 5
+    },
+    {
+      "id": "hdemucs_mmi-ov25",
+      "file": "clips-4stem/timboz-pony-hdemucs_mmi-ov25-bass.m4a",
+      "inst_file": null,
+      "params": "hdemucs_mmi, overlap 0.25, 44.1 kHz [14.93 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "separate_s": 14.93,
+      "si_sdr": 0.535,
+      "s_per_stem_minute": 14.93,
+      "machine_score": 6
+    },
+    {
+      "id": "htdemucs-ov25",
+      "file": "clips-4stem/timboz-pony-htdemucs-ov25-bass.m4a",
+      "inst_file": null,
+      "params": "htdemucs, overlap 0.25, 44.1 kHz [25.99 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "separate_s": 25.99,
+      "si_sdr": -0.035,
+      "s_per_stem_minute": 25.99,
+      "machine_score": 4
+    },
+    {
+      "id": "htdemucs-ov0-22k",
+      "file": "clips-4stem/timboz-pony-htdemucs-ov0-22k-bass.m4a",
+      "inst_file": null,
+      "params": "htdemucs, overlap 0, separated at 22.05 kHz [8.91 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "separate_s": 8.91,
+      "si_sdr": -3.0,
+      "s_per_stem_minute": 8.91,
+      "machine_score": 2
+    },
+    {
+      "id": "rb7-stems",
+      "file": "clips-4stem/timboz-pony-rb7-stems-bass.m4a",
+      "inst_file": null,
+      "params": "rekordbox 7 STEMS, its own hdemucs.onnx, overlap 0.25, 44.1 kHz [10.45 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "separate_s": 10.45,
+      "si_sdr": -0.208,
+      "s_per_stem_minute": 10.45,
+      "machine_score": 3
+    },
+    {
+      "id": "rb6-spleeter",
+      "file": "clips-4stem/timboz-pony-rb6-spleeter-bass.m4a",
+      "inst_file": null,
+      "params": "rekordbox 6 Track Separation, its own Spleeter 4stems weights, 44.1 kHz [1.81 s per stem-minute on Apple M3 CPU, all four stems from one pass]",
+      "separate_s": 1.81,
+      "si_sdr": -4.619,
+      "s_per_stem_minute": 1.81,
+      "machine_score": 1
+    }
+  ]
+}
