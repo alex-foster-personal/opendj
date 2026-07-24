@@ -3204,6 +3204,105 @@
         "title": "ProvenanceOut",
         "type": "object"
       },
+      "QualityOut": {
+        "description": "One rung of the venue ladder, or an honest unknown.\n\nvenue/rank/kbps are null when the file could not be measured; `blurb`\nthen carries the reason. The UI must never render a guessed rung.",
+        "properties": {
+          "blurb": {
+            "title": "Blurb",
+            "type": "string"
+          },
+          "container": {
+            "title": "Container",
+            "type": "string"
+          },
+          "kbps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kbps"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lossless": {
+            "title": "Lossless",
+            "type": "boolean"
+          },
+          "of": {
+            "title": "Of",
+            "type": "integer"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "venue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Venue"
+          }
+        },
+        "required": [
+          "venue",
+          "label",
+          "rank",
+          "of",
+          "blurb",
+          "kbps",
+          "container",
+          "lossless"
+        ],
+        "title": "QualityOut",
+        "type": "object"
+      },
+      "QualityRungOut": {
+        "description": "One legend entry from apps.shared.audio_quality.ladder().",
+        "properties": {
+          "blurb": {
+            "title": "Blurb",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rank",
+          "key",
+          "label",
+          "blurb"
+        ],
+        "title": "QualityRungOut",
+        "type": "object"
+      },
       "QueueItemOut": {
         "properties": {
           "kind": {
@@ -3558,6 +3657,9 @@
             "title": "Is Streaming",
             "type": "boolean"
           },
+          "quality": {
+            "$ref": "#/components/schemas/QualityOut"
+          },
           "stable_id": {
             "title": "Stable Id",
             "type": "string"
@@ -3583,7 +3685,8 @@
           "duration_s",
           "artwork_available",
           "analysis_available",
-          "cue_count"
+          "cue_count",
+          "quality"
         ],
         "title": "RbMetaOut",
         "type": "object"
@@ -4118,6 +4221,9 @@
             ],
             "title": "Preview Max"
           },
+          "quality": {
+            "$ref": "#/components/schemas/QualityOut"
+          },
           "rating": {
             "anyOf": [
               {
@@ -4160,6 +4266,7 @@
           "preview_max",
           "file_exists",
           "is_streaming",
+          "quality",
           "match_context"
         ],
         "title": "SearchHit",
@@ -4800,6 +4907,10 @@
             "title": "Availability",
             "type": "string"
           },
+          "codec": {
+            "title": "Codec",
+            "type": "string"
+          },
           "evidence": {
             "title": "Evidence",
             "type": "string"
@@ -4862,6 +4973,7 @@
           "overlap",
           "shifts",
           "gpu",
+          "codec",
           "purpose",
           "evidence",
           "evidence_strength",
@@ -4873,7 +4985,7 @@
         "type": "object"
       },
       "TrackListItemOut": {
-        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).",
+        "description": "TrackOut + parity row fields (shared API contract item 1).\n\npreview_b64: base64 of uint8[120][3] interleaved [low, mid, hi] per\ncolumn (null = no ANLZ analysis). preview_max: per-track max band value\nfor client-side normalisation (never divide by 127 -- SPIKE-A1 gotcha 3).\nfile_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).\nquality: venue rung from apps.shared.audio_quality (same stat pass, so\nno extra cost per row); venue/rank are null when it cannot be measured.",
         "properties": {
           "album": {
             "anyOf": [
@@ -5001,6 +5113,9 @@
             "title": "Provenance",
             "type": "object"
           },
+          "quality": {
+            "$ref": "#/components/schemas/QualityOut"
+          },
           "rating": {
             "anyOf": [
               {
@@ -5046,7 +5161,8 @@
           "updated_at",
           "preview_b64",
           "preview_max",
-          "file_exists"
+          "file_exists",
+          "quality"
         ],
         "title": "TrackListItemOut",
         "type": "object"
@@ -5359,6 +5475,9 @@
             ],
             "title": "Preview Max"
           },
+          "quality": {
+            "$ref": "#/components/schemas/QualityOut"
+          },
           "rating": {
             "anyOf": [
               {
@@ -5400,7 +5519,8 @@
           "preview_b64",
           "preview_max",
           "file_exists",
-          "is_streaming"
+          "is_streaming",
+          "quality"
         ],
         "title": "TrackRowOut",
         "type": "object"
@@ -9419,6 +9539,32 @@
           }
         },
         "summary": "List Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/quality-ladder": {
+      "get": {
+        "description": "The six venue rungs, so the UI legend is not a second copy of them.",
+        "operationId": "get_quality_ladder_api_v1_tracks_quality_ladder_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/QualityRungOut"
+                  },
+                  "title": "Response Get Quality Ladder Api V1 Tracks Quality Ladder Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Quality Ladder",
         "tags": [
           "tracks"
         ]

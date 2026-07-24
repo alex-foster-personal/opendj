@@ -41,6 +41,11 @@ class TierOut(BaseModel):
     overlap: float
     shifts: int
     gpu: str
+    #: Stem container this rung emits. Exposed because it is the single biggest
+    #: driver of what a caller downloads: L is flac at ~3.7x the bytes of the
+    #: opus rungs (53.17 MB vs 14.45 MB per 2.50-min track, measured), so a UI
+    #: that cannot see it cannot warn before a bulk run.
+    codec: str
     purpose: str
     evidence: str
     evidence_strength: str
@@ -96,6 +101,7 @@ def list_tiers() -> list[TierOut]:
             overlap=t.overlap,
             shifts=t.shifts,
             gpu=t.gpu,
+            codec=t.codec,
             purpose=t.purpose,
             evidence=t.evidence,
             evidence_strength=t.evidence_strength,
