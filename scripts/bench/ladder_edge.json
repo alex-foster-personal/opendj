@@ -1,0 +1,69 @@
+{
+  "track": "AM Contra - Heart Peripheral (MUSDB18-HQ, failure-edge bracket)",
+  "reference": "clips-edge/am-contra-heart-peripheral-truth-vocals.m4a",
+  "window": {
+    "start_s": 135.0,
+    "end_s": 195.0,
+    "length_s": 60.0,
+    "rms_dbfs": -23.25,
+    "silent_frac": 0.1167
+  },
+  "mixture_file": "clips-edge/am-contra-heart-peripheral-mixture.m4a",
+  "mix_baseline_si_sdr": -4.105,
+  "clips": [
+    {
+      "id": "cfg-mix",
+      "file": "clips-edge/am-contra-heart-peripheral-mixture.m4a",
+      "inst_file": null,
+      "machine_score": 1,
+      "params": "no separation - raw mixture graded as the vocal estimate (do-nothing anchor)",
+      "separate_s": 0.0,
+      "si_sdr": -4.105
+    },
+    {
+      "id": "cfg-a",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-a.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-a.inst.m4a",
+      "machine_score": 2,
+      "params": "mdx_q overlap=0 DELIBERATE FLOOR: input band-limited to 8 kHz then upsampled, 1.5s segments",
+      "separate_s": 15.37,
+      "si_sdr": 8.642
+    },
+    {
+      "id": "cfg-b",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-b.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-b.inst.m4a",
+      "machine_score": 6,
+      "params": "mdx_q overlap=0.1 (cheapest real config)",
+      "separate_s": 11.48,
+      "si_sdr": 10.702
+    },
+    {
+      "id": "cfg-c",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-c.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-c.inst.m4a",
+      "machine_score": 8,
+      "params": "htdemucs overlap=0.1 (current production candidate)",
+      "separate_s": 9.25,
+      "si_sdr": 11.669
+    },
+    {
+      "id": "cfg-d",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-d.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-d.inst.m4a",
+      "machine_score": 9,
+      "params": "hdemucs_mmi overlap=0.25 (best dB per second among test-set-clean models)",
+      "separate_s": 2.14,
+      "si_sdr": 11.689
+    },
+    {
+      "id": "cfg-e",
+      "file": "clips-edge/am-contra-heart-peripheral-cfg-e.m4a",
+      "inst_file": "clips-edge/am-contra-heart-peripheral-cfg-e.inst.m4a",
+      "machine_score": 10,
+      "params": "htdemucs_ft overlap=0.25 (best clean quality)",
+      "separate_s": 21.25,
+      "si_sdr": 11.836
+    }
+  ]
+}
