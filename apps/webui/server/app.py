@@ -47,10 +47,12 @@ from .routes import reconcile as reconcile_routes
 from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
+from .routes import settings_ai as settings_ai_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
+from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import voice_probe as voice_probe_routes
 
@@ -180,6 +182,8 @@ def create_app(
     app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
+    app.include_router(settings_ai_routes.router, prefix=api_prefix)
+    app.include_router(ui_prefs_routes.router, prefix=api_prefix)
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
