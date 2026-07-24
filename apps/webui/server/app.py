@@ -51,6 +51,7 @@ from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
+from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
@@ -183,6 +184,7 @@ def create_app(
     app.include_router(progress_routes.router, prefix=api_prefix)
     app.include_router(smartlists_routes.router, prefix=api_prefix)
     app.include_router(stems_routes.router, prefix=api_prefix)
+    app.include_router(stem_tiers_routes.router, prefix=api_prefix)
     app.include_router(reconcile_routes.router, prefix=api_prefix)
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
