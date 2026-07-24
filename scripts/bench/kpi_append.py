@@ -6,9 +6,12 @@
 
 Usage:
     uv run scripts/bench/kpi_append.py --label <run-label> --set key=value [--set key=value ...]
+        [--note "author commentary for this run"]
 
 Every --set key must exist in the ledger's "kpis" dict (unknown key = hard error listing
 valid keys). Unspecified keys are recorded as null. Snapshot ts = now (UTC, ISO 8601 Z).
+--note records author commentary for the run; it is what the admin panel paginates
+below the KPI cards. Omitted note = null (the panel says so rather than inventing one).
 Fail-fast: no hidden defaults, no silent skips.
 
 Acceptance:
@@ -16,6 +19,8 @@ Acceptance:
 - [if] a --set value is not a number [then] exit non-zero naming the offending pair.
 - [if] all --set keys are valid [then] a new snapshot appends and the table prints to stdout.
 - [if] a KPI is not passed [then] its cell for the new snapshot reads null.
+- [if] --note is passed [then] the snapshot carries it verbatim in its "notes" field.
+- [if] --note is omitted [then] the snapshot's "notes" field is null, never an empty string.
 """
 
 from __future__ import annotations
@@ -98,6 +103,8 @@ def main() -> None:
     parser.add_argument("--label", required=True, help="short run label for the snapshot column")
     parser.add_argument("--set", dest="sets", action="append", default=[],
                         metavar="key=value", help="set one KPI value; repeatable")
+    parser.add_argument("--note", default=None,
+                        help="author commentary for this run, shown in the admin panel")
     args = parser.parse_args()
 
     ledger = _load_ledger(LEDGER_PATH)
@@ -108,6 +115,7 @@ def main() -> None:
         "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "label": args.label,
         "values": {key: set_values.get(key) for key in valid_keys},
+        "notes": args.note,
     }
     ledger["snapshots"].append(snapshot)
     LEDGER_PATH.write_text(json.dumps(ledger, indent=2) + "\n")

@@ -56,6 +56,7 @@
 			<a href="/play-analytics">Play analytics</a>
 			<a href="/sets">Sessions / REC</a>
 			<a href="/progress-tree">Progress</a>
+			<a href="/admin">Admin</a>
 			<a href="/settings">Settings (daemon)</a>
 			<button type="button" class="nav-settings" onclick={() => openSettings()}>
 				Settings (Cmd+,)

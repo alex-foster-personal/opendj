@@ -28,6 +28,7 @@ from .backend import (BackendError, ConflictError, InMemoryBackend,
 from .cloud_sync import probe_syncthing_status
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import analysis as analysis_routes
+from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
@@ -160,6 +161,7 @@ def create_app(
 
     api_prefix = "/api/v1"
     app.include_router(tracks_routes.router, prefix=api_prefix)
+    app.include_router(bench_routes.router, prefix=api_prefix)
     app.include_router(bulk_edit_routes.router, prefix=api_prefix)
     app.include_router(find_replace_routes.router, prefix=api_prefix)
     app.include_router(mytag_routes.router, prefix=api_prefix)
