@@ -70,9 +70,10 @@
  */
 
 import { pushToast } from '$lib/stores.svelte';
+import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
-	import {
+import {
 	fetchAnlz,
 	fetchAudioArrayBuffer,
 	fetchHotCueSlots,
@@ -2720,6 +2721,8 @@ function _tick(): void {
 		_updateSlipPosition(deck);
 		if (observation?.audible || observation?.transport_pending) anyTransport = true;
 	}
+	// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
+	if (anyTransport) noteAudioPresentationTick();
 	if (anyTransport) _rafId = requestAnimationFrame(_tick);
 }
 

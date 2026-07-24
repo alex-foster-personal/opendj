@@ -17,6 +17,7 @@
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
+	import PerfMeters from './PerfMeters.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
@@ -100,7 +101,9 @@
 	class="rb-topbar rb-panel"
 	class:vibe-rainbow={vibeState.display >= 0.9}
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
->	<!-- left: mode dropdown + view-layout icon cluster -->
+>	<!-- left: live audio health + prefetch count, then mode dropdown -->
+	<PerfMeters />
+
 	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
 		PERFORMANCE
 		<svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
