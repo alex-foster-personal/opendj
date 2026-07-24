@@ -48,7 +48,11 @@ def concurrency_profile(spans: Sequence[tuple[float, float]]) -> dict[str, float
     ``mean`` is time-weighted over the busy window (summed container seconds
     divided by the wall clock from the first start to the last end). That is
     the number to compare against the configured cap: a true 10-way fan-out
-    approaches 10, and the 128-track production run scored 1.05.
+    approaches 10. The 128-track production run measured 5.34 (954.1s of
+    container time over a 178.5s publication window, 118 entries carrying
+    telemetry). An earlier 1.05 figure for that run was RETRACTED: it divided
+    by a hand-entered ledger field rather than by measured wall, and 954.1s of
+    container time inside a 178.5s window cannot yield 1.05.
 
     The one assumption is that container clocks agree. Modal's hosts are
     NTP-synced; a skew of s seconds perturbs any single overlap by at most s,
