@@ -36,6 +36,7 @@ Acceptance:
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import logging
 import os
@@ -352,8 +353,22 @@ def _progress_file_lock(progress_file: Path) -> Iterator[None]:
                     lock_handle.write(b"\0")
                     lock_handle.flush()
                     os.fsync(lock_handle.fileno())
-                lock_handle.seek(0)
-                msvcrt.locking(lock_handle.fileno(), msvcrt.LK_LOCK, 1)
+                while True:
+                    lock_handle.seek(0)
+                    try:
+                        msvcrt.locking(
+                            lock_handle.fileno(),
+                            msvcrt.LK_LOCK,
+                            1,
+                        )
+                    except OSError as exc:
+                        # LK_LOCK raises after ten one-second attempts. Retry
+                        # only lock-contention failures so Windows matches the
+                        # POSIX wait-until-acquired transaction contract.
+                        if exc.errno not in {errno.EACCES, errno.EDEADLK}:
+                            raise
+                    else:
+                        break
             else:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
             try:
