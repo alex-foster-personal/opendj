@@ -74,6 +74,12 @@ def _no_arg(name: str, fn: Callable[[], object]) -> Handler:
     return handler
 
 
+def _reacquire(argv: list[str]) -> int:
+    from apps.reconcile import reacquire
+
+    return reacquire.main(argv)
+
+
 def _list_broken(argv: list[str]) -> int:
     from apps.reconcile import list_broken
 
@@ -101,6 +107,7 @@ COMMANDS: dict[str, tuple[Handler, str]] = {
     "relink": (_relink, "apply tracks.file_path relinks (dry-run by default)"),
     "relink-undo": (_relink_undo, "revert a relink run from its reversal log"),
     "relink-review": (_relink_review, "rank ambiguous candidates for a human"),
+    "reacquire": (_reacquire, "ranked re-acquisition worklist for absent-no-audio"),
     "list-broken": (_list_broken, "list rekordbox rows whose file is missing"),
     "locate": (_locate, "search the disk for a broken rekordbox row"),
     "apply": (_apply, "write located paths into rekordbox master.db"),
