@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 import scripts.vocal_worker_runner as runner
 
 pytestmark = pytest.mark.requirement("CAT-05")
@@ -519,7 +518,11 @@ def test_main_rejects_missing_resource_percent_file_before_empty_inbox_loop(
 
 
 def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
-    wrapper = (Path(__file__).parents[2] / "scripts" / "run_worker.cmd").read_text(
+    scripts_dir = Path(__file__).parents[2] / "scripts"
+    wrapper = (scripts_dir / "run_worker.cmd").read_text(
+        encoding="utf-8",
+    )
+    hidden_runner = (scripts_dir / "run_worker_hidden.vbs").read_text(
         encoding="utf-8",
     )
     assert r"set BENCH_PYTHON=D:\tmp\demucs-bench\.venv\Scripts\python.exe" in wrapper
@@ -538,6 +541,10 @@ def test_run_worker_cmd_sets_explicit_resource_controls() -> None:
     assert "--gpu-utilization-threshold 50" in wrapper
     assert "--gpu-memory-threshold-mb 2048" in wrapper
     assert "--resource-percent-file \"%RESOURCE_PERCENT_FILE%\"" in wrapper
+    assert 'wscript.exe D:\\demucs-work\\run_worker_hidden.vbs' in wrapper
+    assert 'cmd /c D:\\demucs-work\\run_worker.cmd' not in wrapper
+    assert 'shell.Run(command, 0, True)' in hidden_runner
+    assert 'D:\\demucs-work\\run_worker.cmd' in hidden_runner
 
 
 def test_build_parser_accepts_windows_process_resource_controls(tmp_path: Path) -> None:

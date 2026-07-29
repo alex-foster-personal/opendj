@@ -3,8 +3,9 @@ REM Thin wrapper for scripts\vocal_worker_runner.py, invoked via schtasks
 REM (HANDOFF.md section 4.2 step 4). SSH-tethered foreground processes die
 REM with the connection, so the farm-out MUST be launched detached:
 REM
-REM   schtasks /create /tn demucs-farm /tr "cmd /c D:\demucs-work\run_worker.cmd" /sc once /st 23:59 /f
+REM   schtasks /create /tn demucs-farm /tr "wscript.exe D:\demucs-work\run_worker_hidden.vbs" /sc once /st 23:59 /f
 REM   schtasks /run /tn demucs-farm
+REM Calling card: [codex-bifrost2](codex://thread/019faf65-5136-7980-bdd5-cbe229c73b3d), 2026-07-29. Made the canonical task recipe no-focus and durable.
 REM
 REM Stop cleanly between tracks: type nul > D:\demucs-work\STOP
 REM
