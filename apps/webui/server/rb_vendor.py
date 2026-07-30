@@ -174,6 +174,7 @@ class RbRowMeta:
     analysis_data_path: Optional[str]
     comment: Optional[str]
     genre: Optional[str]
+    play_count: int
 
 
 # ----- errors + connections ------------------------------------------------
@@ -850,16 +851,16 @@ def bulk_rb_meta(stable_ids: Sequence[str]) -> dict[str, RbRowMeta]:
         vendor_ids = sorted(set(vendor_by_sid.values()))
         for chunk in _chunked(vendor_ids):
             placeholders = ",".join("?" * len(chunk))
-            for vid, folder, adp, comment, genre in master.execute(
+            for vid, folder, adp, comment, genre, play_count in master.execute(
                 "SELECT c.ID, c.FolderPath, c.AnalysisDataPath, c.Commnt, "
-                "       g.Name "
+                "       g.Name, c.DJPlayCount "
                 "FROM djmdContent c "
                 "LEFT JOIN djmdGenre g "
                 "       ON g.ID = c.GenreID AND g.rb_local_deleted = 0 "
                 f"WHERE c.ID IN ({placeholders}) AND c.rb_local_deleted = 0",
                 tuple(chunk),
             ):
-                content_by_vid[str(vid)] = (folder, adp, comment, genre)
+                content_by_vid[str(vid)] = (folder, adp, comment, genre, play_count)
     finally:
         master.close()
 
@@ -868,13 +869,14 @@ def bulk_rb_meta(stable_ids: Sequence[str]) -> dict[str, RbRowMeta]:
         content = content_by_vid.get(vid)
         if content is None:
             continue
-        folder, adp, comment, genre = content
+        folder, adp, comment, genre, play_count = content
         out[sid] = RbRowMeta(
             vendor_id=vid,
             folder_path=folder or None,
             analysis_data_path=adp or None,
             comment=comment or None,
             genre=genre or None,
+            play_count=int(play_count or 0),
         )
     return out
 
@@ -993,7 +995,7 @@ def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
     old 29x per-row GET fan-out. Field names match the shared API
     contract exactly: title, artist, key, bpm, rating, duration_ms,
     genre, comments, etag, preview_b64, preview_max, file_exists,
-    is_streaming, quality.
+    is_streaming, quality, play_count.
     """
     from .etag import compute_etag
 
@@ -1037,6 +1039,7 @@ def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
             "file_exists": available[track.stable_id],
             "is_streaming": is_streaming_path(folder),
             "quality": quality[track.stable_id],
+            "play_count": meta.play_count if meta is not None else 0,
         })
     return rows
 

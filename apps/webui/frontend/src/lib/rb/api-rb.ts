@@ -258,6 +258,7 @@ export interface PlaylistTrackRowWire {
 	file_exists: boolean;
 	is_streaming: boolean;
 	quality: TrackQuality;
+	play_count: number;
 }
 
 export interface PlaylistDetailHydrated extends PlaylistDetail {
@@ -336,6 +337,7 @@ export type TrackListItemWire = Track & {
 	preview_max: number | null;
 	file_exists: boolean;
 	quality: TrackQuality;
+	play_count: number;
 };
 
 export interface TracksPageHydrated {

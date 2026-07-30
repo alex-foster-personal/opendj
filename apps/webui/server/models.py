@@ -26,6 +26,8 @@ class TrackOut(BaseModel):
     notes: str | None = None
     last_played_at: str | None = None
     file_path: str | None = None
+    # Rekordbox djmdContent.DJPlayCount when hydrated via rb_vendor; 0 if unknown.
+    play_count: int = 0
     created_at: str
     updated_at: str
     provenance: dict[str, ProvenanceOut] = {}
@@ -139,6 +141,7 @@ class TrackRowOut(BaseModel):
     file_exists: bool
     is_streaming: bool
     quality: QualityOut
+    play_count: int = 0
 
 
 class PlaylistDetail(BaseModel):

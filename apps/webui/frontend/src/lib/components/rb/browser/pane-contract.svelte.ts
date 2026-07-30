@@ -35,6 +35,7 @@ import type { RbMeta, TrackQuality } from '$lib/rb/types';
 /** Sortable column keys (client-side sort - ordering is not server-provided). */
 export type SortKey =
 	| 'order'
+	| 'plays'
 	| 'title'
 	| 'artist'
 	| 'key'
@@ -73,6 +74,8 @@ export interface BrowserRow {
 	/** Venue-rung quality, inline on every row from the SAME stat pass.
 	 * null only for synthesized rows that never came off the wire. */
 	quality: TrackQuality | null;
+	/** Rekordbox DJPlayCount (0 when unknown / non-RB). */
+	play_count: number;
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;
@@ -337,6 +340,7 @@ function _genreTokens(row: BrowserRow): string[] {
 /** Comparable cell value for a sort key (null = missing, sorts last). */
 export function sortValue(row: BrowserRow, key: SortKey): string | number | null {
 	if (key === 'order') return row.order;
+	else if (key === 'plays') return row.play_count;
 	else if (key === 'title') return row.title;
 	else if (key === 'artist') return row.artist;
 	else if (key === 'key') return row.key;

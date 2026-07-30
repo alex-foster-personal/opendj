@@ -40,10 +40,13 @@ function _row(overrides = {}) {
 		duration_ms: null,
 		genre: null,
 		file_exists: true,
+		quality: null,
+		play_count: 0,
 		is_streaming: null,
 		strip: null,
 		rb_meta: null,
 		revealed: false,
+		match_context: null,
 		...overrides
 	};
 }

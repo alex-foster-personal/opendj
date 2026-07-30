@@ -24,6 +24,8 @@ export interface Track {
 	tags: string[];
 	notes: string | null;
 	last_played_at: string | null;
+	/** Rekordbox DJPlayCount when hydrated; 0 if unknown. */
+	play_count?: number;
 	created_at: string;
 	updated_at: string;
 	provenance: Record<string, { value: unknown; source: string; confidence: number | null; modified_at: string }>;

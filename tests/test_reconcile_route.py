@@ -180,7 +180,7 @@ def test_rb_folder_path_wins_over_state_path(
     dead_rb_path = str(library["gone"].parent / "moved-elsewhere.mp3")
     meta = rb_vendor.RbRowMeta(vendor_id="42", folder_path=dead_rb_path,
                                analysis_data_path=None, comment=None,
-                               genre=None)
+                               genre=None, play_count=0)
     monkeypatch.setattr(
         rb_vendor, "bulk_rb_meta",
         lambda stable_ids: {"t-ok": meta} if "t-ok" in stable_ids else {},

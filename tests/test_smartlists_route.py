@@ -225,7 +225,7 @@ def test_tracks_evaluates_rule_and_hydrates_rows(client, state_db_path):
     for field in (
         "stable_id", "title", "artist", "key", "bpm", "rating",
         "duration_ms", "genre", "comments", "etag", "preview_b64",
-        "preview_max", "file_exists", "is_streaming",
+        "preview_max", "file_exists", "is_streaming", "play_count",
     ):
         assert field in row, f"TrackRowOut parity missing {field}"
     assert row["title"] == "Oxide"

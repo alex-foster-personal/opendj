@@ -83,6 +83,7 @@ def list_tracks(
             preview_max=row["preview_max"],
             file_exists=row["file_exists"],
             quality=row["quality"],
+            play_count=int(row.get("play_count") or 0),
         ))
     return TracksPage(items=items, next_cursor=page.next_cursor)
 

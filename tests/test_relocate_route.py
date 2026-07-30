@@ -115,6 +115,7 @@ def _vendor_meta(vendor_id: str, original_path: Path) -> rb_vendor.RbRowMeta:
         analysis_data_path=None,
         comment=None,
         genre=None,
+        play_count=0,
     )
 
 
@@ -217,7 +218,7 @@ def test_candidates_uses_rekordbox_vendor_mapping(
     """rekordbox FolderPath + vendor_id win over the state-layer path."""
     dead_rb_path = str(library["gone"].parent / "moved.mp3")
     meta = rb_vendor.RbRowMeta(vendor_id="99", folder_path=dead_rb_path,
-                               analysis_data_path=None, comment=None, genre=None)
+                               analysis_data_path=None, comment=None, genre=None, play_count=0)
     monkeypatch.setattr(
         rb_vendor, "bulk_rb_meta",
         lambda stable_ids: {"t-gone": meta} if "t-gone" in stable_ids else {},
@@ -740,7 +741,8 @@ def test_apply_rekordbox_branch_503s_without_live_db(
     """Vendor-mapped track: a cloud sandbox has no live rekordbox database,
     so apply must 503 cleanly rather than silently no-op or crash."""
     meta = rb_vendor.RbRowMeta(vendor_id="99", folder_path=str(library["gone"]),
-                               analysis_data_path=None, comment=None, genre=None)
+                               analysis_data_path=None, comment=None, genre=None,
+                               play_count=0)
     monkeypatch.setattr(
         rb_vendor, "bulk_rb_meta",
         lambda stable_ids: {"t-gone": meta} if "t-gone" in stable_ids else {},
