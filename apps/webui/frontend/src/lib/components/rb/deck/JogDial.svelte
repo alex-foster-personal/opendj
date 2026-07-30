@@ -5,6 +5,7 @@
 	// MA remain explicitly inert.
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { DeckState } from '$lib/rb/types';
+	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
 		deck,
@@ -35,6 +36,30 @@
 		deck.duration_ms === null || deck.duration_ms === 0
 			? 0
 			: (deck.position_ms / deck.duration_ms) * 360
+	);
+
+	const slipTitle: string = $derived(
+		deck.slip_active
+			? 'SLIP active - exit loop or turn off to jump to the hidden playhead'
+			: deck.slip_enabled
+				? 'SLIP armed - engage a loop to keep a hidden playhead advancing'
+				: 'SLIP - arm so loops keep a hidden playhead advancing through the track'
+	);
+	const slipBullets: readonly string[] = [
+		'Arm SLIP, then engage a loop (or arm while already looping).',
+		'You hear the loop; a hidden playhead keeps advancing linearly.',
+		'Exit the loop or turn SLIP off: jump to that hidden position.',
+		'Pause clears active SLIP without jumping to the hidden position.'
+	];
+	const qTitle: string = $derived(
+		deck.quantize_enabled
+			? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
+			: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'
+	);
+	const mtTitle: string = $derived(
+		deck.master_tempo_enabled
+			? 'Master Tempo ON - hold musical key while changing tempo'
+			: 'Master Tempo OFF - pitch and key shift together with tempo'
 	);
 </script>
 
@@ -67,24 +92,26 @@
 			aria-pressed={deck.quantize_enabled}
 			data-performance-control="quantize"
 			data-state={deck.quantize_enabled ? 'on' : 'off'}
-			title="toggle quantize"
+			title={qTitle}
 			onclick={async () => await onQuantize()}
 		>
 			Q
 		</button>
-		<button
-			class="rb-lit-button"
-			class:lit={deck.slip_enabled}
-			class:active={deck.slip_active}
-			disabled={pending}
-			aria-pressed={deck.slip_enabled}
-			data-performance-control="slip"
-			data-state={deck.slip_active ? 'active' : deck.slip_enabled ? 'armed' : 'off'}
-			title="toggle SLIP mode"
-			onclick={async () => await onSlip()}
-		>
-			SLIP
-		</button>
+		<ControlExplainer title={slipTitle} bullets={slipBullets} demo="slip">
+			<button
+				class="rb-lit-button"
+				class:lit={deck.slip_enabled}
+				class:active={deck.slip_active}
+				disabled={pending}
+				aria-pressed={deck.slip_enabled}
+				data-performance-control="slip"
+				data-state={deck.slip_active ? 'active' : deck.slip_enabled ? 'armed' : 'off'}
+				title={slipTitle}
+				onclick={async () => await onSlip()}
+			>
+				SLIP
+			</button>
+		</ControlExplainer>
 		<button
 			class="rb-lit-button"
 			class:lit={deck.master_tempo_enabled}
@@ -99,7 +126,7 @@
 						? 'armed'
 						: 'active'
 					: 'bypass'}
-			title="toggle Master Tempo"
+			title={mtTitle}
 			onclick={async () => await onMasterTempo()}
 		>
 			MT
@@ -113,7 +140,7 @@
 			aria-pressed={deck.master_tempo_enabled}
 			data-performance-control="master-tempo"
 			data-state={deck.master_tempo_enabled ? 'on' : 'off'}
-			title="toggle Master Tempo"
+			title={mtTitle}
 			onclick={async () => await onMasterTempo()}
 		>
 			MT

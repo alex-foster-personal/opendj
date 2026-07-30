@@ -5,8 +5,10 @@
 	// BEAT SYNC and exclusive MASTER stacked at the right.
 	import { artworkUrl } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
-	import { effectiveCamelotKey } from '$lib/rb/audio-engine.svelte';
+	import { effectiveCamelotKey, pitchRanges } from '$lib/rb/audio-engine.svelte';
+	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import type { DeckId, DeckState } from '$lib/rb/types';
+	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
 		deck,
@@ -41,6 +43,30 @@
 	});
 
 	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
+	const syncBounds = $derived(tempoBoundsFromPitchRange(pitchRanges[deckId]));
+	const beatSyncTitle: string = $derived(
+		deck.beat_sync_enabled
+			? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (strict BAR 1-4)'
+			: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
+	);
+	const beatSyncBullets: readonly string[] = $derived([
+		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4).',
+		`Needs a real PQTZ grid on both decks. BAR tempo must land in pitch range [${syncBounds.min}, ${syncBounds.max}] (default +-16%).`,
+		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
+		'Half/double tempo matching needs Sync mode BEAT (explicit opt-out), not BAR.'
+	]);
+	const masterTitle: string = $derived(
+		deck.stable_id === null
+			? 'no track loaded'
+			: deck.is_master
+				? 'MASTER - this deck is the tempo / key sync reference'
+				: 'MASTER - make this deck the tempo / key sync reference'
+	);
+	const masterBullets: readonly string[] = [
+		'Only one MASTER at a time. Followers with Beat Sync lock phase to this deck.',
+		'KEY SYNC also uses MASTER as the Camelot reference.',
+		'BeatSyncMax keeps BAR phase lock across seeks when followers are synced.'
+	];
 	/** Show audible Camelot after KEY SYNC / nudge; raw metadata stays in the tooltip. */
 	const keyText: string = $derived(
 		effectiveCamelotKey(deck.key, deck.key_shift_semitones) ?? deck.key ?? '--'
@@ -178,30 +204,34 @@
 			</div>
 
 			<div class="sync-col">
-				<button
-					class="rb-lit-button"
-					class:lit={deck.beat_sync_enabled}
-					disabled={pending}
-					aria-pressed={deck.beat_sync_enabled}
-					data-performance-control="beat-sync"
-					data-state={deck.beat_sync_enabled ? 'on' : 'off'}
-					title="toggle beat sync"
-					onclick={async () => await onBeatSync()}
-				>
-					BEAT SYNC
-				</button>
-				<button
-					class="rb-lit-button master-btn"
-					class:lit={deck.is_master}
-					disabled={pending || deck.stable_id === null}
-					aria-pressed={deck.is_master}
-					data-performance-control="master"
-					data-state={deck.is_master ? 'on' : 'off'}
-					title={deck.stable_id === null ? 'no track loaded' : 'select tempo master'}
-					onclick={async () => await onMaster()}
-				>
-					MASTER
-				</button>
+				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets}>
+					<button
+						class="rb-lit-button"
+						class:lit={deck.beat_sync_enabled}
+						disabled={pending}
+						aria-pressed={deck.beat_sync_enabled}
+						data-performance-control="beat-sync"
+						data-state={deck.beat_sync_enabled ? 'on' : 'off'}
+						title={beatSyncTitle}
+						onclick={async () => await onBeatSync()}
+					>
+						BEAT SYNC
+					</button>
+				</ControlExplainer>
+				<ControlExplainer title={masterTitle} bullets={masterBullets}>
+					<button
+						class="rb-lit-button master-btn"
+						class:lit={deck.is_master}
+						disabled={pending || deck.stable_id === null}
+						aria-pressed={deck.is_master}
+						data-performance-control="master"
+						data-state={deck.is_master ? 'on' : 'off'}
+						title={masterTitle}
+						onclick={async () => await onMaster()}
+					>
+						MASTER
+					</button>
+				</ControlExplainer>
 			</div>
 		</div>
 	</div>

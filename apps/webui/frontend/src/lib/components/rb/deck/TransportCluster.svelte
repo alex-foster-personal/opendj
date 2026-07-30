@@ -5,6 +5,7 @@
 	// track is loaded (engine throws on empty decks; we never swallow that
 	// by pretending to play).
 	import type { DeckState } from '$lib/rb/types';
+	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {
 		deck,
@@ -19,23 +20,50 @@
 	} = $props();
 
 	const hasTrack: boolean = $derived(deck.stable_id !== null);
+
+	// Copy mirrors audio-engine pressCue / pause - click only, no hold-to-preview.
+	const cueTitle: string = $derived(
+		!hasTrack
+			? 'no track loaded'
+			: deck.playing
+				? 'CUE - return to cue and pause'
+				: deck.cue_ms === null
+					? 'CUE - set cue at playhead'
+					: 'CUE - jump playhead to cue'
+	);
+	const cueBullets: readonly string[] = [
+		'Pause stores the memory cue at the pause point (quantized when Q is on).',
+		'While playing: jump to that cue (or track start if unset) and pause.',
+		'While paused: jump to the cue, or set it if none exists yet.',
+		'Separate from hot cues A-H. Click only - no hold-to-preview.'
+	];
+	const playTitle: string = $derived(
+		!hasTrack
+			? 'no track loaded'
+			: deck.playing
+				? 'Pause - also stores the memory cue here'
+				: 'Play from current playhead'
+	);
 </script>
 
 <div class="transport">
-	<button
-		class="round cue"
-		disabled={!hasTrack || pending}
-		title={hasTrack ? 'return to cue' : 'no track loaded'}
-		data-performance-control="cue"
-		onclick={async () => await onCue()}
-	>
-		CUE
-	</button>
+	<ControlExplainer title={cueTitle} bullets={cueBullets} demo="cue">
+		<button
+			class="round cue"
+			disabled={!hasTrack || pending}
+			title={cueTitle}
+			aria-label="cue"
+			data-performance-control="cue"
+			onclick={async () => await onCue()}
+		>
+			CUE
+		</button>
+	</ControlExplainer>
 	<button
 		class="round play"
 		class:playing={deck.playing}
 		disabled={!hasTrack || pending}
-		title={hasTrack ? (deck.playing ? 'pause' : 'play') : 'no track loaded'}
+		title={playTitle}
 		aria-label={deck.playing ? 'pause' : 'play'}
 		aria-pressed={deck.playing}
 		data-performance-control="play"
@@ -78,24 +106,21 @@
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
+		padding: 0;
 	}
 	.round:disabled {
-		color: var(--rb-text-dim);
-		cursor: default;
-		opacity: 0.6;
+		opacity: 0.35;
+		cursor: not-allowed;
 	}
-	.round.cue:not(:disabled):active {
-		border-color: var(--rb-orange);
-		color: var(--rb-orange);
-	}
-	.round.play.playing {
+	.round.cue:hover:not(:disabled) {
 		border-color: var(--rb-accent);
+	}
+	.round.playing {
 		color: var(--rb-accent);
-		box-shadow: 0 0 6px var(--rb-accent-glow);
+		border-color: var(--rb-accent);
 	}
 	.glyph {
-		width: 14px;
-		height: 14px;
-		display: block;
+		width: 16px;
+		height: 16px;
 	}
 </style>

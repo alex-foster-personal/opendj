@@ -3869,9 +3869,19 @@ class RbAudioEngine implements AudioEngine {
 			_assignMaster(deck);
 			return Promise.resolve();
 		}
-		return syncChangeRequiresReschedule(deck, true, enabled, master)
-			? _synchronizeFollowers(master, [deck])
-			: Promise.resolve();
+		if (!syncChangeRequiresReschedule(deck, true, enabled, master)) {
+			return Promise.resolve();
+		}
+		// Hard-reject impossible phase lock; never leave BEAT SYNC lit without a plan.
+		return _synchronizeFollowers(master, [deck]).catch((error: unknown) => {
+			st.beat_sync_enabled = false;
+			const bounds = _tempoBounds(deck);
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`cannot phase-lock within pitch [${bounds.min}, ${bounds.max}] (BAR): ${detail}`,
+				{ cause: error instanceof Error ? error : undefined }
+			);
+		});
 	}
 
 	async setMasterTempo(deck: DeckId, enabled: boolean): Promise<void> {
