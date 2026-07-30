@@ -4,6 +4,7 @@ The application integrator mounts :data:`router` at ``/api/v1``.  The router
 does not run Demucs or mutate files: every request reloads and validates the
 stored artifact before it exposes either the manifest or a WAV response.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,7 +25,6 @@ from ..stem_artifacts import (
     StemBundleNotFoundError,
     load_stem_bundle,
 )
-
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
 
@@ -81,7 +81,7 @@ def _manifest_out(bundle: StemBundle) -> StemManifestOut:
         sample_rate_hz=bundle.alignment.sample_rate,
         frame_count=bundle.alignment.frame_count,
         channel_count=bundle.alignment.channels,
-        parts={part: StemPartOut(media_type="audio/wav") for part in STEM_PARTS},
+        parts={part: StemPartOut(media_type=bundle.media_type) for part in STEM_PARTS},
     )
 
 
@@ -123,7 +123,10 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
     if part not in STEM_PARTS:
         raise HTTPException(
             status_code=404,
-            detail={"code": "STEM_PART_NOT_FOUND", "message": f"unknown stem part {part!r}"},
+            detail={
+                "code": "STEM_PART_NOT_FOUND",
+                "message": f"unknown stem part {part!r}",
+            },
         )
     bundle = _load_or_http_error(stable_id, request)
     try:
@@ -135,7 +138,7 @@ def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingRespo
         ) from exc
     return StreamingResponse(
         _stream_file(source),
-        media_type="audio/wav",
+        media_type=bundle.media_type,
         headers={
             "Cache-Control": "no-store",
             "Content-Length": str(os.fstat(source.fileno()).st_size),
