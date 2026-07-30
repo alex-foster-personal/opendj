@@ -54,17 +54,23 @@ Run (from the repo root):
 
 from __future__ import annotations
 
+import contextlib
+import gc
 import io
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 TRACKS_DIR: Path = REPO_ROOT / ".tmp/bench/4stem-matrix/tracks"
-GATE_JSON: Path = REPO_ROOT / "scripts/bench/stem_content_gate.json"
+GATE_JSONS: tuple[Path, ...] = (
+    REPO_ROOT / "scripts/bench/stem_content_gate.json",
+    # Round 2, added to widen n on drums.
+    REPO_ROOT / "scripts/bench/stem_content_gate_round2.json",
+)
 OUT_JSON: Path = REPO_ROOT / "scripts/bench/four_stem_gpu_matrix.json"
 # Lesson banked the hard way: the CPU sibling of this script wrote its JSON only
 # at the end, was killed on cell 15 of 15, and left 14 finished measurements
@@ -75,9 +81,15 @@ CELL_CACHE: Path = REPO_ROOT / ".tmp/bench/4stem-matrix/cells-gpu.jsonl"
 GPU: str = "H100"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts/bench"))
-from four_stem_common import (  # noqa: E402
-    AUDIBILITY_DB, DEFAULT_MODEL, MODELS, OVERLAP, SHIFTS, STEMS,
-    gate_flags, paired_deltas,
+from four_stem_common import (
+    AUDIBILITY_DB,
+    DEFAULT_MODEL,
+    MODELS,
+    OVERLAP,
+    SHIFTS,
+    STEMS,
+    gate_flags,
+    paired_deltas,
 )
 
 
@@ -144,54 +156,61 @@ def main() -> int:
                 "weight download would be billed to this measurement.")
     farm._assert_contract_matches()
 
-    flags = gate_flags(GATE_JSON)
+    flags = gate_flags(*GATE_JSONS)
     track_dirs = sorted(d for d in TRACKS_DIR.iterdir() if d.is_dir())
     if not track_dirs:
         raise SystemExit(f"error: no track windows under {TRACKS_DIR}")
 
-    truth: dict[str, dict[str, Any]] = {}
-    floors: dict[str, dict[str, float]] = {}
-    mixture_bytes: dict[str, bytes] = {}
-    window_samples: dict[str, int] = {}
     for track_dir in track_dirs:
-        track = track_dir.name
-        if track not in flags:
+        if track_dir.name not in flags:
             raise SystemExit(
-                f"error: {track} has no row in {GATE_JSON.name}; its window was never gated")
-        mixture_bytes[track] = (track_dir / "mixture.wav").read_bytes()
-        mix_mono, rate = _mono_read(str(track_dir / "mixture.wav"))
-        window_samples[track] = len(mix_mono)
-        truth[track] = {}
-        for stem in STEMS:
-            audio, stem_rate = _mono_read(str(track_dir / f"{stem}.wav"))
-            if stem_rate != rate:
-                raise SystemExit(
-                    f"error: {track} true {stem} is {stem_rate} Hz, mixture is {rate} Hz")
-            if len(audio) != len(mix_mono):
-                raise SystemExit(
-                    f"error: {track} true {stem} is {len(audio)} samples, mixture is "
-                    f"{len(mix_mono)} -- the window is not sample-aligned")
-            truth[track][stem] = audio
-        floors[track] = {s: _si_sdr_db(truth[track][s], mix_mono) for s in STEMS}
+                f"error: {track_dir.name} has no gate row; its window was never gated")
 
     done = _load_cells()
     if done:
         print(f"[resume] {len(done)} cell(s) already measured on {GPU}", flush=True)
 
+    floors: dict[str, dict[str, float]] = {}
     cube: dict[str, dict[str, dict[str, float]]] = {}
     timings: list[dict[str, Any]] = []
     container_s_total = 0.0
-    todo = [(d.name, m) for d in track_dirs for m in MODELS if (d.name, m) not in done]
 
-    if todo:
-        with farm.app.run():
-            for track, model in todo:
+    # ONE TRACK RESIDENT AT A TIME. The first version of this loop hoisted every
+    # track's truth arrays and mixture bytes above the modal context, which on a
+    # 5-track run was already ~0.5 GB of float64 and would scale linearly with the
+    # sample. This Mac is deep in swap, so the audio for a track is loaded, scored
+    # and dropped before the next track is opened.
+    # Do not open a modal app just to re-read the cache: a fully resumed run
+    # should cost nothing at all.
+    any_todo = any((d.name, m) not in done for d in track_dirs for m in MODELS)
+    with (farm.app.run() if any_todo else contextlib.nullcontext()):
+        for track_dir in track_dirs:
+            track = track_dir.name
+            mix_mono, rate = _mono_read(str(track_dir / "mixture.wav"))
+            window_samples = len(mix_mono)
+            truth: dict[str, Any] = {}
+            for stem in STEMS:
+                audio, stem_rate = _mono_read(str(track_dir / f"{stem}.wav"))
+                if stem_rate != rate:
+                    raise SystemExit(
+                        f"error: {track} true {stem} is {stem_rate} Hz, mixture is {rate} Hz")
+                if len(audio) != window_samples:
+                    raise SystemExit(
+                        f"error: {track} true {stem} is {len(audio)} samples, mixture is "
+                        f"{window_samples} -- the window is not sample-aligned")
+                truth[stem] = audio
+            floors[track] = {s: _si_sdr_db(truth[s], mix_mono) for s in STEMS}
+            del mix_mono
+
+            todo = [m for m in MODELS if (track, m) not in done]
+            mixture_bytes = (track_dir / "mixture.wav").read_bytes() if todo else b""
+            for model in todo:
                 print(f"[gpu] {track} :: {model}", flush=True)
                 result = farm.separate_track.remote(
-                    mixture_bytes[track], f"4stem-{model}", "mixture.wav",
+                    mixture_bytes, f"4stem-{model}", "mixture.wav",
                     model, OVERLAP, SHIFTS,
                     "bifrost2",  # the only dest that hands the stem bytes back
-                    str(TRACKS_DIR / track / "mixture.wav"),
+                    str(track_dir / "mixture.wav"),
                     {"tag": f"{model}-ov{OVERLAP}", "model": model,
                      "overlap": OVERLAP, "shifts": SHIFTS, "rung": -1},
                     "", "flac",
@@ -201,24 +220,27 @@ def main() -> int:
                 scores: dict[str, float] = {}
                 for stem in STEMS:
                     estimate, _rate = _mono_read(io.BytesIO(result["stems"][stem]))
-                    if len(estimate) != window_samples[track]:
+                    if len(estimate) != window_samples:
                         raise SystemExit(
-                            f"error: {track}/{model} {stem} came back "
-                            f"{len(estimate)} samples, window is "
-                            f"{window_samples[track]}")
-                    scores[stem] = _si_sdr_db(truth[track][stem], estimate)
+                            f"error: {track}/{model} {stem} came back {len(estimate)} "
+                            f"samples, window is {window_samples}")
+                    scores[stem] = _si_sdr_db(truth[stem], estimate)
+                    del estimate
                 cell = {
                     "track": track, "model": model, "gpu": GPU, "si_sdr": scores,
                     "separate_s": result["timings"]["separate_s"],
                     "load_s": result["timings"]["load_s"],
                     "container_s": result["container_s"],
-                    "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 }
                 _persist(cell)  # the moment it exists, before anything else
                 done[(track, model)] = cell
                 print("      " + "  ".join(f"{s}={scores[s]:+.3f}" for s in STEMS)
                       + f"   sep {cell['separate_s']}s container {cell['container_s']}s",
                       flush=True)
+                del result
+            del truth, mixture_bytes
+            gc.collect()
 
     for track_dir in track_dirs:
         track = track_dir.name
@@ -259,7 +281,7 @@ def main() -> int:
         "hardware": f"Modal {GPU}",
         "runner": "scripts/modal_vocal_farm.py::separate_track (the production entrypoint)",
         "n_tracks": len(cube),
-        "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "gate": {t: flags[t] for t in cube},
         "mixture_floor_si_sdr": floors,
         "si_sdr": cube,

@@ -33,28 +33,46 @@ SHIFTS: int = 0
 AUDIBILITY_DB: float = 0.2
 
 
-def gate_flags(gate_json: Path) -> dict[str, dict[str, Any]]:
-    """Per (track, stem) pass/fail, READ from the gate's own verdict file.
+def gate_flags(*gate_jsons: Path) -> dict[str, dict[str, Any]]:
+    """Per (track, stem) pass/fail, READ from the gate's own verdict files.
 
     Read, not recomputed: the gate chose these windows before any model score
     existed, and re-deriving the flags here would let a runner move a bar after
     seeing a result.
+
+    Several files are accepted because the sample was widened in rounds, and a
+    round-2 track's verdict lives in its own file. A track appearing twice is an
+    error rather than a last-one-wins merge: two gate rows for one track means
+    two different windows, and silently picking one would decide which window a
+    score belongs to by file order.
     """
-    blob = json.loads(Path(gate_json).read_text())
     out: dict[str, dict[str, Any]] = {}
-    for candidate in blob["candidates"]:
-        failures = candidate["failures"]
-        out[candidate["track"]] = {
-            "window_start_s": candidate["start_s"],
-            "window_length_s": candidate["length_s"],
-            "track_passed": candidate["passed"],
-            "stem_passed": {s: s not in failures for s in STEMS},
-            "stem_failures": {s: failures.get(s, []) for s in STEMS},
-            "mixture_floor_si_sdr": candidate["mixture_floor_si_sdr"],
-            "stem_energy_share": {
-                s["stem"]: s["energy_share"] for s in candidate["stems"]},
-        }
+    for gate_json in gate_jsons:
+        path = Path(gate_json)
+        if not path.is_file():
+            continue
+        for candidate in json.loads(path.read_text())["candidates"]:
+            if candidate["track"] in out:
+                raise RuntimeError(
+                    f"{candidate['track']} has a gate row in more than one file; "
+                    "refusing to guess which window its scores belong to")
+            _add_flag(out, candidate)
     return out
+
+
+def _add_flag(out: dict[str, dict[str, Any]], candidate: dict[str, Any]) -> None:
+    failures = candidate["failures"]
+    out[candidate["track"]] = {
+        "window_start_s": candidate["start_s"],
+        "window_length_s": candidate["length_s"],
+        "track_passed": candidate["passed"],
+        "stem_passed": {s: s not in failures for s in STEMS},
+        "stem_failures": {s: failures.get(s, []) for s in STEMS},
+        "mixture_floor_si_sdr": candidate["mixture_floor_si_sdr"],
+        "stem_energy_share": {s["stem"]: s["energy_share"] for s in candidate["stems"]},
+        "stem_spectral_centroid_hz": {
+            s["stem"]: s["spectral_centroid_hz"] for s in candidate["stems"]},
+    }
 
 
 def paired_deltas(cube: dict[str, dict[str, dict[str, float]]],

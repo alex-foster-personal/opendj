@@ -1,0 +1,21 @@
+{
+  "model": "hdemucs_mmi",
+  "overlap": 0.0,
+  "runs": 3,
+  "track": "Timboz - Pony 60 s window",
+  "device": "cpu",
+  "si_sdr_runs": [
+    4.152459,
+    4.152459,
+    4.152459
+  ],
+  "si_sdr_mean": 4.152459,
+  "si_sdr_stdev": 0.0,
+  "si_sdr_spread": 0.0,
+  "infer_s_runs": [
+    11.402,
+    11.062,
+    10.874
+  ],
+  "infer_s_stdev": 0.268
+}
