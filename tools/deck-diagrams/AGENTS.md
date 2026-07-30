@@ -46,12 +46,12 @@ See skill `reference.md` section "Scale to 100". Do not fan out past 5 until FLX
 
 ## Agent index / context excludes
 
-`devices/` (~109MB, 100+ controllers) and `docs/controller/reference/` (vendor PDFs) are excluded from default agent indexing/context. Catalog, schema, scripts, and this file stay visible.
+`devices/` (~109MB, 100+ controllers) and `docs/controller/reference/` (vendor PDFs) are excluded from default agent indexing/context. Catalog, schema, scripts, and this file stay visible. Broader repo excludes (`.planning/` audits, `blog/`, dumps, `uv.lock`) live in the same root ignore files.
 
-| Harness | File | Effect |
+| Harness | File (repo root only) | Effect |
 |---|---|---|
 | Cursor | `.cursorindexingignore` | Out of codebase index; still `@`-mention / Read |
 | Claude Code | `.claudeignore` | Out of Read/Glob/Grep; use Bash for a specific device |
-| Codex | `.codexignore` | Out of project context / index |
+| Codex | `.codexignore` | Best-effort; Codex mainly respects `.gitignore` |
 
-Do not put these paths in `.cursorignore` (hard block) or `.gitignore` (they stay in git).
+Do not put these paths in `.cursorignore` (hard block) or `.gitignore` (they stay in git). Ignore files must sit at the repo root, not under `.claude/` / `.agents/` / `.codex/`.
