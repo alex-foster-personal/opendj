@@ -7,13 +7,15 @@
 	// redraw only on DPR change or vocal-region arrival.
 	// Interactive: hover = thin red scrub line; click = onseek(ratio) if wired.
 	import type { PreviewStripData, Vocals } from '$lib/rb/api-rb';
-	import { VOCAL_BAR_PX, VOCAL_BLUE, vocalAlpha } from '../wave/render';
+	import { VOCAL_BLUE, vocalAlpha } from '../wave/render';
 
 	const COL_LOW = '#3d7dd9';
 	const COL_MID = '#e8a13a';
 	const COL_HIGH = '#cfe0f2';
 	const W = 165;
 	const H = 14;
+	/** Mini-strip vocal overlay height (CSS px). */
+	const VOCAL_BAR_H = 0.7;
 
 	let {
 		strip,
@@ -104,7 +106,7 @@
 				const x1 = Math.min(W, ((region.end_s * 1000) / durMs) * W);
 				if (x1 <= x0) continue;
 				ctx.globalAlpha = vocalAlpha(region.intensity);
-				ctx.fillRect(x0, 0, x1 - x0, VOCAL_BAR_PX);
+				ctx.fillRect(x0, 0, x1 - x0, VOCAL_BAR_H);
 			}
 			ctx.globalAlpha = 1;
 		}
