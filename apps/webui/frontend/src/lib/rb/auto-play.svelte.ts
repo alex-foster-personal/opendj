@@ -3,12 +3,17 @@
  *
  * When prefs.auto_play_enabled: as the master (or playing) deck enters the
  * remaining-time window, load the next suggested/playlist track onto a free
- * or stopped follower and start it via performance-ipc. Beat Sync is mirrored
- * from the source deck before play. Crossfade is deferred (GitHub follow-up).
+ * or stopped follower and start it via performance-ipc. Beat Sync is requested
+ * only when a real BAR/BEAT phase-lock plan succeeds against the source;
+ * otherwise follower Beat Sync is explicitly disabled and play continues
+ * free-tempo (see .planning/autoplay-beat-sync-phase-lock-SA.md). Crossfade
+ * is deferred (GitHub follow-up).
  */
-import { DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
+	decideAutoPlayBeatSync,
+	formatAutoPlaySyncSkipToast,
 	getAutoPlayPlaylistIds,
 	getAutoPlaySuggestIds,
 	pickFollowerDeck,
@@ -16,14 +21,23 @@ import {
 	pickSourceDeck,
 	remainingMs,
 	shouldTriggerAutoPlay,
+	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap
 } from '$lib/rb/auto-play';
+import {
+	computeFollowerSyncPlan,
+	quantizeToNearestBeat,
+	validateBeatGrid
+} from '$lib/rb/beat-sync-math';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
+import type { AnlzBeat } from '$lib/rb/types';
 import type { DeckId } from '$lib/rb/types';
 
 const POLL_MS = 250;
+/** Synthetic schedule horizon for preflight only (plan needs syncAt > now). */
+const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;
@@ -53,6 +67,84 @@ function _excludeIds(sourceId: DeckId, snaps: readonly AutoPlayDeckSnap[]): Set<
 	return out;
 }
 
+function _gridOrNull(deck: DeckId): readonly AnlzBeat[] | null {
+	const beats = deckStates[deck].anlz?.beatgrid.beats;
+	try {
+		validateBeatGrid(beats ?? []);
+	} catch {
+		return null;
+	}
+	return beats ?? null;
+}
+
+/** Pure plan probe using live decks; never mutates transport. */
+function _phaseLockOk(sourceId: DeckId, follower: DeckId): { ok: true } | { ok: false; error: string } {
+	const masterGrid = _gridOrNull(sourceId);
+	const followerGrid = _gridOrNull(follower);
+	if (masterGrid === null) {
+		return { ok: false, error: `source deck ${sourceId} has no valid real PQTZ beat grid` };
+	}
+	if (followerGrid === null) {
+		return { ok: false, error: `follower deck ${follower} has no valid real PQTZ beat grid` };
+	}
+	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
+	const masterPosSec = Math.max(0, deckStates[sourceId].position_ms / 1000);
+	const rawFollowerSec = Math.max(0, deckStates[follower].position_ms / 1000);
+	const followerPositionSec = quantizeToNearestBeat(followerGrid, rawFollowerSec);
+	const masterTempoRatio = deckStates[sourceId].pitch;
+	const mode = deckStates[follower].sync_mode;
+	try {
+		computeFollowerSyncPlan({
+			masterGrid,
+			followerGrid,
+			masterPositionAtSyncSec: masterPosSec,
+			masterTempoRatio,
+			followerPositionSec,
+			currentContextTimeSec: 0,
+			syncAtContextTimeSec: PREFLIGHT_SYNC_AHEAD_SEC,
+			minFollowerTempoRatio: bounds.min,
+			maxFollowerTempoRatio: bounds.max,
+			mode
+		});
+		return { ok: true };
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		return { ok: false, error: message };
+	}
+}
+
+async function _applyBeatSyncDecision(
+	source: AutoPlayDeckSnap,
+	follower: DeckId
+): Promise<void> {
+	const probe = source.beat_sync_enabled
+		? _phaseLockOk(source.id, follower)
+		: { ok: false as const, error: 'source Beat Sync off' };
+	const decision = decideAutoPlayBeatSync({
+		source_beat_sync_enabled: source.beat_sync_enabled,
+		phase_lock_ok: probe.ok
+	});
+	const currentlyOn = deckStates[follower].beat_sync_enabled;
+	if (decision === 'enable' && !currentlyOn) {
+		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true });
+	} else if (decision === 'disable' && currentlyOn) {
+		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: false });
+	}
+	if (source.beat_sync_enabled && !probe.ok) {
+		const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
+		pushToast(
+			formatAutoPlaySyncSkipToast({
+				follower_deck: follower,
+				mode: deckStates[follower].sync_mode,
+				plan_error: probe.error,
+				min_ratio: bounds.min,
+				max_ratio: bounds.max
+			}),
+			'error'
+		);
+	}
+}
+
 async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: string): Promise<void> {
 	const occupied = deckStates[follower].stable_id;
 	if (occupied !== null && occupied !== nextId) {
@@ -61,9 +153,7 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	if (deckStates[follower].stable_id !== nextId) {
 		await dispatchPerformanceCommand({ type: 'load', deck: follower, stable_id: nextId });
 	}
-	if (source.beat_sync_enabled && !deckStates[follower].beat_sync_enabled) {
-		await dispatchPerformanceCommand({ type: 'beat_sync', deck: follower, enabled: true });
-	}
+	await _applyBeatSyncDecision(source, follower);
 	await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
 }
 
