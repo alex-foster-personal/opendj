@@ -278,3 +278,33 @@ def test_cache_publication_waits_for_concurrent_reader(
 )
 def test_keep_by_availability(available, file_exists, expected) -> None:
     assert keep_by_availability(available, file_exists) is expected
+
+
+def test_bulk_file_exists_treats_dataless_stub_as_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Darwin sparse stubs must not pass the FR-1 file_exists gate."""
+    import os
+    import sys
+
+    from apps.shared import platform_paths as pp
+
+    stub = tmp_path / "stub.mp3"
+    with open(stub, "wb") as handle:
+        handle.truncate(2_000_000)
+    if os.stat(stub).st_blocks != 0:
+        pytest.skip("filesystem does not support sparse files; cannot mimic a placeholder")
+    if sys.platform != "darwin":
+        pytest.skip("dataless gate is Darwin-scoped")
+
+    # Bypass path-map resolution: treat the absolute path as already local.
+    monkeypatch.setattr(
+        rb_vendor,
+        "resolve_asset_path",
+        lambda path: pp.MappedPath(
+            original=path, resolved=Path(path), mapped=False, reason="test",
+        ),
+    )
+    rb_vendor._FILE_EXISTS_CACHE.clear()
+    assert rb_vendor.bulk_file_exists([str(stub)]) == {str(stub): False}
+    assert rb_vendor.bulk_file_size([str(stub)]) == {str(stub): None}

@@ -61,7 +61,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.reconcile import locate
-from apps.shared import audio_files, paths
+from apps.shared import audio_files, fs_residency, paths
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
 
 from .. import rb_vendor
@@ -196,6 +196,15 @@ def _open_candidate_file(
             "code": "CANDIDATE_PATH_NOT_ABSOLUTE",
             "message": "candidate path must be absolute",
         })
+    # Stat before open: opening a dataless stub can trigger iCloud materialise.
+    if not fs_residency.is_materialised(requested):
+        raise HTTPException(status_code=422, detail={
+            "code": "CANDIDATE_PATH_NOT_MATERIALISED",
+            "message": (
+                "candidate path is missing or not materialised "
+                f"(dataless/iCloud stub): {requested}"
+            ),
+        })
     descriptor: int | None = None
     try:
         before = requested.lstat()
@@ -212,6 +221,7 @@ def _open_candidate_file(
             requested.is_symlink()
             or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
             or not stat.S_ISREG(after.st_mode)
+            or fs_residency.is_dataless_stub(after)
         ):
             raise HTTPException(status_code=422, detail={
                 "code": "CANDIDATE_PATH_UNSAFE",

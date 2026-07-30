@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal, Optional
 
+from apps.shared import fs_residency
+
 if os.name == "nt":
     import msvcrt
 else:
@@ -437,7 +439,7 @@ def _hydrate_member(
         key=track.key if track else None,
         duration_ms=track.duration_ms if track else None,
         rating=track.rating if track else None,
-        file_exists=bool(path) and Path(path).is_file(),
+        file_exists=bool(path) and fs_residency.is_materialised(Path(path)),
     )
 
 

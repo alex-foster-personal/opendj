@@ -46,7 +46,6 @@ import logging
 import os
 import secrets
 import sqlite3
-import stat as stat_module
 import struct
 import tempfile
 import threading
@@ -58,7 +57,7 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared import audio_quality
+from apps.shared import audio_quality, fs_residency
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
 from apps.shared import platform_paths
 from apps.shared.platform_paths import MappedPath, resolve_library_path
@@ -125,13 +124,14 @@ _PVDI_HOP: int = 1024
 _PVDI_RATE: int = 22050
 
 # --- file-existence + preview caches ---
-# file_exists is disk truth (FR-1 item 4): per-path stat results are cached
-# for FILE_EXISTS_TTL_S so a listing request never stats 8k files -- one
-# bulk stat pass warms the cache, then repeats are dict lookups until the
-# TTL lapses (30 s keeps "file restored by reconcile" visible quickly).
-# The cache holds st_size (None = the file is not there), so the SAME stat
-# pass that answers file_exists also feeds audio_quality.classify -- adding
-# the quality badge to a listing therefore costs zero extra stats.
+# file_exists is disk truth (FR-1 item 4): playable local bytes, not merely
+# an inode. iCloud dataless stubs (st_size > 0, st_blocks == 0) count as
+# missing -- see apps.shared.fs_residency. Per-path results are cached for
+# FILE_EXISTS_TTL_S so a listing request never stats 8k files -- one bulk
+# stat pass warms the cache, then repeats are dict lookups until the TTL
+# lapses (30 s keeps "file restored by reconcile" visible quickly).
+# The cache holds materialised st_size (None = missing or stub), so the
+# SAME pass that answers file_exists also feeds audio_quality.classify.
 FILE_EXISTS_TTL_S: float = 30.0
 _FILE_EXISTS_LOCK = threading.Lock()
 _FILE_EXISTS_CACHE: dict[str, tuple[float, Optional[int]]] = {}
@@ -348,11 +348,11 @@ def audio_file(content: RbContent) -> tuple[Path, str]:
             f"{content.folder_path}",
         )
     path = mapped.resolved
-    if not path.is_file():
+    if not fs_residency.is_materialised(path):
         raise not_found(
             "AUDIO_FILE_MISSING",
-            f"audio file for track {content.stable_id} does not exist on "
-            f"disk: {path}",
+            f"audio file for track {content.stable_id} is missing or not "
+            f"materialised (dataless/iCloud stub): {path}",
         )
     media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
     if media_type is None:
@@ -909,14 +909,10 @@ def bulk_file_size(paths: Iterable[str]) -> dict[str, Optional[int]]:
 
 
 def _stat_size(resolved: Optional[Path]) -> Optional[int]:
-    """st_size for a resolved path, or None when it is not a readable file."""
+    """Materialised st_size, or None when missing / not a file / dataless stub."""
     if resolved is None:
         return None
-    try:
-        st = resolved.stat()
-    except OSError:
-        return None
-    return st.st_size if stat_module.S_ISREG(st.st_mode) else None
+    return fs_residency.materialised_size(resolved)
 
 
 def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:

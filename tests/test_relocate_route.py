@@ -317,6 +317,32 @@ def test_apply_rejects_path_outside_music_roots(
 
 
 @pytest.mark.requirement("RECON-04")
+def test_apply_rejects_dataless_stub_candidate(
+    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+) -> None:
+    """iCloud-style sparse stubs must not become the new FolderPath."""
+    import os
+    import sys
+
+    stub = library["candidate"].with_name("dataless-stub.mp3")
+    with open(stub, "wb") as handle:
+        handle.truncate(1_048_576)
+    if os.stat(stub).st_blocks != 0:
+        pytest.skip("filesystem does not support sparse files; cannot mimic a placeholder")
+    if sys.platform != "darwin":
+        pytest.skip("dataless gate is Darwin-scoped")
+    body = _apply_body(library)
+    body["new_path"] = str(stub)
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply", json=body,
+        headers={"If-Match": _current_etag(backend, "t-gone")},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "CANDIDATE_PATH_NOT_MATERIALISED"
+    assert backend.get_track("t-gone").file_path == str(library["gone"])
+
+
+@pytest.mark.requirement("RECON-04")
 def test_apply_rejects_final_component_symlink(
     client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
 ) -> None:

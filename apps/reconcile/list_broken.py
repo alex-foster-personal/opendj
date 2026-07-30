@@ -21,7 +21,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from apps.shared import paths, rekordbox_db
+from apps.shared import fs_residency, paths, rekordbox_db
 
 console = Console(width=120)
 
@@ -94,7 +94,8 @@ def _collect_broken(db) -> list[BrokenRow]:
             continue
         if rb.is_streaming or rb.file_path is None:
             continue
-        if rb.file_path.exists():
+        # Materialised local bytes only -- iCloud dataless stubs are broken.
+        if fs_residency.is_materialised(rb.file_path):
             continue
 
         key = getattr(raw, "KeyName", None) or ""

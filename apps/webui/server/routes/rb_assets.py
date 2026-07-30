@@ -112,11 +112,11 @@ def get_track_rb_meta(
     content = rb_vendor.resolve_content(stable_id)
     response.headers["Cache-Control"] = _CACHE_RB_META
     is_streaming = rb_vendor.is_streaming_path(content.folder_path)
-    file_exists = (
-        content.folder_path is not None
-        and not is_streaming
-        and rb_vendor.resolve_share_path(content.folder_path).is_file()
-    )
+    # Same residency gate as bulk listings (dataless stubs == missing).
+    file_exists = False
+    if content.folder_path is not None and not is_streaming:
+        sizes = rb_vendor.bulk_file_size([content.folder_path])
+        file_exists = sizes.get(content.folder_path) is not None
     artwork_available = (
         content.image_path is not None
         and rb_vendor.resolve_share_path(content.image_path).is_file()
