@@ -99,10 +99,23 @@ export function readPerfEvents(): readonly PerfEvent[] {
 	return _events;
 }
 
-/** DevTools helper: copy(window.__mdtPerfLog()) after a mystery failure. */
+/** Last deck-load timing row, newest first. Easy KPI paste for agents/CLI. */
+export function lastDeckLoadEvents(limit = 4): readonly PerfEvent[] {
+	const out: PerfEvent[] = [];
+	for (let i = _events.length - 1; i >= 0 && out.length < limit; i--) {
+		const e = _events[i];
+		if (e.kind.startsWith('deck-load')) out.push(e);
+	}
+	return out;
+}
+
+/** DevTools helpers: __mdtPerfLog() full ring; __mdtLastLoads() recent deck loads. */
 export function installPerfEventLogGlobal(): void {
 	if (typeof window === 'undefined') return;
-	(
-		window as Window & { __mdtPerfLog?: () => readonly PerfEvent[] }
-	).__mdtPerfLog = () => readPerfEvents();
+	const w = window as Window & {
+		__mdtPerfLog?: () => readonly PerfEvent[];
+		__mdtLastLoads?: (limit?: number) => readonly PerfEvent[];
+	};
+	w.__mdtPerfLog = () => readPerfEvents();
+	w.__mdtLastLoads = (limit = 4) => lastDeckLoadEvents(limit);
 }

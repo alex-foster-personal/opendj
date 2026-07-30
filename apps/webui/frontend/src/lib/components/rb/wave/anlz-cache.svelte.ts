@@ -55,9 +55,9 @@ export function anlzCacheEntryCount(): number {
 	return count;
 }
 
-/** Estimated bytes of ready ANLZ JSON payloads for memory tracking.
- * Uses rough 1.2 MB average per track at points=38400. */
+/** Estimated bytes of ready ANLZ JSON for hover breakdown only.
+ * ~1.2 MB/track at points=38400. Cache grows on select/deck ensureAnlz,
+ * not on table scroll. */
 export function anlzCacheEstimatedBytes(): number {
-	const count = anlzCacheEntryCount();
-	return count * 1.2 * 1024 * 1024; // ~1.2 MB per track
+	return anlzCacheEntryCount() * 1.2 * 1024 * 1024;
 }

@@ -187,6 +187,7 @@ function _emptyDeckState(deck_id: DeckId): DeckState {
 		anlz: null,
 		anlz_error: null,
 		last_load_latency_ms: null,
+		last_load_stages: null,
 		is_master: false
 	};
 }
@@ -489,15 +490,17 @@ export function deckTransportClock(deck: DeckId): DeckTransportClock {
 	};
 }
 
-/** Estimated total bytes of decoded PCM AudioBuffers across all decks for
- * memory tracking. Returns bytes = sampleRate * channels * 4 bytes/float32 * duration. */
+/** Estimated decoded PCM retained for memory tracking.
+ * Mix buffer always; when stems are ready, add 4 aligned part buffers
+ * (AlignedStemDeckProcessor keeps vocals/drums/bass/other at the same geometry). */
 export function deckPcmEstimatedBytes(): number {
 	let total = 0;
 	for (const deck of DECK_IDS) {
 		const buffer = _rt[deck].audioBuffer;
 		if (buffer === null) continue;
-		const bytes = buffer.sampleRate * buffer.numberOfChannels * 4 * buffer.duration;
-		total += bytes;
+		const mixBytes = buffer.length * buffer.numberOfChannels * 4;
+		total += mixBytes;
+		if (deckStates[deck].stems.status === 'ready') total += mixBytes * 4;
 	}
 	return total;
 }
@@ -3387,6 +3390,7 @@ class RbAudioEngine implements AudioEngine {
 			stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
 			stages.failedAt = perfMs();
+			st.last_load_stages = { ...stages };
 			recordPerfTiming('deck-load-fail', stages, deck);
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
@@ -3485,6 +3489,7 @@ class RbAudioEngine implements AudioEngine {
 		});
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
+		st.last_load_stages = { ...stages };
 		recordPerfTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck);
 	}
 

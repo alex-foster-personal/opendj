@@ -121,6 +121,10 @@ export interface PerformanceDeckSnapshot {
 	sync_mode: SyncMode;
 	sync_error: string | null;
 	processor_error: string | null;
+	/** Last successful load wall ms; null until a load completes (KPI). */
+	last_load_latency_ms: number | null;
+	/** Last load stage map (ms); null until a load. CLI/IPC feedback. */
+	last_load_stages: Record<string, number> | null;
 	stems: StemDeckState;
 	loop: LoopState | null;
 	beatgrid: Array<{ n: number; bpm: number; time_ms: number }>;
@@ -469,6 +473,9 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		sync_mode: deck.sync_mode,
 		sync_error: deck.sync_error,
 		processor_error: deck.processor_error,
+		last_load_latency_ms: deck.last_load_latency_ms,
+		last_load_stages:
+			deck.last_load_stages === null ? null : { ...deck.last_load_stages },
 		stems: {
 			...deck.stems,
 			alignment: deck.stems.alignment === null ? null : { ...deck.stems.alignment },

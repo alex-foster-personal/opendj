@@ -7,8 +7,9 @@
 	 *
 	 * - Left number: presentation publish Hz (audio FPS analogue).
 	 * - Middle number: ArrayBuffers in the row-select prefetch cache.
-	 * - Right number: total app memory in MB (JS heap + ANLZ + PCM).
-	 * Hover titles explain all (CLAUDE.md numeric-readout rule).
+	 * - Right number: approx retained MB = JS heap + decoded PCM (often
+	 *   outside the heap). ANLZ/prefetch are already inside the heap - do
+	 *   not sum them again. Hover titles explain all (CLAUDE.md rule).
 	 */
 	import {
 		audioHealthHover,
@@ -54,16 +55,18 @@
 		const anlzCount = anlzCacheEntryCount();
 		const pcmMB = Math.round(deckPcmEstimatedBytes() / (1024 * 1024));
 		const prefetchMB = Math.round(cacheBytes / (1024 * 1024));
-		const totalMB = jsHeapMB + anlzMB + pcmMB + prefetchMB;
+		// ANLZ JSON + prefetch ArrayBuffers live in the JS heap. Decoded
+		// AudioBuffers often do not - only add PCM on top of heap.
+		const totalMB = jsHeapMB + pcmMB;
 
 		memoryMB = totalMB;
 		memoryLevel = totalMB > 1024 ? 'crit' : totalMB > 512 ? 'warn' : 'ok';
 		memoryHover =
-			`Total app memory: ${totalMB} MB\n` +
+			`Approx retained: ${totalMB} MB (JS heap + decoded PCM)\n` +
 			`• JS heap: ${jsHeapMB} MB\n` +
-			`• ANLZ cache: ${anlzMB} MB (${anlzCount} tracks, UNCAPPED)\n` +
-			`• Deck PCM: ${pcmMB} MB (decoded AudioBuffers)\n` +
-			`• Audio prefetch: ${prefetchMB} MB (${cacheN} tracks)`;
+			`• ANLZ cache: ~${anlzMB} MB (${anlzCount} tracks, UNCAPPED, in heap)\n` +
+			`• Deck PCM (+ 4 stems when ready): ${pcmMB} MB\n` +
+			`• Audio prefetch: ${prefetchMB} MB (${cacheN} tracks, in heap)`;
 	}
 
 	// Sample every 2s

@@ -335,6 +335,8 @@ export interface DeckState {
 	/** Last successful load wall time in ms; null until a load completes.
 	 * UI shows a rounded form (e.g. 2.3s / ~300ms) - performance feature. */
 	last_load_latency_ms: number | null;
+	/** Last load stage timings (ms) for IPC/CLI KPI; null until a load. */
+	last_load_stages: Record<string, number> | null;
 	/** Globally exclusive MASTER deck state. */
 	is_master: boolean;
 }
