@@ -43,3 +43,15 @@ open tools/deck-diagrams/devices/ddj-flx10/deck.html
 ## Scale gate
 
 See skill `reference.md` section "Scale to 100". Do not fan out past 5 until FLX10 checksum + overlay gate passes and the skill backlog items for plate crop / fig parse are noted.
+
+## Agent index / context excludes
+
+`devices/` (~109MB, 100+ controllers) and `docs/controller/reference/` (vendor PDFs) are excluded from default agent indexing/context. Catalog, schema, scripts, and this file stay visible.
+
+| Harness | File | Effect |
+|---|---|---|
+| Cursor | `.cursorindexingignore` | Out of codebase index; still `@`-mention / Read |
+| Claude Code | `.claudeignore` | Out of Read/Glob/Grep; use Bash for a specific device |
+| Codex | `.codexignore` | Out of project context / index |
+
+Do not put these paths in `.cursorignore` (hard block) or `.gitignore` (they stay in git).
