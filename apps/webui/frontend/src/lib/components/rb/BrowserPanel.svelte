@@ -70,6 +70,7 @@
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
+	import { setAutoPlayTrackFeed } from '$lib/rb/auto-play';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
@@ -1018,6 +1019,17 @@
 	const masterRef = $derived(
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
+
+	// Feed AutoPlay: open playlist membership with key/BPM for smart pick.
+	$effect(() => {
+		setAutoPlayTrackFeed(
+			pane.rows.map((r) => ({
+				stable_id: r.stable_id,
+				key: r.key,
+				bpm: r.bpm
+			}))
+		);
+	});
 
 	/** Monotonic load counter - double-click prefers least-recent in the pair. */
 	let deckLoadSeq = $state({ 1: 0, 2: 0, 3: 0, 4: 0 });

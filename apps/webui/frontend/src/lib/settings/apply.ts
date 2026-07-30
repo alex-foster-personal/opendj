@@ -3,6 +3,8 @@
  * Unknown keys throw (fail-loud).
  */
 import {
+	setAutoPlayEnabled,
+	setAutoPlayEnforceOrder,
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setConfirmPref,
@@ -22,6 +24,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'hide_broken_links',
 	'library_density',
 	'beat_sync_max',
+	'auto_play_enabled',
+	'auto_play_enforce_order',
 	'next_only_filter',
 	'hide_todo_settings',
 	'auto_sync.rekordbox',
@@ -49,6 +53,10 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.library_density;
 		case 'beat_sync_max':
 			return uiPrefs.beat_sync_max;
+		case 'auto_play_enabled':
+			return uiPrefs.auto_play_enabled;
+		case 'auto_play_enforce_order':
+			return uiPrefs.auto_play_enforce_order;
 		case 'next_only_filter':
 			return uiPrefs.next_only_filter;
 		case 'hide_todo_settings':
@@ -90,6 +98,12 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'beat_sync_max':
 			setBeatSyncMax(_asBool(value, key));
+			return;
+		case 'auto_play_enabled':
+			setAutoPlayEnabled(_asBool(value, key));
+			return;
+		case 'auto_play_enforce_order':
+			setAutoPlayEnforceOrder(_asBool(value, key));
 			return;
 		case 'next_only_filter':
 			setNextOnlyFilter(_asBool(value, key));

@@ -21,6 +21,10 @@ function deck(partial) {
 	};
 }
 
+function row(stable_id, key, bpm) {
+	return { stable_id, key, bpm };
+}
+
 describe('auto-play remaining / trigger', () => {
 	it('computes remaining from presentation position + duration', () => {
 		const { remainingMs } = mod;
@@ -112,50 +116,129 @@ describe('auto-play deck pick', () => {
 });
 
 describe('auto-play track pick', () => {
-	it('prefers suggest-next, else next playlist row after current', () => {
+	const playlist = [
+		row('a', '8A', 120),
+		row('b', '8A', 122),
+		row('c', '3A', 120),
+		row('d', '8B', 125),
+		row('e', '8A', 160)
+	];
+
+	it('enforce order: next membership row after current, skipping played/excluded', () => {
 		const { pickNextStableId } = mod;
 		assert.equal(
 			pickNextStableId({
-				suggest_ids: ['s1', 's2'],
-				playlist_ids: ['a', 'b', 'c'],
+				playlist,
 				current_stable_id: 'a',
-				exclude_ids: new Set()
-			}),
-			's1'
-		);
-		assert.equal(
-			pickNextStableId({
-				suggest_ids: ['a', 's1'],
-				playlist_ids: ['a', 'b', 'c'],
-				current_stable_id: 'a',
-				exclude_ids: new Set(['s1'])
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
 			}),
 			'b'
 		);
 		assert.equal(
 			pickNextStableId({
-				suggest_ids: [],
-				playlist_ids: ['a', 'b', 'c'],
-				current_stable_id: 'b',
-				exclude_ids: new Set(['c'])
+				playlist,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(['b']),
+				played_ids: new Set(['c']),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
 			}),
-			null
+			'd'
 		);
 		assert.equal(
 			pickNextStableId({
-				suggest_ids: [],
-				playlist_ids: ['a', 'b'],
+				playlist,
 				current_stable_id: 'missing',
-				exclude_ids: new Set()
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
 			}),
 			null
 		);
 	});
 
+	it('smart: earliest unplayed key+-1 within phase-lock BPM ratio', () => {
+		const { pickNextStableId } = mod;
+		// b is first after a that matches key+BPM; c is wrong key; e is out of ratio
+		assert.equal(
+			pickNextStableId({
+				playlist,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'b'
+		);
+		// skip played b; d is 8B (compatible) and 125 in range
+		assert.equal(
+			pickNextStableId({
+				playlist,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(['b']),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'd'
+		);
+		// nothing left in range
+		assert.equal(
+			pickNextStableId({
+				playlist,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(['b', 'd']),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			null
+		);
+	});
+
+	it('bpmWithinPhaseLockRange rejects half/double folds', () => {
+		const { bpmWithinPhaseLockRange } = mod;
+		assert.equal(bpmWithinPhaseLockRange(120, 120, 0.84, 1.16), true);
+		assert.equal(bpmWithinPhaseLockRange(160, 120, 0.84, 1.16), false);
+		assert.equal(bpmWithinPhaseLockRange(60, 120, 0.84, 1.16), false);
+	});
+
 	it('publishes browser feed getters', () => {
-		const { setAutoPlayTrackFeed, getAutoPlaySuggestIds, getAutoPlayPlaylistIds } = mod;
-		setAutoPlayTrackFeed(['s1'], ['p1', 'p2']);
-		assert.deepEqual([...getAutoPlaySuggestIds()], ['s1']);
+		const { setAutoPlayTrackFeed, getAutoPlayPlaylist, getAutoPlayPlaylistIds } = mod;
+		setAutoPlayTrackFeed([
+			{ stable_id: 'p1', key: '1A', bpm: 120 },
+			{ stable_id: 'p2', key: '2A', bpm: 124 }
+		]);
+		assert.deepEqual(
+			[...getAutoPlayPlaylist()],
+			[
+				{ stable_id: 'p1', key: '1A', bpm: 120 },
+				{ stable_id: 'p2', key: '2A', bpm: 124 }
+			]
+		);
 		assert.deepEqual([...getAutoPlayPlaylistIds()], ['p1', 'p2']);
 	});
 });

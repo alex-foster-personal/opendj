@@ -41,6 +41,17 @@ export interface RbUiPrefs {
 	/** Library list: keep only tracks appropriate as next (Camelot + BPM
 	 * window vs master / loaded reference). Toggle with Tab. */
 	next_only_filter: boolean;
+	/**
+	 * Auto-play next track onto a free/stopped follower when the playing
+	 * source enters the remaining-time window (~16s). Hard-cut v1.
+	 */
+	auto_play_enabled: boolean;
+	/**
+	 * When true, AutoPlay walks strict playlist order after the current track.
+	 * When false (default), picks earliest un-played membership row with
+	 * Camelot key +-1 and BPM inside Beat Sync pitch bounds.
+	 */
+	auto_play_enforce_order: boolean;
 	/** Light/dark chrome. Default dark. Applied to documentElement. */
 	theme: UiTheme;
 	/** Hide grayed PARITY-TODO rows in the settings overlay. */
@@ -67,6 +78,8 @@ const DEFAULTS: RbUiPrefs = {
 	library_density: 'compact',
 	beat_sync_max: true,
 	next_only_filter: false,
+	auto_play_enabled: true,
+	auto_play_enforce_order: false,
 	theme: 'dark',
 	hide_todo_settings: false,
 	auto_sync: { rekordbox: false, djay: false, open_dj: false },
@@ -116,6 +129,21 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.auto_play_enabled !== undefined && typeof parsed.auto_play_enabled !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (auto_play_enabled is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (
+		parsed.auto_play_enforce_order !== undefined &&
+		typeof parsed.auto_play_enforce_order !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (auto_play_enforce_order is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const theme = parsed.theme;
 	if (theme !== undefined && theme !== 'dark' && theme !== 'light') {
 		throw new Error(
@@ -149,6 +177,9 @@ function _load(): RbUiPrefs {
 		library_density: density ?? DEFAULTS.library_density,
 		beat_sync_max: parsed.beat_sync_max ?? DEFAULTS.beat_sync_max,
 		next_only_filter: parsed.next_only_filter ?? DEFAULTS.next_only_filter,
+		auto_play_enabled: parsed.auto_play_enabled ?? DEFAULTS.auto_play_enabled,
+		auto_play_enforce_order:
+			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
 		theme: theme ?? DEFAULTS.theme,
 		hide_todo_settings: parsed.hide_todo_settings ?? DEFAULTS.hide_todo_settings,
 		auto_sync: autoSync,
@@ -223,6 +254,16 @@ export function setLibraryDensity(next: LibraryDensity): void {
 
 export function setBeatSyncMax(next: boolean): void {
 	uiPrefs.beat_sync_max = next;
+	_persist();
+}
+
+export function setAutoPlayEnabled(next: boolean): void {
+	uiPrefs.auto_play_enabled = next;
+	_persist();
+}
+
+export function setAutoPlayEnforceOrder(next: boolean): void {
+	uiPrefs.auto_play_enforce_order = next;
 	_persist();
 }
 

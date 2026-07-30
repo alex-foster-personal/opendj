@@ -2,20 +2,21 @@
  * /performance auto-play controller (v1 hard-cut).
  *
  * When prefs.auto_play_enabled: as the master (or playing) deck enters the
- * remaining-time window, load the next suggested/playlist track onto a free
- * or stopped follower and start it via performance-ipc. Beat Sync is requested
- * only when a real BAR/BEAT phase-lock plan succeeds against the source;
+ * remaining-time window, load the next playlist track onto a free or stopped
+ * follower and start it via performance-ipc. Default pick: earliest un-played
+ * membership row with Camelot key +-1 and BPM inside Beat Sync pitch bounds.
+ * Optional enforce_play_order walks strict playlist order after current.
+ * Beat Sync is requested only when a real BAR/BEAT phase-lock plan succeeds;
  * otherwise follower Beat Sync is explicitly disabled and play continues
- * free-tempo (see .planning/autoplay-beat-sync-phase-lock-SA.md). Crossfade
- * is deferred (GitHub follow-up).
+ * free-tempo (see .planning/beat-sync-phase-lock-explainer-SA.md).
  */
 import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
 	decideAutoPlayBeatSync,
 	formatAutoPlaySyncSkipToast,
-	getAutoPlayPlaylistIds,
-	getAutoPlaySuggestIds,
+	getAutoPlayFeedEpoch,
+	getAutoPlayPlaylist,
 	pickFollowerDeck,
 	pickNextStableId,
 	pickSourceDeck,
@@ -42,6 +43,8 @@ const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;
 let _triggeredFor: string | null = null;
+let _playedIds = new Set<string>();
+let _playedFeedEpoch = -1;
 
 function _snaps(): AutoPlayDeckSnap[] {
 	return DECK_IDS.map((id) => {
@@ -65,6 +68,14 @@ function _excludeIds(sourceId: DeckId, snaps: readonly AutoPlayDeckSnap[]): Set<
 		if (d.stable_id !== null) out.add(d.stable_id);
 	}
 	return out;
+}
+
+function _syncPlayedSet(): void {
+	const epoch = getAutoPlayFeedEpoch();
+	if (epoch !== _playedFeedEpoch) {
+		_playedIds = new Set();
+		_playedFeedEpoch = epoch;
+	}
 }
 
 function _gridOrNull(deck: DeckId): readonly AnlzBeat[] | null {
@@ -140,7 +151,7 @@ async function _applyBeatSyncDecision(
 				min_ratio: bounds.min,
 				max_ratio: bounds.max
 			}),
-			'error'
+			'info'
 		);
 	}
 }
@@ -155,6 +166,8 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	}
 	await _applyBeatSyncDecision(source, follower);
 	await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
+	if (source.stable_id !== null) _playedIds.add(source.stable_id);
+	_playedIds.add(nextId);
 }
 
 async function _tick(): Promise<void> {
@@ -194,14 +207,27 @@ async function _tick(): Promise<void> {
 		return;
 	}
 
+	_syncPlayedSet();
+	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
+	const sourceDeck = deckStates[source.id];
 	const nextId = pickNextStableId({
-		suggest_ids: getAutoPlaySuggestIds(),
-		playlist_ids: getAutoPlayPlaylistIds(),
+		playlist: getAutoPlayPlaylist(),
 		current_stable_id: source.stable_id,
-		exclude_ids: _excludeIds(source.id, snaps)
+		current_key: sourceDeck.key,
+		current_bpm: sourceDeck.bpm,
+		exclude_ids: _excludeIds(source.id, snaps),
+		played_ids: _playedIds,
+		enforce_play_order: uiPrefs.auto_play_enforce_order,
+		min_tempo_ratio: bounds.min,
+		max_tempo_ratio: bounds.max
 	});
 	if (nextId === null) {
-		pushToast('auto-play: no next track (suggest-next / playlist)', 'error');
+		pushToast(
+			uiPrefs.auto_play_enforce_order
+				? 'auto-play: no next unplayed track in playlist order'
+				: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
+			'error'
+		);
 		_triggeredFor = source.stable_id;
 		return;
 	}
@@ -233,5 +259,7 @@ export function installAutoPlay(): () => void {
 		}
 		_inFlight = false;
 		_triggeredFor = null;
+		_playedIds = new Set();
+		_playedFeedEpoch = -1;
 	};
 }

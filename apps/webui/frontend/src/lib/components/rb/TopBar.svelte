@@ -13,7 +13,12 @@
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
-	import { setBeatSyncMax, uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		setAutoPlayEnabled,
+		setAutoPlayEnforceOrder,
+		setBeatSyncMax,
+		uiPrefs
+	} from '$lib/rb/prefs.svelte';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import CommandEntry from './CommandEntry.svelte';
@@ -24,6 +29,39 @@
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
 	let pairingOpen = $state(false);
+	let autoPlayMenuOpen = $state(false);
+	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
+	let autoPlayMenuStyle = $state('');
+
+	const autoPlayTitle: string = $derived(
+		uiPrefs.auto_play_enabled
+			? uiPrefs.auto_play_enforce_order
+				? 'AutoPlay ON - last ~16s loads next playlist row (enforce order) onto a free/stopped deck'
+				: 'AutoPlay ON - last ~16s loads earliest unplayed key+-1 / Beat Sync BPM twin onto a free/stopped deck'
+			: 'AutoPlay OFF - no automatic next-track handoff'
+	);
+
+	function _placeAutoPlayMenu(): void {
+		if (autoPlayWrapEl === undefined) return;
+		const r = autoPlayWrapEl.getBoundingClientRect();
+		autoPlayMenuStyle = `left:${Math.round(r.right)}px;top:${Math.round(r.bottom + 6)}px`;
+	}
+
+	function _showAutoPlayMenu(): void {
+		_placeAutoPlayMenu();
+		autoPlayMenuOpen = true;
+	}
+
+	function _hideAutoPlayMenu(e: FocusEvent | PointerEvent): void {
+		const next =
+			e instanceof FocusEvent
+				? e.relatedTarget
+				: (e as PointerEvent).relatedTarget;
+		if (next instanceof Node && autoPlayWrapEl?.contains(next)) return;
+		// Fixed menu is outside the wrap - keep open when moving into it.
+		if (next instanceof Element && next.closest?.('.ap-menu')) return;
+		autoPlayMenuOpen = false;
+	}
 
 	/** 4-waveform view icon geometry: 4 stacked jagged polylines (one per
 	 * deck row) so the glyph reads as 4 waveforms, not a dotted grid. */
@@ -216,6 +254,53 @@
 		BeatSyncMax
 	</button>
 
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<span
+		class="ap-wrap"
+		bind:this={autoPlayWrapEl}
+		onpointerenter={_showAutoPlayMenu}
+		onpointerleave={_hideAutoPlayMenu}
+		onfocusin={_showAutoPlayMenu}
+		onfocusout={_hideAutoPlayMenu}
+	>
+		<button
+			type="button"
+			class="bsm-toggle"
+			class:on={uiPrefs.auto_play_enabled}
+			aria-pressed={uiPrefs.auto_play_enabled}
+			title={autoPlayTitle}
+			onclick={() => setAutoPlayEnabled(!uiPrefs.auto_play_enabled)}
+		>
+			AutoPlay
+		</button>
+		{#if autoPlayMenuOpen}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="ap-menu"
+				style={autoPlayMenuStyle}
+				role="dialog"
+				aria-label="AutoPlay options"
+				onpointerenter={_showAutoPlayMenu}
+				onpointerleave={() => (autoPlayMenuOpen = false)}
+			>
+				<p class="ap-head">AutoPlay</p>
+				<label class="ap-row">
+					<input
+						type="checkbox"
+						checked={uiPrefs.auto_play_enforce_order}
+						onchange={(e) =>
+							setAutoPlayEnforceOrder((e.currentTarget as HTMLInputElement).checked)}
+					/>
+					<span>Enforce play order</span>
+				</label>
+				<p class="ap-hint">
+					Off (default): earliest unplayed playlist track with key +-1 and BPM inside
+					Beat Sync pitch range. On: next row after current.
+				</p>
+			</div>
+		{/if}
+	</span>
+
 	<span class="dim-label" title={INERT_TITLE}>PAD</span>
 	<span class="dim-label" title={INERT_TITLE}>MIDI</span>
 
@@ -317,6 +402,48 @@
 		top: 50%;
 		transform: translate(-50%, -50%);
 		z-index: 1;
+	}
+
+	.ap-wrap {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+	}
+	.ap-menu {
+		position: fixed;
+		z-index: 90;
+		width: 220px;
+		transform: translateX(-100%);
+		padding: 8px 9px 9px;
+		background: #0a0c0f;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+		color: var(--rb-text);
+		font-family: var(--rb-font);
+		font-size: 10px;
+		line-height: 1.35;
+		text-align: left;
+	}
+	.ap-head {
+		margin: 0 0 6px;
+		font-weight: 650;
+		letter-spacing: 0.02em;
+	}
+	.ap-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin: 0 0 6px;
+		cursor: pointer;
+		color: var(--rb-text);
+	}
+	.ap-row input {
+		margin: 0;
+	}
+	.ap-hint {
+		margin: 0;
+		color: var(--rb-text-dim);
 	}
 
 	.rb-topbar.vibe-rainbow {

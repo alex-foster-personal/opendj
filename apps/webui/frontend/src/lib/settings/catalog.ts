@@ -121,6 +121,28 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'auto_play_enabled',
+		label: 'AutoPlay',
+		group: 'performance',
+		keywords: ['autoplay', 'auto', 'next', 'handoff', 'suggest', 'follower'],
+		title: 'Auto-load next track onto a free deck near end',
+		detail:
+			'When on, in the last ~16s of the playing source deck, load the next playlist track onto a free/stopped follower and play (hard-cut). Default pick: earliest unplayed key+-1 within Beat Sync BPM range. Hover AutoPlay for enforce-order.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'auto_play_enforce_order',
+		label: 'AutoPlay enforce play order',
+		group: 'performance',
+		keywords: ['autoplay', 'order', 'playlist', 'sequential'],
+		title: 'AutoPlay walks strict playlist order',
+		detail:
+			'When on, AutoPlay takes the next membership row after the current track. When off (default), picks the earliest unplayed playlist track with Camelot key +-1 and BPM inside Beat Sync pitch bounds.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'confirm.dblclick_load_play',
 		label: 'Confirm double-click Load+play',
 		group: 'confirmations',
