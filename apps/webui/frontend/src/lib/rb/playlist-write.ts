@@ -100,3 +100,48 @@ export async function replacePlaylistTracks(
 	const out = (await r.json()) as PlaylistRowWire;
 	return { items: out.items, etag: fresh };
 }
+
+/** POST /playlists - create empty playlist (201 + ETag). */
+export async function createPlaylist(name: string): Promise<PlaylistRowWire> {
+	const r = await fetch(`${API_BASE}/api/v1/playlists`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+		body: JSON.stringify({ name })
+	});
+	if (!r.ok) throw new Error(`create playlist failed (${r.status}): ${await _errorMessage(r)}`);
+	return (await r.json()) as PlaylistRowWire;
+}
+
+/** PATCH /playlists/{id} - rename (If-Match required). */
+export async function renamePlaylist(
+	playlistId: string,
+	etag: string,
+	name: string
+): Promise<PlaylistRowWire> {
+	const r = await fetch(`${API_BASE}/api/v1/playlists/${encodeURIComponent(playlistId)}`, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'If-Match': etag },
+		body: JSON.stringify({ name })
+	});
+	if (r.status === 409) {
+		const body = (await r.json()) as { current: PlaylistRowWire; etag: string };
+		throw new PlaylistConflictError(body.current, body.etag);
+	}
+	if (!r.ok) throw new Error(`rename playlist ${playlistId} failed (${r.status}): ${await _errorMessage(r)}`);
+	return (await r.json()) as PlaylistRowWire;
+}
+
+/** DELETE /playlists/{id} (If-Match required) -> 204. */
+export async function deletePlaylist(playlistId: string, etag: string): Promise<void> {
+	const r = await fetch(`${API_BASE}/api/v1/playlists/${encodeURIComponent(playlistId)}`, {
+		method: 'DELETE',
+		headers: { Accept: 'application/json', 'If-Match': etag }
+	});
+	if (r.status === 409) {
+		const body = (await r.json()) as { current: PlaylistRowWire; etag: string };
+		throw new PlaylistConflictError(body.current, body.etag);
+	}
+	if (!r.ok && r.status !== 204) {
+		throw new Error(`delete playlist ${playlistId} failed (${r.status}): ${await _errorMessage(r)}`);
+	}
+}
