@@ -71,12 +71,20 @@ Requirements (mini-PRD):
     fabricate a number before there is data to support it.
     [if] zero tracks are done yet [then] eta_s/p50/p95/load_overhead_pct
       all read 0.0, not NaN/inf
-  ✔︎ ✅ 🎯 the three efficiency warnings fire on exactly their stated
+  ✔︎ ✅ 🎯 the efficiency + size-target warnings fire on exactly their stated
     thresholds and nothing else.
     [if] load_overhead_pct > 30 [then] the warm-container warning appears
     [if] containers_live < min(10, remaining) and in_flight > 0 [then] the
       under-parallelised warning appears
     [if] p50 > 0 and p95/p50 > 3 [then] the straggler warning appears
+    [if] any done track's size_ratio_max > 1.0 [then] the "n stems over
+      source size, worst +x%" warning appears (mp3 ladder size-vs-source is
+      a KPI/target, not a hard gate -- see apps/stems/stem_size_policy.py
+      and modal_roformer_spike.py's two-rung ladder for why a stem can
+      still land over source bytes at the terminal rung)
+    [if] no done track carries a size_ratio_max (all flac/control, or no
+      tracks done yet) [then] the warning never appears, 0.0 is not
+      fabricated as "worst"
 
 -Claude
 """
@@ -337,14 +345,41 @@ def p95_sep_s_per_audio_min(snapshot: RunSnapshot) -> float:
     return round(_percentile(values, 95), 2) if values else 0.0
 
 
+def _size_ratio_max_values(snapshot: RunSnapshot) -> list[float]:
+    """size_ratio_max from every DONE track that carries one -- a flac/
+    control track (size is exempt there, see apps/stems/stem_size_policy.py)
+    writes None, and is excluded here rather than counted as a 1.0 "fit"."""
+    return [
+        ratio
+        for t in _done_timings(snapshot)
+        if (ratio := t.get("size_ratio_max")) is not None
+    ]
+
+
+def stems_over_source_count(snapshot: RunSnapshot) -> int:
+    """Count of DONE mp3 tracks whose worst stem landed over source bytes --
+    size-vs-source is a KPI/target (not a hard gate), so this is a count to
+    watch, not a failure tally."""
+    return sum(1 for ratio in _size_ratio_max_values(snapshot) if ratio > 1.0)
+
+
+def worst_size_ratio(snapshot: RunSnapshot) -> float:
+    """Largest size_ratio_max seen so far; 1.0 (not fabricated as "over")
+    when nothing has reported one yet."""
+    values = _size_ratio_max_values(snapshot)
+    return round(max(values), 4) if values else 1.0
+
+
 # ----- warnings (pure) ----------------------------------------------------------
 
 
 def build_warnings(
     *, load_overhead: float, containers_live: int, remaining: int, in_flight: int,
-    p50: float, p95: float,
+    p50: float, p95: float, stems_over_source: int, worst_ratio: float,
 ) -> list[str]:
-    """Exactly the three rules the task spec gives. Nothing speculative."""
+    """The efficiency rules the task spec gives, plus the size-target
+    warning added when the mp3 ladder's terminal rung still misses budget
+    for one or more tracks. Nothing speculative."""
     warnings: list[str] = []
     if load_overhead > 30:
         warnings.append(
@@ -354,6 +389,11 @@ def build_warnings(
         warnings.append("under-parallelised vs 10-GPU concurrency cap")
     if p50 > 0 and (p95 / p50) > 3:
         warnings.append("straggler tracks, investigate longest audio")
+    if stems_over_source > 0:
+        worst_pct = (worst_ratio - 1) * 100
+        warnings.append(
+            f"{stems_over_source} stems over source size, worst +{worst_pct:.1f}%"
+        )
     return warnings
 
 
@@ -372,6 +412,8 @@ def build_status(snapshot: RunSnapshot, *, containers_live: int) -> dict[str, An
     load_overhead = load_overhead_pct(snapshot)
     p50 = p50_sep_s_per_audio_min(snapshot)
     p95 = p95_sep_s_per_audio_min(snapshot)
+    stems_over_source = stems_over_source_count(snapshot)
+    worst_ratio = worst_size_ratio(snapshot)
     return {
         # run_id is additive context, not one of the required fields below.
         "run_id": snapshot.run_id,
@@ -387,6 +429,8 @@ def build_status(snapshot: RunSnapshot, *, containers_live: int) -> dict[str, An
         "load_overhead_pct": load_overhead,
         "p50_sep_s_per_audio_min": p50,
         "p95_sep_s_per_audio_min": p95,
+        "stems_over_source_size": stems_over_source,
+        "worst_size_ratio_pct": round((worst_ratio - 1) * 100, 1),
         "warnings": build_warnings(
             load_overhead=load_overhead,
             containers_live=containers_live,
@@ -394,5 +438,7 @@ def build_status(snapshot: RunSnapshot, *, containers_live: int) -> dict[str, An
             in_flight=in_flight,
             p50=p50,
             p95=p95,
+            stems_over_source=stems_over_source,
+            worst_ratio=worst_ratio,
         ),
     }

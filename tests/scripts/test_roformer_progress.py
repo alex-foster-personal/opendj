@@ -217,14 +217,16 @@ def test_sep_s_per_audio_min_zero_with_no_done_tracks() -> None:
 
 def test_warning_fires_on_high_load_overhead() -> None:
     warnings = prog.build_warnings(
-        load_overhead=31.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0
+        load_overhead=31.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == ["model load dominating, use warm containers (modal.Cls) or memory snapshots"]
 
 
 def test_warning_does_not_fire_at_exactly_30_pct() -> None:
     warnings = prog.build_warnings(
-        load_overhead=30.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0
+        load_overhead=30.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == []
 
@@ -232,7 +234,8 @@ def test_warning_does_not_fire_at_exactly_30_pct() -> None:
 def test_warning_fires_on_underparallelised_pool() -> None:
     # remaining=20, containers_live=3 < min(10, 20)=10, in_flight>0.
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=3, remaining=20, in_flight=3, p50=1.0, p95=1.0
+        load_overhead=0.0, containers_live=3, remaining=20, in_flight=3, p50=1.0, p95=1.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == ["under-parallelised vs 10-GPU concurrency cap"]
 
@@ -241,7 +244,8 @@ def test_warning_skips_underparallelised_when_nothing_in_flight() -> None:
     # Even with containers_live < pool cap, no warning if nothing is running
     # (e.g. between polls, or the run just hasn't dispatched yet).
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=0, remaining=20, in_flight=0, p50=1.0, p95=1.0
+        load_overhead=0.0, containers_live=0, remaining=20, in_flight=0, p50=1.0, p95=1.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == []
 
@@ -249,30 +253,84 @@ def test_warning_skips_underparallelised_when_nothing_in_flight() -> None:
 def test_warning_uses_remaining_not_pool_cap_when_remaining_is_smaller() -> None:
     # remaining=2 < H100_POOL_CAP=10: min(10, 2) = 2. containers_live=1 < 2.
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=1, remaining=2, in_flight=1, p50=1.0, p95=1.0
+        load_overhead=0.0, containers_live=1, remaining=2, in_flight=1, p50=1.0, p95=1.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == ["under-parallelised vs 10-GPU concurrency cap"]
 
 
 def test_warning_fires_on_straggler_ratio() -> None:
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=10.0, p95=31.0
+        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=10.0, p95=31.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == ["straggler tracks, investigate longest audio"]
 
 
 def test_warning_skips_straggler_ratio_when_p50_is_zero() -> None:
     warnings = prog.build_warnings(
-        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=0.0, p95=0.0
+        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=0.0, p95=0.0,
+        stems_over_source=0, worst_ratio=1.0,
     )
     assert warnings == []
 
 
-def test_all_three_warnings_can_fire_together() -> None:
+def test_warning_fires_on_stems_over_source_size() -> None:
     warnings = prog.build_warnings(
-        load_overhead=50.0, containers_live=1, remaining=5, in_flight=1, p50=10.0, p95=40.0
+        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
+        stems_over_source=2, worst_ratio=1.034,
     )
-    assert len(warnings) == 3
+    assert warnings == ["2 stems over source size, worst +3.4%"]
+
+
+def test_warning_skips_stems_over_source_size_when_zero() -> None:
+    warnings = prog.build_warnings(
+        load_overhead=0.0, containers_live=10, remaining=0, in_flight=0, p50=1.0, p95=1.0,
+        stems_over_source=0, worst_ratio=1.0,
+    )
+    assert warnings == []
+
+
+def test_all_four_warnings_can_fire_together() -> None:
+    warnings = prog.build_warnings(
+        load_overhead=50.0, containers_live=1, remaining=5, in_flight=1, p50=10.0, p95=40.0,
+        stems_over_source=1, worst_ratio=1.05,
+    )
+    assert len(warnings) == 4
+
+
+# ----- size-vs-source target aggregation -------------------------------------
+
+
+def test_stems_over_source_count_ignores_flac_control_tracks() -> None:
+    """A flac/control track writes size_ratio_max=None (size is exempt
+    there) -- it must not count as "fits" or "over"."""
+    snap = _snapshot(
+        {
+            "a": {**_done(1.0, 10.0, 1.0, 60.0), "size_ratio_max": 1.05},
+            "b": {**_done(1.0, 10.0, 1.0, 60.0), "size_ratio_max": None},
+            "c": {**_done(1.0, 10.0, 1.0, 60.0), "size_ratio_max": 0.9},
+        },
+        total=3,
+    )
+    assert prog.stems_over_source_count(snap) == 1
+    assert prog.worst_size_ratio(snap) == pytest.approx(1.05)
+
+
+def test_worst_size_ratio_defaults_to_one_with_no_data() -> None:
+    snap = _snapshot({}, total=0)
+    assert prog.worst_size_ratio(snap) == 1.0
+    assert prog.stems_over_source_count(snap) == 0
+
+
+def test_build_status_surfaces_stems_over_source_fields() -> None:
+    snap = _snapshot(
+        {"a": {**_done(1.0, 10.0, 1.0, 60.0), "size_ratio_max": 1.1}}, total=1
+    )
+    status = prog.build_status(snap, containers_live=1)
+    assert status["stems_over_source_size"] == 1
+    assert status["worst_size_ratio_pct"] == pytest.approx(10.0)
+    assert any("stems over source size" in w for w in status["warnings"])
 
 
 # ----- containers_live_from_apps -------------------------------------------------------------

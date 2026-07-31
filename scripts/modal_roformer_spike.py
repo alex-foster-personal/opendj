@@ -62,17 +62,56 @@ Opus policy):
     against its ``write_audio_pydub`` before writing this branch, there is
     no way to hand it ffmpeg's qscale VBR flag. Either way this never
     leaves the container, so no local compression pass is ever needed
-    again. The actual encoded bytes are still hard-gated against the
-    source file size (mirrored ``_assert_lossy_stems_not_larger_than_
-    source``), so a bad bitrate guess fails the track loudly rather than
-    shipping an oversized stem.
+    again.
   * ``--force-format {flac,mp3}`` overrides the source-driven decision
     outright (explicit beats implicit) and skips the extension check.
+    ``--force-format flac`` on a lossy (mp3/m4a) source fails fast with a
+    message naming apps/stems/stem_size_policy.py's policy directly (flac
+    cannot invent bit-depth information a lossy codec never carried) --
+    same in-container check as the genuine bit-depth mismatch, just a
+    message that says what actually went wrong instead of reading like a
+    real bit-depth violation.
   * an unrecognised source extension (with no ``--force-format``) fails
     fast -- for ``separate`` this raises locally, before any GPU spend; see
     ``cmd_separate``.
   * the chosen codec, mp3 settings (when applicable), and the probed source
     bitrate are all recorded in meta.json.
+
+Two-rung mp3 encode ladder (closes the V0/near-320 size-ceiling gap;
+apps/stems/stem_size_policy.py is the source of truth for the decision
+functions, mirrored below for the same reason as the rest of this block --
+see that module's docstring for the full write-up of WHY V0 VBR and the
+native 320 CBR rung can both land over source bytes):
+  * rung 1 is the settings above, unchanged
+  * if rung 1's encoded bytes for ONE stem part exceed the source file's
+    bytes, that part alone is re-encoded once more from the same
+    audio-separator output (the FLAC intermediate for the V0 rung, or the
+    rung-1 mp3 itself for the native-320 rung, which has no FLAC
+    intermediate) at the nearest standard CBR <= floor(source_kbps) --
+    no second GPU pass either way, this is a cheap in-container ffmpeg
+    re-encode
+  * rung + final settings per part are recorded in meta.json
+    (``mp3_rung``, ``mp3_settings``, both ``{"vocals": ..., "instrumental":
+    ...}``)
+
+Size-vs-source is a KPI/TARGET, not a hard gate (revised design; mirrors
+apps/stems/stem_size_policy.py's own demotion): even at the terminal rung
+(rung 2), a stem that still lands over source bytes is KEPT, not discarded
+-- ``_assert_lossy_stems_not_larger_than_source`` returns the list of
+violations instead of raising. Per-part ``size_ratio`` (part_bytes /
+source_bytes) is recorded in meta.json for every mp3 track regardless of
+whether it violates, plus a ``warnings`` list (empty when nothing violates)
+naming which part(s) missed the target and by how much. Correctness
+invariants that are NOT size are untouched by this demotion and stay hard
+(codec matches the policy's decision, output bit depth for a lossless
+source, a Vocals+Instrumental pair actually exists).
+
+Per-rung encode timing (``timings.encode_s_rung1``/``encode_s_rung2``) is
+also recorded so batch telemetry can price ladder escalations later --
+``encode_s`` (the total) already folds both in, and so do ``gpu_s``/``usd``
+(the whole-container wall clock and its Modal-rate cost), since a rung-2
+re-encode happens inside the same container invocation as everything else.
+No optimisation is attempted here -- this is capture only.
 
 Every run persists to the ``roformer-spike`` Modal Volume (durable, pullable
 independently of this Mac) AND writes into ``--out-dir`` locally in the same
@@ -106,8 +145,25 @@ Requirements (mini-PRD):
     [if] source is .flac/.wav/.aif/.aiff [then] flac at source bit depth
     [if] source is .mp3/.m4a [then] mp3 at <= source bitrate
     [if] --force-format is passed [then] it wins outright over the source ext
-  ✔︎ ✅ mp3 stems never exceed the source file's bytes.
-    [if] an mp3 stem > source bytes [then ⛔️] raise (mirrored stem_size_policy gate)
+  ✔︎ ✅ 🎯 --force-format flac on a lossy source names the policy in its error.
+    [if] --force-format flac and the source is .mp3/.m4a [then ⛔️] raise with
+      a message naming apps/stems/stem_size_policy.py's lossy->mp3 policy,
+      not a generic bit-depth-mismatch message
+  ✔︎ ✅ 🎯 a rung-1 mp3 stem that exceeds source bytes gets ONE rung-2
+    re-encode at the nearest standard CBR <= floor(source_kbps), no second
+    GPU pass.
+    [if] rung 1 fits under source bytes [then] rung stays 1, no re-encode
+    [if] rung 1 exceeds source bytes for one part [then] only that part is
+      re-encoded once at rung 2's CBR; the other part is untouched
+  ✔︎ ✅ 🎯 size-vs-source is a target, not a hard gate: a stem that still
+    misses budget after rung 2 is kept, not discarded.
+    [if] rung 2 still exceeds source bytes [then] size_ratio/warnings record
+      it in meta.json; the file is written and returned like any other
+    [if] no part exceeds [then] warnings is an empty list
+  ✔︎ ✅ 🎯 per-rung encode seconds are captured for batch cost telemetry.
+    [if] only rung 1 ran for both parts [then] encode_s_rung2 == 0.0
+    [if] a part escalated to rung 2 [then] encode_s_rung2 > 0.0, and
+      gpu_s/usd (the whole-container wrapper) include that time too
   ✔︎ ✅ unknown source extensions fail fast.
     [if] source ext is neither known-lossless nor known-lossy, and no
       --force-format [then ⛔️] raise, for ``separate`` before any GPU spend
@@ -120,13 +176,15 @@ Requirements (mini-PRD):
   ✔︎ ✅ 🎯 `status --run-id X` fails fast on an unknown run-id.
     [if] the named progress Dict does not exist [then ⛔️] SystemExit, never
     an empty/zero snapshot
-  ✔︎ ✅ 🎯 the three efficiency warnings fire on exactly their stated
+  ✔︎ ✅ 🎯 the efficiency + size-target warnings fire on exactly their stated
     thresholds, nothing speculative.
     [if] load_overhead_pct > 30 [then] the warm-container warning appears
     [if] containers_live < min(10, remaining_tracks) and in_flight > 0
       [then] the under-parallelised warning appears
     [if] p95/p50 sep_s-per-audio-min ratio > 3 [then] the straggler warning
       appears
+    [if] any done track's size_ratio_max > 1.0 [then] the "n stems over
+      source size, worst +x%" warning appears (see roformer_progress.py)
 
 Run:
   uv run --with modal python scripts/modal_roformer_spike.py bench --limit 1
@@ -151,6 +209,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import statistics
 import subprocess
@@ -226,6 +285,18 @@ _LOSSY_SOURCE_EXTS: frozenset[str] = frozenset({".mp3", ".m4a"})
 _MP3_CBR_KBPS: int = 320
 _LOSSY_SIZE_GATED: frozenset[str] = frozenset({"opus", "mp3"})
 _CONTROL_CODECS: frozenset[str] = frozenset({"flac", "wav"})
+_MP3_CBR_LADDER: tuple[int, ...] = (320, 256, 224, 192)
+
+# MIRRORED from apps/stems/tiers.GPU_USD_PER_S (same reason as the block
+# above -- the container has no ``apps`` package). Used for reporting only
+# (meta.json's "usd" field); nothing here schedules or gates on price.
+_GPU_USD_PER_S: dict[str, float] = {
+    "H100": 0.001097,
+    "H200": 0.001261,
+    "A100-80GB": 0.000694,
+    "L40S": 0.000542,
+    "L4": 0.000222,
+}
 
 
 class _UnknownSourceFormatError(ValueError):
@@ -258,19 +329,53 @@ def _mp3_lame_settings_for_source_kbps(source_kbps: float) -> str:
     return "lame_320kbps_cbr" if source_kbps >= _MP3_CBR_KBPS else "lame_v0_vbr"
 
 
-def _assert_lossy_stems_not_larger_than_source(
-    *, source_bytes: int, part_sizes: dict[str, int], codec: str
-) -> None:
+def _lossy_stem_exceeds_source(*, source_bytes: int, part_bytes: int, codec: str) -> bool:
     if codec in _CONTROL_CODECS or codec not in _LOSSY_SIZE_GATED:
-        return
+        return False
     if source_bytes <= 0:
         raise RuntimeError(f"source_bytes must be positive, got {source_bytes}")
-    offenders = [f"{n}={s}B" for n, s in part_sizes.items() if s > source_bytes]
-    if offenders:
-        raise RuntimeError(
-            f"lossy stem part(s) exceed source ({source_bytes}B) under codec "
-            f"{codec!r}: {', '.join(offenders)}."
-        )
+    return part_bytes > source_bytes
+
+
+def _mp3_rung2_cbr_kbps(source_kbps: float) -> int:
+    if source_kbps <= 0:
+        raise ValueError(f"source_kbps must be positive, got {source_kbps}")
+    ceiling = math.floor(source_kbps)
+    for cbr in _MP3_CBR_LADDER:
+        if cbr <= ceiling:
+            return cbr
+    raise RuntimeError(
+        f"no rung in _MP3_CBR_LADDER={_MP3_CBR_LADDER} fits under "
+        f"source_kbps={source_kbps} (floor={ceiling})"
+    )
+
+
+def _lossy_stem_size_ratio(*, source_bytes: int, part_bytes: int) -> float:
+    if source_bytes <= 0:
+        raise RuntimeError(f"source_bytes must be positive, got {source_bytes}")
+    return part_bytes / source_bytes
+
+
+def _assert_lossy_stems_not_larger_than_source(
+    *, source_bytes: int, part_sizes: dict[str, int], codec: str
+) -> list[dict[str, Any]]:
+    """Size-vs-source is a KPI/target, not a hard gate (mirrors apps.stems.
+    stem_size_policy's own demotion): returns every offending part instead
+    of raising, so the caller keeps the file and records the overage."""
+    if codec in _CONTROL_CODECS or codec not in _LOSSY_SIZE_GATED:
+        return []
+    if source_bytes <= 0:
+        raise RuntimeError(f"source_bytes must be positive, got {source_bytes}")
+    return [
+        {
+            "name": name,
+            "part_bytes": size,
+            "source_bytes": source_bytes,
+            "ratio": _lossy_stem_size_ratio(source_bytes=source_bytes, part_bytes=size),
+        }
+        for name, size in part_sizes.items()
+        if size > source_bytes
+    ]
 
 
 def _assert_stem_size_policy_mirror_matches() -> None:
@@ -285,6 +390,7 @@ def _assert_stem_size_policy_mirror_matches() -> None:
         or pol.MP3_CBR_KBPS != _MP3_CBR_KBPS
         or pol.LOSSY_SIZE_GATED != _LOSSY_SIZE_GATED
         or pol.CONTROL_CODECS != _CONTROL_CODECS
+        or tuple(pol.MP3_CBR_LADDER) != _MP3_CBR_LADDER
     ):
         raise SystemExit(
             "error: stem_size_policy constants drifted from the roformer-spike mirror"
@@ -307,6 +413,51 @@ def _assert_stem_size_policy_mirror_matches() -> None:
     for kbps in (128.0, 245.0, 256.0, 319.99, 320.0, 500.0):
         if pol.mp3_lame_settings_for_source_kbps(kbps) != _mp3_lame_settings_for_source_kbps(kbps):
             raise SystemExit(f"error: mp3_lame_settings_for_source_kbps({kbps}) drifted")
+    for kbps in (192.0, 200.0, 257.0, 262.0, 300.0, 320.0, 500.0):
+        if pol.mp3_rung2_cbr_kbps(kbps) != _mp3_rung2_cbr_kbps(kbps):
+            raise SystemExit(f"error: mp3_rung2_cbr_kbps({kbps}) drifted")
+    for source_bytes, part_bytes, codec in (
+        (1_000_000, 1_000_001, "mp3"),
+        (1_000_000, 999_999, "mp3"),
+        (1_000, 50_000_000, "flac"),
+    ):
+        policy_result = pol.lossy_stem_exceeds_source(
+            source_bytes=source_bytes, part_bytes=part_bytes, codec=codec
+        )
+        mirror_result = _lossy_stem_exceeds_source(
+            source_bytes=source_bytes, part_bytes=part_bytes, codec=codec
+        )
+        if policy_result != mirror_result:
+            raise SystemExit(
+                f"error: lossy_stem_exceeds_source({source_bytes}, {part_bytes}, "
+                f"{codec!r}) drifted"
+            )
+        policy_violations = pol.assert_lossy_stems_not_larger_than_source(
+            source_bytes=source_bytes, part_sizes={"x": part_bytes}, codec=codec
+        )
+        mirror_violations = _assert_lossy_stems_not_larger_than_source(
+            source_bytes=source_bytes, part_sizes={"x": part_bytes}, codec=codec
+        )
+        if len(policy_violations) != len(mirror_violations) or (
+            policy_violations
+            and policy_violations[0].ratio != mirror_violations[0]["ratio"]
+        ):
+            raise SystemExit(
+                f"error: assert_lossy_stems_not_larger_than_source({source_bytes}, "
+                f"{part_bytes}, {codec!r}) drifted"
+            )
+    for source_bytes, part_bytes in ((1_000_000, 1_000_000), (1_000_000, 2_000_000)):
+        if pol.lossy_stem_size_ratio(
+            source_bytes=source_bytes, part_bytes=part_bytes
+        ) != _lossy_stem_size_ratio(source_bytes=source_bytes, part_bytes=part_bytes):
+            raise SystemExit(f"error: lossy_stem_size_ratio({source_bytes}, {part_bytes}) drifted")
+
+    from apps.stems import tiers as stem_tiers
+
+    if stem_tiers.GPU_USD_PER_S != _GPU_USD_PER_S:
+        raise SystemExit(
+            "error: apps.stems.tiers.GPU_USD_PER_S drifted from the roformer-spike mirror"
+        )
 
 
 # ----- progress (agent-native status surface) --------------------------------
@@ -524,6 +675,53 @@ def _ffmpeg_encode_mp3_v0(flac_bytes: bytes, out_path: Path) -> bytes:
     return out_path.read_bytes()
 
 
+def _ffmpeg_encode_mp3_cbr(source_bytes: bytes, out_path: Path, cbr_kbps: int) -> bytes:
+    """Rung-2 CBR re-encode from an in-memory source (flac OR mp3 -- ffmpeg
+    decodes either transparently via ``-i pipe:0``) at ``cbr_kbps``.
+
+    Only called once rung 1 (native 320 CBR or V0 VBR) already produced a
+    stem part larger than the source file -- see apps/stems/
+    stem_size_policy.py's mp3_rung2_cbr_kbps for why a CBR encode at or
+    under the source's own probed kbps is guaranteed under source bytes for
+    equal duration. The caller re-checks size-vs-source afterwards
+    regardless (now a target, not a gate -- see the module docstring); this
+    function does not itself guarantee the fit.
+
+    ``source_bytes`` here is the AUDIO payload (flac bytes for the V0 rung's
+    still-on-disk intermediate, or the rung-1 mp3 bytes themselves for the
+    native-320 rung, which has no flac intermediate -- one extra lossy
+    generation for that rarer sibling case is an accepted tradeoff against a
+    second GPU pass). No relation to the per-track ``source_bytes`` used
+    elsewhere in this file for the size check; named for what it is: the
+    bytes ffmpeg reads from stdin.
+    """
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            f"{cbr_kbps}k",
+            str(out_path),
+        ],
+        input=source_bytes,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not out_path.is_file():
+        raise RuntimeError(
+            f"ffmpeg mp3 rung-2 {cbr_kbps}k CBR encode failed rc={proc.returncode}: "
+            f"{proc.stderr.decode(errors='replace')[-500:]}"
+        )
+    return out_path.read_bytes()
+
+
 def _separate_one(
     audio_bytes: bytes,
     name: str,
@@ -549,7 +747,10 @@ def _separate_one(
     (unchanged); lossy source -> mp3 at <= the probed source bitrate,
     written natively by audio-separator for the 320 CBR rung, or via one
     in-container ffmpeg pass for V0. ``force_format`` overrides the
-    source-driven decision outright.
+    source-driven decision outright. A rung-1 mp3 part that lands over
+    source bytes gets one rung-2 re-encode (see the two-rung ladder in the
+    module docstring); size-vs-source is a target, so a part that still
+    misses budget after rung 2 is kept and recorded, never raised.
 
     Emits `separating` once load_model finishes (load_s now known) and
     `encoding` once separate() finishes (sep_s now known) -- see the
@@ -574,7 +775,11 @@ def _separate_one(
         duration_s = _ffprobe_duration_s(in_path)
         source_kbps = _effective_bitrate_kbps(source_bytes, duration_s)
 
-        mp3_settings: str | None = None
+        # str for rung 1 everywhere ("lame_320kbps_cbr"/"lame_v0_vbr"); becomes
+        # a per-part {"vocals": ..., "instrumental": ...} dict below IF the
+        # mp3 branch runs (settings can then differ per part, e.g. one rung 1
+        # and one rung 2).
+        mp3_settings: str | dict[str, str] | None = None
         if output_codec == "mp3":
             mp3_settings = _mp3_lame_settings_for_source_kbps(source_kbps)
 
@@ -631,6 +836,23 @@ def _separate_one(
             for part_path in (vocals_path, inst_path):
                 out_info = sf.info(str(part_path))
                 if out_info.subtype != source_info.subtype:
+                    if suffix.lower() in _LOSSY_SOURCE_EXTS:
+                        # Same trigger point as the genuine bit-depth check
+                        # below (a --force-format flac source-vs-output
+                        # subtype mismatch on a lossy source) -- only the
+                        # message changes. A lossy source has no PCM bit
+                        # depth of its own for flac to match in the first
+                        # place, so "bit-depth policy violated" is the wrong
+                        # diagnosis; name the real policy instead.
+                        raise RuntimeError(
+                            f"--force-format flac was requested for {name}, a "
+                            f"lossy source ({suffix}); apps/stems/"
+                            "stem_size_policy.py's policy for a lossy source "
+                            "is mp3 output at <= source bitrate, never flac -- "
+                            "flac cannot invent bit-depth information a lossy "
+                            "codec never carried. Drop --force-format (mp3 is "
+                            "chosen automatically) or pass --force-format mp3."
+                        )
                     raise RuntimeError(
                         f"bit-depth policy violated for {name}: source subtype "
                         f"{source_info.subtype!r}, {part_path.name} is "
@@ -642,9 +864,16 @@ def _separate_one(
             inst_bytes = inst_path.read_bytes()
             source_subtype: str | None = source_info.subtype
             source_samplerate: int | None = source_info.samplerate
+            mp3_rung: dict[str, int] | None = None
+            size_ratio: dict[str, float] | None = None
+            size_warnings: list[str] = []
+            encode_s_rung1 = round(time.perf_counter() - encode0, 2)
+            encode_s_rung2 = 0.0
         else:  # mp3 -- no PCM bit depth to compare against
             source_subtype = None
             source_samplerate = None
+
+            rung1_t0 = time.perf_counter()
             if native_mp3:
                 vocals_bytes = vocals_path.read_bytes()
                 inst_bytes = inst_path.read_bytes()
@@ -655,11 +884,70 @@ def _separate_one(
                 inst_bytes = _ffmpeg_encode_mp3_v0(
                     inst_path.read_bytes(), tmp_path / "instrumental-v0.mp3"
                 )
-            _assert_lossy_stems_not_larger_than_source(
+            encode_s_rung1 = round(time.perf_counter() - rung1_t0, 2)
+
+            # Two-rung ladder: rung 1 (above) has no hard ceiling relative to
+            # THIS source (V0 VBR targets quality, not a cap; native 320 CBR
+            # can fractionally exceed a source only fractionally above 320
+            # kbps). Re-encode ONLY the part(s) that actually exceed, once,
+            # at the nearest standard CBR <= floor(source_kbps) -- see
+            # apps/stems/stem_size_policy.py's mp3_rung2_cbr_kbps. The
+            # rung-1 file on disk (flac for V0, mp3 for native) is the input
+            # either way, so this never re-runs the model.
+            rung2_t0 = time.perf_counter()
+            part_bytes = {"vocals": vocals_bytes, "instrumental": inst_bytes}
+            part_rung1_path = {"vocals": vocals_path, "instrumental": inst_path}
+            mp3_rung = {"vocals": 1, "instrumental": 1}
+            mp3_settings_by_part = {"vocals": mp3_settings, "instrumental": mp3_settings}
+            for part_name in ("vocals", "instrumental"):
+                if not _lossy_stem_exceeds_source(
+                    source_bytes=source_bytes,
+                    part_bytes=len(part_bytes[part_name]),
+                    codec="mp3",
+                ):
+                    continue
+                rung2_cbr = _mp3_rung2_cbr_kbps(source_kbps)
+                part_bytes[part_name] = _ffmpeg_encode_mp3_cbr(
+                    part_rung1_path[part_name].read_bytes(),
+                    tmp_path / f"{part_name}-rung2.mp3",
+                    rung2_cbr,
+                )
+                mp3_rung[part_name] = 2
+                mp3_settings_by_part[part_name] = f"lame_{rung2_cbr}kbps_cbr"
+            encode_s_rung2 = round(time.perf_counter() - rung2_t0, 2)
+            vocals_bytes, inst_bytes = part_bytes["vocals"], part_bytes["instrumental"]
+            mp3_settings = mp3_settings_by_part
+
+            # Size-vs-source is a KPI/target, not a hard gate: this never
+            # raises for a genuine overage (only for a non-positive
+            # source_bytes, which cannot happen here -- already validated >0
+            # by _effective_bitrate_kbps above). A part that still misses
+            # budget at this terminal rung is KEPT, not discarded; the miss
+            # is recorded in size_ratio/size_warnings for meta.json and the
+            # status subcommand instead of aborting the track.
+            violations = _assert_lossy_stems_not_larger_than_source(
                 source_bytes=source_bytes,
                 part_sizes={"vocals": len(vocals_bytes), "instrumental": len(inst_bytes)},
                 codec="mp3",
             )
+            size_ratio = {
+                "vocals": round(
+                    _lossy_stem_size_ratio(source_bytes=source_bytes, part_bytes=len(vocals_bytes)),
+                    4,
+                ),
+                "instrumental": round(
+                    _lossy_stem_size_ratio(
+                        source_bytes=source_bytes, part_bytes=len(inst_bytes)
+                    ),
+                    4,
+                ),
+            }
+            size_warnings = [
+                f"{v['name']} stem is {(v['ratio'] - 1) * 100:.1f}% over source "
+                f"size ({v['part_bytes']}B vs {v['source_bytes']}B source, "
+                f"rung {mp3_rung[v['name']]})"
+                for v in violations
+            ]
 
         encode_s = time.perf_counter() - encode0
         return {
@@ -667,6 +955,9 @@ def _separate_one(
             "instrumental": inst_bytes,
             "output_codec": output_codec,
             "mp3_settings": mp3_settings,
+            "mp3_rung": mp3_rung,
+            "size_ratio": size_ratio,
+            "warnings": size_warnings,
             "source_subtype": source_subtype,
             "source_samplerate": source_samplerate,
             "source_kbps": round(source_kbps, 2),
@@ -676,6 +967,8 @@ def _separate_one(
                 "load_s": round(load_s, 2),
                 "separate_s": round(separate_s, 2),
                 "encode_s": round(encode_s, 2),
+                "encode_s_rung1": encode_s_rung1,
+                "encode_s_rung2": encode_s_rung2,
             },
         }
 
@@ -710,7 +1003,10 @@ def separate_track(
     the mirror block above `separate_track`'s definition, and scripts/
     roformer_progress.py for the reader): one `loading` write on entry, one
     `done`/`failed` write on exit, plus `separating`/`encoding` from inside
-    _separate_one at the phase boundaries only it can see.
+    _separate_one at the phase boundaries only it can see. The `done` write
+    also carries `size_ratio_max` (None for a flac/control track) so
+    roformer_progress.py's status warnings can flag "n stems over source
+    size" without pulling meta.json off the Volume.
     """
     import torch
 
@@ -750,6 +1046,7 @@ def separate_track(
     vol_dir.mkdir(parents=True, exist_ok=True)
     (vol_dir / f"vocals.{ext}").write_bytes(result["vocals"])
     (vol_dir / f"instrumental.{ext}").write_bytes(result["instrumental"])
+    gpu_s = round(time.perf_counter() - entered, 2)  # includes any rung-2 re-encode time
     meta = {
         "config_tag": config_tag,
         "checkpoint": checkpoint,
@@ -764,6 +1061,9 @@ def separate_track(
         "source_name": name,
         "output_codec": result["output_codec"],
         "mp3_settings": result["mp3_settings"],
+        "mp3_rung": result["mp3_rung"],
+        "size_ratio": result["size_ratio"],
+        "warnings": result["warnings"],
         "force_format": force_format,
         "source_subtype": result["source_subtype"],
         "source_samplerate": result["source_samplerate"],
@@ -772,11 +1072,14 @@ def separate_track(
         "vocals_bytes": len(result["vocals"]),
         "instrumental_bytes": len(result["instrumental"]),
         "timings": result["timings"],
+        "gpu_s": gpu_s,
+        "usd": round(gpu_s * _GPU_USD_PER_S[GPU_KIND], 6),
         "runner_sha256": _runner_sha256(),
     }
     (vol_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     volume.commit()
 
+    size_ratio_max = max(result["size_ratio"].values()) if result["size_ratio"] else None
     _progress_track(
         progress, slug, "done",
         gpu_id=gpu_id,
@@ -784,13 +1087,14 @@ def separate_track(
         sep_s=result["timings"]["separate_s"],
         encode_s=result["timings"]["encode_s"],
         duration_s=result["duration_s"],
+        size_ratio_max=size_ratio_max,
     )
     return {
         "slug": slug,
         "vocals": result["vocals"],
         "instrumental": result["instrumental"],
         "meta": meta,
-        "gpu_s": round(time.perf_counter() - entered, 2),
+        "gpu_s": gpu_s,
     }
 
 
@@ -1103,10 +1407,13 @@ def cmd_separate(args: argparse.Namespace) -> None:
         (out_dir / f"{path.stem}-meta.json").write_text(
             json.dumps(result["meta"], indent=2) + "\n"
         )
+        warn_suffix = f" WARN={result['meta']['warnings']}" if result["meta"]["warnings"] else ""
         print(
             f"[OK] {path.name} -> {vocals_path.name}, {inst_path.name} "
             f"(codec={ext}, mp3_settings={result['meta']['mp3_settings']}, "
-            f"source_kbps={result['meta']['source_kbps']})",
+            f"mp3_rung={result['meta']['mp3_rung']}, "
+            f"source_kbps={result['meta']['source_kbps']}, "
+            f"gpu_s={result['meta']['gpu_s']}, usd={result['meta']['usd']}){warn_suffix}",
             flush=True,
         )
 
@@ -1139,8 +1446,8 @@ def cmd_pull(args: argparse.Namespace) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
-    """One JSON object on stdout: counts, ETA, cost, and the three
-    efficiency warnings, read live from the run's modal.Dict -- see
+    """One JSON object on stdout: counts, ETA, cost, and the efficiency +
+    size-target warnings, read live from the run's modal.Dict -- see
     scripts/roformer_progress.py for the reducer/stats this prints
     unmodified. Exits 0 whenever the run_id is readable (including a
     finished or a not-yet-started run); fails fast (nonzero exit, via
