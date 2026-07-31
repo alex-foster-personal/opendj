@@ -1,0 +1,64 @@
+{
+  "runs": [
+    {
+      "config_tag": "mel-band-roformer-ov8-seg256",
+      "per_track_sisdr": {
+        "al-james-schoolboy-facination": 9.106
+      },
+      "median": 9.106,
+      "wall_s": 187.9,
+      "gpu_s": 31.8,
+      "accepted": true,
+      "note": "MDXC overlap (8) is an integer window-overlap count, not the demucs 0..1 fraction -- 'overlap 0.25 equivalent' from the task brief is honoured as this architecture's own library default, not a numeric conversion. TTA is unsupported for MDXC/Roformer in audio-separator (VR-arch only), so tta=false is a hard constraint here, not a choice. 'accepted' applies the plan's GOAL threshold (median paired delta >= +1.0 dB vs htdemucs_ft), not the +0.2 dB 'accept a lever change vs the previous round' rule -- there is no previous roformer round yet. PARTIAL RUN: 1/12 tracks (smoke test).",
+      "checkpoint": "model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt",
+      "overlap": 8,
+      "segment_size": 256,
+      "override_model_segment_size": false,
+      "pitch_shift": 0,
+      "tta": false,
+      "gpu_kind": "H100",
+      "track_count": 1,
+      "htdemucs_ft_per_track_delta": {
+        "al-james-schoolboy-facination": 2.056
+      },
+      "htdemucs_ft_median_paired_delta": 2.056,
+      "timestamp": "2026-07-31T04:33:23.809850+00:00",
+      "runner_sha256": "1dc1f893a2179b6ab5f57cc25f08fb065ab574a86eae210653de9772310b6381"
+    },
+    {
+      "config_tag": "mel-band-roformer-ov8-seg256",
+      "per_track_sisdr": {
+        "al-james-schoolboy-facination": 9.106,
+        "zeno-signs": 9.934,
+        "timboz-pony": 4.776,
+        "sambasevam-shanmugam-kaathaadi": 20.585,
+        "enda-reilly-cur-an-long-ag-seol": 17.129,
+        "cristina-vane-so-easy": 12.479
+      },
+      "median": 11.206,
+      "wall_s": 65.5,
+      "gpu_s": 179.8,
+      "accepted": true,
+      "note": "MDXC overlap (8) is an integer window-overlap count, not the demucs 0..1 fraction -- 'overlap 0.25 equivalent' from the task brief is honoured as this architecture's own library default, not a numeric conversion. TTA is unsupported for MDXC/Roformer in audio-separator (VR-arch only), so tta=false is a hard constraint here, not a choice. 'accepted' applies the plan's GOAL threshold (median paired delta >= +1.0 dB vs htdemucs_ft), not the +0.2 dB 'accept a lever change vs the previous round' rule -- there is no previous roformer round yet.",
+      "checkpoint": "model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt",
+      "overlap": 8,
+      "segment_size": 256,
+      "override_model_segment_size": false,
+      "pitch_shift": 0,
+      "tta": false,
+      "gpu_kind": "H100",
+      "track_count": 6,
+      "htdemucs_ft_per_track_delta": {
+        "al-james-schoolboy-facination": 2.056,
+        "zeno-signs": 0.974,
+        "timboz-pony": 0.586,
+        "sambasevam-shanmugam-kaathaadi": 4.115,
+        "enda-reilly-cur-an-long-ag-seol": 3.689,
+        "cristina-vane-so-easy": 2.399
+      },
+      "htdemucs_ft_median_paired_delta": 2.228,
+      "timestamp": "2026-07-31T04:36:15.560017+00:00",
+      "runner_sha256": "2f25d7c7718bd3ff92b9d5f0e9af8796dd487936445f99bb38b8b679bea7813f"
+    }
+  ]
+}
