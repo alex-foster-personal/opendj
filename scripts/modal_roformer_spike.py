@@ -40,12 +40,39 @@ default mel-band vocal checkpoint". Only this checkpoint is baked into the
 image for now (BAKED_CHECKPOINTS); add rungs there and rebuild for
 alternates (Kim/unwa lineage, BS-RoFormer) in a later iteration round.
 
-Output policy (house rule, apps/stems/stem_size_policy.py's sibling rule for
-this spike): 2-stem FLAC at the SOURCE bit depth. audio-separator already
-matches output bit depth to input by default (checked locally: a 16-bit PCM
-input produced 16-bit PCM output); ``_separate_one`` asserts this in-container
-rather than trusting it, so a library upgrade that changes the default fails
-the run instead of silently writing oversized stems.
+Output policy (apps/stems/stem_size_policy.py is the source of truth; this
+runner MIRRORS the small pure-Python decision functions with a leading
+underscore because the GPU container has no ``apps`` package -- see the
+mirror block below and modal_vocal_farm.py's identical pattern for its own
+Opus policy):
+  * source is lossless (flac/wav/aif/aiff) -> 2-stem FLAC at the SOURCE bit
+    depth. audio-separator already matches output bit depth to input by
+    default (checked locally: a 16-bit PCM input produced 16-bit PCM
+    output); ``_separate_one`` asserts this in-container rather than
+    trusting it, so a library upgrade that changes the default fails the
+    run instead of silently writing oversized stems.
+  * source is lossy (mp3/m4a) -> 2-stem MP3, in-container, bitrate <= the
+    probed source bitrate: LAME 320 CBR when the source itself is >= 320
+    kbps (320 CBR then literally cannot exceed it), else LAME V0 VBR.
+    audio-separator's own ``output_format="MP3"`` is used NATIVELY for the
+    320 CBR rung (its pydub writer takes a bitrate directly, one encode
+    pass, no ffmpeg post-step needed). V0 needs one extra in-container
+    ffmpeg pass on a FLAC intermediate, because audio-separator's MP3
+    writer only ever takes a fixed ``-b:a`` bitrate -- checked directly
+    against its ``write_audio_pydub`` before writing this branch, there is
+    no way to hand it ffmpeg's qscale VBR flag. Either way this never
+    leaves the container, so no local compression pass is ever needed
+    again. The actual encoded bytes are still hard-gated against the
+    source file size (mirrored ``_assert_lossy_stems_not_larger_than_
+    source``), so a bad bitrate guess fails the track loudly rather than
+    shipping an oversized stem.
+  * ``--force-format {flac,mp3}`` overrides the source-driven decision
+    outright (explicit beats implicit) and skips the extension check.
+  * an unrecognised source extension (with no ``--force-format``) fails
+    fast -- for ``separate`` this raises locally, before any GPU spend; see
+    ``cmd_separate``.
+  * the chosen codec, mp3 settings (when applicable), and the probed source
+    bitrate are all recorded in meta.json.
 
 Every run persists to the ``roformer-spike`` Modal Volume (durable, pullable
 independently of this Mac) AND writes into ``--out-dir`` locally in the same
@@ -70,15 +97,30 @@ Requirements (mini-PRD):
   ✔︎ ✅ --tta refuses outright (see WHAT audio-separator DOES NOT GIVE UP above)
     rather than running without augmentation and reporting it as requested.
     [if] --tta is passed [then ⛔️] SystemExit naming why, before any GPU spend
-  ✔︎ ✅ output bit depth never exceeds the source's.
+  ✔︎ ✅ output bit depth never exceeds the source's (lossless-source branch
+    only -- an mp3 output has no PCM bit depth to compare).
     [if] a 16-bit source produces a wider-than-16-bit stem [then ⛔️] raise
     in-container, before the bytes cross the wire
+  ✔︎ ✅ output codec is decided per source format, in-container, no local
+    compression pass ever needed again.
+    [if] source is .flac/.wav/.aif/.aiff [then] flac at source bit depth
+    [if] source is .mp3/.m4a [then] mp3 at <= source bitrate
+    [if] --force-format is passed [then] it wins outright over the source ext
+  ✔︎ ✅ mp3 stems never exceed the source file's bytes.
+    [if] an mp3 stem > source bytes [then ⛔️] raise (mirrored stem_size_policy gate)
+  ✔︎ ✅ unknown source extensions fail fast.
+    [if] source ext is neither known-lossless nor known-lossy, and no
+      --force-format [then ⛔️] raise, for ``separate`` before any GPU spend
 
 Run:
   uv run --with modal python scripts/modal_roformer_spike.py bench --limit 1
   uv run --with modal python scripts/modal_roformer_spike.py bench
   uv run --with modal python scripts/modal_roformer_spike.py separate \
       --input some.flac --out-dir /tmp/out
+  uv run --with modal python scripts/modal_roformer_spike.py separate \
+      --input some.mp3 --out-dir /tmp/out  # emits mp3 in-container, no local pass
+  uv run --with modal python scripts/modal_roformer_spike.py separate \
+      --input some.mp3 --out-dir /tmp/out --force-format flac  # override
   uv run --with modal python scripts/modal_roformer_spike.py pull \
       --config-tag melband-viperx1143-ov8-seg256 --out-dir /tmp/pulled
 
@@ -155,6 +197,98 @@ MODEL_CACHE_DIR: str = "/root/.cache/audio-separator"
 VOLUME_NAME: str = "roformer-spike"
 VOLUME_MOUNT_PATH: str = "/vol"
 
+# MIRRORED from apps/stems/stem_size_policy.py -- the GPU container has no
+# ``apps`` package (same reason scripts/modal_vocal_farm.py mirrors its own
+# Opus policy). _assert_stem_size_policy_mirror_matches() fails locally if
+# these constants/functions drift from the source of truth.
+_LOSSLESS_SOURCE_EXTS: frozenset[str] = frozenset({".flac", ".wav", ".aif", ".aiff"})
+_LOSSY_SOURCE_EXTS: frozenset[str] = frozenset({".mp3", ".m4a"})
+_MP3_CBR_KBPS: int = 320
+_LOSSY_SIZE_GATED: frozenset[str] = frozenset({"opus", "mp3"})
+_CONTROL_CODECS: frozenset[str] = frozenset({"flac", "wav"})
+
+
+class _UnknownSourceFormatError(ValueError):
+    pass
+
+
+def _effective_bitrate_kbps(size_bytes: int, duration_s: float) -> float:
+    if size_bytes <= 0:
+        raise ValueError(f"size_bytes must be positive, got {size_bytes}")
+    if duration_s <= 0:
+        raise ValueError(f"duration_s must be positive, got {duration_s}")
+    return size_bytes * 8 / duration_s / 1000
+
+
+def _stem_output_codec_for_source_ext(source_ext: str) -> str:
+    ext = source_ext.lower()
+    if ext in _LOSSLESS_SOURCE_EXTS:
+        return "flac"
+    if ext in _LOSSY_SOURCE_EXTS:
+        return "mp3"
+    raise _UnknownSourceFormatError(
+        f"no output-format policy for source extension {source_ext!r}; known "
+        f"lossless={sorted(_LOSSLESS_SOURCE_EXTS)}, lossy={sorted(_LOSSY_SOURCE_EXTS)}"
+    )
+
+
+def _mp3_lame_settings_for_source_kbps(source_kbps: float) -> str:
+    if source_kbps <= 0:
+        raise ValueError(f"source_kbps must be positive, got {source_kbps}")
+    return "lame_320kbps_cbr" if source_kbps >= _MP3_CBR_KBPS else "lame_v0_vbr"
+
+
+def _assert_lossy_stems_not_larger_than_source(
+    *, source_bytes: int, part_sizes: dict[str, int], codec: str
+) -> None:
+    if codec in _CONTROL_CODECS or codec not in _LOSSY_SIZE_GATED:
+        return
+    if source_bytes <= 0:
+        raise RuntimeError(f"source_bytes must be positive, got {source_bytes}")
+    offenders = [f"{n}={s}B" for n, s in part_sizes.items() if s > source_bytes]
+    if offenders:
+        raise RuntimeError(
+            f"lossy stem part(s) exceed source ({source_bytes}B) under codec "
+            f"{codec!r}: {', '.join(offenders)}."
+        )
+
+
+def _assert_stem_size_policy_mirror_matches() -> None:
+    """Keep this runner's mirrored format policy identical to
+    apps.stems.stem_size_policy (source of truth; GPU container has no
+    ``apps`` package, hence the mirror block above)."""
+    from apps.stems import stem_size_policy as pol
+
+    if (
+        pol.LOSSLESS_SOURCE_EXTS != _LOSSLESS_SOURCE_EXTS
+        or pol.LOSSY_SOURCE_EXTS != _LOSSY_SOURCE_EXTS
+        or pol.MP3_CBR_KBPS != _MP3_CBR_KBPS
+        or pol.LOSSY_SIZE_GATED != _LOSSY_SIZE_GATED
+        or pol.CONTROL_CODECS != _CONTROL_CODECS
+    ):
+        raise SystemExit(
+            "error: stem_size_policy constants drifted from the roformer-spike mirror"
+        )
+    for ext, want in (
+        (".flac", "flac"),
+        (".wav", "flac"),
+        (".aiff", "flac"),
+        (".aif", "flac"),
+        (".mp3", "mp3"),
+        (".m4a", "mp3"),
+    ):
+        mirrored = _stem_output_codec_for_source_ext(ext)
+        policy = pol.stem_output_codec_for_source_ext(ext)
+        if mirrored != policy or mirrored != want:
+            raise SystemExit(
+                f"error: stem_output_codec_for_source_ext({ext!r}) drifted -- "
+                f"policy={policy!r} mirror={mirrored!r} want={want!r}"
+            )
+    for kbps in (128.0, 245.0, 256.0, 319.99, 320.0, 500.0):
+        if pol.mp3_lame_settings_for_source_kbps(kbps) != _mp3_lame_settings_for_source_kbps(kbps):
+            raise SystemExit(f"error: mp3_lame_settings_for_source_kbps({kbps}) drifted")
+
+
 # htdemucs_ft per-track SI-SDR (dB), copied verbatim from the 6-track table in
 # scripts/bench/MODEL-SHOOTOUT.md (Thu 24 Jul 2026 run, GTX 1660, overlap
 # 0.25, shifts 0). Keyed by shootout_spec.Track.slug so a paired delta needs
@@ -217,6 +351,76 @@ volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 # ----- remote GPU function ---------------------------------------------------
 
 
+def _ffprobe_duration_s(path: Path) -> float:
+    """Codec-agnostic duration probe (works for mp3 as well as flac/wav; a raw
+    MP3 is not guaranteed readable by ``soundfile`` in this image, but ffmpeg
+    -- and therefore ffprobe -- is always here via the image's apt_install)."""
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise RuntimeError(f"ffprobe failed to read duration for {path}: {proc.stderr.strip()}")
+    return float(proc.stdout.strip())
+
+
+def _ffmpeg_encode_mp3_v0(flac_bytes: bytes, out_path: Path) -> bytes:
+    """LAME V0 VBR encode from an in-memory FLAC intermediate.
+
+    ``out_path`` MUST be a real (seekable) file, not a pipe. Checked directly
+    against ffmpeg's own behaviour before writing this: a VBR mp3 muxed to
+    ``pipe:1`` comes out with no Xing/VBR header, because ffmpeg writes that
+    header as a placeholder up front and seeks back to patch in the real
+    frame count once encoding finishes -- impossible on a non-seekable pipe.
+    Without it, fast/no-decode duration readers (ffprobe's own
+    ``format=duration``, the webui player, mutagen) read the FIRST frame's
+    bitrate as if it were constant and report a wildly wrong duration (a
+    226 s track came back reporting 953 s), even though the audio itself
+    decodes perfectly. Only reached when the source can't absorb 320 CBR
+    (see _mp3_lame_settings_for_source_kbps) -- audio-separator's own MP3
+    writer (pydub) only ever takes a fixed ``-b:a`` bitrate, not qscale VBR,
+    so this is the one ffmpeg post-step the module docstring allows, still
+    fully in-container (input is piped via stdin, which is unaffected --
+    only the OUTPUT needs to be seekable).
+    """
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            "pipe:0",
+            "-codec:a",
+            "libmp3lame",
+            "-qscale:a",
+            "0",
+            str(out_path),
+        ],
+        input=flac_bytes,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not out_path.is_file():
+        raise RuntimeError(
+            f"ffmpeg mp3 V0 encode failed rc={proc.returncode}: "
+            f"{proc.stderr.decode(errors='replace')[-500:]}"
+        )
+    return out_path.read_bytes()
+
+
 def _separate_one(
     audio_bytes: bytes,
     name: str,
@@ -225,27 +429,54 @@ def _separate_one(
     segment_size: int,
     override_segment_size: bool,
     pitch_shift: int,
+    force_format: str | None,
 ) -> dict[str, Any]:
     """One track, both stems, IN THE CONTAINER. Raises on anything unexpected;
     the caller converts a raise into a per-track failure so one bad file
     cannot abort a small batch (mirrors modal_vocal_farm.py's per-track
-    isolation, at 1/6th the scale this spike actually needs)."""
+    isolation, at 1/6th the scale this spike actually needs).
+
+    Output format is decided per-track here (see the module docstring's
+    Output policy section): lossless source -> flac at source bit depth
+    (unchanged); lossy source -> mp3 at <= the probed source bitrate,
+    written natively by audio-separator for the 320 CBR rung, or via one
+    in-container ffmpeg pass for V0. ``force_format`` overrides the
+    source-driven decision outright.
+    """
     import tempfile
 
     import soundfile as sf
     from audio_separator.separator import Separator
 
     suffix = Path(name).suffix or ".flac"
+    output_codec = force_format or _stem_output_codec_for_source_ext(suffix)
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         in_path = tmp_path / f"input{suffix}"
         in_path.write_bytes(audio_bytes)
-        source_info = sf.info(str(in_path))
+
+        source_bytes = len(audio_bytes)
+        duration_s = _ffprobe_duration_s(in_path)
+        source_kbps = _effective_bitrate_kbps(source_bytes, duration_s)
+
+        mp3_settings: str | None = None
+        if output_codec == "mp3":
+            mp3_settings = _mp3_lame_settings_for_source_kbps(source_kbps)
+
+        # 320 CBR is native (audio-separator's own MP3 writer, one pass);
+        # V0 needs a lossless FLAC intermediate + the ffmpeg pass below, so
+        # ask audio-separator for FLAC in that case (same as the lossless
+        # source branch).
+        native_mp3 = output_codec == "mp3" and mp3_settings == "lame_320kbps_cbr"
+        sep_output_format = "MP3" if native_mp3 else "FLAC"
+        sep_output_bitrate = f"{_MP3_CBR_KBPS}k" if native_mp3 else None
 
         sep = Separator(
             model_file_dir=MODEL_CACHE_DIR,
             output_dir=str(tmp_path),
-            output_format="FLAC",
+            output_format=sep_output_format,
+            output_bitrate=sep_output_bitrate,
             mdxc_params={
                 "segment_size": segment_size,
                 "override_model_segment_size": override_segment_size,
@@ -271,22 +502,50 @@ def _separate_one(
         vocals_path = tmp_path / vocals_name
         inst_path = tmp_path / inst_name
 
-        for part_path in (vocals_path, inst_path):
-            out_info = sf.info(str(part_path))
-            if out_info.subtype != source_info.subtype:
-                raise RuntimeError(
-                    f"bit-depth policy violated for {name}: source subtype "
-                    f"{source_info.subtype!r}, {part_path.name} is "
-                    f"{out_info.subtype!r}. Separation adds no information, "
-                    "so output must never carry more bits than the source "
-                    "(apps/stems/stem_size_policy.py's rule for this spike)."
+        if output_codec == "flac":
+            source_info = sf.info(str(in_path))
+            for part_path in (vocals_path, inst_path):
+                out_info = sf.info(str(part_path))
+                if out_info.subtype != source_info.subtype:
+                    raise RuntimeError(
+                        f"bit-depth policy violated for {name}: source subtype "
+                        f"{source_info.subtype!r}, {part_path.name} is "
+                        f"{out_info.subtype!r}. Separation adds no information, "
+                        "so output must never carry more bits than the source "
+                        "(apps/stems/stem_size_policy.py's rule for this spike)."
+                    )
+            vocals_bytes = vocals_path.read_bytes()
+            inst_bytes = inst_path.read_bytes()
+            source_subtype: str | None = source_info.subtype
+            source_samplerate: int | None = source_info.samplerate
+        else:  # mp3 -- no PCM bit depth to compare against
+            source_subtype = None
+            source_samplerate = None
+            if native_mp3:
+                vocals_bytes = vocals_path.read_bytes()
+                inst_bytes = inst_path.read_bytes()
+            else:  # lame_v0_vbr: FLAC intermediate -> ffmpeg VBR pass
+                vocals_bytes = _ffmpeg_encode_mp3_v0(
+                    vocals_path.read_bytes(), tmp_path / "vocals-v0.mp3"
                 )
+                inst_bytes = _ffmpeg_encode_mp3_v0(
+                    inst_path.read_bytes(), tmp_path / "instrumental-v0.mp3"
+                )
+            _assert_lossy_stems_not_larger_than_source(
+                source_bytes=source_bytes,
+                part_sizes={"vocals": len(vocals_bytes), "instrumental": len(inst_bytes)},
+                codec="mp3",
+            )
 
         return {
-            "vocals": vocals_path.read_bytes(),
-            "instrumental": inst_path.read_bytes(),
-            "source_subtype": source_info.subtype,
-            "source_samplerate": source_info.samplerate,
+            "vocals": vocals_bytes,
+            "instrumental": inst_bytes,
+            "output_codec": output_codec,
+            "mp3_settings": mp3_settings,
+            "source_subtype": source_subtype,
+            "source_samplerate": source_samplerate,
+            "source_kbps": round(source_kbps, 2),
+            "source_bytes": source_bytes,
             "timings": {"load_s": round(load_s, 2), "separate_s": round(separate_s, 2)},
         }
 
@@ -308,6 +567,7 @@ def separate_track(
     pitch_shift: int,
     config_tag: str,
     source_path: str,
+    force_format: str | None,
 ) -> dict[str, Any]:
     """One track: separate on an H100, persist to the Volume, return bytes.
 
@@ -322,7 +582,14 @@ def separate_track(
         raise RuntimeError("cuda unavailable inside the H100 container")
     try:
         result = _separate_one(
-            audio_bytes, name, checkpoint, overlap, segment_size, override_segment_size, pitch_shift
+            audio_bytes,
+            name,
+            checkpoint,
+            overlap,
+            segment_size,
+            override_segment_size,
+            pitch_shift,
+            force_format,
         )
     except Exception as exc:  # per-track isolation is the whole point
         return {
@@ -331,10 +598,11 @@ def separate_track(
             "gpu_s": round(time.perf_counter() - entered, 2),
         }
 
+    ext = result["output_codec"]  # "flac" or "mp3" -- decided in _separate_one
     vol_dir = Path(VOLUME_MOUNT_PATH) / config_tag / slug
     vol_dir.mkdir(parents=True, exist_ok=True)
-    (vol_dir / "vocals.flac").write_bytes(result["vocals"])
-    (vol_dir / "instrumental.flac").write_bytes(result["instrumental"])
+    (vol_dir / f"vocals.{ext}").write_bytes(result["vocals"])
+    (vol_dir / f"instrumental.{ext}").write_bytes(result["instrumental"])
     meta = {
         "config_tag": config_tag,
         "checkpoint": checkpoint,
@@ -347,8 +615,13 @@ def separate_track(
         "slug": slug,
         "source_path": source_path,
         "source_name": name,
+        "output_codec": result["output_codec"],
+        "mp3_settings": result["mp3_settings"],
+        "force_format": force_format,
         "source_subtype": result["source_subtype"],
         "source_samplerate": result["source_samplerate"],
+        "source_kbps": result["source_kbps"],
+        "source_bytes": result["source_bytes"],
         "vocals_bytes": len(result["vocals"]),
         "instrumental_bytes": len(result["instrumental"]),
         "timings": result["timings"],
@@ -377,6 +650,7 @@ class RunConfig:
     override_segment_size: bool
     pitch_shift: int
     config_tag: str
+    force_format: str | None
 
 
 def _resolve_config(args: argparse.Namespace) -> RunConfig:
@@ -411,6 +685,7 @@ def _resolve_config(args: argparse.Namespace) -> RunConfig:
         override_segment_size=args.override_segment_size,
         pitch_shift=args.pitch_shift,
         config_tag=args.config_tag or default_tag,
+        force_format=args.force_format,
     )
 
 
@@ -505,6 +780,7 @@ def cmd_bench(args: argparse.Namespace) -> None:
                         config.pitch_shift,
                         config.config_tag,
                         str(mix_path),
+                        config.force_format,
                     )
                     for track, mix_path, _ in jobs
                 ]
@@ -522,8 +798,9 @@ def cmd_bench(args: argparse.Namespace) -> None:
             failures[track.slug] = result["error"]
             print(f"[FAIL] {track.title}: {result['error']}", flush=True)
             continue
-        vocals_path = out_dir / f"{track.slug}-{config.config_tag}.flac"
-        inst_path = out_dir / f"{track.slug}-{config.config_tag}.inst.flac"
+        ext = result["meta"]["output_codec"]  # "flac" unless --force-format mp3
+        vocals_path = out_dir / f"{track.slug}-{config.config_tag}.{ext}"
+        inst_path = out_dir / f"{track.slug}-{config.config_tag}.inst.{ext}"
         vocals_path.write_bytes(result["vocals"])
         inst_path.write_bytes(result["instrumental"])
         metrics = _score_estimate(mix_path, truth_path, vocals_path)
@@ -599,6 +876,10 @@ def cmd_bench(args: argparse.Namespace) -> None:
 
 
 def cmd_separate(args: argparse.Namespace) -> None:
+    # Local-only import: apps.stems is not on the GPU container's path (no
+    # ``apps`` package there), but cmd_separate always runs on the Mac.
+    from apps.stems import stem_size_policy as pol
+
     config = _resolve_config(args)
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -606,6 +887,10 @@ def cmd_separate(args: argparse.Namespace) -> None:
     for path in inputs:
         if not path.is_file():
             raise SystemExit(f"error: input file does not exist: {path}")
+        if config.force_format is None:
+            # Fail fast on an unrecognised source extension BEFORE any GPU
+            # spend -- --force-format bypasses this outright.
+            pol.stem_output_codec_for_source_ext(path.suffix)
 
     with app.run():
         remote_results = list(
@@ -622,6 +907,7 @@ def cmd_separate(args: argparse.Namespace) -> None:
                         config.pitch_shift,
                         config.config_tag,
                         str(path),
+                        config.force_format,
                     )
                     for path in inputs
                 ]
@@ -632,14 +918,20 @@ def cmd_separate(args: argparse.Namespace) -> None:
         if "error" in result:
             print(f"[FAIL] {path.name}: {result['error']}", flush=True)
             continue
-        vocals_path = out_dir / f"{path.stem}-vocals.flac"
-        inst_path = out_dir / f"{path.stem}-instrumental.flac"
+        ext = result["meta"]["output_codec"]  # "flac" or "mp3", per-track decision
+        vocals_path = out_dir / f"{path.stem}-vocals.{ext}"
+        inst_path = out_dir / f"{path.stem}-instrumental.{ext}"
         vocals_path.write_bytes(result["vocals"])
         inst_path.write_bytes(result["instrumental"])
         (out_dir / f"{path.stem}-meta.json").write_text(
             json.dumps(result["meta"], indent=2) + "\n"
         )
-        print(f"[OK] {path.name} -> {vocals_path.name}, {inst_path.name}", flush=True)
+        print(
+            f"[OK] {path.name} -> {vocals_path.name}, {inst_path.name} "
+            f"(codec={ext}, mp3_settings={result['meta']['mp3_settings']}, "
+            f"source_kbps={result['meta']['source_kbps']})",
+            flush=True,
+        )
 
 
 # ----- CLI: pull (re-fetch from the Volume without spending GPU time) -------
@@ -681,9 +973,19 @@ def _add_config_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="defaults to a name derived from checkpoint+overlap+segment_size",
     )
+    parser.add_argument(
+        "--force-format",
+        choices=("flac", "mp3"),
+        default=None,
+        help=(
+            "override the source-driven flac/mp3 output decision outright "
+            "(explicit beats implicit); default: decide per source extension"
+        ),
+    )
 
 
 def main() -> None:
+    _assert_stem_size_policy_mirror_matches()
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
