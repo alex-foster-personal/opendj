@@ -119,7 +119,26 @@ AUDIO_SEPARATOR_VERSION: str = "0.44.5"  # pinned to what was probed locally
 # --list_models). Only DEFAULT_CHECKPOINT is baked into the image; add more
 # here (and to BAKED_CHECKPOINTS) for a later alternate-checkpoint round.
 DEFAULT_CHECKPOINT: str = "model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt"
-BAKED_CHECKPOINTS: tuple[str, ...] = (DEFAULT_CHECKPOINT,)
+
+# Round-1 alternates (roformer-spike-plan.md lever 1: checkpoint swap), added
+# for the iteration round. Chosen over the Kim/unwa mel-band lineage (SYHFT,
+# Big Beta 4/5e) because those all report stems=['vocals','other'] in
+# `--list_models`, so audio-separator would name their outputs "(Other)", not
+# "(Instrumental)" -- _separate_one's Vocals+Instrumental match would raise on
+# them, and patching that match is out of scope for a single-lever round.
+# BS-Roformer-Viperx-1296/1297 both report stems=['vocals','instrumental']
+# (verified via a local `--list_models` probe before baking), so they need no
+# runner change. Registry entries: "BS-Roformer-Viperx-1296" (self-reported
+# vocals SDR 12.10 dB, SIR 28.16 dB) and "BS-Roformer-Viperx-1297" (SDR 11.77,
+# SIR 27.40) -- both from the architecture's own MUSDB-style eval, not this
+# harness, so treated as a hint to try both, not a predicted outcome here.
+BS_ROFORMER_VIPERX_1296: str = "model_bs_roformer_ep_368_sdr_12.9628.ckpt"
+BS_ROFORMER_VIPERX_1297: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+BAKED_CHECKPOINTS: tuple[str, ...] = (
+    DEFAULT_CHECKPOINT,
+    BS_ROFORMER_VIPERX_1296,
+    BS_ROFORMER_VIPERX_1297,
+)
 
 # MDXC architecture defaults (audio-separator's own Separator() defaults,
 # not tuned here -- "default knobs" per the spike plan's step 3). MDXC
