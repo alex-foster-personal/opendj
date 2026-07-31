@@ -111,6 +111,22 @@ Requirements (mini-PRD):
   ✔︎ ✅ unknown source extensions fail fast.
     [if] source ext is neither known-lossless nor known-lossy, and no
       --force-format [then ⛔️] raise, for ``separate`` before any GPU spend
+  ✔︎ ✅ 🎯 every phase transition (queued/loading/separating/encoding/done/
+    failed) is one modal.Dict write, readable by `status` from a wholly
+    separate process while the run is mid-flight -- see scripts/roformer_
+    progress.py for the reducer and WHY modal.Dict, not farm_progress.
+    [if] a container is mid-separate() [then] status shows phase=separating
+    for that track, with no log file touched by either side
+  ✔︎ ✅ 🎯 `status --run-id X` fails fast on an unknown run-id.
+    [if] the named progress Dict does not exist [then ⛔️] SystemExit, never
+    an empty/zero snapshot
+  ✔︎ ✅ 🎯 the three efficiency warnings fire on exactly their stated
+    thresholds, nothing speculative.
+    [if] load_overhead_pct > 30 [then] the warm-container warning appears
+    [if] containers_live < min(10, remaining_tracks) and in_flight > 0
+      [then] the under-parallelised warning appears
+    [if] p95/p50 sep_s-per-audio-min ratio > 3 [then] the straggler warning
+      appears
 
 Run:
   uv run --with modal python scripts/modal_roformer_spike.py bench --limit 1
@@ -123,6 +139,9 @@ Run:
       --input some.mp3 --out-dir /tmp/out --force-format flac  # override
   uv run --with modal python scripts/modal_roformer_spike.py pull \
       --config-tag melband-viperx1143-ov8-seg256 --out-dir /tmp/pulled
+  uv run --with modal python scripts/modal_roformer_spike.py status \
+      --run-id <run-id>   # printed by bench/separate at launch; agent-native
+      # progress + efficiency JSON, safe to poll from any other process
 
 -Claude
 """
@@ -132,6 +151,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -289,6 +309,89 @@ def _assert_stem_size_policy_mirror_matches() -> None:
             raise SystemExit(f"error: mp3_lame_settings_for_source_kbps({kbps}) drifted")
 
 
+# ----- progress (agent-native status surface) --------------------------------
+# MIRRORED from scripts/roformer_progress.py (source of truth for the reader,
+# its stats math, and WHY this is a modal.Dict and not farm_progress's JSONL)
+# for the same reason apps.stems.stem_size_policy is mirrored above: the GPU
+# container only ever has THIS file's own source on disk, nothing else in
+# scripts/ is mounted into it. _assert_roformer_progress_mirror_matches()
+# fails locally if these drift from roformer_progress.py's copies.
+_PROGRESS_DICT_PREFIX: str = "mdt-roformer-progress"
+_PROGRESS_RUN_META_KEY: str = "__run__"
+_PROGRESS_PHASES: frozenset[str] = frozenset(
+    {"queued", "loading", "separating", "encoding", "done", "failed"}
+)
+
+
+def _progress_dict_name(run_id: str) -> str:
+    return f"{_PROGRESS_DICT_PREFIX}-{run_id}"
+
+
+def _progress_dict(run_id: str, *, create: bool) -> modal.Dict:
+    """One Dict handle, resolved ONCE per process (driver or container) and
+    reused across every emit for that process -- resolving by name is its
+    own RPC, so re-resolving per phase transition would double the traffic
+    a "cheap writes only" surface is supposed to avoid."""
+    return modal.Dict.from_name(_progress_dict_name(run_id), create_if_missing=create)
+
+
+def _progress_track(handle: modal.Dict, stable_id: str, phase: str, **fields: Any) -> None:
+    """One phase transition, one modal.Dict write. Whole-state PUT, not an
+    append: cheap, no read-modify-write, no polling, no timers -- safe
+    because only ONE writer ever touches a given key (the driver writes
+    `queued` before dispatch; after that, only the one container running
+    this stable_id writes it, through `done` or `failed`)."""
+    if phase not in _PROGRESS_PHASES:
+        raise ValueError(
+            f"unknown roformer progress phase {phase!r}; known: {sorted(_PROGRESS_PHASES)}"
+        )
+    if stable_id == _PROGRESS_RUN_META_KEY:
+        raise ValueError(f"stable_id collides with reserved key {_PROGRESS_RUN_META_KEY!r}")
+    handle[stable_id] = {"phase": phase, "ts": time.time(), **fields}
+
+
+def _progress_run_start(
+    handle: modal.Dict, run_id: str, *, total: int, config_tag: str, checkpoint: str,
+    max_containers: int, app_id: str,
+) -> None:
+    handle[_PROGRESS_RUN_META_KEY] = {
+        "run_id": run_id,
+        "total": total,
+        "config_tag": config_tag,
+        "checkpoint": checkpoint,
+        "max_containers": max_containers,
+        "app_id": app_id,
+        "started_ts": time.time(),
+    }
+
+
+def _assert_roformer_progress_mirror_matches() -> None:
+    """Keep this runner's mirrored progress constants identical to
+    scripts.roformer_progress (source of truth; the GPU container has no
+    access to that module, hence the mirror block above)."""
+    from scripts import roformer_progress as prog
+
+    if (
+        prog.PHASES != _PROGRESS_PHASES
+        or prog.RUN_META_KEY != _PROGRESS_RUN_META_KEY
+        or prog.dict_name("x") != _progress_dict_name("x")
+    ):
+        raise SystemExit("error: roformer_progress constants drifted from the mirror")
+
+
+def _resolve_run_id(explicit: str | None) -> str:
+    """New id unless one was passed explicitly (e.g. to poll a known name
+    with `status` while a run is still going). Generation itself is reused
+    verbatim from farm_progress -- a sortable timestamp+pid stamp is generic,
+    not vocal-farm-specific (see scripts/roformer_progress.py's module
+    docstring for what IS and is not reused from that file)."""
+    if explicit:
+        return explicit
+    from scripts import farm_progress  # local-only import, see comment above
+
+    return farm_progress.new_run_id()
+
+
 # htdemucs_ft per-track SI-SDR (dB), copied verbatim from the 6-track table in
 # scripts/bench/MODEL-SHOOTOUT.md (Thu 24 Jul 2026 run, GTX 1660, overlap
 # 0.25, shifts 0). Keyed by shootout_spec.Track.slug so a paired delta needs
@@ -430,6 +533,11 @@ def _separate_one(
     override_segment_size: bool,
     pitch_shift: int,
     force_format: str | None,
+    *,
+    progress: modal.Dict,
+    run_id: str,
+    slug: str,
+    gpu_id: str,
 ) -> dict[str, Any]:
     """One track, both stems, IN THE CONTAINER. Raises on anything unexpected;
     the caller converts a raise into a per-track failure so one bad file
@@ -442,6 +550,12 @@ def _separate_one(
     written natively by audio-separator for the 320 CBR rung, or via one
     in-container ffmpeg pass for V0. ``force_format`` overrides the
     source-driven decision outright.
+
+    Emits `separating` once load_model finishes (load_s now known) and
+    `encoding` once separate() finishes (sep_s now known) -- see the
+    progress module docstring for why these live inside this function
+    rather than only at the separate_track level: only this function knows
+    when each phase boundary actually happens.
     """
     import tempfile
 
@@ -488,10 +602,20 @@ def _separate_one(
         load0 = time.perf_counter()
         sep.load_model(checkpoint)
         load_s = time.perf_counter() - load0
+        _progress_track(
+            progress, slug, "separating",
+            gpu_id=gpu_id, load_s=round(load_s, 2), duration_s=round(duration_s, 2),
+        )
 
         sep0 = time.perf_counter()
         out_names = sep.separate(str(in_path))
         separate_s = time.perf_counter() - sep0
+        _progress_track(
+            progress, slug, "encoding",
+            gpu_id=gpu_id, load_s=round(load_s, 2), sep_s=round(separate_s, 2),
+            duration_s=round(duration_s, 2),
+        )
+        encode0 = time.perf_counter()
 
         vocals_name = next((n for n in out_names if "(Vocals)" in n), None)
         inst_name = next((n for n in out_names if "(Instrumental)" in n), None)
@@ -537,6 +661,7 @@ def _separate_one(
                 codec="mp3",
             )
 
+        encode_s = time.perf_counter() - encode0
         return {
             "vocals": vocals_bytes,
             "instrumental": inst_bytes,
@@ -546,7 +671,12 @@ def _separate_one(
             "source_samplerate": source_samplerate,
             "source_kbps": round(source_kbps, 2),
             "source_bytes": source_bytes,
-            "timings": {"load_s": round(load_s, 2), "separate_s": round(separate_s, 2)},
+            "duration_s": round(duration_s, 2),
+            "timings": {
+                "load_s": round(load_s, 2),
+                "separate_s": round(separate_s, 2),
+                "encode_s": round(encode_s, 2),
+            },
         }
 
 
@@ -568,18 +698,28 @@ def separate_track(
     config_tag: str,
     source_path: str,
     force_format: str | None,
+    run_id: str,
 ) -> dict[str, Any]:
     """One track: separate on an H100, persist to the Volume, return bytes.
 
     Returns ``{slug, error}`` instead of raising so one bad track cannot
     abort the whole batch -- the same per-track isolation modal_vocal_farm.py
     uses, kept even though this spike's batches are tiny.
+
+    Also the container-side half of the agent-native progress surface (see
+    the mirror block above `separate_track`'s definition, and scripts/
+    roformer_progress.py for the reader): one `loading` write on entry, one
+    `done`/`failed` write on exit, plus `separating`/`encoding` from inside
+    _separate_one at the phase boundaries only it can see.
     """
     import torch
 
     entered = time.perf_counter()
     if not torch.cuda.is_available():
         raise RuntimeError("cuda unavailable inside the H100 container")
+    gpu_id = os.environ.get("MODAL_TASK_ID", "unknown")
+    progress = _progress_dict(run_id, create=False)
+    _progress_track(progress, slug, "loading", gpu_id=gpu_id)
     try:
         result = _separate_one(
             audio_bytes,
@@ -590,8 +730,15 @@ def separate_track(
             override_segment_size,
             pitch_shift,
             force_format,
+            progress=progress,
+            run_id=run_id,
+            slug=slug,
+            gpu_id=gpu_id,
         )
     except Exception as exc:  # per-track isolation is the whole point
+        _progress_track(
+            progress, slug, "failed", gpu_id=gpu_id, error=f"{type(exc).__name__}: {exc}"
+        )
         return {
             "slug": slug,
             "error": f"{type(exc).__name__}: {exc}",
@@ -630,6 +777,14 @@ def separate_track(
     (vol_dir / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     volume.commit()
 
+    _progress_track(
+        progress, slug, "done",
+        gpu_id=gpu_id,
+        load_s=result["timings"]["load_s"],
+        sep_s=result["timings"]["separate_s"],
+        encode_s=result["timings"]["encode_s"],
+        duration_s=result["duration_s"],
+    )
     return {
         "slug": slug,
         "vocals": result["vocals"],
@@ -757,15 +912,24 @@ def cmd_bench(args: argparse.Namespace) -> None:
                 )
         jobs.append((track, mix_path, truth_path))
 
+    run_id = _resolve_run_id(args.run_id)
     print(
         f"[OK] config_tag={config.config_tag} checkpoint={config.checkpoint} "
         f"overlap={config.overlap} segment_size={config.segment_size} "
-        f"tracks={len(jobs)}",
+        f"tracks={len(jobs)} run_id={run_id}",
         flush=True,
     )
 
     wall0 = time.perf_counter()
-    with app.run():
+    with app.run() as running_app:
+        progress = _progress_dict(run_id, create=True)
+        _progress_run_start(
+            progress, run_id, total=len(jobs), config_tag=config.config_tag,
+            checkpoint=config.checkpoint, max_containers=DEFAULT_MAX_CONTAINERS,
+            app_id=running_app.app_id,
+        )
+        for track, _, _ in jobs:
+            _progress_track(progress, track.slug, "queued")
         remote_results = list(
             separate_track.starmap(
                 [
@@ -781,6 +945,7 @@ def cmd_bench(args: argparse.Namespace) -> None:
                         config.config_tag,
                         str(mix_path),
                         config.force_format,
+                        run_id,
                     )
                     for track, mix_path, _ in jobs
                 ]
@@ -892,7 +1057,18 @@ def cmd_separate(args: argparse.Namespace) -> None:
             # spend -- --force-format bypasses this outright.
             pol.stem_output_codec_for_source_ext(path.suffix)
 
-    with app.run():
+    run_id = _resolve_run_id(args.run_id)
+    print(f"[OK] config_tag={config.config_tag} tracks={len(inputs)} run_id={run_id}", flush=True)
+
+    with app.run() as running_app:
+        progress = _progress_dict(run_id, create=True)
+        _progress_run_start(
+            progress, run_id, total=len(inputs), config_tag=config.config_tag,
+            checkpoint=config.checkpoint, max_containers=DEFAULT_MAX_CONTAINERS,
+            app_id=running_app.app_id,
+        )
+        for path in inputs:
+            _progress_track(progress, path.stem, "queued")
         remote_results = list(
             separate_track.starmap(
                 [
@@ -908,6 +1084,7 @@ def cmd_separate(args: argparse.Namespace) -> None:
                         config.config_tag,
                         str(path),
                         config.force_format,
+                        run_id,
                     )
                     for path in inputs
                 ]
@@ -958,6 +1135,28 @@ def cmd_pull(args: argparse.Namespace) -> None:
     print(f"[DONE] pulled {count} files to {out_dir}", flush=True)
 
 
+# ----- CLI: status (agent-native progress + efficiency snapshot) -------------
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    """One JSON object on stdout: counts, ETA, cost, and the three
+    efficiency warnings, read live from the run's modal.Dict -- see
+    scripts/roformer_progress.py for the reducer/stats this prints
+    unmodified. Exits 0 whenever the run_id is readable (including a
+    finished or a not-yet-started run); fails fast (nonzero exit, via
+    SystemExit inside read_state) only when the run_id itself is unknown.
+    """
+    from scripts import roformer_progress as prog
+
+    raw = prog.read_state(args.run_id)
+    snapshot = prog.reduce_state(raw)
+    containers_live = (
+        prog.containers_live_from_modal_cli(snapshot.app_id) if snapshot.app_id else 0
+    )
+    status = prog.build_status(snapshot, containers_live=containers_live)
+    print(json.dumps(status, indent=2))
+
+
 # ----- entrypoint -------------------------------------------------------------
 
 
@@ -985,7 +1184,16 @@ def _add_config_args(parser: argparse.ArgumentParser) -> None:
 
 
 def main() -> None:
+    # Local-only, never runs in-container (guarded by __main__ below). Needed
+    # because this file is invoked as `python scripts/modal_roformer_spike.py
+    # ...`, which puts THIS file's own directory on sys.path[0], not the repo
+    # root -- `scripts` is not in pyproject.toml's editable-install package
+    # list (only `apps*` is), so `from scripts import roformer_progress` (and
+    # farm_progress) would otherwise raise ModuleNotFoundError. Same fix
+    # cmd_bench already applies locally via BENCH_DIR for shootout_spec.
+    sys.path.insert(0, str(REPO_ROOT))
     _assert_stem_size_policy_mirror_matches()
+    _assert_roformer_progress_mirror_matches()
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -994,12 +1202,18 @@ def main() -> None:
     bench.add_argument(
         "--limit", type=int, default=0, help="run only the first N tracks (0 = all 6)"
     )
+    bench.add_argument(
+        "--run-id", default=None, help="progress run-id; default: auto-generated, printed at start"
+    )
     _add_config_args(bench)
     bench.set_defaults(func=cmd_bench)
 
     separate = sub.add_parser("separate", help="separate arbitrary local audio files")
     separate.add_argument("--input", type=Path, nargs="+", required=True)
     separate.add_argument("--out-dir", type=Path, required=True)
+    separate.add_argument(
+        "--run-id", default=None, help="progress run-id; default: auto-generated, printed at start"
+    )
     _add_config_args(separate)
     separate.set_defaults(func=cmd_separate)
 
@@ -1007,6 +1221,12 @@ def main() -> None:
     pull.add_argument("--config-tag", required=True)
     pull.add_argument("--out-dir", type=Path, required=True)
     pull.set_defaults(func=cmd_pull)
+
+    status = sub.add_parser(
+        "status", help="agent-native progress + efficiency snapshot for a run-id"
+    )
+    status.add_argument("--run-id", required=True)
+    status.set_defaults(func=cmd_status)
 
     args = parser.parse_args()
     args.func(args)
