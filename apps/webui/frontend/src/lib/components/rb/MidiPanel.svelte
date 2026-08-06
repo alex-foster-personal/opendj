@@ -1,0 +1,186 @@
+<script lang="ts">
+	/**
+	 * MIDI panel drawer (build unit: midi panel).
+	 * Overlay drawer over the /performance layout, opened from the TopBar
+	 * MIDI label. Everything shown is REAL state from webmidi.svelte.ts +
+	 * midi-ui-state.svelte.ts - no fabricated placeholders anywhere.
+	 *
+	 * Requirements (mini-PRD):
+	 *   ✔︎ 🎯 Permission section: request button + live permission state;
+	 *     request failures render red (midiUi.lastError), never vanish.
+	 *     [if] the browser prompt is denied [then] the panel shows 'denied'
+	 *       + the error text, no silent retry ⛔️
+	 *   ✔︎ 🎯 Devices section: MidiDeviceList (name, map matched, binding
+	 *     count, LED test per device).
+	 *   ✔︎ 🎯 Learn-log section: MidiLearnLog console (last 50, unmapped red).
+	 *   ✔︎ 🎯 Esc / backdrop / close button all dismiss the drawer.
+	 *     [if] Esc while open doesn't close [then] broken
+	 */
+	import MidiDeviceList from '$lib/components/rb/midi/MidiDeviceList.svelte';
+	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
+	import { midiUi, requestMidiAccess, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+
+	const PERMISSION_LABEL: Record<typeof midiState.permission, string> = {
+		unsupported: 'not supported in this browser (WebMIDI needs Chrome or Edge)',
+		prompt: 'not requested yet',
+		granted: 'granted',
+		denied: 'denied - re-enable in browser site settings, then reload'
+	};
+
+	function handleKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape' && midiUi.panelOpen) {
+			toggleMidiPanel();
+		}
+	}
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+{#if midiUi.panelOpen}
+	<button class="midi-backdrop" aria-label="close MIDI panel" onclick={toggleMidiPanel}></button>
+	<div class="midi-drawer rb-panel" role="dialog" aria-label="MIDI devices and learn log">
+		<header class="drawer-head">
+			<span class="drawer-title">MIDI</span>
+			<button class="drawer-close" aria-label="close" onclick={toggleMidiPanel}>&times;</button>
+		</header>
+
+		<section class="drawer-section">
+			<h3 class="section-title">Permission</h3>
+			<div class="perm-row">
+				<span
+					class="perm-state"
+					class:perm-granted={midiState.permission === 'granted'}
+					class:perm-bad={midiState.permission === 'denied' || midiState.permission === 'unsupported'}
+				>
+					{PERMISSION_LABEL[midiState.permission]}
+				</span>
+				{#if midiState.permission === 'prompt' || midiState.permission === 'denied'}
+					<button
+						class="perm-request"
+						disabled={midiUi.requestPending}
+						onclick={() => void requestMidiAccess()}
+					>
+						{midiUi.requestPending ? 'Waiting for browser prompt...' : 'Request MIDI access'}
+					</button>
+				{/if}
+			</div>
+			{#if midiUi.lastError !== null}
+				<p class="perm-error">{midiUi.lastError}</p>
+			{/if}
+		</section>
+
+		<section class="drawer-section">
+			<h3 class="section-title">Devices ({midiState.devices.length})</h3>
+			<MidiDeviceList />
+		</section>
+
+		<section class="drawer-section grow">
+			<h3 class="section-title">Learn log</h3>
+			<MidiLearnLog />
+		</section>
+	</div>
+{/if}
+
+<style>
+	.midi-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+		background: rgba(0, 0, 0, 0.45);
+		border: none;
+		padding: 0;
+		cursor: default;
+	}
+	.midi-drawer {
+		position: fixed;
+		top: var(--rb-topbar-h);
+		right: 0;
+		bottom: 0;
+		z-index: 41;
+		width: min(420px, 92vw);
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 10px;
+		overflow-y: auto;
+		box-shadow: -6px 0 18px rgba(0, 0, 0, 0.5);
+	}
+	.drawer-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.drawer-title {
+		color: var(--rb-text);
+		font-size: var(--rb-fs-deck-title);
+		font-weight: 600;
+		letter-spacing: 0.08em;
+	}
+	.drawer-close {
+		background: transparent;
+		border: none;
+		color: var(--rb-text-dim);
+		font-size: 16px;
+		line-height: 1;
+		cursor: pointer;
+		padding: 0 4px;
+	}
+	.drawer-close:hover {
+		color: var(--rb-text);
+	}
+	.drawer-section {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.drawer-section.grow {
+		flex: 1;
+		min-height: 0;
+	}
+	.section-title {
+		margin: 0;
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		border-bottom: 1px solid var(--rb-border);
+		padding-bottom: 3px;
+	}
+	.perm-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+	.perm-state {
+		color: var(--rb-text);
+		font-size: var(--rb-fs-browser);
+	}
+	.perm-state.perm-granted {
+		color: var(--rb-green);
+	}
+	.perm-state.perm-bad {
+		color: var(--rb-red);
+	}
+	.perm-request {
+		background: var(--rb-accent);
+		border: 1px solid var(--rb-accent);
+		border-radius: 2px;
+		color: #fff;
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		padding: 3px 10px;
+		cursor: pointer;
+	}
+	.perm-request:disabled {
+		opacity: 0.55;
+		cursor: default;
+	}
+	.perm-error {
+		margin: 0;
+		color: var(--rb-red);
+		font-size: var(--rb-fs-label);
+	}
+</style>
