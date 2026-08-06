@@ -12,6 +12,8 @@
  *     [if] BAR needs half/double normalization [then ⛔️] select BEAT instead
  *
  * No DOM, Web Audio objects, nominal track BPM, or synthetic grid fallback.
+ * Tempo ratios use beat INTERVALS (60/dt), never the PQTZ bpm field alone -
+ * that field can disagree with .t (Proper Education: field 124.72 vs dt→125).
  */
 import type { AnlzBeat } from '$lib/rb/types';
 
@@ -142,6 +144,66 @@ function _positionAtIntervalOffset(
 	);
 }
 
+/** Half-window (beats) for tempo from intervals; absorbs dirty PQTZ gaps. */
+const _INTERVAL_BPM_RADIUS = 32;
+/** Drop intervals farther than this fraction from the window median. */
+const _INTERVAL_BPM_OUTLIER = 0.06;
+
+function _medianSorted(sorted: readonly number[]): number {
+	const mid = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function _mean(values: readonly number[]): number {
+	let sum = 0;
+	for (const value of values) sum += value;
+	return sum / values.length;
+}
+
+/**
+ * Tempo from a robust average of nearby beat intervals. PQTZ `bpm` is advisory
+ * only; stretch locks must match wall-clock spacing from `.t`. Proper
+ * Education has field 124.72 vs dt→125, plus multi-beat 114-138 BPM gaps -
+ * those must not yank follower rate on waveform seek.
+ *
+ * Two aggregation steps, because two DIFFERENT grid defects fight each other:
+ *   1. A preliminary MEDIAN centres a +-6% band that rejects the sparse gross
+ *      outliers of a dirty grid (Proper Education's 114-138 BPM gaps).
+ *   2. The MEAN of the survivors then recovers the true tempo. rekordbox
+ *      stores beat `.t` to the millisecond, so a genuinely constant track's
+ *      per-beat interval DITHERS between the two ms values straddling the
+ *      true 60/bpm (e.g. 130 BPM -> 0.461s/0.462s -> 130.15/129.87 BPM). Their
+ *      MEAN is the true 130.00; a MEDIAN would snap to whichever rounded value
+ *      is more frequent, biasing tempo by up to ~0.15 BPM. That bias is the
+ *      deck's DISPLAYED and follower-LOCK BPM, while the master's real audio
+ *      still plays its true tempo - so two decks with identical displayed BPM
+ *      drift apart (PURA VIDA 130 master vs Yotto 126 follower: median lock
+ *      129.87 vs real 130.00 = ~0.18 BPM, one beat every ~5.5 min).
+ */
+function _windowedIntervalBpm(beats: readonly AnlzBeat[], index: number): number {
+	if (beats.length < 2) {
+		throw new RangeError(`interval BPM requires at least 2 beats, got ${beats.length}`);
+	}
+	const center = index >= beats.length - 1 ? beats.length - 2 : Math.max(0, index);
+	const lo = Math.max(0, center - _INTERVAL_BPM_RADIUS);
+	const hi = Math.min(beats.length - 1, center + _INTERVAL_BPM_RADIUS + 1);
+	const bpms: number[] = [];
+	for (let i = lo; i < hi; i++) {
+		const dt = beats[i + 1].t - beats[i].t;
+		if (dt > 0 && Number.isFinite(dt)) bpms.push(60 / dt);
+	}
+	if (bpms.length === 0) {
+		throw new RangeError(`no positive beat intervals near index ${center}`);
+	}
+	bpms.sort((left, right) => left - right);
+	const preliminary = _medianSorted(bpms);
+	const loBpm = preliminary * (1 - _INTERVAL_BPM_OUTLIER);
+	const hiBpm = preliminary * (1 + _INTERVAL_BPM_OUTLIER);
+	const filtered = bpms.filter((bpm) => bpm >= loBpm && bpm <= hiBpm);
+	if (filtered.length === 0) return preliminary;
+	return _mean(filtered);
+}
+
 interface _FollowerAnchorPlan {
 	index: number;
 	positionSec: number;
@@ -167,7 +229,8 @@ function _bestFollowerAnchor(
 	for (let index = 0; index < beats.length - 1; index++) {
 		const beat = beats[index];
 		if (mode === 'bar' && beat.n !== masterBeatNumber) continue;
-		const rawRatio = (masterBpm * masterTempoRatio) / beat.bpm;
+		const followerBpm = _windowedIntervalBpm(beats, index);
+		const rawRatio = (masterBpm * masterTempoRatio) / followerBpm;
 		const tempo = _tempoRatioWithinRangeOrNull(rawRatio, minRatio, maxRatio);
 		if (tempo === null) continue;
 		if (mode === 'bar' && tempo.normalization !== 1) {
@@ -268,6 +331,235 @@ export function quantizeToNearestBeat(
 	return beats[_nearestBeatIndex(beats, positionSec)].t;
 }
 
+/** Local tempo (BPM) from the nearest beat's interval; null when unusable. */
+export function gridBpmAt(
+	beats: readonly AnlzBeat[],
+	positionSec: number
+): number | null {
+	try {
+		validateBeatGrid(beats);
+		_assertFiniteNonNegative('positionSec', positionSec);
+		return _windowedIntervalBpm(beats, _nearestBeatIndex(beats, positionSec));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Playback tempo in BPM for UI / IPC readouts.
+ *
+ * Beat Sync plans tempo from beat intervals (60/dt), not tag BPM or the
+ * PQTZ bpm field (field can lie; Proper Education field 124.72 vs dt→125).
+ * Prefer interval BPM × tempo ratio; fall back to tag only with no grid.
+ */
+export function playbackBpm(input: {
+	beats: readonly AnlzBeat[] | null | undefined;
+	positionSec: number;
+	tempoRatio: number;
+	tagBpm: number | null;
+}): number | null {
+	if (!Number.isFinite(input.tempoRatio) || input.tempoRatio <= 0) {
+		return null;
+	}
+	const gridBpm =
+		input.beats === null || input.beats === undefined
+			? null
+			: gridBpmAt(input.beats, input.positionSec);
+	const baseBpm = gridBpm ?? input.tagBpm;
+	if (baseBpm === null || !Number.isFinite(baseBpm) || baseBpm <= 0) {
+		return null;
+	}
+	return baseBpm * input.tempoRatio;
+}
+
+/** Default absolute BPM tolerance for {@link isTempoLockedToMaster}.
+ * Wider than pure float noise (~1e-9) because two decks compute their
+ * windowed interval BPM independently at their own evolving position, and
+ * each track's local grid jitter (dirty PQTZ, filtered by
+ * `_INTERVAL_BPM_OUTLIER`) can still differ by a few hundredths of a BPM
+ * between decks even while genuinely tempo-locked. A real mismatch (wrong
+ * track, unsynced tempo) differs by whole BPM digits, so 0.1 stays far
+ * below that while absorbing normal windowed-interval jitter without
+ * flickering the UI. */
+export const DEFAULT_TEMPO_LOCK_TOLERANCE_BPM = 0.1;
+
+/**
+ * True when candidateBpm is tempo-locked to masterBpm at 1x, 0.5x, or 2x
+ * within toleranceBpm - the three ratios Beat Sync itself accepts (see
+ * `TempoNormalization`). Null, non-finite, or non-positive inputs mean
+ * there is no valid reference to compare against (no elected master, no
+ * live BPM yet, or the master deck against itself); those cases return
+ * true so the UI never shows a mismatch without a real error to report.
+ */
+export function isTempoLockedToMaster(
+	candidateBpm: number | null,
+	masterBpm: number | null,
+	toleranceBpm: number = DEFAULT_TEMPO_LOCK_TOLERANCE_BPM
+): boolean {
+	if (candidateBpm === null || masterBpm === null) return true;
+	if (!Number.isFinite(candidateBpm) || candidateBpm <= 0) return true;
+	if (!Number.isFinite(masterBpm) || masterBpm <= 0) return true;
+	const normalizations: readonly TempoNormalization[] = [1, 0.5, 2];
+	return normalizations.some(
+		(normalization) => Math.abs(candidateBpm - masterBpm * normalization) <= toleranceBpm
+	);
+}
+
+// ------------------------------------------ beatgrid data-quality (Err col)
+
+export type BeatgridIssueSeverity = 'warning' | 'error';
+
+export interface BeatgridIssue {
+	severity: BeatgridIssueSeverity;
+	/** Beat time (seconds) of the worst disagreement found. */
+	atSec: number;
+	/** PQTZ `bpm` field at that beat. */
+	fieldBpm: number;
+	/** True tempo implied by the adjacent beat interval (60 / dt). */
+	intervalBpm: number;
+	/** abs(fieldBpm - intervalBpm). */
+	disagreementBpm: number;
+}
+
+/** Field vs. interval BPM disagreement above this is worth a look (orange). */
+export const BEATGRID_ISSUE_WARN_BPM = 2;
+/** Above this, the disagreement is large enough to audibly jump tempo (red). */
+export const BEATGRID_ISSUE_ERROR_BPM = 5;
+/**
+ * A run of this many or fewer consecutive same-direction outlier beats is
+ * isolated noise (e.g. a transient-detection artifact at a filter-sweep or
+ * drop - real captured data confirms Proper Education's dirty ~120-130s
+ * region runs up to 5 beats deep). A longer run means the interval genuinely
+ * kept drifting one way for many beats in a row - a real sustained tempo
+ * change in the music, not a data-quality problem - so it is not flagged.
+ */
+export const BEATGRID_ISSUE_MAX_RUN = 6;
+
+/**
+ * Worst ISOLATED PQTZ field-vs-interval BPM disagreement in the grid.
+ *
+ * A bare per-beat threshold cannot tell a noisy artifact from a real tempo
+ * change, since both produce a beat where field and interval disagree. The
+ * distinguishing signal is run length: noise is 1-few beats surrounded by
+ * otherwise-agreeing neighbors; a real tempo change drifts the same
+ * direction for many consecutive beats. So a candidate only counts when its
+ * run of consecutive same-direction disagreements is at most
+ * BEATGRID_ISSUE_MAX_RUN beats long.
+ *
+ * Mirrors apps/webui/server/beatgrid_diagnostics.py's `detect_beatgrid_issue`
+ * (backend computes it once per real ANLZ parse and caches the verdict;
+ * this copy exists so the pure math is unit-tested here too and reusable
+ * without a network round-trip). Returns null when every beat's field bpm
+ * is within tolerance of its own interval, every disagreement is part of a
+ * longer sustained drift, or the grid is too short to have an interval at
+ * all - all real "nothing to flag" states, never a guessed issue.
+ */
+export function detectBeatgridIssue(beats: readonly AnlzBeat[]): BeatgridIssue | null {
+	if (!Array.isArray(beats) || beats.length < 2) return null;
+	const intervalCount = beats.length - 1;
+	const intervalBpms: number[] = new Array(intervalCount);
+	const disagreements: number[] = new Array(intervalCount);
+	for (let i = 0; i < intervalCount; i++) {
+		const dt = beats[i + 1].t - beats[i].t;
+		const intervalBpm = dt > 0 && Number.isFinite(dt) ? 60 / dt : Number.NaN;
+		intervalBpms[i] = intervalBpm;
+		disagreements[i] = Number.isFinite(intervalBpm) ? beats[i].bpm - intervalBpm : 0;
+	}
+
+	// -1/0/1: which side of the reference this beat's field lies on, or 0
+	// when it agrees closely enough to not count as an outlier at all.
+	function direction(i: number): -1 | 0 | 1 {
+		const d = disagreements[i];
+		if (Math.abs(d) <= BEATGRID_ISSUE_WARN_BPM) return 0;
+		return d > 0 ? 1 : -1;
+	}
+
+	// Length of the maximal run of consecutive same-direction outliers
+	// containing beat i (a lone outlier has run length 1).
+	function runLength(i: number): number {
+		const dir = direction(i);
+		let start = i;
+		while (start > 0 && direction(start - 1) === dir) start--;
+		let end = i;
+		while (end < intervalCount - 1 && direction(end + 1) === dir) end++;
+		return end - start + 1;
+	}
+
+	let worst: BeatgridIssue | null = null;
+	for (let i = 0; i < intervalCount; i++) {
+		if (direction(i) === 0) continue;
+		if (runLength(i) > BEATGRID_ISSUE_MAX_RUN) continue;
+		const disagreementBpm = Math.abs(disagreements[i]);
+		if (worst !== null && disagreementBpm <= worst.disagreementBpm) continue;
+		worst = {
+			severity: disagreementBpm > BEATGRID_ISSUE_ERROR_BPM ? 'error' : 'warning',
+			atSec: beats[i].t,
+			fieldBpm: beats[i].bpm,
+			intervalBpm: intervalBpms[i],
+			disagreementBpm
+		};
+	}
+	return worst;
+}
+
+// --------------------------------------------------- re-anchor rate ramp
+
+/**
+ * Total time to approach a re-anchored followerTempoRatio. Grid noise
+ * (the residual the windowed median above cannot fully absorb) is at most
+ * a few hundredths of a BPM at typical 120-140 BPM tempos - under 0.1%
+ * relative rate. Spread across this window, each step's rate change stays
+ * far below the ~0.1-0.3% pitch-change JND, so isolated noise is inaudible
+ * while still settling well within a DJ's sense of an "instant" control
+ * (the ~150-400ms range industry mixers use for tempo-fader smoothing).
+ */
+export const REANCHOR_RAMP_DURATION_SEC = 0.25;
+/** Step cadence: fast enough to read as continuous, matching this engine's
+ * other control-rate constants (e.g. its 25ms context-wait poll). */
+export const REANCHOR_RAMP_STEP_SEC = 0.025;
+
+export interface TempoRampStep {
+	/** Seconds after the ramp's own sync instant; the first step is 0. */
+	offsetSec: number;
+	tempoRatio: number;
+}
+
+/**
+ * Rate-limited correction, the DSP-side counterpart to Mixxx's
+ * `calcSyncAdjustment`: never jump straight to a recomputed target ratio,
+ * always approach it through small steps. Unlike Mixxx's open-ended
+ * per-tick phase-error nudge, the target here is already known (one
+ * recomputed `followerTempoRatio`, not a live error signal), so this lands
+ * on it exactly at a fixed, bounded duration instead of an unbounded
+ * correction loop.
+ *
+ * [if] fromTempoRatio equals toTempoRatio [then] a single no-op step -
+ * nothing to ramp, and the caller still gets a step to schedule.
+ */
+export function planTempoRatioRamp(
+	fromTempoRatio: number,
+	toTempoRatio: number,
+	durationSec: number = REANCHOR_RAMP_DURATION_SEC,
+	stepSec: number = REANCHOR_RAMP_STEP_SEC
+): TempoRampStep[] {
+	_assertFinitePositive('fromTempoRatio', fromTempoRatio);
+	_assertFinitePositive('toTempoRatio', toTempoRatio);
+	_assertFinitePositive('durationSec', durationSec);
+	_assertFinitePositive('stepSec', stepSec);
+	if (stepSec > durationSec) {
+		throw new RangeError(`stepSec ${stepSec} must not exceed durationSec ${durationSec}`);
+	}
+	if (fromTempoRatio === toTempoRatio) return [{ offsetSec: 0, tempoRatio: toTempoRatio }];
+	const stepCount = Math.max(1, Math.round(durationSec / stepSec));
+	return Array.from({ length: stepCount }, (_unused, index) => ({
+		offsetSec: index * stepSec,
+		tempoRatio:
+			index === stepCount - 1
+				? toTempoRatio
+				: fromTempoRatio + (toTempoRatio - fromTempoRatio) * ((index + 1) / stepCount)
+	}));
+}
+
 /**
  * Plan one scheduled follower seek and playback-rate change.
  *
@@ -318,6 +610,7 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 	const masterBeatNumber = masterBeat.n as BeatNumber;
 	const masterBeatIntervalSec = request.masterGrid[masterBeatIndex + 1].t - masterBeat.t;
 	const beatPhase = (projectedMasterPositionSec - masterBeat.t) / masterBeatIntervalSec;
+	const masterIntervalBpm = _windowedIntervalBpm(request.masterGrid, masterBeatIndex);
 	const followerAnchor = _bestFollowerAnchor(
 		request.followerGrid,
 		request.followerPositionSec,
@@ -325,7 +618,7 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 		masterBeatIndex,
 		masterBeatNumber,
 		beatPhase,
-		masterBeat.bpm,
+		masterIntervalBpm,
 		request.masterTempoRatio,
 		request.minFollowerTempoRatio,
 		request.maxFollowerTempoRatio
