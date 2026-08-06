@@ -11,7 +11,9 @@
 	 * Master volume renders the shared mixer read model and dispatches through
 	 * the same typed command path used by browser IPC and presets.
 	 */
-	import { mixerState } from '$lib/rb/audio-engine.svelte';
+	import { onMount } from 'svelte';
+	import { engine, mixerState } from '$lib/rb/audio-engine.svelte';
+	import type { AudioEngine } from '$lib/rb/types';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
 		setAutoPlayEnabled,
@@ -25,6 +27,15 @@
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import VibeMeter from './VibeMeter.svelte';
+	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
+	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
+	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
+	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+
+	interface MasterCapableEngine extends AudioEngine {
+		setMaster(value: number): void;
+	}
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
@@ -83,6 +94,28 @@
 
 	let clock = $state(_formatClock(new Date()));
 	let masterDragging = false;
+
+	/** MIDI label status (build unit: midi panel): grey = unsupported /
+	 * denied / idle, amber pulse = permission prompt pending, green = at
+	 * least one mapped device connected. Logic lives in midi-format.ts
+	 * (pure, unit-tested); this is just the reactive plumbing. */
+	const midiMappedCount = $derived(
+		midiState.devices.filter((d) => d.mapVendor !== null).length
+	);
+	const midiStatus = $derived(
+		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
+	);
+	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
+	const midiTitle = $derived(
+		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+	);
+
+	// Re-run the access request on load IFF the user opted in before (persisted
+	// choice). Goes through requestMidiAccess() - the single init trigger that
+	// also registers device maps + attaches the glue - so the invariant holds.
+	onMount(() => {
+		void maybeAutoEnableMidi();
+	});
 
 	$effect(() => {
 		const id = setInterval(() => {
@@ -302,7 +335,20 @@
 	</span>
 
 	<span class="dim-label" title={INERT_TITLE}>PAD</span>
-	<span class="dim-label" title={INERT_TITLE}>MIDI</span>
+	<!-- MIDI: LIVE (build unit: midi panel) - status colour + panel toggle -->
+	<button
+		class="midi-label"
+		class:st-grey={midiStatus === 'grey'}
+		class:st-green={midiStatus === 'green'}
+		class:st-amber={midiStatus === 'amber'}
+		class:st-red={midiStatus === 'red'}
+		title={midiTitle}
+		aria-label="MIDI panel"
+		aria-expanded={midiUi.panelOpen}
+		onclick={toggleMidiPanel}
+	>
+		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
+	</button>
 
 	<!-- text-command entry: closest rekordbox-parity hook for apps/voice
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
@@ -373,6 +419,13 @@
 </header>
 
 <CreatePairingSheet bind:open={pairingOpen} />
+
+<!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
+<MidiPanel />
+
+<!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
+     panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
+<MidiLearnLogPopout />
 
 <style>
 	.rb-topbar {
@@ -553,6 +606,52 @@
 	}
 	.bsm-toggle:hover {
 		color: var(--rb-text);
+	}
+	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
+	 * amber pulse = permission prompt pending, green = mapped device up. */
+	.midi-label {
+		background: transparent;
+		border: none;
+		padding: 0;
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		letter-spacing: 0.08em;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.midi-label.st-grey {
+		color: var(--rb-text-dim);
+		opacity: 0.6;
+	}
+	.midi-label.st-grey:hover {
+		opacity: 1;
+	}
+	.midi-label.st-green {
+		color: var(--rb-green);
+		opacity: 1;
+	}
+	.midi-label.st-red {
+		color: var(--rb-red);
+		opacity: 1;
+	}
+	.midi-glyph {
+		margin-left: 3px;
+		font-size: 10px;
+		font-weight: 700;
+	}
+	.midi-label.st-amber {
+		color: var(--rb-orange);
+		opacity: 1;
+		animation: midi-pulse 1s ease-in-out infinite;
+	}
+	@keyframes midi-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
 	}
 
 	.free-badge {
