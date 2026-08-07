@@ -13,7 +13,7 @@
  * SMARTLIST_MEMBER_MISSING (500).
  */
 
-import { RB_API_BASE, RbApiError } from './api-rb';
+import { RB_API_BASE, RbApiError, type StemSummary, type Vocals } from './api-rb';
 
 // ----------------------------------------------------------- types
 
@@ -54,6 +54,8 @@ export interface SmartlistTrackRow {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	vocals: Vocals;
+	stems: StemSummary;
 }
 
 /** GET /smartlists/{id}/tracks -- live evaluation result. */

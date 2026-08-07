@@ -46,11 +46,11 @@ export function recommendedBrowserRows(
 			is_streaming: null,
 			strip: null,
 			vocals: { status: 'not_analyzed' },
-			hot_cues: [],
+			stems: { status: 'none' },
+			quality: null,
 			rb_meta: null,
 			revealed: false,
-			match_context: null,
-			row_kind: 'recommended'
+			match_context: null
 		});
 	}
 	return out;

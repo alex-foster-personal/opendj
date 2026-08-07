@@ -3,6 +3,12 @@ import { expect, test } from '@playwright/test';
 test('browser headphone output acquisition starts from the visible ADD OUTPUT gesture', async ({ page }) => {
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	// Quiet headed runs; gain > 0 so presentation/audible checks stay valid.
+	await page.evaluate(async () => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC is not installed');
+		await ipc.dispatch({ type: 'master_volume', value: 0.1 });
+	});
 
 	const browserSupport = await page.evaluate(
 		() =>

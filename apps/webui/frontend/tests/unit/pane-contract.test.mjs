@@ -44,6 +44,8 @@ function _row(overrides = {}) {
 		play_count: 0,
 		is_streaming: null,
 		strip: null,
+		vocals: { status: 'not_analyzed' },
+		stems: { status: 'none' },
 		rb_meta: null,
 		revealed: false,
 		match_context: null,

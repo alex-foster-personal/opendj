@@ -20,6 +20,8 @@
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
+		parseStemSummary,
+		parseVocals,
 		vocalsOf,
 		RB_API_BASE
 	} from '$lib/rb/api-rb';
@@ -200,24 +202,27 @@
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
 	);
-	// Vocals ALREADY known client-side for the visible pane's rows: loaded
-	// decks (engine-populated anlz) + the wavestack's anlz cache. v1 SCOPE
-	// DECISION (documented per task brief): table strips do NOT issue their
-	// own /anlz fetches - a ?fields=vocals slim endpoint is NOT in the
-	// shared contract, and a full per-visible-row /anlz would reinstate
-	// exactly the fan-out this change removes. Bars therefore appear on
-	// strips only for tracks whose analysis is already in memory.
+	// Vocals for PreviewStrip blue bars: listing hydrate (row.vocals) is
+	// the base; loaded-deck / client anlz overwrite only when analyzed.
+	// Strips never fan-out /anlz themselves.
 	const vocalsById = $derived.by((): Record<string, Vocals> => {
 		const out: Record<string, Vocals> = {};
+		for (const row of pane.rows) {
+			out[row.stable_id] = row.vocals;
+		}
+		const preferAnalyzed = (sid: string, v: Vocals): void => {
+			if (v.status !== 'not_analyzed') out[sid] = v;
+		};
 		for (const d of DECK_IDS) {
 			const st = decks[d];
-			if (st.stable_id !== null && st.anlz !== null) out[st.stable_id] = vocalsOf(st.anlz);
+			if (st.stable_id !== null && st.anlz !== null) {
+				preferAnalyzed(st.stable_id, vocalsOf(st.anlz));
+			}
 		}
 		for (const row of pane.rows) {
-			if (out[row.stable_id] !== undefined) continue;
 			const entry = getAnlzEntry(row.stable_id);
 			if (entry !== undefined && entry.status === 'ready') {
-				out[row.stable_id] = vocalsOf(entry.data);
+				preferAnalyzed(row.stable_id, vocalsOf(entry.data));
 			}
 		}
 		return out;
@@ -850,6 +855,8 @@
 			quality: wire.quality ?? null,
 			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
+			vocals: parseVocals(wire.vocals),
+			stems: parseStemSummary(wire.stems),
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -884,6 +891,8 @@
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),
+			vocals: parseVocals(track.vocals),
+			stems: parseStemSummary(track.stems),
 			rb_meta: null,
 			revealed: false,
 			match_context: null
@@ -1020,13 +1029,15 @@
 		DECK_IDS.map((d) => decks[d]).find((d) => d.is_master) ?? null
 	);
 
-	// Feed AutoPlay: open playlist membership with key/BPM for smart pick.
+	// Feed AutoPlay: open playlist membership with key/BPM + disk truth.
+	// Include broken rows so pick can skip them; never invent file_exists.
 	$effect(() => {
 		setAutoPlayTrackFeed(
 			pane.rows.map((r) => ({
 				stable_id: r.stable_id,
 				key: r.key,
-				bpm: r.bpm
+				bpm: r.bpm,
+				file_exists: r.file_exists
 			}))
 		);
 	});

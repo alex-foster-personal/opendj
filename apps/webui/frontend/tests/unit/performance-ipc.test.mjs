@@ -257,6 +257,15 @@ test('jog SLIP control dispatches only through the typed performance dispatcher'
 	assert.match(jogSource, /data-performance-control="slip"/);
 });
 
+test('jog live BPM uses PQTZ playbackBpm, not tag BPM times pitch', async () => {
+	const jogSource = await readFile('src/lib/components/rb/deck/JogDial.svelte', 'utf8');
+	assert.match(jogSource, /playbackBpm/);
+	assert.doesNotMatch(
+		jogSource,
+		/deck\.bpm === null \? null : deck\.bpm \* deck\.pitch/
+	);
+});
+
 test('continuous mixer controls execute through IPC immediately and round-trip in query state', async () => {
 	globalThis.window = {};
 	const uninstall = ipc.installPerformanceBrowserIpc();

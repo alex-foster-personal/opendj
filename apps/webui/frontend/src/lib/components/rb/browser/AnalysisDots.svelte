@@ -2,30 +2,67 @@
 	import {
 		ANALYSIS_DOT_SLOTS,
 		ANALYSIS_COLORS,
+		ANALYSIS_ISSUE_COLORS,
+		ANALYSIS_LABELS,
 		type AnalysisBadge,
+		type AnalysisIssues,
 		type AnalysisKind
 	} from '$lib/rb/job-progress.svelte';
 
+	/** 'coverage' (default) = today's "is it done" funnel dots; 'issues' =
+	 * the Err column, colored red/orange only for kinds with a REAL detected
+	 * problem - undetected kinds stay off, never a guessed/fabricated state. */
 	let {
 		badge = {},
-		title = 'analysis coverage'
+		issues = {},
+		mode = 'coverage',
+		title
 	}: {
 		badge?: AnalysisBadge;
+		issues?: AnalysisIssues;
+		mode?: 'coverage' | 'issues';
 		title?: string;
 	} = $props();
 
 	const doneCount = $derived(
 		ANALYSIS_DOT_SLOTS.filter((k): k is AnalysisKind => k !== null && badge[k] === true).length
 	);
+	const issueCount = $derived(
+		ANALYSIS_DOT_SLOTS.filter((k): k is AnalysisKind => k !== null && issues[k] !== undefined).length
+	);
 	const totalSlots = ANALYSIS_DOT_SLOTS.filter((k) => k !== null).length;
-	const allDone = $derived(doneCount === totalSlots && totalSlots > 0);
+	const allDone = $derived(mode === 'coverage' && doneCount === totalSlots && totalSlots > 0);
+	const containerTitle = $derived(
+		title !== undefined
+			? title
+			: mode === 'issues'
+				? `data-quality issues: ${issueCount}`
+				: `analysis coverage: ${doneCount}/${totalSlots}`
+	);
+
+	function dotOn(kind: AnalysisKind): boolean {
+		return mode === 'issues' ? issues[kind] !== undefined : badge[kind] === true;
+	}
+
+	function dotColor(kind: AnalysisKind): string | undefined {
+		if (mode === 'issues') {
+			const issue = issues[kind];
+			return issue === undefined ? undefined : ANALYSIS_ISSUE_COLORS[issue.severity];
+		}
+		return ANALYSIS_COLORS[kind];
+	}
+
+	function dotTitle(kind: AnalysisKind): string | undefined {
+		if (mode === 'issues') return issues[kind]?.detail;
+		return `${ANALYSIS_LABELS[kind]} analysis: ${badge[kind] === true ? 'done' : 'not yet analyzed'}`;
+	}
 </script>
 
 <span
 	class="analysis-dots"
 	class:all-done={allDone}
-	title={`${title}: ${doneCount}/${totalSlots}`}
-	aria-label={`${doneCount} of ${totalSlots} analyses done`}
+	title={containerTitle}
+	aria-label={containerTitle}
 >
 	{#each ANALYSIS_DOT_SLOTS as kind, i (i)}
 		{#if kind === null}
@@ -33,9 +70,10 @@
 		{:else}
 			<span
 				class="dot"
-				class:on={badge[kind] === true}
-				style={`--dot:${ANALYSIS_COLORS[kind]}`}
+				class:on={dotOn(kind)}
+				style={dotOn(kind) ? `--dot:${dotColor(kind)}` : undefined}
 				data-kind={kind}
+				title={dotTitle(kind)}
 				aria-hidden="true"
 			></span>
 		{/if}

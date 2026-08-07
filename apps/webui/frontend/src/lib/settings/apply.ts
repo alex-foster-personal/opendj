@@ -5,6 +5,7 @@
 import {
 	setAutoPlayEnabled,
 	setAutoPlayEnforceOrder,
+	setAutoPlayMaximizeReach,
 	setAutoSyncDestination,
 	setBeatSyncMax,
 	setConfirmPref,
@@ -26,6 +27,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'beat_sync_max',
 	'auto_play_enabled',
 	'auto_play_enforce_order',
+	'auto_play_maximize_reach',
 	'next_only_filter',
 	'hide_todo_settings',
 	'auto_sync.rekordbox',
@@ -57,6 +59,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.auto_play_enabled;
 		case 'auto_play_enforce_order':
 			return uiPrefs.auto_play_enforce_order;
+		case 'auto_play_maximize_reach':
+			return uiPrefs.auto_play_maximize_reach;
 		case 'next_only_filter':
 			return uiPrefs.next_only_filter;
 		case 'hide_todo_settings':
@@ -104,6 +108,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'auto_play_enforce_order':
 			setAutoPlayEnforceOrder(_asBool(value, key));
+			return;
+		case 'auto_play_maximize_reach':
+			setAutoPlayMaximizeReach(_asBool(value, key));
 			return;
 		case 'next_only_filter':
 			setNextOnlyFilter(_asBool(value, key));

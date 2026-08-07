@@ -27,7 +27,7 @@
  * (tests/unit/load-typescript.mjs) can load this module directly.
  */
 
-import type { PreviewStripData } from '$lib/rb/api-rb';
+import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import type { RbMeta, TrackQuality } from '$lib/rb/types';
 
 // ------------------------------------------------------------ row types
@@ -82,6 +82,11 @@ export interface BrowserRow {
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;
+	/** Inline vocals from listing hydrate (PVDI or demucs cache); drives
+	 * PreviewStrip blue bars without a per-row /anlz fetch. */
+	vocals: Vocals;
+	/** Inline demucs stem summary (V/I/D); null only for synthetic rows. */
+	stems: StemSummary | null;
 	/** Lazy rb-meta (artwork_available + genre/streaming fallback);
 	 * null until the row first scrolls into view. */
 	rb_meta: RbMeta | null;
