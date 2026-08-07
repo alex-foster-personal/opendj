@@ -37,6 +37,7 @@ excluded (slot mapping unverified -- see PARITY-TODO).
 Fail-fast: every unresolved step raises an explicit HTTPException with a
 ``{"code", "message"}`` detail; there is no silent None anywhere.
 """
+
 from __future__ import annotations
 
 import base64
@@ -62,6 +63,7 @@ from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
 from apps.shared import platform_paths
 from apps.shared.platform_paths import MappedPath, resolve_library_path
 from apps.vocals import cache as vocal_cache
+from apps.webui.server import beatgrid_diagnostics
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +77,15 @@ DATA_DIR: Path = Path(_MDT_DATA_DIR_ENV) if _MDT_DATA_DIR_ENV else _PATHS_DATA_D
 
 MASTER_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
 ANLZ_CACHE_DIR: Path = DATA_DIR / "state" / "anlz-cache"
+# Tiny sidecar cache, DELIBERATELY separate from ANLZ_CACHE_DIR: that cache's
+# payload also carries the waveform bands (100s of KB - 1MB per track), which
+# is fine for the rare full /anlz fetch but far too heavy to read once per
+# row as the library browser's TrackTable scrolls thousands of rows into
+# view. Each entry here is a few hundred bytes (one severity + one beat's
+# numbers), so GET /rb-meta's existing lazy per-row fetch (see
+# routes/rb_assets.get_track_rb_meta) can read it as cheaply as the
+# analysis_available file-existence stat it already does.
+BEATGRID_ISSUE_CACHE_DIR: Path = DATA_DIR / "state" / "beatgrid-issue-cache"
 # demucs gap-fill cache written by ``python -m apps.vocals`` (SPIKE-B2).
 VOCAL_CACHE_DIR: Path = vocal_cache.cache_dir(DATA_DIR)
 # Matches apps.shared.paths' STATE_DIR/STATE_DB formula exactly, so this
@@ -106,16 +117,18 @@ _MONO_SCALE: float = 31.0
 # decode semantics change (band order fix, vocals field, ...) so stale
 # cache entries self-heal by recomputing instead of serving old shapes.
 ANLZ_CACHE_SCHEMA: int = 2
+# Bump whenever beatgrid_diagnostics' output shape or thresholds change.
+BEATGRID_ISSUE_CACHE_SCHEMA: int = 1
 
 # --- preview strip (SPIKE-A1 / SPIKE-SUMMARY section 2) ---
-PREVIEW_COLUMNS: int = 120          # 1200 -> 120 peak-max downsample (10:1)
-_PWV4_LUMINANCE_BYTE: int = 0       # verified: corr 0.60 vs PWV6 height, 0..127
-_PWAV_HEIGHT_MASK: int = 0x1F       # low 5 bits = height 0..31 (A1 tag table)
+PREVIEW_COLUMNS: int = 120  # 1200 -> 120 peak-max downsample (10:1)
+_PWV4_LUMINANCE_BYTE: int = 0  # verified: corr 0.60 vs PWV6 height, 0..127
+_PWAV_HEIGHT_MASK: int = 0x1F  # low 5 bits = height 0..31 (A1 tag table)
 
 # --- vocals (SPIKE-B1 / SPIKE-B2 calibrated params) ---
-VOCAL_INTENSITY_MIN: int = 1        # PVDI frame value (0..4) counted as vocal
-VOCAL_MERGE_GAP_S: float = 1.5      # merge regions separated by < this gap
-VOCAL_MIN_REGION_S: float = 1.0     # drop merged regions shorter than this
+VOCAL_INTENSITY_MIN: int = 1  # PVDI frame value (0..4) counted as vocal
+VOCAL_MERGE_GAP_S: float = 1.5  # merge regions separated by < this gap
+VOCAL_MIN_REGION_S: float = 1.0  # drop merged regions shorter than this
 # PVDI fixed header bytes at section offset 12..20: u16 reserved=0x0000,
 # u16 hop=1024, u16 rate=22050, u16 version=1. Uniform across all 3985
 # carriers (B1 section 3); any deviation means the format changed.
@@ -148,7 +161,7 @@ _PREVIEW_CACHE: dict[str, tuple[str, float, str, int]] = {}
 _ANLZ_CACHE_LOCKS_GUARD = threading.Lock()
 _ANLZ_CACHE_LOCKS: dict[Path, threading.Lock] = {}
 
-_SQL_CHUNK: int = 500               # keep IN (...) under SQLite's var cap
+_SQL_CHUNK: int = 500  # keep IN (...) under SQLite's var cap
 
 
 @dataclass(frozen=True)
@@ -179,6 +192,7 @@ class RbRowMeta:
 
 # ----- errors + connections ------------------------------------------------
 
+
 def not_found(code: str, message: str) -> HTTPException:
     """404 with the explicit {code, message} detail shape (COMPONENT-MAP 2)."""
     return HTTPException(status_code=404, detail={"code": code, "message": message})
@@ -199,6 +213,7 @@ def _open_ro(path: Path, label: str) -> sqlite3.Connection:
 
 
 # ----- stable_id -> djmdContent ---------------------------------------------
+
 
 def resolve_content(stable_id: str) -> RbContent:
     """Resolve a stable_id to its rekordbox content row, failing explicitly."""
@@ -327,6 +342,7 @@ def is_streaming_path(folder_path: Optional[str]) -> bool:
 
 # ----- per-asset resolution --------------------------------------------------
 
+
 def audio_file(content: RbContent) -> tuple[Path, str]:
     """Resolve the on-disk audio file + media type, or 404 explicitly."""
     if not content.folder_path:
@@ -367,6 +383,48 @@ def audio_file(content: RbContent) -> tuple[Path, str]:
     return path, media_type
 
 
+def local_audio_file(stable_id: str) -> tuple[Path, str]:
+    """Fallback audio resolution for tracks with NO rekordbox vendor mapping.
+
+    Locally imported files (e.g. vocal stems added straight into state.db)
+    have a real ``tracks.file_path`` but no djmdContent row, so
+    :func:`resolve_content` 404s with ``VENDOR_MAPPING_NOT_FOUND``. The audio
+    route falls back here to stream that path directly. Same residency +
+    media-type gates as :func:`audio_file` -- never a mocked or missing file.
+    """
+    state = _open_ro(STATE_DB, "STATE_DB")
+    try:
+        row = state.execute(
+            "SELECT file_path FROM tracks WHERE stable_id = ?", (stable_id,)
+        ).fetchone()
+    finally:
+        state.close()
+    if row is None:
+        raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
+    if not row[0]:
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"track {stable_id} has no rekordbox mapping and no file_path",
+        )
+    path = Path(row[0])
+    if not fs_residency.is_materialised(path):
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"file_path for track {stable_id} is missing or not "
+            f"materialised (dataless/iCloud stub): {path}",
+        )
+    media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
+    if media_type is None:
+        raise HTTPException(
+            status_code=415,
+            detail={
+                "code": "AUDIO_FORMAT_UNSUPPORTED",
+                "message": f"unsupported audio extension {path.suffix!r}: {path}",
+            },
+        )
+    return path, media_type
+
+
 def artwork_file(content: RbContent, size: str) -> Path:
     """Resolve the artwork jpg for a size variant (s/m/orig), or 404."""
     if size not in ARTWORK_FILENAMES:
@@ -391,9 +449,7 @@ def artwork_file(content: RbContent, size: str) -> Path:
             f"resolved on this platform ({mapped.reason}): "
             f"{content.image_path}",
         )
-    derived = _asset_sibling(
-        mapped, mapped.resolved.parent / ARTWORK_FILENAMES[size]
-    )
+    derived = _asset_sibling(mapped, mapped.resolved.parent / ARTWORK_FILENAMES[size])
     if derived.resolved is None:
         raise not_found(
             "ARTWORK_NOT_FOUND",
@@ -441,14 +497,15 @@ def anlz_dir(content: RbContent) -> Path:
 # PVDI is dropped with a "not supported" warning), and its .DAT parse costs up
 # to 51 ms/track (A1 gotcha 2) -- the raw walk is 0.011-0.055 ms.
 
+
 def _iter_pmai_sections(buf: bytes) -> Iterator[tuple[bytes, int, int, int]]:
     """Yield ``(fourcc, offset, head_len, total_len)`` over a PMAI container."""
     if buf[:4] != b"PMAI":
         raise ValueError("not an ANLZ PMAI container")
     off = struct.unpack(">I", buf[4:8])[0]
     while off + 12 <= len(buf):
-        fourcc = buf[off:off + 4]
-        head_len, total_len = struct.unpack(">II", buf[off + 4:off + 12])
+        fourcc = buf[off : off + 4]
+        head_len, total_len = struct.unpack(">II", buf[off + 4 : off + 12])
         if total_len <= 0:
             raise ValueError(f"corrupt ANLZ section length at offset {off}")
         yield fourcc, off, head_len, total_len
@@ -461,12 +518,12 @@ def _read_pwv6_tri(path: Path) -> Optional[np.ndarray]:
     for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
         if fourcc != b"PWV6":
             continue
-        entry_bytes, entries = struct.unpack(">II", buf[off + 12:off + 20])
+        entry_bytes, entries = struct.unpack(">II", buf[off + 12 : off + 20])
         if entry_bytes != 3:
             raise ValueError(f"PWV6 entry size {entry_bytes} != 3 in {path}")
-        return np.frombuffer(
-            buf, np.uint8, entries * 3, off + head_len
-        ).reshape(entries, 3)
+        return np.frombuffer(buf, np.uint8, entries * 3, off + head_len).reshape(
+            entries, 3
+        )
     return None
 
 
@@ -483,12 +540,12 @@ def _read_pwv4_mono(path: Path) -> Optional[np.ndarray]:
     for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
         if fourcc != b"PWV4":
             continue
-        entry_bytes, entries = struct.unpack(">II", buf[off + 12:off + 20])
+        entry_bytes, entries = struct.unpack(">II", buf[off + 12 : off + 20])
         if entry_bytes != 6:
             raise ValueError(f"PWV4 entry size {entry_bytes} != 6 in {path}")
-        cols = np.frombuffer(
-            buf, np.uint8, entries * 6, off + head_len
-        ).reshape(entries, 6)
+        cols = np.frombuffer(buf, np.uint8, entries * 6, off + head_len).reshape(
+            entries, 6
+        )
         lum = cols[:, _PWV4_LUMINANCE_BYTE] & 0x7F
         return np.repeat(lum[:, np.newaxis], 3, axis=1)
     return None
@@ -500,15 +557,14 @@ def _read_pwav_mono(path: Path) -> Optional[np.ndarray]:
     for fourcc, off, head_len, total_len in _iter_pmai_sections(buf):
         if fourcc != b"PWAV":
             continue
-        entries = struct.unpack(">I", buf[off + 12:off + 16])[0]
+        entries = struct.unpack(">I", buf[off + 12 : off + 16])[0]
         if entries != total_len - head_len:
             raise ValueError(
                 f"PWAV length mismatch in {path}: "
                 f"{entries} entries vs {total_len - head_len} payload bytes"
             )
         heights = (
-            np.frombuffer(buf, np.uint8, entries, off + head_len)
-            & _PWAV_HEIGHT_MASK
+            np.frombuffer(buf, np.uint8, entries, off + head_len) & _PWAV_HEIGHT_MASK
         )
         return np.repeat(heights[:, np.newaxis], 3, axis=1)
     return None
@@ -582,6 +638,7 @@ def preview_strip(
 
 # ----- vocals (PVDI -- SPIKE-B1 decode, SPIKE-B2 calibrated params) -----------
 
+
 def read_pvdi(path_2ex: Path) -> Optional[tuple[float, bytes]]:
     """Return ``(fps, envelope)`` from a .2EX, or None when PVDI is absent.
 
@@ -595,23 +652,20 @@ def read_pvdi(path_2ex: Path) -> Optional[tuple[float, bytes]]:
     for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
         if fourcc != b"PVDI":
             continue
-        fixed = buf[off + 12:off + 20]
+        fixed = buf[off + 12 : off + 20]
         if fixed != _PVDI_FIXED_HEADER:
             raise ValueError(
                 f"PVDI fixed header changed in {path_2ex}: "
                 f"{fixed.hex()} != {_PVDI_FIXED_HEADER.hex()} -- format bump?"
             )
-        count = struct.unpack(">I", buf[off + 20:off + 24])[0]
-        envelope = buf[off + head_len:off + head_len + count]
+        count = struct.unpack(">I", buf[off + 20 : off + 24])[0]
+        envelope = buf[off + head_len : off + head_len + count]
         if len(envelope) != count:
             raise ValueError(
-                f"PVDI payload truncated in {path_2ex}: "
-                f"{len(envelope)} < {count} bytes"
+                f"PVDI payload truncated in {path_2ex}: {len(envelope)} < {count} bytes"
             )
         if envelope and max(envelope) > 4:
-            raise ValueError(
-                f"PVDI intensity > 4 in {path_2ex}: format changed"
-            )
+            raise ValueError(f"PVDI intensity > 4 in {path_2ex}: format changed")
         return _PVDI_RATE / _PVDI_HOP, envelope
     return None
 
@@ -642,11 +696,13 @@ def _vocal_regions(envelope: bytes, fps: float) -> list[dict[str, Any]]:
     for run_start, run_end in merged:
         if (run_end - run_start) / fps < VOCAL_MIN_REGION_S:
             continue
-        regions.append({
-            "start_s": round(run_start / fps, 2),
-            "end_s": round(run_end / fps, 2),
-            "intensity": int(max(envelope[run_start:run_end])),
-        })
+        regions.append(
+            {
+                "start_s": round(run_start / fps, 2),
+                "end_s": round(run_end / fps, 2),
+                "intensity": int(max(envelope[run_start:run_end])),
+            }
+        )
     return regions
 
 
@@ -690,9 +746,7 @@ def demucs_vocals_payload(content: RbContent) -> Optional[dict[str, Any]]:
     return vocal_cache.anlz_vocals_of(entry)
 
 
-def merge_demucs_vocals(
-    payload: dict[str, Any], content: RbContent
-) -> dict[str, Any]:
+def merge_demucs_vocals(payload: dict[str, Any], content: RbContent) -> dict[str, Any]:
     """Serve-time merge: when PVDI said not_analyzed, consult the demucs
     vocal-cache. Applied AFTER the anlz file cache on purpose -- the cached
     payload stays PVDI-only, so a vocal-cache entry landing (or being
@@ -706,7 +760,30 @@ def merge_demucs_vocals(
     return {**payload, "vocals": demucs}
 
 
+def vocals_for_content(content: RbContent) -> dict[str, Any]:
+    """Listing hot path: PVDI from .2EX, else demucs vocal-cache.
+
+    Same four statuses as ``/anlz`` vocals. Used by :func:`build_track_rows`
+    so library PreviewStrip blue bars do not need a per-row /anlz fetch.
+    """
+    path_2ex: Optional[Path] = None
+    if content.analysis_data_path:
+        mapped = resolve_asset_path(content.analysis_data_path)
+        if mapped.resolved is not None:
+            mapped_twoex = _asset_sibling(mapped, mapped.resolved.with_suffix(".2EX"))
+            if mapped_twoex.resolved is not None:
+                path_2ex = mapped_twoex.resolved
+    vocals = (
+        vocals_payload(path_2ex) if path_2ex is not None else {"status": "not_analyzed"}
+    )
+    if vocals["status"] != "not_analyzed":
+        return vocals
+    demucs = demucs_vocals_payload(content)
+    return demucs if demucs is not None else vocals
+
+
 # ----- playlist ordering (djmdPlaylist Seq) -----------------------------------
+
 
 def playlist_order_index() -> dict[str, int]:
     """djmdPlaylist ID -> flattened rekordbox tree position (0-based).
@@ -746,6 +823,7 @@ def playlist_order_index() -> dict[str, int]:
 
 # ----- cues (djmdCue, NOT ANLZ) ----------------------------------------------
 
+
 def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
     """Live djmdCue rows mapped to the COMPONENT-MAP 2.3 cue shape."""
     master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
@@ -779,17 +857,19 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
         else:
             kind = "hot_cue"
             slot = HOT_CUE_SLOTS[int(kind_i) - 1]
-        cues.append({
-            "kind": kind,
-            "slot": slot,
-            "in_ms": int(in_ms) if in_ms is not None else None,
-            "out_ms": int(out_ms) if is_loop else None,
-            "is_loop": is_loop,
-            "active_loop": bool(active_loop),
-            "beat_loop_size": int(loop_size) if loop_size is not None else None,
-            "color_table_index": int(color_idx) if color_idx is not None else None,
-            "comment": comment or None,
-        })
+        cues.append(
+            {
+                "kind": kind,
+                "slot": slot,
+                "in_ms": int(in_ms) if in_ms is not None else None,
+                "out_ms": int(out_ms) if is_loop else None,
+                "is_loop": is_loop,
+                "active_loop": bool(active_loop),
+                "beat_loop_size": int(loop_size) if loop_size is not None else None,
+                "color_table_index": int(color_idx) if color_idx is not None else None,
+                "comment": comment or None,
+            }
+        )
     cues.sort(key=lambda c: c["in_ms"] if c["in_ms"] is not None else -1)
     return cues
 
@@ -799,8 +879,7 @@ def count_cues(vendor_id: str) -> int:
     master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
     try:
         row = master.execute(
-            "SELECT COUNT(*) FROM djmdCue "
-            "WHERE ContentID = ? AND rb_local_deleted = 0",
+            "SELECT COUNT(*) FROM djmdCue WHERE ContentID = ? AND rb_local_deleted = 0",
             (vendor_id,),
         ).fetchone()
         return int(row[0])
@@ -810,9 +889,10 @@ def count_cues(vendor_id: str) -> int:
 
 # ----- bulk row hydration (contract items 1-4) --------------------------------
 
+
 def _chunked(seq: Sequence[str], size: int = _SQL_CHUNK) -> Iterator[Sequence[str]]:
     for i in range(0, len(seq), size):
-        yield seq[i:i + size]
+        yield seq[i : i + size]
 
 
 def bulk_rb_meta(stable_ids: Sequence[str]) -> dict[str, RbRowMeta]:
@@ -939,8 +1019,7 @@ def bulk_availability(
             meta.folder_path if meta is not None else state_file_paths.get(sid)
         )
     exists = bulk_file_exists(
-        path for path in folder_by_sid.values()
-        if path and not is_streaming_path(path)
+        path for path in folder_by_sid.values() if path and not is_streaming_path(path)
     )
     return {
         sid: bool(path) and not is_streaming_path(path) and exists[path]
@@ -961,8 +1040,7 @@ def bulk_quality(
     UNKNOWN rather than a guessed rung.
     """
     sizes = bulk_file_size(
-        path for path in folder_by_sid.values()
-        if path and not is_streaming_path(path)
+        path for path in folder_by_sid.values() if path and not is_streaming_path(path)
     )
     out: dict[str, dict] = {}
     for sid in stable_ids:
@@ -995,56 +1073,76 @@ def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
     old 29x per-row GET fan-out. Field names match the shared API
     contract exactly: title, artist, key, bpm, rating, duration_ms,
     genre, comments, etag, preview_b64, preview_max, file_exists,
-    is_streaming, quality, play_count.
+    is_streaming, quality, play_count, vocals, stems.
     """
     from .etag import compute_etag
+    from .stem_artifacts import bulk_stem_summaries
 
     stable_ids = [t.stable_id for t in tracks]
     metas = bulk_rb_meta(stable_ids)
     available = bulk_availability(
-        stable_ids, {t.stable_id: t.file_path for t in tracks}, metas,
+        stable_ids,
+        {t.stable_id: t.file_path for t in tracks},
+        metas,
     )
     folder_by_sid = {
         t.stable_id: (
             metas[t.stable_id].folder_path
-            if metas.get(t.stable_id) is not None else t.file_path
+            if metas.get(t.stable_id) is not None
+            else t.file_path
         )
         for t in tracks
     }
     quality = bulk_quality(
-        stable_ids, folder_by_sid,
+        stable_ids,
+        folder_by_sid,
         {t.stable_id: t.duration_ms for t in tracks},
     )
+    stems = bulk_stem_summaries(stable_ids)
     rows: list[dict[str, Any]] = []
     for track in tracks:
         meta = metas.get(track.stable_id)
         folder = meta.folder_path if meta is not None else track.file_path
         preview_b64, preview_max = (
-            preview_strip(meta.analysis_data_path)
-            if meta is not None else (None, None)
+            preview_strip(meta.analysis_data_path) if meta is not None else (None, None)
         )
-        rows.append({
-            "stable_id": track.stable_id,
-            "title": track.title,
-            "artist": track.artist,
-            "key": track.key,
-            "bpm": track.bpm,
-            "rating": track.rating,
-            "duration_ms": track.duration_ms,
-            "genre": meta.genre if meta is not None else None,
-            "comments": meta.comment if meta is not None else None,
-            "etag": compute_etag(track.stable_id, track.updated_at),
-            "preview_b64": preview_b64,
-            "preview_max": preview_max,
-            "file_exists": available[track.stable_id],
-            "is_streaming": is_streaming_path(folder),
-            "quality": quality[track.stable_id],
-            "play_count": meta.play_count if meta is not None else 0,
-        })
+        content = RbContent(
+            stable_id=track.stable_id,
+            vendor_id=meta.vendor_id if meta is not None else "",
+            folder_path=folder,
+            image_path=None,
+            analysis_data_path=(meta.analysis_data_path if meta is not None else None),
+            length_s=None,
+            comment=None,
+            genre=None,
+        )
+        rows.append(
+            {
+                "stable_id": track.stable_id,
+                "title": track.title,
+                "artist": track.artist,
+                "key": track.key,
+                "bpm": track.bpm,
+                "rating": track.rating,
+                "duration_ms": track.duration_ms,
+                "genre": meta.genre if meta is not None else None,
+                "comments": meta.comment if meta is not None else None,
+                "etag": compute_etag(track.stable_id, track.updated_at),
+                "preview_b64": preview_b64,
+                "preview_max": preview_max,
+                "file_exists": available[track.stable_id],
+                "is_streaming": is_streaming_path(folder),
+                "quality": quality[track.stable_id],
+                "play_count": meta.play_count if meta is not None else 0,
+                "vocals": vocals_for_content(content),
+                "stems": stems[track.stable_id],
+            }
+        )
     return rows
 
 
 # ----- ANLZ payload (waveform + beatgrid + phrases) ---------------------------
+
 
 def _downsample_max(arr: np.ndarray, points: int) -> np.ndarray:
     """Per-bucket max downsample along axis 0 to <= ``points`` entries."""
@@ -1128,21 +1226,21 @@ def _phrases_payload(tags: dict[str, Any], times: list[float]) -> list[dict[str,
     for i, entry in enumerate(entries):
         start_beat = int(entry.beat)
         stop_beat = int(entries[i + 1].beat) if i + 1 < len(entries) else end_beat
-        phrases.append({
-            "start_s": time_of_beat(start_beat),
-            "end_s": time_of_beat(stop_beat),
-            "kind": int(entry.kind),
-            "mood": mood,
-        })
+        phrases.append(
+            {
+                "start_s": time_of_beat(start_beat),
+                "end_s": time_of_beat(stop_beat),
+                "kind": int(entry.kind),
+                "mood": mood,
+            }
+        )
     return phrases
 
 
 def _anlz_mtime(directory: Path) -> float:
     files = sorted(directory.glob("ANLZ*"))
     if not files:
-        raise not_found(
-            "ANALYSIS_NOT_FOUND", f"no ANLZ files in directory {directory}"
-        )
+        raise not_found("ANALYSIS_NOT_FOUND", f"no ANLZ files in directory {directory}")
     return max(f.stat().st_mtime for f in files)
 
 
@@ -1198,12 +1296,14 @@ def _store_cached_payload(
     tmp = Path(tmp_name)
     try:
         tmp.write_text(
-            json.dumps({
-                "schema": ANLZ_CACHE_SCHEMA,
-                "anlz_mtime": anlz_mtime,
-                "points": points,
-                "payload": payload,
-            }),
+            json.dumps(
+                {
+                    "schema": ANLZ_CACHE_SCHEMA,
+                    "anlz_mtime": anlz_mtime,
+                    "points": points,
+                    "payload": payload,
+                }
+            ),
             encoding="utf-8",
         )
         with _cache_lock(path):
@@ -1211,6 +1311,102 @@ def _store_cached_payload(
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+# ----- beatgrid data-quality diagnostic (browser Err column) ----------------
+# Perf tradeoff (see BEATGRID_ISSUE_CACHE_DIR above): the diagnostic is only
+# ever COMPUTED here, piggybacked on a full ANLZ parse that already happened
+# for another reason (deck load, waveform view, RunAnalyses). Bulk row
+# listings (build_track_rows) and the browser's lazy per-row rb-meta fetch
+# never parse PQTZ themselves - rb-meta only READS the tiny cached verdict
+# via cached_beatgrid_issue(), so a track shows no Err dot until its full
+# ANLZ has actually been fetched once. That is an honest "not yet evaluated"
+# state, not a wrong answer, and it self-heals the first time anything reads
+# that track's /anlz.
+
+
+def _beatgrid_issue_cache_path(stable_id: str) -> Path:
+    return BEATGRID_ISSUE_CACHE_DIR / f"{stable_id}.json"
+
+
+def _read_beatgrid_issue_cache_entry(stable_id: str) -> Optional[dict[str, Any]]:
+    path = _beatgrid_issue_cache_path(stable_id)
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("beatgrid-issue cache unreadable, ignoring: %s (%s)", path, exc)
+        return None
+
+
+def _store_beatgrid_issue_cache(
+    stable_id: str, dat_mtime: float, issue: Optional[dict[str, Any]]
+) -> None:
+    """Atomic write, same tempfile-then-replace pattern as _store_cached_payload."""
+    BEATGRID_ISSUE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _beatgrid_issue_cache_path(stable_id)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        tmp.write_text(
+            json.dumps(
+                {
+                    "schema": BEATGRID_ISSUE_CACHE_SCHEMA,
+                    "dat_mtime": dat_mtime,
+                    "issue": issue,
+                }
+            ),
+            encoding="utf-8",
+        )
+        with _cache_lock(path):
+            os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _ensure_beatgrid_issue_cached(
+    stable_id: str, dat_mtime: float, beats: Sequence[Mapping[str, Any]]
+) -> None:
+    """Compute + persist the diagnostic only if the sidecar is missing or
+    stale for this exact AnalysisDataPath mtime; a fresh match is a no-op so
+    a warm anlz-cache hit stays cheap on every subsequent /anlz call."""
+    entry = _read_beatgrid_issue_cache_entry(stable_id)
+    if (
+        entry is not None
+        and entry.get("schema") == BEATGRID_ISSUE_CACHE_SCHEMA
+        and entry.get("dat_mtime") == dat_mtime
+    ):
+        return
+    issue = beatgrid_diagnostics.detect_beatgrid_issue(beats)
+    _store_beatgrid_issue_cache(stable_id, dat_mtime, issue)
+
+
+def cached_beatgrid_issue(content: RbContent) -> Optional[dict[str, Any]]:
+    """Cheap read-only lookup for GET /rb-meta - see the module comment above
+    for the full perf rationale. None means either "no issue" or "never
+    evaluated yet"; both are honest and this never fabricates a verdict."""
+    if content.analysis_data_path is None:
+        return None
+    mapped = resolve_asset_path(content.analysis_data_path)
+    if mapped.resolved is None:
+        return None
+    try:
+        dat_mtime = mapped.resolved.stat().st_mtime
+    except OSError:
+        return None
+    entry = _read_beatgrid_issue_cache_entry(content.stable_id)
+    if (
+        entry is None
+        or entry.get("schema") != BEATGRID_ISSUE_CACHE_SCHEMA
+        or entry.get("dat_mtime") != dat_mtime
+    ):
+        return None
+    return entry.get("issue")
 
 
 def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
@@ -1227,9 +1423,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
     assert content.analysis_data_path is not None
     mapped_adp = resolve_asset_path(content.analysis_data_path)
     assert mapped_adp.resolved is not None  # anlz_dir() would have 404'd
-    mapped_twoex = _asset_sibling(
-        mapped_adp, mapped_adp.resolved.with_suffix(".2EX")
-    )
+    mapped_twoex = _asset_sibling(mapped_adp, mapped_adp.resolved.with_suffix(".2EX"))
     if mapped_twoex.resolved is None:
         raise not_found(
             "ANALYSIS_NOT_FOUND",
@@ -1237,9 +1431,20 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
             f"({mapped_twoex.reason}): {content.analysis_data_path}",
         )
     twoex_path = mapped_twoex.resolved
+    try:
+        dat_mtime: Optional[float] = mapped_adp.resolved.stat().st_mtime
+    except OSError:
+        # anlz_dir() already verified the real directory exists; only a
+        # mocked/synthetic path (unit tests) lands here. Skip the sidecar
+        # cache write rather than fail the whole payload over it.
+        dat_mtime = None
     anlz_mtime = _anlz_mtime(directory)
     cached = _load_cached_payload(content.stable_id, anlz_mtime, points)
     if cached is not None:
+        if dat_mtime is not None:
+            _ensure_beatgrid_issue_cached(
+                content.stable_id, dat_mtime, cached["beatgrid"]["beats"]
+            )
         payload = dict(cached)
         payload["cues"] = fetch_cues(content.vendor_id)
         return merge_demucs_vocals(payload, content)
@@ -1255,15 +1460,19 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         detail_bands = _mono_bands(tags["PWV3"]) if "PWV3" in tags else {}
     empty_bands = {"length": 0, "low": [], "mid": [], "high": []}
     beatgrid, times = _beatgrid_payload(tags)
+    if dat_mtime is not None:
+        _ensure_beatgrid_issue_cached(content.stable_id, dat_mtime, beatgrid["beats"])
     payload: dict[str, Any] = {
         "stable_id": content.stable_id,
         "points": points,
         "waveform": {
             "kind": kind,
             "preview": _bands_payload(preview_bands, points)
-            if preview_bands else dict(empty_bands),
+            if preview_bands
+            else dict(empty_bands),
             "detail": _bands_payload(detail_bands, points)
-            if detail_bands else dict(empty_bands),
+            if detail_bands
+            else dict(empty_bands),
         },
         "beatgrid": beatgrid,
         "phrases": _phrases_payload(tags, times),
@@ -1295,6 +1504,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
 # frontend concern (beat-sync-math.quantizeToNearestBeat against the loaded
 # AnlzBeatgrid) -- this surface accepts whatever in_ms it is given verbatim.
 
+
 class HotCueSlotError(ValueError):
     """Unknown/unsupported hot-cue slot letter."""
 
@@ -1325,9 +1535,10 @@ def _rb_timestamp() -> str:
 def _new_cue_id(conn: sqlite3.Connection) -> str:
     for _ in range(50):
         candidate = str(secrets.randbelow(9_000_000_000) + 1_000_000_000)
-        if conn.execute(
-            "SELECT 1 FROM djmdCue WHERE ID = ?", (candidate,)
-        ).fetchone() is None:
+        if (
+            conn.execute("SELECT 1 FROM djmdCue WHERE ID = ?", (candidate,)).fetchone()
+            is None
+        ):
             return candidate
     raise HTTPException(
         status_code=500,
@@ -1359,8 +1570,18 @@ _CUE_SNAPSHOT_COLUMNS = (
 def _cue_snapshot_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
     """Serialize every destructive hot-cue field needed for an exact undo."""
     (
-        cue_id, kind, in_ms, in_frame, in_mpeg_frame, in_mpeg_abs, out_ms,
-        out_frame, active_loop, beat_loop_size, color_table_index, comment,
+        cue_id,
+        kind,
+        in_ms,
+        in_frame,
+        in_mpeg_frame,
+        in_mpeg_abs,
+        out_ms,
+        out_frame,
+        active_loop,
+        beat_loop_size,
+        color_table_index,
+        comment,
         updated_at,
     ) = row
     return {
@@ -1374,18 +1595,28 @@ def _cue_snapshot_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "out_frame": int(out_frame) if out_frame is not None else None,
         "active_loop": bool(active_loop),
         "beat_loop_size": int(beat_loop_size) if beat_loop_size is not None else None,
-        "color_table_index": int(color_table_index) if color_table_index is not None else None,
+        "color_table_index": int(color_table_index)
+        if color_table_index is not None
+        else None,
         "comment": comment or None,
         "updated_at": str(updated_at) if updated_at is not None else None,
     }
 
 
 def _cue_revision(
-    vendor_id: str, kind: int, generation: int, snapshot: Optional[Mapping[str, Any]],
+    vendor_id: str,
+    kind: int,
+    generation: int,
+    snapshot: Optional[Mapping[str, Any]],
 ) -> str:
     """Opaque CAS token bound to track, slot generation, and exact state."""
     encoded = json.dumps(
-        {"content_id": vendor_id, "kind": kind, "generation": generation, "snapshot": snapshot},
+        {
+            "content_id": vendor_id,
+            "kind": kind,
+            "generation": generation,
+            "snapshot": snapshot,
+        },
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -1393,7 +1624,9 @@ def _cue_revision(
 
 
 def _live_slot_snapshot(
-    conn: sqlite3.Connection, vendor_id: str, kind: int,
+    conn: sqlite3.Connection,
+    vendor_id: str,
+    kind: int,
 ) -> Optional[dict[str, Any]]:
     rows = conn.execute(
         f"SELECT {_CUE_SNAPSHOT_COLUMNS} FROM djmdCue "
@@ -1455,8 +1688,12 @@ def fetch_hot_cue_slots(vendor_id: str) -> list[dict[str, Any]]:
                 slot,
                 snapshots[kind],
                 _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
-            ) if snapshots[kind] else None,
-            "revision": _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
+            )
+            if snapshots[kind]
+            else None,
+            "revision": _cue_revision(
+                vendor_id, kind, generations[kind], snapshots[kind]
+            ),
         }
         for kind, slot in enumerate(HOT_CUE_SLOTS, start=1)
     ]
@@ -1497,7 +1734,11 @@ def _duration_ms(conn: sqlite3.Connection, vendor_id: str) -> int:
             },
         )
     duration_s = row[0]
-    if isinstance(duration_s, bool) or not isinstance(duration_s, int) or duration_s < 0:
+    if (
+        isinstance(duration_s, bool)
+        or not isinstance(duration_s, int)
+        or duration_s < 0
+    ):
         raise HTTPException(
             status_code=422,
             detail={
@@ -1508,11 +1749,16 @@ def _duration_ms(conn: sqlite3.Connection, vendor_id: str) -> int:
     return duration_s * 1000
 
 
-def _validate_cue_position(conn: sqlite3.Connection, vendor_id: str, in_ms: int) -> None:
+def _validate_cue_position(
+    conn: sqlite3.Connection, vendor_id: str, in_ms: int
+) -> None:
     if isinstance(in_ms, bool) or not isinstance(in_ms, int):
         raise HTTPException(
             status_code=422,
-            detail={"code": "INVALID_CUE_POSITION", "message": "in_ms must be a finite integer"},
+            detail={
+                "code": "INVALID_CUE_POSITION",
+                "message": "in_ms must be a finite integer",
+            },
         )
     duration_ms = _duration_ms(conn, vendor_id)
     if not 0 <= in_ms <= duration_ms:
@@ -1539,11 +1785,20 @@ def _restore_snapshot(
         "rb_local_deleted = 0, updated_at = ? "
         "WHERE ID = ? AND ContentID = ? AND Kind = ?",
         (
-            snapshot["in_ms"], snapshot["in_frame"], snapshot["in_mpeg_frame"],
-            snapshot["in_mpeg_abs"], snapshot["out_ms"], snapshot["out_frame"],
-            int(snapshot["active_loop"]), snapshot["beat_loop_size"],
-            snapshot["color_table_index"], snapshot["comment"], now, snapshot["id"],
-            vendor_id, kind,
+            snapshot["in_ms"],
+            snapshot["in_frame"],
+            snapshot["in_mpeg_frame"],
+            snapshot["in_mpeg_abs"],
+            snapshot["out_ms"],
+            snapshot["out_frame"],
+            int(snapshot["active_loop"]),
+            snapshot["beat_loop_size"],
+            snapshot["color_table_index"],
+            snapshot["comment"],
+            now,
+            snapshot["id"],
+            vendor_id,
+            kind,
         ),
     )
     if result.rowcount != 1:
@@ -1594,7 +1849,9 @@ def _bump_slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -
         (generation + 1, vendor_id, kind, generation),
     )
     if result.rowcount != 1:
-        raise RuntimeError("hot-cue slot generation changed inside an exclusive transaction")
+        raise RuntimeError(
+            "hot-cue slot generation changed inside an exclusive transaction"
+        )
     return generation + 1
 
 
@@ -1615,7 +1872,9 @@ def _create_reversal(
             reversal_id,
             vendor_id,
             kind,
-            json.dumps(preimage, sort_keys=True, separators=(",", ":")) if preimage else None,
+            json.dumps(preimage, sort_keys=True, separators=(",", ":"))
+            if preimage
+            else None,
             post_revision,
             _rb_timestamp(),
         ),
@@ -1624,7 +1883,10 @@ def _create_reversal(
 
 
 def _load_reversal(
-    conn: sqlite3.Connection, reversal_id: str, vendor_id: str, kind: int,
+    conn: sqlite3.Connection,
+    reversal_id: str,
+    vendor_id: str,
+    kind: int,
 ) -> Optional[dict[str, Any]]:
     _ensure_reversal_tables(conn)
     row = conn.execute(
@@ -1635,18 +1897,27 @@ def _load_reversal(
     if row is None:
         raise HTTPException(
             status_code=404,
-            detail={"code": "HOT_CUE_REVERSAL_NOT_FOUND", "message": "unknown reversal token"},
+            detail={
+                "code": "HOT_CUE_REVERSAL_NOT_FOUND",
+                "message": "unknown reversal token",
+            },
         )
     content_id, record_kind, preimage_json, post_revision, consumed_at = row
     if str(content_id) != vendor_id or int(record_kind) != kind:
         raise HTTPException(
             status_code=409,
-            detail={"code": "HOT_CUE_REVERSAL_SCOPE_CONFLICT", "message": "reversal token is bound to another hot-cue slot"},
+            detail={
+                "code": "HOT_CUE_REVERSAL_SCOPE_CONFLICT",
+                "message": "reversal token is bound to another hot-cue slot",
+            },
         )
     if consumed_at is not None:
         raise HTTPException(
             status_code=409,
-            detail={"code": "HOT_CUE_REVERSAL_CONSUMED", "message": "reversal token was already consumed"},
+            detail={
+                "code": "HOT_CUE_REVERSAL_CONSUMED",
+                "message": "reversal token was already consumed",
+            },
         )
     return {
         "preimage": json.loads(preimage_json) if preimage_json else None,
@@ -1673,7 +1944,8 @@ def save_hot_cue(
         preimage = _live_slot_snapshot(master, vendor_id, kind)
         generation = _slot_generation(master, vendor_id, kind)
         _require_current_revision(
-            expected_revision, _cue_revision(vendor_id, kind, generation, preimage),
+            expected_revision,
+            _cue_revision(vendor_id, kind, generation, preimage),
         )
         if preimage is not None:
             update = master.execute(
@@ -1681,8 +1953,16 @@ def save_hot_cue(
                 "InMpegAbs = NULL, OutMsec = NULL, OutFrame = NULL, "
                 "ActiveLoop = 0, ColorTableIndex = ?, Comment = ?, "
                 "updated_at = ? WHERE ID = ? AND ContentID = ? AND Kind = ?",
-                (in_ms, _msec_to_frame(in_ms), color_table_index, comment,
-                 now, preimage["id"], vendor_id, kind),
+                (
+                    in_ms,
+                    _msec_to_frame(in_ms),
+                    color_table_index,
+                    comment,
+                    now,
+                    preimage["id"],
+                    vendor_id,
+                    kind,
+                ),
             )
             if update.rowcount != 1:
                 raise RuntimeError("save_hot_cue: scoped cue row disappeared")
@@ -1695,8 +1975,17 @@ def save_hot_cue(
                 "created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, 0, ?, 0, "
                 "?, ?)",
-                (cue_id, vendor_id, in_ms, _msec_to_frame(in_ms), kind,
-                 color_table_index, comment, now, now),
+                (
+                    cue_id,
+                    vendor_id,
+                    in_ms,
+                    _msec_to_frame(in_ms),
+                    kind,
+                    color_table_index,
+                    comment,
+                    now,
+                    now,
+                ),
             )
         current = _live_slot_snapshot(master, vendor_id, kind)
         if current is None:
@@ -1704,7 +1993,11 @@ def save_hot_cue(
         generation = _bump_slot_generation(master, vendor_id, kind)
         revision = _cue_revision(vendor_id, kind, generation, current)
         reversal_id = _create_reversal(
-            master, vendor_id, kind, preimage, revision,
+            master,
+            vendor_id,
+            kind,
+            preimage,
+            revision,
         )
         master.commit()
     except Exception:
@@ -1719,7 +2012,10 @@ def save_hot_cue(
 
 
 def clear_hot_cue(
-    vendor_id: str, slot: str, *, expected_revision: str,
+    vendor_id: str,
+    slot: str,
+    *,
+    expected_revision: str,
 ) -> dict[str, Any]:
     """CAS-clear a hot cue and return its atomic preimage for restore."""
     kind = _slot_to_kind(slot)
@@ -1729,7 +2025,8 @@ def clear_hot_cue(
         preimage = _live_slot_snapshot(master, vendor_id, kind)
         generation = _slot_generation(master, vendor_id, kind)
         _require_current_revision(
-            expected_revision, _cue_revision(vendor_id, kind, generation, preimage),
+            expected_revision,
+            _cue_revision(vendor_id, kind, generation, preimage),
         )
         if preimage is not None:
             update = master.execute(
@@ -1743,7 +2040,11 @@ def clear_hot_cue(
         generation = _bump_slot_generation(master, vendor_id, kind)
         revision = _cue_revision(vendor_id, kind, generation, current)
         reversal_id = _create_reversal(
-            master, vendor_id, kind, preimage, revision,
+            master,
+            vendor_id,
+            kind,
+            preimage,
+            revision,
         )
         master.commit()
     except Exception:
@@ -1819,6 +2120,8 @@ __all__ = [
     "ANLZ_CACHE_SCHEMA",
     "ARTWORK_FILENAMES",
     "AUDIO_MEDIA_TYPES",
+    "BEATGRID_ISSUE_CACHE_DIR",
+    "BEATGRID_ISSUE_CACHE_SCHEMA",
     "FILE_EXISTS_TTL_S",
     "HOT_CUE_SLOTS",
     "HotCueSlotError",
@@ -1839,6 +2142,7 @@ __all__ = [
     "bulk_availability",
     "bulk_file_exists",
     "bulk_rb_meta",
+    "cached_beatgrid_issue",
     "clear_hot_cue",
     "count_cues",
     "demucs_vocals_payload",
