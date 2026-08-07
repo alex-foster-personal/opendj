@@ -14,6 +14,7 @@ Regression one-liners:
   - if missing state.db does not 503 SMARTLISTS_DB_UNAVAILABLE then broken
   - if pre-Phase-08 db (no smartlists table) does not list [] then broken
 """
+
 from __future__ import annotations
 
 import json
@@ -61,12 +62,23 @@ def _seed_state_db(path: Path) -> None:
                 "content_hash, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    sid, "inferred", title, json.dumps(["Test Artist"]),
-                    None, None, 300000, None, None, created, created,
+                    sid,
+                    "inferred",
+                    title,
+                    json.dumps(["Test Artist"]),
+                    None,
+                    None,
+                    300000,
+                    None,
+                    None,
+                    created,
+                    created,
                 ),
             )
             for fname, value in (
-                ("bpm", bpm), ("genre", genre), ("rating", rating),
+                ("bpm", bpm),
+                ("genre", genre),
+                ("rating", rating),
             ):
                 conn.execute(
                     "INSERT INTO track_fields (stable_id, field_name, "
@@ -223,9 +235,23 @@ def test_tracks_evaluates_rule_and_hydrates_rows(client, state_db_path):
     assert [t["stable_id"] for t in body["tracks"]] == body["items"]
     row = body["tracks"][0]
     for field in (
-        "stable_id", "title", "artist", "key", "bpm", "rating",
-        "duration_ms", "genre", "comments", "etag", "preview_b64",
-        "preview_max", "file_exists", "is_streaming", "play_count",
+        "stable_id",
+        "title",
+        "artist",
+        "key",
+        "bpm",
+        "rating",
+        "duration_ms",
+        "genre",
+        "comments",
+        "etag",
+        "preview_b64",
+        "preview_max",
+        "file_exists",
+        "is_streaming",
+        "play_count",
+        "vocals",
+        "stems",
     ):
         assert field in row, f"TrackRowOut parity missing {field}"
     assert row["title"] == "Oxide"
@@ -236,12 +262,18 @@ def test_tracks_evaluates_rule_and_hydrates_rows(client, state_db_path):
 def test_tracks_respects_order_by_and_limit(client, state_db_path):
     rule = {"field": "bpm", "op": ">", "value": 0}
     sid = _create_smartlist(
-        state_db_path, "all by bpm", rule, order_by="bpm asc",
+        state_db_path,
+        "all by bpm",
+        rule,
+        order_by="bpm asc",
     )
     r = client.get(f"/api/v1/smartlists/{sid}/tracks")
     assert r.status_code == 200
     assert r.json()["items"] == [
-        "sl-track-003", "sl-track-001", "sl-track-002", "sl-track-004",
+        "sl-track-003",
+        "sl-track-001",
+        "sl-track-002",
+        "sl-track-004",
     ]
     r2 = client.get(f"/api/v1/smartlists/{sid}/tracks", params={"limit": 2})
     assert r2.status_code == 200

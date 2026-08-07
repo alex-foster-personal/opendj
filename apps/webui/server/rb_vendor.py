@@ -1206,15 +1206,42 @@ def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
     return out
 
 
-def _first_tags(directory: Path) -> dict[str, Any]:
-    """First occurrence of each tag type across the track's ANLZ files."""
-    from pyrekordbox.anlz import read_anlz_files
+def _first_tags(directory: Path) -> tuple[dict[str, Any], list[str]]:
+    """First occurrence of each tag type, plus the files that would not parse.
+
+    Parses each ANLZ file SEPARATELY. ``read_anlz_files`` parses the set in one
+    call, so a single unparseable sibling took the whole track's analysis down
+    with a 500 -- and rekordbox does write files pyrekordbox cannot read: the
+    100 acapellas imported Sat 8 Aug 2026 have an ANLZ0000.EXT whose colour
+    waveform tag fails a construct const check, while their .DAT (PQTZ
+    beatgrid, PWAV, PCOB cues) and .2EX (PWV6/PWV7 tri-band) parse perfectly.
+
+    Losing one file is NOT the same as losing the analysis, so the parseable
+    files are kept -- but the failure is RETURNED, never swallowed. The caller
+    puts it in the payload so a client can say which lanes are missing instead
+    of showing an empty waveform lane that looks like real silence.
+    """
+    from pyrekordbox.anlz import AnlzFile
 
     tags: dict[str, Any] = {}
-    for anlz_file in read_anlz_files(directory).values():
+    unreadable: list[str] = []
+    for path in sorted(directory.iterdir()):
+        if not path.is_file() or path.suffix.upper() not in {".DAT", ".EXT", ".2EX"}:
+            continue
+        try:
+            anlz_file = AnlzFile.parse_file(str(path))
+        except Exception as exc:
+            log.warning("ANLZ file %s is unparseable (%s)", path.name, exc)
+            unreadable.append(path.name)
+            continue
         for tag in anlz_file.tags:  # tags is a LIST in pyrekordbox 0.4.4
             tags.setdefault(tag.type, tag)
-    return tags
+    if not tags:
+        raise not_found(
+            "ANALYSIS_NOT_FOUND",
+            f"no ANLZ file in {directory} could be parsed: {unreadable}",
+        )
+    return tags, unreadable
 
 
 def _tri_bands(tag: Any) -> dict[str, np.ndarray]:
@@ -1491,7 +1518,7 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         payload["cues"] = fetch_cues(content.vendor_id)
         return merge_demucs_vocals(payload, content)
 
-    tags = _first_tags(directory)
+    tags, unreadable_anlz = _first_tags(directory)
     if "PWV6" in tags and "PWV7" in tags:
         kind = "tri"
         preview_bands = _tri_bands(tags["PWV6"])
@@ -1520,6 +1547,10 @@ def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
         "phrases": _phrases_payload(tags, times),
         # contract item 5: PVDI-derived vocal regions, three explicit states.
         "vocals": vocals_payload(twoex_path),
+        # ANLZ files rekordbox wrote but pyrekordbox cannot parse. Empty for
+        # a healthy track. Non-empty means some lanes below are absent because
+        # their tags were unreadable -- NOT because the track has no such data.
+        "unreadable_anlz": unreadable_anlz,
     }
 
     _store_cached_payload(content.stable_id, anlz_mtime, points, payload)
