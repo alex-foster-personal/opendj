@@ -2,7 +2,10 @@
 	/**
 	 * Horizontal crossfader (SCREENSHOT-SPEC 4, bottom center of the mixer).
 	 * Real control: 0 = full A (left bus), 1 = full B (right bus).
+	 * Wheel up moves toward B.
 	 */
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+
 	interface Props {
 		/** 0..1; 0 = full A, 1 = full B. */
 		value: number;
@@ -67,6 +70,7 @@
 	aria-valuenow={value}
 	tabindex="0"
 	bind:clientWidth={trackWidth}
+	use:wheelAdjust={{ step: WHEEL_STEP.crossfader, get: () => value, set: onchange }}
 	onpointerdown={handlePointerDown}
 	onpointermove={handlePointerMove}
 	onpointerup={handlePointerUp}

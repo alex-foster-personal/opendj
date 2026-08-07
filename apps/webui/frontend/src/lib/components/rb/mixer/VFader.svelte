@@ -6,6 +6,7 @@
 	 */
 	import { onDestroy } from 'svelte';
 	import { peekDeckMeter } from '$lib/rb/audio-engine.svelte';
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import type { DeckId } from '$lib/rb/types';
 
 	interface Props {
@@ -108,6 +109,7 @@
 	class:playing
 	class:looped
 	bind:this={trackEl}
+	use:wheelAdjust={{ step: WHEEL_STEP.fader, get: () => value, set: onchange }}
 	role="slider"
 	aria-label={label}
 	aria-orientation="vertical"

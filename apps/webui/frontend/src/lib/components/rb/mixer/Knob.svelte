@@ -2,9 +2,11 @@
 	/**
 	 * Rotary knob: SVG dark ring + indicator line (SCREENSHOT-SPEC 6).
 	 * Real knobs: drag-vertical to turn, double-click resets to 0.5, arrow
-	 * keys nudge. Inert knobs render identically but ignore input and carry
-	 * the standard tooltip.
+	 * keys nudge, mouse wheel nudges. Inert knobs render identically but
+	 * ignore input and carry the standard tooltip.
 	 */
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+
 	interface Props {
 		/** Small caps label under the knob (TRIM / HI / MID / LOW / FILTER ...). */
 		label: string;
@@ -97,6 +99,12 @@
 		onpointerup={handlePointerUp}
 		ondblclick={handleDblClick}
 		onkeydown={handleKeyDown}
+		use:wheelAdjust={{
+			step: WHEEL_STEP.knob,
+			get: () => value,
+			set: (next) => onchange?.(next),
+			disabled: inert || !onchange
+		}}
 	>
 		<circle cx="15" cy="15" r="14" class="ring" />
 		<circle cx="15" cy="15" r="11" class="cap" />
