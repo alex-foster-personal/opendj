@@ -16,10 +16,11 @@ Requirements (mini-PRD):
     [if] counts do not sum to total [then ⛔️]
     [if] --playlist names an unknown playlist [then ⛔️] explicit error
   ✔︎ ✅ trickle: process todo queue N tracks (--limit, default 5), ordered
-    by (playlist with most on-disk members) desc then length asc; DRY-RUN
-    by default, --live executes (mirrors apps.smartlists.refresh);
+    by (playlist with most on-disk members) desc then length asc; requires
+    explicit --dry-run or --live (no silent default);
     idempotent via cache presence; missing files skipped EXPLICITLY with
     a log line; per-track wall time + running ETA on stdout.
+    [if] neither --dry-run nor --live [then ⛔️] argparse rejects
     [if] run twice --live [then] second run recomputes nothing
     [if] a queued file vanished before its turn [then] "[SKIP]" line, no crash
     [if] --dry-run and --live both passed [then ⛔️] argparse rejects them
@@ -27,6 +28,12 @@ Requirements (mini-PRD):
   ✔︎ ✅ one: analyse a single --stable-id immediately (debug path), --force
     recomputes over a valid cache entry.
     [if] cache valid and no --force [then] no worker run, prints cached
+  ✔︎ ✅ from-stems: CPU-only backfill of vocal-cache from existing
+    ``data/state/stems/<id>/`` bundles (no demucs). Requires explicit
+    --dry-run or --live (no silent default). Skips valid cache unless --force.
+    [if] neither --dry-run nor --live [then ⛔️] argparse rejects
+    [if] stems present and cache missing [then] --live writes regions
+    [if] cache valid and no --force [then] skip
   ✔︎ ✅ --data-dir overrides the repo-default data/ root everywhere
     (worktrees pass the primary checkout's data dir explicitly).
   ✔︎ ✅ Windows portability: FolderPath/.2EX resolution goes through the
@@ -45,9 +52,12 @@ Exact command lines:
   python -m apps.vocals scan --data-dir /Users/dev/Music/music-dj-tools/data
   python -m apps.vocals trickle --limit 1 --live \\
       --data-dir /Users/dev/Music/music-dj-tools/data
+  python -m apps.vocals from-stems --dry-run
+  python -m apps.vocals from-stems --live
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,19 +79,29 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
 from apps.shared.paths import DATA_DIR
-from apps.shared.platform_paths import PathMap, MappedPath, load_path_map, resolve_library_path
+from apps.shared.platform_paths import (
+    PathMap,
+    MappedPath,
+    load_path_map,
+    resolve_library_path,
+)
 from apps.vocals import cache as vcache
+from apps.vocals import from_stems as vfrom_stems
 
 # ----- CFG ---------------------------------------------------------------------
-DEMUCS_REALTIME_FACTOR: float = 1.36   # SPIKE-B2 measured CPU rate (honest band 0.8-1.4x)
+DEMUCS_REALTIME_FACTOR: float = (
+    1.36  # SPIKE-B2 measured CPU rate (honest band 0.8-1.4x)
+)
 DEFAULT_TRICKLE_LIMIT: int = 5
 WORKER_TIMEOUT_S: float = 30 * 60
 LOCK_LEASE_S: float = 30
 LOCK_HEARTBEAT_S: float = 5
 WORKER_TERMINATE_GRACE_S: float = 2
 _WINDOWS: bool = os.name == "nt"
-WORKER_SCRIPT: Path = Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
-_SQL_CHUNK: int = 500                  # keep IN (...) under SQLite's var cap
+WORKER_SCRIPT: Path = (
+    Path(__file__).resolve().parents[2] / "scripts" / "vocal_region_worker.py"
+)
+_SQL_CHUNK: int = 500  # keep IN (...) under SQLite's var cap
 
 CATEGORY_PVDI = "pvdi"
 CATEGORY_CACHED = "cached_demucs"
@@ -141,6 +161,7 @@ class TrackClaim:
 
 # ----- db plumbing ---------------------------------------------------------------
 
+
 def _open_ro(path: Path, label: str) -> sqlite3.Connection:
     if not path.is_file():
         raise FileNotFoundError(f"{label} missing on disk: {path}")
@@ -170,10 +191,11 @@ def _resolve_share_path(path: str) -> Path:
 
 def _chunks(seq: list[str], size: int) -> Iterable[list[str]]:
     for i in range(0, len(seq), size):
-        yield seq[i:i + size]
+        yield seq[i : i + size]
 
 
 # ----- track loading -------------------------------------------------------------
+
 
 def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
     """All rekordbox-mapped tracks (optionally one playlist's members)."""
@@ -187,7 +209,8 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
             ).fetchall()
             if not pl_rows:
                 names = [
-                    r[0] for r in state.execute(
+                    r[0]
+                    for r in state.execute(
                         "SELECT DISTINCT name FROM playlists ORDER BY name"
                     ).fetchall()
                 ]
@@ -200,7 +223,8 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
             for chunk in _chunks(pl_ids, _SQL_CHUNK):
                 marks = ",".join("?" * len(chunk))
                 member_ids.update(
-                    r[0] for r in state.execute(
+                    r[0]
+                    for r in state.execute(
                         "SELECT DISTINCT stable_id FROM playlist_memberships "
                         f"WHERE playlist_id IN ({marks})",
                         chunk,
@@ -245,21 +269,24 @@ def load_tracks(ctx: Ctx, playlist: Optional[str]) -> list[VocalTrack]:
         if folder_path:
             audio = _resolve(str(folder_path), path_map=path_map)
             on_disk = audio is not None and audio.is_file()
-        tracks.append(VocalTrack(
-            stable_id=stable_id,
-            vendor_id=str(vendor_id),
-            title=str(title or state_title),
-            length_s=int(length_s) if length_s is not None else 0,
-            folder_path=str(folder_path) if folder_path else None,
-            analysis_data_path=str(adp) if adp else None,
-            audio_path=audio,
-            audio_on_disk=on_disk,
-        ))
+        tracks.append(
+            VocalTrack(
+                stable_id=stable_id,
+                vendor_id=str(vendor_id),
+                title=str(title or state_title),
+                length_s=int(length_s) if length_s is not None else 0,
+                folder_path=str(folder_path) if folder_path else None,
+                analysis_data_path=str(adp) if adp else None,
+                audio_path=audio,
+                audio_on_disk=on_disk,
+            )
+        )
     tracks.sort(key=lambda t: t.stable_id)
     return tracks
 
 
 # ----- classification --------------------------------------------------------------
+
 
 def pvdi_present(path_2ex: Path) -> bool:
     """Cheap PVDI probe: seek-walk the PMAI section headers only (a scan
@@ -311,7 +338,10 @@ def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
 
 # ----- trickle queue ordering -------------------------------------------------------
 
-def best_playlist_rank(ctx: Ctx, tracks: list[VocalTrack]) -> dict[str, tuple[int, str]]:
+
+def best_playlist_rank(
+    ctx: Ctx, tracks: list[VocalTrack]
+) -> dict[str, tuple[int, str]]:
     """stable_id -> (largest on-disk member count over its playlists, that
     playlist's name). Tracks in no playlist rank (0, '')."""
     on_disk_ids = {t.stable_id for t in tracks if t.audio_on_disk}
@@ -355,6 +385,7 @@ def order_todo(
 
 
 # ----- worker invocation --------------------------------------------------------------
+
 
 def _worker_command(audio_path: Path) -> list[str]:
     device = os.environ.get("MDT_VOCAL_WORKER_DEVICE", "auto")
@@ -476,8 +507,7 @@ def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[st
         ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
-            f"vocal_region_worker failed (exit {proc.returncode}) "
-            f"for {audio_path}"
+            f"vocal_region_worker failed (exit {proc.returncode}) for {audio_path}"
         )
     return json.loads(stdout)
 
@@ -543,7 +573,9 @@ def _read_claim_record(lock: Path) -> Optional[dict[str, Any]]:
 
 def _write_claim_record(lock: Path, record: dict[str, Any]) -> None:
     descriptor, tmp_name = tempfile.mkstemp(
-        dir=str(lock.parent), prefix=f".{lock.name}.", suffix=".tmp",
+        dir=str(lock.parent),
+        prefix=f".{lock.name}.",
+        suffix=".tmp",
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file_handle:
@@ -585,7 +617,8 @@ def _heartbeat_claim(
 
 
 def _claim_track(
-    cache_file: Path, lease_s: float = LOCK_LEASE_S,
+    cache_file: Path,
+    lease_s: float = LOCK_LEASE_S,
 ) -> Optional[TrackClaim]:
     """Claim one uncached track without waiting behind another CLI process.
 
@@ -604,14 +637,17 @@ def _claim_track(
         record = _read_claim_record(lock)
         if record is not None and _claim_is_active(record, now):
             return None
-        _write_claim_record(lock, {
-            "owner_token": owner_token,
-            "pid": os.getpid(),
-            "heartbeat_at": now,
-            "lease_s": lease_s,
-            "released": False,
-            "manual_recovery_required": False,
-        })
+        _write_claim_record(
+            lock,
+            {
+                "owner_token": owner_token,
+                "pid": os.getpid(),
+                "heartbeat_at": now,
+                "lease_s": lease_s,
+                "released": False,
+                "manual_recovery_required": False,
+            },
+        )
     stop = threading.Event()
     heartbeat_errors: list[BaseException] = []
     heartbeat_thread = threading.Thread(
@@ -634,7 +670,9 @@ def _claim_track(
 @contextmanager
 def _owned_track_claim(claim: TrackClaim) -> Iterator[None]:
     if claim.heartbeat_errors:
-        raise RuntimeError("vocals claim heartbeat failed") from claim.heartbeat_errors[0]
+        raise RuntimeError("vocals claim heartbeat failed") from claim.heartbeat_errors[
+            0
+        ]
     with _claim_record_guard(claim.path):
         record = _read_claim_record(claim.path)
         if (
@@ -671,7 +709,8 @@ def _release_track_claim(claim: TrackClaim) -> None:
 
 
 def _retain_track_claim_for_manual_recovery(
-    claim: TrackClaim, cleanup_error: WorkerCleanupError,
+    claim: TrackClaim,
+    cleanup_error: WorkerCleanupError,
 ) -> None:
     """Make an unverified-cleanup claim non-expiring, then stop its heartbeat."""
     with _claim_record_guard(claim.path):
@@ -713,6 +752,7 @@ def _managed_track_claim(claim: TrackClaim) -> Iterator[None]:
 
 # ----- output helpers ------------------------------------------------------------------
 
+
 def _fmt_dur(seconds: float) -> str:
     if seconds >= 3600:
         return f"{seconds / 3600:.1f}h"
@@ -724,8 +764,10 @@ def _fmt_dur(seconds: float) -> str:
 
 def _counts(tracks: list[VocalTrack]) -> dict[str, int]:
     counts = {
-        CATEGORY_PVDI: 0, CATEGORY_CACHED: 0,
-        CATEGORY_MISSING: 0, CATEGORY_TODO: 0,
+        CATEGORY_PVDI: 0,
+        CATEGORY_CACHED: 0,
+        CATEGORY_MISSING: 0,
+        CATEGORY_TODO: 0,
     }
     for tr in tracks:
         counts[tr.category] += 1
@@ -733,6 +775,7 @@ def _counts(tracks: list[VocalTrack]) -> dict[str, int]:
 
 
 # ----- subcommands ----------------------------------------------------------------------
+
 
 def cmd_scan(args: argparse.Namespace) -> int:
     ctx = Ctx(data_dir=args.data_dir)
@@ -745,15 +788,20 @@ def cmd_scan(args: argparse.Namespace) -> int:
     eta_s = todo_audio_s * DEMUCS_REALTIME_FACTOR
 
     if args.json:
-        print(json.dumps({
-            "data_dir": str(ctx.data_dir),
-            "playlist": args.playlist,
-            "total": len(tracks),
-            **counts,
-            "todo_audio_s": todo_audio_s,
-            "todo_eta_s": round(eta_s, 1),
-            "realtime_factor": DEMUCS_REALTIME_FACTOR,
-        }, indent=1))
+        print(
+            json.dumps(
+                {
+                    "data_dir": str(ctx.data_dir),
+                    "playlist": args.playlist,
+                    "total": len(tracks),
+                    **counts,
+                    "todo_audio_s": todo_audio_s,
+                    "todo_eta_s": round(eta_s, 1),
+                    "realtime_factor": DEMUCS_REALTIME_FACTOR,
+                },
+                indent=1,
+            )
+        )
         return 0
 
     scope = f" playlist={args.playlist!r}" if args.playlist else ""
@@ -799,14 +847,20 @@ def _process_one(
         )
     if claim is None:
         entry = vcache.write_entry(
-            vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
-            audio_mtime=pre_mtime, source_signature=pre_signature,
+            vcache.cache_path(ctx.data_dir, tr.stable_id),
+            result,
+            tr.audio_path,
+            audio_mtime=pre_mtime,
+            source_signature=pre_signature,
         )
     else:
         with _owned_track_claim(claim):
             entry = vcache.write_entry(
-                vcache.cache_path(ctx.data_dir, tr.stable_id), result, tr.audio_path,
-                audio_mtime=pre_mtime, source_signature=pre_signature,
+                vcache.cache_path(ctx.data_dir, tr.stable_id),
+                result,
+                tr.audio_path,
+                audio_mtime=pre_mtime,
+                source_signature=pre_signature,
             )
     wall_s = time.perf_counter() - t0
     rate = wall_s / tr.length_s if tr.length_s else float("nan")
@@ -830,16 +884,17 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     for tr in tracks:
         if tr.category == CATEGORY_MISSING:
             n_missing += 1
-            print(f"[SKIP missing-file] {tr.stable_id} {tr.title!r}: "
-                  f"{tr.folder_path or '(no FolderPath)'}", file=sys.stderr)
+            print(
+                f"[SKIP missing-file] {tr.stable_id} {tr.title!r}: "
+                f"{tr.folder_path or '(no FolderPath)'}",
+                file=sys.stderr,
+            )
     if n_missing:
         print(f"[skipped {n_missing} missing-file tracks; see stderr]")
 
     rank = best_playlist_rank(ctx, tracks)
-    todo = order_todo(
-        [t for t in tracks if t.category == CATEGORY_TODO], rank
-    )
-    batch = todo[:args.limit]
+    todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
+    batch = todo[: args.limit]
     batch_audio_s = sum(t.length_s for t in batch)
     est_s = batch_audio_s * DEMUCS_REALTIME_FACTOR
 
@@ -868,15 +923,20 @@ def cmd_trickle(args: argparse.Namespace) -> int:
         if tr.audio_path is None or not tr.audio_path.is_file():
             print(f"[SKIP vanished] {tr.stable_id} {tr.title!r}: {tr.audio_path}")
             continue
-        if vcache.load_valid_entry(
-            vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
-        ) is not None:
+        if (
+            vcache.load_valid_entry(
+                vcache.cache_path(ctx.data_dir, tr.stable_id), tr.audio_path
+            )
+            is not None
+        ):
             print(f"[SKIP cached] {tr.stable_id} {tr.title!r}: valid cache entry")
             continue
         cache_file = vcache.cache_path(ctx.data_dir, tr.stable_id)
         claim = _claim_track(cache_file)
         if claim is None:
-            print(f"[SKIP in-progress] {tr.stable_id} {tr.title!r}: another CLI owns it")
+            print(
+                f"[SKIP in-progress] {tr.stable_id} {tr.title!r}: another CLI owns it"
+            )
             continue
         with _managed_track_claim(claim):
             if vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
@@ -884,7 +944,11 @@ def cmd_trickle(args: argparse.Namespace) -> int:
                 continue
             print(f"[{i}/{len(batch)}] {tr.stable_id} {tr.title!r} ({tr.length_s}s)")
             wall_s, _entry = _process_one(
-                ctx, tr, f"[{i}/{len(batch)}]", args.worker_timeout_s, claim,
+                ctx,
+                tr,
+                f"[{i}/{len(batch)}]",
+                args.worker_timeout_s,
+                claim,
             )
         completed += 1
         done_audio_s += tr.length_s
@@ -895,16 +959,16 @@ def cmd_trickle(args: argparse.Namespace) -> int:
             f"est remaining {_fmt_dur(remaining_audio_s * live_rate)} "
             f"(measured {live_rate:.2f}x realtime)"
         )
-    print(f"[live] finished: {completed} analysed, "
-          f"{len(batch) - completed} skipped, wall {_fmt_dur(done_wall_s)}")
+    print(
+        f"[live] finished: {completed} analysed, "
+        f"{len(batch) - completed} skipped, wall {_fmt_dur(done_wall_s)}"
+    )
     return 0
 
 
 def cmd_one(args: argparse.Namespace) -> int:
     ctx = Ctx(data_dir=args.data_dir)
-    tracks = [
-        t for t in load_tracks(ctx, None) if t.stable_id == args.stable_id
-    ]
+    tracks = [t for t in load_tracks(ctx, None) if t.stable_id == args.stable_id]
     if not tracks:
         raise SystemExit(
             f"error: stable_id {args.stable_id!r} has no rekordbox mapping "
@@ -919,9 +983,11 @@ def cmd_one(args: argparse.Namespace) -> int:
     cache_file = vcache.cache_path(ctx.data_dir, tr.stable_id)
     existing = vcache.load_valid_entry(cache_file, tr.audio_path)
     if existing is not None and not args.force:
-        print(f"[cached] {tr.stable_id} {tr.title!r}: valid entry at "
-              f"{cache_file} ({len(existing['regions'])} regions, "
-              f"cov={existing['coverage_pct']}%); use --force to recompute")
+        print(
+            f"[cached] {tr.stable_id} {tr.title!r}: valid entry at "
+            f"{cache_file} ({len(existing['regions'])} regions, "
+            f"cov={existing['coverage_pct']}%); use --force to recompute"
+        )
         return 0
     claim = _claim_track(cache_file)
     if claim is None:
@@ -929,28 +995,134 @@ def cmd_one(args: argparse.Namespace) -> int:
             f"error: {tr.stable_id} is already being analysed by another vocals CLI process"
         )
     with _managed_track_claim(claim):
-        if not args.force and vcache.load_valid_entry(cache_file, tr.audio_path) is not None:
+        if (
+            not args.force
+            and vcache.load_valid_entry(cache_file, tr.audio_path) is not None
+        ):
             print(f"[cached] {tr.stable_id} {tr.title!r}: valid entry at {cache_file}")
             return 0
-        print(f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
-              f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}")
+        print(
+            f"[one] {tr.stable_id} {tr.title!r} ({tr.length_s}s) "
+            f"est {_fmt_dur(tr.length_s * DEMUCS_REALTIME_FACTOR)}"
+        )
         _process_one(ctx, tr, "[one]", args.worker_timeout_s, claim)
     return 0
 
 
+def cmd_from_stems(args: argparse.Namespace) -> int:
+    """CPU backfill: stem bundles -> vocal-cache (no demucs)."""
+    from apps.webui.server.stem_artifacts import (
+        StemArtifactError,
+        StemBundleNotFoundError,
+        load_stem_bundle,
+    )
+
+    ctx = Ctx(data_dir=args.data_dir)
+    root = vfrom_stems.stems_dir(ctx.data_dir)
+    live = bool(args.live)
+    force = bool(args.force)
+
+    if args.stable_id:
+        try:
+            load_stem_bundle(args.stable_id, stems_dir=root)
+        except StemBundleNotFoundError:
+            raise SystemExit(
+                f"error: no stem bundle for {args.stable_id!r} under {root}"
+            )
+        except StemArtifactError as exc:
+            raise SystemExit(
+                f"error: stem bundle invalid for {args.stable_id!r}: {exc}"
+            )
+        ids = [args.stable_id]
+    else:
+        ids = vfrom_stems.list_bundle_ids(root)
+
+    by_id = {t.stable_id: t for t in load_tracks(ctx, None)}
+    planned: list[VocalTrack] = []
+    for sid in ids:
+        tr = by_id.get(sid)
+        if tr is None:
+            print(
+                f"[SKIP unmapped] {sid}: no rekordbox mapping in {ctx.state_db}",
+                file=sys.stderr,
+            )
+            continue
+        if tr.audio_path is None or not tr.audio_path.is_file():
+            print(
+                f"[SKIP missing-file] {sid} {tr.title!r}: "
+                f"{tr.folder_path or '(no FolderPath)'}",
+                file=sys.stderr,
+            )
+            continue
+        cache_file = vcache.cache_path(ctx.data_dir, sid)
+        existing = vcache.load_valid_entry(cache_file, tr.audio_path)
+        if existing is not None and not force:
+            print(
+                f"[SKIP cached] {sid} {tr.title!r}: "
+                f"{len(existing['regions'])} regions "
+                f"cov={existing['coverage_pct']}%"
+            )
+            continue
+        planned.append(tr)
+
+    if args.limit is not None:
+        planned = planned[: max(0, int(args.limit))]
+
+    mode = "live" if live else "dry-run"
+    print(
+        f"[{mode}] from-stems: {len(planned)} track(s) "
+        f"(bundles under {root}; force={force})"
+    )
+    for i, tr in enumerate(planned, 1):
+        print(f"  {i}. {tr.stable_id} {tr.title!r}")
+    if not live:
+        print("[dry-run] no writes; pass --live to publish vocal-cache entries")
+        return 0
+
+    written = 0
+    for i, tr in enumerate(planned, 1):
+        assert tr.audio_path is not None
+        t0 = time.perf_counter()
+        try:
+            entry = vfrom_stems.write_from_bundle(
+                ctx.data_dir,
+                tr.stable_id,
+                tr.audio_path,
+                stems_root=root,
+            )
+        except Exception as exc:
+            print(
+                f"[FAIL] {tr.stable_id} {tr.title!r}: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        wall_s = time.perf_counter() - t0
+        written += 1
+        print(
+            f"[{i}/{len(planned)}] {tr.stable_id} {tr.title!r} "
+            f"regions={len(entry['regions'])} cov={entry['coverage_pct']}% "
+            f"in {wall_s:.2f}s -> {vcache.cache_path(ctx.data_dir, tr.stable_id)}"
+        )
+    print(f"[live] finished: {written} written, {len(planned) - written} failed")
+    return 0 if written == len(planned) else 1
+
+
 # ----- parser ----------------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m apps.vocals",
         description="demucs vocal-region gap-fill: scan coverage, trickle "
-                    "the todo queue, or analyse one track.",
+        "the todo queue, analyse one track, or backfill from stems.",
     )
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
-        "--data-dir", type=Path, default=DATA_DIR,
+        "--data-dir",
+        type=Path,
+        default=DATA_DIR,
         help=f"data root holding state/state.db, master.plain.db and "
-             f"state/vocal-cache (default: {DATA_DIR})",
+        f"state/vocal-cache (default: {DATA_DIR})",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -962,35 +1134,86 @@ def build_parser() -> argparse.ArgumentParser:
     scan.set_defaults(func=cmd_scan)
 
     trickle = sub.add_parser(
-        "trickle", parents=[common],
-        help="process the todo queue (dry-run unless --live)",
+        "trickle",
+        parents=[common],
+        help="process the todo queue (requires --dry-run or --live)",
     )
-    trickle.add_argument("--limit", type=int, default=DEFAULT_TRICKLE_LIMIT,
-                         help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})")
-    trickle.add_argument("--playlist", default=None,
-                         help="limit the queue to one playlist name")
     trickle.add_argument(
-        "--worker-timeout-s", type=float, default=WORKER_TIMEOUT_S,
+        "--limit",
+        type=int,
+        default=DEFAULT_TRICKLE_LIMIT,
+        help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})",
+    )
+    trickle.add_argument(
+        "--playlist", default=None, help="limit the queue to one playlist name"
+    )
+    trickle.add_argument(
+        "--worker-timeout-s",
+        type=float,
+        default=WORKER_TIMEOUT_S,
         help=f"per-track worker deadline in seconds (default {WORKER_TIMEOUT_S:g})",
     )
-    mode = trickle.add_mutually_exclusive_group()
-    mode.add_argument("--dry-run", action="store_true",
-                      help="plan only, no worker runs (the default)")
-    mode.add_argument("--live", action="store_true",
-                      help="actually run the demucs worker + write cache")
+    mode = trickle.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--dry-run", action="store_true", help="plan only, no worker runs"
+    )
+    mode.add_argument(
+        "--live",
+        action="store_true",
+        help="actually run the demucs worker + write cache",
+    )
     trickle.set_defaults(func=cmd_trickle)
 
     one = sub.add_parser(
         "one", parents=[common], help="analyse a single track (debug path)"
     )
     one.add_argument("--stable-id", required=True)
-    one.add_argument("--force", action="store_true",
-                     help="recompute even when a valid cache entry exists")
     one.add_argument(
-        "--worker-timeout-s", type=float, default=WORKER_TIMEOUT_S,
+        "--force",
+        action="store_true",
+        help="recompute even when a valid cache entry exists",
+    )
+    one.add_argument(
+        "--worker-timeout-s",
+        type=float,
+        default=WORKER_TIMEOUT_S,
         help=f"worker deadline in seconds (default {WORKER_TIMEOUT_S:g})",
     )
     one.set_defaults(func=cmd_one)
+
+    from_stems = sub.add_parser(
+        "from-stems",
+        parents=[common],
+        help="CPU backfill vocal-cache from existing stem bundles (no demucs)",
+    )
+    from_stems.add_argument(
+        "--stable-id",
+        default=None,
+        help="only this track (default: every loadable stem bundle)",
+    )
+    from_stems.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="max tracks to write this run (default: no cap)",
+    )
+    from_stems.add_argument(
+        "--force",
+        action="store_true",
+        help="rewrite even when a valid vocal-cache entry exists",
+    )
+    fs_mode = from_stems.add_mutually_exclusive_group(required=True)
+    fs_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="plan only, no cache writes",
+    )
+    fs_mode.add_argument(
+        "--live",
+        action="store_true",
+        help="derive regions from stems and write vocal-cache",
+    )
+    from_stems.set_defaults(func=cmd_from_stems)
     return parser
 
 
