@@ -123,8 +123,16 @@ def get_track_anlz(
     from data/state/vocal-cache, merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
-    content = rb_vendor.resolve_content(stable_id)
-    payload = rb_vendor.build_anlz_payload(content, points)
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+        payload = rb_vendor.build_anlz_payload(content, points)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+        # Locally imported track (no rekordbox analysis): empty-but-valid
+        # payload so a deck can still load + play, no synthesised waveform.
+        payload = rb_vendor.empty_anlz_payload(stable_id, points)
     return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ})
 
 

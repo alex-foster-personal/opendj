@@ -425,6 +425,48 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
     return path, media_type
 
 
+def empty_anlz_payload(stable_id: str, points: int) -> dict[str, Any]:
+    """Valid, empty ``/anlz`` payload for tracks with NO rekordbox analysis
+    (locally imported files, e.g. vocal stems). Shapes mirror
+    :func:`build_anlz_payload` exactly -- every array empty, ``vocals``
+    not_analyzed -- so a deck can load and play with no grid/waveform rather
+    than the whole load failing on a 404. Never synthesised data.
+    """
+    empty_bands = {"length": 0, "low": [], "mid": [], "high": []}
+    return {
+        "stable_id": stable_id,
+        "points": points,
+        "waveform": {
+            "kind": "mono",
+            "preview": dict(empty_bands),
+            "detail": dict(empty_bands),
+        },
+        "beatgrid": {"beat_count": 0, "beats": []},
+        "cues": [],
+        "phrases": [],
+        "vocals": {"status": "not_analyzed"},
+    }
+
+
+def empty_hot_cue_slots() -> list[dict[str, Any]]:
+    """Eight empty hot-cue slots for tracks with no rekordbox mapping.
+
+    Deterministic per-slot revisions keep the shape stable across calls; these
+    tracks have no djmdContent row, so cue writeback is unsupported anyway (a
+    PUT would 404), and the deck-load path only needs a non-null slot list.
+    """
+    return [
+        {
+            "slot": slot,
+            "cue": None,
+            "revision": hashlib.sha256(
+                f"empty-hot-cue:{slot}".encode("utf-8")
+            ).hexdigest(),
+        }
+        for slot in HOT_CUE_SLOTS
+    ]
+
+
 def artwork_file(content: RbContent, size: str) -> Path:
     """Resolve the artwork jpg for a size variant (s/m/orig), or 404."""
     if size not in ARTWORK_FILENAMES:
