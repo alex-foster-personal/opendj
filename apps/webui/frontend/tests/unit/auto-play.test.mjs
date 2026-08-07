@@ -21,8 +21,8 @@ function deck(partial) {
 	};
 }
 
-function row(stable_id, key, bpm) {
-	return { stable_id, key, bpm };
+function row(stable_id, key, bpm, file_exists = true) {
+	return { stable_id, key, bpm, file_exists };
 }
 
 describe('auto-play remaining / trigger', () => {
@@ -170,6 +170,43 @@ describe('auto-play track pick', () => {
 		);
 	});
 
+	it('skips file_exists=false (missing / iCloud stubs) in both modes', () => {
+		const { pickNextStableId } = mod;
+		const withStub = [
+			row('a', '8A', 120),
+			row('b', '8A', 122, false),
+			row('d', '8B', 125)
+		];
+		assert.equal(
+			pickNextStableId({
+				playlist: withStub,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: true,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'd'
+		);
+		assert.equal(
+			pickNextStableId({
+				playlist: withStub,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			}),
+			'd'
+		);
+	});
+
 	it('smart: earliest unplayed key+-1 within phase-lock BPM ratio', () => {
 		const { pickNextStableId } = mod;
 		// b is first after a that matches key+BPM; c is wrong key; e is out of ratio
@@ -226,20 +263,155 @@ describe('auto-play track pick', () => {
 		assert.equal(bpmWithinPhaseLockRange(60, 120, 0.84, 1.16), false);
 	});
 
-	it('publishes browser feed getters', () => {
-		const { setAutoPlayTrackFeed, getAutoPlayPlaylist, getAutoPlayPlaylistIds } = mod;
+	it('publishes browser feed getters; epoch only on membership identity change', () => {
+		const {
+			setAutoPlayTrackFeed,
+			getAutoPlayPlaylist,
+			getAutoPlayPlaylistIds,
+			getAutoPlayFeedEpoch
+		} = mod;
+		const before = getAutoPlayFeedEpoch();
 		setAutoPlayTrackFeed([
-			{ stable_id: 'p1', key: '1A', bpm: 120 },
-			{ stable_id: 'p2', key: '2A', bpm: 124 }
+			{ stable_id: 'p1', key: '1A', bpm: 120, file_exists: true },
+			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: false }
 		]);
+		const afterId = getAutoPlayFeedEpoch();
+		assert.equal(afterId > before, true);
+		setAutoPlayTrackFeed([
+			{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
+			{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
+		]);
+		assert.equal(getAutoPlayFeedEpoch(), afterId);
 		assert.deepEqual(
 			[...getAutoPlayPlaylist()],
 			[
-				{ stable_id: 'p1', key: '1A', bpm: 120 },
-				{ stable_id: 'p2', key: '2A', bpm: 124 }
+				{ stable_id: 'p1', key: '9A', bpm: 128, file_exists: true },
+				{ stable_id: 'p2', key: '2A', bpm: 124, file_exists: true }
 			]
 		);
 		assert.deepEqual([...getAutoPlayPlaylistIds()], ['p1', 'p2']);
+	});
+});
+
+describe('auto-play maximize reach (slack path)', () => {
+	// Tight BPM window: greedy earliest (b) is a dead end; c unlocks d.
+	const strand = [
+		row('a', '8A', 120),
+		row('b', '8A', 121),
+		row('c', '8A', 119),
+		row('d', '8A', 118)
+	];
+	const tight = { min_tempo_ratio: 0.985, max_tempo_ratio: 1.015 };
+
+	it('slack picks fewer-outward non-dead-end over greedy earliest', () => {
+		const { pickNextStableId } = mod;
+		assert.equal(
+			pickNextStableId({
+				playlist: strand,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				maximize_reach: false,
+				...tight
+			}),
+			'b'
+		);
+		assert.equal(
+			pickNextStableId({
+				playlist: strand,
+				current_stable_id: 'a',
+				current_key: '8A',
+				current_bpm: 120,
+				exclude_ids: new Set(),
+				played_ids: new Set(),
+				enforce_play_order: false,
+				maximize_reach: true,
+				...tight
+			}),
+			'c'
+		);
+	});
+
+	it('simulated chain: slack last track is last accessible; longer than greedy', () => {
+		const { simulateAutoPlayChain } = mod;
+		const greedy = simulateAutoPlayChain({
+			playlist: strand,
+			start_stable_id: 'a',
+			enforce_play_order: false,
+			maximize_reach: false,
+			...tight
+		});
+		const slack = simulateAutoPlayChain({
+			playlist: strand,
+			start_stable_id: 'a',
+			enforce_play_order: false,
+			maximize_reach: true,
+			...tight
+		});
+		assert.deepEqual([...greedy], ['a', 'b']);
+		assert.deepEqual([...slack], ['a', 'c', 'd']);
+		assert.equal(slack[slack.length - 1], 'd');
+		assert.equal(slack.length > greedy.length, true);
+	});
+
+	it('no-stranding fixture: greedy and slack produce identical order', () => {
+		const { simulateAutoPlayChain } = mod;
+		const linear = [
+			row('a', '8A', 120),
+			row('b', '8A', 120),
+			row('c', '8A', 120),
+			row('d', '8A', 120)
+		];
+		const opts = {
+			playlist: linear,
+			start_stable_id: 'a',
+			enforce_play_order: false,
+			min_tempo_ratio: 0.84,
+			max_tempo_ratio: 1.16
+		};
+		assert.deepEqual(
+			[...simulateAutoPlayChain({ ...opts, maximize_reach: false })],
+			[...simulateAutoPlayChain({ ...opts, maximize_reach: true })]
+		);
+	});
+
+	it('over budget falls back to greedy earliest with fell_back', () => {
+		const { pickNextMaximizingReach, AUTO_PLAY_REACH_MAX_STEPS } = mod;
+		assert.equal(AUTO_PLAY_REACH_MAX_STEPS >= 50_000, true);
+		const many = [row('a', '8A', 120), row('b', '8A', 121), row('c', '8A', 119)];
+		const pick = pickNextMaximizingReach({
+			candidates: many.slice(1),
+			current_key: '8A',
+			current_bpm: 120,
+			min_tempo_ratio: 0.985,
+			max_tempo_ratio: 1.015,
+			max_steps: 1
+		});
+		assert.equal(pick.fell_back, true);
+		assert.equal(pick.next, 'b');
+	});
+
+	it('broken rows never appear in either chain', () => {
+		const { simulateAutoPlayChain } = mod;
+		const withBroken = [
+			row('a', '8A', 120),
+			row('x', '8A', 120, false),
+			row('b', '8A', 120)
+		];
+		for (const maximize of [false, true]) {
+			const chain = simulateAutoPlayChain({
+				playlist: withBroken,
+				start_stable_id: 'a',
+				enforce_play_order: false,
+				maximize_reach: maximize,
+				min_tempo_ratio: 0.84,
+				max_tempo_ratio: 1.16
+			});
+			assert.equal(chain.includes('x'), false);
+		}
 	});
 });
 
