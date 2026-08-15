@@ -79,7 +79,7 @@
 				{/if}
 				<span>bind: {health.data.bind_host}</span>
 			{:else}
-				<span>Connecting to daemon at :8585...</span>
+				<span>Connecting to configured worktree daemon...</span>
 			{/if}
 		</div>
 		<div class="content">

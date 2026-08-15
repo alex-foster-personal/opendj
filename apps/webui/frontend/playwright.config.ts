@@ -1,4 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+
+import { claimAndCheckWebuiDevConfig } from './webui-port-config';
+
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const ports = claimAndCheckWebuiDevConfig(REPOSITORY_ROOT, 'frontend');
 
 export default defineConfig({
 	testDir: './tests/e2e',
@@ -8,9 +14,9 @@ export default defineConfig({
 	timeout: 30_000,
 	webServer: {
 		command: 'pnpm dev',
-		port: 5173,
-		reuseExistingServer: !process.env.CI,
+		port: ports.frontendPort,
+		reuseExistingServer: false,
 	},
-	use: { baseURL: 'http://127.0.0.1:5173' },
+	use: { baseURL: `http://127.0.0.1:${ports.frontendPort}` },
 	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

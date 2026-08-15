@@ -39,12 +39,12 @@ def test_settings_bind_host_reflects_override(insecure_client):
 
 
 @pytest.mark.requirement("CAT-05")
-def test_settings_port_is_tbd_not_fabricated(client):
-    """The daemon cannot introspect its own --port; must say so, not guess."""
+def test_settings_port_reflects_effective_runtime_config(client):
+    """The daemon reports the exact port passed into its application state."""
     r = client.get("/api/v1/settings")
     items = _flatten(r.json())
-    assert items["port"]["tbd"] is True
-    assert items["port"]["value"] is None
+    assert items["port"]["tbd"] is False
+    assert items["port"]["value"] == 18697
 
 
 @pytest.mark.requirement("CAT-05")
@@ -52,7 +52,7 @@ def test_settings_cors_reflects_live_middleware(client):
     r = client.get("/api/v1/settings")
     items = _flatten(r.json())
     assert items["cors_enabled"]["value"] is True
-    assert "http://localhost:5173" in items["cors_allow_origins"]["value"]
+    assert "http://localhost:19411" in items["cors_allow_origins"]["value"]
 
 
 @pytest.mark.requirement("CAT-05")

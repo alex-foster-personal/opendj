@@ -1,8 +1,7 @@
 /** Typed HTTP contract for the Session/REC surface. */
 
-const DEFAULT_BASE = typeof window === 'undefined' ? 'http://127.0.0.1:8585' : '';
 const ENV_BASE = import.meta.env.VITE_API_BASE as string | undefined;
-export const SETS_API_BASE = ENV_BASE ?? DEFAULT_BASE;
+export const SETS_API_BASE = ENV_BASE ?? '';
 const SETS_PATH = '/api/sets';
 
 export interface RecorderStatus {

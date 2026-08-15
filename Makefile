@@ -112,11 +112,10 @@ spotify-rematch:
 .PHONY: webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
 
 webui.dev:
-	$(VENV)/bin/uvicorn apps.webui.server.app:app --reload --port 8585
+	just webui-backend
 
 webui.prod:
-	doppler run -p music-dj-tools -c prod -- $(VENV)/bin/uvicorn \
-		apps.webui.server.app:app --host $${MUSIC_DJ_BIND_HOST:-127.0.0.1} --port 8585
+	doppler run -p music-dj-tools -c prod -- $(PY) -m apps.webui.server --prod
 
 webui.openapi:
 	$(PY) -m apps.webui.server --dump-openapi apps/webui/openapi.json

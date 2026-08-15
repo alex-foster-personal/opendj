@@ -24,6 +24,14 @@ def _load_config() -> dict:
         return yaml.safe_load(fh)
 
 
+def _load_workflow(workflow_name: str) -> dict:
+    workflow = REPO_ROOT / ".github" / "workflows" / workflow_name
+    with workflow.open("r", encoding="utf-8") as fh:
+        config = yaml.load(fh, Loader=yaml.BaseLoader)
+    assert isinstance(config, dict), f"invalid workflow: {workflow}"
+    return config
+
+
 def _collect_nav_paths(nav_entry) -> list[str]:
     """Flatten a mkdocs `nav:` tree into a list of leaf file paths."""
     out: list[str] = []
@@ -108,12 +116,26 @@ def test_docs_workflow_present():
     assert "actions/deploy-pages" in text
 
 
-def test_ci_and_docs_workflows_target_release_and_integration_branches():
-    """CI must cover both release and live integration branch activity."""
+def test_ci_and_docs_workflows_accept_all_normal_pull_request_bases():
+    """Normal CI gates must accept every active integration PR base."""
+    expected_pr_bases = [
+        "master",
+        "af--rekordbox-parity-ui",
+        "codex--v2-integration",
+    ]
+    expected_push_bases = ["master", "af--rekordbox-parity-ui"]
     for workflow_name in ("ci.yml", "docs.yml"):
-        workflow = REPO_ROOT / ".github" / "workflows" / workflow_name
-        text = workflow.read_text(encoding="utf-8")
-        assert text.count("branches: [master, af--rekordbox-parity-ui]") == 2
+        triggers = _load_workflow(workflow_name)["on"]
+        assert triggers["pull_request"]["branches"] == expected_pr_bases
+        assert triggers["push"]["branches"] == expected_push_bases
+
+
+def test_release_workflow_remains_release_only():
+    triggers = _load_workflow("release-check.yml")["on"]
+
+    assert triggers["pull_request"]["branches"] == ["release/*"]
+    assert triggers["push"]["branches"] == ["release/*"]
+    assert triggers["push"]["tags"] == ["v*"]
 
 
 def test_docs_publish_guards_target_release_branch_only():

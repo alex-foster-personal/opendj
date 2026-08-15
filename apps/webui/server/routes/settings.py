@@ -6,9 +6,7 @@ sourced from ``request.app.state``, a middleware/route introspection, or
 an ``apps.shared.paths`` constant -- see the citing comment on each field.
 Nothing here is user-editable; v1 is read-only (no PATCH/POST).
 
-Anything the running process cannot actually introspect (e.g. the CLI
-``--port`` flag, which ``apps.webui.server.app.create_app`` never
-receives -- see ``apps/webui/server/__main__.py``) is reported with
+Anything the running process cannot actually introspect is reported with
 ``tbd=true`` and a note instead of a guessed value.
 """
 from __future__ import annotations
@@ -86,11 +84,11 @@ def get_settings(request: Request) -> SettingsOut:
                     note="MUSIC_DJ_BIND_HOST env var; default 127.0.0.1 (D5/CAT-05b)."),
         SettingItem(key="hostname", value=getattr(state, "hostname", None)),
         SettingItem(
-            key="port", tbd=True,
+            key="port", value=getattr(state, "port", None),
+            tbd=getattr(state, "port", None) is None,
             note=(
-                "CLI --port (apps/webui/server/__main__.py, default 8585) is "
-                "not passed into create_app/app.state, so the running daemon "
-                "cannot introspect its own bound port."
+                "Effective CLI --port or MUSIC_DJ_BACKEND_PORT from the "
+                "worktree root .env."
             ),
         ),
         SettingItem(

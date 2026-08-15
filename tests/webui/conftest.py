@@ -94,6 +94,7 @@ def client(
     _stub_rb_vendor(monkeypatch)
     app = create_app(
         backend=seed_backend, bind_host="127.0.0.1", hostname="test-host",
+        port=18697, frontend_port=19411,
         lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
     )
     with TestClient(app) as c:

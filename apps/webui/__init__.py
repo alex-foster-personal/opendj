@@ -4,7 +4,7 @@ FastAPI backend + SvelteKit static SPA served from the same process.
 
 Entry points:
   python -m apps.webui.server                       # dev runner
-  uvicorn apps.webui.server.app:app --port 8585     # manual uvicorn
+  just webui-backend                                # worktree-safe runner
 
 Requirement coverage: CAT-05, CAT-05a (UI surfaces), CAT-05b (auth posture).
 """

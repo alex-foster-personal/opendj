@@ -231,7 +231,7 @@
 			{/each}
 		{/if}
 	{:else if !error}
-		<p class="empty">Loading dedup clusters from daemon at :8585...</p>
+		<p class="empty">Loading dedup clusters from the configured daemon...</p>
 	{/if}
 </div>
 

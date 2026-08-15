@@ -22,6 +22,11 @@ from starlette.types import Scope
 
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
+from apps.webui.port_config import (
+    PortConfigError,
+    resolve_backend_port,
+    resolve_frontend_port,
+)
 
 from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
@@ -92,10 +97,23 @@ def create_app(
     syncthing_status_fn: Optional[Callable[[], Any]] = None,
     state_db_path: str = "data/state/state.db",
     version: str = "0.1.0",
+    port: Optional[int] = None,
+    frontend_port: Optional[int] = None,
     enable_cors: bool = True,
     mount_frontend: bool = True,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
+
+    if port is None:
+        try:
+            port = resolve_backend_port(None)
+        except PortConfigError:
+            port = None
+    if frontend_port is None:
+        try:
+            frontend_port = resolve_frontend_port()
+        except PortConfigError:
+            frontend_port = None
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -115,6 +133,7 @@ def create_app(
     )
     app.state.backend = backend or InMemoryBackend()
     app.state.bind_host = bind_host
+    app.state.port = port
     app.state.hostname = hostname or socket.gethostname()
     app.state.lock_status_fn = lock_status_fn
     app.state.syncthing_status_fn = syncthing_status_fn
@@ -134,10 +153,18 @@ def create_app(
         # allow_headers=["Content-Type","If-Match"]. The If-Match header
         # must remain allowed for optimistic-concurrency preflights.
         # See apps/webui/README.md -> "CORS policy" for rationale.
+        worktree_origins = (
+            [
+                f"http://localhost:{frontend_port}",
+                f"http://127.0.0.1:{frontend_port}",
+            ]
+            if frontend_port is not None
+            else []
+        )
         app.add_middleware(
             CORSMiddleware,
             allow_origins=[
-                "http://localhost:5173", "http://127.0.0.1:5173",
+                *worktree_origins,
                 # Isolated e2e verify stacks (loopback-only, see
                 # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
                 # talks to daemons :8686/:8688 via VITE_API_BASE.
