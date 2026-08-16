@@ -66,6 +66,16 @@ export interface RbUiPrefs {
 	 * vendor DB writeback is still manual CLI (apps/sync/apply_ratings.py).
 	 */
 	auto_sync: AutoSyncPrefs;
+	/** #328 USB tracker: toast when a new stick is detected. */
+	usb_toast_enabled: boolean;
+	/** Dismiss delay for that toast, in milliseconds. */
+	usb_toast_ms: number;
+	/**
+	 * Open the USB panel on ANY new detect. Off by default: a volume that
+	 * still needs its first-seen answers already forces the panel open, so
+	 * this only adds the intrusion for sticks that need nothing.
+	 */
+	usb_auto_open_panel: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -89,6 +99,9 @@ const DEFAULTS: RbUiPrefs = {
 	theme: 'dark',
 	hide_todo_settings: false,
 	auto_sync: { rekordbox: false, djay: false, open_dj: false },
+	usb_toast_enabled: true,
+	usb_toast_ms: 5000,
+	usb_auto_open_panel: false,
 	confirm: {}
 };
 
@@ -172,6 +185,32 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.usb_toast_enabled !== undefined && typeof parsed.usb_toast_enabled !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (usb_toast_enabled is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (
+		parsed.usb_toast_ms !== undefined &&
+		(typeof parsed.usb_toast_ms !== 'number' ||
+			!Number.isFinite(parsed.usb_toast_ms) ||
+			parsed.usb_toast_ms <= 0)
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (usb_toast_ms must be a positive finite number) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (
+		parsed.usb_auto_open_panel !== undefined &&
+		typeof parsed.usb_auto_open_panel !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (usb_auto_open_panel is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const autoSync = _parseAutoSync(parsed.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
 	if (confirm !== null && typeof confirm !== 'object') {
@@ -200,6 +239,9 @@ function _load(): RbUiPrefs {
 		theme: theme ?? DEFAULTS.theme,
 		hide_todo_settings: parsed.hide_todo_settings ?? DEFAULTS.hide_todo_settings,
 		auto_sync: autoSync,
+		usb_toast_enabled: parsed.usb_toast_enabled ?? DEFAULTS.usb_toast_enabled,
+		usb_toast_ms: parsed.usb_toast_ms ?? DEFAULTS.usb_toast_ms,
+		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) }
 	};
 }
