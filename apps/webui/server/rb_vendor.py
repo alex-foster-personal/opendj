@@ -60,7 +60,10 @@ from fastapi import HTTPException
 from apps.shared import audio_quality, fs_residency
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
 from apps.shared import platform_paths
-from apps.shared.platform_paths import MappedPath, resolve_library_path
+from apps.shared.platform_paths import (
+    MappedPath,
+    resolve_library_path as resolve_library_path,
+)
 from apps.vocals import cache as vocal_cache
 
 log = logging.getLogger(__name__)
@@ -273,52 +276,14 @@ def resolve_share_path(path: str) -> Path:
     return Path(path)
 
 
-def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
-    """Resolve an asset candidate and reject a share-root symlink escape.
-
-    ``/PIONEER`` records are constrained to the platform-bound share root.
-    Lexical traversal is rejected by ``platform_paths``; resolving here also
-    closes the filesystem-level escape through a symlink in that tree. Native
-    and configured path-map targets remain intentionally unconstrained: their
-    roots are user-configured library locations, not Rekordbox's share tree.
-    """
-    try:
-        resolved = candidate.resolve(strict=False)
-    except OSError:
-        return MappedPath(
-            original=mapped.original,
-            resolved=None,
-            mapped=False,
-            reason="unsafe:resolution-error",
-        )
-    if mapped.reason == "share":
-        root = platform_paths.SHARE_ROOT.resolve()
-        if not resolved.is_relative_to(root):
-            return MappedPath(
-                original=mapped.original,
-                resolved=None,
-                mapped=False,
-                reason="unsafe:share-symlink",
-            )
-    return MappedPath(
-        original=mapped.original,
-        resolved=resolved,
-        mapped=mapped.mapped,
-        reason=mapped.reason,
-    )
-
-
 def resolve_asset_path(path: str) -> MappedPath:
     """Map one vendor asset path and enforce symlink-aware containment."""
-    mapped = resolve_library_path(path)
-    if mapped.resolved is None:
-        return mapped
-    return _contained_asset_path(mapped, mapped.resolved)
+    return platform_paths.resolve_asset_path(path)
 
 
 def _asset_sibling(mapped: MappedPath, candidate: Path) -> MappedPath:
     """Contain a derived sibling of an already-mapped vendor asset path."""
-    return _contained_asset_path(mapped, candidate)
+    return platform_paths.resolve_asset_sibling(mapped, candidate)
 
 
 def is_streaming_path(folder_path: Optional[str]) -> bool:
