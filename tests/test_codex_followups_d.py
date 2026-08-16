@@ -32,7 +32,10 @@ from apps.dj_copilot.session_context import (
 
 pytestmark = [
     pytest.mark.requirement("AI-01"),
-    pytest.mark.requirement("VOICE-02"),
+    # VOICE-02 does not exist: .planning/phases/14-voice-commands/14-CONTEXT.md
+    # reserves "VOICE-02+" for future backlog items. The shipped requirement
+    # this CLI-flag test defends is VOICE-01.
+    pytest.mark.requirement("VOICE-01"),
     pytest.mark.requirement("OPEN-03c"),
     pytest.mark.requirement("LAUNCH-02"),
 ]

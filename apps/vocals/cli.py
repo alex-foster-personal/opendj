@@ -9,13 +9,16 @@ contract. The webui /anlz endpoint consults that cache when PVDI is
 absent (status "demucs").
 
 Requirements (mini-PRD):
-  ✔︎ ✅ scan: coverage report pvdi / cached-demucs / missing-file / todo,
+  ✔︎ ✅ 🎯 scan: coverage report pvdi / cached-demucs / missing-file /
+    missing-analysis / todo,
     with todo ETA at the SPIKE-B2 1.36x-realtime CPU rate; --playlist
     filter; --json machine-readable (agent-native parity).
     [if] a track has PVDI in its .2EX [then] it counts as pvdi
+    [if] an audio track has no local ANLZ .DAT [then ⛔️] it enters the
+      trickle queue (Demucs output would be unservable through /anlz)
     [if] counts do not sum to total [then ⛔️]
     [if] --playlist names an unknown playlist [then ⛔️] explicit error
-  ✔︎ ✅ trickle: process todo queue N tracks (--limit, default 5), ordered
+  ✔︎ ✅ 🎯 trickle: process todo queue N tracks (--limit, default 5), ordered
     by (playlist with most on-disk members) desc then length asc; requires
     explicit --dry-run or --live (no silent default);
     idempotent via cache presence; missing files skipped EXPLICITLY with
@@ -24,10 +27,12 @@ Requirements (mini-PRD):
     [if] run twice --live [then] second run recomputes nothing
     [if] a queued file vanished before its turn [then] "[SKIP]" line, no crash
     [if] --dry-run and --live both passed [then ⛔️] argparse rejects them
+    [if] --limit is negative [then ⛔️] argparse rejects it before queue slicing
     [if] audio mtime changes during a worker run [then ⛔️] no cache write
-  ✔︎ ✅ one: analyse a single --stable-id immediately (debug path), --force
+  ✔︎ ✅ 🎯 one: analyse a single --stable-id immediately (debug path), --force
     recomputes over a valid cache entry.
     [if] cache valid and no --force [then] no worker run, prints cached
+    [if] no local ANLZ .DAT exists [then ⛔️] reject before cache or worker
   ✔︎ ✅ from-stems: CPU-only backfill of vocal-cache from existing
     ``data/state/stems/<id>/`` bundles (no demucs). Requires explicit
     --dry-run or --live (no silent default). Skips valid cache unless --force.
@@ -37,7 +42,7 @@ Requirements (mini-PRD):
   ✔︎ ✅ --data-dir overrides the repo-default data/ root everywhere
     (worktrees pass the primary checkout's data dir explicitly).
   ✔︎ ✅ Windows portability: FolderPath/.2EX resolution goes through the
-    shared apps.shared.platform_paths.resolve_library_path resolver (never
+    shared apps.shared.platform_paths.resolve_asset_path resolver (never
     a local /PIONEER/-only shim), so an unmapped foreign-absolute path
     (e.g. a Mac path read on Windows) is an explicit missing state, never
     a fabricated Path; the worker subprocess honours MDT_VOCAL_WORKER_PYTHON
@@ -83,7 +88,7 @@ from apps.shared.platform_paths import (
     PathMap,
     MappedPath,
     load_path_map,
-    resolve_library_path,
+    resolve_asset_path,
 )
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
@@ -106,6 +111,7 @@ _SQL_CHUNK: int = 500  # keep IN (...) under SQLite's var cap
 CATEGORY_PVDI = "pvdi"
 CATEGORY_CACHED = "cached_demucs"
 CATEGORY_MISSING = "missing_file"
+CATEGORY_MISSING_ANALYSIS = "missing_analysis"
 CATEGORY_TODO = "todo"
 
 
@@ -177,13 +183,13 @@ def _resolve(path: str, *, path_map: PathMap) -> Optional[Path]:
     e.g. a Mac FolderPath read on Windows with no path-map entry, or a
     streaming URI) -- never a fabricated ``Path`` that happens not to
     exist. Windows portability plan section 3.1."""
-    mapped: MappedPath = resolve_library_path(path, path_map=path_map)
+    mapped: MappedPath = resolve_asset_path(path, path_map=path_map)
     return mapped.resolved
 
 
 def _resolve_share_path(path: str) -> Path:
     """Resolve a local path, rejecting unsafe or unmapped source paths."""
-    mapped = resolve_library_path(path)
+    mapped = resolve_asset_path(path)
     if mapped.resolved is None:
         raise ValueError(mapped.reason)
     return mapped.resolved
@@ -311,17 +317,31 @@ def pvdi_present(path_2ex: Path) -> bool:
     return False
 
 
+def _anlz_data_file(track: VocalTrack, path_map: PathMap) -> Optional[Path]:
+    """Return the local ANLZ .DAT required before ``/anlz`` can serve a track."""
+    if track.analysis_data_path is None:
+        return None
+    resolved = _resolve(track.analysis_data_path, path_map=path_map)
+    if resolved is None or not resolved.is_file():
+        return None
+    return resolved
+
+
 def classify(ctx: Ctx, tracks: list[VocalTrack]) -> None:
     """Assign each track exactly one category (pvdi wins over everything:
     an analyzed track is covered even if its audio has since moved)."""
     path_map = load_path_map(ctx.data_dir)
     for tr in tracks:
-        twoex: Optional[Path] = None
-        if tr.analysis_data_path is not None:
-            resolved_adp = _resolve(tr.analysis_data_path, path_map=path_map)
-            if resolved_adp is not None:
-                twoex = resolved_adp.with_suffix(".2EX")
-        if twoex is not None and twoex.is_file() and pvdi_present(twoex):
+        anlz_data = _anlz_data_file(tr, path_map)
+        if anlz_data is None:
+            if tr.audio_on_disk:
+                tr.category = CATEGORY_MISSING_ANALYSIS
+            else:
+                tr.category = CATEGORY_MISSING
+            continue
+
+        twoex = anlz_data.with_suffix(".2EX")
+        if twoex.is_file() and pvdi_present(twoex):
             tr.category = CATEGORY_PVDI
             continue
         entry = vcache.load_valid_entry(
@@ -767,6 +787,7 @@ def _counts(tracks: list[VocalTrack]) -> dict[str, int]:
         CATEGORY_PVDI: 0,
         CATEGORY_CACHED: 0,
         CATEGORY_MISSING: 0,
+        CATEGORY_MISSING_ANALYSIS: 0,
         CATEGORY_TODO: 0,
     }
     for tr in tracks:
@@ -809,6 +830,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     print(f"  pvdi (rekordbox):  {counts[CATEGORY_PVDI]:>6}")
     print(f"  cached-demucs:     {counts[CATEGORY_CACHED]:>6}")
     print(f"  missing-file:      {counts[CATEGORY_MISSING]:>6}")
+    print(f"  missing-analysis:  {counts[CATEGORY_MISSING_ANALYSIS]:>6}")
     print(
         f"  todo:              {counts[CATEGORY_TODO]:>6}"
         f"  ({_fmt_dur(todo_audio_s)} audio, "
@@ -878,7 +900,7 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     tracks = load_tracks(ctx, args.playlist)
     classify(ctx, tracks)
 
-    # Explicit, never silent: every missing-file track is logged (stderr -
+    # Explicit, never silent: every unprocessable track is logged (stderr -
     # stdout carries the plan / progress lines).
     n_missing = 0
     for tr in tracks:
@@ -891,6 +913,20 @@ def cmd_trickle(args: argparse.Namespace) -> int:
             )
     if n_missing:
         print(f"[skipped {n_missing} missing-file tracks; see stderr]")
+
+    n_missing_analysis = 0
+    for tr in tracks:
+        if tr.category == CATEGORY_MISSING_ANALYSIS:
+            n_missing_analysis += 1
+            print(
+                f"[SKIP missing-analysis] {tr.stable_id} {tr.title!r}: "
+                f"{tr.analysis_data_path or '(no AnalysisDataPath)'}",
+                file=sys.stderr,
+            )
+    if n_missing_analysis:
+        print(
+            f"[skipped {n_missing_analysis} missing-analysis tracks; see stderr]"
+        )
 
     rank = best_playlist_rank(ctx, tracks)
     todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
@@ -979,6 +1015,12 @@ def cmd_one(args: argparse.Namespace) -> int:
         raise SystemExit(
             f"error: audio file missing for {tr.stable_id}: "
             f"{tr.folder_path or '(no FolderPath)'}"
+        )
+    if _anlz_data_file(tr, load_path_map(ctx.data_dir)) is None:
+        raise SystemExit(
+            f"error: local ANLZ .DAT missing for {tr.stable_id}: "
+            f"{tr.analysis_data_path or '(no AnalysisDataPath)'}; "
+            "generated vocals would be unservable through /anlz"
         )
     cache_file = vcache.cache_path(ctx.data_dir, tr.stable_id)
     existing = vcache.load_valid_entry(cache_file, tr.audio_path)
@@ -1110,6 +1152,15 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
 # ----- parser ----------------------------------------------------------------------------
 
 
+def _nonnegative_int(raw_value: str) -> int:
+    """Parse a nonnegative CLI integer without Python slice semantics."""
+    value = int(raw_value)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return value
+
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m apps.vocals",
@@ -1140,7 +1191,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     trickle.add_argument(
         "--limit",
-        type=int,
+        type=_nonnegative_int,
         default=DEFAULT_TRICKLE_LIMIT,
         help=f"max tracks this run (default {DEFAULT_TRICKLE_LIMIT})",
     )

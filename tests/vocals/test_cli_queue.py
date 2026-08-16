@@ -9,6 +9,10 @@ Regression one-liners:
   - if a PVDI-analyzed track isn't category pvdi (even with audio gone) then broken
   - if a valid cache entry isn't category cached_demucs then broken
   - if a streaming/pathless/dead-path track isn't missing_file then broken
+  - if an audio track without a servable ANLZ .DAT reaches the trickle queue then broken
+  - if a /PIONEER ANLZ symlink escapes the share root but reaches the queue then broken
+  - if `one` accepts cached audio without a servable ANLZ .DAT then broken
+  - if `one --force` accepts an ANLZ symlink escape then broken
   - if the queue isn't (most on-disk playlist members desc, length asc) then broken
 """
 
@@ -30,6 +34,7 @@ from apps.vocals import cache as vcache
 from apps.vocals.cli import (
     CATEGORY_CACHED,
     CATEGORY_MISSING,
+    CATEGORY_MISSING_ANALYSIS,
     CATEGORY_PVDI,
     CATEGORY_TODO,
     Ctx,
@@ -37,6 +42,7 @@ from apps.vocals.cli import (
     best_playlist_rank,
     classify,
     load_tracks,
+    main,
     order_todo,
     pvdi_present,
 )
@@ -95,6 +101,7 @@ def data_dir(tmp_path: Path) -> Path:
       todoB    100 s, playlist small                  -> todo
       todoC    200 s, playlist big                    -> todo
       todoD     50 s, no playlist                     -> todo
+      noanlz    120 s, audio on disk, no ANLZ .DAT    -> missing_analysis
     """
     data = tmp_path / "data"
     (data / "state").mkdir(parents=True)
@@ -124,9 +131,10 @@ def data_dir(tmp_path: Path) -> Path:
         ("miss1", 200, _audio("miss1", exists=False), None),
         ("strm1", 200, "tidal:12345", None),
         ("todoA", 300, _audio("todoA"), _twoex("todoA", _empty_2ex())),
-        ("todoB", 100, _audio("todoB"), None),
-        ("todoC", 200, _audio("todoC"), None),
-        ("todoD", 50, _audio("todoD"), None),
+        ("todoB", 100, _audio("todoB"), _twoex("todoB", _empty_2ex())),
+        ("todoC", 200, _audio("todoC"), _twoex("todoC", _empty_2ex())),
+        ("todoD", 50, _audio("todoD"), _twoex("todoD", _empty_2ex())),
+        ("noanlz", 120, _audio("noanlz"), None),
     ]
 
     state = sqlite3.connect(data / "state" / "state.db")
@@ -188,10 +196,11 @@ def test_classification_and_counts_sum(data_dir: Path) -> None:
     assert by_id["cachd"] == CATEGORY_CACHED
     assert by_id["miss1"] == CATEGORY_MISSING
     assert by_id["strm1"] == CATEGORY_MISSING
+    assert by_id["noanlz"] == CATEGORY_MISSING_ANALYSIS
     for sid in ("todoA", "todoB", "todoC", "todoD"):
         assert by_id[sid] == CATEGORY_TODO
     counts = _counts(tracks)
-    assert sum(counts.values()) == len(tracks) == 9
+    assert sum(counts.values()) == len(tracks) == 10
 
 
 def test_queue_orders_biggest_ondisk_playlist_then_shortest(data_dir: Path) -> None:
@@ -205,6 +214,134 @@ def test_queue_orders_biggest_ondisk_playlist_then_shortest(data_dir: Path) -> N
     assert [t.stable_id for t in todo] == ["todoC", "todoA", "todoB", "todoD"], (
         "expected big-playlist members (shortest first), then small, then playlist-less"
     )
+
+
+def test_audio_without_anlz_dat_is_excluded_from_trickle_queue(data_dir: Path) -> None:
+    """[if] a track lacks the .DAT required by /anlz [then ⛔️] it is queued."""
+    ctx = Ctx(data_dir=data_dir)
+    tracks = load_tracks(ctx, None)
+    classify(ctx, tracks)
+    todo_ids = {
+        track.stable_id for track in tracks if track.category == CATEGORY_TODO
+    }
+    assert "noanlz" not in todo_ids
+
+
+def test_cached_audio_without_anlz_dat_is_still_unservable(data_dir: Path) -> None:
+    """[if] no-ANLZ audio has cached vocals [then ⛔️] it appears servable."""
+    audio_path = data_dir.parent / "media" / "noanlz.mp3"
+    vcache.write_entry(
+        vcache.cache_path(data_dir, "noanlz"), _worker_result(), audio_path
+    )
+
+    ctx = Ctx(data_dir=data_dir)
+    tracks = load_tracks(ctx, None)
+    classify(ctx, tracks)
+    by_id = {track.stable_id: track.category for track in tracks}
+
+    assert by_id["noanlz"] == CATEGORY_MISSING_ANALYSIS
+
+
+def test_one_rejects_cached_audio_without_anlz_dat(data_dir: Path) -> None:
+    """[if] `one` sees cached no-ANLZ audio [then ⛔️] it accepts the cache."""
+    audio_path = data_dir.parent / "media" / "noanlz.mp3"
+    vcache.write_entry(
+        vcache.cache_path(data_dir, "noanlz"), _worker_result(), audio_path
+    )
+
+    with pytest.raises(SystemExit, match=r"local ANLZ \.DAT"):
+        main([
+            "one",
+            "--data-dir",
+            str(data_dir),
+            "--stable-id",
+            "noanlz",
+        ])
+
+
+def _point_noanlz_at_share_symlink_escape(
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.shared import platform_paths
+
+    share_root = tmp_path / "share"
+    anlz_link = share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
+    anlz_link.parent.mkdir(parents=True)
+    outside_anlz = tmp_path / "outside" / "ANLZ0000.DAT"
+    outside_anlz.parent.mkdir()
+    outside_anlz.write_bytes(b"dat")
+    try:
+        anlz_link.symlink_to(outside_anlz)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this test environment: {exc}")
+    monkeypatch.setattr(platform_paths, "SHARE_ROOT", share_root)
+
+    state = sqlite3.connect(data_dir / "state" / "state.db")
+    vendor_row = state.execute(
+        "SELECT vendor_id FROM track_vendor_ids WHERE stable_id = 'noanlz'"
+    ).fetchone()
+    state.close()
+    assert vendor_row is not None
+
+    master = sqlite3.connect(data_dir / "master.plain.db")
+    master.execute(
+        "UPDATE djmdContent SET AnalysisDataPath = ? WHERE ID = ?",
+        ("/PIONEER/USB/ANLZ0000.DAT", vendor_row[0]),
+    )
+    master.commit()
+    master.close()
+
+
+def test_share_symlink_escaped_anlz_is_excluded_from_trickle_queue(
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] an ANLZ symlink escapes share [then ⛔️] it enters the queue."""
+    _point_noanlz_at_share_symlink_escape(data_dir, tmp_path, monkeypatch)
+
+    ctx = Ctx(data_dir=data_dir)
+    tracks = load_tracks(ctx, None)
+    classify(ctx, tracks)
+    by_id = {track.stable_id: track.category for track in tracks}
+    todo = order_todo(
+        [track for track in tracks if track.category == CATEGORY_TODO],
+        best_playlist_rank(ctx, tracks),
+    )
+
+    assert by_id["noanlz"] == CATEGORY_MISSING_ANALYSIS
+    assert "noanlz" not in {track.stable_id for track in todo}
+
+
+def test_one_force_rejects_share_symlink_escaped_anlz(
+    data_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] `one --force` sees escaped ANLZ [then ⛔️] it claims work."""
+    from apps.vocals import cli as vcli
+
+    _point_noanlz_at_share_symlink_escape(data_dir, tmp_path, monkeypatch)
+    audio_path = data_dir.parent / "media" / "noanlz.mp3"
+    cache_file = vcache.cache_path(data_dir, "noanlz")
+    vcache.write_entry(cache_file, _worker_result(), audio_path)
+    active_claim = vcli._claim_track(cache_file)
+    assert active_claim is not None
+
+    try:
+        with pytest.raises(SystemExit, match=r"local ANLZ \.DAT"):
+            main([
+                "one",
+                "--data-dir",
+                str(data_dir),
+                "--stable-id",
+                "noanlz",
+                "--force",
+            ])
+    finally:
+        vcli._release_track_claim(active_claim)
 
 
 def test_playlist_filter_limits_scope(data_dir: Path) -> None:
@@ -250,6 +387,31 @@ def test_from_stems_requires_dry_run_or_live() -> None:
 
     with pytest.raises(SystemExit):
         build_parser().parse_args(["from-stems"])
+
+
+@pytest.mark.parametrize(
+    ("raw_limit", "expected_limit"),
+    [("-1", None), ("0", 0), ("2", 2)],
+)
+def test_trickle_limit_rejects_negative_and_preserves_nonnegative_values(
+    raw_limit: str, expected_limit: int | None,
+) -> None:
+    """[if] --limit is negative [then ⛔️] parsing fails before queue work;
+    [if] it is zero or positive [then] its exact value reaches trickle.
+
+    Every case passes an explicit --dry-run: trickle requires --dry-run or
+    --live (M25), so without it argparse would exit for the missing mode
+    rather than for the limit, and the negative case would pass vacuously.
+    """
+    from apps.vocals.cli import build_parser
+
+    argv = ["trickle", "--dry-run", "--limit", raw_limit]
+    if expected_limit is None:
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(argv)
+    else:
+        args = build_parser().parse_args(argv)
+        assert args.limit == expected_limit
 
 
 def test_process_one_refuses_audio_changed_mid_analysis(

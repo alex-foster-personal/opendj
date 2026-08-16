@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { getSmartlistTracks, listSmartlists, updateSmartlist, type SmartlistOut, type SmartlistTrackOut } from '$lib/api';
+	import {
+		getSmartlist,
+		getSmartlistTracks,
+		SmartlistApiError,
+		SmartlistConflictError,
+		updateSmartlist,
+		type SmartlistOut,
+		type SmartlistTrackOut
+	} from '$lib/api';
 	import {
 		astToForm,
 		createEmptyGroup,
@@ -16,6 +24,7 @@
 	import RulePredicate from '$lib/components/smartlists/RulePredicate.svelte';
 
 	let smartlist = $state<SmartlistOut | null>(null);
+	let etag = $state<string | null>(null);
 	let notFound = $state(false);
 	let loading = $state(true);
 	let formRoot = $state<FormNode | null>(null);
@@ -24,6 +33,7 @@
 	let tracksError = $state<string | null>(null);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
+	let conflictCurrent = $state<SmartlistOut | null>(null);
 
 	const errors = $derived(formRoot ? validateForm(formRoot) : []);
 	const astResult = $derived.by(() => {
@@ -43,50 +53,86 @@
 	}
 
 	async function save(): Promise<void> {
-		if (!smartlist || !astResult?.ok) {
+		if (!smartlist || !astResult?.ok || etag === null || conflictCurrent !== null) {
 			saveError = 'Fix rule validation errors before saving.';
 			return;
 		}
 		saving = true;
 		saveError = null;
 		try {
-			const saved = await updateSmartlist(smartlist.id, {
-				rule: astResult.ast,
-				order_by: orderBy
-			});
-			smartlist = saved;
-			orderBy = saved.order_by;
-			formRoot = astToForm(saved.rule);
+			const saved = await updateSmartlist(
+				smartlist.id,
+				{
+					rule: astResult.ast,
+					order_by: orderBy
+				},
+				etag
+			);
+			smartlist = saved.smartlist;
+			etag = saved.etag;
+			orderBy = saved.smartlist.order_by;
+			formRoot = astToForm(saved.smartlist.rule);
+			conflictCurrent = null;
 			pushToast('Smartlist saved.');
 			try {
-				tracks = await getSmartlistTracks(saved.id);
+				tracks = await getSmartlistTracks(saved.smartlist.id);
 				tracksError = null;
 			} catch (exc) {
 				tracksError = `${exc}`;
 				pushToast('Smartlist saved, but its track preview could not refresh.', 'error');
 			}
 		} catch (exc) {
-			saveError = `${exc}`;
+			if (exc instanceof SmartlistConflictError) {
+				conflictCurrent = exc.current;
+				etag = exc.etag;
+				saveError = 'This smartlist changed elsewhere. Choose how to resolve it.';
+			} else {
+				saveError = `${exc}`;
+			}
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function reloadConflict(): Promise<void> {
+		const current = conflictCurrent;
+		if (current === null) return;
+		smartlist = current;
+		orderBy = current.order_by;
+		formRoot = astToForm(current.rule);
+		conflictCurrent = null;
+		saveError = null;
+		try {
+			tracks = await getSmartlistTracks(current.id);
+			tracksError = null;
+		} catch (exc) {
+			tracksError = `${exc}`;
+		}
+	}
+
+	async function retryConflict(): Promise<void> {
+		if (conflictCurrent === null) return;
+		conflictCurrent = null;
+		saveError = null;
+		await save();
 	}
 
 	onMount(async () => {
 		const id = $page.params.id;
 		if (id === undefined) throw new Error('smartlists route param "id" missing');
 		try {
-			const all = await listSmartlists();
-			const found = all.find((s) => s.id === id);
-			if (!found) {
-				notFound = true;
-				return;
-			}
-			smartlist = found;
-			orderBy = found.order_by;
-			formRoot = astToForm(found.rule);
+			const loaded = await getSmartlist(id);
+			smartlist = loaded.smartlist;
+			etag = loaded.etag;
+			orderBy = loaded.smartlist.order_by;
+			formRoot = astToForm(loaded.smartlist.rule);
+			conflictCurrent = null;
 		} catch (exc) {
-			pushToast(`Failed to load smartlist: ${exc}`, 'error');
+			if (exc instanceof SmartlistApiError && exc.status === 404) {
+				notFound = true;
+			} else {
+				pushToast(`Failed to load smartlist: ${exc}`, 'error');
+			}
 		} finally {
 			loading = false;
 		}
@@ -148,13 +194,25 @@
 	{/if}
 
 	<div class="save-row">
-		<button class="primary" onclick={save} disabled={saving || !astResult?.ok}>
+		<button class="primary" onclick={save} disabled={saving || !astResult?.ok || etag === null || conflictCurrent !== null}>
 			{saving ? 'Saving...' : 'Save'}
 		</button>
 		{#if saveError}
 			<p class="save-error" role="alert">Save failed: {saveError}</p>
 		{/if}
 	</div>
+
+	{#if conflictCurrent}
+		<div class="conflict-panel" role="alert">
+			<strong>Smartlist changed elsewhere</strong>
+			<p>Current saved rule: {conflictCurrent.rule_summary}</p>
+			<p>Current order: {conflictCurrent.order_by}</p>
+			<div class="conflict-actions">
+				<button type="button" onclick={reloadConflict}>Reload latest</button>
+				<button type="button" class="primary" onclick={retryConflict}>Retry my changes</button>
+			</div>
+		</div>
+	{/if}
 
 	<h3>Currently matching tracks</h3>
 	{#if tracksError}
@@ -199,6 +257,16 @@
 	}
 	.save-error {
 		color: var(--danger);
+	}
+	.conflict-panel {
+		background: var(--surface);
+		border: 1px solid var(--danger);
+		border-radius: 6px;
+		padding: 0.8rem;
+	}
+	.conflict-actions {
+		display: flex;
+		gap: 0.5rem;
 	}
 	.validation-summary {
 		margin: 0.5rem 0;

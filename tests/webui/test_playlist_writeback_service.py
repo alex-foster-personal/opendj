@@ -4,14 +4,18 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from apps.webui.server.playlist_writeback import (
-    VendorPlaylist, WritebackBackup, WritebackConflict, WritebackService, WritebackUnavailable,
+    VendorPlaylist,
+    WritebackBackup,
+    WritebackConflict,
+    WritebackService,
+    WritebackUnavailable,
 )
 from apps.webui.server.routes.playlist_writeback import get_writeback_service
 from apps.webui.server.sqlite_backend import SqliteBackend
@@ -95,7 +99,7 @@ def writer(state_conn: sqlite3.Connection) -> _FakeVendorWriter:
 def service(writer: _FakeVendorWriter) -> WritebackService:
     def factory(vendor, mode, target_path):
         assert vendor == "rekordbox" and mode == "live" and target_path == writer.target_path
-        return writer
+        return nullcontext(writer)
     return WritebackService(
         writer_factory=factory,
         source_members_reader=lambda _playlist_id: list(writer.source),
@@ -143,7 +147,7 @@ def test_plan_token_rejects_concurrent_source_membership(service, writer) -> Non
 def test_vendor_boundary_rejects_source_edit_interleaved_after_plan(writer) -> None:
     source = ["a", "b"]
     service = WritebackService(
-        writer_factory=lambda *_args: writer,
+        writer_factory=lambda *_args: nullcontext(writer),
         source_members_reader=lambda _playlist_id: list(source),
         source_lock_factory=nullcontext,
     )
@@ -204,7 +208,7 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
     writer = _FakeVendorWriter("rekordbox", state_conn, {"one": ("Set", ["a", "c"]), "two": ("Set", ["b"])})
     backend = SqliteBackend(state_path)
     service = WritebackService(
-        writer_factory=lambda *_args: writer,
+        writer_factory=lambda *_args: nullcontext(writer),
         source_members_reader=lambda playlist_id: list(backend.get_playlist(playlist_id).items),
         source_lock_factory=backend.hold_writeback_source_lock,
     )
@@ -296,23 +300,21 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
     monkeypatch.setattr(djay_writer_module, "build_djay_writer", build_writer)
     backend = SqliteBackend(state_path)
     service = get_writeback_service(backend)
-    try:
-        plan = service.plan(
-            vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
-            target_mode="live", target_path=str(target_path), target_id="one",
-        )
-        service.apply(
-            vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
-            target_mode="live", target_path=str(target_path), target_id="one",
-            plan_token=plan.plan_token, dry_run=False, confirmed=True,
-        )
-    finally:
-        for built_writer in built_writers:
-            built_writer.state_conn.close()
+    plan = service.plan(
+        vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
+        target_mode="live", target_path=str(target_path), target_id="one",
+    )
+    service.apply(
+        vendor="djay", source_playlist_id="source", desired_ids=["a", "b"],
+        target_mode="live", target_path=str(target_path), target_id="one",
+        plan_token=plan.plan_token, dry_run=False, confirmed=True,
+    )
 
     assert set(mapping_paths) == {state_path.resolve()}
     assert rejected == ["custom-state"]
     assert any(("native", "one", ["djay-a", "djay-b"]) in writer.calls for writer in built_writers)
+    for built_writer in built_writers:
+        _assert_connection_closed(built_writer.state_conn)
 
 
 def test_dry_run_is_non_mutating_and_confirmation_is_required(service, writer) -> None:
@@ -338,8 +340,11 @@ def test_backup_is_taken_from_the_exact_target_and_rollback_is_cas_protected(ser
 def test_wrong_target_path_is_refused_by_production_factory(monkeypatch, tmp_path) -> None:
     from apps.webui.server import playlist_writeback as module
     monkeypatch.setattr(module.paths, "REKORDBOX_LIVE_DB", tmp_path / "live.db")
-    with pytest.raises(Exception):
-        module.default_writer_factory("rekordbox", "live", tmp_path / "working.db")
+    with (
+        pytest.raises(ValueError, match="refusing target"),
+        module.default_writer_factory("rekordbox", "live", tmp_path / "working.db"),
+    ):
+        pass
 
 
 def test_production_factory_refuses_unowned_mapping_state(monkeypatch, tmp_path) -> None:
@@ -348,5 +353,98 @@ def test_production_factory_refuses_unowned_mapping_state(monkeypatch, tmp_path)
     target_path = tmp_path / "MediaLibrary.db"
     target_path.touch()
     monkeypatch.setattr(module.paths, "DJAY_LIVE_DB", target_path)
-    with pytest.raises(WritebackUnavailable, match="mapping state database ownership"):
-        module.default_writer_factory("djay", "live", target_path)
+    with (
+        pytest.raises(WritebackUnavailable, match="mapping state database ownership"),
+        module.default_writer_factory("djay", "live", target_path),
+    ):
+        pass
+
+
+def _assert_connection_closed(connection: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")
+
+
+def test_service_closes_real_bound_mapping_connection_after_success(
+    monkeypatch, tmp_path,
+) -> None:
+    """A successful request releases its exact backend-owned mapping DB."""
+    from apps.shared.state import db as state_db
+    from apps.shared.state import paths as state_paths
+    from apps.webui.server import playlist_writeback as module
+
+    state_path = tmp_path / "custom-state.db"
+    decoy_path = tmp_path / "default-state.db"
+    for path, vendor_id in ((state_path, "custom-a"), (decoy_path, "decoy-a")):
+        with state_db.connect_rw(path) as connection:
+            connection.execute(
+                "INSERT INTO tracks (stable_id, stable_id_tier, created_at, updated_at) "
+                "VALUES ('a', 'inferred', 't', 't')"
+            )
+            connection.execute(
+                "INSERT INTO track_vendor_ids VALUES ('a', 'djay', ?)",
+                (vendor_id,),
+            )
+
+    target_path = tmp_path / "MediaLibrary.db"
+    target_path.touch()
+    monkeypatch.setattr(state_paths, "STATE_DB", decoy_path)
+    monkeypatch.setattr(module.paths, "DJAY_LIVE_DB", target_path)
+
+    opened_connections: list[sqlite3.Connection] = []
+    mapping_paths: list[Path] = []
+    bound_factory = module.bind_default_writer_factory(state_path)
+
+    @contextmanager
+    def observing_factory(vendor, target_mode, requested_target_path):
+        with bound_factory(vendor, target_mode, requested_target_path) as writer:
+            assert writer is not None
+            opened_connections.append(writer.state_conn)
+            mapping_path = writer.state_conn.execute("PRAGMA database_list").fetchone()[2]
+            mapping_paths.append(Path(mapping_path).resolve())
+            assert writer.state_conn.execute(
+                "SELECT vendor_id FROM track_vendor_ids WHERE stable_id = 'a'"
+            ).fetchone()[0] == "custom-a"
+            yield writer
+
+    service = WritebackService(writer_factory=observing_factory)
+    capability = service.capability("djay")
+
+    assert capability.available
+    assert mapping_paths == [state_path.resolve()]
+    assert len(opened_connections) == 1
+    _assert_connection_closed(opened_connections[0])
+
+
+def test_service_closes_real_bound_mapping_connection_after_exception(
+    monkeypatch, tmp_path,
+) -> None:
+    """A vendor read failure releases mapping state without relying on GC."""
+    from apps.shared.state import db as state_db
+    from apps.webui.server import playlist_writeback as module
+
+    state_path = tmp_path / "state.db"
+    with state_db.connect_rw(state_path):
+        pass
+    target_path = tmp_path / "MediaLibrary.db"
+    target_path.touch()
+    monkeypatch.setattr(module.paths, "DJAY_LIVE_DB", target_path)
+
+    opened_connections: list[sqlite3.Connection] = []
+    bound_factory = module.bind_default_writer_factory(state_path)
+
+    @contextmanager
+    def observing_factory(vendor, target_mode, requested_target_path):
+        with bound_factory(vendor, target_mode, requested_target_path) as writer:
+            assert writer is not None
+            opened_connections.append(writer.state_conn)
+            yield writer
+
+    service = WritebackService(writer_factory=observing_factory)
+    with pytest.raises(sqlite3.OperationalError, match="no such table: database2"):
+        service.targets(
+            vendor="djay", target_mode="live", target_path=str(target_path),
+        )
+
+    assert len(opened_connections) == 1
+    _assert_connection_closed(opened_connections[0])

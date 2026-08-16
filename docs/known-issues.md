@@ -56,8 +56,9 @@ None of them block using the toolkit today.
 
 ## Requirements not shipped in v1.0
 
-Pulled from [`coverage-matrix.md`](../coverage-matrix.md) and
-[`reqs.json`](../reqs.json).
+Pulled from [`reqs.json`](../reqs.json) and the generated
+`coverage-matrix.md` (gitignored -- run `make test`, or download the
+`coverage-matrix` artifact from CI).
 
 | Req       | Scope                                   | Status      | Notes                                                                                                                     |
 |-----------|-----------------------------------------|-------------|---------------------------------------------------------------------------------------------------------------------------|
@@ -81,22 +82,64 @@ RC note is obsolete.
   write path in-repo; a real Serato library round-trip is still
   category D2-adjacent and has not been run.
 
-### `coverage-matrix.md` churn
+### `coverage-matrix.md` churn -- RESOLVED 2026-08-16
 
-The pytest `reqs` plugin regenerates `coverage-matrix.md` on every
-`make test` run. It is intentionally committed, but sibling agents
-during the v1 fanout repeatedly left it dirty, masking real WIP. A
-pre-commit hook that either commits or resets this file is tracked in
-[`.planning/SESSION-REPORT-2026-04-17.md`](../.planning/SESSION-REPORT-2026-04-17.md)
-as a v1.1 candidate. Until then: after `make test`, stage the diff or
-`git checkout coverage-matrix.md` before committing unrelated work.
+`coverage-matrix.md` is no longer tracked. It is a build artifact, fully
+derived from `reqs.json` × `@pytest.mark.requirement` markers, and the
+pytest `reqs` plugin rewrites it on **every** run -- including partial
+ones, whose totals are scoped to that run. A committed copy was therefore
+stale the moment anyone ran a subset, which is why sibling agents kept
+having to `git checkout --` it.
+
+`.gitignore` had listed the file since `80bb80a5`, but it was committed
+first (`19d91fed`) and a tracked file ignores `.gitignore`, so the rule
+sat inert. `git rm --cached` completed the decision.
+
+Where to read it now:
+
+- **Locally:** run `make test` (or `pytest tests`) and open the generated
+  file. It is gitignored, so it will not dirty the tree.
+- **CI:** the full-suite copy is published as the `coverage-matrix`
+  artifact on every run (`.github/workflows/ci.yml`).
+
+Each generated file now states its own run scope in the header, and a
+narrowed run (`-k`, `-m`, an explicit path) or one with collection errors
+is stamped with a PARTIAL RUN warning. Quoting a coverage figure without
+that header is the honest-denominator failure described in `CLAUDE.md`:
+`pytest tests/sync` alone reports 9/57 (15.8%), against a real full-suite
+figure of 48/57 (84.2%).
 
 ### `coverage-matrix` label drift
 
-15 shipped requirements have zero `@pytest.mark.requirement` markers
-despite their tests passing. The coverage dashboard understates
-coverage because of this. Tracked in the session report; fix is a
-sweep through `tests/` to add markers, not a code change.
+Re-measured on a full `pytest tests` run, 2026-08-16: 48/57 covered,
+9 uncovered. Six of those nine are legitimately unbuilt (`AI-03`, `AI-04`,
+`CROSS-01`, `CROSS-02` are v2; `LAUNCH-03` and `SMART-04` are
+DEFERRED-V2). Only three are genuine label drift -- shipped requirements
+whose tests exist but carry no marker:
+
+| Req        | Shipped as                                          |
+|------------|-----------------------------------------------------|
+| `OPEN-02a` | Rekordbox open-dj adapter (read + write)            |
+| `OPEN-02b` | djay Pro open-dj adapter (read + write)             |
+| `OPEN-03a` | Spec prose + reference CLI + JSON Schema            |
+
+Fix is a sweep through `tests/` to add markers, not a code change. The
+earlier "15 shipped requirements" figure predates the marker sweep and
+the orphan fix below.
+
+### Orphan requirement markers -- RESOLVED 2026-08-16
+
+Nine markers referenced IDs that were not in `reqs.json`, so they traced
+to nothing while reading as coverage. `git log -S` confirmed none had
+ever existed in `reqs.json` -- all were invented, not renamed: area
+prefixes that are not categories (`ANALYSIS-03`, `TAGS-02`,
+`SMARTLISTS-02`, `SPOTIFY-02`, `USB-03`), CHANGELOG audit labels
+(`P1-A`, `P1-B`), a phase number read as a requirement number
+(`INFRA-05`), and a documented future-backlog placeholder (`VOICE-02`).
+
+All nine were retargeted to the requirement each test actually defends.
+`tests/test_requirement_markers.py` now fails the suite on any marker ID
+absent from `reqs.json`, so this cannot silently recur.
 
 ### Unresolved stashes + non-canonical author identities
 
@@ -153,5 +196,6 @@ Security-sensitive reports go to the contacts in
 - [`.planning/V1-SHIP-SUMMARY.md`](../.planning/V1-SHIP-SUMMARY.md)
 - [`.planning/SESSION-REPORT-2026-04-17.md`](../.planning/SESSION-REPORT-2026-04-17.md)
 - [`.planning/BROKEN-LINKS-2026-04-17.md`](../.planning/BROKEN-LINKS-2026-04-17.md)
-- [`coverage-matrix.md`](../coverage-matrix.md)
+- `coverage-matrix.md` (generated + gitignored; `make test` locally, or the
+  `coverage-matrix` CI artifact)
 - [`RELEASE-NOTES-v1.0-rc3.md`](../RELEASE-NOTES-v1.0-rc3.md)

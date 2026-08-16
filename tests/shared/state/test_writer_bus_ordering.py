@@ -1,4 +1,4 @@
-"""INFRA-05 regression: StateWriter must not persist a mutation if the
+"""INFRA-01 regression: StateWriter must not persist a mutation if the
 bus publish fails.
 
 Codex Phase-05 review flagged that mutation methods committed the DB
@@ -18,7 +18,7 @@ from apps.shared.state.types import Event
 from apps.shared.state.writer import StateWriter
 
 
-pytestmark = pytest.mark.requirement("INFRA-05")
+pytestmark = pytest.mark.requirement("INFRA-01")
 
 
 class _ExplodingBus:
