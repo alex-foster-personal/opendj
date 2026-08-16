@@ -16,6 +16,7 @@ import shutil
 from pathlib import Path
 
 from apps.shared.platform_paths import (
+    DATA_DIR,
     DJAY_LIVE_DB,
     HOME,
     MUSIC_ROOTS,
@@ -50,7 +51,11 @@ __all__ = [
     "copy_live_dbs",
 ]
 
-DATA_DIR: Path = PROJECT_ROOT / "data"
+# DATA_DIR is re-exported from platform_paths, which honors MDT_DATA_DIR.
+# It was previously redefined here as PROJECT_ROOT / "data", silently
+# ignoring the override for every non-webui consumer (worktrees could not
+# point at the primary tree's data/). rb_vendor.py's local override predates
+# this fix and now resolves to the same value.
 
 # ----- Rekordbox ---------------------------------------------------------
 REKORDBOX_WORKING_DB: Path = DATA_DIR / "master.db.copy"
