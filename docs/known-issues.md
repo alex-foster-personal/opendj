@@ -56,8 +56,9 @@ None of them block using the toolkit today.
 
 ## Requirements not shipped in v1.0
 
-Pulled from [`coverage-matrix.md`](../coverage-matrix.md) and
-[`reqs.json`](../reqs.json).
+Pulled from [`reqs.json`](../reqs.json) and the generated
+`coverage-matrix.md` (gitignored -- run `make test`, or download the
+`coverage-matrix` artifact from CI).
 
 | Req       | Scope                                   | Status      | Notes                                                                                                                     |
 |-----------|-----------------------------------------|-------------|---------------------------------------------------------------------------------------------------------------------------|
@@ -81,15 +82,32 @@ RC note is obsolete.
   write path in-repo; a real Serato library round-trip is still
   category D2-adjacent and has not been run.
 
-### `coverage-matrix.md` churn
+### `coverage-matrix.md` churn -- RESOLVED 2026-08-16
 
-The pytest `reqs` plugin regenerates `coverage-matrix.md` on every
-`make test` run. It is intentionally committed, but sibling agents
-during the v1 fanout repeatedly left it dirty, masking real WIP. A
-pre-commit hook that either commits or resets this file is tracked in
-[`.planning/SESSION-REPORT-2026-04-17.md`](../.planning/SESSION-REPORT-2026-04-17.md)
-as a v1.1 candidate. Until then: after `make test`, stage the diff or
-`git checkout coverage-matrix.md` before committing unrelated work.
+`coverage-matrix.md` is no longer tracked. It is a build artifact, fully
+derived from `reqs.json` × `@pytest.mark.requirement` markers, and the
+pytest `reqs` plugin rewrites it on **every** run -- including partial
+ones, whose totals are scoped to that run. A committed copy was therefore
+stale the moment anyone ran a subset, which is why sibling agents kept
+having to `git checkout --` it.
+
+`.gitignore` had listed the file since `80bb80a5`, but it was committed
+first (`19d91fed`) and a tracked file ignores `.gitignore`, so the rule
+sat inert. `git rm --cached` completed the decision.
+
+Where to read it now:
+
+- **Locally:** run `make test` (or `pytest tests`) and open the generated
+  file. It is gitignored, so it will not dirty the tree.
+- **CI:** the full-suite copy is published as the `coverage-matrix`
+  artifact on every run (`.github/workflows/ci.yml`).
+
+Each generated file now states its own run scope in the header, and a
+narrowed run (`-k`, `-m`, an explicit path) or one with collection errors
+is stamped with a PARTIAL RUN warning. Quoting a coverage figure without
+that header is the honest-denominator failure described in `CLAUDE.md`:
+`pytest tests/sync` alone reports 9/57 (15.8%), against a real full-suite
+figure of 48/57 (84.2%).
 
 ### `coverage-matrix` label drift
 
@@ -98,60 +116,12 @@ despite their tests passing. The coverage dashboard understates
 coverage because of this. Tracked in the session report; fix is a
 sweep through `tests/` to add markers, not a code change.
 
-### Unresolved stashes + non-canonical author identities
-
-Historical only. 15 stashes and 21 non-canonical author commits
-accumulated during the v1 fanout. Both are documented in
-[`.planning/HEALTH-2-2026-04-17.md`](../.planning/HEALTH-2-2026-04-17.md)
-and
-[`docs/git-author-convention.md`](git-author-convention.md). No new
-commits should add to either count. For agents: match the canonical
-author identity from `docs/git-author-convention.md` before committing.
-
-### Intra-repo links
-
-The `apps/adapters/_shim/` package was retired during phase 16-15 (see
-commits `0d22335` and `6a31672`). Two historical Markdown references
-pointed at the retired path and were fixed in the broken-link audit
-([`.planning/BROKEN-LINKS-2026-04-17.md`](../.planning/BROKEN-LINKS-2026-04-17.md)).
-If new docs reference `apps/adapters/_shim/`, treat it as stale; the
-canonical home is `apps.open_dj` (schema, registry, canon).
-
-## Things deferred to v2 (not in scope for any v1.x)
-
-These are explicitly NOT worked on before v1.0 ships and are called
-out here so operators do not wait for them.
-
-- **SMART-04** dedicated web rule editor (above).
-- **LAUNCH-03** DJ driver manager (above).
-- **CROSS-01 / CROSS-02** Windows + Linux support. v1 is macOS-only.
-  The Tauri launcher is cross-platform-ready; the Python side uses
-  macOS-specific paths (`~/Library`, `diskutil`) in several places.
-- **AI-03 / AI-04** further LLM features beyond the AI-01 / AI-02
-  structured suggester.
-- **CloudKit coherence**: patching `cloudKit_record_cloudKit` blobs
-  to avoid djay re-upload after playlist writes.
-
-## Reporting a new issue
-
-Open an issue at
-<https://github.com/former-work-account/music-dj-tools/issues> with:
-
-1. Which phase / app module the issue sits in.
-2. The exact CLI invocation or API call that triggered it.
-3. Whether any of the six rails fired (backup file path, reversal
-   script path, readback error).
-4. Vendor app versions for any DB you touched (Rekordbox / djay /
-   Serato / Traktor).
-
-Security-sensitive reports go to the contacts in
-[`SECURITY.md`](../SECURITY.md) instead.
-
 ## Related documents
 
 - [`.planning/MAINTAINER-REVIEW-QUEUE.md`](../.planning/MAINTAINER-REVIEW-QUEUE.md)
 - [`.planning/V1-SHIP-SUMMARY.md`](../.planning/V1-SHIP-SUMMARY.md)
 - [`.planning/SESSION-REPORT-2026-04-17.md`](../.planning/SESSION-REPORT-2026-04-17.md)
 - [`.planning/BROKEN-LINKS-2026-04-17.md`](../.planning/BROKEN-LINKS-2026-04-17.md)
-- [`coverage-matrix.md`](../coverage-matrix.md)
+- `coverage-matrix.md` (generated + gitignored; `make test` locally, or the
+  `coverage-matrix` CI artifact)
 - [`RELEASE-NOTES-v1.0-rc3.md`](../RELEASE-NOTES-v1.0-rc3.md)
