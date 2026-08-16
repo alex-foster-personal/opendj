@@ -36,7 +36,13 @@ import sys
 from pathlib import Path
 
 from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn
+from rich.progress import (
+    Progress,
+    TextColumn,
+    BarColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 from rich.table import Table
 
 from apps.shared import paths as _paths
@@ -154,6 +160,23 @@ def _execute_op(op, profile, *, ffmpeg: str | None) -> CopyResult:
     raise ValueError(f"unknown op kind: {op.kind}")
 
 
+def _progress_columns() -> tuple:
+    """Columns for the apply progress bar.
+
+    A long library write has to answer "how much longer", not just "how long
+    so far" (requirement M17). ``TimeRemainingColumn`` is therefore part of
+    the contract, not decoration: elapsed-only is what shipped, and it left a
+    150-track add with no way to tell a slow run from a hung one.
+    """
+    return (
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+    )
+
+
 def _run_plan(
     *,
     plan: Plan,
@@ -186,10 +209,7 @@ def _run_plan(
     touched_stable_ids: set[str] = set()
     write_kinds = {"copy", "transcode", "overwrite", "rename"}
     with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(),
+        *_progress_columns(),
         transient=True,
     ) as bar:
         t = bar.add_task("applying", total=len(plan.ops))
