@@ -194,7 +194,17 @@ def _tracks_on_disk() -> tuple[list[tuple[str, str]], int]:
 def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str, str]]]:
     conn = open_ro()
     try:
-        analysed = {r[0] for r in conn.execute("SELECT DISTINCT stable_id FROM analysis")}
+        # apps.analysis.store creates its table on first write, so a library
+        # that has never been analysed legitimately has no ``analysis`` table:
+        # that means zero tracks analysed, not an error.
+        has_analysis = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis'"
+        ).fetchone() is not None
+        analysed = (
+            {r[0] for r in conn.execute("SELECT DISTINCT stable_id FROM analysis")}
+            if has_analysis
+            else set()
+        )
     finally:
         conn.close()
     stems_done = (

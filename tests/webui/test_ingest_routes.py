@@ -244,3 +244,13 @@ def test_refresh_batch_scope_runs_analysis_only(client, monkeypatch, tmp_path):
 def test_refresh_batch_scope_rejects_outside_inbox(client, tmp_path):
     r = client.post("/api/v1/ingest/refresh", json={"batch_dir": str(tmp_path)})
     assert r.status_code == 422
+
+
+def test_coverage_on_never_analysed_library(client, app):
+    conn = sqlite3.connect(app.state.state_db)
+    conn.execute("DROP TABLE analysis")
+    conn.commit()
+    conn.close()
+    out = client.get("/api/v1/ingest/coverage")
+    assert out.status_code == 200
+    assert out.json()["missing"]["analysis"] == 0
