@@ -237,6 +237,7 @@ def get_coverage() -> CoverageOut:
 class _RefreshJob:
     started_at: float
     steps: list[str]
+    batch_dir: Optional[Path] = None
     phase: str = "queued"            # queued | running | done | error
     current_step: Optional[str] = None
     step_done: int = 0
@@ -295,9 +296,29 @@ def _refresh_worker(job: _RefreshJob) -> None:
     global _job
     try:
         job.phase = "running"
-        on_disk, unreachable = _tracks_on_disk()
-        missing = _missing_by_step(on_disk)
-        _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
+        if job.batch_dir is not None:
+            # Batch scope: freshly staged files that have no state.db rows
+            # yet. Only path-keyed steps can run; id-keyed ones (stems,
+            # vocals) explicitly wait for the Rekordbox import.
+            staged = sorted(
+                str(p) for p in job.batch_dir.rglob("*")
+                if p.suffix.lower() in AUDIO_EXTENSIONS
+            )
+            _log(job, f"batch scope: {len(staged)} staged files in {job.batch_dir}")
+            missing = {
+                "analysis": [("", f) for f in staged],
+                "stems": [],
+                "vocals": [],
+            }
+            for skipped in ("stems", "vocals"):
+                if skipped in job.steps:
+                    _log(job, f"{skipped}: skipped for batch scope - needs the "
+                              "Rekordbox import first (id-keyed)")
+            job.steps = [s for s in job.steps if s == "analysis"]
+        else:
+            on_disk, unreachable = _tracks_on_disk()
+            missing = _missing_by_step(on_disk)
+            _log(job, f"coverage: {len(on_disk)} tracks on disk, {unreachable} unreachable")
 
         for step in job.steps:
             job.current_step = step
@@ -350,9 +371,22 @@ def _refresh_worker(job: _RefreshJob) -> None:
         job.finished_at = time.time()
 
 
+class RefreshIn(BaseModel):
+    # Optional scope: run only over freshly staged files in this dir (must
+    # live under the ingest inbox). Absent = whole-library coverage sweep.
+    batch_dir: Optional[str] = None
+
+
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
-def start_refresh() -> RefreshStatusOut:
+def start_refresh(body: Optional[RefreshIn] = None) -> RefreshStatusOut:
     global _job
+    batch_dir: Optional[Path] = None
+    if body is not None and body.batch_dir is not None:
+        batch_dir = Path(body.batch_dir).resolve()
+        if not batch_dir.is_dir():
+            raise HTTPException(422, f"batch_dir not found: {batch_dir}")
+        if not batch_dir.is_relative_to(INGEST_INBOX.resolve()):
+            raise HTTPException(422, f"batch_dir must live under {INGEST_INBOX}")
     with _job_lock:
         if _job is not None and _job.phase in ("queued", "running"):
             raise HTTPException(409, "a refresh job is already running")
@@ -360,7 +394,7 @@ def start_refresh() -> RefreshStatusOut:
         steps = [s["id"] for s in STEPS if enabled[s["id"]]]
         if not steps:
             raise HTTPException(422, "no steps enabled in ingest config")
-        _job = _RefreshJob(started_at=time.time(), steps=steps)
+        _job = _RefreshJob(started_at=time.time(), steps=steps, batch_dir=batch_dir)
         threading.Thread(target=_refresh_worker, args=(_job,), daemon=True).start()
     return refresh_status()
 

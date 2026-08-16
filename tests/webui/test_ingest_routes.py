@@ -217,3 +217,30 @@ def test_upload_skips_exact_duplicate_unless_forced(client, app):
     res2 = r2.json()["results"][0]
     assert res2["skipped_duplicate"] is False
     assert Path(res2["staged_path"]).exists()
+
+
+def test_refresh_batch_scope_runs_analysis_only(client, monkeypatch, tmp_path):
+    ran: list[list[str]] = []
+    monkeypatch.setattr(ingest_mod, "_run_cli", lambda job, argv: ran.append(argv))
+    batch = ingest_mod.INGEST_INBOX / "scoped"
+    batch.mkdir(parents=True)
+    (batch / "a.mp3").write_bytes(b"x" * 2048)
+    client.put("/api/v1/ingest/config",
+               json={"enabled": {"analysis": True, "stems": True, "vocals": True}})
+    r = client.post("/api/v1/ingest/refresh", json={"batch_dir": str(batch)})
+    assert r.status_code == 202
+    for _ in range(80):
+        status = client.get("/api/v1/ingest/refresh/status").json()
+        if not status["running"]:
+            break
+        time.sleep(0.05)
+    assert status["phase"] == "done", status["log_tail"]
+    assert status["steps_completed"] == ["analysis"]
+    assert any("apps.analysis.run" in " ".join(a) for a in ran)
+    assert not any("apps.stems" in " ".join(a) for a in ran)
+    assert any("skipped for batch scope" in ln for ln in status["log_tail"])
+
+
+def test_refresh_batch_scope_rejects_outside_inbox(client, tmp_path):
+    r = client.post("/api/v1/ingest/refresh", json={"batch_dir": str(tmp_path)})
+    assert r.status_code == 422
