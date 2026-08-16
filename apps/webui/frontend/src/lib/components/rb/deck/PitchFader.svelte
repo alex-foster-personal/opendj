@@ -6,6 +6,7 @@
 	import { PITCH_RANGES } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import type { DeckState } from '$lib/rb/types';
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { faderValueFromPitchRatio, pitchRatioFromFaderValue } from './pitch-fader-geometry';
 
 	let {
@@ -106,6 +107,12 @@
 		aria-disabled={pending}
 		tabindex="0"
 		data-performance-control="pitch"
+		use:wheelAdjust={{
+			step: WHEEL_STEP.pitch,
+			get: () => value,
+			set: _setTempoFromValue,
+			disabled: deck.stable_id === null
+		}}
 		onpointerdown={handlePointerDown}
 		onpointermove={handlePointerMove}
 		onpointerup={handlePointerDone}

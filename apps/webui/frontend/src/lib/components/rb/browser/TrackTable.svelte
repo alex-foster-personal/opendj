@@ -7,7 +7,8 @@
 <script lang="ts">
 	// Browser track table (SCREENSHOT-SPEC 5c). Columns in screenshot order:
 	// funnel | cloud | # | Preview | Artwork | Track Title | Artist | K | B |
-	// Rating | Comments | Time | Venue (quality badge) | Genre. Preview strips + file_exists arrive
+	// Rating | Comments | Time | Venue (quality badge) | Genre | Stems.
+	// Preview strips + file_exists arrive
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
 	// Row states: yellow title+artist = loaded on a non-master deck; gold =
@@ -21,26 +22,34 @@
 	// provider.total.
 	import { untrack } from 'svelte';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import { autoPlayOrder } from '$lib/rb/auto-play.svelte';
+	import { buildCurveSegments, segmentPath } from '$lib/rb/autoplay-curve';
+	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 	import { setConfirmPref, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { beginTrackDrag, endTrackDrag } from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/types';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
+	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
+	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDots from './AnalysisDots.svelte';
+	import StemTags from './StemTags.svelte';
 	import { computeVirtualWindow } from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress,
-		type AnalysisBadge
+		type AnalysisBadge,
+		type AnalysisIssues
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 
@@ -53,6 +62,7 @@
 
 	type ColId =
 		| 'funnel'
+		| 'err'
 		| 'cloud'
 		| 'order'
 		| 'preview'
@@ -66,10 +76,18 @@
 		| 'comments'
 		| 'time'
 		| 'quality'
-		| 'genre';
+		| 'genre'
+		| 'stems'
+		| 'autoplay';
+
+	// ----- AUTOPLAY-COL -----------------------------------------------------
+	const AUTOPLAY_ARROW = '\u2193'; // down; flip to \u2191 without re-plumbing
+	const AUTOPLAY_COL_COUNT = 18;
+	const AUTOPLAY_THEAD_H = 20;
 
 	const COL_DEFAULTS: Record<ColId, number> = {
 		funnel: 24,
+		err: 24,
 		cloud: 24,
 		order: 34,
 		preview: 177,
@@ -83,7 +101,9 @@
 		comments: 110,
 		time: 48,
 		quality: 92,
-		genre: 90
+		genre: 90,
+		stems: 148,
+		autoplay: 46
 	};
 
 	let colWidths = $state<Record<ColId, number>>({ ...COL_DEFAULTS });
@@ -184,6 +204,16 @@
 			key: fromStore.key ?? (row.key !== null && row.key !== undefined && String(row.key) !== ''),
 			waveform: fromStore.waveform ?? row.rb_meta?.analysis_available === true
 		};
+	}
+
+	/** Err column: reads the backend-cached beatgrid diagnostic off rb_meta
+	 * (see apps/webui/server/rb_vendor.cached_beatgrid_issue) - never parses
+	 * the full ANLZ beat-grid here, since this runs per visible row. Other
+	 * analysis kinds have no working detector yet, so they stay empty/off
+	 * rather than fabricate a state (house rule: no mocked data). The rule
+	 * itself lives in $lib/rb/analysis-issues so it can be unit-tested. */
+	function _issuesFor(row: BrowserRow): AnalysisIssues {
+		return analysisIssuesFor(row);
 	}
 
 	function _jobRowStyle(stableId: string): string | undefined {
@@ -366,6 +396,36 @@
 	const rowHeight = $derived(
 		uiPrefs.library_density === 'cosy' ? ROW_HEIGHT_COSY : ROW_HEIGHT_COMPACT
 	);
+
+	// ----- AUTOPLAY-COL helpers ---------------------------------------------
+	let hoveredApId = $state<string | null>(null);
+	const autoPlayMode = $derived(describeAutoPlayMode(uiPrefs).mode);
+
+	function _autoPlayRank(stableId: string): number | null {
+		return autoPlayOrder.rankOf.get(stableId) ?? null;
+	}
+
+	const rowIndexOf = $derived.by(() => {
+		const map = new Map<string, number>();
+		for (let i = 0; i < rows.length; i++) map.set(rows[i].stable_id, i);
+		return map;
+	});
+
+	const apCurveSegments = $derived.by(() => {
+		if (hoveredApId === null || autoPlayOrder.chain.length < 2) return [];
+		// Offset scroll so Y is relative to sticky-thead scrollport.
+		return buildCurveSegments({
+			chain: autoPlayOrder.chain,
+			rankOf: autoPlayOrder.rankOf,
+			rowIndexOf,
+			rowHeight,
+			scrollTop: liveScrollTop - AUTOPLAY_THEAD_H,
+			viewportHeight,
+			pad: rowHeight * 2
+		});
+	});
+
+	const apCurveX = $derived(Math.max(8, colWidths.autoplay / 2));
 
 	// ------------------------------------------- per-pane scroll cursor
 	// Restore ONLY when the rendered pane changes (restoreKey): reading
@@ -643,6 +703,7 @@
 		<table>
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
+				<col style={`width:${colWidths.err}px`} />
 				<col style={`width:${colWidths.cloud}px`} />
 				<col style={`width:${colWidths.order}px`} />
 				<col style={`width:${colWidths.preview}px`} />
@@ -657,6 +718,8 @@
 				<col style={`width:${colWidths.time}px`} />
 				<col style={`width:${colWidths.quality}px`} />
 				<col style={`width:${colWidths.genre}px`} />
+				<col style={`width:${colWidths.stems}px`} />
+				<col style={`width:${colWidths.autoplay}px`} />
 			</colgroup>
 			<thead>
 				<tr>
@@ -668,6 +731,21 @@
 						<span
 							class="col-resize"
 							onpointerdown={(e) => onColResizeStart(e, 'funnel')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
+					<th
+						class="h-icon h-err"
+						style={`width:${colWidths.err}px`}
+						title="Err - detected analysis data-quality issues, hover a square for detail"
+					>
+						Err
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'err')}
 							onpointermove={onColResizeMove}
 							onpointerup={onColResizeEnd}
 							onpointercancel={onColResizeEnd}
@@ -804,12 +882,66 @@
 						></span>
 					</th>
 					{@render sortableTh('genre', 'Genre', 'genre')}
+					<th
+						class="h-stems"
+						style={`width:${colWidths.stems}px`}
+						title="Stems - [V] vocals, [I] instruments (bass+other), [D] drums. Hover for model, overlap, format, sizes"
+					>
+						<span class="th-label"><span>Stems</span></span>
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'stems')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
+					<th
+						class="h-icon h-autoplay"
+						style={`width:${colWidths.autoplay}px`}
+						title="AutoPlay order - rank in AutoPlay's next handoffs for the open playlist"
+					>
+						{#if autoPlayMode !== 'off'}
+							<AutoPlayExplainer>
+								{#snippet demo()}
+									{#if autoPlayMode === 'greedy' || autoPlayMode === 'reach' || autoPlayMode === 'enforce'}
+										<AutoPlayWalkthrough mode={autoPlayMode} />
+									{/if}
+								{/snippet}
+								<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+									<!-- robot head -->
+									<rect x="3" y="4" width="10" height="8" rx="1.5" fill="currentColor" />
+									<circle cx="6" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
+									<circle cx="10" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
+									<rect x="7.25" y="1.5" width="1.5" height="2.5" fill="currentColor" />
+									<circle cx="8" cy="1.5" r="1" fill="currentColor" />
+								</svg>
+							</AutoPlayExplainer>
+						{:else}
+							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+								<rect x="3" y="4" width="10" height="8" rx="1.5" fill="currentColor" />
+								<circle cx="6" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
+								<circle cx="10" cy="8" r="1.1" fill="var(--rb-bg, #0a0c0f)" />
+								<rect x="7.25" y="1.5" width="1.5" height="2.5" fill="currentColor" />
+								<circle cx="8" cy="1.5" r="1" fill="currentColor" />
+							</svg>
+						{/if}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="col-resize"
+							onpointerdown={(e) => onColResizeStart(e, 'autoplay')}
+							onpointermove={onColResizeMove}
+							onpointerup={onColResizeEnd}
+							onpointercancel={onColResizeEnd}
+						></span>
+					</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#if windowInfo.topPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.topPad}px`} aria-hidden="true">
-						<td colspan="15"></td>
+						<td colspan={AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
 				{#each visibleRows as row (`${row.stable_id}:${row.order}`)}
@@ -841,21 +973,29 @@
 						ondragover={onRowDragOver}
 						ondrop={(e) => onRowDrop(e, row)}
 					>
-						{#if audioPrefetchStatus(row.stable_id) === 'ready'}
-							<span
-								class="audio-cache-chevron"
-								title="Audio cached for fast deck load"
-								aria-hidden="true"
-							>▸</span>
-						{:else if audioPrefetchStatus(row.stable_id) === 'loading'}
-							<span
-								class="audio-cache-dot"
-								title="Prefetching audio"
-								aria-hidden="true"
-							></span>
-						{/if}
+						<!-- Prefetch markers live INSIDE the first cell, never as a bare
+						     child of <tr>: a non-<td> row child gets wrapped in an anonymous
+						     table cell, which under table-layout:fixed + <colgroup> eats a
+						     column slot and shifts every real cell one column right. That
+						     showed up as decked (= prefetched) rows rendering offset. -->
 						<td class="c-funnel">
+							{#if audioPrefetchStatus(row.stable_id) === 'ready'}
+								<span
+									class="audio-cache-chevron"
+									title="Audio cached for fast deck load"
+									aria-hidden="true"
+								>▸</span>
+							{:else if audioPrefetchStatus(row.stable_id) === 'loading'}
+								<span
+									class="audio-cache-dot"
+									title="Prefetching audio"
+									aria-hidden="true"
+								></span>
+							{/if}
 							<AnalysisDots badge={_badgeFor(row)} />
+						</td>
+						<td class="c-err">
+							<AnalysisDots issues={_issuesFor(row)} mode="issues" />
 						</td>
 						<!-- Cloud column is DATA-DRIVEN: rekordbox's per-row cloud icons
 						     reflect Cloud Library Sync state we do not have locally, so a
@@ -1019,17 +1159,69 @@
 								</button>
 							{/each}
 						</td>
+						<td class="c-stems">
+							<StemTags stems={row.stems} />
+						</td>
+						<td class="c-autoplay">
+							{#if _autoPlayRank(row.stable_id) !== null}
+								{@const rank = _autoPlayRank(row.stable_id)!}
+								<span
+									class="ap-rank"
+									class:ap-rank-hot={hoveredApId === row.stable_id}
+									tabindex="0"
+									title={`AutoPlay will hand off to this track after ${rank - 1} more, for the open playlist`}
+									onpointerenter={() => (hoveredApId = row.stable_id)}
+									onpointerleave={() => {
+										if (hoveredApId === row.stable_id) hoveredApId = null;
+									}}
+									onfocus={() => (hoveredApId = row.stable_id)}
+									onblur={() => {
+										if (hoveredApId === row.stable_id) hoveredApId = null;
+									}}
+								>{rank}{AUTOPLAY_ARROW}</span>
+							{/if}
+						</td>
 					</tr>
 				{/each}
 				{#if windowInfo.bottomPad > 0}
 					<tr class="tt-spacer" style={`height:${windowInfo.bottomPad}px`} aria-hidden="true">
-						<td colspan="15"></td>
+						<td colspan={AUTOPLAY_COL_COUNT}></td>
 					</tr>
 				{/if}
 			</tbody>
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">{emptyMessage}</div>
+		{/if}
+		{#if apCurveSegments.length > 0}
+			<svg
+				class="ap-curve"
+				aria-hidden="true"
+				style={`--ap-curve-w:${colWidths.autoplay}px`}
+			>
+				{#each apCurveSegments as seg (`${seg.from.stable_id}-${seg.to.stable_id}`)}
+					<path
+						d={segmentPath(seg, apCurveX)}
+						class="ap-curve-seg"
+						class:skips={seg.skips}
+						fill="none"
+					/>
+					<circle
+						cx={apCurveX}
+						cy={seg.from.y}
+						r={hoveredApId === seg.from.stable_id ? 3.5 : 2}
+						class="ap-curve-node"
+						class:hot={hoveredApId === seg.from.stable_id}
+					/>
+					<circle
+						cx={apCurveX}
+						cy={seg.to.y}
+						r={hoveredApId === seg.to.stable_id ? 3.5 : 2}
+						class="ap-curve-node"
+						class:hot={hoveredApId === seg.to.stable_id}
+					/>
+				{/each}
+			</svg>
 		{/if}
 	</div>
 	{#if provider.truncated}
@@ -1076,6 +1268,55 @@
 {/if}
 
 <style>
+
+	/* ----- AUTOPLAY-COL --------------------------------------------------- */
+	.c-autoplay {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		padding: 0 2px;
+	}
+	.ap-rank {
+		display: inline-block;
+		font-style: italic;
+		font-size: 10px;
+		color: var(--rb-text-dim);
+		cursor: default;
+		outline: none;
+	}
+	.ap-rank-hot,
+	.ap-rank:focus {
+		color: var(--rb-accent);
+	}
+	.h-autoplay :global(.ap-explain-wrap) {
+		color: inherit;
+	}
+	.ap-curve {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: var(--ap-curve-w, 46px);
+		pointer-events: none;
+		z-index: 5;
+		overflow: visible;
+	}
+	.ap-curve-seg {
+		stroke: var(--rb-accent);
+		stroke-width: 1.25;
+		opacity: 0.75;
+	}
+	.ap-curve-seg.skips {
+		stroke-dasharray: 3 3;
+		opacity: 0.55;
+	}
+	.ap-curve-node {
+		fill: var(--rb-accent);
+		opacity: 0.85;
+	}
+	.ap-curve-node.hot {
+		opacity: 1;
+	}
+
 	.tt-root {
 		display: flex;
 		flex-direction: column;
@@ -1096,6 +1337,7 @@
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
+		position: relative;
 	}
 	table {
 		width: 100%;
@@ -1133,6 +1375,11 @@
 	}
 	.h-icon {
 		text-align: center;
+	}
+	.h-err {
+		font-size: 9px;
+		font-weight: 600;
+		letter-spacing: 0.02em;
 	}
 	th.sortable {
 		padding: 0;
@@ -1429,6 +1676,10 @@
 	.c-comments,
 	.c-genre {
 		color: var(--rb-text-dim);
+	}
+	.c-stems {
+		overflow: hidden;
+		white-space: nowrap;
 	}
 	.genre-sep {
 		color: var(--rb-text-dim);

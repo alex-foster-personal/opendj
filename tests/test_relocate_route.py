@@ -23,6 +23,7 @@ Uses InMemoryBackend + real tmp files (disk truth, no mocked stat results);
 rb_vendor.bulk_rb_meta is monkeypatched, same pattern as
 tests/test_reconcile_route.py.
 """
+
 from __future__ import annotations
 
 import sys
@@ -59,26 +60,42 @@ def library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
 @pytest.fixture
 def backend(library: dict[str, Path]) -> InMemoryBackend:
     b = InMemoryBackend()
-    b.seed_track(Track(stable_id="t-gone", title="Vanished", artist="A",
-                       duration_ms=200_000, file_path=str(library["gone"])))
-    b.seed_track(Track(stable_id="t-stream", title="Streamy", artist="B",
-                       file_path="tidal:12345"))
-    b.seed_track(Track(stable_id="t-nopath", title="Pathless", artist="C",
-                       file_path=None))
+    b.seed_track(
+        Track(
+            stable_id="t-gone",
+            title="Vanished",
+            artist="A",
+            duration_ms=200_000,
+            file_path=str(library["gone"]),
+        )
+    )
+    b.seed_track(
+        Track(
+            stable_id="t-stream", title="Streamy", artist="B", file_path="tidal:12345"
+        )
+    )
+    b.seed_track(
+        Track(stable_id="t-nopath", title="Pathless", artist="C", file_path=None)
+    )
     return b
 
 
 @pytest.fixture
 def client(backend: InMemoryBackend) -> Iterator[TestClient]:
-    app = create_app(backend=backend, bind_host="127.0.0.1",
-                     hostname="test-host", lock_status_fn=lambda: None,
-                     mount_frontend=False)
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as c:
         yield c
 
 
 def _current_etag(backend: InMemoryBackend, stable_id: str) -> str:
     from apps.webui.server.etag import compute_etag
+
     track = backend.get_track(stable_id)
     return compute_etag(track.stable_id, track.updated_at)
 
@@ -97,7 +114,10 @@ def _candidate_identity(path: Path) -> str:
 
 
 def _apply_body(
-    library: dict[str, Path], *, confirm: bool = True, vendor_id: str | None = None,
+    library: dict[str, Path],
+    *,
+    confirm: bool = True,
+    vendor_id: str | None = None,
 ) -> dict[str, object]:
     return {
         "new_path": str(library["candidate"]),
@@ -120,7 +140,8 @@ def _vendor_meta(vendor_id: str, original_path: Path) -> rb_vendor.RbRowMeta:
 
 
 def _swap_candidate_after_scan(
-    monkeypatch: pytest.MonkeyPatch, candidate: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: Path,
 ) -> None:
     original_find = locate.find_candidates
 
@@ -135,7 +156,8 @@ def _swap_candidate_after_scan(
 
 
 def _swap_candidate_after_mutation_guard_opens(
-    monkeypatch: pytest.MonkeyPatch, candidate: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: Path,
 ) -> None:
     """Replace the pathname after the mutation-boundary FD has opened."""
     from apps.webui.server.routes import relocate as relocate_routes
@@ -161,7 +183,8 @@ def _swap_candidate_after_mutation_guard_opens(
 
 @pytest.mark.requirement("RECON-02")
 def test_candidates_finds_basename_match(
-    client: TestClient, library: dict[str, Path],
+    client: TestClient,
+    library: dict[str, Path],
 ) -> None:
     r = client.get("/api/v1/relocate/candidates/t-gone")
     assert r.status_code == 200
@@ -177,7 +200,9 @@ def test_candidates_finds_basename_match(
 
 @pytest.mark.requirement("RECON-02")
 def test_candidates_empty_when_no_music_roots(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """No configured/present music roots -> empty, not an error."""
     monkeypatch.setattr(shared_paths, "MUSIC_ROOTS", [tmp_path / "does-not-exist"])
@@ -212,20 +237,32 @@ def test_candidates_unknown_track_404(client: TestClient) -> None:
 
 @pytest.mark.requirement("RECON-02")
 def test_candidates_uses_rekordbox_vendor_mapping(
-    backend: InMemoryBackend, library: dict[str, Path],
+    backend: InMemoryBackend,
+    library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """rekordbox FolderPath + vendor_id win over the state-layer path."""
     dead_rb_path = str(library["gone"].parent / "moved.mp3")
-    meta = rb_vendor.RbRowMeta(vendor_id="99", folder_path=dead_rb_path,
-                               analysis_data_path=None, comment=None, genre=None, play_count=0)
+    meta = rb_vendor.RbRowMeta(
+        vendor_id="99",
+        folder_path=dead_rb_path,
+        analysis_data_path=None,
+        comment=None,
+        genre=None,
+        play_count=0,
+    )
     monkeypatch.setattr(
-        rb_vendor, "bulk_rb_meta",
+        rb_vendor,
+        "bulk_rb_meta",
         lambda stable_ids: {"t-gone": meta} if "t-gone" in stable_ids else {},
     )
-    app = create_app(backend=backend, bind_host="127.0.0.1",
-                     hostname="test-host", lock_status_fn=lambda: None,
-                     mount_frontend=False)
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as c:
         body = c.get("/api/v1/relocate/candidates/t-gone").json()
     assert body["original_path"] == dead_rb_path
@@ -237,52 +274,64 @@ def test_candidates_uses_rekordbox_vendor_mapping(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_requires_confirm(client: TestClient, library: dict[str, Path]) -> None:
-    r = client.post("/api/v1/relocate/t-gone/apply",
-                    json=_apply_body(library, confirm=False))
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply", json=_apply_body(library, confirm=False)
+    )
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "CONFIRM_REQUIRED"
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_nonexistent_candidate_path(
-    client: TestClient, library: dict[str, Path], tmp_path: Path,
+    client: TestClient,
+    library: dict[str, Path],
+    tmp_path: Path,
 ) -> None:
-    r = client.post("/api/v1/relocate/t-gone/apply",
-                    json={
-                        "new_path": str(tmp_path / "nope.mp3"),
-                        "expected_candidate_identity": "stale",
-                        "expected_original_path": str(library["gone"]),
-                        "expected_vendor_id": None,
-                        "confirm": True,
-                    }, headers={"If-Match": _current_etag(client.app.state.backend, "t-gone")})
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json={
+            "new_path": str(tmp_path / "nope.mp3"),
+            "expected_candidate_identity": "stale",
+            "expected_original_path": str(library["gone"]),
+            "expected_vendor_id": None,
+            "confirm": True,
+        },
+        headers={"If-Match": _current_etag(client.app.state.backend, "t-gone")},
+    )
     assert r.status_code == 422
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_unknown_track_404(client: TestClient, library: dict[str, Path]) -> None:
-    r = client.post("/api/v1/relocate/nope/apply",
-                    json=_apply_body(library),
-                    headers={"If-Match": '"anything"'})
+    r = client.post(
+        "/api/v1/relocate/nope/apply",
+        json=_apply_body(library),
+        headers={"If-Match": '"anything"'},
+    )
     assert r.status_code == 404
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_state_layer_requires_if_match(
-    client: TestClient, library: dict[str, Path],
+    client: TestClient,
+    library: dict[str, Path],
 ) -> None:
-    r = client.post("/api/v1/relocate/t-gone/apply",
-                    json=_apply_body(library))
+    r = client.post("/api/v1/relocate/t-gone/apply", json=_apply_body(library))
     assert r.status_code == 428
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_state_layer_patches_file_path(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
 ) -> None:
     etag = _current_etag(backend, "t-gone")
-    r = client.post("/api/v1/relocate/t-gone/apply",
-                    json=_apply_body(library),
-                    headers={"If-Match": etag})
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json=_apply_body(library),
+        headers={"If-Match": etag},
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["target"] == "state"
@@ -292,24 +341,31 @@ def test_apply_state_layer_patches_file_path(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_state_layer_stale_etag_conflicts(
-    client: TestClient, library: dict[str, Path],
+    client: TestClient,
+    library: dict[str, Path],
 ) -> None:
-    r = client.post("/api/v1/relocate/t-gone/apply",
-                    json=_apply_body(library),
-                    headers={"If-Match": '"stale-etag"'})
+    r = client.post(
+        "/api/v1/relocate/t-gone/apply",
+        json=_apply_body(library),
+        headers={"If-Match": '"stale-etag"'},
+    )
     assert r.status_code == 409
 
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_path_outside_music_roots(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
+    tmp_path: Path,
 ) -> None:
     outside = tmp_path / "outside.mp3"
     outside.write_bytes(b"x")
     body = _apply_body(library)
     body["new_path"] = str(outside)
     r = client.post(
-        "/api/v1/relocate/t-gone/apply", json=body,
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
         headers={"If-Match": _current_etag(backend, "t-gone")},
     )
     assert r.status_code == 422
@@ -319,7 +375,9 @@ def test_apply_rejects_path_outside_music_roots(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_dataless_stub_candidate(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
 ) -> None:
     """iCloud-style sparse stubs must not become the new FolderPath."""
     import os
@@ -329,13 +387,16 @@ def test_apply_rejects_dataless_stub_candidate(
     with open(stub, "wb") as handle:
         handle.truncate(1_048_576)
     if os.stat(stub).st_blocks != 0:
-        pytest.skip("filesystem does not support sparse files; cannot mimic a placeholder")
+        pytest.skip(
+            "filesystem does not support sparse files; cannot mimic a placeholder"
+        )
     if sys.platform != "darwin":
         pytest.skip("dataless gate is Darwin-scoped")
     body = _apply_body(library)
     body["new_path"] = str(stub)
     r = client.post(
-        "/api/v1/relocate/t-gone/apply", json=body,
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
         headers={"If-Match": _current_etag(backend, "t-gone")},
     )
     assert r.status_code == 422
@@ -345,14 +406,17 @@ def test_apply_rejects_dataless_stub_candidate(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_final_component_symlink(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
 ) -> None:
     symlink = library["candidate"].with_name("linked-track.mp3")
     symlink.symlink_to(library["candidate"])
     body = _apply_body(library)
     body["new_path"] = str(symlink)
     r = client.post(
-        "/api/v1/relocate/t-gone/apply", json=body,
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
         headers={"If-Match": _current_etag(backend, "t-gone")},
     )
     assert r.status_code == 422
@@ -362,7 +426,8 @@ def test_apply_rejects_final_component_symlink(
 
 @pytest.mark.requirement("RECON-04")
 def test_candidate_guard_closes_fd_when_music_root_resolution_is_denied(
-    library: dict[str, Path], monkeypatch: pytest.MonkeyPatch,
+    library: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from apps.webui.server.routes import relocate as relocate_routes
 
@@ -399,12 +464,15 @@ def test_candidate_guard_closes_fd_when_music_root_resolution_is_denied(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_stale_recorded_path(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
 ) -> None:
     body = _apply_body(library)
     body["expected_original_path"] = "/stale/path.mp3"
     r = client.post(
-        "/api/v1/relocate/t-gone/apply", json=body,
+        "/api/v1/relocate/t-gone/apply",
+        json=body,
         headers={"If-Match": _current_etag(backend, "t-gone")},
     )
     assert r.status_code == 409
@@ -414,7 +482,9 @@ def test_apply_rejects_stale_recorded_path(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rejects_changed_vendor_mapping(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -434,7 +504,9 @@ def test_apply_rejects_changed_vendor_mapping(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_state_rejects_candidate_swap_before_mutation(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     body = _apply_body(library)
@@ -451,7 +523,9 @@ def test_apply_state_rejects_candidate_swap_before_mutation(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_state_rejects_swap_after_guard_open_without_persisting(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     body = _apply_body(library)
@@ -468,7 +542,9 @@ def test_apply_state_rejects_swap_after_guard_open_without_persisting(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_state_postcheck_mismatch_rolls_back_published_update(
-    client: TestClient, backend: InMemoryBackend, library: dict[str, Path],
+    client: TestClient,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A swap after the precheck must undo the state mutation on postcheck."""
@@ -488,7 +564,9 @@ def test_apply_state_postcheck_mismatch_rolls_back_published_update(
             replacement.replace(library["candidate"])
 
     monkeypatch.setattr(
-        relocate_routes, "_assert_candidate_path_identity", _check_then_swap,
+        relocate_routes,
+        "_assert_candidate_path_identity",
+        _check_then_swap,
     )
     r = client.post(
         "/api/v1/relocate/t-gone/apply",
@@ -502,7 +580,9 @@ def test_apply_state_postcheck_mismatch_rolls_back_published_update(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_verify_failure_restores_backup(
-    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A post-commit verify failure must restore the unique live-db backup."""
@@ -546,8 +626,13 @@ def test_apply_rekordbox_verify_failure_restores_backup(
     from apps.webui.server.routes import relocate as relocate_routes
 
     monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
-    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
-                     lock_status_fn=lambda: None, mount_frontend=False)
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as client:
         r = client.post(
             "/api/v1/relocate/t-gone/apply",
@@ -561,7 +646,9 @@ def test_apply_rekordbox_verify_failure_restores_backup(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_primary_close_failure_restores_committed_backup(
-    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A successful commit followed by primary close failure must roll back."""
@@ -602,8 +689,13 @@ def test_apply_rekordbox_primary_close_failure_restores_committed_backup(
     from apps.webui.server.routes import relocate as relocate_routes
 
     monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
-    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
-                     lock_status_fn=lambda: None, mount_frontend=False)
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as client:
         r = client.post(
             "/api/v1/relocate/t-gone/apply",
@@ -618,7 +710,9 @@ def test_apply_rekordbox_primary_close_failure_restores_committed_backup(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_postcommit_path_swap_restores_backup(
-    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     live_db = tmp_path / "master.db"
@@ -661,8 +755,13 @@ def test_apply_rekordbox_postcommit_path_swap_restores_backup(
 
     monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
     body = _apply_body(library, vendor_id="99")
-    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
-                     lock_status_fn=lambda: None, mount_frontend=False)
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as client:
         r = client.post(
             "/api/v1/relocate/t-gone/apply",
@@ -677,7 +776,9 @@ def test_apply_rekordbox_postcommit_path_swap_restores_backup(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_rejects_swap_after_guard_open_without_commit(
-    backend: InMemoryBackend, library: dict[str, Path], tmp_path: Path,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     live_db = tmp_path / "master.db"
@@ -719,8 +820,13 @@ def test_apply_rekordbox_rejects_swap_after_guard_open_without_commit(
     monkeypatch.setattr(relocate_routes, "_assert_rekordbox_not_running", lambda: None)
     body = _apply_body(library, vendor_id="99")
     _swap_candidate_after_mutation_guard_opens(monkeypatch, library["candidate"])
-    app = create_app(backend=backend, bind_host="127.0.0.1", hostname="test-host",
-                     lock_status_fn=lambda: None, mount_frontend=False)
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as client:
         r = client.post(
             "/api/v1/relocate/t-gone/apply",
@@ -735,25 +841,41 @@ def test_apply_rekordbox_rejects_swap_after_guard_open_without_commit(
 
 @pytest.mark.requirement("RECON-04")
 def test_apply_rekordbox_branch_503s_without_live_db(
-    backend: InMemoryBackend, library: dict[str, Path],
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    backend: InMemoryBackend,
+    library: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Vendor-mapped track: a cloud sandbox has no live rekordbox database,
     so apply must 503 cleanly rather than silently no-op or crash."""
-    meta = rb_vendor.RbRowMeta(vendor_id="99", folder_path=str(library["gone"]),
-                               analysis_data_path=None, comment=None, genre=None,
-                               play_count=0)
+    meta = rb_vendor.RbRowMeta(
+        vendor_id="99",
+        folder_path=str(library["gone"]),
+        analysis_data_path=None,
+        comment=None,
+        genre=None,
+        play_count=0,
+    )
     monkeypatch.setattr(
-        rb_vendor, "bulk_rb_meta",
+        rb_vendor,
+        "bulk_rb_meta",
         lambda stable_ids: {"t-gone": meta} if "t-gone" in stable_ids else {},
     )
-    monkeypatch.setattr(shared_paths, "REKORDBOX_LIVE_DB", tmp_path / "no-such-master.db")
-    app = create_app(backend=backend, bind_host="127.0.0.1",
-                     hostname="test-host", lock_status_fn=lambda: None,
-                     mount_frontend=False)
+    monkeypatch.setattr(
+        shared_paths, "REKORDBOX_LIVE_DB", tmp_path / "no-such-master.db"
+    )
+    app = create_app(
+        backend=backend,
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        mount_frontend=False,
+    )
     with TestClient(app) as c:
-        r = c.post("/api/v1/relocate/t-gone/apply",
-                   json=_apply_body(library, vendor_id="99"),
-                   headers={"If-Match": _current_etag(backend, "t-gone")})
+        r = c.post(
+            "/api/v1/relocate/t-gone/apply",
+            json=_apply_body(library, vendor_id="99"),
+            headers={"If-Match": _current_etag(backend, "t-gone")},
+        )
     assert r.status_code == 503
     assert r.json()["detail"]["code"] == "REKORDBOX_DB_UNAVAILABLE"

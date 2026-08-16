@@ -418,10 +418,15 @@ def build_parser() -> argparse.ArgumentParser:
     trickle = sub.add_parser("trickle", parents=[common])
     trickle.add_argument("--playlist", default=None)
     trickle.add_argument("--limit", type=int, default=DEFAULT_TRICKLE_LIMIT)
-    trickle.add_argument(
-        "--live",
-        action="store_true",
-        help="execute worker (default is dry-run listing only)",
+    # A mutating subcommand must state its mode explicitly. A bare --live with
+    # a silent dry-run default reads as "safe by default" while leaving the
+    # operator no way to say which they meant, so argparse refuses instead.
+    trickle_mode = trickle.add_mutually_exclusive_group(required=True)
+    trickle_mode.add_argument(
+        "--dry-run", action="store_true", help="list the batch only, run no worker"
+    )
+    trickle_mode.add_argument(
+        "--live", action="store_true", help="execute the worker for each queued track"
     )
     trickle.set_defaults(func=cmd_trickle)
 

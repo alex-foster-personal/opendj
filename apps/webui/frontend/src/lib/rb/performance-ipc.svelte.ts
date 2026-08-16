@@ -88,6 +88,9 @@ export type PerformanceCommand =
 	| { type: 'headphone_outputs_refresh' }
 	| { type: 'headphone_output_acquire' }
 	| { type: 'headphone_output_select'; device_id: string }
+	| { type: 'safety_loop_save'; deck: DeckId }
+	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
+	| { type: 'safety_loop_clear'; deck: DeckId }
 	| { type: 'hot_cue_save'; deck: DeckId; slot: HotCueSlot; in_ms: number; revision: string }
 	| { type: 'hot_cue_clear'; deck: DeckId; slot: HotCueSlot; revision: string }
 	| { type: 'hot_cue_restore'; deck: DeckId; slot: HotCueSlot; revision: string; reversal_id: string };
@@ -346,6 +349,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'cue' || type === 'master') {
 		_exactKeys(record, ['type', 'deck']);
 		return { type, deck };
+	} else if (type === 'safety_loop_save' || type === 'safety_loop_clear') {
+		_exactKeys(record, ['type', 'deck']);
+		return { type, deck };
+	} else if (type === 'safety_loop_arm') {
+		_exactKeys(record, ['type', 'deck', 'armed']);
+		return { type, deck, armed: _boolean('armed', record.armed) };
 	} else if (type === 'key_sync') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
@@ -663,6 +672,14 @@ async function _execute(command: PerformanceCommand): Promise<void> {
 		await engine.acquireHeadphoneOutput();
 	} else if (command.type === 'headphone_output_select') {
 		await engine.selectHeadphoneOutput(command.device_id);
+	} else if (command.type === 'safety_loop_save') {
+		// Engine-side and synchronous: it captures the deck's currently
+		// engaged loop, and throws when there is none to capture.
+		engine.saveSafetyLoop(command.deck);
+	} else if (command.type === 'safety_loop_arm') {
+		engine.setSafetyLoopArmed(command.deck, command.armed);
+	} else if (command.type === 'safety_loop_clear') {
+		engine.clearSafetyLoop(command.deck);
 	} else if (command.type === 'hot_cue_save') {
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);

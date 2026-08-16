@@ -45,6 +45,20 @@ export const ANALYSIS_DOT_SLOTS: readonly (AnalysisKind | null)[] = [
 	'other'
 ] as const;
 
+/** Human-readable names for dot tooltips (funnel coverage + Err columns). */
+export const ANALYSIS_LABELS: Record<AnalysisKind, string> = {
+	vocals: 'Vocals',
+	beatgrid: 'Beatgrid',
+	key: 'Key',
+	cues: 'Cues',
+	waveform: 'Waveform',
+	phrase: 'Phrase',
+	loudness: 'Loudness',
+	stems: 'Stems',
+	load: 'Load',
+	other: 'Other'
+};
+
 export const ANALYSIS_COLORS: Record<AnalysisKind, string> = {
 	vocals: '#5b8cff',
 	beatgrid: '#3ecf8e',
@@ -87,6 +101,15 @@ export type TrackJob = {
 };
 
 export type AnalysisBadge = Partial<Record<AnalysisKind, boolean>>;
+
+/** A real detected data-quality problem for one analysis kind (the browser
+ * "Err" column) - never a guessed/fabricated severity. */
+export type AnalysisIssue = { severity: 'warning' | 'error'; detail: string };
+export type AnalysisIssues = Partial<Record<AnalysisKind, AnalysisIssue>>;
+export const ANALYSIS_ISSUE_COLORS: Record<AnalysisIssue['severity'], string> = {
+	warning: '#e8973e',
+	error: '#e5484d'
+};
 
 export type UpsertJobInput = Omit<TrackJob, 'updated_at' | 'started_at' | 'progress'> & {
 	progress?: number;

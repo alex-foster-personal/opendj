@@ -232,7 +232,7 @@ LEDGER_PATH: Path = BENCH_DIR / "roformer_ledger.json"
 
 GPU_KIND: str = "H100"  # constraint: Modal H100 for all separation, never bifrost2
 TASK_TIMEOUT_S: int = 900
-DEFAULT_MAX_CONTAINERS: int = 6  # 6-track baseline never needs more than one per track
+DEFAULT_MAX_CONTAINERS: int = int(os.environ.get("MDT_ROFORMER_MAX_CONTAINERS", "24"))  # ceiling, not floor: small runs still spin only what they need; env-override for wider fan-out (self-levels to the Modal account H100 cap)
 
 AUDIO_SEPARATOR_VERSION: str = "0.44.5"  # pinned to what was probed locally
 

@@ -12,6 +12,52 @@ type Service = 'backend' | 'frontend' | 'all';
 const MIN_PORT = 1024;
 const MAX_PORT = 65_535;
 
+const HOSTNAME = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$/;
+
+/**
+ * Hostnames a reverse proxy may present in the Host header, from
+ * `MUSIC_DJ_ALLOWED_HOSTS` (comma-separated).
+ *
+ * Vite 5.4.12+ answers 403 to any Host it was not told about, which is why the
+ * tailnet remote runner (`tailscale serve :8080` -> vite) 403s under its
+ * MagicDNS name while 127.0.0.1 serves fine. Unset means the empty list, which
+ * is Vite's own default: loopback only. Wildcards and the blanket `true` are
+ * rejected on purpose - they reopen the DNS-rebinding hole the check closes.
+ */
+export function parseAllowedHosts(rawValue: string | undefined): string[] {
+	if (rawValue === undefined || rawValue.trim() === '') {
+		return [];
+	}
+	const hosts = rawValue
+		.split(',')
+		.map((host) => host.trim())
+		.filter((host) => host !== '');
+	if (hosts.length === 0) {
+		throw new Error('MUSIC_DJ_ALLOWED_HOSTS was set but named no hostname');
+	}
+	for (const host of hosts) {
+		if (!HOSTNAME.test(host)) {
+			throw new Error(
+				`MUSIC_DJ_ALLOWED_HOSTS must list bare hostnames, got ${JSON.stringify(host)}`
+			);
+		}
+	}
+	return hosts;
+}
+
+/**
+ * Resolve `MUSIC_DJ_ALLOWED_HOSTS` from its two sources: an explicit shell value
+ * wins, and the repository root `.env` is the fallback.
+ *
+ * Vite does not put the root `.env` on `process.env` at config time, so a value
+ * living only there is invisible unless the caller loads it and passes it in.
+ * `??` rather than `||` is deliberate: an empty shell value is an explicit
+ * "loopback only" and must not silently fall through to the file.
+ */
+export function resolveAllowedHosts(shellEnv: Environment, rootEnv: Environment): string[] {
+	return parseAllowedHosts(shellEnv.MUSIC_DJ_ALLOWED_HOSTS ?? rootEnv.MUSIC_DJ_ALLOWED_HOSTS);
+}
+
 export function claimAndCheckWebuiDevConfig(
 	repositoryRoot: string,
 	service: Service

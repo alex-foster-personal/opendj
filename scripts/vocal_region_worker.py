@@ -53,6 +53,7 @@ has no demucs.api; htdemucs cannot run on MPS (apply_model raises on
 
 -Claude
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,12 +67,18 @@ from typing import Any
 
 # ----- calibrated params (SPIKE-B2 section 6.6 - do NOT tune casually) --------
 MODEL_NAME: str = "htdemucs"
-HOP_S: float = 0.5            # RMS envelope hop
-ON_RATIO: float = 0.10        # vocals-rms / mix-rms to enter a region
-OFF_RATIO: float = 0.05       # ...to exit (hysteresis)
-MERGE_GAP_S: float = 1.5      # merge regions separated by < this gap
-MIN_REGION_S: float = 1.0     # drop merged regions shorter than this
+HOP_S: float = 0.5  # RMS envelope hop
+ON_RATIO: float = 0.10  # vocals-rms / mix-rms to enter a region
+OFF_RATIO: float = 0.05  # ...to exit (hysteresis)
+MERGE_GAP_S: float = 1.5  # merge regions separated by < this gap
+MIN_REGION_S: float = 1.0  # drop merged regions shorter than this
 CONFIDENCE_GAIN: float = 2.5  # confidence = min(1, GAIN * max ratio in region)
+# When demucs leakage keeps every frame above OFF_RATIO, hysteresis never
+# exits and paints the whole track (e.g. Nobody OLTF). Lift thresholds
+# relative to that track's own baseline only in that stuck case - default
+# SPIKE-B2 on/off stay for every track that can still exit.
+ADAPT_BASE_PERCENTILE: float = 0.40
+ADAPT_MARGIN: float = 0.08
 # Drift guard (NOTE-musicbot-alignment-learnings): resampled duration must
 # match the ffprobe source duration within this tolerance.
 DRIFT_ABS_TOL_S: float = 0.5
@@ -88,6 +95,7 @@ _ACCELERATOR_FAILURE_MARKERS: dict[str, tuple[str, ...]] = {
 
 
 # ----- pure region maths (dependency-light; unit-tested via path import) ------
+
 
 def envelope_to_regions(
     env: list[tuple[float, float]],
@@ -123,8 +131,7 @@ def ratio_envelope(
     """(t, vocals/mix) pairs; ratio 0 where the mix is silent (PoC rule)."""
     if len(vocals_rms) != len(mix_rms):
         raise ValueError(
-            f"envelope length mismatch: vocals {len(vocals_rms)} "
-            f"!= mix {len(mix_rms)}"
+            f"envelope length mismatch: vocals {len(vocals_rms)} != mix {len(mix_rms)}"
         )
     return [
         (i * hop_s, v / m if m > 1e-6 else 0.0)
@@ -148,13 +155,35 @@ def region_confidence(
     return round(min(1.0, CONFIDENCE_GAIN * max(values)), 2)
 
 
+def thresholds_for_ratio(ratio_values: list[float]) -> tuple[float, float, bool]:
+    """SPIKE-B2 (on, off), or adapted when the envelope can never exit.
+
+    Returns ``(on, off, adapted)``. Adaptation triggers only when every
+    frame stays at/above OFF_RATIO (hysteresis stuck on). Otherwise the
+    calibrated 0.10 / 0.05 pair is unchanged.
+    """
+    if not ratio_values:
+        return ON_RATIO, OFF_RATIO, False
+    if min(ratio_values) < OFF_RATIO:
+        return ON_RATIO, OFF_RATIO, False
+    ordered = sorted(ratio_values)
+    # nearest-rank percentile, no numpy (worker pure-maths stays stdlib)
+    idx = int(ADAPT_BASE_PERCENTILE * (len(ordered) - 1))
+    base = ordered[idx]
+    on = max(ON_RATIO, base + ADAPT_MARGIN)
+    off = max(OFF_RATIO, on * 0.5)
+    return on, off, True
+
+
 def regions_payload(
     ratio_env: list[tuple[float, float]], duration_s: float, hop_s: float = HOP_S
 ) -> dict[str, Any]:
     """regions + coverage from a ratio envelope - the whole pure pipeline."""
     if duration_s <= 0:
         raise ValueError(f"non-positive duration_s: {duration_s}")
-    spans = envelope_to_regions(ratio_env, on=ON_RATIO, off=OFF_RATIO)
+    values = [v for _t, v in ratio_env]
+    on, off, adapted = thresholds_for_ratio(values)
+    spans = envelope_to_regions(ratio_env, on=on, off=off)
     regions = [
         {
             "start_s": s,
@@ -168,10 +197,14 @@ def regions_payload(
         "regions": regions,
         "coverage_pct": round(coverage, 1),
         "fps": round(1.0 / hop_s, 4),
+        "on_ratio": on,
+        "off_ratio": off,
+        "thresholds_adapted": adapted,
     }
 
 
 # ----- heavy pipeline (torch/demucs imports stay INSIDE these functions) ------
+
 
 def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
@@ -194,9 +227,7 @@ def _rms_envelope(wav: Any, sr: int, hop_s: float) -> list[float]:
     mono = wav.mean(dim=0)
     hop = int(sr * hop_s)
     n = len(mono) // hop
-    return [
-        float(mono[i * hop:(i + 1) * hop].pow(2).mean().sqrt()) for i in range(n)
-    ]
+    return [float(mono[i * hop : (i + 1) * hop].pow(2).mean().sqrt()) for i in range(n)]
 
 
 def _separate_vocals(model: Any, wav: Any, device: str) -> Any:
@@ -263,9 +294,7 @@ def _read_via_ffmpeg(audio_path: Path, model: Any) -> tuple[int, float, Any]:
     af = AudioFile(audio_path)
     source_sr = int(af.samplerate())
     source_duration_s = float(af.duration)
-    wav = af.read(
-        streams=0, samplerate=model.samplerate, channels=model.audio_channels
-    )
+    wav = af.read(streams=0, samplerate=model.samplerate, channels=model.audio_channels)
     return source_sr, source_duration_s, wav
 
 
@@ -326,6 +355,9 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
     m_env = _rms_envelope(wav, sr, HOP_S)
     ratio = ratio_envelope(v_env, m_env, HOP_S)
     payload = regions_payload(ratio, duration_s=source_duration_s)
+    on_ratio = float(payload.pop("on_ratio"))
+    off_ratio = float(payload.pop("off_ratio"))
+    thresholds_adapted = bool(payload.pop("thresholds_adapted"))
 
     return {
         "schema": SCHEMA,
@@ -338,8 +370,9 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
         "params": {
             "model": MODEL_NAME,
             "hop_s": HOP_S,
-            "on_ratio": ON_RATIO,
-            "off_ratio": OFF_RATIO,
+            "on_ratio": on_ratio,
+            "off_ratio": off_ratio,
+            "thresholds_adapted": thresholds_adapted,
             "merge_gap_s": MERGE_GAP_S,
             "min_region_s": MIN_REGION_S,
             "confidence_gain": CONFIDENCE_GAIN,
@@ -359,7 +392,9 @@ def main() -> None:
     )
     parser.add_argument("audio", type=Path, help="path to the audio file")
     parser.add_argument(
-        "--device", default="auto", choices=("auto", "cpu", "mps", "cuda"),
+        "--device",
+        default="auto",
+        choices=("auto", "cpu", "mps", "cuda"),
         help="torch device preference (auto prefers cuda > mps > cpu; "
         "htdemucs falls back mps/cuda -> cpu on failure)",
     )

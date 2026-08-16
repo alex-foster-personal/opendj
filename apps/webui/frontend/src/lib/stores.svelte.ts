@@ -8,7 +8,17 @@ export type Toast = { id: number; message: string; kind: 'info' | 'error' };
 let _toastSeq = 0;
 export const toasts = $state<Toast[]>([]);
 
-export function pushToast(message: string, kind: 'info' | 'error' = 'info'): void {
+/** Default auto-dismiss delay when a caller does not name its own. */
+export const TOAST_DEFAULT_MS = 5000;
+
+export function pushToast(
+	message: string,
+	kind: 'info' | 'error' = 'info',
+	dismissMs: number = TOAST_DEFAULT_MS
+): void {
+	if (!Number.isFinite(dismissMs) || dismissMs <= 0) {
+		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
+	}
 	// P11-F03: capture *this* toast's id in the closure. The previous
 	// implementation closed over the module-level `_toastSeq` counter,
 	// which meant overlapping toasts would cause each timer to dismiss
@@ -16,11 +26,10 @@ export function pushToast(message: string, kind: 'info' | 'error' = 'info'): voi
 	// actually due to expire.
 	const id = ++_toastSeq;
 	toasts.push({ id, message, kind });
-	// Auto-dismiss after 5s.
 	setTimeout(() => {
 		const i = toasts.findIndex((t) => t.id === id);
 		if (i >= 0) toasts.splice(i, 1);
-	}, 5000);
+	}, dismissMs);
 }
 
 export const health = $state<{ data: HealthOut | null; bindWarning: string | null }>(

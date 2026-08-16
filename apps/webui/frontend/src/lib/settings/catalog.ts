@@ -143,6 +143,17 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	{
+		id: 'auto_play_maximize_reach',
+		label: 'AutoPlay maximize reach',
+		group: 'performance',
+		keywords: ['autoplay', 'reach', 'slack', 'path', 'strand'],
+		title: 'AutoPlay prefers fewer-outward candidates to avoid stranding',
+		detail:
+			'Smart mode only (ignored when enforce play order is on). When on (default), among key+-1 / BPM-compatible next tracks, pick the one with the fewest onward options so later tracks stay reachable. Cap ~50k compatibility checks per pick; over budget falls back to earliest.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
 		id: 'confirm.dblclick_load_play',
 		label: 'Confirm double-click Load+play',
 		group: 'confirmations',

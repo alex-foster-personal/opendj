@@ -10,10 +10,12 @@
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import {
 	DECK_IDS,
 	deckStates,
 	getDeckState,
+		mixerState,
 		parseCamelotKey,
 		pitchRanges
 	} from '$lib/rb/audio-engine.svelte';
@@ -301,6 +303,11 @@
 	data-deck={deckId}
 	data-deck-hover={deckId}
 	data-command-pending={pending}
+	use:wheelAdjust={{
+		step: WHEEL_STEP.fader,
+		get: () => mixerState.channels[deckId].fader,
+		set: (value) => void runPerformanceCommandFromUi({ type: 'fader', deck: deckId, value })
+	}}
 	onpointerenter={(e) => deckHoverEnter(deckIdFromHoverEl(e.currentTarget) ?? deckId)}
 	onpointerleave={(e) => deckHoverLeave(deckIdFromHoverEl(e.currentTarget) ?? deckId, e)}
 	ondragover={onTrackDragOver}

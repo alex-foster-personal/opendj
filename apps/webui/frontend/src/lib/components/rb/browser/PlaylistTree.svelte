@@ -11,6 +11,8 @@
 	import { RbApiError } from '$lib/rb/api-rb';
 	import { tick } from 'svelte';
 	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
+	import { TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
+	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './pane-contract.svelte';
 
 	let {
 		nodes,
@@ -23,7 +25,8 @@
 		onloadtrack,
 		oncreateplaylist,
 		onrenameplaylist,
-		ondeleteplaylist
+		ondeleteplaylist,
+		ondroptracks
 	}: {
 		nodes: PlaylistNode[];
 		allTracksCount: number | null;
@@ -47,7 +50,60 @@
 		/** Commit in-place rename; empty/cancelled name leaves server name. */
 		onrenameplaylist?: (node: PlaylistNode, name: string) => void | Promise<void>;
 		ondeleteplaylist?: (node: PlaylistNode) => void;
+		/**
+		 * Library tracks dropped onto a playlist row. Absent = rows are not
+		 * drop targets, same absent-means-inert convention as above.
+		 */
+		ondroptracks?: (playlistId: string, stableIds: string[]) => void;
 	} = $props();
+
+	/** playlist_id currently under a track drag, for the drop outline. */
+	let dropTargetId: string | null = $state(null);
+
+	/** Ids from a TrackTable row drag, or [] when the drag is not ours. */
+	function _draggedStableIds(event: DragEvent): string[] {
+		const raw = event.dataTransfer?.getData(TRACK_STABLE_MIME) ?? '';
+		return raw
+			.split(',')
+			.map((id) => id.trim())
+			.filter((id) => id !== '');
+	}
+
+	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
+		// All Tracks is a view, not a playlist, so it can never receive a drop.
+		if (ondroptracks === undefined || node.kind !== 'playlist') return;
+		if (![...(event.dataTransfer?.types ?? [])].includes(TRACK_STABLE_MIME)) return;
+		event.preventDefault();
+		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+		dropTargetId = node.playlist_id;
+	}
+
+	function _onTrackDragLeave(node: PlaylistNode): void {
+		if (dropTargetId === node.playlist_id) dropTargetId = null;
+	}
+
+	function _onTrackDrop(event: DragEvent, node: PlaylistNode): void {
+		if (ondroptracks === undefined || node.kind !== 'playlist') return;
+		event.preventDefault();
+		dropTargetId = null;
+		const ids = _draggedStableIds(event);
+		if (ids.length === 0) return;
+		ondroptracks(node.playlist_id, ids);
+	}
+
+	/** Make a playlist row draggable onto the pane tab bar. */
+	function _onPlaylistDragStart(event: DragEvent, node: PlaylistNode): void {
+		event.dataTransfer?.setData(
+			PLAYLIST_DRAG_MIME,
+			encodePlaylistDrag({
+				playlist_id: node.playlist_id,
+				name: node.name,
+				track_count: node.track_count,
+				kind: node.kind
+			})
+		);
+		if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'copy';
+	}
 
 	let editingId = $state<string | null>(null);
 	let editDraft = $state('');
@@ -224,10 +280,16 @@
 					class="row child"
 					class:selected={selectedId === node.playlist_id}
 					class:broken={node.mostly_broken}
+					class:drop-target={dropTargetId === node.playlist_id}
 					role="button"
 					tabindex="0"
+					draggable="true"
 					onclick={() => onselect(node)}
 					onkeydown={(e) => _rowKeydown(e, node)}
+					ondragstart={(e) => _onPlaylistDragStart(e, node)}
+					ondragover={(e) => _onTrackDragOver(e, node)}
+					ondragleave={() => _onTrackDragLeave(node)}
+					ondrop={(e) => _onTrackDrop(e, node)}
 				>
 					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 						<path d="M2 3h8v2H2zM2 7h8v2H2zM2 11h8v2H2zM11 5l4 3-4 3z" fill="currentColor" />
@@ -405,6 +467,9 @@
 	}
 	.row.broken {
 		color: var(--rb-text-dim);
+	}
+	.row.drop-target {
+		box-shadow: inset 0 0 0 1px var(--rb-accent);
 	}
 	.row svg {
 		flex: none;

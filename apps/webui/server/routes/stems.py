@@ -46,6 +46,7 @@ class StemManifestOut(BaseModel):
     stable_id: str
     source: str = "demucs"
     model: str
+    layout: str = "demucs4"
     sample_rate_hz: int
     frame_count: int
     channel_count: int
@@ -77,11 +78,20 @@ def _manifest_out(bundle: StemBundle) -> StemManifestOut:
     """Expose only the stable client contract after internal provenance checks."""
     return StemManifestOut(
         stable_id=bundle.manifest.stable_id,
+        # The separator that actually made these files. Reporting "demucs" for
+        # a RoFormer bundle would put a wrong model name in front of the user.
+        source="demucs" if bundle.layout == "demucs4" else "roformer",
         model=bundle.manifest.model.name,
+        layout=bundle.layout,
         sample_rate_hz=bundle.alignment.sample_rate,
         frame_count=bundle.alignment.frame_count,
         channel_count=bundle.alignment.channels,
-        parts={part: StemPartOut(media_type=bundle.media_type) for part in STEM_PARTS},
+        # The bundle's OWN parts, not a fixed four: a 2-part RoFormer bundle
+        # must advertise exactly what it has so the client can render the
+        # controls it cannot drive as inert rather than silently dead.
+        parts={
+            part: StemPartOut(media_type=bundle.media_type) for part in bundle.parts
+        },
     )
 
 
@@ -105,8 +115,12 @@ def _open_validated_stem(path: Path) -> BufferedReader:
 
 
 def _stream_file(source: BufferedReader) -> Iterator[bytes]:
+    # Sync route -> each chunk is a separate anyio threadpool round trip. 1 MiB
+    # meant 30-40 GIL handoffs per stem file; under N-deck-parallel loads those
+    # compete and serialize throughput well below disk speed. 8 MiB cuts the
+    # round trips ~8x with no behavior change.
     with source:
-        while chunk := source.read(1024 * 1024):
+        while chunk := source.read(8 * 1024 * 1024):
             yield chunk
 
 
@@ -120,15 +134,18 @@ def get_stem_manifest(stable_id: str, request: Request) -> StemManifestOut:
 @router.get("/{stable_id}/stems/{part}", response_class=StreamingResponse)
 def get_stem_file(stable_id: str, part: str, request: Request) -> StreamingResponse:
     """Stream one validated WAV stem from its already-verified file handle."""
-    if part not in STEM_PARTS:
+    bundle = _load_or_http_error(stable_id, request)
+    if part not in bundle.parts:
         raise HTTPException(
             status_code=404,
             detail={
                 "code": "STEM_PART_NOT_FOUND",
-                "message": f"unknown stem part {part!r}",
+                "message": (
+                    f"unknown stem part {part!r} for a {bundle.layout} bundle; "
+                    f"it has {bundle.parts}"
+                ),
             },
         )
-    bundle = _load_or_http_error(stable_id, request)
     try:
         source = _open_validated_stem(bundle.files[part])
     except (OSError, StemArtifactError) as exc:

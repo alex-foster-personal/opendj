@@ -77,6 +77,88 @@ test('stem controls and part maps reject incomplete keys instead of defaulting',
 	);
 	assert.throws(
 		() => stems.validateStemBufferAlignment({ vocals: ALIGNED.vocals }),
+		/match no known layout/i
+	);
+});
+
+const ROFORMER_ALIGNED = {
+	vocals: { sampleRate: 48_000, length: 960_000, numberOfChannels: 2, duration: 20 },
+	instrumental: { sampleRate: 48_000, length: 960_000, numberOfChannels: 2, duration: 20 }
+};
+
+test('a two-part RoFormer buffer set is recognised as its own layout', () => {
+	assert.equal(stems.layoutOfBuffers(ALIGNED), 'demucs4');
+	assert.equal(stems.layoutOfBuffers(ROFORMER_ALIGNED), 'roformer2');
+	assert.deepEqual(stems.validateStemBufferAlignment(ROFORMER_ALIGNED), {
+		sample_rate_hz: 48_000,
+		frame_count: 960_000,
+		channel_count: 2,
+		duration_ms: 20_000
+	});
+});
+
+test('solo VOCAL on a roformer2 deck plays vocals alone', () => {
+	const controls = stems.createDefaultStemControls();
+	controls.vocal.solo = true;
+	assert.deepEqual(stems.stemPartGains(controls, 'roformer2'), {
+		vocals: 1,
+		instrumental: 0
+	});
+});
+
+test('a control the layout cannot drive can never silence the deck', () => {
+	// DRUMS is not a roformer2 control: its parts live inside `instrumental`,
+	// so soloing it must not gate the two real branches to zero.
+	const controls = stems.createDefaultStemControls();
+	controls.drums.solo = true;
+	assert.deepEqual(stems.stemPartGains(controls, 'roformer2'), {
+		vocals: 1,
+		instrumental: 1
+	});
+
+	controls.drums.solo = false;
+	controls.drums.muted = true;
+	assert.deepEqual(stems.stemPartGains(controls, 'roformer2'), {
+		vocals: 1,
+		instrumental: 1
+	});
+});
+
+test('each layout advertises only the controls it can genuinely drive', () => {
+	assert.deepEqual(stems.readyStemDeckState(
+		{ source: 'roformer', model: 'mel-band-roformer', layout: 'roformer2' },
+		{ sample_rate_hz: 48_000, frame_count: 960_000, channel_count: 2, duration_ms: 20_000 }
+	).available_controls, ['vocal', 'instrumental']);
+
+	assert.deepEqual(stems.readyStemDeckState(
+		{ source: 'demucs', model: 'htdemucs', layout: 'demucs4' },
+		{ sample_rate_hz: 48_000, frame_count: 960_000, channel_count: 2, duration_ms: 20_000 }
+	).available_controls, ['vocal', 'instrumental', 'drums']);
+});
+
+test('a roformer2 schedule reaches both branches and no phantom third', async () => {
+	const calls = [];
+	const processors = Object.fromEntries(
+		stems.ROFORMER_PARTS.map((part) => [
+			part,
+			{ schedule: async (outputTime, change) => calls.push({ part, outputTime, change }) }
+		])
+	);
+	const change = { active: true, input: 3.25, rate: 1.02, semitones: 0 };
+	await stems.scheduleAlignedStemProcessors(processors, 10.5, change, 'roformer2');
+	assert.deepEqual(
+		calls,
+		stems.ROFORMER_PARTS.map((part) => ({ part, outputTime: 10.5, change }))
+	);
+
+	// A four-part processor map is not a valid roformer2 graph.
+	await assert.rejects(
+		stems.scheduleAlignedStemProcessors(
+			Object.fromEntries(stems.DEMUCS_PARTS.map((part) => [part, { schedule: async () => {} }])),
+			10.5,
+			change,
+			'roformer2'
+		),
 		/exactly/i
 	);
 });

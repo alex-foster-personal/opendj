@@ -1044,6 +1044,7 @@ test('pending pause transport mutations stay scheduled instead of touching the f
 			audible: true,
 			controlActive: true,
 			pendingScheduleCount: 1,
+			presentationPending: false,
 			scheduleIntentCount: 0
 		}),
 		true,
@@ -1055,6 +1056,7 @@ test('pending pause transport mutations stay scheduled instead of touching the f
 			audible: false,
 			controlActive: false,
 			pendingScheduleCount: 0,
+			presentationPending: false,
 			scheduleIntentCount: 0
 		}),
 		false,
@@ -1067,6 +1069,7 @@ test('pending pause transport mutations stay scheduled instead of touching the f
 				audible: false,
 				controlActive: false,
 				pendingScheduleCount: -1,
+				presentationPending: false,
 				scheduleIntentCount: 0
 			}),
 		/pendingScheduleCount/i
@@ -1080,6 +1083,7 @@ test('KEY nudge keeps an acknowledged pending stop on the scheduled output path'
 			audible: true,
 			controlActive: true,
 			pendingScheduleCount: 1,
+			presentationPending: false,
 			scheduleIntentCount: 0
 		},
 		false,
@@ -1098,6 +1102,7 @@ test('KEY nudge keeps an acknowledged pending stop on the scheduled output path'
 				audible: false,
 				controlActive: false,
 				pendingScheduleCount: 0,
+				presentationPending: false,
 				scheduleIntentCount: 0
 			},
 			false,

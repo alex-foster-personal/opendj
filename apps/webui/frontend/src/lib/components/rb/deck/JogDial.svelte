@@ -3,7 +3,9 @@
 	// large, pitch percent, pitch range, and a red position tick rotating
 	// with playback position. Right column: real Q, SLIP, and MT state; AU /
 	// MA remain explicitly inert.
+	import { DECK_IDS, deckEffectiveBpm, deckStates } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
+	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
 	import type { DeckState } from '$lib/rb/types';
 	import ControlExplainer from './ControlExplainer.svelte';
 
@@ -25,9 +27,42 @@
 		inertTip: string;
 	} = $props();
 
-	// Live BPM = track BPM x playback ratio (ratio driven by the pitch fader).
-	const liveBpm: number | null = $derived(deck.bpm === null ? null : deck.bpm * deck.pitch);
+	// Live BPM = PQTZ grid BPM x playback ratio (Beat Sync plans from PQTZ,
+	// not rekordbox tag BPM - tag*pitch desyncs the dial after Bsync).
+	const liveBpm: number | null = $derived(
+		playbackBpm({
+			beats: deck.anlz?.beatgrid.beats,
+			positionSec: Math.max(0, deck.position_ms / 1000),
+			tempoRatio: deck.pitch,
+			tagBpm: deck.bpm
+		})
+	);
 	const bpmText: string = $derived(liveBpm === null ? '--.--' : liveBpm.toFixed(2));
+
+	/** Null while locked (or with no valid comparison to make); a numeric
+	 * title otherwise so the tint always explains itself (house rule:
+	 * numeric readouts carry an explanatory hover title). */
+	function _offTempoTitle(candidateBpm: number | null, masterBpm: number | null): string | null {
+		if (candidateBpm === null || masterBpm === null) return null;
+		if (isTempoLockedToMaster(candidateBpm, masterBpm)) return null;
+		return (
+			`Off tempo: ${candidateBpm.toFixed(1)} BPM vs master ${masterBpm.toFixed(1)} BPM ` +
+			`(not 1x/0.5x/2x locked)`
+		);
+	}
+
+	// Off-tempo tint: read the elected master straight off the shared engine
+	// state (deckStates), never a local copy, per AGENTS.md /performance
+	// ("agents share the engine read model... never local copies").
+	const masterBpm: number | null = $derived(
+		(() => {
+			const masterDeckId = DECK_IDS.find((candidate) => deckStates[candidate].is_master);
+			return masterDeckId === undefined ? null : deckEffectiveBpm(masterDeckId);
+		})()
+	);
+	const offTempoTitle: string | null = $derived(
+		deck.is_master ? null : _offTempoTitle(liveBpm, masterBpm)
+	);
 	const pitchText: string = $derived(`${((deck.pitch - 1) * 100).toFixed(1)}%`);
 	// Range readout is REAL from the engine's per-deck pitchRanges store;
 	// 100 renders as WIDE per SCREENSHOT-SPEC 3.
@@ -64,25 +99,27 @@
 </script>
 
 <div class="jog">
-	<svg viewBox="0 0 100 100" class="dial" role="img" aria-label="jog dial readout">
-		<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
-		<circle cx="50" cy="50" r="40" fill="#14171d" stroke="#1a1e25" stroke-width="1" />
-		{#if deck.stable_id !== null}
-			<line
-				x1="50"
-				y1="4"
-				x2="50"
-				y2="12"
-				stroke="#d0342c"
-				stroke-width="3"
-				stroke-linecap="round"
-				transform={`rotate(${tickAngle} 50 50)`}
-			/>
-		{/if}
-		<text x="50" y="47" class="bpm">{bpmText}</text>
-		<text x="50" y="61" class="pitch">{pitchText}</text>
-		<text x="50" y="72" class="range">{rangeText}</text>
-	</svg>
+	<div class="dial-wrap" class:jog-off-tempo={offTempoTitle !== null} title={offTempoTitle ?? undefined}>
+		<svg viewBox="0 0 100 100" class="dial" role="img" aria-label="jog dial readout">
+			<circle cx="50" cy="50" r="47" fill="#0a0c0f" stroke="#23282f" stroke-width="2.5" />
+			<circle cx="50" cy="50" r="40" fill="#14171d" stroke="#1a1e25" stroke-width="1" />
+			{#if deck.stable_id !== null}
+				<line
+					x1="50"
+					y1="4"
+					x2="50"
+					y2="12"
+					stroke="#d0342c"
+					stroke-width="3"
+					stroke-linecap="round"
+					transform={`rotate(${tickAngle} 50 50)`}
+				/>
+			{/if}
+			<text x="50" y="47" class="bpm">{bpmText}</text>
+			<text x="50" y="61" class="pitch">{pitchText}</text>
+			<text x="50" y="72" class="range">{rangeText}</text>
+		</svg>
+	</div>
 
 	<div class="side-buttons">
 		<button
@@ -156,15 +193,29 @@
 		flex: 0 0 auto;
 		min-height: 0;
 	}
-	.dial {
+	.dial-wrap {
 		width: 104px;
 		height: 104px;
 		flex: 0 0 auto;
+	}
+	.dial {
+		width: 100%;
+		height: 100%;
 	}
 	.dial text {
 		text-anchor: middle;
 		font-family: var(--rb-font);
 		font-variant-numeric: tabular-nums;
+	}
+	/* Off-tempo tint: recolor the outer ring and add a soft glow. A CSS
+	 * rule always outranks the ring's own stroke presentation attribute,
+	 * so no extra markup is needed to override it. */
+	.dial-wrap.jog-off-tempo .dial {
+		filter: drop-shadow(0 0 4px var(--rb-red, #d0342c));
+	}
+	.dial-wrap.jog-off-tempo .dial circle:first-child {
+		stroke: var(--rb-red, #d0342c);
+		stroke-width: 3.5px;
 	}
 	.dial .bpm {
 		fill: var(--rb-text);

@@ -27,7 +27,7 @@
  * (tests/unit/load-typescript.mjs) can load this module directly.
  */
 
-import type { PreviewStripData } from '$lib/rb/api-rb';
+import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import type { RbMeta, TrackQuality } from '$lib/rb/types';
 
 // ------------------------------------------------------------ row types
@@ -82,6 +82,11 @@ export interface BrowserRow {
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;
+	/** Inline vocals from listing hydrate (PVDI or demucs cache); drives
+	 * PreviewStrip blue bars without a per-row /anlz fetch. */
+	vocals: Vocals;
+	/** Inline demucs stem summary (V/I/D); null only for synthetic rows. */
+	stems: StemSummary | null;
 	/** Lazy rb-meta (artwork_available + genre/streaming fallback);
 	 * null until the row first scrolls into view. */
 	rb_meta: RbMeta | null;
@@ -175,6 +180,13 @@ export class PaneStore {
 	truncated = $state(false);
 	/** Scroll cursor: table-wrap scrollTop, restored on pane activation. */
 	scroll_top = $state(0);
+	/**
+	 * Locked tab. Selecting a playlist while this pane is sticky opens it in
+	 * another pane rather than replacing what is loaded here. Pure client
+	 * pane state like scroll_top, and deliberately NOT reset by beginLoad -
+	 * the lock belongs to the tab, not to whatever it currently holds.
+	 */
+	sticky = $state(false);
 	/** Whole-collection FTS5 search state, independent for every pane. */
 	whole_collection = $state(false);
 	search_results = $state<BrowserRow[]>([]);
@@ -243,7 +255,39 @@ export class PaneStore {
 		}
 	}
 
-	select(stable_id: string, extend: boolean): void {
+	/**
+	 * Row click selection.
+	 *
+	 * `extend` (cmd/ctrl-click) toggles one row in or out of the selection.
+	 * `range` (shift-click) selects the contiguous span between the current
+	 * row and the clicked one, which requires the caller to pass the ids in
+	 * the order the user actually sees them (post filter and sort) -
+	 * membership order would select a different span than the one on screen.
+	 *
+	 * The anchor is the previously selected row, and the clicked row becomes
+	 * the new one, so successive shift-clicks grow or shrink from the last
+	 * click. If either end is absent from `ordered_ids` there is no span the
+	 * user could have meant, so this falls back to a plain single select
+	 * rather than guessing one.
+	 */
+	select(
+		stable_id: string,
+		extend: boolean,
+		range = false,
+		ordered_ids: readonly string[] = []
+	): void {
+		if (range) {
+			const anchor = this.selected_id;
+			const from = anchor === null ? -1 : ordered_ids.indexOf(anchor);
+			const to = ordered_ids.indexOf(stable_id);
+			if (from !== -1 && to !== -1) {
+				const lo = Math.min(from, to);
+				const hi = Math.max(from, to);
+				this.selected_ids = ordered_ids.slice(lo, hi + 1);
+				this.selected_id = stable_id;
+				return;
+			}
+		}
 		this.selected_id = stable_id;
 		if (extend) {
 			this.selected_ids = this.selected_ids.includes(stable_id)
@@ -423,4 +467,49 @@ export function reorderPanesInPlace<T>(
 export function resolveNewTabIndex(panes: { sticky?: boolean }[]): number | null {
 	const free = panes.findIndex((p) => p.sticky !== true);
 	return free === -1 ? null : free;
+}
+
+// -------------------------------------------------- playlist drag payload
+
+/** dataTransfer type for a playlist dragged out of the tree onto the tabs. */
+export const PLAYLIST_DRAG_MIME = 'application/x-mdt-playlist';
+
+/**
+ * The subset of PlaylistNode that survives a drag. Children are dropped
+ * because the payload crosses a dataTransfer JSON round trip and the tab
+ * bar only ever opens the dragged node itself.
+ */
+export interface PlaylistDragPayload {
+	playlist_id: string;
+	name: string;
+	track_count: number;
+	kind: 'all_tracks' | 'playlist' | 'folder';
+}
+
+/** Serialize a playlist for dataTransfer. */
+export function encodePlaylistDrag(payload: PlaylistDragPayload): string {
+	return JSON.stringify(payload);
+}
+
+/**
+ * Parse a dropped playlist payload, or null when the drop is not one of
+ * ours. Returns null rather than throwing because a drop handler receives
+ * whatever the OS hands it - foreign drags are an expected input, not a bug.
+ */
+export function decodePlaylistDrag(raw: string): PlaylistDragPayload | null {
+	if (raw.trim() === '') return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== 'object' || parsed === null) return null;
+	const record = parsed as Record<string, unknown>;
+	const { playlist_id, name, track_count, kind } = record;
+	if (typeof playlist_id !== 'string' || playlist_id === '') return null;
+	if (typeof name !== 'string') return null;
+	if (typeof track_count !== 'number' || !Number.isFinite(track_count)) return null;
+	if (kind !== 'all_tracks' && kind !== 'playlist' && kind !== 'folder') return null;
+	return { playlist_id, name, track_count, kind };
 }

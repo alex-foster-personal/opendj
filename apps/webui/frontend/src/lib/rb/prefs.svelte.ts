@@ -52,6 +52,11 @@ export interface RbUiPrefs {
 	 * Camelot key +-1 and BPM inside Beat Sync pitch bounds.
 	 */
 	auto_play_enforce_order: boolean;
+	/**
+	 * Smart AutoPlay only: prefer the compatible next track with the fewest
+	 * onward options (slack / maximize reachable chain). Off = greedy earliest.
+	 */
+	auto_play_maximize_reach: boolean;
 	/** Light/dark chrome. Default dark. Applied to documentElement. */
 	theme: UiTheme;
 	/** Hide grayed PARITY-TODO rows in the settings overlay. */
@@ -61,6 +66,16 @@ export interface RbUiPrefs {
 	 * vendor DB writeback is still manual CLI (apps/sync/apply_ratings.py).
 	 */
 	auto_sync: AutoSyncPrefs;
+	/** #328 USB tracker: toast when a new stick is detected. */
+	usb_toast_enabled: boolean;
+	/** Dismiss delay for that toast, in milliseconds. */
+	usb_toast_ms: number;
+	/**
+	 * Open the USB panel on ANY new detect. Off by default: a volume that
+	 * still needs its first-seen answers already forces the panel open, so
+	 * this only adds the intrusion for sticks that need nothing.
+	 */
+	usb_auto_open_panel: boolean;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -80,9 +95,13 @@ const DEFAULTS: RbUiPrefs = {
 	next_only_filter: false,
 	auto_play_enabled: true,
 	auto_play_enforce_order: false,
+	auto_play_maximize_reach: true,
 	theme: 'dark',
 	hide_todo_settings: false,
 	auto_sync: { rekordbox: false, djay: false, open_dj: false },
+	usb_toast_enabled: true,
+	usb_toast_ms: 5000,
+	usb_auto_open_panel: false,
 	confirm: {}
 };
 
@@ -144,6 +163,15 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (
+		parsed.auto_play_maximize_reach !== undefined &&
+		typeof parsed.auto_play_maximize_reach !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (auto_play_maximize_reach is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const theme = parsed.theme;
 	if (theme !== undefined && theme !== 'dark' && theme !== 'light') {
 		throw new Error(
@@ -154,6 +182,32 @@ function _load(): RbUiPrefs {
 	if (parsed.hide_todo_settings !== undefined && typeof parsed.hide_todo_settings !== 'boolean') {
 		throw new Error(
 			`${STORAGE_KEY}: malformed prefs blob (hide_todo_settings is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (parsed.usb_toast_enabled !== undefined && typeof parsed.usb_toast_enabled !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (usb_toast_enabled is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (
+		parsed.usb_toast_ms !== undefined &&
+		(typeof parsed.usb_toast_ms !== 'number' ||
+			!Number.isFinite(parsed.usb_toast_ms) ||
+			parsed.usb_toast_ms <= 0)
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (usb_toast_ms must be a positive finite number) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (
+		parsed.usb_auto_open_panel !== undefined &&
+		typeof parsed.usb_auto_open_panel !== 'boolean'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (usb_auto_open_panel is not a boolean) - ` +
 				'clear the localStorage key to recover'
 		);
 	}
@@ -180,9 +234,14 @@ function _load(): RbUiPrefs {
 		auto_play_enabled: parsed.auto_play_enabled ?? DEFAULTS.auto_play_enabled,
 		auto_play_enforce_order:
 			parsed.auto_play_enforce_order ?? DEFAULTS.auto_play_enforce_order,
+		auto_play_maximize_reach:
+			parsed.auto_play_maximize_reach ?? DEFAULTS.auto_play_maximize_reach,
 		theme: theme ?? DEFAULTS.theme,
 		hide_todo_settings: parsed.hide_todo_settings ?? DEFAULTS.hide_todo_settings,
 		auto_sync: autoSync,
+		usb_toast_enabled: parsed.usb_toast_enabled ?? DEFAULTS.usb_toast_enabled,
+		usb_toast_ms: parsed.usb_toast_ms ?? DEFAULTS.usb_toast_ms,
+		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) }
 	};
 }
@@ -264,6 +323,11 @@ export function setAutoPlayEnabled(next: boolean): void {
 
 export function setAutoPlayEnforceOrder(next: boolean): void {
 	uiPrefs.auto_play_enforce_order = next;
+	_persist();
+}
+
+export function setAutoPlayMaximizeReach(next: boolean): void {
+	uiPrefs.auto_play_maximize_reach = next;
 	_persist();
 }
 

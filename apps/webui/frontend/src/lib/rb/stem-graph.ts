@@ -22,19 +22,52 @@ import type {
 	StemAlignment,
 	StemControl,
 	StemControlState,
-	StemDeckState
+	StemDeckState,
+	StemLayout
 } from '$lib/rb/types';
 
 export const STEM_CONTROLS: readonly StemControl[] = ['vocal', 'instrumental', 'drums'];
 export const DEMUCS_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
 export type DemucsPart = (typeof DEMUCS_PARTS)[number];
 
+export const ROFORMER_PARTS = ['vocals', 'instrumental'] as const;
+
+/** Every part name any layout can use. */
+export type StemPart = DemucsPart | 'instrumental';
+
+export const STEM_LAYOUT_PARTS: Record<StemLayout, readonly StemPart[]> = {
+	demucs4: DEMUCS_PARTS,
+	roformer2: ROFORMER_PARTS
+};
+
+/** Controls a layout can genuinely drive.
+ *
+ * roformer2 omits `drums` on purpose. Its `instrumental` part already contains
+ * the drums, so there is no drums signal to gain to zero -- a DRUMS button
+ * here could only ever do nothing, and a button that does nothing is worse
+ * than a button that is visibly unavailable. */
+export const STEM_LAYOUT_CONTROLS: Record<StemLayout, readonly StemControl[]> = {
+	demucs4: ['vocal', 'instrumental', 'drums'],
+	roformer2: ['vocal', 'instrumental']
+};
+
 export type StemControls = Record<StemControl, StemControlState>;
-export type StemBuffers = Record<DemucsPart, AudioBuffer>;
+export type StemBuffers = Partial<Record<StemPart, AudioBuffer>>;
 
 export interface StemArtifactIdentity {
-	source: 'demucs';
+	source: 'demucs' | 'roformer';
 	model: string;
+	layout: StemLayout;
+}
+
+/** The layout whose part set exactly matches these buffers. Throws rather than
+ * guessing: a buffer set matching no known layout is a contract breach. */
+export function layoutOfBuffers(buffers: StemBuffers): StemLayout {
+	const keys = Object.keys(buffers).sort().join(',');
+	for (const [layout, parts] of Object.entries(STEM_LAYOUT_PARTS)) {
+		if ([...parts].sort().join(',') === keys) return layout as StemLayout;
+	}
+	throw new TypeError(`stem buffers {${keys}} match no known layout`);
 }
 
 function _exactKeys(name: string, value: object, keys: readonly string[]): void {
@@ -58,6 +91,8 @@ export function unavailableStemDeckState(error: string | null = null): StemDeckS
 		status: 'unavailable',
 		source: null,
 		model: null,
+		layout: null,
+		available_controls: [],
 		alignment: null,
 		controls: createDefaultStemControls(),
 		error
@@ -72,6 +107,8 @@ export function readyStemDeckState(
 		status: 'ready',
 		source: identity.source,
 		model: identity.model,
+		layout: identity.layout,
+		available_controls: [...STEM_LAYOUT_CONTROLS[identity.layout]],
 		alignment: { ...alignment },
 		controls: createDefaultStemControls(),
 		error: null
@@ -95,13 +132,23 @@ function _validateControls(controls: StemControls): void {
 	}
 }
 
-export function stemPartGains(controls: StemControls): Record<DemucsPart, 0 | 1> {
+export function stemPartGains(
+	controls: StemControls,
+	layout: StemLayout = 'demucs4'
+): Partial<Record<StemPart, 0 | 1>> {
 	_validateControls(controls);
-	const anySolo = STEM_CONTROLS.some((stem) => controls[stem].solo);
+	// Solo is evaluated over the controls this LAYOUT owns. Counting a soloed
+	// DRUMS on a roformer2 deck would silence both real parts and play nothing
+	// -- a control the layout cannot drive must not be able to mute the deck.
+	const owned = STEM_LAYOUT_CONTROLS[layout];
+	const anySolo = owned.some((stem) => controls[stem].solo);
 	const gain = (stem: StemControl): 0 | 1 => {
 		const state = controls[stem];
 		return !state.muted && (!anySolo || state.solo) ? 1 : 0;
 	};
+	if (layout === 'roformer2') {
+		return { vocals: gain('vocal'), instrumental: gain('instrumental') };
+	}
 	return {
 		vocals: gain('vocal'),
 		drums: gain('drums'),
@@ -114,8 +161,9 @@ export function validateStemBufferAlignment(buffers: StemBuffers): StemAlignment
 	if (typeof buffers !== 'object' || buffers === null) {
 		throw new TypeError('stem buffers must be an object');
 	}
-	_exactKeys('stem buffers', buffers, DEMUCS_PARTS);
-	const reference = buffers.vocals;
+	const parts = STEM_LAYOUT_PARTS[layoutOfBuffers(buffers)];
+	// `vocals` is in every layout, so it is always a valid reference.
+	const reference = buffers.vocals as AudioBuffer;
 	if (
 		!Number.isFinite(reference.sampleRate) ||
 		reference.sampleRate <= 0 ||
@@ -129,8 +177,8 @@ export function validateStemBufferAlignment(buffers: StemBuffers): StemAlignment
 	) {
 		throw new RangeError('stem alignment reference metadata is invalid');
 	}
-	for (const part of DEMUCS_PARTS) {
-		const buffer = buffers[part];
+	for (const part of parts) {
+		const buffer = buffers[part] as AudioBuffer;
 		if (
 			buffer.sampleRate !== reference.sampleRate ||
 			buffer.length !== reference.length ||
@@ -167,13 +215,15 @@ export interface SchedulableStemProcessor {
 }
 
 export async function scheduleAlignedStemProcessors(
-	processors: Record<DemucsPart, SchedulableStemProcessor>,
+	processors: Partial<Record<StemPart, SchedulableStemProcessor>>,
 	outputTime: number,
-	change: StretchScheduleChange
+	change: StretchScheduleChange,
+	layout: StemLayout = 'demucs4'
 ): Promise<void> {
-	_exactKeys('stem processors', processors, DEMUCS_PARTS);
+	const parts = STEM_LAYOUT_PARTS[layout];
+	_exactKeys('stem processors', processors, parts);
 	const outcomes = await Promise.allSettled(
-		DEMUCS_PARTS.map((part) => processors[part].schedule(outputTime, change))
+		parts.map((part) => (processors[part] as SchedulableStemProcessor).schedule(outputTime, change))
 	);
 	_aggregateFailures('schedule', outcomes);
 }
@@ -182,21 +232,35 @@ export async function scheduleAlignedStemProcessors(
  * the existing deck analyser. No original-mix bypass exists once selected. */
 export class AlignedStemDeckProcessor {
 	readonly #context: AudioContext;
-	readonly #processors: Record<DemucsPart, StretchDeckProcessor>;
-	readonly #gains: Record<DemucsPart, GainNode>;
+	readonly #processors: Partial<Record<StemPart, StretchDeckProcessor>>;
+	readonly #gains: Partial<Record<StemPart, GainNode>>;
 	readonly #latencySec: number;
+	readonly #layout: StemLayout;
+	readonly #parts: readonly StemPart[];
 	#controls: StemControls = createDefaultStemControls();
 
 	private constructor(
 		context: AudioContext,
-		processors: Record<DemucsPart, StretchDeckProcessor>,
-		gains: Record<DemucsPart, GainNode>,
-		latencySec: number
+		processors: Partial<Record<StemPart, StretchDeckProcessor>>,
+		gains: Partial<Record<StemPart, GainNode>>,
+		latencySec: number,
+		layout: StemLayout
 	) {
 		this.#context = context;
 		this.#processors = processors;
 		this.#gains = gains;
 		this.#latencySec = latencySec;
+		this.#layout = layout;
+		this.#parts = STEM_LAYOUT_PARTS[layout];
+	}
+
+	get layout(): StemLayout {
+		return this.#layout;
+	}
+
+	/** Controls this deck can drive; the rest must render inert. */
+	get availableControls(): readonly StemControl[] {
+		return STEM_LAYOUT_CONTROLS[this.#layout];
 	}
 
 	static async create(
@@ -205,12 +269,14 @@ export class AlignedStemDeckProcessor {
 		options: StretchAdapterOptions
 	): Promise<{ processor: AlignedStemDeckProcessor; alignment: StemAlignment }> {
 		const alignment = validateStemBufferAlignment(buffers);
-		const processors = {} as Record<DemucsPart, StretchDeckProcessor>;
-		const gains = {} as Record<DemucsPart, GainNode>;
+		const layout = layoutOfBuffers(buffers);
+		const parts = STEM_LAYOUT_PARTS[layout];
+		const processors: Partial<Record<StemPart, StretchDeckProcessor>> = {};
+		const gains: Partial<Record<StemPart, GainNode>> = {};
 		try {
-			for (const part of DEMUCS_PARTS) {
+			for (const part of parts) {
 				const processor = await StretchDeckProcessor.create(context, options);
-				await processor.load(buffers[part]);
+				await processor.load(buffers[part] as AudioBuffer);
 				processors[part] = processor;
 				const gain = context.createGain();
 				gain.gain.value = 1;
@@ -218,19 +284,21 @@ export class AlignedStemDeckProcessor {
 				gains[part] = gain;
 			}
 			const latencies = await Promise.all(
-				DEMUCS_PARTS.map((part) => processors[part].latencySec())
+				parts.map((part) => (processors[part] as StretchDeckProcessor).latencySec())
 			);
 			const latencySec = latencies[0];
 			if (latencies.some((latency) => Math.abs(latency - latencySec) > 1 / alignment.sample_rate_hz)) {
 				throw new Error(`stem processor latency alignment mismatch: ${latencies.join(', ')}`);
 			}
 			return {
-				processor: new AlignedStemDeckProcessor(context, processors, gains, latencySec),
+				processor: new AlignedStemDeckProcessor(
+					context, processors, gains, latencySec, layout
+				),
 				alignment
 			};
 		} catch (error) {
 			const cleanupFailures: unknown[] = [];
-			for (const part of DEMUCS_PARTS) {
+			for (const part of parts) {
 				try {
 					processors[part]?.disconnect();
 				} catch (cleanupError) {
@@ -253,19 +321,19 @@ export class AlignedStemDeckProcessor {
 	}
 
 	connect(destination: AudioNode): void {
-		for (const part of DEMUCS_PARTS) this.#gains[part].connect(destination);
+		for (const part of this.#parts) this.#gains[part]?.connect(destination);
 	}
 
 	disconnect(): void {
 		const failures: unknown[] = [];
-		for (const part of DEMUCS_PARTS) {
+		for (const part of this.#parts) {
 			try {
-				this.#processors[part].disconnect();
+				this.#processors[part]?.disconnect();
 			} catch (error) {
 				failures.push(error);
 			}
 			try {
-				this.#gains[part].disconnect();
+				this.#gains[part]?.disconnect();
 			} catch (error) {
 				failures.push(error);
 			}
@@ -280,7 +348,9 @@ export class AlignedStemDeckProcessor {
 
 	async schedule(outputTime: number, change: StretchScheduleChange): Promise<void> {
 		try {
-			await scheduleAlignedStemProcessors(this.#processors, outputTime, change);
+			await scheduleAlignedStemProcessors(
+				this.#processors, outputTime, change, this.#layout
+			);
 		} catch (error) {
 			try {
 				this.disconnect();
@@ -300,9 +370,14 @@ export class AlignedStemDeckProcessor {
 
 	setControls(controls: StemControls): void {
 		_validateControls(controls);
-		const gains = stemPartGains(controls);
-		for (const part of DEMUCS_PARTS) {
-			this.#gains[part].gain.setTargetAtTime(gains[part], this.#context.currentTime, 0.01);
+		const gains = stemPartGains(controls, this.#layout);
+		for (const part of this.#parts) {
+			const value = gains[part];
+			const node = this.#gains[part];
+			if (value === undefined || node === undefined) {
+				throw new Error(`stem gain missing for part ${part} in layout ${this.#layout}`);
+			}
+			node.gain.setTargetAtTime(value, this.#context.currentTime, 0.01);
 		}
 		this.#controls = {
 			vocal: { ...controls.vocal },
