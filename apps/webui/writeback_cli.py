@@ -13,6 +13,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from apps.webui.port_config import PortConfigError, resolve_backend_port
+
 
 def _request(base_url: str, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = None if body is None else json.dumps(body).encode("utf-8")
@@ -35,7 +37,7 @@ def _target_args(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.webui.writeback_cli")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8585/api/v1")
+    parser.add_argument("--base-url", default=None)
     commands = parser.add_subparsers(dest="command", required=True)
     capabilities = commands.add_parser("capabilities")
     capabilities.add_argument("playlist_id")
@@ -64,22 +66,29 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        base_url = args.base_url or (
+            f"http://127.0.0.1:{resolve_backend_port(None)}/api/v1"
+        )
+    except PortConfigError as exc:
+        sys.stderr.write(f"writeback: port configuration error: {exc}\n")
+        return 2
     root = f"/playlists/{args.playlist_id}/writeback"
     try:
         if args.command == "capabilities":
-            result = _request(args.base_url, "GET", f"{root}/capabilities")
+            result = _request(base_url, "GET", f"{root}/capabilities")
         else:
             target_query = urlencode({"vendor": args.vendor, "target_mode": args.target_mode, "target_path": args.target_path})
         if args.command == "capabilities":
             pass
         elif args.command == "targets":
-            result = _request(args.base_url, "GET", f"{root}/targets?{target_query}")
+            result = _request(base_url, "GET", f"{root}/targets?{target_query}")
         elif args.command == "plan":
-            result = _request(args.base_url, "GET", f"{root}/plan?{target_query}&{urlencode({'target_id': args.target_id})}")
+            result = _request(base_url, "GET", f"{root}/plan?{target_query}&{urlencode({'target_id': args.target_id})}")
         elif args.command == "apply":
             if not args.confirm and not args.dry_run:
                 raise RuntimeError("apply refuses without --confirm or --dry-run")
-            result = _request(args.base_url, "POST", f"{root}/apply", {
+            result = _request(base_url, "POST", f"{root}/apply", {
                 "vendor": args.vendor, "target_mode": args.target_mode, "target_path": args.target_path,
                 "target_id": args.target_id, "plan_token": args.plan_token,
                 "dry_run": args.dry_run, "confirmed": args.confirm,
@@ -87,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if not args.confirm:
                 raise RuntimeError("rollback refuses without --confirm")
-            result = _request(args.base_url, "POST", f"{root}/rollback", {
+            result = _request(base_url, "POST", f"{root}/rollback", {
                 "vendor": args.vendor, "target_mode": args.target_mode, "target_path": args.target_path,
                 "target_id": args.target_id, "backup_id": args.backup_id,
                 "expected_target_revision": args.expected_target_revision, "confirmed": True,

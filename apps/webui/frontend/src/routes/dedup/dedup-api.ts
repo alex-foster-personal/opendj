@@ -160,7 +160,7 @@ export async function fetchDedupClusters(signal?: AbortSignal): Promise<Clusters
 		});
 	} catch (error) {
 		throw new Error(
-			`daemon unreachable at :8585 (${error instanceof Error ? error.message : String(error)})`
+			`daemon unreachable (${error instanceof Error ? error.message : String(error)})`
 		);
 	}
 	if (!response.ok) {
@@ -194,7 +194,7 @@ export async function postDedupDecision(
 		});
 	} catch (error) {
 		throw new Error(
-			`daemon unreachable at :8585 (${error instanceof Error ? error.message : String(error)})`
+			`daemon unreachable (${error instanceof Error ? error.message : String(error)})`
 		);
 	}
 	if (response.status === 409) {

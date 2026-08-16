@@ -357,7 +357,8 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(mixer, /type: 'headphone_outputs_refresh'/);
 	assert.match(mixer, /type: 'headphone_output_acquire'/);
 	assert.match(mixer, /type: 'headphone_output_select'/);
-	assert.match(headphones, />ADD OUTPUT</);
+	assert.match(headphones, /onclick=\{onacquire\}/);
+	assert.match(headphones, /Grant browser access to a second audio output/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);
 	assert.match(headphones, /aria-label="headphone output device"/);
 });

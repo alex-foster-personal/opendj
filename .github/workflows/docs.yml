@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, af--rekordbox-parity-ui]
   pull_request:
-    branches: [master, af--rekordbox-parity-ui]
+    branches: [master, af--rekordbox-parity-ui, codex--v2-integration]
 
 permissions:
   contents: read

@@ -14,6 +14,7 @@ def _apply_arguments(*extra: str) -> list[str]:
 
 def test_cli_apply_dry_run_uses_the_http_preview_contract(monkeypatch) -> None:
     requests: list[tuple[str, str, str, dict]] = []
+    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "18697")
     monkeypatch.setattr(
         writeback_cli,
         "_request",
@@ -22,7 +23,7 @@ def test_cli_apply_dry_run_uses_the_http_preview_contract(monkeypatch) -> None:
 
     assert writeback_cli.main(_apply_arguments("--dry-run")) == 0
     assert requests == [(
-        "http://127.0.0.1:8585/api/v1", "POST", "/playlists/source-1/writeback/apply",
+        "http://127.0.0.1:18697/api/v1", "POST", "/playlists/source-1/writeback/apply",
         {"vendor": "djay", "target_mode": "live", "target_path": "/library/MediaLibrary.db", "target_id": "native-9", "plan_token": "reviewed-token", "dry_run": True, "confirmed": False},
     )]
 

@@ -1,12 +1,12 @@
 """CLI entry point for the webui daemon.
 
 Runs:
-  python -m apps.webui.server                           # dev uvicorn
+  python -m apps.webui.server                           # root .env port
   python -m apps.webui.server --dump-openapi out.json   # schema dump
   python -m apps.webui.server --help                    # usage
 
-For uvicorn's auto-reload / production stage, invoke uvicorn directly:
-  uvicorn apps.webui.server.app:app --host 127.0.0.1 --port 8585
+For uvicorn's auto-reload / production stage, pass an explicit port from the
+same worktree configuration.
 """
 from __future__ import annotations
 
@@ -16,10 +16,22 @@ import os
 import sys
 from pathlib import Path
 
-from apps.webui.server.app import app
+from apps.webui.port_config import (
+    BACKEND_ENV,
+    FRONTEND_ENV,
+    WEBUI_ENV_FILE as DEFAULT_WEBUI_ENV_FILE,
+    PortConfigError,
+    check_reservation,
+    claim_ports,
+    resolve_backend_port,
+)
+
+WEBUI_ENV_FILE = DEFAULT_WEBUI_ENV_FILE
 
 
 def _dump_openapi(out_path: str) -> int:
+    from apps.webui.server.app import app
+
     schema = app.openapi()
     dest = Path(out_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -40,7 +52,13 @@ def main(argv: list[str] | None = None) -> int:
         default=os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1"),
         help="Bind host (default: 127.0.0.1). Override via MUSIC_DJ_BIND_HOST.",
     )
-    parser.add_argument("--port", type=int, default=8585)
+    parser.add_argument(
+        "--port", type=int, default=None,
+        help=(
+            "Bind port. Overrides MUSIC_DJ_BACKEND_PORT from the process "
+            "environment or worktree root .env."
+        ),
+    )
     parser.add_argument("--reload", action="store_true",
                         help="Enable uvicorn auto-reload (development).")
     parser.add_argument(
@@ -57,11 +75,35 @@ def main(argv: list[str] | None = None) -> int:
         return _dump_openapi(args.dump_openapi)
 
     try:
+        if (
+            args.port is None
+            and not args.prod
+            and WEBUI_ENV_FILE == DEFAULT_WEBUI_ENV_FILE
+            and (DEFAULT_WEBUI_ENV_FILE.parent / ".git").exists()
+        ):
+            claimed_ports = claim_ports()
+            resolved_port = claimed_ports.backend
+            os.environ[FRONTEND_ENV] = str(claimed_ports.frontend)
+            check_reservation("backend")
+        else:
+            resolved_port = resolve_backend_port(
+                args.port, dotenv_path=WEBUI_ENV_FILE,
+            )
+    except PortConfigError as exc:
+        parser.error(str(exc))
+
+    os.environ[BACKEND_ENV] = str(resolved_port)
+
+    from apps.webui.server.app import app
+
+    app.state.port = resolved_port
+
+    try:
         import uvicorn  # type: ignore
     except ImportError:  # pragma: no cover
         sys.stderr.write(
             "uvicorn is required to run the server. Install via "
-            "`pip install uvicorn[standard]`.\n"
+            "`uv add 'uvicorn[standard]'`.\n"
         )
         return 1
 
@@ -73,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
 
     uvicorn.run(  # pragma: no cover - io
         "apps.webui.server.app:app",
-        host=args.host, port=args.port,
+        host=args.host, port=resolved_port,
         reload=args.reload and not args.prod,
     )
     return 0

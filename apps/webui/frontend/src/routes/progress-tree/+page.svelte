@@ -354,7 +354,7 @@
 		<code>data/progress-tree.yaml</code>
 	</footer>
 {:else if !error}
-	<p class="empty">Loading progress tree from daemon at :8585...</p>
+	<p class="empty">Loading progress tree from the configured daemon...</p>
 {/if}
 </div>
 
