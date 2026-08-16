@@ -22,14 +22,30 @@
 		vocals,
 		duration_ms,
 		revealed,
+		nowRatio = null,
 		onseek
 	}: {
 		strip: PreviewStripData | null;
 		vocals: Vocals | null;
 		duration_ms: number | null;
 		revealed: boolean;
+		/**
+		 * Playhead as a 0..1 fraction when this track is loaded on a deck,
+		 * null when it is not on any deck. Drawn as a DOM overlay rather
+		 * than into the canvas on purpose: the canvas follows the SPIKE-A2
+		 * draw-once policy, and repainting it every position tick would
+		 * throw that away for every visible row at once.
+		 */
+		nowRatio?: number | null;
 		onseek?: (ratio: number) => void;
 	} = $props();
+
+	/** Clamped playhead offset in CSS px, or null when off-deck / unusable. */
+	const nowX: number | null = $derived(
+		nowRatio === null || !Number.isFinite(nowRatio)
+			? null
+			: Math.min(1, Math.max(0, nowRatio)) * W
+	);
 
 	let canvas: HTMLCanvasElement | undefined = $state(undefined);
 	let dpr = $state(1);
@@ -152,6 +168,9 @@
 		onclick={onClick}
 	>
 		<canvas bind:this={canvas} style={`width:${W}px;height:${H}px`}></canvas>
+		{#if nowX !== null}
+			<span class="now" style={`left:${nowX}px`} aria-hidden="true"></span>
+		{/if}
 		{#if hoverX !== null}
 			<span class="scrub" style={`left:${hoverX}px`} aria-hidden="true"></span>
 		{/if}
@@ -177,6 +196,19 @@
 		background: var(--rb-red, #d0342c);
 		pointer-events: none;
 		z-index: 1;
+	}
+	/* Live deck position. Sits under the hover scrub so a scrub still
+	   reads clearly while the track is playing. */
+	.now {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		margin-left: -0.5px;
+		background: var(--rb-red, #d0342c);
+		box-shadow: 0 0 3px var(--rb-red, #d0342c);
+		pointer-events: none;
+		z-index: 0;
 	}
 	.no-anlz {
 		display: inline-block;
