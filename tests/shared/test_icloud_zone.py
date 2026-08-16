@@ -67,7 +67,16 @@ def test_music_root_inside_zone_fails_fast(
         icloud_zone.assert_music_roots_outside_icloud_zone([cloud])
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="off-Darwin returns None before the absolute-path check runs",
+)
 def test_relative_path_rejected() -> None:
+    # icloud_zone_reason short-circuits on `sys.platform != "darwin"` BEFORE it
+    # validates the argument, by design: the iCloud zone is a macOS-only problem
+    # domain and the module is deliberately inert elsewhere. So the ValueError is
+    # a Darwin-only contract, and asserting it unconditionally fails on Linux CI.
+    # Gated the same way as test_off_darwin_never_zone below, in reverse.
     with pytest.raises(ValueError, match="absolute"):
         icloud_zone.is_icloud_zone("relative/a.mp3")
 
