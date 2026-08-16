@@ -356,3 +356,129 @@ test('fetchWindow fails fast on negative window args', () => {
 	assert.throws(() => provider.fetchWindow(-1, 5), /negative window/);
 	assert.throws(() => provider.fetchWindow(0, -2), /negative window/);
 });
+
+// ------------------------------------------- sticky panes + range select
+// Regression lines:
+// - if a fresh pane starts sticky then every playlist click opens a new tab
+//   instead of loading in place -- broken
+// - if beginLoad clears sticky then a locked tab silently unlocks the moment
+//   it loads anything -- broken
+// - if resolveNewTabIndex doesn't skip sticky panes, or doesn't return null
+//   when all are locked, then a locked tab gets stolen -- broken
+// - if shift-click range select doesn't span the visible order, or doesn't
+//   fall back to a single select when either end is missing, then broken
+// - if the two-argument select call sites change behaviour then broken
+// - if decodePlaylistDrag accepts a foreign or malformed payload, or throws
+//   instead of returning null, then a drag from another app crashes the
+//   tab bar -- broken
+
+test('a new pane is not sticky, and beginLoad leaves the lock alone', () => {
+	const p = contract.createPaneStore();
+	assert.equal(p.sticky, false);
+
+	p.sticky = true;
+	p.beginLoad('pl-1', 'Warmup');
+	assert.equal(p.sticky, true, 'the lock belongs to the tab, not to its contents');
+});
+
+test('resolveNewTabIndex skips locked panes and reports all-locked as null', () => {
+	const panes = [0, 1, 2, 3].map(() => contract.createPaneStore());
+	assert.equal(contract.resolveNewTabIndex(panes), 0);
+
+	panes[0].sticky = true;
+	panes[1].sticky = true;
+	assert.equal(contract.resolveNewTabIndex(panes), 2);
+
+	for (const p of panes) p.sticky = true;
+	assert.equal(contract.resolveNewTabIndex(panes), null);
+});
+
+test('range select spans the visible order in both directions', () => {
+	const ordered = ['a', 'b', 'c', 'd', 'e'];
+	const p = contract.createPaneStore();
+
+	p.select('b', false);
+	p.select('d', false, true, ordered);
+	assert.deepEqual(p.selected_ids, ['b', 'c', 'd']);
+	assert.equal(p.selected_id, 'd', 'the clicked row becomes the current row');
+
+	// Dragging the span backwards yields the same set, not a reversed one.
+	p.select('d', false);
+	p.select('b', false, true, ordered);
+	assert.deepEqual(p.selected_ids, ['b', 'c', 'd']);
+	assert.equal(p.selected_id, 'b');
+});
+
+test('range select of a single row selects exactly that row', () => {
+	const p = contract.createPaneStore();
+	p.select('c', false);
+	p.select('c', false, true, ['a', 'b', 'c']);
+	assert.deepEqual(p.selected_ids, ['c']);
+});
+
+test('range select falls back to single select when an end is missing', () => {
+	const ordered = ['a', 'b', 'c'];
+
+	// No anchor at all: the first click in a pane cannot be a range.
+	const fresh = contract.createPaneStore();
+	fresh.select('b', false, true, ordered);
+	assert.deepEqual(fresh.selected_ids, ['b']);
+	assert.equal(fresh.selected_id, 'b');
+
+	// Anchor was filtered or sorted out of the visible list.
+	const filtered = contract.createPaneStore();
+	filtered.select('zz-not-visible', false);
+	filtered.select('c', false, true, ordered);
+	assert.deepEqual(filtered.selected_ids, ['c']);
+
+	// Empty visible order (caller passed nothing to span).
+	const empty = contract.createPaneStore();
+	empty.select('a', false);
+	empty.select('b', false, true, []);
+	assert.deepEqual(empty.selected_ids, ['b']);
+});
+
+test('extend and plain select keep their pre-range behaviour', () => {
+	const p = contract.createPaneStore();
+	p.select('a', false);
+	assert.deepEqual(p.selected_ids, ['a']);
+
+	p.select('b', true);
+	assert.deepEqual(p.selected_ids, ['a', 'b']);
+
+	p.select('a', true); // toggles back off
+	assert.deepEqual(p.selected_ids, ['b']);
+
+	p.select('c', false); // plain click collapses the selection
+	assert.deepEqual(p.selected_ids, ['c']);
+});
+
+test('playlist drag payloads round-trip, and junk decodes to null', () => {
+	const payload = {
+		playlist_id: 'pl-7',
+		name: 'Peak Time',
+		track_count: 42,
+		kind: 'playlist'
+	};
+	assert.deepEqual(
+		contract.decodePlaylistDrag(contract.encodePlaylistDrag(payload)),
+		payload
+	);
+
+	for (const junk of [
+		'',
+		'   ',
+		'not json at all',
+		'null',
+		'[]',
+		'"a string"',
+		JSON.stringify({ playlist_id: '', name: 'n', track_count: 1, kind: 'playlist' }),
+		JSON.stringify({ name: 'n', track_count: 1, kind: 'playlist' }),
+		JSON.stringify({ playlist_id: 'p', track_count: 1, kind: 'playlist' }),
+		JSON.stringify({ playlist_id: 'p', name: 'n', kind: 'playlist' }),
+		JSON.stringify({ playlist_id: 'p', name: 'n', track_count: 1 }),
+		JSON.stringify({ playlist_id: 'p', name: 'n', track_count: 1, kind: 'nope' })
+	]) {
+		assert.equal(contract.decodePlaylistDrag(junk), null, `should reject ${junk}`);
+	}
+});

@@ -1,3 +1,25 @@
+<script module lang="ts">
+	/**
+	 * One published candidate. `rating` is always null: POST
+	 * /copilot/suggest-next returns CopilotTrackOut, which has no rating
+	 * field, so there is no honest value to put here. It stays in the shape
+	 * because the consuming Recommended grouping asks for it, and null is
+	 * the accurate "the suggest-next contract does not carry this" answer
+	 * rather than a fabricated number.
+	 */
+	export interface SuggestCandidate {
+		stable_id: string;
+		title: string | null;
+		artist: string | null;
+		bpm: number | null;
+		key_camelot: string | null;
+		energy: number | null;
+		rating: number | null;
+		rationale_tags: string[];
+		explain_text: string | null;
+	}
+</script>
+
 <script lang="ts">
 	// SuggestNextStrip -- renders POST /api/v1/copilot/suggest-next for the
 	// deck-1-loaded track (gating-wave unit: dj_copilot router).
@@ -51,14 +73,37 @@
 		stableId,
 		sessionIds = [],
 		topN = 8,
-		onload
+		onload,
+		onplay,
+		onhover,
+		oncandidates
 	}: {
 		stableId: string | null;
 		sessionIds?: string[];
 		topN?: number;
 		/** Click a candidate to load (deck null = free deck). */
 		onload?: (stableId: string) => void;
+		/** Load a candidate and start it playing. */
+		onplay?: (stableId: string) => void;
+		/** Pointer entered a candidate, or null when it left. */
+		onhover?: (stableId: string | null) => void;
+		/** Republish the ranked candidates whenever a fetch settles. */
+		oncandidates?: (candidates: SuggestCandidate[]) => void;
 	} = $props();
+
+	function _toCandidates(data: SuggestNextWire): SuggestCandidate[] {
+		return data.candidates.map((c) => ({
+			stable_id: c.stable_id,
+			title: c.title,
+			artist: c.artist,
+			bpm: c.bpm,
+			key_camelot: c.key_camelot,
+			energy: c.energy,
+			rating: null,
+			rationale_tags: [...c.rationale_tags],
+			explain_text: c.explain_text
+		}));
+	}
 
 	let state: StripState = $state({ kind: 'idle' });
 	let requestSeq = 0; // stale-response guard
@@ -69,11 +114,17 @@
 		const seq = ++requestSeq;
 		if (sid === null) {
 			state = { kind: 'idle' };
+			oncandidates?.([]);
 			return;
 		}
 		state = { kind: 'loading' };
 		_fetchSuggestions(sid, session).then((next) => {
-			if (seq === requestSeq) state = next;
+			if (seq !== requestSeq) return;
+			state = next;
+			// Republish on every settled outcome, so a failed or
+			// insufficient-data fetch clears the previous track's
+			// candidates instead of leaving them on screen as if current.
+			oncandidates?.(next.kind === 'loaded' ? _toCandidates(next.data) : []);
 		});
 	});
 
@@ -127,7 +178,11 @@
 	{:else}
 		<ol class="cands">
 			{#each state.data.candidates as cand (cand.stable_id)}
-				<li class="cand">
+				<li
+					class="cand"
+					onpointerenter={() => onhover?.(cand.stable_id)}
+					onpointerleave={() => onhover?.(null)}
+				>
 					<button
 						type="button"
 						class="cand-btn"
@@ -147,6 +202,18 @@
 								<span class="tag" class:pair={tag.startsWith('pair_')}>{_tagLabel(tag)}</span>
 							{/each}
 						</span>
+					</button>
+					<button
+						type="button"
+						class="play-btn"
+						data-stable-id={cand.stable_id}
+						title={`Load and play ${cand.title ?? cand.stable_id}`}
+						aria-label={`load and play ${cand.title ?? cand.stable_id}`}
+						onclick={() => onplay?.(cand.stable_id)}
+					>
+						<svg viewBox="0 0 8 10" width="8" height="10" aria-hidden="true">
+							<path d="M1 1 L7 5 L1 9 Z" fill="currentColor" />
+						</svg>
 					</button>
 				</li>
 			{/each}
@@ -191,9 +258,27 @@
 		list-style: none;
 	}
 	.cand {
+		display: flex;
+		align-items: stretch;
+		gap: 2px;
 		flex: none;
 		max-width: 180px;
 		list-style: none;
+	}
+	.play-btn {
+		display: flex;
+		flex: none;
+		align-items: center;
+		padding: 0 4px;
+		background: var(--rb-panel-raised);
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text-dim);
+		cursor: pointer;
+	}
+	.play-btn:hover {
+		border-color: var(--rb-accent);
+		color: var(--rb-accent);
 	}
 	.cand-btn {
 		display: flex;
