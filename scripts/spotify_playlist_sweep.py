@@ -77,6 +77,16 @@ def _local_index(db: Path) -> tuple[set[str], set[str]]:
     return isrcs, names
 
 
+def rank_gaps(gaps: list[PlaylistGap]) -> list[PlaylistGap]:
+    """Biggest absolute gap first; name breaks ties so runs are reproducible.
+
+    Absolute missing count, not gap_pct: a 200-track playlist missing 90 is a
+    bigger acquisition job than a 3-track playlist missing all 3, even though
+    the latter is 100 percent missing.
+    """
+    return sorted(gaps, key=lambda g: (-g.missing, g.name))
+
+
 def _all_playlists(sp) -> list[dict]:
     out: list[dict] = []
     offset = 0
@@ -157,7 +167,7 @@ def main() -> None:
         print(f"  {i:>3}/{len(playlists)}  {gap.missing:>4} missing / "
               f"{gap.total:>4}  {gap.name[:48]}")
 
-    gaps.sort(key=lambda g: (-g.missing, g.name))
+    gaps = rank_gaps(gaps)
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     with OUT_CSV.open("w", newline="") as fh:
         w = csv.writer(fh)
