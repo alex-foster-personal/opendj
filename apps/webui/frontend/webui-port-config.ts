@@ -45,6 +45,19 @@ export function parseAllowedHosts(rawValue: string | undefined): string[] {
 	return hosts;
 }
 
+/**
+ * Resolve `MUSIC_DJ_ALLOWED_HOSTS` from its two sources: an explicit shell value
+ * wins, and the repository root `.env` is the fallback.
+ *
+ * Vite does not put the root `.env` on `process.env` at config time, so a value
+ * living only there is invisible unless the caller loads it and passes it in.
+ * `??` rather than `||` is deliberate: an empty shell value is an explicit
+ * "loopback only" and must not silently fall through to the file.
+ */
+export function resolveAllowedHosts(shellEnv: Environment, rootEnv: Environment): string[] {
+	return parseAllowedHosts(shellEnv.MUSIC_DJ_ALLOWED_HOSTS ?? rootEnv.MUSIC_DJ_ALLOWED_HOSTS);
+}
+
 export function claimAndCheckWebuiDevConfig(
 	repositoryRoot: string,
 	service: Service
