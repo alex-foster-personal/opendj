@@ -312,3 +312,50 @@ def resolve_library_path(
     return MappedPath(
         original=folder_path, resolved=None, mapped=False, reason=f"unmapped:{PLATFORM}"
     )
+
+
+def _contained_asset_path(mapped: MappedPath, candidate: Path) -> MappedPath:
+    """Resolve an asset candidate and reject a share-root symlink escape."""
+    try:
+        resolved = candidate.resolve(strict=False)
+    except OSError:
+        return MappedPath(
+            original=mapped.original,
+            resolved=None,
+            mapped=False,
+            reason="unsafe:resolution-error",
+        )
+    if mapped.reason == "share":
+        root = SHARE_ROOT.resolve()
+        if not resolved.is_relative_to(root):
+            return MappedPath(
+                original=mapped.original,
+                resolved=None,
+                mapped=False,
+                reason="unsafe:share-symlink",
+            )
+    return MappedPath(
+        original=mapped.original,
+        resolved=resolved,
+        mapped=mapped.mapped,
+        reason=mapped.reason,
+    )
+
+
+def resolve_asset_path(
+    asset_path: str, *, path_map: Optional[PathMap] = None
+) -> MappedPath:
+    """Map one vendor asset path and enforce symlink-aware containment.
+
+    An explicit ``path_map`` keeps callers bound to their selected data root
+    instead of silently consulting the process-default configuration.
+    """
+    mapped = resolve_library_path(asset_path, path_map=path_map)
+    if mapped.resolved is None:
+        return mapped
+    return _contained_asset_path(mapped, mapped.resolved)
+
+
+def resolve_asset_sibling(mapped: MappedPath, candidate: Path) -> MappedPath:
+    """Contain a derived sibling of an already-mapped vendor asset path."""
+    return _contained_asset_path(mapped, candidate)

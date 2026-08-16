@@ -13,7 +13,7 @@ Acceptance:
   [if] any child command exits nonzero [then STOP] this script exits nonzero immediately.
   [if] Node is older than 22.14.0 [then STOP] this script fails before dependency installation.
   [if] pytest runs on Windows [then PASS] temp files stay inside the workspace and the tracked coverage matrix is not rewritten.
-  [if] the Windows parity gate selects Python tests [then PASS] unrelated progress-ledger, Spotify, and USB suites remain in general CI only.
+  [if] the Windows parity gate selects Python tests [then PASS] the real interprocess progress-lock suite runs while unrelated progress-route, Spotify, and USB suites remain in general CI only.
   [if] -Final is supplied [then PASS] the production frontend build completes after all faster gates.
 #>
 [CmdletBinding()]
@@ -87,12 +87,13 @@ if (Test-Path -LiteralPath $PytestBaseTemp) {
 $FocusedTests = @(
     "tests/reconcile/test_prefix_dead_playlists.py",
     "tests/shared/test_rekordbox_db.py",
+    "tests/test_progress_interprocess.py",
     "tests/test_rb_assets.py",
     "tests/webui"
 )
-# Deliberately leave tests/test_progress.py and tests/test_codex_followups_c.py
-# to the general Python job. They cover the progress ledger plus Spotify/USB
-# flows, not the Windows Rekordbox parity surface, and materially slow this gate.
+# Keep the real-process progress lock coverage in this Windows gate. The wider
+# tests/test_progress.py and test_codex_followups_c.py suites remain in general
+# Python CI because their unrelated ledger/Spotify/USB coverage is slow here.
 $PytestArgs = @(
     "-m", "pytest", "-q", "--no-coverage-matrix",
     "--basetemp", $PytestBaseTemp

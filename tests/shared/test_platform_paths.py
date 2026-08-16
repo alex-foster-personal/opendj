@@ -317,3 +317,51 @@ def test_resolve_library_path_uses_load_path_map_when_none_passed(
 
     assert result.resolved == Path("D:/lib/a.wav")
     assert result.reason == "path-map"
+
+
+# ----- resolve_asset_path --------------------------------------------------
+
+
+def test_resolve_asset_path_rejects_share_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] a /PIONEER asset symlinks outside share [then ⛔️] it resolves."""
+    share_root = tmp_path / "share"
+    link = share_root / "PIONEER" / "USB" / "ANLZ0000.DAT"
+    link.parent.mkdir(parents=True)
+    outside = tmp_path / "outside.DAT"
+    outside.write_bytes(b"dat")
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable in this test environment: {exc}")
+    monkeypatch.setattr(pp, "SHARE_ROOT", share_root)
+
+    result = pp.resolve_asset_path(
+        "/PIONEER/USB/ANLZ0000.DAT",
+        path_map=pp.PathMap(entries=()),
+    )
+
+    assert result.resolved is None
+    assert result.mapped is False
+    assert result.reason == "unsafe:share-symlink"
+
+
+def test_resolve_asset_path_preserves_explicit_path_map(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] an explicit data-dir map is supplied [then] asset resolution uses it."""
+    monkeypatch.setattr(pp, "IS_DARWIN", False)
+    monkeypatch.setattr(pp, "IS_WINDOWS", True)
+    local_root = tmp_path / "mapped"
+    local_root.mkdir()
+    asset = local_root / "ANLZ0000.DAT"
+    asset.write_bytes(b"dat")
+
+    result = pp.resolve_asset_path(
+        "/Users/dev/Music/ANLZ0000.DAT",
+        path_map=pp.PathMap(entries=(("/Users/dev/Music", str(local_root)),)),
+    )
+
+    assert result.resolved == asset.resolve()
+    assert result.reason == "path-map"

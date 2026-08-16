@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from ._common import build_repo
+from ._common import build_repo, smartlist_json
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,19 +28,7 @@ def main(argv: list[str] | None = None, *, out=None) -> int:
     finally:
         conn.close()
     if args.format == "json":
-        payload = [
-            {
-                "id": r.id, "name": r.name, "rule": r.rule,
-                "order_by": r.order_by,
-                "referenced_fields": sorted(r.referenced_fields),
-                "last_materialized_count": len(r.last_materialized_track_ids),
-                "last_evaluated_at": (
-                    r.last_evaluated_at.isoformat() if r.last_evaluated_at else None
-                ),
-                "created_at": r.created_at.isoformat(),
-            }
-            for r in rows
-        ]
+        payload = [smartlist_json(row) for row in rows]
         json.dump(payload, stream, indent=2)
         stream.write("\n")
         return 0

@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, ExitStack, closing, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from contextlib import contextmanager
-from typing import Callable, ContextManager, Iterator, Literal, Optional, Protocol
+from typing import Literal, Optional, Protocol
 
 from apps.shared import paths
 from apps.smartlists.diff import diff_sets
@@ -35,19 +37,22 @@ class WritebackBackup:
 
 class VendorPlaylistWriter(Protocol):
     vendor: str
-    state_conn: object
+    state_conn: sqlite3.Connection
 
     def list_playlists(self) -> list[VendorPlaylist]: ...
     def read_members_by_id(self, playlist_id: str) -> list[str]: ...
     def apply_with_backup_by_id(
         self, playlist_id: str, stable_members: list[str], expected_target_revision: str,
-        expected_mapping_revision: str, source_transaction: Callable[[], ContextManager[None]],
+        expected_mapping_revision: str,
+        source_transaction: Callable[[], AbstractContextManager[None]],
     ) -> tuple[WritebackBackup, str]: ...
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str: ...
 
 
-WriterFactory = Callable[[Vendor, TargetMode, Path], Optional[VendorPlaylistWriter]]
-SourceLockFactory = Callable[[], ContextManager[None]]
+WriterFactory = Callable[
+    [Vendor, TargetMode, Path], AbstractContextManager[VendorPlaylistWriter | None]
+]
+SourceLockFactory = Callable[[], AbstractContextManager[None]]
 
 
 def _canonical_live_path(vendor: Vendor) -> Path:
@@ -73,11 +78,12 @@ def _require_exact_live_target(vendor: Vendor, target_mode: TargetMode, target_p
     return actual
 
 
+@contextmanager
 def default_writer_factory(
     vendor: Vendor, target_mode: TargetMode, target_path: Path, *,
     state_db_path: Path | None = None,
-) -> Optional[VendorPlaylistWriter]:
-    """Open the exact live target against an explicitly owned state DB."""
+) -> Iterator[VendorPlaylistWriter | None]:
+    """Yield a live-target writer and close every factory-owned resource."""
     _require_exact_live_target(vendor, target_mode, str(target_path))
     if state_db_path is None:
         raise WritebackUnavailable(
@@ -86,31 +92,24 @@ def default_writer_factory(
 
     from apps.shared.state.db import open_ro
 
-    state_conn = open_ro(state_db_path)
-    if vendor == "rekordbox":
-        from apps.shared.rekordbox_db import open_db
-        from apps.smartlists.rb_writer import RBPlaylistWriter
+    with ExitStack() as resources:
+        state_conn = resources.enter_context(closing(open_ro(state_db_path)))
+        if vendor == "rekordbox":
+            from apps.shared.rekordbox_db import open_db
+            from apps.smartlists.rb_writer import RBPlaylistWriter
 
-        try:
-            return RBPlaylistWriter(
-                db=open_db(target_path), state_conn=state_conn, live=True,
+            rekordbox_db = resources.enter_context(closing(open_db(target_path)))
+            writer: VendorPlaylistWriter | None = RBPlaylistWriter(
+                db=rekordbox_db, state_conn=state_conn, live=True,
                 live_db_path=target_path,
             )
-        except Exception:
-            state_conn.close()
-            raise
-    elif vendor == "djay":
-        from apps.smartlists.djay_writer import build_djay_writer
+        elif vendor == "djay":
+            from apps.smartlists.djay_writer import build_djay_writer
 
-        try:
             writer = build_djay_writer(target_path, state_conn=state_conn)
-        except Exception:
-            state_conn.close()
-            raise
-        if writer is None:
-            state_conn.close()
-        return writer
-    raise ValueError(f"unknown writeback vendor: {vendor!r}")
+        else:
+            raise ValueError(f"unknown writeback vendor: {vendor!r}")
+        yield writer
 
 
 def bind_default_writer_factory(state_db_path: str | Path) -> WriterFactory:
@@ -119,7 +118,7 @@ def bind_default_writer_factory(state_db_path: str | Path) -> WriterFactory:
 
     def factory(
         vendor: Vendor, target_mode: TargetMode, target_path: Path,
-    ) -> Optional[VendorPlaylistWriter]:
+    ) -> AbstractContextManager[VendorPlaylistWriter | None]:
         return default_writer_factory(
             vendor, target_mode, target_path, state_db_path=bound_path,
         )
@@ -204,21 +203,28 @@ class WritebackService:
         self._source_members_reader = source_members_reader
         self._source_lock_factory = source_lock_factory
 
+    @contextmanager
     def _writer(
         self, vendor: Vendor, target_mode: TargetMode, target_path: str,
-    ) -> VendorPlaylistWriter:
-        try:
-            writer = self._writer_factory(vendor, target_mode, Path(target_path))
-        except (FileNotFoundError, ValueError) as exc:
-            raise WritebackUnavailable(str(exc)) from exc
-        if writer is None:
-            raise WritebackUnavailable(f"{vendor}: exact live database is not reachable")
-        return writer
+    ) -> Iterator[VendorPlaylistWriter]:
+        with ExitStack() as writer_lifecycle:
+            try:
+                writer = writer_lifecycle.enter_context(
+                    self._writer_factory(vendor, target_mode, Path(target_path))
+                )
+            except (FileNotFoundError, ValueError) as exc:
+                raise WritebackUnavailable(str(exc)) from exc
+            if writer is None:
+                raise WritebackUnavailable(
+                    f"{vendor}: exact live database is not reachable"
+                )
+            yield writer
 
     def capability(self, vendor: Vendor) -> WritebackCapability:
         path = _canonical_live_path(vendor)
         try:
-            self._writer(vendor, "live", str(path))
+            with self._writer(vendor, "live", str(path)):
+                pass
         except WritebackUnavailable as exc:
             return WritebackCapability(vendor=vendor, available=False, target_path=str(path), reason=str(exc))
         return WritebackCapability(vendor=vendor, available=True, target_path=str(path))
@@ -229,7 +235,7 @@ class WritebackService:
             return [], []
         unique = list(dict.fromkeys(desired_ids))
         placeholders = ",".join("?" * len(unique))
-        rows = writer.state_conn.execute(  # type: ignore[attr-defined]
+        rows = writer.state_conn.execute(
             "SELECT stable_id FROM track_vendor_ids WHERE vendor = ? "
             f"AND stable_id IN ({placeholders})", (writer.vendor, *unique),
         ).fetchall()
@@ -242,7 +248,7 @@ class WritebackService:
             return _revision([])
         unique = list(dict.fromkeys(desired_ids))
         placeholders = ",".join("?" * len(unique))
-        rows = writer.state_conn.execute(  # type: ignore[attr-defined]
+        rows = writer.state_conn.execute(
             "SELECT stable_id, vendor_id FROM track_vendor_ids WHERE vendor = ? "
             f"AND stable_id IN ({placeholders})", (writer.vendor, *unique),
         ).fetchall()
@@ -274,36 +280,37 @@ class WritebackService:
             yield
 
     def targets(self, *, vendor: Vendor, target_mode: TargetMode, target_path: str) -> list[VendorPlaylist]:
-        return self._writer(vendor, target_mode, target_path).list_playlists()
+        with self._writer(vendor, target_mode, target_path) as writer:
+            return writer.list_playlists()
 
     def plan(
         self, *, vendor: Vendor, source_playlist_id: str, desired_ids: list[str],
         target_mode: TargetMode, target_path: str, target_id: str,
     ) -> WritebackPlan:
-        writer = self._writer(vendor, target_mode, target_path)
-        targets = {target.playlist_id: target for target in writer.list_playlists()}
-        target = targets.get(target_id)
-        if target is None:
-            raise WritebackConflict(f"{vendor}: target playlist ID {target_id!r} does not exist")
-        resolved, unresolved = self._resolvable(writer, desired_ids)
-        current = writer.read_members_by_id(target_id)
-        added, removed = diff_sets(current, resolved)
-        source_revision = _revision({"source_playlist_id": source_playlist_id, "members": desired_ids})
-        target_revision = _revision({"target_id": target_id, "members": current})
-        mapping_revision = self._mapping_revision(writer, desired_ids)
-        token_data = {
-            "vendor": vendor, "source_playlist_id": source_playlist_id,
-            "source_revision": source_revision, "target_mode": target_mode,
-            "target_path": target_path, "target_id": target_id,
-            "target_revision": target_revision, "added": added, "removed": removed,
-            "unresolved": unresolved, "mapping_revision": mapping_revision,
-        }
-        return WritebackPlan(
-            vendor=vendor, source_playlist_id=source_playlist_id, target_mode=target_mode,
-            target_path=target_path, target_id=target_id, target_name=target.name,
-            source_revision=source_revision, target_revision=target_revision, mapping_revision=mapping_revision, ordered_match=current == resolved,
-            plan_token=_revision(token_data), added=added, removed=removed, unresolved=unresolved,
-        )
+        with self._writer(vendor, target_mode, target_path) as writer:
+            targets = {target.playlist_id: target for target in writer.list_playlists()}
+            target = targets.get(target_id)
+            if target is None:
+                raise WritebackConflict(f"{vendor}: target playlist ID {target_id!r} does not exist")
+            resolved, unresolved = self._resolvable(writer, desired_ids)
+            current = writer.read_members_by_id(target_id)
+            added, removed = diff_sets(current, resolved)
+            source_revision = _revision({"source_playlist_id": source_playlist_id, "members": desired_ids})
+            target_revision = _revision({"target_id": target_id, "members": current})
+            mapping_revision = self._mapping_revision(writer, desired_ids)
+            token_data = {
+                "vendor": vendor, "source_playlist_id": source_playlist_id,
+                "source_revision": source_revision, "target_mode": target_mode,
+                "target_path": target_path, "target_id": target_id,
+                "target_revision": target_revision, "added": added, "removed": removed,
+                "unresolved": unresolved, "mapping_revision": mapping_revision,
+            }
+            return WritebackPlan(
+                vendor=vendor, source_playlist_id=source_playlist_id, target_mode=target_mode,
+                target_path=target_path, target_id=target_id, target_name=target.name,
+                source_revision=source_revision, target_revision=target_revision, mapping_revision=mapping_revision, ordered_match=current == resolved,
+                plan_token=_revision(token_data), added=added, removed=removed, unresolved=unresolved,
+            )
 
     def apply(
         self, *, vendor: Vendor, source_playlist_id: str, desired_ids: list[str],
@@ -325,11 +332,11 @@ class WritebackService:
                 added=plan.added, removed=plan.removed, target_revision=plan.target_revision)
         if not confirmed:
             raise WritebackConflict("live writeback requires confirmed=true")
-        writer = self._writer(vendor, target_mode, target_path)
-        backup, target_revision = writer.apply_with_backup_by_id(
-            target_id, desired_ids, plan.target_revision, plan.mapping_revision,
-            lambda: self._source_transaction(source_playlist_id, plan.source_revision),
-        )
+        with self._writer(vendor, target_mode, target_path) as writer:
+            backup, target_revision = writer.apply_with_backup_by_id(
+                target_id, desired_ids, plan.target_revision, plan.mapping_revision,
+                lambda: self._source_transaction(source_playlist_id, plan.source_revision),
+            )
         return WritebackApplyResult(vendor, target_id, plan.target_name, True, False,
             added=plan.added, removed=plan.removed, backup_id=backup.backup_id,
             target_revision=target_revision)
@@ -340,8 +347,10 @@ class WritebackService:
     ) -> WritebackRollbackResult:
         if not confirmed:
             raise WritebackConflict("rollback requires confirmed=true")
-        writer = self._writer(vendor, target_mode, target_path)
-        target_revision = writer.restore_backup(backup_id, target_id, expected_target_revision)
+        with self._writer(vendor, target_mode, target_path) as writer:
+            target_revision = writer.restore_backup(
+                backup_id, target_id, expected_target_revision,
+            )
         return WritebackRollbackResult(vendor, target_id, backup_id, True, target_revision)
 
 
