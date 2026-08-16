@@ -5,10 +5,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let parseAllowedHosts;
 let parseWebuiDevConfigPayload;
+let resolveAllowedHosts;
 let resolveWebuiDevConfig;
 
 before(async () => {
-	({ parseAllowedHosts, parseWebuiDevConfigPayload, resolveWebuiDevConfig } =
+	({ parseAllowedHosts, parseWebuiDevConfigPayload, resolveAllowedHosts, resolveWebuiDevConfig } =
 		await loadTypeScriptModule('webui-port-config.ts'));
 });
 
@@ -124,4 +125,35 @@ test('wildcards, ports and schemes are rejected rather than silently widening th
 	// What must never happen is it becoming vite's allow-every-host boolean.
 	assert.deepEqual(parseAllowedHosts('true'), ['true']);
 	assert.notEqual(parseAllowedHosts('true'), true);
+});
+
+test('the root .env supplies allowed hosts that never reach process.env', () => {
+	// The regression this pins: vite does not load the root .env onto process.env
+	// at config time, so a deployment that sets the value only in the file used to
+	// fall back to loopback-only and 403 the remote runner.
+	assert.deepEqual(resolveAllowedHosts({}, { MUSIC_DJ_ALLOWED_HOSTS: 'agentbox' }), ['agentbox']);
+	assert.deepEqual(resolveAllowedHosts({}, {}), []);
+});
+
+test('an explicit shell value outranks the root .env', () => {
+	assert.deepEqual(
+		resolveAllowedHosts(
+			{ MUSIC_DJ_ALLOWED_HOSTS: 'shell-host' },
+			{ MUSIC_DJ_ALLOWED_HOSTS: 'file-host' }
+		),
+		['shell-host']
+	);
+	// An empty shell value is an explicit 'loopback only', so it must override the
+	// file rather than falling through to it the way || would.
+	assert.deepEqual(
+		resolveAllowedHosts({ MUSIC_DJ_ALLOWED_HOSTS: '' }, { MUSIC_DJ_ALLOWED_HOSTS: 'file-host' }),
+		[]
+	);
+});
+
+test('a malformed host fails the dev server rather than widening the allowlist', () => {
+	assert.throws(
+		() => resolveAllowedHosts({}, { MUSIC_DJ_ALLOWED_HOSTS: '*.ts.net' }),
+		/MUSIC_DJ_ALLOWED_HOSTS must list bare hostnames/
+	);
 });
