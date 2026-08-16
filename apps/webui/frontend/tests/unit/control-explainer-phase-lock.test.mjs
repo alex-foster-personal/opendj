@@ -1,0 +1,163 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { before, test } from 'node:test';
+
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+// 863c0eb6 - ControlExplainer wiring + Beat Sync phase-lock UX.
+//
+// The commit makes one promise to the DJ: the pitch window the explainer
+// ADVERTISES is the pitch window the engine ENFORCES, and when a lock inside
+// that window is impossible the BEAT SYNC button reverts rather than sitting
+// lit with no schedule behind it.
+//
+// That promise spans two files with two independent copies of the same
+// arithmetic: `_tempoBounds` in audio-engine.svelte.ts (what is enforced) and
+// `tempoBoundsFromPitchRange` in auto-play.ts (what DeckHeader prints).
+// ControlExplainer.svelte says only "Copy must match audio-engine" in a
+// comment, which is exactly the shape of rule that a refactor changes on one
+// side and leaves stale on the other - the UI then lies about when sync will
+// engage, and the revert error quotes a window nobody enforces.
+//
+// Regression lines:
+// - if the two bounds formulas disagree for any pitch range then the explainer
+//   advertises a window the engine does not enforce
+// - if DeckHeader hardcodes the window instead of deriving it then changing the
+//   pitch range silently desyncs the copy from the engine
+// - if the Beat Sync bullets stop stating the revert then a lit-but-dead button
+//   is undocumented behaviour
+// - if the setBeatSync catch stops clearing beat_sync_enabled then BEAT SYNC
+//   stays lit with no schedule - the exact bug 863c0eb6 fixed
+// - if ControlExplainer is unmounted from CUE/SLIP/BEAT SYNC/MASTER then the
+//   teaching chrome silently disappears
+
+const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+const ENGINE_SRC = readFileSync(`${SRC}/lib/rb/audio-engine.svelte.ts`, 'utf8');
+const DECK_HEADER_SRC = readFileSync(`${SRC}/lib/components/rb/deck/DeckHeader.svelte`, 'utf8');
+const JOG_DIAL_SRC = readFileSync(`${SRC}/lib/components/rb/deck/JogDial.svelte`, 'utf8');
+const TRANSPORT_SRC = readFileSync(
+	`${SRC}/lib/components/rb/deck/TransportCluster.svelte`,
+	'utf8'
+);
+
+let autoPlay;
+let audio;
+
+before(async () => {
+	autoPlay = await loadTypeScriptModule('src/lib/rb/auto-play.ts');
+	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts');
+});
+
+/**
+ * Build a callable from the engine's real `_tempoBounds` body so the two
+ * formulas are compared by the values they produce, not by their text. A
+ * cosmetic reformat must not fail this; a changed number must.
+ */
+function enforcedBoundsFn() {
+	const match = ENGINE_SRC.match(
+		/function _tempoBounds\(deck: DeckId\): \{ min: number; max: number \} \{\n([\s\S]*?)\n\}/
+	);
+	assert.ok(
+		match,
+		'if _tempoBounds is renamed or reshaped then this drift guard must be re-pointed, not deleted'
+	);
+	const body = match[1].replace(/pitchRanges\[deck\]/g, 'pct');
+	return new Function('pct', body);
+}
+
+test('the advertised pitch window is the enforced pitch window, for every pitch range', () => {
+	const enforced = enforcedBoundsFn();
+	for (const pct of audio.PITCH_RANGES) {
+		const advertised = autoPlay.tempoBoundsFromPitchRange(pct);
+		assert.deepEqual(
+			enforced(pct),
+			advertised,
+			`if the engine and the explainer disagree at +-${pct}% then the UI ` +
+				'promises a lock the engine will refuse'
+		);
+	}
+});
+
+test('the Beat Sync explainer derives its window from the real bounds function', () => {
+	assert.match(
+		DECK_HEADER_SRC,
+		/tempoBoundsFromPitchRange\(pitchRanges\[deckId\]\)/,
+		'if the window is not derived from the deck pitch range then switching ' +
+			'+-8/16/100% leaves the copy stale'
+	);
+	assert.match(
+		DECK_HEADER_SRC,
+		/pitch range \[\$\{syncBounds\.min\}, \$\{syncBounds\.max\}\]/,
+		'if the bounds are hardcoded rather than interpolated then the explainer ' +
+			'can drift from the engine without any test noticing'
+	);
+});
+
+test('the Beat Sync explainer states that an impossible lock reverts the button', () => {
+	const bullets = DECK_HEADER_SRC.slice(
+		DECK_HEADER_SRC.indexOf('beatSyncBullets'),
+		DECK_HEADER_SRC.indexOf('masterTitle')
+	);
+	assert.match(
+		bullets,
+		/reverts/,
+		'if the bullets stop stating the revert then the engine reverts silently ' +
+			'and the DJ is never told why sync did not engage'
+	);
+	assert.match(
+		bullets,
+		/BAR/,
+		'if BAR is dropped from the copy then the strict 1-4 phase constraint is undocumented'
+	);
+});
+
+test('setBeatSync clears the lit flag before rethrowing an impossible phase lock', () => {
+	const start = ENGINE_SRC.indexOf('setBeatSync(deck: DeckId, enabled: boolean)');
+	assert.ok(start > 0, 'setBeatSync must exist on the engine');
+	const body = ENGINE_SRC.slice(start, ENGINE_SRC.indexOf('setMasterTempo', start));
+
+	const catchAt = body.indexOf('.catch(');
+	assert.ok(
+		catchAt > 0,
+		'if the catch is removed then a failed synchronize leaves BEAT SYNC lit ' +
+			'with no schedule - the bug 863c0eb6 fixed'
+	);
+	const revertAt = body.indexOf('st.beat_sync_enabled = false', catchAt);
+	const throwAt = body.indexOf('throw new Error', catchAt);
+	assert.ok(
+		revertAt > catchAt && revertAt < throwAt,
+		'if the flag is not cleared before the rethrow then the button stays lit ' +
+			'after the failure propagates'
+	);
+	assert.match(
+		body.slice(throwAt),
+		/cannot phase-lock within pitch \[\$\{bounds\.min\}, \$\{bounds\.max\}\] \(BAR\)/,
+		'if the error stops naming the enforced window then the operator cannot ' +
+			'tell which pitch range refused the lock'
+	);
+});
+
+test('ControlExplainer is mounted on CUE, SLIP, BEAT SYNC and MASTER', () => {
+	for (const [label, src] of [
+		['CUE', TRANSPORT_SRC],
+		['SLIP', JOG_DIAL_SRC],
+		['BEAT SYNC / MASTER', DECK_HEADER_SRC]
+	]) {
+		assert.match(
+			src,
+			/import ControlExplainer from '\.\/ControlExplainer\.svelte'/,
+			`if ${label} drops the import then its teaching chrome is gone`
+		);
+		assert.match(src, /<ControlExplainer\b/, `if ${label} stops mounting it then the hover is dead`);
+	}
+	const deckHeaderMounts = DECK_HEADER_SRC.match(/<ControlExplainer\b/g) ?? [];
+	assert.equal(
+		deckHeaderMounts.length,
+		2,
+		'if DeckHeader does not mount exactly two explainers then BEAT SYNC or ' +
+			'MASTER has lost its own'
+	);
+	assert.match(TRANSPORT_SRC, /demo="cue"/, 'if the cue demo is dropped then the SVG teach is gone');
+	assert.match(JOG_DIAL_SRC, /demo="slip"/, 'if the slip demo is dropped then the SVG teach is gone');
+});
