@@ -1,14 +1,15 @@
-"""Smartlists router -- read/evaluate plus full rule replacement.
+"""Smartlists router -- read/evaluate plus CAS rule replacement.
 
-Read-only evaluation surface over the ``smartlists`` table + Phase 5
-shared-state schema. The rule-AST -> SQL compiler in
-:mod:`apps.smartlists.evaluator` is reused AS-IS; no materialiser calls,
-no writes. Downstream (rule-editor-ui) builds CRUD against this router's
-contract:
+Evaluation and compare-and-swap rule-write surface over the ``smartlists``
+table + Phase 5 shared-state schema. The rule-AST -> SQL compiler in
+:mod:`apps.smartlists.evaluator` is reused AS-IS; no materialiser calls.
+The rule editor and agents share this router's contract:
 
   * ``GET  /api/v1/smartlists``                -- list summaries
     (id, name, rule AST + human-readable rule_summary, order_by, ...).
   * ``GET  /api/v1/smartlists/{id}``           -- one summary.
+  * ``PUT  /api/v1/smartlists/{id}``           -- complete rule replacement,
+    requiring the detail response ETag through ``If-Match``.
   * ``GET  /api/v1/smartlists/{id}/tracks``    -- live evaluation:
     ordered ``items`` (stable_ids) + hydrated ``tracks`` rows shaped
     exactly like playlist detail (:class:`..models.TrackRowOut`).
@@ -24,6 +25,9 @@ the daemon):
     (corrupt row; fail loudly, never skip predicates).
   * 500 ``SMARTLIST_MEMBER_MISSING``  -- evaluator returned stable_ids
     the backend cannot hydrate (state/backend divergence).
+  * 409 ``conflict``                  -- stale ``If-Match``; current summary
+    and ETag are returned without mutation.
+  * 428 ``precondition_required``     -- update omitted ``If-Match``.
 
 NOTE for the wave integrator: wire with
 ``app.include_router(smartlists_routes.router, prefix=api_prefix)`` in
@@ -35,18 +39,24 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, evaluate
-from apps.smartlists.repo import SmartlistsRepo, SmartlistsRepoError
+from apps.smartlists.repo import (
+    SmartlistRevisionConflict,
+    SmartlistsRepo,
+    SmartlistsRepoError,
+    smartlist_revision,
+)
 
 from .. import rb_vendor
-from ..backend import StateBackend
-from ..deps import get_read_state
+from ..backend import ConflictError, StateBackend
+from ..deps import get_read_state, get_write_state
+from ..errors import precondition_required
 from ..models import TrackRowOut
 
 router = APIRouter(prefix="/smartlists", tags=["smartlists"])
@@ -58,6 +68,23 @@ _COLS: str = (
     "id, name, rule, rule_schema_version, referenced_fields, order_by, "
     "last_evaluated_at, last_materialized_track_ids, created_at, modified_at"
 )
+
+_ETAG_RESPONSE_HEADER: dict[str, Any] = {
+    "ETag": {
+        "description": "Strong validator for the complete persisted smartlist row",
+        "schema": {"type": "string"},
+    },
+}
+_GET_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {"headers": _ETAG_RESPONSE_HEADER},
+}
+_IF_MATCH_OPENAPI_PARAMETER: dict[str, Any] = {
+    "name": "If-Match",
+    "in": "header",
+    "required": True,
+    "description": "Smartlist ETag returned by GET /api/v1/smartlists/{smartlist_id}",
+    "schema": {"type": "string"},
+}
 
 
 # ----------------------------------------------------------- schemas
@@ -88,6 +115,23 @@ class SmartlistUpdateIn(BaseModel):
     order_by: str | None = None
 
 
+class SmartlistConflictBody(BaseModel):
+    """Structured stale-write response with current state and fresh ETag."""
+
+    error: Literal["conflict"] = "conflict"
+    message: str
+    current: SmartlistSummary
+    etag: str
+
+
+class SmartlistPreconditionRequiredBody(BaseModel):
+    """Structured response when an update omits its CAS precondition."""
+
+    error: Literal["precondition_required"] = "precondition_required"
+    message: str
+    details: None = None
+
+
 class SmartlistTracks(BaseModel):
     """Live evaluation result, shaped like playlist detail.
 
@@ -105,11 +149,41 @@ class SmartlistTracks(BaseModel):
     tracks: list[TrackRowOut]
 
 
+_PUT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {"headers": _ETAG_RESPONSE_HEADER},
+    409: {
+        "model": SmartlistConflictBody,
+        "description": "If-Match does not match the current smartlist revision",
+        "headers": _ETAG_RESPONSE_HEADER,
+    },
+    428: {
+        "model": SmartlistPreconditionRequiredBody,
+        "description": "If-Match is required for every smartlist update",
+    },
+}
+
+
 # ----------------------------------------------------------- _helpers
 
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
+
+
+def _etag(revision: str) -> str:
+    """Project a domain revision as one strong, opaque HTTP entity tag."""
+    return f'"{revision}"'
+
+
+def _revision_from_if_match(if_match: str) -> str:
+    """Decode exactly one strong quoted validator; malformed tags go stale."""
+    if (
+        len(if_match) >= 2
+        and if_match.startswith('"')
+        and if_match.endswith('"')
+    ):
+        return if_match[1:-1]
+    return f"invalid-if-match:{if_match}"
 
 
 def summarize_rule(rule: dict[str, Any]) -> str:
@@ -264,31 +338,61 @@ def list_smartlists(
     return [_to_summary(_row_to_model(r)) for r in rows]
 
 
-@router.get("/{smartlist_id}", response_model=SmartlistSummary)
+@router.get(
+    "/{smartlist_id}",
+    response_model=SmartlistSummary,
+    responses=_GET_RESPONSES,
+)
 def get_smartlist(
     smartlist_id: str,
+    response: Response,
     conn: sqlite3.Connection = Depends(get_smartlists_conn),
 ) -> SmartlistSummary:
-    return _to_summary(_fetch_smartlist(conn, smartlist_id))
+    row = _fetch_smartlist(conn, smartlist_id)
+    response.headers["ETag"] = _etag(smartlist_revision(row))
+    return _to_summary(row)
 
 
-@router.put("/{smartlist_id}", response_model=SmartlistSummary)
+@router.put(
+    "/{smartlist_id}",
+    response_model=SmartlistSummary,
+    responses=_PUT_RESPONSES,
+    openapi_extra={"parameters": [_IF_MATCH_OPENAPI_PARAMETER]},
+)
 def update_smartlist(
     smartlist_id: str,
     body: SmartlistUpdateIn,
+    request: Request,
+    response: Response,
+    _backend: StateBackend = Depends(get_write_state),
     conn: sqlite3.Connection = Depends(get_smartlists_write_conn),
-) -> SmartlistSummary:
-    """Apply a complete rule replacement and return persisted readback."""
+) -> SmartlistSummary | Response:
+    """CAS-apply a complete rule replacement and return persisted readback."""
+    if_match = request.headers.get("If-Match")
+    if if_match is None:
+        return precondition_required(
+            "PUT /smartlists/{smartlist_id} requires If-Match header"
+        )
     _fetch_smartlist(conn, smartlist_id)
     try:
         row = SmartlistsRepo(conn, ensure_schema=False).update_rule(
-            smartlist_id, body.rule, order_by=body.order_by,
+            smartlist_id,
+            body.rule,
+            expected_revision=_revision_from_if_match(if_match),
+            order_by=body.order_by,
         )
+    except SmartlistRevisionConflict as exc:
+        current_etag = _etag(exc.current_revision)
+        raise ConflictError(
+            _to_summary(exc.current).model_dump(mode="json"),
+            current_etag,
+        ) from exc
     except (SmartlistRuleError, SmartlistsRepoError) as exc:
         raise HTTPException(status_code=422, detail={
             "code": "SMARTLIST_RULE_INVALID",
             "message": str(exc),
         }) from exc
+    response.headers["ETag"] = _etag(smartlist_revision(row))
     return _to_summary(row)
 
 

@@ -4378,6 +4378,59 @@
         "title": "SettingsOut",
         "type": "object"
       },
+      "SmartlistConflictBody": {
+        "description": "Structured stale-write response with current state and fresh ETag.",
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/SmartlistSummary"
+          },
+          "error": {
+            "const": "conflict",
+            "default": "conflict",
+            "title": "Error",
+            "type": "string"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "current",
+          "etag"
+        ],
+        "title": "SmartlistConflictBody",
+        "type": "object"
+      },
+      "SmartlistPreconditionRequiredBody": {
+        "description": "Structured response when an update omits its CAS precondition.",
+        "properties": {
+          "details": {
+            "title": "Details",
+            "type": "null"
+          },
+          "error": {
+            "const": "precondition_required",
+            "default": "precondition_required",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "SmartlistPreconditionRequiredBody",
+        "type": "object"
+      },
       "SmartlistSummary": {
         "description": "List/detail row for one smartlist (contract for rule-editor-ui).",
         "properties": {
@@ -8935,7 +8988,15 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -8954,7 +9015,7 @@
         ]
       },
       "put": {
-        "description": "Apply a complete rule replacement and return persisted readback.",
+        "description": "CAS-apply a complete rule replacement and return persisted readback.",
         "operationId": "update_smartlist_api_v1_smartlists__smartlist_id__put",
         "parameters": [
           {
@@ -8963,6 +9024,15 @@
             "required": true,
             "schema": {
               "title": "Smartlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Smartlist ETag returned by GET /api/v1/smartlists/{smartlist_id}",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
               "type": "string"
             }
           }
@@ -8986,7 +9056,33 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistConflictBody"
+                }
+              }
+            },
+            "description": "If-Match does not match the current smartlist revision",
+            "headers": {
+              "ETag": {
+                "description": "Strong validator for the complete persisted smartlist row",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -8997,6 +9093,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartlistPreconditionRequiredBody"
+                }
+              }
+            },
+            "description": "If-Match is required for every smartlist update"
           }
         },
         "summary": "Update Smartlist",
