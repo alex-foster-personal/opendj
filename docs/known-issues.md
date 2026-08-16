@@ -111,10 +111,84 @@ figure of 48/57 (84.2%).
 
 ### `coverage-matrix` label drift
 
-15 shipped requirements have zero `@pytest.mark.requirement` markers
-despite their tests passing. The coverage dashboard understates
-coverage because of this. Tracked in the session report; fix is a
-sweep through `tests/` to add markers, not a code change.
+Re-measured on a full `pytest tests` run, 2026-08-16: 48/57 covered,
+9 uncovered. Six of those nine are legitimately unbuilt (`AI-03`, `AI-04`,
+`CROSS-01`, `CROSS-02` are v2; `LAUNCH-03` and `SMART-04` are
+DEFERRED-V2). Only three are genuine label drift -- shipped requirements
+whose tests exist but carry no marker:
+
+| Req        | Shipped as                                          |
+|------------|-----------------------------------------------------|
+| `OPEN-02a` | Rekordbox open-dj adapter (read + write)            |
+| `OPEN-02b` | djay Pro open-dj adapter (read + write)             |
+| `OPEN-03a` | Spec prose + reference CLI + JSON Schema            |
+
+Fix is a sweep through `tests/` to add markers, not a code change. The
+earlier "15 shipped requirements" figure predates the marker sweep and
+the orphan fix below.
+
+### Orphan requirement markers -- RESOLVED 2026-08-16
+
+Nine markers referenced IDs that were not in `reqs.json`, so they traced
+to nothing while reading as coverage. `git log -S` confirmed none had
+ever existed in `reqs.json` -- all were invented, not renamed: area
+prefixes that are not categories (`ANALYSIS-03`, `TAGS-02`,
+`SMARTLISTS-02`, `SPOTIFY-02`, `USB-03`), CHANGELOG audit labels
+(`P1-A`, `P1-B`), a phase number read as a requirement number
+(`INFRA-05`), and a documented future-backlog placeholder (`VOICE-02`).
+
+All nine were retargeted to the requirement each test actually defends.
+`tests/test_requirement_markers.py` now fails the suite on any marker ID
+absent from `reqs.json`, so this cannot silently recur.
+
+### Unresolved stashes + non-canonical author identities
+
+Historical only. 15 stashes and 21 non-canonical author commits
+accumulated during the v1 fanout. Both are documented in
+[`.planning/HEALTH-2-2026-04-17.md`](../.planning/HEALTH-2-2026-04-17.md)
+and
+[`docs/git-author-convention.md`](git-author-convention.md). No new
+commits should add to either count. For agents: match the canonical
+author identity from `docs/git-author-convention.md` before committing.
+
+### Intra-repo links
+
+The `apps/adapters/_shim/` package was retired during phase 16-15 (see
+commits `0d22335` and `6a31672`). Two historical Markdown references
+pointed at the retired path and were fixed in the broken-link audit
+([`.planning/BROKEN-LINKS-2026-04-17.md`](../.planning/BROKEN-LINKS-2026-04-17.md)).
+If new docs reference `apps/adapters/_shim/`, treat it as stale; the
+canonical home is `apps.open_dj` (schema, registry, canon).
+
+## Things deferred to v2 (not in scope for any v1.x)
+
+These are explicitly NOT worked on before v1.0 ships and are called
+out here so operators do not wait for them.
+
+- **SMART-04** dedicated web rule editor (above).
+- **LAUNCH-03** DJ driver manager (above).
+- **CROSS-01 / CROSS-02** Windows + Linux support. v1 is macOS-only.
+  The Tauri launcher is cross-platform-ready; the Python side uses
+  macOS-specific paths (`~/Library`, `diskutil`) in several places.
+- **AI-03 / AI-04** further LLM features beyond the AI-01 / AI-02
+  structured suggester.
+- **CloudKit coherence**: patching `cloudKit_record_cloudKit` blobs
+  to avoid djay re-upload after playlist writes.
+
+## Reporting a new issue
+
+Open an issue at
+<https://github.com/former-work-account/music-dj-tools/issues> with:
+
+1. Which phase / app module the issue sits in.
+2. The exact CLI invocation or API call that triggered it.
+3. Whether any of the six rails fired (backup file path, reversal
+   script path, readback error).
+4. Vendor app versions for any DB you touched (Rekordbox / djay /
+   Serato / Traktor).
+
+Security-sensitive reports go to the contacts in
+[`SECURITY.md`](../SECURITY.md) instead.
 
 ## Related documents
 

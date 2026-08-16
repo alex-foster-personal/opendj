@@ -23,9 +23,13 @@ from apps.sync.usb.preflight import preflight
 from apps.sync.usb.profile import load_from_string
 
 
+# Requirement IDs come from reqs.json. There is no SPOTIFY/USB category --
+# the Spotify importer is CAT-01, USB sync + verify is CAT-02, and the web UI
+# the toast store belongs to is CAT-05.
 pytestmark = [
-    pytest.mark.requirement("SPOTIFY-02"),
-    pytest.mark.requirement("USB-03"),
+    pytest.mark.requirement("CAT-01"),  # P09-F02 Spotify writer encoding
+    pytest.mark.requirement("CAT-02"),  # P10-F03 USB preflight writer probe
+    pytest.mark.requirement("CAT-05"),  # P11-F03 web UI toast store
 ]
 
 

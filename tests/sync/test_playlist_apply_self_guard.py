@@ -1,5 +1,9 @@
-"""P1-A regression: apply_plan must refuse live writes when the caller
+"""SYNC-03 regression: apply_plan must refuse live writes when the caller
 has not wrapped the call in a LiveWriteSession AND a DJ app is running.
+
+Tracked as forensics finding "P1-A" in CHANGELOG.md -- that is an audit
+label, not a requirement ID; the requirement it defends is SYNC-03
+(bi-directional playlist sync, RB-canonical, with conflict policy).
 
 Forensics audit (PR #105) flagged that apps/sync/playlist_apply.py:apply_plan
 opened ``MediaLibrary.db`` with ``mode=rwc`` directly, relying entirely on
@@ -23,7 +27,7 @@ from apps.sync import playlist_apply as pa
 from apps.sync import safety as _safety
 
 
-@pytest.mark.requirement("P1-A")
+@pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_refuses_without_safety_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -43,7 +47,7 @@ def test_playlist_apply_refuses_without_safety_session(
         pa.apply_plan({"playlists": []}, db_path=db_path, live=True)
 
 
-@pytest.mark.requirement("P1-A")
+@pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_refuses_when_rekordbox_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -60,7 +64,7 @@ def test_playlist_apply_refuses_when_rekordbox_running(
         pa.apply_plan({"playlists": []}, db_path=db_path, live=True)
 
 
-@pytest.mark.requirement("P1-A")
+@pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_allows_when_safety_session_provided(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -93,7 +97,7 @@ def test_playlist_apply_allows_when_safety_session_provided(
     assert result.per_playlist == []
 
 
-@pytest.mark.requirement("P1-A")
+@pytest.mark.requirement("SYNC-03")
 def test_playlist_apply_dry_run_bypasses_guard(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
