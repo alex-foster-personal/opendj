@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
-import { claimAndCheckWebuiDevConfig } from './webui-port-config';
+import { claimAndCheckWebuiDevConfig, parseAllowedHosts } from './webui-port-config';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -29,6 +29,7 @@ export default defineConfig(({ command }) => {
 				: {
 						port: devConfig.frontendPort,
 						strictPort: true,
+						allowedHosts: parseAllowedHosts(process.env.MUSIC_DJ_ALLOWED_HOSTS),
 						proxy: {
 							'/api': devConfig.apiProxyTarget
 						}
