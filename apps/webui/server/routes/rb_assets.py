@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -28,6 +28,21 @@ _CACHE_ANLZ = "public, max-age=3600"
 _CACHE_RB_META = "no-store"  # file_exists must reflect disk truth
 
 
+class BeatgridIssueOut(BaseModel):
+    """A real, already-detected PQTZ field-vs-interval BPM disagreement.
+
+    See ``rb_vendor.cached_beatgrid_issue`` for the caching tradeoff: this is
+    None both when the grid is clean AND when it has never been evaluated
+    yet - never a guessed verdict.
+    """
+
+    severity: Literal["warning", "error"]
+    at_sec: float
+    field_bpm: float
+    interval_bpm: float
+    disagreement_bpm: float
+
+
 class RbMetaOut(BaseModel):
     """COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief)."""
 
@@ -42,6 +57,7 @@ class RbMetaOut(BaseModel):
     duration_s: Optional[int]
     artwork_available: bool
     analysis_available: bool
+    beatgrid_issue: Optional[BeatgridIssueOut]
     cue_count: int
     quality: QualityOut
 
@@ -51,9 +67,19 @@ def get_track_audio(
     stable_id: str,
     _backend: StateBackend = Depends(get_read_state),
 ) -> FileResponse:
-    """Stream the local audio file. FileResponse handles Range/206 natively."""
-    content = rb_vendor.resolve_content(stable_id)
-    path, media_type = rb_vendor.audio_file(content)
+    """Stream the local audio file. FileResponse handles Range/206 natively.
+
+    Rekordbox tracks resolve via the vendor mapping; locally imported tracks
+    (no djmdContent row, e.g. vocal stems) fall back to ``tracks.file_path``.
+    """
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+        path, media_type = rb_vendor.audio_file(content)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+        path, media_type = rb_vendor.local_audio_file(stable_id)
     return FileResponse(
         path,
         media_type=media_type,
@@ -97,8 +123,16 @@ def get_track_anlz(
     from data/state/vocal-cache, merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
-    content = rb_vendor.resolve_content(stable_id)
-    payload = rb_vendor.build_anlz_payload(content, points)
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+        payload = rb_vendor.build_anlz_payload(content, points)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+        # Locally imported track (no rekordbox analysis): empty-but-valid
+        # payload so a deck can still load + play, no synthesised waveform.
+        payload = rb_vendor.empty_anlz_payload(stable_id, points)
     return JSONResponse(payload, headers={"Cache-Control": _CACHE_ANLZ})
 
 
@@ -125,6 +159,7 @@ def get_track_rb_meta(
         content.analysis_data_path is not None
         and rb_vendor.resolve_share_path(content.analysis_data_path).is_file()
     )
+    beatgrid_issue = rb_vendor.cached_beatgrid_issue(content)
     # One track, so a direct stat is fine -- and it reuses the bulk cache,
     # which the listing has usually already warmed for this path.
     quality = rb_vendor.bulk_quality(
@@ -144,6 +179,7 @@ def get_track_rb_meta(
         duration_s=content.length_s,
         artwork_available=artwork_available,
         analysis_available=analysis_available,
+        beatgrid_issue=BeatgridIssueOut(**beatgrid_issue) if beatgrid_issue is not None else None,
         cue_count=rb_vendor.count_cues(content.vendor_id),
         quality=QualityOut(**quality),
     )

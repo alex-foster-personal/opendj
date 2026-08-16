@@ -86,6 +86,9 @@ def test_get_manifest_and_real_stem_file(tmp_path: Path) -> None:
         "stable_id": "track-001",
         "source": "demucs",
         "model": "htdemucs",
+        # A 4-part Demucs bundle must still declare demucs4 explicitly, so the
+        # client never has to infer a layout from the part names.
+        "layout": "demucs4",
         "sample_rate_hz": 44_100,
         "frame_count": 12,
         "channel_count": 2,

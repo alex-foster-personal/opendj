@@ -9,7 +9,8 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import type { DeckId } from '$lib/rb/types';
-	import { getDeckState, DECK_IDS } from './engine-accessor';
+	import { getDeckState, DECK_IDS, mixerState } from './engine-accessor';
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import { ensureAnlz, getAnlzEntry } from './anlz-cache.svelte';
 	import { ensureBeatgridFallback, getBeatgridFallbackEntry } from './beatgrid-fallback-cache.svelte';
@@ -345,6 +346,11 @@
 	class:secondary={deckId === 3 || deckId === 4}
 	class:deck-focus={deckHoverUi.deckId === deckId}
 	data-deck={deckId}
+	use:wheelAdjust={{
+		step: WHEEL_STEP.fader,
+		get: () => mixerState.channels[deckId].fader,
+		set: (value) => void runPerformanceCommandFromUi({ type: 'fader', deck: deckId, value })
+	}}
 	onpointerenter={() => setHoveredDeck(deckId)}
 	onpointerleave={() => {
 		if (deckHoverUi.deckId === deckId) setHoveredDeck(null);

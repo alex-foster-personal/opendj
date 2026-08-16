@@ -22,7 +22,7 @@
  *       unusable deck candidate is published ⛔️
  *   ✔︎ Reactive transport: position_ms advances via rAF clock math while
  *     playing; remaining time derivable from duration_ms - position_ms;
- *     deckEffectiveBpm() = bpm * pitch.
+ *     deckEffectiveBpm() = PQTZ grid BPM * pitch (tag BPM only if no grid).
  *     [if] play() then 1s elapses [then] position_ms ~= 1000 * pitch
  *     [if] play() while paused at end-of-track [then] transport restarts at 0
  *   ✔︎ CUE semantics: pause() stores the cue at the pause position;
@@ -79,6 +79,7 @@ import {
 	fetchAudioArrayBuffer,
 	fetchHotCueSlots,
 	fetchStemAudioArrayBuffers,
+	STEM_LAYOUT_PART_NAMES,
 	getTrack,
 	probeStemArtifact,
 	RbApiError
@@ -87,9 +88,12 @@ import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$li
 import { getAnlzEntry } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
 	computeFollowerSyncPlan,
+	planTempoRatioRamp,
+	playbackBpm,
 	quantizeToNearestBeat,
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
+import type { TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatFourLeadInSec, syncSeekBlendDurationSec } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -278,11 +282,17 @@ export function getDeckState(deck: DeckId): DeckState {
 	return deckStates[deck];
 }
 
-/** Pitch-adjusted BPM for the jog readout; null until a track with a BPM
- * is loaded. Reactive when read inside $derived. */
+/** Pitch-adjusted playback BPM for jog / IPC; null until a tempo base exists.
+ * Uses local PQTZ BPM (Beat Sync truth), not rekordbox tag BPM. Reactive
+ * when read inside $derived. */
 export function deckEffectiveBpm(deck: DeckId): number | null {
 	const st = deckStates[deck];
-	return st.bpm === null ? null : st.bpm * st.pitch;
+	return playbackBpm({
+		beats: st.anlz?.beatgrid.beats,
+		positionSec: Math.max(0, st.position_ms / 1000),
+		tempoRatio: st.pitch,
+		tagBpm: st.bpm
+	});
 }
 
 /** Remaining track time in ms (for the -MM:SS.d readout); null until a
@@ -305,6 +315,7 @@ interface _ChannelNodes {
 	cue: GainNode;
 	fader: GainNode;
 	xf: GainNode;
+	extsplit: ChannelSplitterNode | null;
 }
 
 interface _ClockSegment {
@@ -407,6 +418,16 @@ interface _DeckRuntime {
 	keySyncBaselineSemitones: number | null;
 	/** Decoded mix buffer retained for short sync-seek crossfades. */
 	audioBuffer: AudioBuffer | null;
+	/**
+	 * True from the moment a re-anchor tempo ramp begins until its last step
+	 * is registered. Each ramp step's own revision briefly becomes "presented"
+	 * as soon as real playback reaches it, well before later steps finish
+	 * their own worklet round-trip - without this override, transport_pending
+	 * would flicker false mid-ramp (revision temporarily settled) and let a
+	 * caller read/measure position while the rate is still transitioning. See
+	 * `_scheduleReanchoredFollower` / `_continueTempoRamp`.
+	 */
+	reanchorRampActive: boolean;
 }
 
 function _emptyRuntime(): _DeckRuntime {
@@ -433,12 +454,14 @@ function _emptyRuntime(): _DeckRuntime {
 		slipAnchor: null,
 		slipTempoBoundaries: [],
 		keySyncBaselineSemitones: null,
-		audioBuffer: null
+		audioBuffer: null,
+		reanchorRampActive: false
 	};
 }
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
+let _externalMerger: ChannelMergerNode | null = null;
 interface _HeadphoneNodes {
 	cueSum: GainNode;
 	masterMonitor: GainNode;
@@ -809,6 +832,34 @@ function _disposeHeadphoneGraph(): void {
 	for (const track of nodes.destination.stream.getTracks()) track.stop();
 }
 
+// -------------------------------------------- external mixer routing
+// Opt-in via URL query `?extroute=1:1,2:7` -- comma-separated `deck:usbLeft`
+// pairs, where usbLeft is the 1-based LEFT channel of a stereo pair on the
+// selected multichannel output device (e.g. DJM mixer over USB: 1 -> USB 1/2
+// -> mixer CH1, 7 -> USB 7/8 -> mixer CH4). Routed decks keep trim/EQ/fader
+// but bypass the in-app crossfader and master bus: summing and crossfading
+// belong to the hardware mixer. Unrouted decks stay on the internal master,
+// which in this mode feeds ONLY the headphone monitor.
+
+function _parseExternalRouting(): Map<DeckId, number> | null {
+	if (typeof window === 'undefined') return null;
+	const raw = new URLSearchParams(window.location.search).get('extroute');
+	if (raw === null || raw === '') return null;
+	const routing = new Map<DeckId, number>();
+	for (const part of raw.split(',')) {
+		const match = part.match(/^([1-4]):(\d{1,2})$/);
+		if (match === null) {
+			throw new Error(`extroute: bad segment '${part}' (want deck:usbLeft, e.g. 1:1,2:7)`);
+		}
+		const deck = Number(match[1]) as DeckId;
+		const usbLeft = Number(match[2]);
+		if (usbLeft < 1) throw new Error(`extroute: usbLeft must be >= 1 in '${part}'`);
+		if (routing.has(deck)) throw new Error(`extroute: deck ${deck} routed twice`);
+		routing.set(deck, usbLeft);
+	}
+	return routing;
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
@@ -817,7 +868,24 @@ function _ensureGraph(): AudioContext {
 	_ctx = new AudioContext();
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
-	_masterGain.connect(_ctx.destination);
+	const routing = _parseExternalRouting();
+	if (routing === null) {
+		_masterGain.connect(_ctx.destination);
+	} else {
+		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
+		const dest = _ctx.destination;
+		if (dest.maxChannelCount < highestUsbChannel) {
+			throw new Error(
+				`extroute needs ${highestUsbChannel} output channels but the current output device exposes ` +
+					`${dest.maxChannelCount} - select the multichannel interface as the system output device and reload`
+			);
+		}
+		dest.channelCount = dest.maxChannelCount;
+		dest.channelInterpretation = 'discrete';
+		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
+		_externalMerger.channelInterpretation = 'discrete';
+		_externalMerger.connect(dest);
+	}
 	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
 		const ch = mixerState.channels[deck];
@@ -854,9 +922,18 @@ function _ensureGraph(): AudioContext {
 		high.connect(cue);
 		cue.connect(headphones.cueSum);
 		high.connect(fader);
-		fader.connect(xf);
-		xf.connect(_masterGain);
-		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf };
+		const usbLeft = routing?.get(deck) ?? null;
+		let extsplit: ChannelSplitterNode | null = null;
+		if (usbLeft !== null && _externalMerger !== null) {
+			extsplit = _ctx.createChannelSplitter(2);
+			fader.connect(extsplit);
+			extsplit.connect(_externalMerger, 0, usbLeft - 1);
+			extsplit.connect(_externalMerger, 1, usbLeft);
+		} else {
+			fader.connect(xf);
+			xf.connect(_masterGain);
+		}
+		_rt[deck].nodes = { analyser, trim, low, mid, high, cue, fader, xf, extsplit };
 	}
 	return _ctx;
 }
@@ -1974,6 +2051,21 @@ export interface TransportMutationActivity {
 	controlActive: boolean;
 	pendingScheduleCount: number;
 	scheduleIntentCount: number;
+	/** Presentation clock lag: desired_revision !== presented_revision.
+	 * The control clock (`pendingScheduleCount`) drains off `ctx.currentTime`,
+	 * but the presentation clock only advances inside the rAF tick. When rAF
+	 * stops - a hidden tab, or a natural end that left nothing audible to
+	 * animate - the control clock reaches idle while presentation still lags.
+	 * Without this flag a seek takes the paused-cursor branch, which then
+	 * throws in setPausedTransportTimelineCursor and wedges the deck. */
+	presentationPending: boolean;
+}
+
+/** True while the rAF-driven presentation clock has not caught up to the last
+ * acknowledged schedule. Read this, never `st.transport_pending`, when gating a
+ * transport mutation: the state flag also folds in reanchor ramps. */
+function _presentationPending(rt: _DeckRuntime): boolean {
+	return rt.presentation.desired_revision !== rt.presentation.presented_revision;
 }
 
 export function transportNeedsScheduledMutation(
@@ -1982,7 +2074,8 @@ export function transportNeedsScheduledMutation(
 	for (const [name, value] of Object.entries({
 		playing: activity.playing,
 		audible: activity.audible,
-		controlActive: activity.controlActive
+		controlActive: activity.controlActive,
+		presentationPending: activity.presentationPending
 	})) {
 		if (typeof value !== 'boolean') {
 			throw new TypeError(`${name} must be boolean, got ${String(value)}`);
@@ -2000,6 +2093,7 @@ export function transportNeedsScheduledMutation(
 		activity.playing ||
 		activity.audible ||
 		activity.controlActive ||
+		activity.presentationPending ||
 		activity.pendingScheduleCount > 0 ||
 		activity.scheduleIntentCount > 0
 	);
@@ -2358,7 +2452,8 @@ async function _scheduleDeckSerial(
 		keyShiftSemitones: scheduledKeyShiftSemitones
 	});
 	st.transport_pending =
-		rt.presentation.presented_revision !== rt.presentation.desired_revision;
+		rt.presentation.presented_revision !== rt.presentation.desired_revision ||
+		rt.reanchorRampActive;
 	_commitPendingIfDue(deck);
 	_ensureRaf();
 	return scheduledInputSec;
@@ -2396,6 +2491,7 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 			playing: st.playing,
 			audible: st.audible,
 			controlActive: rt.controlActive,
+			presentationPending: _presentationPending(rt),
 			pendingScheduleCount: rt.pending.length,
 			scheduleIntentCount: rt.scheduleIntentCount
 		},
@@ -2683,7 +2779,7 @@ function _publishPresentedTransport(
 	const wasAudible = st.audible;
 	st.position_ms = observation.position_sec * 1000;
 	st.audible = observation.audible;
-	st.transport_pending = observation.transport_pending;
+	st.transport_pending = observation.transport_pending || rt.reanchorRampActive;
 	const presentedKeyShift = presentedKeyShiftSemitonesAt(
 		rt.presentation,
 		outputTimestamp.contextTime
@@ -2807,6 +2903,7 @@ function _clearLoadedTrackState(st: DeckState): void {
 	_rt[st.deck_id].slipAnchor = null;
 	_rt[st.deck_id].slipTempoBoundaries = [];
 	_rt[st.deck_id].keySyncBaselineSemitones = null;
+	_rt[st.deck_id].reanchorRampActive = false;
 	st.hot_cues = [];
 	st.anlz = null;
 	st.anlz_error = null;
@@ -2893,6 +2990,17 @@ interface _MasterSyncSchedule {
 interface _SyncOptions {
 	followerAnchorSec?: Partial<Record<DeckId, number>>;
 	masterSchedule?: _MasterSyncSchedule;
+	/**
+	 * Followers that were already playing and already beat-synced before
+	 * this call - a re-anchor of an ongoing lock, not a fresh join or the
+	 * first Beat Sync engage. Each caller below already restricts itself to
+	 * exactly that precondition (see seekSyncMaster, beatSyncMaxFollowers,
+	 * masterSwitchFollowers, syncChangeRequiresReschedule), so it passes the
+	 * same followers through here unchanged. Their recomputed
+	 * followerTempoRatio approaches its target through
+	 * `_scheduleReanchoredFollower` instead of stepping - see that function.
+	 */
+	reanchorDecks?: ReadonlySet<DeckId>;
 }
 
 /**
@@ -3004,6 +3112,94 @@ async function _scheduleFollowerBackwardBlend(
 	}, delayMs);
 
 	return scheduled;
+}
+
+/**
+ * Re-anchoring an already-playing, already-synced follower can recompute a
+ * different followerTempoRatio purely from grid noise near the new anchor
+ * (`_windowedIntervalBpm`'s window shifts by a few beats). Landing on it in
+ * one step turns that noise into an audible tempo jump. Position and phase
+ * still lock exactly at `syncAt` in this same call, unchanged from the
+ * non-ramped path - only the RATE eases toward its target afterward, via
+ * `planTempoRatioRamp`'s small steps scheduled on the real AudioContext
+ * clock (never a JS timer racing the audio graph).
+ *
+ * The first step is awaited so this resolves with the same phase-lock
+ * timing callers already depend on; the remaining steps continue on this
+ * deck's own serialized schedule queue (`_scheduleDeck`'s `rt.scheduleTail`)
+ * without being awaited here, so they cannot extend how long the shared
+ * `sync` command scope stays claimed - only this deck's own scope, exactly
+ * like an ordinary follow-up mutation on that deck.
+ *
+ * `rt.reanchorRampActive` holds `transport_pending` true for this deck across
+ * the whole ramp. Each step's own schedule revision becomes "presented" as
+ * soon as real playback reaches it - which can happen before the *next*
+ * step's own worklet round-trip finishes registering - so without this
+ * override a caller polling `!transport_pending` could catch that gap and
+ * read/measure position while the rate is still mid-transition.
+ */
+async function _scheduleReanchoredFollower(
+	deck: DeckId,
+	syncAt: number,
+	inputSec: number,
+	toTempoRatio: number,
+	masterTempoEnabled: boolean
+): Promise<number> {
+	const fromTempoRatio = _tempoAt(deck, syncAt);
+	const ramp = planTempoRatioRamp(fromTempoRatio, toTempoRatio);
+	const rt = _rt[deck];
+	rt.reanchorRampActive = true;
+	let scheduledInputSec: number;
+	try {
+		scheduledInputSec = await _scheduleDeck(
+			deck,
+			syncAt,
+			inputSec,
+			true,
+			ramp[0].tempoRatio,
+			masterTempoEnabled
+		);
+	} catch (error) {
+		rt.reanchorRampActive = false;
+		throw error;
+	}
+	void _continueTempoRamp(deck, syncAt, ramp.slice(1), masterTempoEnabled);
+	return scheduledInputSec;
+}
+
+/** Background tail of a re-anchor ramp. Position is deliberately left to
+ * `_projectPositionAt` (the same projection every other tempo-only mutation
+ * here uses) rather than re-stated from the plan, since only the rate is
+ * changing at each step. Always clears `rt.reanchorRampActive` on the way
+ * out, success or not - a superseded/abandoned ramp must not leave this
+ * deck's `transport_pending` stuck true forever. */
+async function _continueTempoRamp(
+	deck: DeckId,
+	syncAt: number,
+	remainingSteps: readonly TempoRampStep[],
+	masterTempoEnabled: boolean
+): Promise<void> {
+	const rt = _rt[deck];
+	try {
+		for (const step of remainingSteps) {
+			try {
+				await _scheduleDeck(
+					deck,
+					syncAt + step.offsetSec,
+					(effectiveWhen) => _projectPositionAt(deck, effectiveWhen),
+					true,
+					step.tempoRatio,
+					masterTempoEnabled
+				);
+			} catch {
+				// The deck moved on (reload/unload/a newer command) mid-ramp;
+				// abandon the rest rather than fight whatever superseded it.
+				return;
+			}
+		}
+	} finally {
+		rt.reanchorRampActive = false;
+	}
 }
 
 async function _synchronizeFollowers(
@@ -3152,25 +3348,35 @@ async function _synchronizeFollowers(
 		];
 		const scheduleTimes = commonSyncScheduleTimes(syncAt, schedules.length);
 		const outcomes = await Promise.allSettled(
-			schedules.map((item, index) =>
-				item.blendFromSec !== null
-					? _scheduleFollowerBackwardBlend(
-							item.deck,
-							scheduleTimes[index],
-							item.inputSec,
-							item.tempoRatio,
-							item.masterTempoEnabled,
-							item.blendFromSec
-						)
-					: _scheduleDeck(
-							item.deck,
-							scheduleTimes[index],
-							item.inputSec,
-							true,
-							item.tempoRatio,
-							item.masterTempoEnabled
-						)
-			)
+			schedules.map((item, index) => {
+				if (item.blendFromSec !== null) {
+					return _scheduleFollowerBackwardBlend(
+						item.deck,
+						scheduleTimes[index],
+						item.inputSec,
+						item.tempoRatio,
+						item.masterTempoEnabled,
+						item.blendFromSec
+					);
+				}
+				if (options.reanchorDecks?.has(item.deck) === true) {
+					return _scheduleReanchoredFollower(
+						item.deck,
+						scheduleTimes[index],
+						item.inputSec,
+						item.tempoRatio,
+						item.masterTempoEnabled
+					);
+				}
+				return _scheduleDeck(
+					item.deck,
+					scheduleTimes[index],
+					item.inputSec,
+					true,
+					item.tempoRatio,
+					item.masterTempoEnabled
+				);
+			})
 		);
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
@@ -3246,7 +3452,9 @@ class RbAudioEngine implements AudioEngine {
 			rt.loadToken += 1;
 			const processor = detachProcessorForDisposal(rt);
 			if (processor !== null) processors.push(processor);
-			if (rt.nodes !== null) nodes.push(...Object.values(rt.nodes));
+			if (rt.nodes !== null) {
+				nodes.push(...Object.values(rt.nodes).filter((node): node is AudioNode => node !== null));
+			}
 		}
 		_headphoneGeneration += 1;
 		_disposeHeadphoneGraph();
@@ -3260,6 +3468,7 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		_externalMerger = null;
 		_ctx = null;
 		_masterDeck = null;
 		for (const deck of DECK_IDS) {
@@ -3336,23 +3545,28 @@ class RbAudioEngine implements AudioEngine {
 			};
 			if (stemProbe.status === 'ready') {
 				// SPIKE-PERF: decode mix while stem files download.
+				// The bundle's own layout drives fetch AND decode: a roformer2
+				// bundle has no drums/bass/other to ask for.
+				const stemLayout = stemProbe.manifest.layout;
+				const layoutParts = STEM_LAYOUT_PART_NAMES[stemLayout];
 				const [decodedMix, encodedParts] = await Promise.all([
 					time('decodeMix', ctx.decodeAudioData(audioBytes)),
-					time('fetchStems', fetchStemAudioArrayBuffers(stable_id))
+					time('fetchStems', fetchStemAudioArrayBuffers(stable_id, stemLayout))
 				]);
 				buffer = decodedMix;
 				const decodedEntries = await time(
 					'decodeStems',
 					Promise.all(
-						DEMUCS_PARTS.map(
-							async (part) => [part, await ctx.decodeAudioData(encodedParts[part])] as const
+						layoutParts.map(
+							async (part) =>
+								[
+									part,
+									await ctx.decodeAudioData(encodedParts[part] as ArrayBuffer)
+								] as const
 						)
 					)
 				);
-				const stemBuffers = Object.fromEntries(decodedEntries) as Record<
-					DemucsStemPart,
-					AudioBuffer
-				> as StemBuffers;
+				const stemBuffers = Object.fromEntries(decodedEntries) as StemBuffers;
 				const created = await time(
 					'stemProcessorCreate',
 					AlignedStemDeckProcessor.create(ctx, stemBuffers, processorOptions)
@@ -3372,7 +3586,11 @@ class RbAudioEngine implements AudioEngine {
 				}
 				processor = created.processor;
 				candidateStemState = readyStemDeckState(
-					{ source: stemProbe.manifest.source, model: stemProbe.manifest.model },
+					{
+						source: stemProbe.manifest.source,
+						model: stemProbe.manifest.model,
+						layout: stemLayout
+					},
 					created.alignment
 				);
 			} else {
@@ -3517,6 +3735,7 @@ class RbAudioEngine implements AudioEngine {
 			playing: st.playing,
 			audible: st.audible,
 			controlActive: rt.controlActive,
+			presentationPending: _presentationPending(rt),
 			pendingScheduleCount: rt.pending.length,
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
@@ -3553,6 +3772,9 @@ class RbAudioEngine implements AudioEngine {
 			await _scheduleDeck(deck, when, startSec, true);
 			st.sync_error = null;
 		} else {
+			// This deck is joining from silence (guarded by the desiredActive
+			// check above) - no audible tempo to protect yet, so no
+			// reanchorDecks here; the initial lock applies immediately.
 			await _synchronizeFollowers(activeMaster, [deck]);
 		}
 	}
@@ -3606,6 +3828,7 @@ class RbAudioEngine implements AudioEngine {
 			playing: rt.desiredActive,
 			audible: st.audible,
 			controlActive: rt.controlActive,
+			presentationPending: _presentationPending(rt),
 			pendingScheduleCount: rt.pending.length,
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
@@ -3626,16 +3849,22 @@ class RbAudioEngine implements AudioEngine {
 				}))
 			});
 			if (syncPlan.kind === 'follower') {
+				// seekSyncMaster only returns this kind for a deck already
+				// playing and already beat-synced - a re-anchor, not a join.
 				await _synchronizeFollowers(syncPlan.master, [deck], {
-					followerAnchorSec: { [deck]: targetMs / 1000 }
+					followerAnchorSec: { [deck]: targetMs / 1000 },
+					reanchorDecks: new Set([deck])
 				});
 			} else if (syncPlan.kind === 'master-max') {
+				// beatSyncMaxFollowers only returns already playing,
+				// already beat-synced followers - same re-anchor contract.
 				await _synchronizeFollowers(deck, syncPlan.followers, {
 					masterSchedule: {
 						tempoRatio: st.pitch,
 						masterTempoEnabled: st.master_tempo_enabled,
 						positionSec: targetMs / 1000
-					}
+					},
+					reanchorDecks: new Set(syncPlan.followers)
 				});
 			} else {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
@@ -3705,11 +3934,14 @@ class RbAudioEngine implements AudioEngine {
 						)
 					: [];
 			if (followers.length > 0) {
+				// followers above is already filtered to playing +
+				// beat_sync_enabled decks - a re-anchor, not a fresh join.
 				await _synchronizeFollowers(deck, followers, {
 					masterSchedule: {
 						tempoRatio: ratio,
 						masterTempoEnabled: st.master_tempo_enabled
-					}
+					},
+					reanchorDecks: new Set(followers)
 				});
 			} else {
 				const when = _futureScheduleTime(deck);
@@ -3873,6 +4105,9 @@ class RbAudioEngine implements AudioEngine {
 			return Promise.resolve();
 		}
 		// Hard-reject impossible phase lock; never leave BEAT SYNC lit without a plan.
+		// This is the FIRST lock for this deck (beat_sync_enabled just flipped
+		// true above) - nothing audible was synced before, so no
+		// reanchorDecks; engaging Beat Sync applies immediately.
 		return _synchronizeFollowers(master, [deck]).catch((error: unknown) => {
 			st.beat_sync_enabled = false;
 			const bounds = _tempoBounds(deck);
@@ -4043,7 +4278,9 @@ class RbAudioEngine implements AudioEngine {
 		if (master === null) {
 			throw new Error('setSyncMode: reschedule invariant requires a selected master deck');
 		}
-		return _synchronizeFollowers(master, [deck]);
+		// syncChangeRequiresReschedule already required desiredActive and
+		// beat_sync_enabled - this deck was already locked, now re-anchoring.
+		return _synchronizeFollowers(master, [deck], { reanchorDecks: new Set([deck]) });
 	}
 
 	async setDeckMaster(deck: DeckId): Promise<void> {
@@ -4054,8 +4291,10 @@ class RbAudioEngine implements AudioEngine {
 			_assignMaster(deck);
 			return;
 		}
+		// masterSwitchFollowers only returns already playing, already
+		// beat-synced decks - re-anchoring them to the new master.
 		const followers = masterSwitchFollowers(deck, deckStates);
-		await _synchronizeFollowers(deck, followers);
+		await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
 		_assignMaster(deck);
 	}
 
@@ -4079,6 +4318,18 @@ class RbAudioEngine implements AudioEngine {
 			throw new TypeError(`stem must be vocal, instrumental, or drums; got ${String(stem)}`);
 		}
 		const { st, rt } = _requireLoaded(deck, `setStem${field === 'muted' ? 'Mute' : 'Solo'}`);
+		if (
+			st.stems.status === 'ready' &&
+			!st.stems.available_controls.includes(stem)
+		) {
+			// e.g. DRUMS on a roformer2 bundle: the signal is inside
+			// `instrumental`, so there is nothing to gain to zero. Refuse loudly
+			// rather than accept a control change that can never be heard.
+			throw new Error(
+				`deck ${deck} stem layout ${String(st.stems.layout)} has no ${stem} control; ` +
+					`available: ${st.stems.available_controls.join(', ')}`
+			);
+		}
 		if (st.stems.status !== 'ready' || !(rt.processor instanceof AlignedStemDeckProcessor)) {
 			throw new Error(
 				`deck ${deck} stems are ${st.stems.status}: ${st.stems.error ?? 'no aligned artifact'}`

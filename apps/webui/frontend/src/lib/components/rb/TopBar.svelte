@@ -18,11 +18,14 @@
 	import {
 		setAutoPlayEnabled,
 		setAutoPlayEnforceOrder,
+		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
+	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
+	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
@@ -44,13 +47,11 @@
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
 
-	const autoPlayTitle: string = $derived(
-		uiPrefs.auto_play_enabled
-			? uiPrefs.auto_play_enforce_order
-				? 'AutoPlay ON - last ~16s loads next playlist row (enforce order) onto a free/stopped deck'
-				: 'AutoPlay ON - last ~16s loads earliest unplayed key+-1 / Beat Sync BPM twin onto a free/stopped deck'
-			: 'AutoPlay OFF - no automatic next-track handoff'
-	);
+	const autoPlayTitle: string = $derived.by(() => {
+		const d = describeAutoPlayMode(uiPrefs);
+		if (d.mode === 'off') return `${d.short} - ${d.detail}`;
+		return `AutoPlay ON (${d.short}) - last ~16s loads onto a free/stopped deck. ${d.detail}`;
+	});
 
 	function _placeAutoPlayMenu(): void {
 		if (autoPlayWrapEl === undefined) return;
@@ -326,9 +327,20 @@
 					/>
 					<span>Enforce play order</span>
 				</label>
+				<label class="ap-row">
+					<input
+						type="checkbox"
+						checked={uiPrefs.auto_play_maximize_reach}
+						disabled={uiPrefs.auto_play_enforce_order}
+						onchange={(e) =>
+							setAutoPlayMaximizeReach((e.currentTarget as HTMLInputElement).checked)}
+					/>
+					<span>Maximize reach (avoid stranding)</span>
+				</label>
 				<p class="ap-hint">
-					Off (default): earliest unplayed playlist track with key +-1 and BPM inside
-					Beat Sync pitch range. On: next row after current.
+					Off enforce: key +-1 + Beat Sync BPM. Maximize reach (default on) prefers
+					fewer-outward twins so later tracks stay playable. Enforce order: next row
+					after current (ignores maximize reach).
 				</p>
 			</div>
 		{/if}
@@ -404,6 +416,11 @@
 		aria-valuemax={1}
 		aria-valuenow={mixerState.master}
 		tabindex="0"
+		use:wheelAdjust={{
+			step: WHEEL_STEP.fader,
+			get: () => mixerState.master,
+			set: _setMaster
+		}}
 		onpointerdown={handleMasterDown}
 		onpointermove={handleMasterMove}
 		onpointerup={handleMasterUp}
@@ -708,5 +725,52 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
+	 * amber pulse = permission prompt pending, green = mapped device up. */
+	.midi-label {
+		background: transparent;
+		border: none;
+		padding: 0;
+		font-family: var(--rb-font);
+		font-size: var(--rb-fs-label);
+		letter-spacing: 0.08em;
+		line-height: 1;
+		cursor: pointer;
+	}
+	.midi-label.st-grey {
+		color: var(--rb-text-dim);
+		opacity: 0.6;
+	}
+	.midi-label.st-grey:hover {
+		opacity: 1;
+	}
+	.midi-label.st-green {
+		color: var(--rb-green);
+		opacity: 1;
+	}
+	.midi-label.st-red {
+		color: var(--rb-red);
+		opacity: 1;
+	}
+	.midi-glyph {
+		margin-left: 3px;
+		font-size: 10px;
+		font-weight: 700;
+	}
+	.midi-label.st-amber {
+		color: var(--rb-orange);
+		opacity: 1;
+		animation: midi-pulse 1s ease-in-out infinite;
+	}
+	@keyframes midi-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
 	}
 </style>

@@ -53,5 +53,7 @@ See skill `reference.md` section "Scale to 100". Do not fan out past 5 until FLX
 | Cursor | `.cursorindexingignore` | Out of codebase index; still `@`-mention / Read |
 | Claude Code | `.claudeignore` | Out of Read/Glob/Grep; use Bash for a specific device |
 | Codex | `.codexignore` | Best-effort; Codex mainly respects `.gitignore` |
+| Gemini | `.geminiignore` | Out of Gemini index context |
+| Antigravity | `.antigravityignore` | Out of Antigravity index context |
 
 Do not put these paths in `.cursorignore` (hard block) or `.gitignore` (they stay in git). Ignore files must sit at the repo root, not under `.claude/` / `.agents/` / `.codex/`.

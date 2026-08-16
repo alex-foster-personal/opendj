@@ -12,6 +12,7 @@ Regression one-liners:
   - if confidence isn't clip(2.5 x max ratio in region, 1.0) then broken
   - if a silent mix frame doesn't yield ratio 0 (never a divide) then broken
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -28,9 +29,7 @@ _WORKER_PATH = (
 
 
 def _import_worker():
-    spec = importlib.util.spec_from_file_location(
-        "vocal_region_worker", _WORKER_PATH
-    )
+    spec = importlib.util.spec_from_file_location("vocal_region_worker", _WORKER_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -49,6 +48,7 @@ def test_import_is_torch_free() -> None:
 
 
 # ----- envelope_to_regions (verbatim SPIKE-B2 params) ----------------------------
+
 
 def _env(values: list[float], hop_s: float = 0.5) -> list[tuple[float, float]]:
     return [(i * hop_s, v) for i, v in enumerate(values)]
@@ -85,9 +85,12 @@ def test_super_merge_gap_runs_stay_apart() -> None:
 def test_short_regions_dropped() -> None:
     # a single 0.5 s hop above threshold is < 1.0 s min region
     values = [0.0, 0.2, 0.0, 0.0, 0.0, 0.0]
-    assert worker.envelope_to_regions(
-        _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
-    ) == []
+    assert (
+        worker.envelope_to_regions(
+            _env(values), on=worker.ON_RATIO, off=worker.OFF_RATIO
+        )
+        == []
+    )
 
 
 def test_open_region_closes_at_envelope_end() -> None:
@@ -99,6 +102,7 @@ def test_open_region_closes_at_envelope_end() -> None:
 
 
 # ----- ratio_envelope --------------------------------------------------------------
+
 
 def test_ratio_envelope_silent_mix_is_zero_not_divide() -> None:
     ratio = worker.ratio_envelope([0.5, 0.5], [0.0, 1.0], hop_s=0.5)
@@ -112,6 +116,7 @@ def test_ratio_envelope_length_mismatch_raises() -> None:
 
 # ----- region_confidence -------------------------------------------------------------
 
+
 def test_confidence_is_gain_times_max_ratio_clipped() -> None:
     env = _env([0.2, 0.3, 0.1, 0.0])
     assert worker.region_confidence(env, 0.0, 1.5, 0.5) == pytest.approx(0.75)
@@ -123,7 +128,9 @@ def test_confidence_is_gain_times_max_ratio_clipped() -> None:
 def test_cpu_fallback_only_allows_known_accelerator_errors() -> None:
     """[if] a non-device error occurs on GPU [then] it must not retry CPU."""
     assert worker._is_accelerator_failure("cuda", RuntimeError("CUDA out of memory"))
-    assert worker._is_accelerator_failure("mps", RuntimeError("output channels > 65536"))
+    assert worker._is_accelerator_failure(
+        "mps", RuntimeError("output channels > 65536")
+    )
     assert not worker._is_accelerator_failure("cuda", ValueError("bad audio header"))
 
 
@@ -135,6 +142,7 @@ def test_confidence_samples_at_least_first_hop() -> None:
 
 # ----- regions_payload ----------------------------------------------------------------
 
+
 def test_regions_payload_coverage_and_fps() -> None:
     values = [0.2] * 8 + [0.0] * 8  # vocal until the exit frame at t=4.0
     payload = worker.regions_payload(_env(values), duration_s=8.0)
@@ -145,8 +153,25 @@ def test_regions_payload_coverage_and_fps() -> None:
     assert region["end_s"] == 4.0
     assert region["confidence"] == pytest.approx(0.5)
     assert payload["coverage_pct"] == pytest.approx(50.0, abs=0.1)
+    assert payload["thresholds_adapted"] is False
+    assert payload["on_ratio"] == worker.ON_RATIO
+    assert payload["off_ratio"] == worker.OFF_RATIO
 
 
 def test_regions_payload_rejects_nonpositive_duration() -> None:
     with pytest.raises(ValueError, match="duration"):
         worker.regions_payload(_env([0.0]), duration_s=0.0)
+
+
+def test_regions_payload_adapts_when_ratio_never_exits() -> None:
+    """[if] every frame stays >= OFF_RATIO [then] lift thresholds so the
+    whole song is not painted (demucs leakage / Nobody-class tracks)."""
+    # Floor at 0.12: never drops below OFF 0.05; mid-track peaks to 0.35.
+    values = [0.12] * 10 + [0.35] * 20 + [0.12] * 10
+    payload = worker.regions_payload(_env(values), duration_s=20.0)
+    assert payload["thresholds_adapted"] is True
+    assert payload["on_ratio"] > worker.ON_RATIO
+    assert payload["coverage_pct"] < 90.0
+    assert len(payload["regions"]) >= 1
+    # Peak band should survive as a region.
+    assert any(r["start_s"] >= 4.0 for r in payload["regions"])

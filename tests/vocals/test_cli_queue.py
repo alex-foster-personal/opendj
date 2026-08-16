@@ -11,6 +11,7 @@ Regression one-liners:
   - if a streaming/pathless/dead-path track isn't missing_file then broken
   - if the queue isn't (most on-disk playlist members desc, length asc) then broken
 """
+
 from __future__ import annotations
 
 import os
@@ -47,6 +48,7 @@ _PVDI_FIXED_HEADER = bytes.fromhex("0000040056220001")
 
 # ----- synthetic fixtures ---------------------------------------------------------
 
+
 def _synthetic_2ex(envelope: bytes) -> bytes:
     """Minimal PMAI container with one PVDI section (B1 layout; mirrors
     tests/webui/test_rb_vendor_units.py)."""
@@ -69,8 +71,11 @@ def _empty_2ex() -> bytes:
 
 def _worker_result() -> dict[str, Any]:
     return {
-        "schema": vcache.VOCAL_CACHE_SCHEMA, "source": "demucs-htdemucs", "fps": 2.0,
-        "duration_s": 100.0, "coverage_pct": 50.0,
+        "schema": vcache.VOCAL_CACHE_SCHEMA,
+        "source": "demucs-htdemucs",
+        "fps": 2.0,
+        "duration_s": 100.0,
+        "coverage_pct": 50.0,
         "regions": [{"start_s": 0.0, "end_s": 50.0, "confidence": 0.8}],
         "params": {},
     }
@@ -166,13 +171,12 @@ def data_dir(tmp_path: Path) -> Path:
 
     # valid cache entry for cachd
     audio_path = media / "cachd.mp3"
-    vcache.write_entry(
-        vcache.cache_path(data, "cachd"), _worker_result(), audio_path
-    )
+    vcache.write_entry(vcache.cache_path(data, "cachd"), _worker_result(), audio_path)
     return data
 
 
 # ----- hermetic tests ----------------------------------------------------------------
+
 
 def test_classification_and_counts_sum(data_dir: Path) -> None:
     ctx = Ctx(data_dir=data_dir)
@@ -199,8 +203,7 @@ def test_queue_orders_biggest_ondisk_playlist_then_shortest(data_dir: Path) -> N
     assert rank["todoB"] == (1, "small")
     todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
     assert [t.stable_id for t in todo] == ["todoC", "todoA", "todoB", "todoD"], (
-        "expected big-playlist members (shortest first), then small, then "
-        "playlist-less"
+        "expected big-playlist members (shortest first), then small, then playlist-less"
     )
 
 
@@ -224,11 +227,29 @@ def test_pvdi_present_probe(data_dir: Path, tmp_path: Path) -> None:
 
 # ----- gate + race guards ---------------------------------------------------------------
 
+
 def test_trickle_rejects_dry_run_plus_live() -> None:
     """[if] --dry-run and --live both passed [then] argparse SystemExit."""
     from apps.vocals.cli import build_parser
+
     with pytest.raises(SystemExit):
         build_parser().parse_args(["trickle", "--dry-run", "--live"])
+
+
+def test_trickle_requires_dry_run_or_live() -> None:
+    """[if] neither --dry-run nor --live [then] argparse SystemExit."""
+    from apps.vocals.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["trickle"])
+
+
+def test_from_stems_requires_dry_run_or_live() -> None:
+    """[if] neither --dry-run nor --live [then] argparse SystemExit."""
+    from apps.vocals.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["from-stems"])
 
 
 def test_process_one_refuses_audio_changed_mid_analysis(
@@ -237,6 +258,7 @@ def test_process_one_refuses_audio_changed_mid_analysis(
     """[if] audio mtime changes during a worker run [then] RuntimeError,
     and NO cache entry lands (poisoned regions must never validate)."""
     from apps.vocals import cli as vcli
+
     ctx = Ctx(data_dir=data_dir)
     tracks = load_tracks(ctx, None)
     classify(ctx, tracks)
@@ -259,6 +281,7 @@ def test_process_one_records_pre_run_mtime(
     """The cached audio_mtime is the PRE-worker stat, so a post-write file
     replacement invalidates the entry on next load."""
     from apps.vocals import cli as vcli
+
     ctx = Ctx(data_dir=data_dir)
     tracks = load_tracks(ctx, None)
     classify(ctx, tracks)
@@ -276,6 +299,7 @@ def test_run_worker_deadline_raises_and_never_reads_stdin(
 ) -> None:
     """[if] worker exceeds deadline [then] CLI fails and subprocess has DEVNULL stdin."""
     from apps.vocals import cli as vcli
+
     audio = tmp_path / "track.mp3"
     audio.write_bytes(b"audio")
     seen: dict[str, Any] = {}
@@ -315,7 +339,8 @@ def test_run_worker_deadline_raises_and_never_reads_stdin(
 
 
 def test_track_claim_lease_and_old_owner_cannot_release_successor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An expired prior owner cannot clear the successor's immutable token."""
     from apps.vocals import cli as vcli
@@ -378,7 +403,10 @@ def test_windows_taskkill_failure_retains_nonexpiring_claim(
         if taskkill_unavailable:
             raise FileNotFoundError("taskkill unavailable")
         return subprocess.CompletedProcess(
-            args=["taskkill"], returncode=1, stdout="", stderr="access denied",
+            args=["taskkill"],
+            returncode=1,
+            stdout="",
+            stderr="access denied",
         )
 
     monkeypatch.setattr(vcli, "_WINDOWS", True)
@@ -403,7 +431,8 @@ def test_windows_taskkill_failure_retains_nonexpiring_claim(
 
 
 def test_posix_escalation_failure_retains_nonexpiring_claim(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from apps.vocals import cli as vcli
 
@@ -442,7 +471,8 @@ def test_posix_escalation_failure_retains_nonexpiring_claim(
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process-group regression")
 def test_worker_timeout_reaps_descendant_before_claim_release(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A timed-out worker's TERM-resistant child is gone before unlock."""
     from apps.vocals import cli as vcli
@@ -493,10 +523,12 @@ def test_pioneer_path_cannot_escape_share_root(
 
 # ----- live-data smoke (skips cleanly without local library data) ---------------------
 
+
 def _real_data_dir() -> Optional[Path]:
     override = os.environ.get("VOCALS_DATA_DIR")
     candidates = (
-        [Path(override)] if override
+        [Path(override)]
+        if override
         else [DATA_DIR, Path("/Users/dev/Music/music-dj-tools/data")]
     )
     for candidate in candidates:

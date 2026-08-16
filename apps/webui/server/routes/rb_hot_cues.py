@@ -122,8 +122,17 @@ def list_hot_cue_slots(
     stable_id: str,
     _backend: StateBackend = Depends(get_write_state),
 ) -> list[HotCueSlotOut]:
-    content = rb_vendor.resolve_content(stable_id)
-    return [HotCueSlotOut(**slot) for slot in rb_vendor.fetch_hot_cue_slots(content.vendor_id)]
+    try:
+        content = rb_vendor.resolve_content(stable_id)
+        slots = rb_vendor.fetch_hot_cue_slots(content.vendor_id)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+        # Locally imported track (no rekordbox mapping): eight empty slots so
+        # the deck-load path gets a non-null list instead of a 404.
+        slots = rb_vendor.empty_hot_cue_slots()
+    return [HotCueSlotOut(**slot) for slot in slots]
 
 
 @router.put(

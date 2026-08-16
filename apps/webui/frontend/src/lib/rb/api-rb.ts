@@ -130,10 +130,12 @@ export type AnlzWithVocals = AnlzData & { vocals: Vocals };
 
 const _vocalsMemo = new WeakMap<AnlzData, Vocals>();
 
-function _validateVocals(raw: unknown): Vocals {
+/** Validate a wire ``vocals`` object (listing rows or /anlz). Throws on
+ * absent/malformed: that is a contract breach, never invent regions. */
+export function parseVocals(raw: unknown): Vocals {
 	if (typeof raw !== 'object' || raw === null) {
 		throw new Error(
-			'anlz payload has no valid "vocals" field - backend contract point 5 not met'
+			'payload has no valid "vocals" field - backend contract point 5 not met'
 		);
 	}
 	const v = raw as { status?: unknown; fps?: unknown; regions?: unknown };
@@ -172,7 +174,7 @@ function _validateVocals(raw: unknown): Vocals {
 export function vocalsOf(anlz: AnlzData): Vocals {
 	const memo = _vocalsMemo.get(anlz);
 	if (memo !== undefined) return memo;
-	const vocals = _validateVocals((anlz as AnlzData & { vocals?: unknown }).vocals);
+	const vocals = parseVocals((anlz as AnlzData & { vocals?: unknown }).vocals);
 	_vocalsMemo.set(anlz, vocals);
 	return vocals;
 }
@@ -242,6 +244,47 @@ export function decodePreviewStrip(
 // not TrackOut.notes).
 
 /** One full track row from the hydrated playlist detail (contract 4). */
+/** Browser Stems column: V=vocals, I=bass+other, D=drums. From listing hydrate. */
+export type StemSummary =
+	| { status: 'none' }
+	| { status: 'invalid'; error?: string }
+	| {
+			status: 'ready';
+			model: string | null;
+			preset: string | null;
+			overlap: number | null;
+			shifts: number | null;
+			format: string;
+			total_bytes: number;
+			groups: Record<string, { bytes: number; parts: string[] }>;
+	  };
+
+export function parseStemSummary(raw: unknown): StemSummary {
+	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+		throw new Error('stems summary must be an object');
+	}
+	const s = raw as { status?: unknown };
+	if (s.status === 'none') return { status: 'none' };
+	if (s.status === 'invalid') {
+		const err = (raw as { error?: unknown }).error;
+		return {
+			status: 'invalid',
+			error: typeof err === 'string' ? err : undefined
+		};
+	}
+	if (s.status !== 'ready') {
+		throw new Error(`stems summary: unknown status ${JSON.stringify(s.status)}`);
+	}
+	const r = raw as Record<string, unknown>;
+	if (typeof r.format !== 'string' || typeof r.total_bytes !== 'number') {
+		throw new Error('stems summary ready row missing format/total_bytes');
+	}
+	if (typeof r.groups !== 'object' || r.groups === null) {
+		throw new Error('stems summary ready row missing groups');
+	}
+	return raw as StemSummary;
+}
+
 export interface PlaylistTrackRowWire {
 	stable_id: string;
 	title: string | null;
@@ -259,6 +302,10 @@ export interface PlaylistTrackRowWire {
 	is_streaming: boolean;
 	quality: TrackQuality;
 	play_count: number;
+	/** Same four-status vocals as /anlz - drives PreviewStrip blue bars. */
+	vocals: Vocals;
+	/** Demucs bundle summary for the Stems column (V/I/D). */
+	stems: StemSummary;
 }
 
 export interface PlaylistDetailHydrated extends PlaylistDetail {
@@ -338,6 +385,8 @@ export type TrackListItemWire = Track & {
 	file_exists: boolean;
 	quality: TrackQuality;
 	play_count: number;
+	vocals: Vocals;
+	stems: StemSummary;
 };
 
 export interface TracksPageHydrated {
@@ -521,15 +570,30 @@ export async function fetchAudioArrayBuffer(stable_id: string): Promise<ArrayBuf
 export const DEMUCS_STEM_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
 export type DemucsStemPart = (typeof DEMUCS_STEM_PARTS)[number];
 
+/** Part names across every layout. `instrumental` is RoFormer's single
+ * not-vocals part, which already contains drums and bass. */
+export const ALL_STEM_PARTS = ['vocals', 'drums', 'bass', 'other', 'instrumental'] as const;
+export type StemPartName = (typeof ALL_STEM_PARTS)[number];
+
+export const STEM_LAYOUT_PART_NAMES = {
+	demucs4: ['vocals', 'drums', 'bass', 'other'],
+	roformer2: ['vocals', 'instrumental']
+} as const satisfies Record<string, readonly StemPartName[]>;
+
+export type StemLayoutName = keyof typeof STEM_LAYOUT_PART_NAMES;
+
+const _STEM_MEDIA_TYPES = ['audio/wav', 'audio/flac', 'audio/ogg', 'audio/mpeg'] as const;
+
 export interface StemArtifactManifest {
 	schema: 1;
 	stable_id: string;
-	source: 'demucs';
+	source: 'demucs' | 'roformer';
 	model: string;
+	layout: StemLayoutName;
 	sample_rate_hz: number;
 	frame_count: number;
 	channel_count: number;
-	parts: Record<DemucsStemPart, { media_type: 'audio/wav' | 'audio/flac' }>;
+	parts: Partial<Record<StemPartName, { media_type: (typeof _STEM_MEDIA_TYPES)[number] }>>;
 }
 
 export type StemArtifactProbe =
@@ -545,8 +609,14 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 	if (manifest.stable_id !== stableId) {
 		throw new Error(`stem manifest stable_id mismatch: expected ${stableId}, got ${String(manifest.stable_id)}`);
 	}
-	if (manifest.source !== 'demucs') {
-		throw new Error(`stem manifest source must be demucs, got ${String(manifest.source)}`);
+	if (manifest.source !== 'demucs' && manifest.source !== 'roformer') {
+		throw new Error(`stem manifest source must be demucs or roformer, got ${String(manifest.source)}`);
+	}
+	// Layout is REQUIRED: the part set is read from it, never guessed from the
+	// keys, so a manifest that forgot to declare it is rejected rather than
+	// silently treated as the 4-part default.
+	if (manifest.layout !== 'demucs4' && manifest.layout !== 'roformer2') {
+		throw new Error(`stem manifest layout must be demucs4 or roformer2, got ${String(manifest.layout)}`);
 	}
 	if (typeof manifest.model !== 'string' || manifest.model.trim() === '') {
 		throw new Error('stem manifest model must be a non-empty string');
@@ -561,17 +631,21 @@ function _validateStemManifest(raw: unknown, stableId: string): StemArtifactMani
 		throw new Error('stem manifest parts must be an object');
 	}
 	const partKeys = Object.keys(manifest.parts).sort();
-	const expectedPartKeys = [...DEMUCS_STEM_PARTS].sort();
+	const expectedPartKeys = [...STEM_LAYOUT_PART_NAMES[manifest.layout]].sort();
 	if (
 		partKeys.length !== expectedPartKeys.length ||
 		partKeys.some((key, index) => key !== expectedPartKeys[index])
 	) {
-		throw new Error(`stem manifest parts must contain exactly ${expectedPartKeys.join(', ')}`);
+		throw new Error(
+			`stem manifest parts must contain exactly ${expectedPartKeys.join(', ')} for ${manifest.layout}`
+		);
 	}
-	for (const part of DEMUCS_STEM_PARTS) {
+	for (const part of expectedPartKeys) {
 		const media = manifest.parts[part]?.media_type;
-		if (media !== 'audio/wav' && media !== 'audio/flac') {
-			throw new Error(`stem manifest ${part} media_type must be audio/wav or audio/flac`);
+		if (!(_STEM_MEDIA_TYPES as readonly string[]).includes(media as string)) {
+			throw new Error(
+				`stem manifest ${part} media_type must be one of ${_STEM_MEDIA_TYPES.join(', ')}`
+			);
 		}
 	}
 	return manifest as StemArtifactManifest;
@@ -593,24 +667,28 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 	}
 }
 
-export function stemAudioUrl(stableId: string, part: DemucsStemPart): string {
+export function stemAudioUrl(stableId: string, part: StemPartName): string {
 	return (
 		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/stems/` +
 		encodeURIComponent(part)
 	);
 }
 
+/** Fetch exactly the parts THIS layout declares. Fetching the fixed four
+ * against a 2-part bundle would 404 on drums/bass/other and fail a load that
+ * is actually fine. */
 export async function fetchStemAudioArrayBuffers(
-	stableId: string
-): Promise<Record<DemucsStemPart, ArrayBuffer>> {
+	stableId: string,
+	layout: StemLayoutName = 'demucs4'
+): Promise<Partial<Record<StemPartName, ArrayBuffer>>> {
 	const entries = await Promise.all(
-		DEMUCS_STEM_PARTS.map(async (part) => {
+		STEM_LAYOUT_PART_NAMES[layout].map(async (part) => {
 			const response = await fetch(stemAudioUrl(stableId, part));
 			if (!response.ok) await _throwRbApiError(response);
 			return [part, await response.arrayBuffer()] as const;
 		})
 	);
-	return Object.fromEntries(entries) as Record<DemucsStemPart, ArrayBuffer>;
+	return Object.fromEntries(entries) as Partial<Record<StemPartName, ArrayBuffer>>;
 }
 
 // --------------------------------------------- voice probe (text-command-entry)

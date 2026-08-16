@@ -35,21 +35,68 @@ import stat
 import struct
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Annotated, Literal
+from typing import Annotated, Any, Iterable, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from apps.shared.paths import STATE_DIR
 
 STEM_PARTS: tuple[str, str, str, str] = ("vocals", "drums", "bass", "other")
 """The complete standard Demucs 4-part output, in API presentation order."""
 
-StemPart = Literal["vocals", "drums", "bass", "other"]
+ROFORMER_PARTS: tuple[str, str] = ("vocals", "instrumental")
+"""Mel-Band RoFormer's 2-part output, in API presentation order.
+
+This is a DIFFERENT SPLIT, not a subset of the Demucs four: ``instrumental``
+is everything that is not vocals, so it already contains the drums and bass
+that Demucs would have separated. A deck driven by this layout can therefore
+mute/solo VOCAL and INSTRUMENTAL truthfully, and CANNOT offer DRUMS at all --
+there is no drums signal to gain to zero. The DRUMS control must render inert
+for these bundles rather than silently doing nothing.
+"""
+
+STEM_LAYOUTS: dict[str, tuple[str, ...]] = {
+    "demucs4": STEM_PARTS,
+    "roformer2": ROFORMER_PARTS,
+}
+
+StemPart = Literal["vocals", "drums", "bass", "other", "instrumental"]
 _STABLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
-_STEM_SUFFIXES = {".wav", ".flac"}
+_MEDIA_TYPES: dict[str, str] = {
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".mp3": "audio/mpeg",
+}
+_STEM_SUFFIXES = set(_MEDIA_TYPES)
 
 DEFAULT_STEMS_DIR = STATE_DIR / "stems"
+ROFORMER_STEMS_DIR = STATE_DIR / "stems-roformer-spike"
+"""Where the RoFormer farm lands its 2-part bundles.
+
+Kept as a SEPARATE root rather than merged into ``stems/`` because the two
+stores are produced by different models at different times and a stable_id can
+legitimately have a bundle in both. Lookup order (see ``stem_roots``) decides
+which one a deck gets, and keeping them apart means re-running either farm
+never overwrites the other's output.
+"""
+
+
+def stem_roots(primary: Path | None = None) -> tuple[Path, ...]:
+    """Stem stores to search, in precedence order.
+
+    Demucs 4-part first: it drives more controls (DRUMS included), so where a
+    track has both, the richer bundle wins.
+    """
+    first = Path(primary) if primary is not None else DEFAULT_STEMS_DIR
+    return (first, ROFORMER_STEMS_DIR) if first != ROFORMER_STEMS_DIR else (first,)
 
 
 def stems_accept_v2() -> bool:
@@ -113,6 +160,8 @@ class StemManifest(BaseModel):
     model: DemucsModel
     source: StemSourceProvenance
     files: dict[StemPart, Annotated[str, Field(min_length=1, max_length=512)]]
+    # Defaulted so every already-written v1 manifest on disk stays valid.
+    layout: Literal["demucs4", "roformer2"] = "demucs4"
 
     @field_validator("stable_id")
     @classmethod
@@ -120,16 +169,14 @@ class StemManifest(BaseModel):
         validate_stable_id(value)
         return value
 
-    @field_validator("files")
-    @classmethod
-    def require_exact_standard_parts(
-        cls, value: dict[StemPart, str]
-    ) -> dict[StemPart, str]:
-        if set(value) != set(STEM_PARTS):
-            raise ValueError(f"files must contain exactly {STEM_PARTS!r}")
-        if len(set(value.values())) != len(STEM_PARTS):
-            raise ValueError("each standard stem part must declare a distinct file")
-        return value
+    @model_validator(mode="after")
+    def require_exact_layout_parts(self) -> "StemManifest":
+        expected = STEM_LAYOUTS[self.layout]
+        if set(self.files) != set(expected):
+            raise ValueError(f"files must contain exactly {expected!r} for {self.layout}")
+        if len(set(self.files.values())) != len(expected):
+            raise ValueError("each stem part must declare a distinct file")
+        return self
 
 
 @dataclass(frozen=True)
@@ -149,6 +196,12 @@ class StemBundle:
     files: dict[StemPart, Path]
     alignment: WavMetadata
     media_type: str = "audio/wav"
+    layout: str = "demucs4"
+
+    @property
+    def parts(self) -> tuple[str, ...]:
+        """The parts this bundle actually has -- NOT a fixed four."""
+        return STEM_LAYOUTS[self.layout]
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +220,26 @@ def validate_stable_id(stable_id: str) -> None:
 def load_stem_bundle(
     stable_id: str, *, stems_dir: Path = DEFAULT_STEMS_DIR
 ) -> StemBundle:
-    """Load one complete, aligned stem bundle (v1 WAV, or v2 FLAC when toggled)."""
+    """Load one complete, aligned bundle from the first root that has it.
+
+    Roots are tried in ``stem_roots`` order and the FIRST directory that exists
+    wins outright -- a bundle that exists but fails validation raises rather
+    than quietly falling through to a lesser store, so a corrupt Demucs bundle
+    surfaces as an error instead of silently degrading the deck to 2 parts.
+    """
     validate_stable_id(stable_id)
-    root = Path(stems_dir).resolve()
+    roots = stem_roots(stems_dir)
+    for root in roots:
+        candidate = root.resolve() / stable_id
+        if candidate.is_dir() and not candidate.is_symlink():
+            return _load_from_root(stable_id, root.resolve())
+    raise StemBundleNotFoundError(
+        f"no stem bundle exists for {stable_id!r} in any of "
+        f"{', '.join(str(r) for r in roots)}"
+    )
+
+
+def _load_from_root(stable_id: str, root: Path) -> StemBundle:
     bundle_dir = root / stable_id
     if not bundle_dir.is_dir() or bundle_dir.is_symlink():
         raise StemBundleNotFoundError(f"no stem bundle exists for {stable_id!r}")
@@ -191,6 +261,8 @@ def load_stem_bundle(
                 "manifest.json is stem schema v2 (farm FLAC); set MDT_STEMS_ACCEPT_V2=1 to play"
             )
         return _load_v2_bundle(stable_id, resolved_bundle, raw)
+    if schema == 3:
+        return _load_v3_bundle(stable_id, resolved_bundle, raw)
     if schema != 1:
         raise StemArtifactError(f"unsupported stem schema_version {schema!r}")
     return _load_v1_bundle(stable_id, resolved_bundle, raw)
@@ -303,6 +375,99 @@ def _load_v2_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
         ) from exc
     return StemBundle(
         manifest=manifest, files=files, alignment=alignment, media_type="audio/flac"
+    )
+
+
+def _load_v3_bundle(stable_id: str, bundle_dir: Path, raw: dict) -> StemBundle:
+    """Schema v3: an explicit ``layout`` and a matching part set, any codec.
+
+    v1 and v2 both hard-code the Demucs four. v3 exists so a bundle can DECLARE
+    which split it is, which is the whole point for RoFormer: two parts, one of
+    them named ``instrumental``, and no drums signal in the box at all.
+
+    Alignment comes from the manifest's ``audio`` block rather than being read
+    out of the files, because MP3 has no cheap frame-exact header count. The
+    generator is what measures it (ffprobe), so a wrong number here is a
+    generator bug and shows up as a decode mismatch in the deck, not as a
+    silently misaligned mix.
+    """
+    if raw.get("stable_id") != stable_id:
+        raise StemArtifactError(
+            f"manifest stable_id {raw.get('stable_id')!r} does not match requested {stable_id!r}"
+        )
+    layout = raw.get("layout")
+    if layout not in STEM_LAYOUTS:
+        raise StemArtifactError(
+            f"v3 manifest layout must be one of {sorted(STEM_LAYOUTS)}; got {layout!r}"
+        )
+    parts = STEM_LAYOUTS[layout]
+
+    model_obj = raw.get("model")
+    if not isinstance(model_obj, dict) or not isinstance(model_obj.get("name"), str):
+        raise StemArtifactError("v3 manifest model.name must be a string")
+    source = raw.get("source")
+    if not isinstance(source, dict):
+        raise StemArtifactError("v3 manifest source must be an object")
+    files_raw = raw.get("files")
+    if not isinstance(files_raw, dict) or set(files_raw) != set(parts):
+        raise StemArtifactError(f"v3 files must contain exactly {parts!r} for {layout}")
+
+    audio = raw.get("audio")
+    if not isinstance(audio, dict):
+        raise StemArtifactError("v3 manifest audio must be an object")
+    try:
+        alignment = WavMetadata(
+            sample_rate=int(audio["sample_rate"]),
+            frame_count=int(audio["frame_count"]),
+            channels=int(audio["channels"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise StemArtifactError(f"v3 manifest audio metadata incomplete: {exc}") from exc
+    if alignment.sample_rate <= 0 or alignment.frame_count <= 0 or alignment.channels <= 0:
+        raise StemArtifactError("v3 manifest audio metadata must be positive")
+
+    files: dict[StemPart, Path] = {}
+    media_types: set[str] = set()
+    for part in parts:
+        declared = files_raw[part]
+        if not isinstance(declared, str):
+            raise StemArtifactError(f"v3 files.{part} must be a string path")
+        file_path = _resolve_stem_file(bundle_dir, declared, part)
+        files[part] = file_path  # type: ignore[index]
+        media_types.add(_MEDIA_TYPES[file_path.suffix.lower()])
+    if len(media_types) != 1:
+        raise StemArtifactError(
+            f"v3 bundle mixes codecs {sorted(media_types)}; every part must share one"
+        )
+
+    try:
+        manifest = StemManifest.model_validate(
+            {
+                "schema_version": 1,
+                "stable_id": stable_id,
+                "layout": layout,
+                "model": {
+                    "name": model_obj["name"].strip(),
+                    "version": str(model_obj.get("version") or "unknown").strip()
+                    or "unknown",
+                },
+                "source": {
+                    "path": str(source.get("path") or "unknown"),
+                    "sha256": str(source.get("sha256") or ("0" * 64)),
+                },
+                "files": {part: files[part].name for part in parts},  # type: ignore[index]
+            }
+        )
+    except ValidationError as exc:
+        raise StemArtifactError(
+            f"v3 manifest could not project to client contract: {exc}"
+        ) from exc
+    return StemBundle(
+        manifest=manifest,
+        files=files,
+        alignment=alignment,
+        media_type=media_types.pop(),
+        layout=layout,
     )
 
 
@@ -427,8 +592,110 @@ def _parse_riff_wav_chunks(source, *, file_size: int, file_name: str) -> WavMeta
     )
 
 
+# ---------------------------------------------------------------------------
+# Listing summaries (browser "Stems" column)
+# ---------------------------------------------------------------------------
+#
+# Deliberately NOT built on load_stem_bundle. That function is the playback
+# gate: it validates every part, aligns geometry, and raises on anything it
+# cannot vouch for -- correct before a deck sums four branches, far too strict
+# and far too slow for a badge on 200 listing rows, where one malformed bundle
+# must not blank the column for the whole page. This reads the manifest and
+# stats the files, nothing more.
+
+_STEM_GROUPS: dict[str, tuple[str, ...]] = {
+    "V": ("vocals",),
+    "D": ("drums",),
+    # Everything that is not vocals or drums, under either layout. RoFormer's
+    # single `instrumental` part and Demucs's bass+other both land here, which
+    # is what makes one column readable across two different splits.
+    "I": ("bass", "other", "instrumental"),
+}
+
+
+def summarize_stem_bundle(
+    stable_id: str, *, stems_dir: Path = DEFAULT_STEMS_DIR
+) -> dict[str, Any]:
+    """A cheap listing badge for one bundle: ``{"status": "none"}`` or ready.
+
+    Never raises for a bad bundle -- an unreadable or malformed manifest is
+    reported as ``none``, the same as absent, because the listing's job is to
+    say "there is nothing playable here", not to diagnose why.
+    """
+    try:
+        validate_stable_id(stable_id)
+    except StemArtifactError:
+        return {"status": "none"}
+
+    for root in stem_roots(stems_dir):
+        bundle_dir = Path(root) / stable_id
+        manifest_path = bundle_dir / "manifest.json"
+        if not manifest_path.is_file():
+            continue
+        try:
+            raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+            files = raw["files"]
+            if not isinstance(files, dict):
+                raise ValueError("files must be an object")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, ValueError) as exc:
+            # "invalid" is NOT "none": a bundle whose manifest is corrupt is a
+            # thing to go and fix, and the column says so rather than showing
+            # the same blank as a track that was simply never separated.
+            return {"status": "invalid", "error": f"{type(exc).__name__}: {exc}"}
+
+        groups: dict[str, dict[str, Any]] = {}
+        total = 0
+        suffixes: set[str] = set()
+        for label, candidates in _STEM_GROUPS.items():
+            group_bytes = 0
+            present: list[str] = []
+            for part in candidates:
+                name = files.get(part)
+                if not isinstance(name, str):
+                    continue
+                path = bundle_dir / name
+                try:
+                    group_bytes += path.stat().st_size
+                except OSError:
+                    continue
+                present.append(part)
+                suffixes.add(path.suffix.lower().lstrip("."))
+            # `parts` names WHICH stems back this group, so a 2-part RoFormer
+            # "I" (instrumental) is distinguishable from a Demucs "I"
+            # (bass+other) in the UI without guessing from the byte count.
+            groups[label] = {"bytes": group_bytes, "parts": present}
+            total += group_bytes
+
+        model = raw.get("model") if isinstance(raw.get("model"), dict) else {}
+        preset = raw.get("preset") if isinstance(raw.get("preset"), dict) else {}
+        return {
+            "status": "ready",
+            "model": model.get("name"),
+            "preset": preset.get("tag"),
+            "overlap": preset.get("overlap"),
+            "shifts": preset.get("shifts"),
+            "format": next(iter(sorted(suffixes)), ""),
+            "groups": groups,
+            "total_bytes": total,
+        }
+    return {"status": "none"}
+
+
+def bulk_stem_summaries(
+    stable_ids: Iterable[str], *, stems_dir: Path = DEFAULT_STEMS_DIR
+) -> dict[str, dict[str, Any]]:
+    """``summarize_stem_bundle`` for a listing page, keyed by stable_id."""
+    return {sid: summarize_stem_bundle(sid, stems_dir=stems_dir) for sid in stable_ids}
+
+
 __all__ = [
     "DEFAULT_STEMS_DIR",
+    "ROFORMER_PARTS",
+    "ROFORMER_STEMS_DIR",
+    "STEM_LAYOUTS",
+    "bulk_stem_summaries",
+    "stem_roots",
+    "summarize_stem_bundle",
     "STEM_PARTS",
     "DemucsModel",
     "StemArtifactError",

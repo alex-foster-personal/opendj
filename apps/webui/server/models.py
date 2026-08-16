@@ -1,4 +1,5 @@
 """Pydantic request/response schemas."""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -68,12 +69,17 @@ class TrackListItemOut(TrackOut):
     file_exists: disk truth from the bulk-cached stat pass (FR-1 item 4).
     quality: venue rung from apps.shared.audio_quality (same stat pass, so
     no extra cost per row); venue/rank are null when it cannot be measured.
+    vocals: same four-status shape as /anlz (PVDI or demucs vocal-cache).
+    stems: demucs bundle summary for the browser Stems column (V/I/D), or
+    ``{status: none}`` when no local bundle exists.
     """
 
     preview_b64: str | None
     preview_max: int | None
     file_exists: bool
     quality: QualityOut
+    vocals: dict[str, Any]
+    stems: dict[str, Any]
 
 
 class TracksPage(BaseModel):
@@ -123,7 +129,9 @@ class TrackRowOut(BaseModel):
     Returned by playlist detail in membership order so the browser table
     renders without the old 29x per-row GET fan-out. ``etag`` is the same
     quoted sha1 the single-track endpoints emit (etag.py conventions), so
-    a row can be PATCHed directly with If-Match.
+    a row can be PATCHed directly with If-Match. ``vocals`` is the same
+    four-status field as /anlz so library PreviewStrip blue bars paint
+    without a per-row analysis fetch.
     """
 
     stable_id: str
@@ -142,6 +150,8 @@ class TrackRowOut(BaseModel):
     is_streaming: bool
     quality: QualityOut
     play_count: int = 0
+    vocals: dict[str, Any]
+    stems: dict[str, Any]
 
 
 class PlaylistDetail(BaseModel):
@@ -218,9 +228,21 @@ class HealthOut(BaseModel):
 
 
 __all__ = [
-    "HealthCloud", "HealthOut", "HealthStateDb", "HealthSyncthing",
-    "PairingCreate", "PairingOut", "PlaylistDetail", "PlaylistDiff",
-    "PlaylistSummary", "ProvenanceOut", "QueueItemOut", "QueueOut",
-    "TrackListItemOut", "TrackOut", "TrackPatch", "TrackRowOut",
+    "HealthCloud",
+    "HealthOut",
+    "HealthStateDb",
+    "HealthSyncthing",
+    "PairingCreate",
+    "PairingOut",
+    "PlaylistDetail",
+    "PlaylistDiff",
+    "PlaylistSummary",
+    "ProvenanceOut",
+    "QueueItemOut",
+    "QueueOut",
+    "TrackListItemOut",
+    "TrackOut",
+    "TrackPatch",
+    "TrackRowOut",
     "TracksPage",
 ]

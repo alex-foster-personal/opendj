@@ -4,11 +4,15 @@
  * When prefs.auto_play_enabled: as the master (or playing) deck enters the
  * remaining-time window, load the next playlist track onto a free or stopped
  * follower and start it via performance-ipc. Default pick: earliest un-played
- * membership row with Camelot key +-1 and BPM inside Beat Sync pitch bounds.
- * Optional enforce_play_order walks strict playlist order after current.
+ * membership row with Camelot key +-1 and BPM inside Beat Sync pitch bounds
+ * (optional maximize-reach / Warnsdorff slack). Optional enforce_play_order
+ * walks strict playlist order after current.
  * Beat Sync is requested only when a real BAR/BEAT phase-lock plan succeeds;
  * otherwise follower Beat Sync is explicitly disabled and play continues
  * free-tempo (see .planning/beat-sync-phase-lock-explainer-SA.md).
+ *
+ * Failed handoffs quarantine the candidate and re-arm (bounded) so ghost
+ * tracks / mapping 404s cannot permanently disarm AutoPlay for the source.
  */
 import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
 import {
@@ -22,6 +26,7 @@ import {
 	pickSourceDeck,
 	remainingMs,
 	shouldTriggerAutoPlay,
+	simulateAutoPlayChain,
 	tempoBoundsFromPitchRange,
 	type AutoPlayDeckSnap
 } from '$lib/rb/auto-play';
@@ -39,12 +44,60 @@ import type { DeckId } from '$lib/rb/types';
 const POLL_MS = 250;
 /** Synthetic schedule horizon for preflight only (plan needs syncAt > now). */
 const PREFLIGHT_SYNC_AHEAD_SEC = 0.05;
+/** Failed load/play attempts per source track before stopping. */
+const MAX_HANDOFF_ATTEMPTS = 3;
 
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _inFlight = false;
 let _triggeredFor: string | null = null;
 let _playedIds = new Set<string>();
 let _playedFeedEpoch = -1;
+/** Candidates that failed load/play; cleared when playlist membership changes. */
+let _unplayableIds = new Set<string>();
+let _attemptsFor: { source: string; count: number } = { source: '', count: 0 };
+/** Toast-once while waiting for a free follower (does not pin _triggeredFor). */
+let _waitingFollowerFor: string | null = null;
+
+/** Read-only charted AutoPlay order for the open playlist (library column). */
+export const autoPlayOrder = $state<{
+	chain: readonly string[];
+	rankOf: ReadonlyMap<string, number>;
+}>({ chain: [], rankOf: new Map() });
+
+function _publishOrder(chain: readonly string[]): void {
+	if (
+		chain.length === autoPlayOrder.chain.length &&
+		chain.every((id, i) => id === autoPlayOrder.chain[i])
+	) {
+		return;
+	}
+	autoPlayOrder.chain = chain;
+	autoPlayOrder.rankOf = new Map(chain.map((id, i) => [id, i + 1]));
+}
+
+function _refreshChartedOrder(
+	source: AutoPlayDeckSnap | null,
+	excludeIds: ReadonlySet<string>
+): void {
+	if (!uiPrefs.auto_play_enabled || source === null || source.stable_id === null) {
+		_publishOrder([]);
+		return;
+	}
+	_syncPlayedSet();
+	const bounds = tempoBoundsFromPitchRange(pitchRanges[source.id] ?? 16);
+	const full = simulateAutoPlayChain({
+		playlist: getAutoPlayPlaylist(),
+		start_stable_id: source.stable_id,
+		enforce_play_order: uiPrefs.auto_play_enforce_order,
+		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach,
+		min_tempo_ratio: bounds.min,
+		max_tempo_ratio: bounds.max,
+		exclude_ids: excludeIds,
+		played_ids: _playedIds
+	});
+	// Upcoming only - source is already playing, not "next".
+	_publishOrder(full.slice(1));
+}
 
 function _snaps(): AutoPlayDeckSnap[] {
 	return DECK_IDS.map((id) => {
@@ -67,6 +120,7 @@ function _excludeIds(sourceId: DeckId, snaps: readonly AutoPlayDeckSnap[]): Set<
 		if (d.id === sourceId) continue;
 		if (d.stable_id !== null) out.add(d.stable_id);
 	}
+	for (const id of _unplayableIds) out.add(id);
 	return out;
 }
 
@@ -74,6 +128,7 @@ function _syncPlayedSet(): void {
 	const epoch = getAutoPlayFeedEpoch();
 	if (epoch !== _playedFeedEpoch) {
 		_playedIds = new Set();
+		_unplayableIds = new Set();
 		_playedFeedEpoch = epoch;
 	}
 }
@@ -171,19 +226,29 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 }
 
 async function _tick(): Promise<void> {
-	if (!uiPrefs.auto_play_enabled || _inFlight) return;
+	if (!uiPrefs.auto_play_enabled || _inFlight) {
+		if (!uiPrefs.auto_play_enabled) _publishOrder([]);
+		return;
+	}
 
 	const snaps = _snaps();
 	const source = pickSourceDeck(snaps);
 	if (source === null || source.stable_id === null) {
 		_triggeredFor = null;
+		_waitingFollowerFor = null;
+		_publishOrder([]);
 		return;
 	}
+
+	_syncPlayedSet();
+	const excludeIds = _excludeIds(source.id, snaps);
+	_refreshChartedOrder(source, excludeIds);
 
 	const rem = remainingMs(source.position_ms, source.duration_ms);
 	if (rem !== null && rem > AUTO_PLAY_THRESHOLD_MS) {
 		// Seek back out of the window: allow a later re-arm for same track.
 		if (_triggeredFor === source.stable_id) _triggeredFor = null;
+		if (_waitingFollowerFor === source.stable_id) _waitingFollowerFor = null;
 		return;
 	}
 
@@ -202,12 +267,15 @@ async function _tick(): Promise<void> {
 
 	const follower = pickFollowerDeck(snaps, source.id);
 	if (follower === null) {
-		pushToast('auto-play: no free/stopped follower deck', 'error');
-		_triggeredFor = source.stable_id;
+		// Do not pin _triggeredFor - retry when a deck frees; toast once.
+		if (_waitingFollowerFor !== source.stable_id) {
+			pushToast('auto-play: no free/stopped follower deck', 'error');
+			_waitingFollowerFor = source.stable_id;
+		}
 		return;
 	}
+	_waitingFollowerFor = null;
 
-	_syncPlayedSet();
 	const bounds = tempoBoundsFromPitchRange(pitchRanges[follower]);
 	const sourceDeck = deckStates[source.id];
 	const nextId = pickNextStableId({
@@ -215,17 +283,27 @@ async function _tick(): Promise<void> {
 		current_stable_id: source.stable_id,
 		current_key: sourceDeck.key,
 		current_bpm: sourceDeck.bpm,
-		exclude_ids: _excludeIds(source.id, snaps),
+		exclude_ids: excludeIds,
 		played_ids: _playedIds,
 		enforce_play_order: uiPrefs.auto_play_enforce_order,
 		min_tempo_ratio: bounds.min,
-		max_tempo_ratio: bounds.max
+		max_tempo_ratio: bounds.max,
+		maximize_reach: !uiPrefs.auto_play_enforce_order && uiPrefs.auto_play_maximize_reach
 	});
 	if (nextId === null) {
+		const remaining = getAutoPlayPlaylist().filter(
+			(r) =>
+				r.stable_id !== source.stable_id &&
+				!excludeIds.has(r.stable_id) &&
+				!_playedIds.has(r.stable_id)
+		);
+		const allMissing = remaining.length > 0 && remaining.every((r) => !r.file_exists);
 		pushToast(
-			uiPrefs.auto_play_enforce_order
-				? 'auto-play: no next unplayed track in playlist order'
-				: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
+			allMissing
+				? 'auto-play: remaining playlist tracks are missing/stub audio'
+				: uiPrefs.auto_play_enforce_order
+					? 'auto-play: no next unplayed track in playlist order'
+					: 'auto-play: no unplayed playlist track within key +-1 and Beat Sync BPM range',
 			'error'
 		);
 		_triggeredFor = source.stable_id;
@@ -236,9 +314,23 @@ async function _tick(): Promise<void> {
 	_triggeredFor = source.stable_id;
 	try {
 		await _handoff(source, follower, nextId);
+		_attemptsFor = { source: '', count: 0 };
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		pushToast(`auto-play failed: ${message}`, 'error');
+		_unplayableIds.add(nextId);
+		if (_attemptsFor.source !== source.stable_id) {
+			_attemptsFor = { source: source.stable_id, count: 0 };
+		}
+		_attemptsFor.count += 1;
+		if (_attemptsFor.count < MAX_HANDOFF_ATTEMPTS) {
+			_triggeredFor = null;
+			pushToast(`auto-play: skipped unplayable (${nextId.slice(0, 12)}...): ${message}`, 'info');
+		} else {
+			pushToast(
+				`auto-play stopped after ${MAX_HANDOFF_ATTEMPTS} failed handoffs: ${message}`,
+				'error'
+			);
+		}
 	} finally {
 		_inFlight = false;
 	}
@@ -259,7 +351,11 @@ export function installAutoPlay(): () => void {
 		}
 		_inFlight = false;
 		_triggeredFor = null;
+		_waitingFollowerFor = null;
 		_playedIds = new Set();
+		_unplayableIds = new Set();
+		_attemptsFor = { source: '', count: 0 };
 		_playedFeedEpoch = -1;
+		_publishOrder([]);
 	};
 }

@@ -21,11 +21,31 @@
 		{ id: 'drums', label: 'DRUMS', colorVar: 'var(--rb-accent)' }
 	];
 	const ready: boolean = $derived(deck.stems.status === 'ready');
+
+	/** A control this bundle's layout cannot drive. RoFormer's 2-stem split
+	 * folds the drums into `instrumental`, so DRUMS has no signal of its own:
+	 * the chip renders inert with a reason rather than accepting a click that
+	 * could never change what you hear. */
+	function unavailable(stem: StemControl): boolean {
+		return ready && !deck.stems.available_controls.includes(stem);
+	}
+
 	const statusTip: string = $derived(
 		ready
-			? `real ${deck.stems.model ?? 'Demucs'} stems - click mute, Shift+click solo`
+			? `real ${deck.stems.model ?? 'Demucs'} stems (${deck.stems.layout ?? 'demucs4'})` +
+				` - click mute, Shift+click solo`
 			: `stems ${deck.stems.status}: ${deck.stems.error ?? 'no aligned artifact'}`
 	);
+
+	function chipTip(stem: StemControl, label: string): string {
+		if (unavailable(stem)) {
+			return (
+				`${label} is not a separate stem in this ${deck.stems.layout ?? 'bundle'} ` +
+				`- it is mixed into INST, so it cannot be muted on its own`
+			);
+		}
+		return statusTip;
+	}
 
 	async function toggle(event: MouseEvent, stem: StemControl): Promise<void> {
 		if (event.shiftKey) await onSolo(stem);
@@ -40,8 +60,11 @@
 			class="chip"
 			class:muted={deck.stems.controls[stem.id].muted}
 			class:solo={deck.stems.controls[stem.id].solo}
-			disabled={!ready || pending}
+			class:unavailable={unavailable(stem.id)}
+			disabled={!ready || pending || unavailable(stem.id)}
+			title={chipTip(stem.id, stem.label)}
 			aria-label={`${stem.label} stem mute; Shift+click solo`}
+			data-unavailable={unavailable(stem.id)}
 			aria-pressed={deck.stems.controls[stem.id].muted}
 			data-performance-control={`stem-${stem.id}`}
 			data-muted={deck.stems.controls[stem.id].muted}
@@ -93,5 +116,12 @@
 		border-color: var(--rb-border);
 		cursor: default;
 		opacity: 0.6;
+	}
+	/* Dimmer than merely-disabled: this control does not exist for this
+	   bundle, as opposed to existing but not being ready yet. */
+	.chip.unavailable {
+		opacity: 0.3;
+		border-style: dashed;
+		cursor: not-allowed;
 	}
 </style>
