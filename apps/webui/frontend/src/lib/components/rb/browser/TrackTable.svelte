@@ -22,6 +22,7 @@
 	// provider.total.
 	import { untrack } from 'svelte';
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { genreHoverColor } from '$lib/rb/genre-color';
@@ -209,19 +210,10 @@
 	 * (see apps/webui/server/rb_vendor.cached_beatgrid_issue) - never parses
 	 * the full ANLZ beat-grid here, since this runs per visible row. Other
 	 * analysis kinds have no working detector yet, so they stay empty/off
-	 * rather than fabricate a state (house rule: no mocked data). */
+	 * rather than fabricate a state (house rule: no mocked data). The rule
+	 * itself lives in $lib/rb/analysis-issues so it can be unit-tested. */
 	function _issuesFor(row: BrowserRow): AnalysisIssues {
-		const issue = row.rb_meta?.beatgrid_issue;
-		if (issue === null || issue === undefined) return {};
-		return {
-			beatgrid: {
-				severity: issue.severity,
-				detail:
-					`Beatgrid: PQTZ field BPM disagrees with beat interval by ` +
-					`${issue.disagreement_bpm.toFixed(1)} BPM near t=${Math.round(issue.at_sec)}s - ` +
-					`can cause Beat Sync tempo to jump on seek near this point`
-			}
-		};
+		return analysisIssuesFor(row);
 	}
 
 	function _jobRowStyle(stableId: string): string | undefined {
