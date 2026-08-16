@@ -1,5 +1,9 @@
-"""P1-B regression: DjayPlaylistWriter must refuse live writes when no
+"""SMART-02 regression: DjayPlaylistWriter must refuse live writes when no
 LiveWriteSession wraps the call AND djay (or Rekordbox) is running.
+
+Tracked as forensics finding "P1-B" in CHANGELOG.md -- that is an audit
+label, not a requirement ID; the requirement it defends is SMART-02 (the
+materialization engine pushing a rule's result into djay Pro).
 
 Forensics audit (PR #105) flagged that apps/smartlists/djay_writer.py
 opens djay's MediaLibrary.db with ``mode=rwc`` inside ``_apply_op``,
@@ -46,7 +50,7 @@ def _tmp_state_conn() -> sqlite3.Connection:
     return con
 
 
-@pytest.mark.requirement("P1-B")
+@pytest.mark.requirement("SMART-02")
 def test_djay_writer_refuses_without_safety_session(
     _tmp_djay_db: Path,
     _tmp_state_conn: sqlite3.Connection,
@@ -64,7 +68,7 @@ def test_djay_writer_refuses_without_safety_session(
         w.create_playlist("[SL] Blocked", ["sid-1", "sid-2"])
 
 
-@pytest.mark.requirement("P1-B")
+@pytest.mark.requirement("SMART-02")
 def test_djay_writer_refuses_when_rekordbox_running(
     _tmp_djay_db: Path,
     _tmp_state_conn: sqlite3.Connection,
@@ -81,7 +85,7 @@ def test_djay_writer_refuses_when_rekordbox_running(
         w.create_playlist("[SL] Blocked", ["sid-1", "sid-2"])
 
 
-@pytest.mark.requirement("P1-B")
+@pytest.mark.requirement("SMART-02")
 def test_djay_writer_bypasses_guard_when_safety_session_set(
     _tmp_djay_db: Path,
     _tmp_state_conn: sqlite3.Connection,
@@ -110,7 +114,7 @@ def test_djay_writer_bypasses_guard_when_safety_session_set(
         pass
 
 
-@pytest.mark.requirement("P1-B")
+@pytest.mark.requirement("SMART-02")
 def test_djay_writer_guard_is_noop_when_processes_quit(
     _tmp_djay_db: Path,
     _tmp_state_conn: sqlite3.Connection,

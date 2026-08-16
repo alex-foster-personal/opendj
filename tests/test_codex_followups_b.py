@@ -32,10 +32,14 @@ from apps.shared.smartlists.schema import validate_rule
 from apps.tags import apply as tags_apply
 
 
+# Requirement IDs come from reqs.json (generated from .planning/REQUIREMENTS.md).
+# There is no ANALYSIS/TAGS/SMARTLISTS category -- the areas these findings sit
+# in are META (analysis + tag write-back) and SMART (smartlist rules).
 pytestmark = [
-    pytest.mark.requirement("ANALYSIS-03"),
-    pytest.mark.requirement("TAGS-02"),
-    pytest.mark.requirement("SMARTLISTS-02"),
+    pytest.mark.requirement("META-04"),   # P06-F03 auto_cues cue labelling
+    pytest.mark.requirement("META-01"),   # P06-F02/P07 tag write-back + apply
+    pytest.mark.requirement("META-03"),   # P07-03 dedup apply pgrep gate
+    pytest.mark.requirement("SMART-01"),  # P08-04 rule-schema validation
 ]
 
 
