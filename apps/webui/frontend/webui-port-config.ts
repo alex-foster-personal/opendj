@@ -58,6 +58,41 @@ export function resolveAllowedHosts(shellEnv: Environment, rootEnv: Environment)
 	return parseAllowedHosts(shellEnv.MUSIC_DJ_ALLOWED_HOSTS ?? rootEnv.MUSIC_DJ_ALLOWED_HOSTS);
 }
 
+// Env handoff so the claim/check runs once per test run. Playwright re-imports
+// the config inside every worker process AFTER webServer (vite) has bound the
+// claimed frontend port, so re-running `check --service frontend` in a worker
+// always failed with "frontend port NNNN is already in use". The main process
+// (no TEST_WORKER_INDEX) still claims and live-checks - the genuine collision
+// case stays fail-fast - and publishes the validated payload for its workers
+// via the environment, which Playwright propagates to worker processes.
+const DEV_CONFIG_ENV_KEY = 'MDT_WEBUI_DEV_CONFIG_PAYLOAD';
+
+export function claimAndCheckWebuiDevConfigOnce(
+	repositoryRoot: string,
+	service: Service
+): WebuiDevConfig {
+	const inWorker = process.env.TEST_WORKER_INDEX !== undefined;
+	const cached = process.env[DEV_CONFIG_ENV_KEY];
+	if (inWorker) {
+		if (cached === undefined) {
+			// No payload means the main process never ran the claim - fail
+			// loudly rather than claim from a worker (the port is now in use
+			// by our own webServer and the check would misfire).
+			throw new Error(
+				`${DEV_CONFIG_ENV_KEY} missing in worker: the main-process claim did not run`
+			);
+		}
+		return parseWebuiDevConfigPayload(cached);
+	}
+	const config = claimAndCheckWebuiDevConfig(repositoryRoot, service);
+	process.env[DEV_CONFIG_ENV_KEY] = JSON.stringify({
+		backend: config.backendPort,
+		frontend: config.frontendPort,
+		api_proxy_target: config.apiProxyTarget
+	});
+	return config;
+}
+
 export function claimAndCheckWebuiDevConfig(
 	repositoryRoot: string,
 	service: Service

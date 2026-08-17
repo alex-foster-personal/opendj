@@ -1,10 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
-import { claimAndCheckWebuiDevConfig } from './webui-port-config';
+import { claimAndCheckWebuiDevConfigOnce } from './webui-port-config';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const ports = claimAndCheckWebuiDevConfig(REPOSITORY_ROOT, 'frontend');
+// Once = claim/check in the main process only; workers reuse its payload
+// (they re-import this config after vite has bound the claimed port).
+const ports = claimAndCheckWebuiDevConfigOnce(REPOSITORY_ROOT, 'frontend');
 
 export default defineConfig({
 	testDir: './tests/e2e',
