@@ -14,6 +14,11 @@ rbox==0.1.7
 # scripts/check-chromaprint.sh + docs/install-notes.md.
 pyacoustid>=1.3.0
 
+# CAT-06 (Prototype C computer-use agent): Quartz display geometry + window
+# capture in apps/sync/usb/pioneer/agent_actuator.py. macOS-only; the module
+# and its tests skip wholesale on the Ubuntu CI runner.
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+
 # Phase 7 -- process-alive checks for the live-write abort rail.
 psutil>=5.9
 
