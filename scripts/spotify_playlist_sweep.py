@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from apps.spotify.client import SpotifyClient  # noqa: E402
+from apps.spotify.client import SpotifyClient
 
 # ----- config -------------------------------------------------------------
 
@@ -160,7 +160,7 @@ def main() -> None:
     for i, pl in enumerate(playlists, 1):
         try:
             gap = _playlist_gap(sp, pl, isrcs, names)
-        except Exception as exc:  # noqa: BLE001 -- report and continue the sweep
+        except Exception as exc:
             print(f"  [WARN] {pl.get('name')!r}: {exc}")
             continue
         gaps.append(gap)

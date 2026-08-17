@@ -52,7 +52,7 @@ class _FakeAcoustid(types.ModuleType):
         super().__init__("acoustid")
         self.calls: list[str] = []
 
-    def fingerprint_file(self, path: str):  # noqa: D401
+    def fingerprint_file(self, path: str):
         self.calls.append(path)
         return (42.0, f"FP:{Path(path).read_bytes().decode(errors='replace')}")
 

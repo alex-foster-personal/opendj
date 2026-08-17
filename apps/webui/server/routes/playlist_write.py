@@ -125,7 +125,7 @@ def get_playlist_store(request: Request) -> PlaylistStore:
         return store
 
 
-def close_store(app) -> None:  # noqa: ANN001 - FastAPI app, avoids hotspot import
+def close_store(app) -> None:
     """Integrator shutdown hook: close the lazily-built store, if any."""
     store: PlaylistStore | None = getattr(app.state, "playlist_store", None)
     if store is not None:

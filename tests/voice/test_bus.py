@@ -79,7 +79,7 @@ class TestMakeBus:
 
     def test_falls_back_when_state_db_cannot_open(self, monkeypatch):
         """A broken state layer must fall back to JSONL with one warning."""
-        def _boom(*a, **kw):  # noqa: ANN001,ANN002,ANN003
+        def _boom(*a, **kw):
             raise RuntimeError("state DB not available")
 
         monkeypatch.setattr(
@@ -91,7 +91,7 @@ class TestMakeBus:
         assert any("JSONL stub" in w for w in warnings)
 
     def test_warning_is_once_per_run(self, monkeypatch):
-        def _boom(*a, **kw):  # noqa: ANN001,ANN002,ANN003
+        def _boom(*a, **kw):
             raise RuntimeError("state DB not available")
 
         monkeypatch.setattr(
@@ -171,7 +171,7 @@ class TestStateBackedBus:
             # Force the in-process fanout to raise. We monkey-patch the
             # bound EventBus instance's publish so the real Phase 5 code
             # path fires but the fanout call explodes.
-            def _boom(_event):  # noqa: ANN001
+            def _boom(_event):
                 raise RuntimeError("fanout exploded")
             monkeypatch.setattr(b._bus, "publish", _boom)
 

@@ -69,7 +69,7 @@ def _nothing_running(monkeypatch: pytest.MonkeyPatch) -> None:
         stdout = ""
 
     monkeypatch.setattr(
-        subprocess, "run", lambda *a, **k: _Result()  # noqa: ARG005
+        subprocess, "run", lambda *a, **k: _Result()
     )
 
 
@@ -141,9 +141,9 @@ def test_override_flag_proceeds_and_is_recorded_in_the_reversal_log(
     )
     db = tmp_path / "djay.db"
     db.write_bytes(b"djay")
-    monkeypatch.setattr(pa, "_live_db_path", lambda live: db)  # noqa: ARG005
+    monkeypatch.setattr(pa, "_live_db_path", lambda live: db)
     monkeypatch.setattr(
-        pa, "apply_plan", lambda *a, **k: pa.ApplyResult()  # noqa: ARG005
+        pa, "apply_plan", lambda *a, **k: pa.ApplyResult()
     )
     monkeypatch.setattr("builtins.input", lambda: pa.CONFIRMATION_PHRASE)
 
@@ -176,9 +176,9 @@ def test_healthy_library_reaches_the_write_path_with_no_override_recorded(
     )
     db = tmp_path / "djay.db"
     db.write_bytes(b"djay")
-    monkeypatch.setattr(pa, "_live_db_path", lambda live: db)  # noqa: ARG005
+    monkeypatch.setattr(pa, "_live_db_path", lambda live: db)
     monkeypatch.setattr(
-        pa, "apply_plan", lambda *a, **k: pa.ApplyResult()  # noqa: ARG005
+        pa, "apply_plan", lambda *a, **k: pa.ApplyResult()
     )
     monkeypatch.setattr("builtins.input", lambda: pa.CONFIRMATION_PHRASE)
 

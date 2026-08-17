@@ -202,9 +202,9 @@ def test_assignments_are_durable_before_the_first_arm_is_farmed(
     """
     ids = [f"sid-{i:03d}" for i in range(40)]
     monkeypatch.setattr(ssr, "_assert_arms_runnable", lambda: None)
-    monkeypatch.setattr(ssr, "candidate_tracks", lambda d, limit: ids)  # noqa: ARG005
+    monkeypatch.setattr(ssr, "candidate_tracks", lambda d, limit: ids)
 
-    def _crash(arm, arm_ids, dest, dry_run):  # noqa: ANN001, ARG001
+    def _crash(arm, arm_ids, dest, dry_run):
         raise RuntimeError("modal died mid-batch")
 
     monkeypatch.setattr(ssr, "run_arm", _crash)
@@ -226,7 +226,7 @@ def test_plan_only_records_nothing_and_runs_nothing(
 ) -> None:
     ids = [f"sid-{i}" for i in range(8)]
     monkeypatch.setattr(ssr, "_assert_arms_runnable", lambda: None)
-    monkeypatch.setattr(ssr, "candidate_tracks", lambda d, limit: ids)  # noqa: ARG005
+    monkeypatch.setattr(ssr, "candidate_tracks", lambda d, limit: ids)
 
     def _never(*args: object, **kwargs: object) -> int:
         raise AssertionError("--plan-only farmed an arm")

@@ -46,7 +46,7 @@ class _ProbeHandler(BaseHTTPRequestHandler):
     }
     received_body: dict[str, object] | None = None
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         content_length = int(self.headers["Content-Length"])
         type(self).received_body = json.loads(self.rfile.read(content_length))
         payload = json.dumps(type(self).response_body).encode("utf-8")

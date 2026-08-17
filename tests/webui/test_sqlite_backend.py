@@ -454,7 +454,7 @@ class TestFallbackPaths:
         original_set_field = sb_mod.StateWriter.set_field
         calls = 0
 
-        def fail_second_write(self, *args, **kwargs):  # noqa: ANN001
+        def fail_second_write(self, *args, **kwargs):
             nonlocal calls
             calls += 1
             if calls == 2:
@@ -482,7 +482,7 @@ class TestFallbackPaths:
         original_open_rw = sb_mod._state_db.open_rw
         injected = False
 
-        def open_rw_after_racing_add(*args, **kwargs):  # noqa: ANN002, ANN003
+        def open_rw_after_racing_add(*args, **kwargs):
             nonlocal injected
             if not injected:
                 injected = True

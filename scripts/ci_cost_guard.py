@@ -213,7 +213,7 @@ def fetch_jobs(repository: str, run_id: str, attempt: str, token: str) -> list[d
                 "User-Agent": "music-dj-tools-ci-cost-guard",
             },
         )
-        with urlopen(request, timeout=30) as response:  # noqa: S310 - fixed GitHub API origin
+        with urlopen(request, timeout=30) as response:
             payload = json.load(response)
         batch = payload.get("jobs") or []
         jobs.extend(batch)

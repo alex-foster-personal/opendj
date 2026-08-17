@@ -44,7 +44,7 @@ def parse(fp: Path) -> dict:
         audio = MutagenFile(str(fp))
         if audio is not None and audio.info is not None:
             dur_ms = int(round(audio.info.length * 1000))
-    except Exception as e:  # noqa: BLE001 - duration is best-effort
+    except Exception as e:
         print(f"  warn: no duration for {fp.name}: {e}", file=sys.stderr)
     sid = hashlib.sha1(str(fp).encode("utf-8")).hexdigest()
     return dict(pos=pos, stable_id=sid, title=title.strip(),

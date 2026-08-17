@@ -218,13 +218,13 @@ def test_rekordbox_running_check_uses_pgrep(monkeypatch: pytest.MonkeyPatch) -> 
             self.returncode = code
             self.stdout = stdout
 
-    def _fake_run(args, **kwargs):  # noqa: ANN001
+    def _fake_run(args, **kwargs):
         return _FakeResult(0, "12345 Rekordbox\n")
 
     monkeypatch.setattr(subprocess, "run", _fake_run)
     assert apply._rekordbox_running() is True
 
-    def _fake_empty(args, **kwargs):  # noqa: ANN001
+    def _fake_empty(args, **kwargs):
         return _FakeResult(1, "")
 
     monkeypatch.setattr(subprocess, "run", _fake_empty)

@@ -536,7 +536,7 @@ def _verify_database(
         return tuple(playlist_rows), tuple(track_rows)
     except UsbExportError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise UsbExportError("readback_failed", f"rbox readback failed: {exc}") from exc
 
 
@@ -693,7 +693,7 @@ def apply_export(plan: ExportPlan, *, confirmation: str) -> ApplyReceipt:
     )
     try:
         readback_export(plan, receipt)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         rollback_error = _rollback_promoted_output(plan, target_output, output_hash)
         if rollback_error is not None:
             raise UsbExportError(

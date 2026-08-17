@@ -29,7 +29,7 @@ class _FakeModuleAdapter:
         self._doc = doc
         self.calls: list[dict] = []
 
-    def export_library(self, *, source_path, out_path, include_cues):  # noqa: D401
+    def export_library(self, *, source_path, out_path, include_cues):
         self.calls.append(
             {"source_path": source_path, "out_path": out_path, "include_cues": include_cues}
         )

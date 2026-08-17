@@ -56,7 +56,7 @@ class _FakeDB:
         default_factory=lambda: SimpleNamespace(rollback=lambda: None)
     )
 
-    def get_content(self, ID):  # noqa: N803 (pyrekordbox style)
+    def get_content(self, ID):
         if self.raise_on_lookup:
             raise RuntimeError("boom-lookup")
         return self.rows.get(str(ID))
@@ -311,10 +311,10 @@ def test_apply_updates_strict_aborts_on_assign_exception(
 ) -> None:
     class _ExplodingRow:
         @property
-        def FolderPath(self) -> str:  # noqa: N802
+        def FolderPath(self) -> str:
             return "/old"
         @FolderPath.setter
-        def FolderPath(self, v: str) -> None:  # noqa: N802
+        def FolderPath(self, v: str) -> None:
             raise RuntimeError("assign-bang")
 
     db = _FakeDB(rows={"1": _ExplodingRow()})

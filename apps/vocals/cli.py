@@ -543,12 +543,12 @@ def _claim_record_guard(lock: Path) -> Iterator[None]:
             os.write(descriptor, b"\0")
             os.fsync(descriptor)
         if os.name == "nt":
-            import msvcrt  # noqa: PLC0415
+            import msvcrt
 
             os.lseek(descriptor, 0, os.SEEK_SET)
             msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
         else:
-            import fcntl  # noqa: PLC0415
+            import fcntl
 
             fcntl.flock(descriptor, fcntl.LOCK_EX)
         try:

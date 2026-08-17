@@ -50,7 +50,7 @@ def _count_orphans(db_path: Path, track_id: str) -> dict[str, int]:
             col = "ID" if t == "djmdContent" else "ContentID"
             try:
                 n = cur.execute(
-                    f"SELECT COUNT(*) FROM {t} WHERE {col}=?",  # noqa: S608
+                    f"SELECT COUNT(*) FROM {t} WHERE {col}=?",
                     (track_id,),
                 ).fetchone()[0]
             except sqlite3.Error:

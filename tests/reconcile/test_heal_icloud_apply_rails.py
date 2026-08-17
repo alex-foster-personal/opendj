@@ -75,7 +75,7 @@ def rails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
         calls.append("confirm")
         return True
 
-    def _backup(backup_dir: Path) -> Path:  # noqa: ARG001
+    def _backup(backup_dir: Path) -> Path:
         calls.append("backup")
         return backup
 

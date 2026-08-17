@@ -434,7 +434,7 @@ def _write_rekordbox_folder_path(
             ),
         })
     try:
-        from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+        from pyrekordbox import Rekordbox6Database
     except ImportError as exc:
         raise HTTPException(status_code=503, detail={
             "code": "PYREKORDBOX_UNAVAILABLE",

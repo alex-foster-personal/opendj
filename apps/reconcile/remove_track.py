@@ -122,7 +122,7 @@ def _open_db(db_path: Path):
     working-path resolution; we infer that by checking the sqlite header
     — a plain file starts with ``SQLite format 3``.
     """
-    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+    from pyrekordbox import Rekordbox6Database
 
     # Peek at the header so we pass unlock=False for plain fixtures.
     try:
@@ -214,7 +214,7 @@ def _rows_by_col(db, table: str, col: str, value: str) -> list[dict[str, Any]]:
     try:
         with db.engine.connect() as con:
             result = con.execute(
-                text(f'SELECT * FROM "{table}" WHERE "{col}" = :v'),  # noqa: S608
+                text(f'SELECT * FROM "{table}" WHERE "{col}" = :v'),
                 {"v": value},
             )
             return [dict(row._mapping) for row in result]
@@ -226,7 +226,7 @@ def _count_by_col(db, table: str, col: str, value: str) -> int:
     try:
         with db.engine.connect() as con:
             result = con.execute(
-                text(f'SELECT COUNT(*) FROM "{table}" WHERE "{col}" = :v'),  # noqa: S608
+                text(f'SELECT COUNT(*) FROM "{table}" WHERE "{col}" = :v'),
                 {"v": value},
             )
             return int(result.scalar() or 0)
@@ -391,7 +391,7 @@ def _apply_removals(
                 for tbl in MANUAL_CASCADE_TABLES:
                     try:
                         con.execute(
-                            text(f'DELETE FROM "{tbl}" WHERE "ContentID" = :v'),  # noqa: S608
+                            text(f'DELETE FROM "{tbl}" WHERE "ContentID" = :v'),
                             {"v": fp.id},
                         )
                     except Exception as exc:  # noqa: BLE001
@@ -405,7 +405,7 @@ def _apply_removals(
                             continue
                         try:
                             con.execute(
-                                text(f'DELETE FROM "{tbl}" WHERE "ID" = :v'),  # noqa: S608
+                                text(f'DELETE FROM "{tbl}" WHERE "ID" = :v'),
                                 {"v": row_id},
                             )
                         except Exception as exc:  # noqa: BLE001

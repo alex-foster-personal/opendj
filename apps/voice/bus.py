@@ -172,7 +172,7 @@ class StateBackedBus:
                         actor="voice",
                     )
                 )
-            except Exception:  # noqa: BLE001 - isolate producer from fanout
+            except Exception:
                 log.exception(
                     "StateBackedBus fanout failed for kind=%s id=%s; "
                     "events row committed but in-process subscribers "

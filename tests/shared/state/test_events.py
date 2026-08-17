@@ -65,7 +65,7 @@ def test_callback_exception_is_swallowed() -> None:
     good_done = threading.Event()
     good_received: list[Event] = []
 
-    def bad(ev: Event) -> None:  # noqa: ARG001
+    def bad(ev: Event) -> None:
         raise RuntimeError("boom")
 
     def good(ev: Event) -> None:
