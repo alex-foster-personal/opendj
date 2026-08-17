@@ -34,7 +34,9 @@ from apps.webui.port_config import (
 
 ALLOWED_HOSTS_ENV = "MUSIC_DJ_ALLOWED_HOSTS"
 SERVE_HTTPS_PORT = 443
+SERVE_HTTP_PORT = 80
 LEGACY_SERVE_HTTP_PORT = 8080
+HTTP_REDIRECT_PORT = 9080
 BACKEND_WAIT_SECONDS = 30.0
 FRONTEND_WAIT_SECONDS = 45.0
 STOP_WAIT_SECONDS = 5.0
@@ -180,10 +182,19 @@ def _is_our_frontend(pid: int) -> bool:
     return False
 
 
+def _is_our_redirect(pid: int) -> bool:
+    return any(
+        "apps.agentbox.http_redirect" in _proc_text(current, "cmdline")
+        for current in _walk_ancestors(pid)
+    )
+
+
 def _stoppable_ancestor(pid: int) -> bool:
     cmdline = _proc_text(pid, "cmdline")
     cwd = _proc_cwd(pid)
     if "apps.webui.server" in cmdline:
+        return True
+    if "apps.agentbox.http_redirect" in cmdline:
         return True
     if "vite" in cmdline and (
         str(PROJECT_ROOT) in cwd or str(PROJECT_ROOT) in cmdline
@@ -193,9 +204,10 @@ def _stoppable_ancestor(pid: int) -> bool:
 
 
 def stop_worktree_listeners(ports: WebuiPorts) -> list[str]:
-    """Stop this worktree's backend/frontend. Refuse a foreign occupant."""
+    """Stop this worktree's web listeners. Refuse a foreign occupant."""
     notes: list[str] = []
     for service, port, ours in (
+        ("HTTP redirect", HTTP_REDIRECT_PORT, _is_our_redirect),
         ("backend", ports.backend, _is_our_backend),
         ("frontend", ports.frontend, _is_our_frontend),
     ):
@@ -307,6 +319,57 @@ def _wait_https(
     raise PortConfigError(f"{label} did not reach 200 (last {last}) at {url}")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+def redirect_response(
+    url: str, *, host: str | None = None, timeout: float = 2.0
+) -> tuple[int, str | None]:
+    """Return a real HTTP response without following its redirect."""
+    request = urllib.request.Request(url, method="GET")
+    if host is not None:
+        request.add_header("Host", host)
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            return int(response.status), response.headers.get("Location")
+    except urllib.error.HTTPError as exc:
+        return int(exc.code), exc.headers.get("Location")
+    except (OSError, urllib.error.URLError, ValueError):
+        return 0, None
+
+
+def _wait_redirect(
+    url: str,
+    *,
+    host: str | None,
+    expected_location: str,
+    seconds: float,
+    label: str,
+) -> None:
+    deadline = time.monotonic() + seconds
+    last: tuple[int, str | None] = (0, None)
+    while time.monotonic() < deadline:
+        last = redirect_response(url, host=host)
+        if last == (307, expected_location):
+            return
+        time.sleep(0.2)
+    raise PortConfigError(
+        f"{label} did not redirect to {expected_location} (last {last}) at {url}"
+    )
+
+
 def log_home(*, hostname: str | None = None) -> Path:
     """Agentbox keeps days; other machines use OS temp so a reboot wipes them.
 
@@ -377,8 +440,8 @@ def _tailscale_ipv4() -> str:
     return ip
 
 
-def ensure_serve(frontend_port: int) -> str:
-    """Point tailnet-only HTTPS Serve at this worktree's Vite loopback."""
+def ensure_serve(frontend_port: int, redirect_port: int = HTTP_REDIRECT_PORT) -> str:
+    """Serve secure Vite plus a tailnet-only HTTP-to-HTTPS redirect."""
     target = f"http://127.0.0.1:{frontend_port}"
     result = subprocess.run(
         ["tailscale", "serve", "--bg", f"--https={SERVE_HTTPS_PORT}", target],
@@ -389,6 +452,24 @@ def ensure_serve(frontend_port: int) -> str:
     if result.returncode != 0:
         raise PortConfigError(
             f"tailscale serve failed: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    redirect_target = f"http://127.0.0.1:{redirect_port}"
+    redirect = subprocess.run(
+        [
+            "tailscale",
+            "serve",
+            "--bg",
+            f"--http={SERVE_HTTP_PORT}",
+            redirect_target,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if redirect.returncode != 0:
+        raise PortConfigError(
+            "tailscale HTTP redirect serve failed: "
+            f"{redirect.stderr.strip() or redirect.stdout.strip()}"
         )
     status = subprocess.run(
         ["tailscale", "serve", "status", "--json"],
@@ -493,13 +574,16 @@ def run_agentbox() -> int:
         print(f"[OK] {note}")
     wait_bindable(ports.backend, STOP_WAIT_SECONDS + 10.0, "backend")
     wait_bindable(ports.frontend, STOP_WAIT_SECONDS + 10.0, "frontend")
+    wait_bindable(HTTP_REDIRECT_PORT, STOP_WAIT_SECONDS + 10.0, "HTTP redirect")
 
     backend_log = prepare_log_path("webui-backend")
     frontend_log = prepare_log_path("webui-frontend")
     client_error_log = prepare_log_path("webui-client-errors")
+    redirect_log = prepare_log_path("agentbox-http-redirect")
     print(f"[OK] logs {backend_log}")
     print(f"[OK] logs {frontend_log}")
     print(f"[OK] logs {client_error_log}")
+    print(f"[OK] logs {redirect_log}")
 
     backend_pid = _start_detached(
         [
@@ -538,6 +622,32 @@ def run_agentbox() -> int:
     )
     print(f"[OK] proxy {frontend_health}")
 
+    secure_origin = f"https://{host}"
+    redirect_pid = _start_detached(
+        [
+            sys.executable,
+            "-m",
+            "apps.agentbox.http_redirect",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(HTTP_REDIRECT_PORT),
+            "--target-origin",
+            secure_origin,
+        ],
+        cwd=PROJECT_ROOT,
+        log_path=redirect_log,
+    )
+    expected_redirect = f"{secure_origin}/performance"
+    _wait_redirect(
+        f"http://127.0.0.1:{HTTP_REDIRECT_PORT}/performance",
+        host="agentbox",
+        expected_location=expected_redirect,
+        seconds=10.0,
+        label="loopback HTTP redirect",
+    )
+    print(f"[OK] HTTP redirect pid {redirect_pid} -> {secure_origin}")
+
     serve_target = ensure_serve(ports.frontend)
     serve_ip = _tailscale_ipv4()
     serve_url = f"https://{host}/"
@@ -549,6 +659,14 @@ def run_agentbox() -> int:
         label="tailscale HTTPS serve",
     )
     print(f"[OK] serve {serve_target} -> {serve_url} via {serve_ip}")
+    _wait_redirect(
+        f"http://{serve_ip}/performance",
+        host="agentbox",
+        expected_location=expected_redirect,
+        seconds=10.0,
+        label="tailscale short-host HTTP redirect",
+    )
+    print(f"[OK] http://agentbox/performance -> {expected_redirect}")
     return 0
 
 

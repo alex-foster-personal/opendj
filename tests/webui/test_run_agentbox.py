@@ -28,6 +28,7 @@ from apps.webui.run_agentbox import (
     log_home,
     prepare_log_path,
     public_host,
+    redirect_response,
     remote_run_command,
     resolve_allowed_hosts,
     ssh_agentbox_argv,
@@ -186,6 +187,33 @@ def test_http_status_reads_a_real_server() -> None:
         assert http_status(url, host="agentbox.example-tailnet.ts.net") == 200
         assert http_status(url, host="127.0.0.1") == 400
         assert http_status("http://127.0.0.1:9/", host=None) == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_redirect_response_does_not_follow_a_real_redirect() -> None:
+    port = _free_port()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            self.send_response(307)
+            self.send_header(
+                "Location",
+                "https://agentbox.example-tailnet.ts.net/performance",
+            )
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = HTTPServer(("127.0.0.1", port), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert redirect_response(
+            f"http://127.0.0.1:{port}/performance", host="agentbox"
+        ) == (307, "https://agentbox.example-tailnet.ts.net/performance")
     finally:
         server.shutdown()
         server.server_close()
