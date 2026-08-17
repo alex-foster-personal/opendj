@@ -1,4 +1,4 @@
-"""Tests for the library-integrity guard (apps.audit.library_integrity).
+"""Tests for the library-integrity guard (apps.shared.library_integrity).
 
 Deterministic unit tests exercise the pure core with an injected
 ``exists`` predicate + ``home`` — they never touch the real DB and always
@@ -16,8 +16,8 @@ from types import ModuleType
 
 import pytest
 
-from apps.audit import library_integrity
-from apps.audit.library_integrity import (
+from apps.shared import library_integrity
+from apps.shared.library_integrity import (
     DEFAULT_THRESHOLD,
     IntegrityReport,
     LibraryIntegrityError,
@@ -232,7 +232,7 @@ def test_live_report_rejects_stale_working_copy_when_live_db_is_missing(
     monkeypatch.setitem(sys.modules, "apps.shared.rekordbox_db", fake_rekordbox_db)
 
     with pytest.raises(FileNotFoundError, match="fresh Rekordbox snapshot"):
-        library_integrity._live_report()
+        library_integrity.live_report()
 
 
 # ----- live regression guard (gated) -------------------------------------

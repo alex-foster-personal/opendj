@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.audit import library_integrity
+from apps.shared import library_integrity
 from apps.sync import playlist_apply as pa
 
 

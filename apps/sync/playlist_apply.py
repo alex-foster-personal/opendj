@@ -39,8 +39,7 @@ import uuid as _uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from apps.audit import library_integrity
-from apps.shared import paths
+from apps.shared import library_integrity, paths
 from apps.sync import playlist_tsaf as ptsaf
 
 
