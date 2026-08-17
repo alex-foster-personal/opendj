@@ -74,6 +74,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.dump_openapi:
         return _dump_openapi(args.dump_openapi)
 
+    from apps.shared.library_mode import apply_library_env, assert_ready
+    from apps.shared import platform_paths
+
+    apply_library_env()
+    platform_paths.refresh_share_root()
+    assert_ready()
+
     try:
         if (
             args.port is None

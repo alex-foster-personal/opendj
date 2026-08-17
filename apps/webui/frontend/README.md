@@ -7,9 +7,15 @@ its frontend and backend ports. Vite derives the API proxy from the backend.
 
 ```bash
 # From the repository root, using Node 22.14 or newer.
+just run
+# Or frontend only:
 just webui-ports
 just webui-frontend
 ```
+
+`just run` opens one macOS Terminal per server (tmux on Linux) and then
+`http://127.0.0.1:<frontend>`. Agentbox over Tailscale is
+`just run-agentbox`. Details: `apps/webui/README.md`.
 
 Direct `pnpm dev` also claims the repository-root `.env` through the shared
 allocator, uses `strictPort`, and fails instead of selecting another

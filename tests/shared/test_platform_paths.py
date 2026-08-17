@@ -365,3 +365,33 @@ def test_resolve_asset_path_preserves_explicit_path_map(
 
     assert result.resolved == asset.resolve()
     assert result.reason == "path-map"
+
+
+@pytest.mark.skipif(pp.IS_WINDOWS, reason="agentbox remap is a native POSIX case")
+def test_native_missing_path_uses_path_map(tmp_path: Path) -> None:
+    dest = tmp_path / "crate"
+    dest.mkdir()
+    audio = dest / "a.flac"
+    audio.write_bytes(b"fLaC")
+    result = pp.resolve_library_path(
+        "/Users/dev/Music/a.flac",
+        path_map=pp.PathMap(entries=(("/Users/dev/Music", str(dest)),)),
+    )
+    assert result.reason == "path-map"
+    assert result.resolved == Path(str(dest) + "/a.flac")
+    assert pp.fs_residency.is_materialised(result.resolved)
+
+
+@pytest.mark.skipif(pp.IS_WINDOWS, reason="native-wins needs a real local file")
+def test_native_materialised_path_wins_over_path_map(tmp_path: Path) -> None:
+    native = tmp_path / "here.flac"
+    native.write_bytes(b"fLaC")
+    dest = tmp_path / "other"
+    dest.mkdir()
+    (dest / "here.flac").write_bytes(b"xxxx")
+    result = pp.resolve_library_path(
+        str(native),
+        path_map=pp.PathMap(entries=((str(tmp_path), str(dest)),)),
+    )
+    assert result.reason == "native"
+    assert result.resolved == native
