@@ -20,7 +20,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
-from .types import SOURCES, Event, ProvenanceValue, Source
+from .types import SOURCES, ProvenanceValue, Source
 
 # Whitelist of field_names allowed in track_fields. Everything else must
 # live as an identity column on tracks. cue_points / beatgrid_* are

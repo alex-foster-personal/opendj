@@ -62,7 +62,6 @@ import json
 import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import soundfile as sf

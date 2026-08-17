@@ -14,7 +14,6 @@ import os
 import subprocess
 import time
 import re
-from datetime import datetime
 
 BACKLOG_FILE = ".planning/EXPLORATION_BACKLOG.md"
 MODEL = os.environ.get("FIREWORKS_MODEL", "openai/accounts/fireworks/models/kimi-2.7-code")

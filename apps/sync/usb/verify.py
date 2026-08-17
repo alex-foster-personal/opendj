@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as _cf
-import dataclasses
 import enum
 import json
 import sys
@@ -48,7 +47,6 @@ from apps.sync.usb import profile as profile_mod
 from apps.sync.usb.diff import (
     Op,
     Plan,
-    SKIP_PATTERNS,
     compute_plan,
     enumerate_drive_files,
 )

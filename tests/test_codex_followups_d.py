@@ -19,13 +19,11 @@ Covers:
 """
 from __future__ import annotations
 
-import io
 import sys
 from pathlib import Path
 import pytest
 
 from apps.dj_copilot.session_context import (
-    SessionContext,
     load_session_context,
 )
 

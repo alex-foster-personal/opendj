@@ -18,7 +18,7 @@ from pathlib import Path
 
 LOOPBACK_URL = re.compile(r"^http://127\.0\.0\.1:(\d+)$")
 
-from apps.webui.port_config import PROJECT_ROOT, PortConfigError, WebuiPorts, claim_ports
+from apps.webui.port_config import PROJECT_ROOT, PortConfigError, claim_ports
 from apps.webui.run_agentbox import FRONTEND_WAIT_SECONDS, _wait_http, http_status
 
 

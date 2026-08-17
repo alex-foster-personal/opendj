@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.tag_writer import TagRead
-from apps.tags.preview import build_preview_rows, run_preview, write_csv
+from apps.tags.preview import run_preview
 
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"

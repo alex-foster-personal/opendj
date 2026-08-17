@@ -11,7 +11,6 @@ Requirement: PLAY-02 (play-it) + AI-01 (suggest-next).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,7 +18,6 @@ import pytest
 
 from apps.dj_copilot import cli
 from apps.dj_copilot.play_it import InsufficientDataError
-from apps.shared.harmonic import TrackFeature
 
 
 pytestmark = pytest.mark.requirement("PLAY-02")

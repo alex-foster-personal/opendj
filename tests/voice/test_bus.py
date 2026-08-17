@@ -66,7 +66,6 @@ class TestMakeBus:
         # The module-level constant used by db.open_rw's default path
         # lives in apps.shared.state.paths; the db module re-imports it,
         # so patch both spellings to be safe.
-        from apps.shared.state import db as state_db
         from apps.shared.state import paths as state_paths
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         warnings: list[str] = []

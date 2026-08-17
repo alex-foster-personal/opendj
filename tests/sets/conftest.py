@@ -1,7 +1,6 @@
 """Shared fixtures for Phase 12 set-recording tests."""
 from __future__ import annotations
 
-import json
 import sqlite3
 import struct
 from datetime import datetime, timedelta, timezone

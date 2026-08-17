@@ -15,14 +15,12 @@ from apps.sync.playlist_diff import (
     write_plan_json,
 )
 from apps.sync.playlist_plan import (
-    DjayOnlyPlaylist,
     DjayPlaylistRead,
     FlatPlaylist,
     MatchSet,
     PlaylistOp,
     PlannedMember,
     PlaylistPlan,
-    UnmatchedTrack,
     build_plan,
 )
 

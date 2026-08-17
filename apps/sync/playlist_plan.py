@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from apps.shared.rekordbox_db import RBPlaylist, is_streaming_path
+from apps.shared.rekordbox_db import RBPlaylist
 from apps.shared.djay_db import DjayPlaylist
 
 

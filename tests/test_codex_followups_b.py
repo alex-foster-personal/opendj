@@ -19,10 +19,7 @@ Covers:
 """
 from __future__ import annotations
 
-import sqlite3
-import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 

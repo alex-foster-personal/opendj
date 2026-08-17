@@ -24,7 +24,6 @@ from pathlib import Path
 from apps.shared import paths
 from apps.shared.rekordbox_db import (
     RBPlaylist,
-    RBTrack,
     is_streaming_path,
     iter_playlists as rb_iter_playlists,
     iter_tracks as rb_iter_tracks,

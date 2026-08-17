@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import pytest
 
 from apps.cloud.config import CloudConfig
-from apps.cloud.lock import FakeS3Client, Lock, LockHolder
+from apps.cloud.lock import FakeS3Client, LockHolder
 from apps.cloud.replicate import Replicator, self_check
 
 

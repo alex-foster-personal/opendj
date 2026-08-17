@@ -25,8 +25,7 @@ import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Callable, Protocol
 
 from .config import CloudConfig, MissingEnvError
 from .lock import (

@@ -16,7 +16,6 @@ import pytest
 from apps.shared import fingerprints as fp_mod
 from apps.shared.fingerprints import (
     ChromaprintMissing,
-    Fingerprint,
     FingerprintCache,
     compare,
     compute,

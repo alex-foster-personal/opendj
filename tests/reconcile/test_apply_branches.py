@@ -17,7 +17,6 @@ Requirement: RECON-04.
 from __future__ import annotations
 
 import builtins
-import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path

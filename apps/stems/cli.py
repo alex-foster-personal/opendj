@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from apps.shared.paths import DATA_DIR, STATE_DIR
+from apps.shared.paths import DATA_DIR
 from apps.vocals.cli import (
     CATEGORY_MISSING,
     CATEGORY_TODO,

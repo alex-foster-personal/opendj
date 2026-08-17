@@ -14,8 +14,6 @@ import os
 import subprocess
 import time
 import sys
-import shutil
-import signal
 
 MODEL = os.environ.get("FIREWORKS_MODEL", "openai/accounts/fireworks/models/kimi-2.7-code")
 
