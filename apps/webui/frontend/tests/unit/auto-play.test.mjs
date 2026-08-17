@@ -56,7 +56,11 @@ describe('auto-play remaining / trigger', () => {
 });
 
 describe('auto-play deck pick', () => {
-	it('prefers playing master, else lowest playing deck', () => {
+	it('only the playing master arms a handoff - never a non-master playing deck', () => {
+		// Regression: two decks playing with no master pick used to fall back
+		// to "lowest playing deck id", so BOTH could independently arm a
+		// handoff. With two decks finishing ~1m apart that staggers new
+		// loads 1m apart forever instead of following one master track.
 		const { pickSourceDeck } = mod;
 		const decks = [
 			deck({ id: 1, stable_id: 'a', playing: true, is_master: false }),
@@ -64,12 +68,22 @@ describe('auto-play deck pick', () => {
 			deck({ id: 3, stable_id: 'c', playing: false })
 		];
 		assert.equal(pickSourceDeck(decks)?.id, 2);
+		// No master among the playing decks (or at all) - must not fall back
+		// to picking any playing deck by id; that is the staggering bug.
 		assert.equal(
 			pickSourceDeck([
 				deck({ id: 3, stable_id: 'c', playing: true }),
 				deck({ id: 1, stable_id: 'a', playing: true })
-			])?.id,
-			1
+			]),
+			null
+		);
+		// A master that isn't currently playing (e.g. paused) is not a source.
+		assert.equal(
+			pickSourceDeck([
+				deck({ id: 1, stable_id: 'a', playing: true, is_master: false }),
+				deck({ id: 2, stable_id: 'b', playing: false, is_master: true })
+			]),
+			null
 		);
 		assert.equal(pickSourceDeck([deck({ id: 1, playing: false })]), null);
 	});
