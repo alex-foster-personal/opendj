@@ -98,7 +98,7 @@ def rails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
 # ----- rail: the explicit risk flag --------------------------------------
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_refuses_without_the_risk_flag_and_writes_nothing(
     rows: list[heal.HealRow], rails: list[str]
 ) -> None:
@@ -110,7 +110,7 @@ def test_refuses_without_the_risk_flag_and_writes_nothing(
 # ----- rail: Rekordbox must be quit BEFORE the DB is opened --------------
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_running_rekordbox_aborts_before_backup_or_write(
     rows: list[heal.HealRow], rails: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -126,7 +126,7 @@ def test_running_rekordbox_aborts_before_backup_or_write(
     )
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_failed_confirmation_aborts_before_backup_or_write(
     rows: list[heal.HealRow], rails: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -139,7 +139,7 @@ def test_failed_confirmation_aborts_before_backup_or_write(
 # ----- rail: backup precedes the first write, verify follows it ----------
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_happy_path_fires_every_rail_in_order(
     rows: list[heal.HealRow], rails: list[str]
 ) -> None:
@@ -157,7 +157,7 @@ def test_happy_path_fires_every_rail_in_order(
 # ----- rail: a failure names the recovery pointer ------------------------
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_verify_failure_names_the_backup_file(
     rows: list[heal.HealRow],
     rails: list[str],
@@ -178,7 +178,7 @@ def test_verify_failure_names_the_backup_file(
     assert "verify failure" in out
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_write_error_names_the_backup_file(
     rows: list[heal.HealRow],
     rails: list[str],
@@ -196,7 +196,7 @@ def test_write_error_names_the_backup_file(
     assert "master.20260817T090000.db" in out.replace("\n", "")
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_the_backup_dir_is_the_documented_reconcile_backups_dir() -> None:
     """The failure message is only a recovery pointer if the path is findable."""
     assert reconcile_apply.DEFAULT_BACKUP_DIR.parts[-2:] == ("reconcile", "backups")
@@ -205,7 +205,7 @@ def test_the_backup_dir_is_the_documented_reconcile_backups_dir() -> None:
 # ----- rail: candidates must be real, materialised, out-of-zone ----------
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_a_non_materialised_candidate_is_refused_before_any_write(
     rows: list[heal.HealRow], rails: list[str], tmp_path: Path
 ) -> None:
@@ -215,7 +215,7 @@ def test_a_non_materialised_candidate_is_refused_before_any_write(
     assert rails == [], f"a write was attempted with a dataless candidate: {rails}"
 
 
-@pytest.mark.requirement("RECON-HEAL")
+@pytest.mark.requirement("GUARD-02")
 def test_rows_that_are_not_ready_unique_are_never_written(
     rows: list[heal.HealRow], rails: list[str]
 ) -> None:
