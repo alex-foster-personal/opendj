@@ -389,9 +389,26 @@ def _source_group(
     *,
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
+    share_root: Optional[Path] = None,
 ) -> tuple[Path, Path, Path]:
     """Return source root, destination root, and relative file path."""
     source = item.source.resolve(strict=False)
+    pioneer_source_root = (
+        share_root if share_root is not None else platform_paths.SHARE_ROOT
+    ).resolve(strict=False)
+    try:
+        relative = source.relative_to(pioneer_source_root)
+    except ValueError:
+        relative = None
+    if relative is not None:
+        dest_root = crate_root / "pioneer-share"
+        if dest_root / relative != item.dest:
+            raise RuntimeError(
+                f"Pioneer crate mapping drift for {item.source}: expected "
+                f"{dest_root / relative}, planned {item.dest}"
+            )
+        return pioneer_source_root, dest_root, relative
+
     for source_raw, dest_raw in sorted(
         user_maps, key=lambda pair: len(pair[0]), reverse=True
     ):
@@ -408,18 +425,7 @@ def _source_group(
             )
         return source_root, dest_root, relative
 
-    share_root = platform_paths.SHARE_ROOT.resolve(strict=False)
-    try:
-        relative = source.relative_to(share_root)
-    except ValueError as exc:
-        raise RuntimeError(f"no rsync source group for {item.source}") from exc
-    dest_root = crate_root / "pioneer-share"
-    if dest_root / relative != item.dest:
-        raise RuntimeError(
-            f"Pioneer crate mapping drift for {item.source}: expected "
-            f"{dest_root / relative}, planned {item.dest}"
-        )
-    return share_root, dest_root, relative
+    raise RuntimeError(f"no rsync source group for {item.source}")
 
 
 def _rsync_plan_to_host(
