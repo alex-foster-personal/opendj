@@ -24,6 +24,7 @@
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
 	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
+	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
@@ -641,7 +642,7 @@
 	}
 </script>
 
-{#snippet sortableTh(key: SortKey, label: string, col: ColId)}
+{#snippet sortableTh(key: SortKey, label: string, col: ColId & LibraryColTipId)}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<th
@@ -651,7 +652,7 @@
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
 		}}
-		title={`Sort by ${label} (asc → desc → clear)`}
+		title={columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`)}
 	>
 		<span class="th-label">
 			<span>{label}</span>
@@ -768,7 +769,11 @@
 						></span>
 					</th>
 					{@render sortableTh('order', '#', 'order')}
-					<th class="h-preview" style={`width:${colWidths.preview}px`}>
+					<th
+						class="h-preview"
+						style={`width:${colWidths.preview}px`}
+						title={columnHeaderTitle('preview')}
+					>
 						Preview
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
@@ -779,7 +784,11 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					<th class="h-art" style={`width:${colWidths.art}px`}>
+					<th
+						class="h-art"
+						style={`width:${colWidths.art}px`}
+						title={columnHeaderTitle('art')}
+					>
 						Artwork
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
@@ -801,9 +810,12 @@
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('key');
 						}}
-						title={masterKey !== null
-							? `Master key ${masterKey} - sort by key (asc → desc → clear)`
-							: 'Sort by key (asc → desc → clear)'}
+						title={columnHeaderTitle(
+							'key',
+							masterKey !== null
+								? `Master key ${masterKey} - sort by key (asc → desc → clear)`
+								: 'Sort by key (asc → desc → clear)'
+						)}
 					>
 						<span class="th-label">
 							{#if masterKey !== null}
@@ -836,9 +848,12 @@
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('bpm');
 						}}
-						title={masterBpm !== null
-							? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
-							: 'Sort by BPM (asc → desc → clear)'}
+						title={columnHeaderTitle(
+							'bpm',
+							masterBpm !== null
+								? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
+								: 'Sort by BPM (asc → desc → clear)'
+						)}
 					>
 						<span class="th-label">
 							{#if masterBpm !== null}
