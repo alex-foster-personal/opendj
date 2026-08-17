@@ -11,7 +11,6 @@ import pathlib
 import pytest
 import yaml
 
-
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MKDOCS_YML = REPO_ROOT / "mkdocs.yml"
 

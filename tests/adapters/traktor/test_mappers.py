@@ -14,7 +14,6 @@ from apps.adapters.traktor.mappers import (
     traktor_rating_to_stars,
 )
 
-
 # ------------------------------------------------------------- key mapper
 
 pytestmark = pytest.mark.requirement("OPEN-02")

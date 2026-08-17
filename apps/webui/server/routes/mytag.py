@@ -7,8 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from ..backend import (
-    BatchConflictError, MyTagMergeConfirmationRequiredError,
-    MyTagScopeConflictError, StateBackend, TrackFilter, TrackUpdate,
+    BatchConflictError,
+    MyTagMergeConfirmationRequiredError,
+    MyTagScopeConflictError,
+    StateBackend,
+    TrackFilter,
+    TrackUpdate,
     compute_mytag_catalog_revision,
 )
 from ..deps import get_read_state, get_write_state

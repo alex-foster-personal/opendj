@@ -17,7 +17,6 @@ import pytest
 from apps.sync import fingerprint as fp_mod
 from apps.sync.fingerprint import FingerprintCache, compare_pair
 
-
 pytestmark = pytest.mark.requirement("SYNC-02")
 
 

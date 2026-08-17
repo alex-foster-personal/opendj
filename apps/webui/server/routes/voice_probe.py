@@ -45,7 +45,8 @@ def _import_voice_stack():
     monkeypatch it to simulate a missing optional dependency without
     actually uninstalling anything.
     """
-    from apps.voice import actions, bus, context as ctx_mod, grammar, tts
+    from apps.voice import actions, bus, grammar, tts
+    from apps.voice import context as ctx_mod
 
     return grammar, actions, bus, ctx_mod, tts
 

@@ -29,11 +29,9 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
-from .backend import (BackendError, ConflictError, InMemoryBackend,
-                      NotFoundError, StateBackend)
+from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
-from .errors import (handle_backend_error, handle_conflict, handle_not_found)
-from .share_gate import share_gate_middleware, share_host
+from .errors import handle_backend_error, handle_conflict, handle_not_found
 from .routes import analysis as analysis_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
@@ -41,12 +39,12 @@ from .routes import client_errors as client_errors_routes
 from .routes import client_events as client_events_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
-from .routes import health as health_routes
 from .routes import find_replace as find_replace_routes
+from .routes import health as health_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
-from .routes import playlist_write as playlist_write_routes
 from .routes import play_it as play_it_routes
+from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
@@ -56,9 +54,9 @@ from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
 from .routes import relocate as relocate_routes
 from .routes import search as search_routes
-from .routes import share as share_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
+from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import stem_tiers as stem_tiers_routes
@@ -68,6 +66,7 @@ from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import voice_probe as voice_probe_routes
+from .share_gate import share_gate_middleware, share_host
 
 log = logging.getLogger(__name__)
 
@@ -285,8 +284,8 @@ def create_app(
 
 
 def _build_default_app() -> FastAPI:
-    from apps.shared.library_mode import apply_library_env, assert_ready
     from apps.shared import platform_paths
+    from apps.shared.library_mode import apply_library_env, assert_ready
     from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
     apply_library_env()

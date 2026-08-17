@@ -23,7 +23,6 @@ from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer import writer_rbox
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
 
-
 pytestmark = [pytest.mark.requirement("CAT-06")]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

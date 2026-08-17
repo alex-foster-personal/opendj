@@ -68,7 +68,7 @@ def _capture_transcripts(args: argparse.Namespace):
     finite iterable so `_cmd_run` exits after a deterministic number of
     iterations without touching real hardware.
     """
-    from apps.voice import audio, wake, stt
+    from apps.voice import audio, stt, wake
 
     try:
         sd = audio._sounddevice()
@@ -117,7 +117,8 @@ def _capture_transcripts(args: argparse.Namespace):
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Start the voice daemon: wake-word -> STT -> grammar -> dispatch."""
-    from apps.voice import grammar, bus, actions, context as ctx_mod
+    from apps.voice import actions, bus, grammar
+    from apps.voice import context as ctx_mod
 
     # P14-F03 (retained from master #102): honour --dry-bus and
     # --enable-destructive on the `run` subcommand. Previously both flags
@@ -196,7 +197,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_probe(args: argparse.Namespace) -> int:
     """Read one or more transcripts from --text / stdin; print events."""
-    from apps.voice import grammar, bus, actions, context as ctx_mod
+    from apps.voice import actions, bus, grammar
+    from apps.voice import context as ctx_mod
 
     transcripts: list[str] = []
     if args.text:
@@ -242,7 +244,9 @@ def _cmd_probe(args: argparse.Namespace) -> int:
 def _cmd_bench(args: argparse.Namespace) -> int:
     """Run the grammar + dispatch loop N times; print percentile timings."""
     import statistics
-    from apps.voice import grammar, bus, actions, context as ctx_mod
+
+    from apps.voice import actions, bus, grammar
+    from apps.voice import context as ctx_mod
 
     sample = args.text or "find daft punk"
     event_bus = bus.make_bus(force_stub=True)

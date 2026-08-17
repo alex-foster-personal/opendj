@@ -29,9 +29,9 @@ from apps.vocals.cli import (
     Ctx,
     VocalTrack,
     _fmt_dur,
+    best_playlist_rank,
     load_tracks,
     order_todo,
-    best_playlist_rank,
 )
 from apps.webui.server.stem_artifacts import (
     DEFAULT_STEMS_DIR,

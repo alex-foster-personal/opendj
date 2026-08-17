@@ -27,7 +27,6 @@ from tests.fixtures._resolver import (
     fixture_path,
 )
 
-
 pytestmark = [pytest.mark.requirement("INFRA-03")]
 
 

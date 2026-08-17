@@ -13,7 +13,6 @@ from apps.sync.usb.profile import (
     load_from_string,
 )
 
-
 HAPPY = """\
 name: gigA
 drive_label: GIG-A

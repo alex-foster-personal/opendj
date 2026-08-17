@@ -11,7 +11,6 @@ from apps.shared.pairings import ensure_phase08_tables
 from apps.smartlists import refresh as cli_refresh
 from apps.smartlists.cli import create as cli_create
 
-
 pytestmark = pytest.mark.requirement("SMART-02")
 
 

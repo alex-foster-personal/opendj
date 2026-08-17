@@ -12,7 +12,6 @@ import pytest
 
 from apps.shared.pairings import ensure_phase08_tables
 
-
 pytestmark = pytest.mark.requirement("CAT-03")
 
 

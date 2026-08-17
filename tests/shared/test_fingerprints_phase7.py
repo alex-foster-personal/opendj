@@ -22,7 +22,6 @@ from apps.shared.fingerprints import (
     load_or_compute,
 )
 
-
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
 

@@ -19,18 +19,18 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import hashlib
-import shutil
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.dedup import schema as dedup_schema
 from apps.shared import paths
 from apps.shared.tag_writer import read_tags, write_tags
 
-from apps.dedup import schema as dedup_schema
 from . import collect as tag_collect
 from . import unify as tag_unify
 

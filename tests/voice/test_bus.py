@@ -8,7 +8,6 @@ import pytest
 
 from apps.voice import bus
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 
@@ -163,6 +162,7 @@ class TestStateBackedBus:
         the event.
         """
         import logging
+
         from apps.shared.state import paths as state_paths
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
@@ -228,7 +228,9 @@ class TestRecentSeesAllActors:
             b.publish({"kind": "READ_BPM", "slots": {}, "bpm": 128})
             # Simulate a Phase-5/12 producer inserting directly with a
             # different actor. We use the same sqlite file the bus owns.
-            import sqlite3 as _sqlite3, json as _json, time as _time
+            import json as _json
+            import sqlite3 as _sqlite3
+            import time as _time
             with _sqlite3.connect(str(tmp_path / "state.db")) as conn:
                 conn.execute(
                     "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "

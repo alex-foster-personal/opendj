@@ -22,7 +22,6 @@ from typing import Any
 
 from apps.shared.tag_writer import TagRead, UnifiedTags
 
-
 SOURCES = ("rb", "mik", "djay", "file", "filename")
 
 

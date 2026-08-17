@@ -11,9 +11,9 @@ The Orchestrator agent (Claude Code / Sol) does not need to be active while this
 """
 
 import os
+import re
 import subprocess
 import time
-import re
 
 BACKLOG_FILE = ".planning/EXPLORATION_BACKLOG.md"
 MODEL = os.environ.get("FIREWORKS_MODEL", "openai/accounts/fireworks/models/kimi-2.7-code")

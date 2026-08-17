@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
+from apps.shared import audio_quality
+
 from .. import rb_vendor
 from ..backend import StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
@@ -19,7 +21,6 @@ from ..models import (
     TrackPatch,
     TracksPage,
 )
-from apps.shared import audio_quality
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 

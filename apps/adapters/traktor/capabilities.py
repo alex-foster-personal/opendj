@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from apps.open_dj import Capabilities, CapabilityField
 
-
 TRAKTOR_CAPABILITIES = Capabilities(
     adapter="traktor",
     version="0.1.0",

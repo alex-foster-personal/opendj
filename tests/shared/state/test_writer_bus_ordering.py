@@ -17,7 +17,6 @@ import pytest
 from apps.shared.state.types import Event
 from apps.shared.state.writer import StateWriter
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 

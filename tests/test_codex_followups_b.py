@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis import auto_cues, write_tags as wt
+from apps.analysis import auto_cues
+from apps.analysis import write_tags as wt
 from apps.shared.smartlists import SmartlistRuleError
 from apps.shared.smartlists.schema import validate_rule
 from apps.tags import apply as tags_apply
-
 
 # Requirement IDs come from reqs.json (generated from .planning/REQUIREMENTS.md).
 # There is no ANALYSIS/TAGS/SMARTLISTS category -- the areas these findings sit

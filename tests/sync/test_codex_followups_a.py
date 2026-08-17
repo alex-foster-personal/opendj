@@ -37,7 +37,6 @@ from apps.sync.safety import (
     require_cautious_before_bulk,
 )
 
-
 pytestmark = [
     pytest.mark.requirement("SYNC-02"),
     pytest.mark.requirement("SYNC-03"),

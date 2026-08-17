@@ -42,7 +42,8 @@ from pathlib import Path
 
 from pyrekordbox import Rekordbox6Database
 
-from apps.shared import paths, rekordbox_db as rb
+from apps.shared import paths
+from apps.shared import rekordbox_db as rb
 
 # Prefix grammar: "[dead] " or "[half] " (single trailing space, ASCII only).
 DEAD_PREFIX = "[dead] "

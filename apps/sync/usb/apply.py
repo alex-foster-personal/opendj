@@ -35,9 +35,9 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     TextColumn,
-    BarColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
 )

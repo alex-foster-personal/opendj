@@ -22,7 +22,6 @@ import pytest
 from apps.audit import rekordbox_vs_music as rvm
 from apps.shared import audio_files as _audio_files
 
-
 pytestmark = pytest.mark.requirement("RECON-01")
 
 

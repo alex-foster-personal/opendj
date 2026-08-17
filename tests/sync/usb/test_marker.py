@@ -1,7 +1,6 @@
 """Tests for apps.sync.usb.marker."""
 from __future__ import annotations
 
-
 import pytest
 
 from apps.sync.usb.marker import MARKER_NAME, read_marker, write_marker

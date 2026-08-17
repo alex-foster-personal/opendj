@@ -29,9 +29,9 @@ from typing import Callable, Protocol
 
 from .config import CloudConfig, MissingEnvError
 from .lock import (
+    HEARTBEAT_SECONDS,
     AcquireResult,
     FakeS3Client,
-    HEARTBEAT_SECONDS,
     Lock,
     LockLostError,
     S3Client,

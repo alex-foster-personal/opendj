@@ -11,7 +11,12 @@
 Fail-fast: any unresolved filename, DB error, or non-2xx API response raises.
 """
 from __future__ import annotations
-import hashlib, json, re, sqlite3, sys
+
+import hashlib
+import json
+import re
+import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 

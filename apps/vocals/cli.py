@@ -85,8 +85,8 @@ from typing import Any, Iterable, Iterator, Optional
 
 from apps.shared.paths import DATA_DIR
 from apps.shared.platform_paths import (
-    PathMap,
     MappedPath,
+    PathMap,
     load_path_map,
     resolve_asset_path,
 )

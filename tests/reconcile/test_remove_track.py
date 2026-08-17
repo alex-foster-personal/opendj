@@ -15,7 +15,6 @@ import pytest
 
 from apps.reconcile import remove_track
 
-
 # ------------------------------------------------------------------ helpers
 
 

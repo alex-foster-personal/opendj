@@ -15,7 +15,6 @@ from apps.sync.djay_writer import (
 )
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
-
 # Codex P04-02: RB-side writes are only implemented for these fields.
 # ``apply_analysis`` used to silently skip any other field and still
 # exit 0, which made the CLI report success after a partial apply.

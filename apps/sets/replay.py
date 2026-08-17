@@ -18,7 +18,6 @@ from . import paths as sets_paths
 from .classify import classify_session, read_transitions
 from .sessions import get_session
 
-
 # Human duration parser for ``--since 45m`` / ``--since 1h30m`` / ``--since 30s``.
 _SINCE_RE = re.compile(r"^\s*(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?\s*$", re.IGNORECASE)
 

@@ -20,7 +20,6 @@ import pytest
 from apps.sync.usb.profile import Profile, load_from_string
 from apps.sync.usb.state import CanonicalTrack
 
-
 PROFILE_YAML = """\
 name: fixtureA
 drive_label: FIXTURE-A

@@ -31,7 +31,6 @@ from apps.smartlists.rb_writer import (
     _resolve_stable_id_for_rb,
 )
 
-
 # ---------------------------------------------------------------- state DB
 
 _STATE_DDL = """

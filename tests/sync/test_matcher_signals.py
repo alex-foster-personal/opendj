@@ -10,11 +10,10 @@ from apps.shared.djay_db import DjayTrack
 from apps.sync.matcher import (
     MIN_CONFIDENCE_FOR_ACCEPT,
     MIN_SIGNALS_FOR_ACCEPT,
-    Signal,
     WEIGHTS,
+    Signal,
     score_pair,
 )
-
 
 pytestmark = pytest.mark.requirement("SYNC-02")
 

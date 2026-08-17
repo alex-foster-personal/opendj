@@ -52,8 +52,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from apps.shared import paths
 from apps.reconcile import locate as _locate
+from apps.shared import paths
 
 console = Console(width=120)
 

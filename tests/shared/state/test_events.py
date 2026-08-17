@@ -12,7 +12,6 @@ import pytest
 from apps.shared.state.events import EventBus, FakeEventBus
 from apps.shared.state.types import Event
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 

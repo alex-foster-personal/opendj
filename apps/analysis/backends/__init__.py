@@ -24,8 +24,10 @@ def get_backend(name: str) -> "type[AnalyzerBackend]":
         elif name == "mik":
             from . import mik
         else:
-            from . import librosa_madmom  # noqa: F401
-            from . import mik  # noqa: F401
+            from . import (
+                librosa_madmom,  # noqa: F401
+                mik,  # noqa: F401
+            )
     try:
         return BACKENDS[name]
     except KeyError as exc:

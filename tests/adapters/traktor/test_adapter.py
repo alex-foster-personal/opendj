@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from apps.adapters.traktor import TraktorAdapter, TraktorAdapterOptions
 from apps.open_dj import (
     Adapter,
     CuePoint,
@@ -12,7 +13,6 @@ from apps.open_dj import (
     Track,
     serialize_jcs,
 )
-from apps.adapters.traktor import TraktorAdapter, TraktorAdapterOptions
 
 
 def _sample_library() -> OpenDjLibrary:

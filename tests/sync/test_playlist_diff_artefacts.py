@@ -9,17 +9,19 @@ import pytest
 
 from apps.sync.playlist_diff import (
     _path_under_repo,
-    main as playlist_diff_main,
     write_diff_md,
     write_patch_csv,
     write_plan_json,
+)
+from apps.sync.playlist_diff import (
+    main as playlist_diff_main,
 )
 from apps.sync.playlist_plan import (
     DjayPlaylistRead,
     FlatPlaylist,
     MatchSet,
-    PlaylistOp,
     PlannedMember,
+    PlaylistOp,
     PlaylistPlan,
     build_plan,
 )

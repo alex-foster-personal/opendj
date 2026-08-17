@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-
 POPM_EMAIL = "music-dj-tools@local"
 POPM_BUCKETS: dict[int, int] = {0: 0, 1: 51, 2: 102, 3: 153, 4: 204, 5: 255}
 
@@ -236,7 +235,6 @@ def read_tags(path: Path) -> TagRead:
 def _write_mp3(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
     from mutagen.id3 import (  # type: ignore
         ID3,
-        ID3NoHeaderError,
         POPM,
         TALB,
         TBPM,
@@ -246,6 +244,7 @@ def _write_mp3(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
         TPE1,
         TSRC,
         TXXX,
+        ID3NoHeaderError,
     )
 
     try:

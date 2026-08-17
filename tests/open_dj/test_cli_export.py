@@ -9,7 +9,6 @@ import pytest
 from apps.open_dj import CuePoint, OpenDjLibrary, Playlist, Track
 from apps.open_dj.cli import main
 
-
 # --------------------------------------------------------------- fake module
 
 

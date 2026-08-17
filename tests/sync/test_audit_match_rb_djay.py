@@ -10,7 +10,6 @@ import pytest
 from apps.audit import match_rb_djay
 from apps.shared.djay_db import DjayTrack
 
-
 pytestmark = pytest.mark.requirement("SYNC-02")
 
 

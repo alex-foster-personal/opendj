@@ -25,7 +25,6 @@ import pytest
 
 from apps.voice import mic_daemon, vad, wake
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 

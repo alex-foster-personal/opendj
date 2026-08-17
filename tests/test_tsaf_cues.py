@@ -24,7 +24,6 @@ from apps.sync.djay_writer import (
     patch_loop_regions,
 )
 
-
 pytestmark = pytest.mark.requirement("SYNC-04")
 
 

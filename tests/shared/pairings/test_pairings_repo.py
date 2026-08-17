@@ -9,7 +9,6 @@ import pytest
 
 from apps.shared.pairings import PairingEdge, PairingsError, PairingsRepo
 
-
 pytestmark = pytest.mark.requirement("CAT-03")
 
 

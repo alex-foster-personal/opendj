@@ -15,7 +15,6 @@ import os
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-
 DEFAULT_WAKE_THRESHOLD: float = 0.5
 DEFAULT_WAKE_PHRASE: str = "hey booth"
 

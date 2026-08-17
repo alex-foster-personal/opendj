@@ -693,7 +693,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    from .run import stable_id_from_path, stable_id_from_audio_bytes
+    from .run import stable_id_from_audio_bytes, stable_id_from_path
     file_map: dict[str, Path] = {}
     for p in map(Path, args.files):
         sid = (

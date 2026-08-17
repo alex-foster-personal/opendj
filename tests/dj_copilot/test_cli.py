@@ -19,7 +19,6 @@ import pytest
 from apps.dj_copilot import cli
 from apps.dj_copilot.play_it import InsufficientDataError
 
-
 pytestmark = pytest.mark.requirement("PLAY-02")
 
 

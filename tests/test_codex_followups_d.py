@@ -21,12 +21,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+
 import pytest
 
 from apps.dj_copilot.session_context import (
     load_session_context,
 )
-
 
 pytestmark = [
     pytest.mark.requirement("AI-01"),
@@ -64,7 +64,7 @@ def test_p13_f02_auto_still_falls_through_to_empty() -> None:
 def test_p14_f03_run_honours_enable_destructive_and_dry_bus(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from apps.voice.__main__ import build_parser, _cmd_run
+    from apps.voice.__main__ import _cmd_run, build_parser
 
     args = build_parser().parse_args(
         ["run", "--enable-destructive", "--dry-bus"]

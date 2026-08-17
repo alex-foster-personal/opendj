@@ -26,7 +26,6 @@ import pytest
 
 from apps.reconcile import apply
 
-
 pytestmark = pytest.mark.requirement("RECON-04")
 
 

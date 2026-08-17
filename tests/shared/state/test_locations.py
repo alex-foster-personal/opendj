@@ -9,7 +9,6 @@ from apps.shared.state import db as state_db
 from apps.shared.state import locations
 from apps.shared.state.writer import StateWriter
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 SID = "d" * 40

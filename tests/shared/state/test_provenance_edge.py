@@ -13,7 +13,6 @@ import pytest
 
 from apps.shared.state import provenance as prov
 
-
 pytestmark = [
     pytest.mark.requirement("OPEN-01c"),
     pytest.mark.requirement("OPEN-01"),
