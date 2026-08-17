@@ -8,6 +8,7 @@ It does not bind, serve, or rewrite Tailscale config on the caller.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import signal
@@ -32,7 +33,8 @@ from apps.webui.port_config import (
 )
 
 ALLOWED_HOSTS_ENV = "MUSIC_DJ_ALLOWED_HOSTS"
-SERVE_HTTP_PORT = 8080
+SERVE_HTTPS_PORT = 443
+LEGACY_SERVE_HTTP_PORT = 8080
 BACKEND_WAIT_SECONDS = 30.0
 FRONTEND_WAIT_SECONDS = 45.0
 STOP_WAIT_SECONDS = 5.0
@@ -98,8 +100,13 @@ def listener_pids(port: int) -> list[int]:
 
 
 def can_bind(port: int) -> bool:
-    """True when a new loopback listener could take the port."""
+    """True when a new server listener could take the port.
+
+    Match uvicorn/Vite's address-reuse behavior so a clean restart is not
+    blocked by the previous listener's harmless TCP TIME_WAIT sockets.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(("127.0.0.1", port))
         except OSError:
@@ -244,11 +251,56 @@ def http_status(url: str, *, host: str | None = None, timeout: float = 2.0) -> i
         return 0
 
 
+def https_status(
+    url: str, *, resolve_host: str, resolve_ip: str, timeout: float = 3.0
+) -> int:
+    """Probe Serve with real TLS/SNI even when the box cannot resolve itself."""
+    result = subprocess.run(
+        [
+            "curl",
+            "--silent",
+            "--output",
+            "/dev/null",
+            "--write-out",
+            "%{http_code}",
+            "--max-time",
+            str(timeout),
+            "--resolve",
+            f"{resolve_host}:{SERVE_HTTPS_PORT}:{resolve_ip}",
+            url,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return 0
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return 0
+
+
 def _wait_http(url: str, *, host: str | None, seconds: float, label: str) -> int:
     deadline = time.monotonic() + seconds
     last = 0
     while time.monotonic() < deadline:
         last = http_status(url, host=host)
+        if last == 200:
+            return last
+        time.sleep(0.2)
+    raise PortConfigError(f"{label} did not reach 200 (last {last}) at {url}")
+
+
+def _wait_https(
+    url: str, *, resolve_host: str, resolve_ip: str, seconds: float, label: str
+) -> int:
+    deadline = time.monotonic() + seconds
+    last = 0
+    while time.monotonic() < deadline:
+        last = https_status(
+            url, resolve_host=resolve_host, resolve_ip=resolve_ip
+        )
         if last == 200:
             return last
         time.sleep(0.2)
@@ -326,10 +378,10 @@ def _tailscale_ipv4() -> str:
 
 
 def ensure_serve(frontend_port: int) -> str:
-    """Point tailscale serve :8080 at this worktree's Vite loopback."""
+    """Point tailnet-only HTTPS Serve at this worktree's Vite loopback."""
     target = f"http://127.0.0.1:{frontend_port}"
     result = subprocess.run(
-        ["tailscale", "serve", "--bg", f"--http={SERVE_HTTP_PORT}", target],
+        ["tailscale", "serve", "--bg", f"--https={SERVE_HTTPS_PORT}", target],
         check=False,
         capture_output=True,
         text=True,
@@ -338,6 +390,38 @@ def ensure_serve(frontend_port: int) -> str:
         raise PortConfigError(
             f"tailscale serve failed: {result.stderr.strip() or result.stdout.strip()}"
         )
+    status = subprocess.run(
+        ["tailscale", "serve", "status", "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if status.returncode != 0:
+        raise PortConfigError(
+            f"tailscale serve status failed: {status.stderr.strip()}"
+        )
+    try:
+        active_ports = json.loads(status.stdout).get("TCP", {})
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise PortConfigError("tailscale serve status returned invalid JSON") from exc
+    if str(LEGACY_SERVE_HTTP_PORT) in active_ports:
+        legacy = subprocess.run(
+            [
+                "tailscale",
+                "serve",
+                "--yes",
+                f"--http={LEGACY_SERVE_HTTP_PORT}",
+                "off",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if legacy.returncode != 0:
+            raise PortConfigError(
+                "failed to disable insecure legacy Serve endpoint: "
+                f"{legacy.stderr.strip() or legacy.stdout.strip()}"
+            )
     return target
 
 
@@ -412,8 +496,10 @@ def run_agentbox() -> int:
 
     backend_log = prepare_log_path("webui-backend")
     frontend_log = prepare_log_path("webui-frontend")
+    client_error_log = prepare_log_path("webui-client-errors")
     print(f"[OK] logs {backend_log}")
     print(f"[OK] logs {frontend_log}")
+    print(f"[OK] logs {client_error_log}")
 
     backend_pid = _start_detached(
         [
@@ -454,10 +540,15 @@ def run_agentbox() -> int:
 
     serve_target = ensure_serve(ports.frontend)
     serve_ip = _tailscale_ipv4()
-    serve_url = f"http://{serve_ip}:{SERVE_HTTP_PORT}/"
-    _wait_http(serve_url, host=host, seconds=10.0, label="tailscale serve")
-    print(f"[OK] serve {serve_target} -> {serve_url} Host={host}")
-    print(f"open http://{host}:{SERVE_HTTP_PORT}")
+    serve_url = f"https://{host}/"
+    _wait_https(
+        serve_url,
+        resolve_host=host,
+        resolve_ip=serve_ip,
+        seconds=15.0,
+        label="tailscale HTTPS serve",
+    )
+    print(f"[OK] serve {serve_target} -> {serve_url} via {serve_ip}")
     return 0
 
 

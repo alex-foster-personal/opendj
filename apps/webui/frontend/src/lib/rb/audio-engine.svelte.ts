@@ -3616,7 +3616,7 @@ class RbAudioEngine implements AudioEngine {
 			const msg =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
-			pushToast(`Deck ${deck} load failed - ${msg}`, 'error');
+			pushToast(`Deck ${deck} load failed - ${msg}`, 'error', undefined, exc);
 			recordPerfEvent('deck-load-fail', msg, deck);
 			throw exc;
 		}

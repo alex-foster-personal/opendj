@@ -797,6 +797,133 @@
         "title": "BulkEditRowOut",
         "type": "object"
       },
+      "ClientErrorIn": {
+        "properties": {
+          "audio_worklet_available": {
+            "title": "Audio Worklet Available",
+            "type": "boolean"
+          },
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 32,
+            "title": "Context",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "window-error",
+              "unhandled-rejection",
+              "sveltekit",
+              "ui-error"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "url": {
+            "maxLength": 4096,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "message",
+          "url",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "audio_worklet_available"
+        ],
+        "title": "ClientErrorIn",
+        "type": "object"
+      },
+      "ClientErrorOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "stored"
+        ],
+        "title": "ClientErrorOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -7110,6 +7237,47 @@
         "summary": "Bulk Edit",
         "tags": [
           "bulk-edit"
+        ]
+      }
+    },
+    "/api/v1/client-errors": {
+      "post": {
+        "operationId": "capture_client_error_api_v1_client_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Client Error",
+        "tags": [
+          "client-errors"
         ]
       }
     },

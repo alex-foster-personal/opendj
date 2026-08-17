@@ -36,6 +36,7 @@ from .share_gate import share_gate_middleware, share_host
 from .routes import analysis as analysis_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
+from .routes import client_errors as client_errors_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import health as health_routes
@@ -103,6 +104,7 @@ def create_app(
     frontend_port: Optional[int] = None,
     enable_cors: bool = True,
     mount_frontend: bool = True,
+    client_error_log_dir: Optional[Path] = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -141,6 +143,11 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.client_error_log_dir = (
+        client_error_log_dir
+        if client_error_log_dir is not None
+        else client_errors_routes.DEFAULT_LOG_DIR
+    )
 
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(ConflictError, handle_conflict)
@@ -209,6 +216,7 @@ def create_app(
 
     api_prefix = "/api/v1"
     app.include_router(tracks_routes.router, prefix=api_prefix)
+    app.include_router(client_errors_routes.router, prefix=api_prefix)
     app.include_router(bench_routes.router, prefix=api_prefix)
     app.include_router(bulk_edit_routes.router, prefix=api_prefix)
     app.include_router(find_replace_routes.router, prefix=api_prefix)

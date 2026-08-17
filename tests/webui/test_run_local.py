@@ -27,7 +27,7 @@ def test_localhost_url_is_loopback_only() -> None:
 
 def test_open_localhost_refuses_non_loopback() -> None:
     with pytest.raises(PortConfigError, match="non-loopback"):
-        open_localhost("http://agentbox.example-tailnet.ts.net:8080")
+        open_localhost("https://agentbox.example-tailnet.ts.net")
     with pytest.raises(PortConfigError, match="non-loopback"):
         open_localhost("http://127.0.0.1:9400/../")
 

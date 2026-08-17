@@ -19,7 +19,7 @@ const HOSTNAME = /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0
  * `MUSIC_DJ_ALLOWED_HOSTS` (comma-separated).
  *
  * Vite 5.4.12+ answers 403 to any Host it was not told about, which is why the
- * tailnet remote runner (`tailscale serve :8080` -> vite) 403s under its
+ * tailnet remote runner (Tailscale HTTPS Serve -> vite) 403s under its
  * MagicDNS name while 127.0.0.1 serves fine. Unset means the empty list, which
  * is Vite's own default: loopback only. Wildcards and the blanket `true` are
  * rejected on purpose - they reopen the DNS-rebinding hole the check closes.

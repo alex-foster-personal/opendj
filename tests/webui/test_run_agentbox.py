@@ -22,6 +22,7 @@ from apps.webui.run_agentbox import (
     can_bind,
     dated_log_path,
     http_status,
+    https_status,
     is_agentbox,
     listener_pids,
     log_home,
@@ -188,3 +189,13 @@ def test_http_status_reads_a_real_server() -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_https_status_returns_zero_for_a_real_closed_socket() -> None:
+    port = _free_port()
+    assert https_status(
+        f"https://agentbox.example-tailnet.ts.net:{port}/",
+        resolve_host="agentbox.example-tailnet.ts.net",
+        resolve_ip="127.0.0.1",
+        timeout=0.2,
+    ) == 0
