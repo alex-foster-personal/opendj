@@ -53,7 +53,7 @@ PRELOAD1_PRESET: Path = (
 DEFAULT_CRATE_ROOT: Path = Path("/data/mdt-crate")
 DEFAULT_USER_PREFIXES: tuple[str, ...] = ("/Users/dev", "/Users/dev")
 REMOTE_REPO: Path = Path("/root/music-dj-tools")
-ANLZ_SIBLING_SUFFIXES: tuple[str, ...] = (".DAT", ".EXT", ".2EX", ".dat", ".ext", ".2ex")
+ANLZ_SIBLING_SUFFIXES: frozenset[str] = frozenset({".DAT", ".EXT", ".2EX"})
 ARTWORK_SIBLINGS: tuple[str, ...] = ("artwork.jpg", "artwork_s.jpg", "artwork_m.jpg")
 FileKind = Literal["audio", "anlz", "artwork"]
 DestKind = Literal["ssh", "local"]
@@ -118,12 +118,6 @@ def crate_dest(source: Path, *, crate_root: Path, user_maps: Sequence[tuple[str,
     posix = source.as_posix()
     if posix.startswith("/PIONEER/"):
         return crate_root / "pioneer-share" / posix.lstrip("/")
-    for from_prefix, to_prefix in user_maps:
-        if posix == from_prefix:
-            return Path(to_prefix)
-        prefix = from_prefix.rstrip("/")
-        if posix.startswith(prefix + "/"):
-            return Path(to_prefix) / posix[len(prefix) + 1 :]
     share = platform_paths.SHARE_ROOT
     try:
         rel = source.resolve(strict=False).relative_to(share)
@@ -131,6 +125,12 @@ def crate_dest(source: Path, *, crate_root: Path, user_maps: Sequence[tuple[str,
         rel = None
     if rel is not None:
         return crate_root / "pioneer-share" / rel
+    for from_prefix, to_prefix in user_maps:
+        if posix == from_prefix:
+            return Path(to_prefix)
+        prefix = from_prefix.rstrip("/")
+        if posix.startswith(prefix + "/"):
+            return Path(to_prefix) / posix[len(prefix) + 1 :]
     raise RuntimeError(f"no crate mapping for {source}")
 
 
@@ -226,13 +226,16 @@ def _anlz_sources(analysis_data_path: Optional[str]) -> list[Path]:
     source = _materialised_source(analysis_data_path)
     if source is None:
         return []
-    files = [source]
-    stem = source.with_suffix("")
-    for suffix in ANLZ_SIBLING_SUFFIXES:
-        sibling = stem.with_suffix(suffix)
-        if sibling != source and fs_residency.is_materialised(sibling):
-            files.append(sibling)
-    return files
+    return sorted(
+        (
+            sibling
+            for sibling in source.parent.iterdir()
+            if sibling.stem == source.stem
+            and sibling.suffix.upper() in ANLZ_SIBLING_SUFFIXES
+            and fs_residency.is_materialised(sibling)
+        ),
+        key=lambda path: path.name,
+    )
 
 
 def _artwork_sources(image_path: Optional[str]) -> list[Path]:
@@ -539,6 +542,41 @@ def load_manifest(path: Path) -> dict[str, object]:
     return raw
 
 
+def load_destination_manifest(
+    *, dest_kind: DestKind, dest_host: str, manifest_path: Path
+) -> dict[str, object]:
+    if dest_kind == "local":
+        return load_manifest(manifest_path)
+    quoted = shlex.quote(manifest_path.as_posix())
+    command = f"test ! -f {quoted} || cat -- {quoted}"
+    completed = subprocess.run(
+        ssh_agentbox_argv(command, ssh_host=dest_host),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"exit {completed.returncode}"
+        )
+        raise RuntimeError(f"could not read destination manifest: {detail}")
+    if not completed.stdout.strip():
+        return {}
+    try:
+        raw = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"destination manifest {manifest_path} is malformed: {exc}"
+        ) from exc
+    if not isinstance(raw, dict):
+        raise RuntimeError(
+            f"destination manifest {manifest_path} must be a JSON object"
+        )
+    return raw
+
+
 def spike_verified(manifest: dict[str, object]) -> bool:
     return bool(manifest.get("spike_verified"))
 
@@ -811,9 +849,14 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         assert_push_host(dest_kind=dest_kind, dest_host=args.to, to_explicit=to_explicit)
+        existing = load_destination_manifest(
+            dest_kind=dest_kind,
+            dest_host=args.to,
+            manifest_path=manifest_path,
+        )
         assert_full_allowed(
             filtered=_filtered(args),
-            spike_ok=spike_verified(load_manifest(manifest_path)),
+            spike_ok=spike_verified(existing),
         )
         apply_plan(
             plan,
@@ -823,7 +866,6 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             user_maps=user_maps,
         )
         map_doc = path_map_document(user_maps)
-        existing = load_manifest(manifest_path)
         payload = manifest_payload(
             plan,
             source_host=socket.gethostname(),
