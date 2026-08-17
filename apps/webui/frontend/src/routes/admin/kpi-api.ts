@@ -115,6 +115,9 @@ function parseLedger(raw: unknown): KpiLedger {
 	return { kpis, snapshots: obj.snapshots.map(parseSnapshot) };
 }
 
+/** TEST-ONLY: the validator half, without a network round trip. */
+export const _parseLedgerForTests = parseLedger;
+
 //----- fetch ----------------------------------------------------------------
 
 export async function fetchKpiLedger(): Promise<KpiLedger> {

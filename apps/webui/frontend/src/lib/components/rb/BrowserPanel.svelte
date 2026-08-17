@@ -36,6 +36,7 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
+	import { resolveRowVocals } from '$lib/rb/row-vocals';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress
@@ -205,28 +206,22 @@
 	// Vocals for PreviewStrip blue bars: listing hydrate (row.vocals) is
 	// the base; loaded-deck / client anlz overwrite only when analyzed.
 	// Strips never fan-out /anlz themselves.
-	const vocalsById = $derived.by((): Record<string, Vocals> => {
-		const out: Record<string, Vocals> = {};
-		for (const row of pane.rows) {
-			out[row.stable_id] = row.vocals;
-		}
-		const preferAnalyzed = (sid: string, v: Vocals): void => {
-			if (v.status !== 'not_analyzed') out[sid] = v;
-		};
-		for (const d of DECK_IDS) {
-			const st = decks[d];
-			if (st.stable_id !== null && st.anlz !== null) {
-				preferAnalyzed(st.stable_id, vocalsOf(st.anlz));
+	const vocalsById = $derived.by((): Record<string, Vocals> =>
+		resolveRowVocals({
+			rows: pane.rows,
+			deckVocals: DECK_IDS.flatMap((d) => {
+				const st = decks[d];
+				if (st.stable_id === null || st.anlz === null) return [];
+				return [{ stable_id: st.stable_id, vocals: vocalsOf(st.anlz) }];
+			}),
+			// getAnlzEntry is a PURE read - swapping it for ensureAnlz here is the
+			// per-row fan-out this contract exists to prevent.
+			cachedVocals: (stable_id: string): Vocals | undefined => {
+				const entry = getAnlzEntry(stable_id);
+				return entry !== undefined && entry.status === 'ready' ? vocalsOf(entry.data) : undefined;
 			}
-		}
-		for (const row of pane.rows) {
-			const entry = getAnlzEntry(row.stable_id);
-			if (entry !== undefined && entry.status === 'ready') {
-				preferAnalyzed(row.stable_id, vocalsOf(entry.data));
-			}
-		}
-		return out;
-	});
+		})
+	);
 	const treeNodes = $derived(
 		playlists
 			.slice()
