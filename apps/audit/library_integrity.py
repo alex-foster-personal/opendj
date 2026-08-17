@@ -74,7 +74,12 @@ def rehome_path(folder_path: str, home: str | None = None) -> str | None:
     if posix_home.is_absolute():
         return str(posix_home / PurePosixPath(m.group(1)))
     windows_home = PureWindowsPath(home)
-    if windows_home.is_absolute():
+    # ``is_absolute()`` alone is not enough: since Python 3.13 an incomplete
+    # UNC prefix (``\\server``, or a bare ``\\``) reports True because the
+    # server half lands in ``.drive`` with an empty ``.root``. A rooted
+    # Windows path always has a non-empty ``.root`` (``C:\...`` and
+    # ``\\server\share\...`` both do), so require both.
+    if windows_home.is_absolute() and windows_home.root:
         return str(windows_home / PureWindowsPath(m.group(1)))
     raise ValueError(
         f"home must be an absolute POSIX or Windows path, got {home!r}."
