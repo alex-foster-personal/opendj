@@ -191,7 +191,13 @@ def _write_dotenv_ports(dotenv_path: Path, ports: WebuiPorts) -> None:
     for name, value in replacements.items():
         if name not in seen:
             output_lines.append(f"{name}={value}")
-    _atomic_write_text(dotenv_path, "\n".join(output_lines).rstrip() + "\n")
+    content = "\n".join(output_lines).rstrip() + "\n"
+    # Skip the write when nothing changes: vite watches the root .env and
+    # re-runs claim on every config load, so an unconditional rewrite feeds
+    # its own change event and wedges the dev server in a restart loop.
+    if dotenv_path.is_file() and dotenv_path.read_text(encoding="utf-8") == content:
+        return
+    _atomic_write_text(dotenv_path, content)
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
