@@ -25,11 +25,32 @@ just quality-baseline    # rewrites baseline.json at today's numbers
 Allowances only ever shrink. Raising one by hand is a decision someone has to
 defend in a diff, which is the point.
 
-The single exception is `arch.contracts_broken`, which is hard-gated at zero
-regardless of baseline. An architecture rule with a growing allowance is not a
-rule. Its debt is carried instead as a named, dated list of exact imports in
+There are two exceptions, in opposite directions.
+
+`arch.contracts_broken` is **hard-gated at zero** regardless of baseline. An
+architecture rule with a growing allowance is not a rule. Its debt is carried
+instead as a named, dated list of exact imports in
 [`.importlinter`](../../.importlinter), so you can read the debt rather than
 just counting it.
+
+`deps.issues` is **report only**: measured and printed every run, never gated,
+and deliberately absent from `baseline.json` (that file lists allowances, and a
+number nothing is allowed to exceed is not one). deptry's answer depends on the
+host, not just the tree. It splits an import into DEP001 (undeclared) or DEP003
+(transitive) by what it can actually resolve, and scores a platform-gated
+declaration as DEP002 (unused) on the platform where the marker is false.
+Measured Mon 17 Aug 2026 on an identical tree: macOS read 22 (DEP003=12,
+DEP001=6, DEP002=4), ubuntu-latest read 24 (DEP001=19, DEP002=5, the extra
+DEP002 being `pyobjc-framework-Quartz` behind `sys_platform == 'darwin'`). The
+other 22 metrics agreed exactly across both hosts, so this is deptry's
+environment sensitivity rather than noise in the gate.
+
+A ratchet compares today's number against one recorded on someone else's
+machine, so a host-dependent metric can only produce false failures or an
+allowance quietly inflated to the worst platform. Both end with the gate being
+switched off. To re-gate it, make the measurement host-independent (run deptry
+in a pinned container, or record a per-platform baseline) and then remove it
+from `REPORT_ONLY` in `scripts/quality_gate.py` -- do not just delete the entry.
 
 ## What each evaluator answers
 

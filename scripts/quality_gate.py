@@ -110,6 +110,27 @@ class CFG:
 # architecture rule with a growing allowance is not a rule.
 HARD_ZERO: frozenset[str] = frozenset({"arch.contracts_broken"})
 
+# Metrics that are measured and printed but never gated, because their value
+# is not reproducible across hosts. A ratchet compares today's number to a
+# number recorded on some other machine, so a metric that legitimately differs
+# by platform can only ever produce false failures or a silently inflated
+# allowance -- both of which end with someone switching the gate off.
+#
+# deps.issues is the only one. deptry splits an import into DEP001 (undeclared)
+# or DEP003 (transitive) by looking at what is actually resolvable, and it
+# scores a platform-gated declaration as DEP002 (unused) on the platform where
+# the marker is false. Measured Mon 17 Aug 2026 on identical trees: macOS reads
+# 22 (DEP003=12, DEP001=6, DEP002=4), ubuntu-latest reads 24 (DEP001=19,
+# DEP002=5, the extra DEP002 being pyobjc-framework-Quartz behind
+# `sys_platform == 'darwin'`). Every one of the other 22 metrics agreed exactly
+# across the two hosts, so this is deptry's environment sensitivity, not noise
+# in the gate.
+#
+# To re-gate it, make the measurement host-independent (run deptry in a pinned
+# container, or record a per-platform baseline) rather than just deleting this
+# entry.
+REPORT_ONLY: frozenset[str] = frozenset({"deps.issues"})
+
 
 @dataclass(frozen=True)
 class Metric:
@@ -564,6 +585,8 @@ def _compare(
             if m.value > 0:
                 regressions.append(f"{m.key}: {m.value:g} (hard gate, must be 0)")
             continue
+        if m.key in REPORT_ONLY:
+            continue
         if m.key not in baseline:
             unknown.append(f"{m.key}: {m.value:g} (no baseline; run --update-baseline)")
         elif m.value > baseline[m.key]:
@@ -591,11 +614,18 @@ def _markdown(metrics: list[Metric], baseline: dict[str, float], hotspots: list)
         "| ------ | ----: | ------: | ------ | ---- | -------------- |",
     ]
     for m in metrics:
-        allowed = "0 (hard)" if m.key in HARD_ZERO else (
-            f"{baseline[m.key]:g}" if m.key in baseline else "-"
-        )
+        if m.key in HARD_ZERO:
+            allowed = "0 (hard)"
+        elif m.key in REPORT_ONLY:
+            allowed = "n/a"
+        elif m.key in baseline:
+            allowed = f"{baseline[m.key]:g}"
+        else:
+            allowed = "-"
         if m.key in HARD_ZERO:
             status = "PASS" if m.value == 0 else "FAIL"
+        elif m.key in REPORT_ONLY:
+            status = "report only"
         elif m.key not in baseline:
             status = "NEW"
         elif m.value > baseline[m.key]:
@@ -636,6 +666,8 @@ def _marker(metric: Metric, allowed: float | None) -> str:
     """Two-character status flag for one metric line."""
     if metric.key in HARD_ZERO:
         return "!!" if metric.value > 0 else "OK"
+    if metric.key in REPORT_ONLY:
+        return "--"
     if allowed is None:
         return "??"
     if metric.value > allowed:
@@ -649,7 +681,12 @@ def _print_metrics(metrics: list[Metric], baseline: dict[str, float]) -> None:
     print()
     for m in metrics:
         allowed = baseline.get(m.key)
-        suffix = f" (allowed {allowed:g})" if allowed is not None else ""
+        if m.key in REPORT_ONLY:
+            suffix = " (report only, not gated)"
+        elif allowed is not None:
+            suffix = f" (allowed {allowed:g})"
+        else:
+            suffix = ""
         detail = f"  [{m.detail}]" if m.detail else ""
         print(f" {_marker(m, allowed):2s} {m.key:38s} {m.value:>8g} {m.unit}{suffix}{detail}")
 
@@ -661,7 +698,12 @@ def _write_baseline(metrics: list[Metric]) -> None:
             {
                 "generated": datetime.now(UTC).isoformat(timespec="seconds"),
                 "note": "Allowances only ever shrink. See ops/quality/README.md.",
-                "metrics": {m.key: m.value for m in metrics},
+                # REPORT_ONLY metrics are deliberately absent: this file is a
+                # list of allowances, and a number nothing is allowed to exceed
+                # does not belong in it.
+                "metrics": {
+                    m.key: m.value for m in metrics if m.key not in REPORT_ONLY
+                },
             },
             indent=2,
         )
