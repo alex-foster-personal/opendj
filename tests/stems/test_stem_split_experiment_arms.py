@@ -63,7 +63,7 @@ def _rows(data_dir: Path) -> list[tuple[str, str]]:
 # ----- first assignment wins ---------------------------------------------
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_a_second_wave_never_relabels_an_existing_assignment(data_dir: Path) -> None:
     ids = [f"sid-{i:03d}" for i in range(40)]
     written = ssr.record_assignments(
@@ -83,7 +83,7 @@ def test_a_second_wave_never_relabels_an_existing_assignment(data_dir: Path) -> 
     assert len(_rows(data_dir)) == len(ids), "a re-run appended duplicate rows"
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_a_second_wave_only_records_the_tracks_that_are_new(data_dir: Path) -> None:
     old = [f"sid-{i:03d}" for i in range(10)]
     ssr.record_assignments(
@@ -97,7 +97,7 @@ def test_a_second_wave_only_records_the_tracks_that_are_new(data_dir: Path) -> N
     assert len(_rows(data_dir)) == 14
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_dry_run_records_nothing(data_dir: Path) -> None:
     ids = [f"sid-{i}" for i in range(5)]
     assert ssr.record_assignments(
@@ -106,7 +106,7 @@ def test_dry_run_records_nothing(data_dir: Path) -> None:
     assert _rows(data_dir) == []
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_already_assigned_reads_back_what_was_recorded(data_dir: Path) -> None:
     ids = [f"sid-{i}" for i in range(6)]
     ssr.record_assignments(
@@ -118,14 +118,14 @@ def test_already_assigned_reads_back_what_was_recorded(data_dir: Path) -> None:
 # ----- assignment is deterministic and id-scoped -------------------------
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_assignment_is_stable_for_the_same_id() -> None:
     ids = [f"sid-{i:04d}" for i in range(200)]
     once = [ssr.assign_arm(s).name for s in ids]
     assert once == [ssr.assign_arm(s).name for s in ids]
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_assignment_is_derived_from_experiment_id_and_stable_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -144,7 +144,7 @@ def test_assignment_is_derived_from_experiment_id_and_stable_id(
     )
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_recorded_payload_names_the_experiment_and_its_arm_set(
     data_dir: Path,
 ) -> None:
@@ -164,7 +164,7 @@ def test_recorded_payload_names_the_experiment_and_its_arm_set(
     assert payload["preset"] and payload["codec"]
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_experiment_id_must_move_when_the_arm_set_moves() -> None:
     """Pin the arm set to the id that labels it.
 
@@ -191,7 +191,7 @@ def test_experiment_id_must_move_when_the_arm_set_moves() -> None:
 # ----- recorded BEFORE the farm runs -------------------------------------
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_assignments_are_durable_before_the_first_arm_is_farmed(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -220,7 +220,7 @@ def test_assignments_are_durable_before_the_first_arm_is_farmed(
     assert recorded == {s: ssr.assign_arm(s).name for s in ids}
 
 
-@pytest.mark.requirement("STEM-SPLIT")
+@pytest.mark.requirement("GUARD-03")
 def test_plan_only_records_nothing_and_runs_nothing(
     data_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

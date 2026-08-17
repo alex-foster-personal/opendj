@@ -53,7 +53,7 @@ def _rows(tier: str, points: list[tuple[float, float, float]]) -> list[dict[str,
 # ----- MERGE, never replace ---------------------------------------------
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_remeasuring_one_tier_keeps_the_other_tiers_and_their_raw_points() -> None:
     prior_m = tt._fit("M", "H100", _rows("M", [(150.0, 30.0, 20.0),
                                                (330.0, 55.0, 40.0),
@@ -76,7 +76,7 @@ def test_remeasuring_one_tier_keeps_the_other_tiers_and_their_raw_points() -> No
     )
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_remeasuring_the_same_pair_replaces_only_that_pairs_rows() -> None:
     first = _rows("M", [(150.0, 30.0, 20.0), (330.0, 55.0, 40.0),
                         (600.0, 95.0, 70.0)])
@@ -92,7 +92,7 @@ def test_remeasuring_the_same_pair_replaces_only_that_pairs_rows() -> None:
     assert {r["wall_s"] for r in after["raw"]} == {31.0, 56.0, 96.0}
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_the_same_tier_on_a_different_card_is_a_different_row() -> None:
     a_raw = _rows("M", [(150.0, 30.0, 20.0), (330.0, 55.0, 40.0),
                         (600.0, 95.0, 70.0)])
@@ -109,7 +109,7 @@ def test_the_same_tier_on_a_different_card_is_a_different_row() -> None:
 # ----- the fit refuses too few points -----------------------------------
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_fit_refuses_two_distinct_durations_and_names_the_count() -> None:
     two = _rows("S", [(150.0, 20.0, 14.0), (600.0, 60.0, 48.0)])
     with pytest.raises(SystemExit) as exc:
@@ -119,7 +119,7 @@ def test_fit_refuses_two_distinct_durations_and_names_the_count() -> None:
     assert str(tt.MIN_DISTINCT_DURATIONS) in msg
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_repeats_of_the_same_duration_do_not_count_as_distinct() -> None:
     """Three rows, two durations. Repeats raise confidence, not rank."""
     rows = _rows("S", [(150.0, 20.0, 14.0), (150.0, 21.0, 15.0),
@@ -132,7 +132,7 @@ def test_repeats_of_the_same_duration_do_not_count_as_distinct() -> None:
 # ----- a poor fit ships WITH its note ------------------------------------
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_poor_fit_is_written_carrying_the_note_not_dropped() -> None:
     """Wildly non-linear wall times: the row must still exist, noted."""
     noisy = _rows("S", [(150.0, 90.0, 14.0), (330.0, 10.0, 27.0),
@@ -145,7 +145,7 @@ def test_poor_fit_is_written_carrying_the_note_not_dropped() -> None:
     assert str(tt.MIN_R_SQUARED) in fit["note"]
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_clean_fit_carries_no_note() -> None:
     clean = _rows("S", [(150.0, 30.0, 20.0), (330.0, 54.0, 40.0),
                         (600.0, 94.0, 70.0)])
@@ -154,7 +154,7 @@ def test_clean_fit_carries_no_note() -> None:
     assert fit["note"] == ""
 
 
-@pytest.mark.requirement("STEM-TIERS")
+@pytest.mark.requirement("GUARD-04")
 def test_every_emitted_row_names_the_command_that_produced_it() -> None:
     clean = _rows("S", [(150.0, 30.0, 20.0), (330.0, 54.0, 40.0),
                         (600.0, 94.0, 70.0)])

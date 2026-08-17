@@ -59,7 +59,7 @@ def _corrupt(path: Path) -> None:
     path.write_bytes(bytes(raw[: len(raw) // 2]))
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_fixture_directory_parses_cleanly_before_anything_is_broken(
     tmp_path: Path,
 ) -> None:
@@ -69,7 +69,7 @@ def test_fixture_directory_parses_cleanly_before_anything_is_broken(
     assert "PQTZ" in tags and "PWV6" in tags and "PWV7" in tags
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_corrupt_ext_still_serves_the_dat_and_2ex_lanes(tmp_path: Path) -> None:
     directory = _real_dir(tmp_path)
     _corrupt(directory / "ANLZ0000.EXT")
@@ -87,7 +87,7 @@ def test_corrupt_ext_still_serves_the_dat_and_2ex_lanes(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_corrupt_2ex_still_serves_the_dat_lanes(tmp_path: Path) -> None:
     """The other direction: the tri-band carrier is the one that dies."""
     directory = _real_dir(tmp_path)
@@ -100,7 +100,7 @@ def test_corrupt_2ex_still_serves_the_dat_lanes(tmp_path: Path) -> None:
     assert "PWV6" not in tags and "PWV7" not in tags
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_the_unreadable_list_names_the_extension_so_a_lane_can_be_identified(
     tmp_path: Path,
 ) -> None:
@@ -122,7 +122,7 @@ def test_the_unreadable_list_names_the_extension_so_a_lane_can_be_identified(
     assert "PQTZ" in tags
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_every_file_corrupt_raises_analysis_not_found_naming_the_files(
     tmp_path: Path,
 ) -> None:
@@ -140,7 +140,7 @@ def test_every_file_corrupt_raises_analysis_not_found_naming_the_files(
         assert name in message, f"{name} not named in the 404: {message}"
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_an_empty_directory_raises_rather_than_returning_empty_bands(
     tmp_path: Path,
 ) -> None:
@@ -151,7 +151,7 @@ def test_an_empty_directory_raises_rather_than_returning_empty_bands(
     assert exc.value.detail["code"] == "ANALYSIS_NOT_FOUND"
 
 
-@pytest.mark.requirement("RB-ANLZ")
+@pytest.mark.requirement("GUARD-01")
 def test_non_anlz_files_in_the_directory_are_ignored_not_reported_unreadable(
     tmp_path: Path,
 ) -> None:
