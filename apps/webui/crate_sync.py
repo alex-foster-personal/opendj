@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import sqlite3
@@ -123,7 +124,7 @@ def crate_dest(source: Path, *, crate_root: Path, user_maps: Sequence[tuple[str,
         prefix = from_prefix.rstrip("/")
         if posix.startswith(prefix + "/"):
             return Path(to_prefix) / posix[len(prefix) + 1 :]
-    share = Path.home() / "Library" / "Pioneer" / "rekordbox" / "share"
+    share = platform_paths.SHARE_ROOT
     try:
         rel = source.resolve(strict=False).relative_to(share)
     except ValueError:
@@ -352,13 +353,20 @@ def plan_bytes(plan: SyncPlan) -> int:
 
 def _rsync_to_host(source: Path, dest_host: str, dest: Path) -> None:
     parent = dest.parent.as_posix()
-    mkdir = ssh_agentbox_argv(f"mkdir -p {parent}", ssh_host=dest_host)
+    mkdir = ssh_agentbox_argv(
+        f"mkdir -p {shlex.quote(parent)}", ssh_host=dest_host
+    )
     made = subprocess.run(mkdir, check=False, capture_output=True, text=True)
     if made.returncode != 0:
         detail = made.stderr.strip() or made.stdout.strip() or f"exit {made.returncode}"
         raise RuntimeError(f"remote mkdir failed for {parent}: {detail}")
     copied = subprocess.run(
-        ["rsync", "-a", str(source), f"{dest_host}:{dest.as_posix()}"],
+        [
+            "rsync",
+            "-a",
+            str(source),
+            f"{dest_host}:{shlex.quote(dest.as_posix())}",
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -373,17 +381,124 @@ def _copy_local(source: Path, dest: Path) -> None:
     shutil.copy2(source, dest)
 
 
+def _source_group(
+    item: CrateFile,
+    *,
+    crate_root: Path,
+    user_maps: Sequence[tuple[str, str]],
+) -> tuple[Path, Path, Path]:
+    """Return source root, destination root, and relative file path."""
+    source = item.source.resolve(strict=False)
+    for source_raw, dest_raw in sorted(
+        user_maps, key=lambda pair: len(pair[0]), reverse=True
+    ):
+        source_root = Path(source_raw).resolve(strict=False)
+        try:
+            relative = source.relative_to(source_root)
+        except ValueError:
+            continue
+        dest_root = Path(dest_raw)
+        if dest_root / relative != item.dest:
+            raise RuntimeError(
+                f"crate mapping drift for {item.source}: expected "
+                f"{dest_root / relative}, planned {item.dest}"
+            )
+        return source_root, dest_root, relative
+
+    share_root = platform_paths.SHARE_ROOT.resolve(strict=False)
+    try:
+        relative = source.relative_to(share_root)
+    except ValueError as exc:
+        raise RuntimeError(f"no rsync source group for {item.source}") from exc
+    dest_root = crate_root / "pioneer-share"
+    if dest_root / relative != item.dest:
+        raise RuntimeError(
+            f"Pioneer crate mapping drift for {item.source}: expected "
+            f"{dest_root / relative}, planned {item.dest}"
+        )
+    return share_root, dest_root, relative
+
+
+def _rsync_plan_to_host(
+    plan: SyncPlan,
+    *,
+    dest_host: str,
+    crate_root: Path,
+    user_maps: Sequence[tuple[str, str]],
+) -> None:
+    """Copy a plan in one NUL-safe rsync batch per source root."""
+    groups: dict[tuple[Path, Path], list[Path]] = {}
+    for item in plan.files:
+        source_root, dest_root, relative = _source_group(
+            item, crate_root=crate_root, user_maps=user_maps
+        )
+        groups.setdefault((source_root, dest_root), []).append(relative)
+
+    for (source_root, dest_root), relative_paths in sorted(
+        groups.items(), key=lambda pair: str(pair[0][1])
+    ):
+        mkdir = ssh_agentbox_argv(
+            f"mkdir -p {shlex.quote(dest_root.as_posix())}",
+            ssh_host=dest_host,
+        )
+        made = subprocess.run(mkdir, check=False, capture_output=True, text=True)
+        if made.returncode != 0:
+            detail = (
+                made.stderr.strip()
+                or made.stdout.strip()
+                or f"exit {made.returncode}"
+            )
+            raise RuntimeError(f"remote mkdir failed for {dest_root}: {detail}")
+
+        file_list = b"".join(
+            relative.as_posix().encode("utf-8") + b"\0"
+            for relative in sorted(set(relative_paths))
+        )
+        copied = subprocess.run(
+            [
+                "rsync",
+                "-a",
+                "--relative",
+                "--from0",
+                "--files-from=-",
+                f"{source_root.as_posix().rstrip('/')}/",
+                f"{dest_host}:"
+                f"{shlex.quote(dest_root.as_posix().rstrip('/') + '/')}",
+            ],
+            input=file_list,
+            check=False,
+            capture_output=True,
+        )
+        if copied.returncode != 0:
+            detail = (
+                copied.stderr.decode("utf-8", errors="replace").strip()
+                or copied.stdout.decode("utf-8", errors="replace").strip()
+                or f"exit {copied.returncode}"
+            )
+            raise RuntimeError(
+                f"rsync batch {source_root} -> {dest_host}:{dest_root} failed: {detail}"
+            )
+
+
 def apply_plan(
     plan: SyncPlan,
     *,
     dest_kind: DestKind,
     dest_host: str,
+    crate_root: Path,
+    user_maps: Sequence[tuple[str, str]],
 ) -> None:
+    if dest_kind == "ssh":
+        _rsync_plan_to_host(
+            plan,
+            dest_host=dest_host,
+            crate_root=crate_root,
+            user_maps=user_maps,
+        )
+        return
     for item in plan.files:
         if dest_kind == "local":
             _copy_local(item.source, item.dest)
-        else:
-            _rsync_to_host(item.source, dest_host, item.dest)
 
 
 def manifest_payload(
@@ -510,6 +625,9 @@ def verify_spike(
     base_url: str,
 ) -> dict[str, object]:
     """GET audio + anlz for each spike id. Real HTTP, no mocked status."""
+    performance_status = _http_status(
+        f"{base_url.rstrip('/')}/performance/preload1"
+    )
     results: list[dict[str, object]] = []
     for stable_id in stable_ids:
         audio_url = f"{base_url.rstrip('/')}/api/v1/tracks/{stable_id}/audio"
@@ -525,10 +643,14 @@ def verify_spike(
                 "anlz_ok": anlz_ok,
             }
         )
-    all_ok = all(
+    all_ok = performance_status == 200 and all(
         item["audio_status"] == 200 and item["anlz_ok"] is True for item in results
     )
-    return {"ok": all_ok, "tracks": results}
+    return {
+        "ok": all_ok,
+        "performance_status": performance_status,
+        "tracks": results,
+    }
 
 
 def _http_status(url: str) -> int:
@@ -599,8 +721,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--base-url",
-        default="http://127.0.0.1:8680",
-        help="backend origin for --verify-spike",
+        default="http://127.0.0.1:9400",
+        help="Vite/Serve origin for --verify-spike",
     )
     return parser
 
@@ -693,7 +815,13 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             filtered=_filtered(args),
             spike_ok=spike_verified(load_manifest(manifest_path)),
         )
-        apply_plan(plan, dest_kind=dest_kind, dest_host=args.to)
+        apply_plan(
+            plan,
+            dest_kind=dest_kind,
+            dest_host=args.to,
+            crate_root=crate_root,
+            user_maps=user_maps,
+        )
         map_doc = path_map_document(user_maps)
         existing = load_manifest(manifest_path)
         payload = manifest_payload(

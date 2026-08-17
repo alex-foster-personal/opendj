@@ -9027,6 +9027,58 @@
         ]
       }
     },
+    "/api/v1/share/session": {
+      "get": {
+        "description": "Set the share cookie when the query token matches, then redirect.",
+        "operationId": "share_session_api_v1_share_session_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "share",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Share",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "next",
+            "required": false,
+            "schema": {
+              "default": "/",
+              "title": "Next",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Share Session",
+        "tags": [
+          "share"
+        ]
+      }
+    },
     "/api/v1/smartlists": {
       "get": {
         "operationId": "list_smartlists_api_v1_smartlists_get",
@@ -9981,7 +10033,7 @@
     },
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
-        "description": "Stream the local audio file. FileResponse handles Range/206 natively.\n\nRekordbox tracks resolve via the vendor mapping; locally imported tracks\n(no djmdContent row, e.g. vocal stems) fall back to ``tracks.file_path``.",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {

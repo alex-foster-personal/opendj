@@ -69,7 +69,7 @@ def _foreign_prefix() -> str:
     """A path prefix that is FOREIGN on THIS interpreter's real platform, so
     the path-map / unmapped tests exercise the real branch without needing
     to simulate a different OS."""
-    return "D:/music-library" if pp.IS_DARWIN else "/Users/dev/Music"
+    return "/Users/dev/Music" if pp.IS_WINDOWS else "D:/music-library"
 
 
 # ----- no hardcoded SHARE_ROOT left in this module ---------------------------

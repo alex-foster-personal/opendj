@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from apps.webui.port_config import PortConfigError
 from apps.webui.run_agentbox import (
     EPHEMERAL_LOG_DIR,
     LOG_DIR,
+    _proc_cwd,
     allowed_ssh_host,
     can_bind,
     dated_log_path,
@@ -155,6 +157,10 @@ def test_listener_pids_sees_a_real_loopback_socket() -> None:
     while time.monotonic() < deadline and not can_bind(port):
         time.sleep(0.05)
     assert can_bind(port) is True
+
+
+def test_proc_cwd_reads_the_real_process_symlink() -> None:
+    assert Path(_proc_cwd(os.getpid())).resolve() == Path.cwd().resolve()
 
 
 def test_http_status_reads_a_real_server() -> None:

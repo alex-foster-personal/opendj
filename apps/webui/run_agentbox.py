@@ -125,6 +125,13 @@ def _proc_text(pid: int, name: str) -> str:
     return raw.replace(b"\x00", b" ").decode("utf-8", "replace").strip()
 
 
+def _proc_cwd(pid: int) -> str:
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return ""
+
+
 def _ppid(pid: int) -> int | None:
     try:
         for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
@@ -158,7 +165,7 @@ def _is_our_backend(pid: int) -> bool:
 def _is_our_frontend(pid: int) -> bool:
     for current in _walk_ancestors(pid):
         cmdline = _proc_text(current, "cmdline")
-        cwd = _proc_text(current, "cwd")
+        cwd = _proc_cwd(current)
         if "vite" in cmdline and (
             str(PROJECT_ROOT) in cwd or str(PROJECT_ROOT) in cmdline
         ):
@@ -168,7 +175,7 @@ def _is_our_frontend(pid: int) -> bool:
 
 def _stoppable_ancestor(pid: int) -> bool:
     cmdline = _proc_text(pid, "cmdline")
-    cwd = _proc_text(pid, "cwd")
+    cwd = _proc_cwd(pid)
     if "apps.webui.server" in cmdline:
         return True
     if "vite" in cmdline and (
