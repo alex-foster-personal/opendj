@@ -188,7 +188,8 @@ def _frontend_files() -> list[Path]:
 # so the longer prefixes are listed before their parents.
 _RUFF_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("complexity", ("C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0904")),
-    ("coupling", ("TID", "ARG", "PLW0603")),
+    # TID252 deliberately absent: see the note in pyproject.toml [tool.ruff.lint].
+    ("coupling", ("ARG", "PLW0603")),
     ("safety", ("BLE", "TRY", "DTZ", "B9", "PLW1510")),
     ("correctness", ("F", "B", "RUF", "PIE", "RET")),
     ("style", ("E", "W", "I", "UP", "SIM", "PERF", "PL")),
@@ -666,7 +667,7 @@ def _write_baseline(metrics: list[Metric]) -> None:
         )
         + "\n"
     )
-    print(f"\n[quality] baseline written to {BASELINE.relative_to(REPO)}")
+    print(f"\n[quality] baseline written to {BASELINE}")
 
 
 def _select(only: str | None) -> list[Evaluator]:
@@ -706,13 +707,17 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_metrics(metrics, baseline)
 
+    # Absolute paths in the readout: this runs from justfile, Makefile and CI
+    # with three different working directories, so a relative path is a path
+    # the reader has to reconstruct before they can open it.
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(_markdown(metrics, baseline, hotspots))
-        print(f"\n[quality] report written to {args.report}")
+        print(f"\n[quality] report written to {args.report.resolve()}")
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps({m.key: m.value for m in metrics}, indent=2) + "\n")
+        print(f"[quality] metrics written to {args.json.resolve()}")
 
     if args.update_baseline:
         if len(selected) != len(EVALUATORS):

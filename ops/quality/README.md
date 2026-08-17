@@ -95,8 +95,16 @@ Highest-value targets, in the order they are worth doing:
 3. **18 orphaned frontend modules**, including `lib/rb/knob-control.svelte.ts`,
    which is complete, sophisticated, and imported by nothing.
 4. **136 blind `except Exception`** handlers, against a house rule that says
-   fail fast with explicit errors and no silent handling.
-5. **156 relative imports that climb out of their package** (`TID252`), which
-   is how a module quietly reaches into a sibling subsystem.
+   fail fast with explicit errors and no silent handling. Concentrated in
+   `apps/tags/collect.py` (10), `apps/analysis/backends/librosa_madmom.py` (6),
+   `apps/cloud/replicate.py` (5), `apps/sync/apply_ratings.py` (5) and
+   `apps/sync/rb_writer.py` (5).
+5. **Six imports that only work by accident**: `starlette` in three webui
+   modules, `joblib` in two `apps/sets/classify` modules, `madmom` in the
+   analysis backend. All are transitive: they resolve today because fastapi,
+   scikit-learn and librosa happen to pull them in, and break the day any of
+   those repins or vendors.
 6. **`Actuator.execute_action` at cyclomatic complexity 44** and `usb
-   preflight` at 41, against a limit of 12.
+   preflight` at 41, against a limit of 12. Two files sit at maintainability
+   rank C: `apps/webui/crate_sync.py` (MI 5.0) and `apps/vocals/cli.py`
+   (MI 6.1), on a scale where anything under 20 is hard to change safely.
