@@ -22,7 +22,10 @@ from apps.shared.platform_paths import (
     MUSIC_ROOTS,
     PROJECT_ROOT,
     REKORDBOX_LIVE_DB,
-    _parse_music_roots,
+    # Private, so it is absent from __all__ and reads as unused to F401, but
+    # tests/shared/test_paths.py reaches it through this module. Deleting the
+    # re-export breaks that suite.
+    _parse_music_roots,  # noqa: F401
 )
 
 __all__ = [

@@ -27,19 +27,19 @@ tests/test_reconcile_route.py.
 from __future__ import annotations
 
 import sys
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Iterator
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from apps.reconcile import locate
 from apps.shared import paths as shared_paths
 from apps.webui.server import rb_vendor
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Track
-from apps.reconcile import locate
 
 
 @pytest.fixture

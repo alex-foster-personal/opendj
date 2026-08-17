@@ -306,7 +306,7 @@ def generate(body: GenerateIn, request: Request) -> dict:
     # The parent closes its copy as soon as the child owns one: leaving it open
     # leaks a descriptor per job, and job_status reads the file by path anyway.
     with log.open("w") as handle:
-        proc = subprocess.Popen(  # noqa: S603
+        proc = subprocess.Popen(
             cmd, cwd=str(_repo_root()), stdout=handle, stderr=subprocess.STDOUT
         )
     _JOBS[job_id] = {

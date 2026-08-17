@@ -166,7 +166,7 @@ def train(
     macro_f1 = float(np.mean(fold_scores)) if fold_scores else 0.0
     logger.info("macro-F1 = %.3f over %d folds", macro_f1, len(fold_scores))
 
-    from . import MIN_MACRO_F1_FOR_TRAINED, META_FILE_NAME, MODEL_FILE_NAME
+    from . import META_FILE_NAME, MIN_MACRO_F1_FOR_TRAINED, MODEL_FILE_NAME
 
     if macro_f1 < MIN_MACRO_F1_FOR_TRAINED:
         return TrainReport(

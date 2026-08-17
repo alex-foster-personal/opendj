@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
-
 _DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "voice" / "settings.sqlite"
 
 _SCHEMA = """

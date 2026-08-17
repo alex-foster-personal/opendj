@@ -8,9 +8,9 @@ import pytest
 
 from apps.dj_copilot.set_goal import SetGoal
 from apps.dj_copilot.solver import (
+    ARTIST_REPEAT_COOLDOWN,
     UnmetConstraint,
     suggest_order,
-    ARTIST_REPEAT_COOLDOWN,
 )
 from apps.shared.harmonic import MAX_BPM_DIFF_PCT, TrackFeature
 

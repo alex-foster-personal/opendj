@@ -9,7 +9,6 @@ from apps.smartlists.evaluator import evaluate
 from apps.smartlists.repo import SmartlistsRepo
 from apps.smartlists.writers import PlaylistWriter
 
-
 DEFAULT_MARKER_PREFIX: str = "[SL] "
 
 

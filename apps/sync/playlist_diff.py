@@ -22,17 +22,21 @@ from dataclasses import asdict
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.djay_db import iter_playlists as djay_iter_playlists
 from apps.shared.rekordbox_db import (
     RBPlaylist,
-    RBTrack,
     is_streaming_path,
+)
+from apps.shared.rekordbox_db import (
     iter_playlists as rb_iter_playlists,
+)
+from apps.shared.rekordbox_db import (
     iter_tracks as rb_iter_tracks,
+)
+from apps.shared.rekordbox_db import (
     open_db as rb_open_db,
 )
-from apps.shared.djay_db import iter_playlists as djay_iter_playlists
 from apps.sync import playlist_plan as pp
-
 
 DEFAULT_OUT_DIR: Path = paths.DATA_DIR / "sync"
 DEFAULT_MATCHES: Path = DEFAULT_OUT_DIR / "matches.csv"

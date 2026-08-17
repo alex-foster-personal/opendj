@@ -7,7 +7,6 @@ from apps.smartlists.materializer import Materializer
 from apps.smartlists.triggers import StateEvent, TriggerRunner
 from apps.smartlists.writers import FakeWriter
 
-
 pytestmark = pytest.mark.requirement("SMART-03")
 
 

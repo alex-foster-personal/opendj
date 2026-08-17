@@ -23,7 +23,6 @@ from apps.open_dj import (
     serialize_jcs,
 )
 
-
 _STUB_MP3: Path = (
     Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-128.mp3"
 )

@@ -52,7 +52,6 @@ import os
 import statistics
 import sys
 import time
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -333,8 +332,9 @@ def main(argv: list[str] | None = None) -> int:
         return _refit(gpu)
 
     import modal  # noqa: F401  (import proves the dep before any GPU spend)
-    from apps.shared.paths import DATA_DIR
+
     import scripts.modal_vocal_farm as farm
+    from apps.shared.paths import DATA_DIR
 
     if farm.GPU_KIND != gpu:
         raise SystemExit(

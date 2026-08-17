@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from apps.open_dj import Capabilities, CapabilityField
 
-
 SERATO_CAPABILITIES = Capabilities(
     adapter="serato",
     version="0.1.0",

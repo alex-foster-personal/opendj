@@ -182,7 +182,7 @@ class StateWriter:
     def __enter__(self) -> "StateWriter":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+    def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
     def __del__(self) -> None:

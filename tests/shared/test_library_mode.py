@@ -7,7 +7,6 @@ import pytest
 
 from apps.shared import library_mode
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 

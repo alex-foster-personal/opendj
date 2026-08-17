@@ -191,7 +191,7 @@ def test_http_status_reads_a_real_server() -> None:
     port = _free_port()
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             host = self.headers.get("Host", "")
             body = b"ok" if "agentbox" in host else b"no-host"
             self.send_response(200 if body == b"ok" else 400)
@@ -218,7 +218,7 @@ def test_redirect_response_does_not_follow_a_real_redirect() -> None:
     port = _free_port()
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             self.send_response(307)
             self.send_header(
                 "Location",

@@ -19,7 +19,6 @@ from apps.sync.usb.pioneer import writer_rbox
 from apps.webui.server.app import create_app
 from apps.webui.server.routes import usb_export
 
-
 pytestmark = [pytest.mark.requirement("CAT-06")]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

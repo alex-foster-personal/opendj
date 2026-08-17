@@ -31,7 +31,6 @@ from urllib.parse import urlparse
 
 from apps.voice import audio, stt, vad, wake
 
-
 DEFAULT_API_URL = "http://127.0.0.1:9415/api/v1/voice/probe"
 DEFAULT_FRAME_MS = 30
 DEFAULT_SPEECH_START_TIMEOUT_MS = 2_000

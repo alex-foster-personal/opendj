@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from apps.shared.harmonic import TrackFeature
 
-from .candidates import FilterTrace, filter_candidates
+from .candidates import filter_candidates
 from .explainer_stub import explain as _stub_explain
 from .rank_stage1 import ScoredCandidate, rank_stage1
 from .rank_stage2 import rerank_with_pairings

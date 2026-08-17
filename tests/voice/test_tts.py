@@ -1,13 +1,9 @@
 """Unit tests for apps.voice.tts (VOICE-01)."""
 from __future__ import annotations
 
-import subprocess
-from typing import Any
-
 import pytest
 
 from apps.voice import tts
-
 
 pytestmark = pytest.mark.requirement("VOICE-01")
 

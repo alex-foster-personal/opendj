@@ -11,7 +11,6 @@ from apps.sync.djay_monitor import (
     coredata_timestamp_to_datetime,
     get_latest_session_items,
     get_now_playing,
-    parse_history_item,
 )
 
 

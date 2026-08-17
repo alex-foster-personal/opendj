@@ -16,7 +16,6 @@ from apps.voice import bus as bus_mod
 from apps.voice import settings as settings_mod
 from apps.voice import tts as tts_mod
 
-
 DEFAULT_DEBOUNCE_S: float = 2.0
 DEFAULT_MUTE_DURATION_S: float = 30 * 60  # 30 minutes
 

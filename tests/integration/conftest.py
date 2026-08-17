@@ -15,7 +15,6 @@ import pytest
 from apps.shared.pairings import PairingsRepo, ensure_phase08_tables
 from apps.smartlists.repo import SmartlistsRepo
 
-
 _PHASE5_TEST_DDL: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS tracks (

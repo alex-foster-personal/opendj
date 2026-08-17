@@ -42,7 +42,6 @@ from pathlib import Path
 from apps.shared import library_integrity, paths
 from apps.sync import playlist_tsaf as ptsaf
 
-
 CONFIRMATION_PHRASE = "APPLY PLAYLIST SYNC"
 DEFAULT_PLAN: Path = paths.DATA_DIR / "sync" / "playlist-plan.json"
 DEFAULT_BACKUP_DIR: Path = paths.DATA_DIR / "sync" / "backups"

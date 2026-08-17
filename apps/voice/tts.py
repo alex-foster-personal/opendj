@@ -13,7 +13,6 @@ import subprocess
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
-
 DEFAULT_SAY_VOICE: str = "the maintainer"
 
 

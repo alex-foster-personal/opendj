@@ -25,9 +25,9 @@ from __future__ import annotations
 import time
 from typing import Literal
 
+import regex
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-import regex
 
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_read_state, get_write_state

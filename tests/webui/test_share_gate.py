@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 
-
 SHARE_HOST = "dj.example"
 TOKEN = "share-secret-token"
 

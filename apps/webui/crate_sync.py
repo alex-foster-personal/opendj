@@ -700,7 +700,7 @@ def verify_spike(
 def _http_status(url: str) -> int:
     request = urllib.request.Request(url)
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310 - operator-chosen origin
+        with urllib.request.urlopen(request) as response:
             return int(response.status)
     except urllib.error.HTTPError as exc:
         return int(exc.code)
@@ -711,7 +711,7 @@ def _http_status(url: str) -> int:
 def _http_json(url: str) -> tuple[int, str]:
     request = urllib.request.Request(url)
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310 - operator-chosen origin
+        with urllib.request.urlopen(request) as response:
             return int(response.status), response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")

@@ -22,16 +22,16 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from apps.shared.paths import DATA_DIR, STATE_DIR
+from apps.shared.paths import DATA_DIR
 from apps.vocals.cli import (
     CATEGORY_MISSING,
     CATEGORY_TODO,
     Ctx,
     VocalTrack,
     _fmt_dur,
+    best_playlist_rank,
     load_tracks,
     order_todo,
-    best_playlist_rank,
 )
 from apps.webui.server.stem_artifacts import (
     DEFAULT_STEMS_DIR,

@@ -99,9 +99,10 @@ def test_settings_backend_type_reflects_sqlite_when_state_db_present(tmp_path):
     """
     if not Path(STATE_DB).is_file():
         pytest.skip(f"state.db not present at {STATE_DB}; skipping live-backend check")
+    from fastapi.testclient import TestClient
+
     from apps.webui.server.app import create_app
     from apps.webui.server.sqlite_backend import make_backend
-    from fastapi.testclient import TestClient
 
     app = create_app(backend=make_backend(STATE_DB), bind_host="127.0.0.1")
     with TestClient(app) as c:

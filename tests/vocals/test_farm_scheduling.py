@@ -253,7 +253,9 @@ def test_old_rungs_stay_selectable() -> None:
 def test_preset_stamp_records_the_model_that_actually_ran() -> None:
     """if the stamp does not name the real model then selective re-runs are blind"""
     from scripts.modal_vocal_farm import (
-        DEFAULT_PRESET, PRESETS, region_params,
+        DEFAULT_PRESET,
+        PRESETS,
+        region_params,
     )
 
     preset = PRESETS[DEFAULT_PRESET]

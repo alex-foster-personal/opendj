@@ -8,7 +8,6 @@ import pytest
 from apps.shared.state import cli as state_cli
 from apps.shared.state import schema as state_schema
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 

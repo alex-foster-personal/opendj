@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..stem_artifacts import (
     DEFAULT_STEMS_DIR,
-    STEM_PARTS,
     StemArtifactError,
     StemBundle,
     StemBundleNotFoundError,

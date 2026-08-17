@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from apps.voice import actions, confirm, grammar, tts as tts_mod
-
+from apps.voice import actions, confirm, grammar
+from apps.voice import tts as tts_mod
 
 pytestmark = pytest.mark.requirement("VOICE-01")
 

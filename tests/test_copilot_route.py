@@ -21,8 +21,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
-from apps.webui.server.backend import (InMemoryBackend, Pairing, Provenance,
-                                       Track)
+from apps.webui.server.backend import InMemoryBackend, Pairing, Provenance, Track
 from apps.webui.server.routes import copilot as copilot_routes
 
 BASE = "/api/v1/copilot/suggest-next"

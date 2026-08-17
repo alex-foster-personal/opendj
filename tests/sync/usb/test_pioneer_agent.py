@@ -56,7 +56,6 @@ from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     window_scaled_to_global_points,
 )
 
-
 # --------------------------------------------------------------------------- #
 # Coordinate scaling — pure math, no GUI needed.
 # --------------------------------------------------------------------------- #

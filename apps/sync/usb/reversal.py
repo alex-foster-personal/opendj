@@ -23,7 +23,6 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from apps.sync.usb.copy import CopyResult
 
