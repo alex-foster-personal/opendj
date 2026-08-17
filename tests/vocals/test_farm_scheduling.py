@@ -224,21 +224,15 @@ def test_every_baked_model_has_a_preset() -> None:
     assert set(BAKED_MODELS) <= have
 
 
-def test_every_preset_model_is_baked() -> None:
-    """if a preset names an unbaked model then every cold container re-downloads it"""
-    from scripts.modal_vocal_farm import BAKED_MODELS, PRESETS
-
-    # The converse of test_every_baked_model_has_a_preset, and the invariant that
-    # would have caught dfde3eb3 changing the bake list out from under the guard
-    # test above.
-    unbaked = {
-        tag: preset.model
-        for tag, preset in PRESETS.items()
-        if preset.model not in BAKED_MODELS
-    }
-    assert not unbaked, (
-        f"presets naming unbaked models: {unbaked}; bake the model or drop the preset"
-    )
+# NOTE: an earlier revision added test_every_preset_model_is_baked here, pinning
+# {preset models} == set(BAKED_MODELS). It was removed on review. Combined with
+# test_every_baked_model_has_a_preset it outlawed the very design --allow-unbaked-model
+# exists to serve: before dfde3eb3, scripts/modal_vocal_farm.py deliberately shipped
+# htdemucs_ft presets with htdemucs_ft UNBAKED ("htdemucs_ft is deliberately absent"),
+# gated behind that flag. The invariant would have been RED before dfde3eb3 and turned
+# GREEN by it -- the opposite of the drift-detection it was claimed to provide -- and
+# would have made the flag permanently unreachable in production. Whether to retire
+# --allow-unbaked-model is a design decision, not a side effect of a test repair.
 
 
 def test_old_rungs_stay_selectable() -> None:
