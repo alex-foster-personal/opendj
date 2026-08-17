@@ -128,6 +128,10 @@ def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
     check_remote = remote_check_command()
     assert "--local --check" in check_remote
     assert "\n" not in check_remote
+    stem_remote = remote_check_command("track-001")
+    assert stem_remote.endswith("--stem-track track-001")
+    with pytest.raises(PortConfigError, match="invalid stem stable id"):
+        remote_check_command("track; rm -rf nope")
 
 
 def test_public_host_prefers_magicdns() -> None:

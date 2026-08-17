@@ -18,9 +18,10 @@ exactly, so an agent can drive the identical flow without a browser.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 
 from apps.stems import tiers as tiercfg
@@ -201,13 +202,13 @@ def _running_count(where: str) -> int:
     )
 
 
-def _repo_root() -> "Path":
-    from pathlib import Path
-
+def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def _generate_command(tier, stable_id: str, audio_path: str) -> list[str]:
+def _generate_command(
+    tier, stable_id: str, audio_path: str, *, stems_dir: Path
+) -> list[str]:
     """The exact argv for this tier. One place, so CLI and UI cannot diverge."""
     root = _repo_root()
     if tier.where == "local":
@@ -215,7 +216,7 @@ def _generate_command(tier, stable_id: str, audio_path: str) -> list[str]:
             "uv", "run", str(root / "scripts/stem_bundle_worker.py"),
             "--audio", audio_path,
             "--stable-id", stable_id,
-            "--out-dir", str(root / "data/state/stems"),
+            "--out-dir", str(stems_dir / stable_id),
         ]
     return [
         "uv", "run", "--with", "modal", "python", "-m",
@@ -226,7 +227,7 @@ def _generate_command(tier, stable_id: str, audio_path: str) -> list[str]:
 
 
 @router.post("/generate", response_model=dict)
-def generate(body: GenerateIn) -> dict:
+def generate(body: GenerateIn, request: Request) -> dict:
     """Start a real separation for one track at one rung. No mocking.
 
     Returns immediately with a job id; the work runs as a subprocess. This is
@@ -277,7 +278,28 @@ def generate(body: GenerateIn) -> dict:
             ),
         )
 
-    cmd = _generate_command(tier, body.stable_id, str(audio_path))
+    from apps.webui.library_assets import (
+        StemStorage,
+        ensure_stem_storage,
+        stem_storage,
+    )
+
+    configured_roots = getattr(request.app.state, "stem_roots", None)
+    storage = stem_storage()
+    if configured_roots is not None:
+        roots = tuple(Path(root) for root in configured_roots)
+        storage = StemStorage(
+            roots=roots,
+            write_root=roots[0],
+            remote=storage.remote,
+        )
+    ensure_stem_storage(storage)
+    cmd = _generate_command(
+        tier,
+        body.stable_id,
+        str(audio_path),
+        stems_dir=storage.write_root,
+    )
     job_id = uuid.uuid4().hex[:12]
     log = _repo_root() / ".tmp/stem-jobs" / f"{job_id}.log"
     log.parent.mkdir(parents=True, exist_ok=True)

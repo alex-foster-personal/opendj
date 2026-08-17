@@ -119,6 +119,50 @@ async function main() {
 		) {
 			throw new Error(`browser capability failure: ${JSON.stringify(browserState)}`);
 		}
+		let stemDeck = null;
+		if (args['stem-track'] !== undefined) {
+			const loaded = await page.evaluate(async (stableId) => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) throw new Error('performance IPC is not installed');
+				return Promise.race([
+					ipc.dispatch({ type: 'load', deck: 1, stable_id: stableId }),
+					new Promise((_, reject) =>
+						setTimeout(() => reject(new Error(`stem track ${stableId} load timed out`)), 120_000)
+					)
+				]);
+			}, args['stem-track']);
+			const deck = loaded.decks[1];
+			stemDeck = {
+				stable_id: deck.stable_id,
+				status: deck.stems.status,
+				source: deck.stems.source,
+				layout: deck.stems.layout,
+				controls: deck.stems.available_controls,
+				error: deck.stems.error
+			};
+			if (
+				stemDeck.stable_id !== args['stem-track'] ||
+				stemDeck.status !== 'ready' ||
+				stemDeck.layout === null ||
+				stemDeck.controls.length === 0 ||
+				stemDeck.error !== null
+			) {
+				throw new Error(`stem deck load failed: ${JSON.stringify(stemDeck)}`);
+			}
+			const muted = await page.evaluate(async () => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) throw new Error('performance IPC is not installed');
+				return ipc.dispatch({ type: 'stem_mute', deck: 1, stem: 'vocal', muted: true });
+			});
+			if (muted.decks[1].stems.controls.vocal.muted !== true) {
+				throw new Error('real stem graph did not acknowledge vocal mute');
+			}
+			await page.evaluate(async () => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) throw new Error('performance IPC is not installed');
+				await ipc.dispatch({ type: 'stem_mute', deck: 1, stem: 'vocal', muted: false });
+			});
+		}
 		await page.waitForTimeout(500);
 		if (pageErrors.length > 0) {
 			throw new Error(`browser page errors: ${pageErrors.join('\n---\n')}`);
@@ -129,7 +173,8 @@ async function main() {
 				navigation_status: navigation.status(),
 				health_status: health.status(),
 				visitor_status: visitor.status(),
-				browser: browserState
+				browser: browserState,
+				stem_deck: stemDeck
 			})
 		);
 	} finally {

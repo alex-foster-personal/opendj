@@ -59,9 +59,22 @@ def _stems_dir(request: Request) -> Path:
     return Path(configured)
 
 
+def _stem_roots(request: Request) -> tuple[Path, ...] | None:
+    """Return an explicit mode boundary when the production app configured one."""
+
+    configured = getattr(request.app.state, "stem_roots", None)
+    if configured is None:
+        return None
+    return tuple(Path(root) for root in configured)
+
+
 def _load_or_http_error(stable_id: str, request: Request) -> StemBundle:
     try:
-        return load_stem_bundle(stable_id, stems_dir=_stems_dir(request))
+        return load_stem_bundle(
+            stable_id,
+            stems_dir=_stems_dir(request),
+            roots=_stem_roots(request),
+        )
     except StemBundleNotFoundError as exc:
         raise HTTPException(
             status_code=404,

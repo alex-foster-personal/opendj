@@ -552,13 +552,22 @@ def remote_run_command() -> str:
     )
 
 
-def remote_check_command() -> str:
+def _validated_stem_track(stable_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", stable_id):
+        raise PortConfigError(f"invalid stem stable id {stable_id!r}")
+    return stable_id
+
+
+def remote_check_command(stem_track: str | None = None) -> str:
     """Constant remote browser-check payload. --local prevents a second hop."""
-    return (
+    command = (
         f"test \"$(hostname)\" = {AGENTBOX_HOSTNAME} && "
         f"cd {REMOTE_REPO} && "
         "exec uv run --no-sync python -m apps.webui.run_agentbox --local --check"
     )
+    if stem_track is not None:
+        command += f" --stem-track {_validated_stem_track(stem_track)}"
+    return command
 
 
 def run_via_ssh(
@@ -585,13 +594,12 @@ def run_via_ssh(
     return 0
 
 
-def check_agentbox() -> int:
+def check_agentbox(stem_track: str | None = None) -> int:
     """Prove HTTP aliases, TLS, browser JS, AudioWorklet, IPC, API and telemetry."""
     hosts = resolve_allowed_hosts()
     host = public_host(hosts)
     serve_ip = _tailscale_ipv4()
-    result = subprocess.run(
-        [
+    command = [
             "pnpm",
             "exec",
             "node",
@@ -600,7 +608,11 @@ def check_agentbox() -> int:
             host,
             "--ip",
             serve_ip,
-        ],
+        ]
+    if stem_track is not None:
+        command.extend(["--stem-track", _validated_stem_track(stem_track)])
+    result = subprocess.run(
+        command,
         cwd=FRONTEND_DIR,
         check=False,
         capture_output=True,
@@ -738,6 +750,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="prove the existing tailnet Serve path in a real browser",
     )
+    parser.add_argument(
+        "--stem-track",
+        help="with --check, load this real track and prove its stem graph",
+    )
     args = parser.parse_args(argv)
     try:
         if args.prepare_log:
@@ -745,8 +761,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.check:
             if args.local or is_agentbox():
-                return check_agentbox()
-            return run_via_ssh(remote_command=remote_check_command())
+                return check_agentbox(args.stem_track)
+            return run_via_ssh(
+                remote_command=remote_check_command(args.stem_track)
+            )
+        if args.stem_track:
+            raise PortConfigError("--stem-track requires --check")
         if args.local or is_agentbox():
             return run_agentbox()
         return run_via_ssh()

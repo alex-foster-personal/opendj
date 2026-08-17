@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
@@ -107,6 +108,7 @@ def create_app(
     mount_frontend: bool = True,
     client_error_log_dir: Optional[Path] = None,
     client_event_log_dir: Optional[Path] = None,
+    stem_roots: Optional[Sequence[Path]] = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -155,6 +157,8 @@ def create_app(
         if client_event_log_dir is not None
         else client_events_routes.DEFAULT_LOG_DIR
     )
+    if stem_roots is not None:
+        app.state.stem_roots = tuple(Path(root) for root in stem_roots)
 
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(ConflictError, handle_conflict)
@@ -281,10 +285,13 @@ def create_app(
 def _build_default_app() -> FastAPI:
     from apps.shared.library_mode import apply_library_env, assert_ready
     from apps.shared import platform_paths
+    from apps.webui.library_assets import ensure_stem_storage, stem_storage
 
     apply_library_env()
     platform_paths.refresh_share_root()
     assert_ready()
+    stems = stem_storage()
+    ensure_stem_storage(stems)
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
@@ -301,6 +308,7 @@ def _build_default_app() -> FastAPI:
     return create_app(
         backend=backend, bind_host=bind_host, hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
+        stem_roots=stems.roots,
     )
 
 
