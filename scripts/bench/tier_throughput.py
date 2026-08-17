@@ -245,6 +245,33 @@ def _fit(tier_key: str, gpu: str, rows: list[dict[str, Any]], cmd: str) -> dict:
     }
 
 
+def merge_blob(
+    prior: dict[str, Any],
+    measurements: list[dict[str, Any]],
+    raw: list[dict[str, Any]],
+    gpu: str,
+) -> dict[str, Any]:
+    """MERGE, never replace.
+
+    ``--tier L`` used to overwrite the whole file and silently delete the S and
+    M rows measured minutes earlier, including their raw points -- so a
+    targeted re-measure destroyed the comparison it was meant to refine. Rows
+    are keyed by ``(tier_key, gpu)``; a fresh measurement of a pair replaces
+    that pair and NOTHING else, and only that pair's raw points are dropped.
+
+    A function rather than an inline block in ``main`` so the invariant can be
+    exercised without a Modal account: everything above this line needs a GPU.
+    """
+    merged = {(m["tier_key"], m["gpu"]): m for m in prior.get("measurements", [])}
+    replaced = {(m["tier_key"], m["gpu"]) for m in measurements}
+    merged.update({(m["tier_key"], m["gpu"]): m for m in measurements})
+    kept_raw = [r for r in prior.get("raw", []) if (r["tier"], gpu) not in replaced]
+    return {
+        "measurements": [merged[k] for k in sorted(merged)],
+        "raw": kept_raw + raw,
+    }
+
+
 def _refit(gpu: str) -> int:
     """Re-derive the fits from raw rows on disk. No GPU, same sample."""
     blob = json.loads(OUT_JSON.read_text())
@@ -354,28 +381,10 @@ def main(argv: list[str] | None = None) -> int:
             raw.extend(rows)
             measurements.append(_fit(tier.key, gpu, rows, cmd))
 
-    # MERGE, never replace. `--tier L` used to overwrite the whole file and
-    # silently delete the S and M rows measured minutes earlier, including
-    # their raw points -- so a targeted re-measure destroyed the comparison it
-    # was meant to refine. Rows are keyed by (tier, gpu); a fresh measurement
-    # of a pair replaces that pair and nothing else.
     prior = json.loads(OUT_JSON.read_text()) if OUT_JSON.exists() else {}
-    merged = {
-        (m["tier_key"], m["gpu"]): m for m in prior.get("measurements", [])
-    }
-    replaced = {(m["tier_key"], m["gpu"]) for m in measurements}
-    merged.update({(m["tier_key"], m["gpu"]): m for m in measurements})
-    kept_raw = [
-        r for r in prior.get("raw", [])
-        if (r["tier"], gpu) not in replaced
-    ]
-    OUT_JSON.write_text(json.dumps(
-        {
-            "measurements": [merged[k] for k in sorted(merged)],
-            "raw": kept_raw + raw,
-        },
-        indent=2,
-    ) + "\n")
+    OUT_JSON.write_text(
+        json.dumps(merge_blob(prior, measurements, raw, gpu), indent=2) + "\n"
+    )
     print(f"\nwrote {OUT_JSON.relative_to(REPO_ROOT)}")
     for m in measurements:
         print(

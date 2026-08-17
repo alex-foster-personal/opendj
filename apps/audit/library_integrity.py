@@ -42,6 +42,7 @@ __all__ = [
     "rehome_path",
     "check_integrity",
     "assert_healthy",
+    "live_report",
 ]
 
 #: Matches a leading POSIX home prefix, tolerating Rekordbox's ``//`` and any
@@ -206,6 +207,16 @@ def _live_report() -> IntegrityReport:
             # it. We warn rather than raise so a close hiccup can't suppress a
             # successfully-built report on the happy path.
             print(f"warning: failed to close Rekordbox DB cleanly: {exc!r}")
+
+
+def live_report() -> IntegrityReport:
+    """Public entry point for write paths that must gate on library health.
+
+    Exists so an apply path can call the guard without reaching for a private
+    name; the module used to be reachable only from its own CLI, which is how
+    the guard ended up with zero production callers.
+    """
+    return _live_report()
 
 
 def main(argv: list[str] | None = None) -> int:
