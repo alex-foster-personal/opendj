@@ -138,27 +138,37 @@ def test_public_host_prefers_magicdns() -> None:
 
 
 def test_listener_pids_sees_a_real_loopback_socket() -> None:
+    """A real listener on loopback is attributed to the PID that holds it.
+
+    The child announces "bound" on stdout instead of the parent polling a
+    3-second timer: spawning a cold interpreter under a loaded full-suite
+    run can take longer than that, and the old timer turned it into a
+    flake. Waiting on the child's own readiness signal makes the assertion
+    a contract check ("once it IS listening, we see it") rather than a
+    race, and it fails fast with a real message when the child dies.
+    """
     port = _free_port()
     proc = subprocess.Popen(
         [
             sys.executable,
             "-c",
             (
-                "import socket, time\n"
+                "import socket, sys, time\n"
                 f"s = socket.socket(); s.bind(('127.0.0.1', {port})); "
-                "s.listen(1); time.sleep(30)\n"
+                "s.listen(1)\n"
+                "sys.stdout.write('bound\\n'); sys.stdout.flush()\n"
+                "time.sleep(30)\n"
             ),
-        ]
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
     )
     try:
-        deadline = time.monotonic() + 3
-        pids: list[int] = []
-        while time.monotonic() < deadline:
-            pids = listener_pids(port)
-            if proc.pid in pids:
-                break
-            time.sleep(0.05)
-        assert proc.pid in pids
+        assert proc.stdout is not None
+        assert proc.stdout.readline().strip() == "bound", (
+            f"child never bound port {port} (rc={proc.poll()})"
+        )
+        assert proc.pid in listener_pids(port)
         assert can_bind(port) is False
     finally:
         proc.kill()
