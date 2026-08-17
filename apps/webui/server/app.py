@@ -32,6 +32,7 @@ from .backend import (BackendError, ConflictError, InMemoryBackend,
                       NotFoundError, StateBackend)
 from .cloud_sync import probe_syncthing_status
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
+from .share_gate import share_gate_middleware, share_host
 from .routes import analysis as analysis_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
@@ -52,6 +53,7 @@ from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
 from .routes import relocate as relocate_routes
 from .routes import search as search_routes
+from .routes import share as share_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
 from .routes import smartlists as smartlists_routes
@@ -161,10 +163,15 @@ def create_app(
             if frontend_port is not None
             else []
         )
+        share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
+        if not share_origin and share_host():
+            share_origin = f"https://{share_host()}"
+        share_origins = [share_origin] if share_origin else []
         app.add_middleware(
             CORSMiddleware,
             allow_origins=[
                 *worktree_origins,
+                *share_origins,
                 # Isolated e2e verify stacks (loopback-only, see
                 # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
                 # talks to daemons :8686/:8688 via VITE_API_BASE.
@@ -179,8 +186,16 @@ def create_app(
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
-            expose_headers=["ETag", "X-Bind-Warning"],
+            expose_headers=[
+                "ETag",
+                "X-Bind-Warning",
+                "X-Audio-Kind",
+                "X-Audio-Venue",
+                "X-Audio-Source",
+            ],
         )
+
+    app.middleware("http")(share_gate_middleware)
 
     @app.middleware("http")
     async def add_bind_warning(request: Request, call_next):
@@ -205,6 +220,7 @@ def create_app(
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
+    app.include_router(share_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)
     app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
@@ -247,6 +263,12 @@ def create_app(
 
 
 def _build_default_app() -> FastAPI:
+    from apps.shared.library_mode import apply_library_env, assert_ready
+    from apps.shared import platform_paths
+
+    apply_library_env()
+    platform_paths.refresh_share_root()
+    assert_ready()
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,

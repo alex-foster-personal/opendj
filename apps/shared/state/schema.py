@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
-SCHEMA_VERSION: int = 3
+SCHEMA_VERSION: int = 5
 
 
 # --- migration 0 -> 1: initial schema ------------------------------------
@@ -185,9 +185,60 @@ _V3: list[str] = [
     "ALTER TABLE track_fields_v3 RENAME TO track_fields",
 ]
 
+# --- migration 3 -> 4: multiple playable locations per track ---------------
+# tracks.file_path stays the ingest/legacy primary path. track_locations
+# holds extra copies (this machine, a remote host, a lower-bitrate
+# transcode). The play path picks one; the frontend never sees the list.
+_V4: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS track_locations (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        stable_id     TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        kind          TEXT NOT NULL CHECK (kind IN ('local', 'remote')),
+        role          TEXT NOT NULL DEFAULT 'alternate'
+                        CHECK (role IN ('primary', 'alternate')),
+        file_path     TEXT,
+        remote_url    TEXT,
+        venue_key     TEXT,
+        venue_rank    INTEGER,
+        available     INTEGER NOT NULL DEFAULT 0,
+        probed_at     TEXT,
+        content_hash  TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        CHECK (
+            (file_path IS NOT NULL AND file_path != '')
+            OR (remote_url IS NOT NULL AND remote_url != '')
+        )
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_track_locations_stable "
+    "ON track_locations(stable_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_path "
+    "ON track_locations(stable_id, kind, file_path) "
+    "WHERE file_path IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_url "
+    "ON track_locations(stable_id, kind, remote_url) "
+    "WHERE remote_url IS NOT NULL",
+    """
+    INSERT OR IGNORE INTO track_locations(
+        stable_id, kind, role, file_path, created_at, updated_at
+    )
+    SELECT stable_id, 'local', 'primary', file_path, updated_at, updated_at
+    FROM tracks
+    WHERE file_path IS NOT NULL AND file_path != ''
+    """,
+]
+
+# Live agentbox state.db already had schema_meta version 4 from an
+# out-of-band bump that did not create track_locations. Re-run the same
+# idempotent statements as 4 -> 5 so those DBs catch up. Fresh DBs run
+# both steps; IF NOT EXISTS / OR IGNORE keep the second a no-op.
+_V5: list[str] = _V4
+
 # Each element is the set of SQL statements that take schema from N to N+1.
 # MIGRATIONS[0] runs when going from v0 (empty) to v1.
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3]
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5]
 
 
 def _ensure_meta(conn: sqlite3.Connection) -> None:
@@ -248,6 +299,7 @@ TABLES: tuple[str, ...] = (
     "playlist_memberships",
     "adapters",
     "events",
+    "track_locations",
 )
 """Core tables created by migration v1. ``schema_meta`` is intentionally
 excluded -- it is infrastructure, not domain data."""

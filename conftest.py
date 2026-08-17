@@ -1,4 +1,4 @@
-"""Root conftest — loads the reqs plugin + shared test fixtures.
+"""Root conftest -- loads the reqs plugin + shared test fixtures.
 
 Fixtures exposed:
 
@@ -13,9 +13,14 @@ master fixture even transiently.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 from pathlib import Path
+
+# Tests default to local so an agentbox root .env with remote mode cannot
+# leak into resolution. Individual tests set remote explicitly.
+os.environ.setdefault("MDT_LIBRARY_MODE", "local")
 
 import pytest
 

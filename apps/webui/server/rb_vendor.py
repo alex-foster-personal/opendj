@@ -61,6 +61,7 @@ from fastapi import HTTPException
 from apps.shared import audio_quality, fs_residency
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
 from apps.shared import platform_paths
+from apps.shared.state import locations as track_locations
 from apps.shared.platform_paths import (
     MappedPath,
     resolve_library_path as resolve_library_path,
@@ -371,7 +372,14 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
             "AUDIO_FILE_MISSING",
             f"track {stable_id} has no rekordbox mapping and no file_path",
         )
-    path = Path(row[0])
+    mapped = resolve_asset_path(row[0])
+    if mapped.resolved is None:
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"file_path for track {stable_id} could not be resolved "
+            f"on this platform ({mapped.reason}): {row[0]}",
+        )
+    path = mapped.resolved
     if not fs_residency.is_materialised(path):
         raise not_found(
             "AUDIO_FILE_MISSING",
@@ -388,6 +396,43 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
             },
         )
     return path, media_type
+
+
+def resolve_playable_audio(
+    stable_id: str, *, share: bool = False
+) -> track_locations.PickedAudio:
+    """Pick the single file the frontend may play. Never returns a list."""
+    folder_path: Optional[str] = None
+    try:
+        content = resolve_content(stable_id)
+        folder_path = content.folder_path
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if detail.get("code") == "TRACK_NOT_FOUND":
+            raise
+        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+            raise
+    state = _open_ro(STATE_DB, "STATE_DB")
+    try:
+        exists = state.execute(
+            "SELECT 1 FROM tracks WHERE stable_id = ?", (stable_id,)
+        ).fetchone()
+        if exists is None:
+            raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
+        picked = track_locations.pick_playable(
+            state,
+            stable_id,
+            policy=track_locations.policy_from_env(share=share),
+            folder_path=folder_path,
+        )
+    finally:
+        state.close()
+    if picked is None:
+        raise not_found(
+            "AUDIO_FILE_MISSING",
+            f"no working audio location for track {stable_id}",
+        )
+    return picked
 
 
 def empty_anlz_payload(stable_id: str, points: int) -> dict[str, Any]:
@@ -1028,8 +1073,22 @@ def bulk_availability(
     exists = bulk_file_exists(
         path for path in folder_by_sid.values() if path and not is_streaming_path(path)
     )
+    loc_paths: dict[str, list[str]] = {sid: [] for sid in stable_ids}
+    if STATE_DB.exists():
+        state = _open_ro(STATE_DB, "STATE_DB")
+        try:
+            loc_paths = track_locations.list_location_paths(state, list(stable_ids))
+        finally:
+            state.close()
+    extra = [p for paths in loc_paths.values() for p in paths if p]
+    extra_exists = bulk_file_exists(extra) if extra else {}
     return {
-        sid: bool(path) and not is_streaming_path(path) and exists[path]
+        sid: (
+            bool(path)
+            and not is_streaming_path(path)
+            and exists.get(path, False)
+        )
+        or any(extra_exists.get(p) for p in loc_paths.get(sid, []))
         for sid, path in folder_by_sid.items()
     }
 
@@ -2175,6 +2234,7 @@ __all__ = [
     "anlz_dir",
     "artwork_file",
     "audio_file",
+    "resolve_playable_audio",
     "build_anlz_payload",
     "build_track_rows",
     "bulk_availability",

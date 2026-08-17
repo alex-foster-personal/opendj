@@ -21,6 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from apps.shared import fs_residency
+from apps.shared.library_mode import crate_root, is_mac_users_path
+
 # ----- Platform identity --------------------------------------------------
 PLATFORM: str = sys.platform
 IS_DARWIN: bool = PLATFORM == "darwin"
@@ -61,7 +64,30 @@ def rekordbox_app_dir() -> Path:
 
 REKORDBOX_APP_DIR: Path = rekordbox_app_dir()
 REKORDBOX_LIVE_DB: Path = REKORDBOX_APP_DIR / "master.db"
-SHARE_ROOT: Path = REKORDBOX_APP_DIR / "share"
+
+
+def compute_share_root() -> Path:
+    """Pioneer share root for this process.
+
+    Remote mode serves ANLZ from ``$MDT_CRATE_ROOT/pioneer-share`` so
+    ``/PIONEER/...`` AnalysisDataPath rows land in the crate, not
+    ``~/.Pioneer/rekordbox/share``. Local mode keeps the platform app dir.
+    Explicit ``MDT_LIBRARY_MODE=remote`` only -- never inferred from hostname.
+    """
+    raw_mode = os.environ.get("MDT_LIBRARY_MODE", "").strip().lower()
+    if raw_mode == "remote":
+        return crate_root() / "pioneer-share"
+    return rekordbox_app_dir() / "share"
+
+
+def refresh_share_root() -> Path:
+    """Recompute :data:`SHARE_ROOT` after library-mode env is applied."""
+    global SHARE_ROOT
+    SHARE_ROOT = compute_share_root()
+    return SHARE_ROOT
+
+
+SHARE_ROOT: Path = compute_share_root()
 
 # ----- djay Pro -------------------------------------------------------------
 # djay Pro is macOS-only; off-darwin this Path is still composed (consumers
@@ -223,6 +249,15 @@ def _has_parent_reference(path: str) -> bool:
     return ".." in path.replace("\\\\", "/").split("/")
 
 
+def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]:
+    """Rewrite ``folder_path`` through the first matching prefix, or None."""
+    for from_prefix, to_prefix in path_map.entries:
+        suffix = _path_map_suffix(folder_path, from_prefix)
+        if suffix is not None:
+            return to_prefix + suffix
+    return None
+
+
 def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
     """Return a boundary-safe mapped suffix, or ``None`` when no match.
 
@@ -263,13 +298,17 @@ def resolve_library_path(
        but this stays defensive).
     2. ``/PIONEER/...`` share-relative -> ``SHARE_ROOT / path.lstrip("/")``,
        reason "share".
-    3. Absolute path native to THIS OS -> ``Path(folder_path)`` verbatim,
-       reason "native".
-    4. Foreign-absolute (e.g. a Mac path read on Windows) -> try each
-       :class:`PathMap` entry longest-prefix-first; a hit rewrites the
-       prefix (reason "path-map"); no hit -> ``resolved=None, mapped=False,
-       reason="unmapped:<platform>"``. This is the load-bearing fail-fast:
-       never fabricate a path that might not exist.
+    3. Remote mode + Mac ``/Users/...`` prefix: skip native (a leftover
+       ``/Users/dev`` tree on Linux must not win). Path-map only, or
+       ``resolved=None, reason="unmapped:remote"``.
+    4. Absolute path native to THIS OS: if the file is materialised here,
+       use it (reason "native"). If it is missing, apply :class:`PathMap`
+       even when the stored path looks native -- a Mac ``/Users/...`` path
+       is POSIX-native on Linux, so the old "foreign only" rule never
+       remapped the crate onto agentbox.
+    5. Foreign-absolute (e.g. a Mac path read on Windows) -> path-map or
+       ``resolved=None, reason="unmapped:<platform>"``. Never fabricate a
+       path that might not exist.
     """
     if path_map is None:
         path_map = load_path_map()
@@ -288,22 +327,46 @@ def resolve_library_path(
         resolved = SHARE_ROOT / folder_path.lstrip("/")
         return MappedPath(original=folder_path, resolved=resolved, mapped=True, reason="share")
 
-    if _is_native_absolute(folder_path):
+    rewritten = _rewrite_with_path_map(folder_path, path_map)
+    remote_mode = os.environ.get("MDT_LIBRARY_MODE", "").strip().lower() == "remote"
+
+    if remote_mode and is_mac_users_path(folder_path):
+        if rewritten is not None:
+            return MappedPath(
+                original=folder_path,
+                resolved=Path(rewritten),
+                mapped=True,
+                reason="path-map",
+            )
         return MappedPath(
-            original=folder_path, resolved=Path(folder_path), mapped=True, reason="native"
+            original=folder_path, resolved=None, mapped=False, reason="unmapped:remote"
+        )
+
+    if _is_native_absolute(folder_path):
+        native_path = Path(folder_path)
+        if fs_residency.is_materialised(native_path):
+            return MappedPath(
+                original=folder_path, resolved=native_path, mapped=True, reason="native"
+            )
+        if rewritten is not None:
+            return MappedPath(
+                original=folder_path,
+                resolved=Path(rewritten),
+                mapped=True,
+                reason="path-map",
+            )
+        return MappedPath(
+            original=folder_path, resolved=native_path, mapped=True, reason="native"
         )
 
     if _is_foreign_absolute(folder_path):
-        for from_prefix, to_prefix in path_map.entries:
-            suffix = _path_map_suffix(folder_path, from_prefix)
-            if suffix is not None:
-                rewritten = to_prefix + suffix
-                return MappedPath(
-                    original=folder_path,
-                    resolved=Path(rewritten),
-                    mapped=True,
-                    reason="path-map",
-                )
+        if rewritten is not None:
+            return MappedPath(
+                original=folder_path,
+                resolved=Path(rewritten),
+                mapped=True,
+                reason="path-map",
+            )
         return MappedPath(
             original=folder_path, resolved=None, mapped=False, reason=f"unmapped:{PLATFORM}"
         )
