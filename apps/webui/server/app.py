@@ -37,6 +37,7 @@ from .routes import analysis as analysis_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
+from .routes import client_events as client_events_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import health as health_routes
@@ -105,6 +106,7 @@ def create_app(
     enable_cors: bool = True,
     mount_frontend: bool = True,
     client_error_log_dir: Optional[Path] = None,
+    client_event_log_dir: Optional[Path] = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -147,6 +149,11 @@ def create_app(
         client_error_log_dir
         if client_error_log_dir is not None
         else client_errors_routes.DEFAULT_LOG_DIR
+    )
+    app.state.client_event_log_dir = (
+        client_event_log_dir
+        if client_event_log_dir is not None
+        else client_events_routes.DEFAULT_LOG_DIR
     )
 
     app.add_exception_handler(NotFoundError, handle_not_found)
@@ -217,6 +224,7 @@ def create_app(
     api_prefix = "/api/v1"
     app.include_router(tracks_routes.router, prefix=api_prefix)
     app.include_router(client_errors_routes.router, prefix=api_prefix)
+    app.include_router(client_events_routes.router, prefix=api_prefix)
     app.include_router(bench_routes.router, prefix=api_prefix)
     app.include_router(bulk_edit_routes.router, prefix=api_prefix)
     app.include_router(find_replace_routes.router, prefix=api_prefix)

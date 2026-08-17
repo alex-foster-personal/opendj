@@ -25,10 +25,12 @@ from apps.webui.run_agentbox import (
     https_status,
     is_agentbox,
     listener_pids,
+    log_dir_for,
     log_home,
     prepare_log_path,
     public_host,
     redirect_response,
+    remote_check_command,
     remote_run_command,
     resolve_allowed_hosts,
     ssh_agentbox_argv,
@@ -68,6 +70,9 @@ def test_log_home_is_durable_only_on_agentbox() -> None:
     assert log_home(hostname="agentbox") == LOG_DIR
     assert log_home(hostname="afmac") == EPHEMERAL_LOG_DIR
     assert log_home(hostname="bifrost2") == EPHEMERAL_LOG_DIR
+    assert log_dir_for("webui-visitors", hostname="afmac") == LOG_DIR
+    assert log_dir_for("webui-client-errors", hostname="afmac") == LOG_DIR
+    assert log_dir_for("webui-backend", hostname="afmac") == EPHEMERAL_LOG_DIR
 
 
 def test_dated_logs_append_off_the_worktree(tmp_path: Path) -> None:
@@ -120,6 +125,9 @@ def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
     assert "--local" in remote
     assert "\n" not in remote
     assert remote.startswith('test "$(hostname)" = agentbox')
+    check_remote = remote_check_command()
+    assert "--local --check" in check_remote
+    assert "\n" not in check_remote
 
 
 def test_public_host_prefers_magicdns() -> None:

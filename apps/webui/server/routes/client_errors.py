@@ -1,9 +1,7 @@
 """Bounded browser-error sink with full details in a separate daily log."""
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -13,11 +11,11 @@ from typing import Literal, Optional, Union
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field, field_validator
 
+from ..client_logs import DEFAULT_LOG_DIR, append_json_record, daily_log_path
+
 router = APIRouter(prefix="/client-errors", tags=["client-errors"])
 log = logging.getLogger(__name__)
 
-DEFAULT_LOG_DIR = Path.home() / ".local/share/music-dj-tools/webui"
-MAX_DAILY_LOG_BYTES = 10 * 1024 * 1024
 ContextValue = Union[str, int, float, bool, None]
 
 
@@ -52,30 +50,6 @@ class ClientErrorOut(BaseModel):
     stored: bool
 
 
-def _log_path(log_dir: Path, now: time.struct_time) -> Path:
-    day = time.strftime("%Y-%m-%d", now)
-    return log_dir / f"webui-client-errors-{day}.log"
-
-
-def _append_record(path: Path, record: dict[str, object]) -> bool:
-    line = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode(
-        "utf-8"
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        current_size = path.stat().st_size
-    except FileNotFoundError:
-        current_size = 0
-    if current_size + len(line) > MAX_DAILY_LOG_BYTES:
-        return False
-    descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-    try:
-        os.write(descriptor, line)
-    finally:
-        os.close(descriptor)
-    return True
-
-
 @router.post("", response_model=ClientErrorOut, status_code=202)
 def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErrorOut:
     event_id = uuid.uuid4().hex[:16]
@@ -91,8 +65,8 @@ def capture_client_error(payload: ClientErrorIn, request: Request) -> ClientErro
     log_dir = Path(
         getattr(request.app.state, "client_error_log_dir", DEFAULT_LOG_DIR)
     )
-    path = _log_path(log_dir, time.localtime())
-    stored = _append_record(path, record)
+    path = daily_log_path(log_dir, "webui-client-errors", time.localtime())
+    stored = append_json_record(path, record)
     summary = payload.message.replace("\n", " ")[:300]
     if stored:
         log.error(

@@ -65,6 +65,15 @@ def test_settings_storage_paths_are_strings(client):
 
 
 @pytest.mark.requirement("CAT-05")
+def test_settings_publish_vibe_runtime_defaults(client):
+    response = client.get("/api/v1/settings")
+    assert response.status_code == 200
+    items = _flatten(response.json())
+    assert items["vibe_sensitivity"]["value"] == 0.07
+    assert items["vibe_decay_per_sec"]["value"] == 0.05
+
+
+@pytest.mark.requirement("CAT-05")
 def test_settings_feature_toggles_group_is_honest_tbd(client):
     """No env-driven feature toggles exist yet; must not fabricate one."""
     r = client.get("/api/v1/settings")

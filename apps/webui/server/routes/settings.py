@@ -125,6 +125,16 @@ def get_settings(request: Request) -> SettingsOut:
         SettingItem(key="frontend_mounted", value=_frontend_mounted(request),
                     note="Whether apps/webui/frontend/build is mounted as the SPA at /."),
         SettingItem(key="frontend_build_dir", value=str(_FRONTEND_BUILD_DIR)),
+        SettingItem(
+            key="vibe_sensitivity",
+            value=0.07,
+            note="Pointer-travel charge multiplier used by the Vibe meter.",
+        ),
+        SettingItem(
+            key="vibe_decay_per_sec",
+            value=0.05,
+            note="Linear Vibe charge decay per second while idle.",
+        ),
     ]
 
     toggle_items = [

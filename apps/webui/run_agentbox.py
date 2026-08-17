@@ -50,6 +50,7 @@ ALLOWED_SSH_HOSTS = frozenset({"agentbox", "agentbox.example-tailnet.ts.net"})
 SSH_HOST = "agentbox"
 REMOTE_REPO = "/root/music-dj-tools"
 SSH_CONNECT_TIMEOUT = "8"
+CLIENT_LOG_NAMES = frozenset({"webui-client-errors", "webui-visitors"})
 
 
 def resolve_allowed_hosts(
@@ -382,6 +383,13 @@ def log_home(*, hostname: str | None = None) -> Path:
     return EPHEMERAL_LOG_DIR
 
 
+def log_dir_for(name: str, *, hostname: str | None = None) -> Path:
+    """Browser-originated diagnostics persist; process logs are host-scoped."""
+    if name in CLIENT_LOG_NAMES:
+        return LOG_DIR
+    return log_home(hostname=hostname)
+
+
 def dated_log_path(
     name: str,
     *,
@@ -390,7 +398,7 @@ def dated_log_path(
 ) -> Path:
     """One append-only file per process per local day."""
     day = time.strftime("%Y-%m-%d", now or time.localtime())
-    return (durable_dir or log_home()) / f"{name}-{day}.log"
+    return (durable_dir or log_dir_for(name)) / f"{name}-{day}.log"
 
 
 def prepare_log_path(
@@ -544,7 +552,18 @@ def remote_run_command() -> str:
     )
 
 
-def run_via_ssh(*, ssh_host: str = SSH_HOST) -> int:
+def remote_check_command() -> str:
+    """Constant remote browser-check payload. --local prevents a second hop."""
+    return (
+        f"test \"$(hostname)\" = {AGENTBOX_HOSTNAME} && "
+        f"cd {REMOTE_REPO} && "
+        "exec uv run --no-sync python -m apps.webui.run_agentbox --local --check"
+    )
+
+
+def run_via_ssh(
+    *, ssh_host: str = SSH_HOST, remote_command: str | None = None
+) -> int:
     """Start the box from a Mac. Does not bind or serve on the caller."""
     check = subprocess.run(
         ssh_agentbox_argv("hostname", ssh_host=ssh_host),
@@ -559,9 +578,38 @@ def run_via_ssh(*, ssh_host: str = SSH_HOST) -> int:
             f"ssh {ssh_host} did not reach {AGENTBOX_HOSTNAME} ({detail})"
         )
     print(f"[OK] hop ssh {ssh_host} -> {remote_name}")
-    hopped = subprocess.run(ssh_agentbox_argv(remote_run_command(), ssh_host=ssh_host))
+    command = remote_run_command() if remote_command is None else remote_command
+    hopped = subprocess.run(ssh_agentbox_argv(command, ssh_host=ssh_host))
     if hopped.returncode != 0:
         raise PortConfigError(f"remote run-agentbox exited {hopped.returncode}")
+    return 0
+
+
+def check_agentbox() -> int:
+    """Prove HTTP aliases, TLS, browser JS, AudioWorklet, IPC, API and telemetry."""
+    hosts = resolve_allowed_hosts()
+    host = public_host(hosts)
+    serve_ip = _tailscale_ipv4()
+    result = subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "node",
+            "scripts/agentbox-check.mjs",
+            "--host",
+            host,
+            "--ip",
+            serve_ip,
+        ],
+        cwd=FRONTEND_DIR,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise PortConfigError(f"agentbox browser check failed: {detail}")
+    print(f"[OK] browser {result.stdout.strip()}")
     return 0
 
 
@@ -579,10 +627,12 @@ def run_agentbox() -> int:
     backend_log = prepare_log_path("webui-backend")
     frontend_log = prepare_log_path("webui-frontend")
     client_error_log = prepare_log_path("webui-client-errors")
+    visitor_log = prepare_log_path("webui-visitors")
     redirect_log = prepare_log_path("agentbox-http-redirect")
     print(f"[OK] logs {backend_log}")
     print(f"[OK] logs {frontend_log}")
     print(f"[OK] logs {client_error_log}")
+    print(f"[OK] logs {visitor_log}")
     print(f"[OK] logs {redirect_log}")
 
     backend_pid = _start_detached(
@@ -667,6 +717,7 @@ def run_agentbox() -> int:
         label="tailscale short-host HTTP redirect",
     )
     print(f"[OK] http://agentbox/performance -> {expected_redirect}")
+    check_agentbox()
     return 0
 
 
@@ -675,18 +726,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--prepare-log",
         metavar="NAME",
-        help="create today's append log and print its path (webui-backend|webui-frontend)",
+        help="create today's append log and print its path",
     )
     parser.add_argument(
         "--local",
         action="store_true",
         help="run on this machine (used by the SSH hop; implied on agentbox)",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="prove the existing tailnet Serve path in a real browser",
+    )
     args = parser.parse_args(argv)
     try:
         if args.prepare_log:
             print(prepare_log_path(args.prepare_log))
             return 0
+        if args.check:
+            if args.local or is_agentbox():
+                return check_agentbox()
+            return run_via_ssh(remote_command=remote_check_command())
         if args.local or is_agentbox():
             return run_agentbox()
         return run_via_ssh()
