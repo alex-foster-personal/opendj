@@ -91,13 +91,26 @@ class OpenWakeWordBackend:
 
         self._openwakeword = openwakeword
         resolved = model_path or os.environ.get("VOICE_WAKE_MODEL_PATH")
-        if resolved:
-            self._model = Model(wakeword_models=[resolved])
-        else:
-            # Use whatever prebuilt models ship with openwakeword. This is
-            # the fallback for pre-install smoke; production flips
-            # VOICE_WAKE_MODEL_PATH to our trained "hey dj" onnx.
-            self._model = Model()
+        # Importing openwakeword is not the same as being able to load a
+        # model: its default tflite runtime ships no wheel for every host
+        # (macOS arm64 among them) and it raises a bare ValueError there.
+        # Translate every construction failure into the same RuntimeError
+        # the import guard above raises, so callers have ONE unusable-backend
+        # contract to handle instead of the upstream exception zoo.
+        try:
+            if resolved:
+                self._model = Model(wakeword_models=[resolved])
+            else:
+                # Use whatever prebuilt models ship with openwakeword. This is
+                # the fallback for pre-install smoke; production flips
+                # VOICE_WAKE_MODEL_PATH to our trained "hey dj" onnx.
+                self._model = Model()
+        except Exception as exc:  # pragma: no cover - env-specific
+            raise RuntimeError(
+                f"openwakeword model failed to load ({exc}); install its "
+                "runtime, point VOICE_WAKE_MODEL_PATH at an onnx model, or "
+                "switch WAKE_BACKEND=stub"
+            ) from exc
         self.threshold = threshold
 
     def detect(self, frame: bytes) -> float:  # pragma: no cover - needs wheel
