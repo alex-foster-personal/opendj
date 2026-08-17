@@ -68,8 +68,24 @@ def _content(
 def _foreign_prefix() -> str:
     """A path prefix that is FOREIGN on THIS interpreter's real platform, so
     the path-map / unmapped tests exercise the real branch without needing
-    to simulate a different OS."""
-    return "/Users/dev/Music" if pp.IS_WINDOWS else "D:/music-library"
+    to simulate a different OS.
+
+    Branches on IS_WINDOWS, matching ``pp._is_foreign_absolute``: everything
+    non-win32 (macOS AND Linux) treats a drive-letter/UNC path as foreign, and
+    only win32 treats a POSIX-rooted path as foreign. Branching on IS_DARWIN
+    instead read "not macOS" as "Windows", so on the Linux CI runner this handed
+    back ``/Users/dev/Music`` -- an ordinary native POSIX path there, not a
+    foreign one -- and both callers silently exercised the local-file-missing
+    branch instead of the unmapped branch they assert on.
+    """
+    prefix = "/Users/dev/Music" if pp.IS_WINDOWS else "D:/music-library"
+    # Fail loudly rather than let a future platform silently re-run these tests
+    # against the wrong branch, which is precisely how the IS_DARWIN bug hid.
+    assert pp._is_foreign_absolute(f"{prefix}/x.mp3"), (
+        f"{prefix!r} is not foreign on {pp.PLATFORM}; the unmapped/path-map "
+        "tests would exercise the wrong branch"
+    )
+    return prefix
 
 
 # ----- no hardcoded SHARE_ROOT left in this module ---------------------------
