@@ -1,4 +1,4 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint build-dist release-check rb-parity-check rb-parity-final
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -71,20 +71,39 @@ clean:
 # Keep this target serial; failures should halt the pipeline immediately.
 
 lint:
-	@# Prefer the venv-local ruff (CI installs it there); fall back to a
-	@# system-wide `ruff` on PATH for local dev machines that manage linters
-	@# outside the project venv.
+	@# Runs the ruff pinned in ops/quality/requirements.txt against the rule
+	@# set pinned in pyproject.toml's [tool.ruff]. Both pins matter: before
+	@# they existed this target ran whatever ruff happened to be on PATH with
+	@# whatever that version's built-in defaults were, so "the tree is clean"
+	@# meant something different on every machine.
+	@#
+	@# This target reports the ABSOLUTE violation count, which is currently
+	@# large. The enforced gate is `make quality`, which fails only when a
+	@# count grows. Use this one to see what to fix next.
 	@#
 	@# LINT_PATHS defaults to the top-level source trees. To replicate the
 	@# pre-commit experience (lint only files changed vs master) set
 	@# LINT_PATHS to the output of `git diff --name-only master... -- '*.py'`
 	@# when calling `make lint` / `make release-check`.
-	@ruff_bin="ruff"; \
-	if [ -x "$(VENV)/bin/ruff" ]; then ruff_bin="$(VENV)/bin/ruff"; fi; \
-	paths="$(LINT_PATHS)"; \
+	@paths="$(LINT_PATHS)"; \
 	if [ -z "$$paths" ]; then paths="apps tests scripts"; fi; \
-	echo "$$ruff_bin check $$paths"; \
-	$$ruff_bin check $$paths
+	uv run --no-project --quiet --with-requirements ops/quality/requirements.txt \
+		ruff check $$paths
+
+# ----- Code quality ratchet ----------------------------------------------
+# `quality` scores lint debt, complexity, architecture contracts, frontend
+# coupling, dead code, dependency defects, file bloat and duplication, then
+# fails if any of them got worse than ops/quality/baseline.json allows.
+# See ops/quality/README.md.
+
+quality:
+	uv run --no-project --quiet python -m scripts.quality_gate --report ops/quality/report.md
+
+# Re-record the baseline after a cleanup. Allowances only ever shrink; this
+# refuses to run on a partial (--only) measurement.
+quality-baseline:
+	uv run --no-project --quiet python -m scripts.quality_gate \
+		--update-baseline --report ops/quality/report.md
 
 build-dist:
 	rm -rf dist build
