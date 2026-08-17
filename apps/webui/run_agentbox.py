@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -84,19 +85,46 @@ def public_host(hosts: Sequence[str]) -> str:
 
 
 def listener_pids(port: int) -> list[int]:
-    """PIDs listening on port, from ``ss`` (no guessed occupants)."""
-    result = subprocess.run(
-        ["ss", "-ltnpH", f"sport = :{port}"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise PortConfigError(f"ss failed for port {port}: {result.stderr.strip()}")
+    """PIDs listening on port, from ``ss`` or ``lsof`` (no guessed occupants).
+
+    The agentbox itself is Linux, where ``ss`` is the right tool. The same
+    launcher is driven from macOS during development, which has no ``ss``
+    at all -- an undecorated ``FileNotFoundError`` from the subprocess is a
+    worse diagnostic than "the port is busy", so dispatch on whichever
+    probe the host actually has and fail loudly when it has neither.
+    """
+    if shutil.which("ss"):
+        argv = ["ss", "-ltnpH", f"sport = :{port}"]
+    elif shutil.which("lsof"):
+        # -b is not optional: without it lsof stats every mounted filesystem,
+        # which on a Mac carrying iCloud or network mounts blocks for tens of
+        # seconds, trips lsof's own 15s alarm and makes it abandon the scan
+        # and print NOTHING -- an occupied port silently reported as free.
+        # -b skips those blocking kernel calls; a network query never needed
+        # them. Measured 30.1s/17.6s/0.05s unflagged vs a flat 0.03s with -b.
+        argv = ["lsof", "-b", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"]
+    else:
+        raise PortConfigError(
+            f"cannot read listeners on port {port}: neither 'ss' nor 'lsof' "
+            "is on PATH"
+        )
+    result = subprocess.run(argv, check=False, capture_output=True, text=True)
+    # lsof exits 1 with no output when nothing holds the port; that is an
+    # empty answer, not a failure. ss reports the same state with exit 0.
+    # An empty answer that came WITH a warning is not an answer at all --
+    # that is the under-report case, so refuse it rather than call the port
+    # free.
+    stderr = result.stderr.strip()
+    if not result.stdout.strip() and stderr:
+        raise PortConfigError(f"{argv[0]} could not read port {port}: {stderr}")
+    if result.returncode != 0 and (argv[0] != "lsof" or stderr):
+        raise PortConfigError(f"{argv[0]} failed for port {port}: {stderr}")
     pids: list[int] = []
     for line in result.stdout.splitlines():
-        for match in PID_RE.finditer(line):
-            pid = int(match.group(1))
+        # ss tags the holder as ``pid=1234``; lsof -t prints the bare PID.
+        found = PID_RE.findall(line) or ([line.strip()] if line.strip().isdigit() else [])
+        for raw in found:
+            pid = int(raw)
             if pid not in pids:
                 pids.append(pid)
     return pids

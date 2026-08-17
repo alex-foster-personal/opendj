@@ -285,6 +285,15 @@ def test_encrypted_rekordbox_apply_backup_and_rollback_round_trip(
     mapping_conn = sqlite3.connect(":memory:", isolation_level=None)
     mapping_conn.executescript(_STATE_DDL)
     monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
+    # ``Rekordbox6Database.commit()`` refuses to write while a rekordbox
+    # process exists ANYWHERE on the host -- it never looks at which DB is
+    # open. This test writes to a throwaway encrypted copy under tmp_path,
+    # so that host-wide interlock is not protecting anything here; without
+    # this stub the test result depends on whether the DJ happens to have
+    # Rekordbox open. Our own path-scoped gate (RBPlaylistWriter's
+    # ``_assert_safe_to_write``) is untouched and still guards live writes.
+    # Same treatment as tests/reconcile/test_remove_track.py.
+    monkeypatch.setattr("pyrekordbox.db6.database.get_rekordbox_pid", lambda: 0)
 
     try:
         playlist = next(

@@ -6100,6 +6100,194 @@
         "title": "UiPrefsPatch",
         "type": "object"
       },
+      "UsbVolumeOut": {
+        "properties": {
+          "hide_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_music": {
+            "default": false,
+            "title": "Is Music",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "unknown",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "music",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount Path"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "default": true,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "role": {
+            "default": "other",
+            "enum": [
+              "usb_stick",
+              "mounted_drive",
+              "disk_image",
+              "other"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "simulated": {
+            "default": false,
+            "title": "Simulated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "UsbVolumeOut",
+        "type": "object"
+      },
+      "UsbVolumePost": {
+        "description": "DEV / simulate: inject a fake present volume (never touches disk).",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "default": "music",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "music",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "/Volumes/FAKE-USB",
+            "title": "Mount Path"
+          },
+          "name": {
+            "default": "FAKE USB",
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "default": true,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "USB",
+            "title": "Protocol"
+          },
+          "role": {
+            "default": "usb_stick",
+            "enum": [
+              "usb_stick",
+              "mounted_drive",
+              "disk_image",
+              "other"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "title": "UsbVolumePost",
+        "type": "object"
+      },
+      "UsbVolumesOut": {
+        "properties": {
+          "scanned_at": {
+            "title": "Scanned At",
+            "type": "number"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/UsbVolumeOut"
+            },
+            "title": "Volumes",
+            "type": "array"
+          },
+          "watching": {
+            "title": "Watching",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "volumes",
+          "scanned_at",
+          "watching"
+        ],
+        "title": "UsbVolumesOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -11088,6 +11276,87 @@
         "summary": "Readback Export",
         "tags": [
           "usb-export"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes": {
+      "get": {
+        "operationId": "get_usb_volumes_api_v1_usb_volumes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Usb Volumes",
+        "tags": [
+          "usb"
+        ]
+      },
+      "post": {
+        "description": "Inject or update a simulated volume (manual test without a stick).",
+        "operationId": "post_usb_volume_api_v1_usb_volumes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsbVolumePost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Usb Volume",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes/events": {
+      "get": {
+        "description": "SSE: keep the scanner warm while a client is subscribed.",
+        "operationId": "usb_volume_events_api_v1_usb_volumes_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Usb Volume Events",
+        "tags": [
+          "usb"
         ]
       }
     },

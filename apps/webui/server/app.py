@@ -66,6 +66,7 @@ from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
+from .routes import usb_volumes as usb_volumes_routes
 from .routes import voice_probe as voice_probe_routes
 
 log = logging.getLogger(__name__)
@@ -258,6 +259,7 @@ def create_app(
     app.include_router(ui_prefs_routes.router, prefix=api_prefix)
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
+    app.include_router(usb_volumes_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)
     app.include_router(play_analytics_router)

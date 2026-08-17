@@ -82,7 +82,21 @@ def _capture_transcripts(args: argparse.Namespace):
             flush=True,
         )
         return
-    backend = wake.make_backend()
+    try:
+        backend = wake.make_backend()
+    except (ImportError, RuntimeError) as exc:
+        # VOICE-01, same degrade contract as the sounddevice branch above.
+        # openWakeWord's default tflite runtime has no wheel on every host
+        # (macOS arm64 among them), so a host can have a working mic and
+        # still have no loadable wake model. Name the reason on stderr and
+        # stay in text-only mode rather than crashing the daemon; flip
+        # WAKE_BACKEND=stub or install the runtime to re-enable it.
+        print(
+            f"[voice] wake word disabled: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
     client = stt.make_client()
     sample_rate = 16_000
     frame_ms = 30
