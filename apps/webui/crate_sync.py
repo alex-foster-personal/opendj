@@ -36,8 +36,8 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from apps.shared import fs_residency, library_mode, platform_paths
-from apps.shared.platform_paths import PROJECT_ROOT
 from apps.shared.crate_index import audit_manifest, ledger_digest
+from apps.shared.platform_paths import PROJECT_ROOT
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
     ALLOWED_SSH_HOSTS,

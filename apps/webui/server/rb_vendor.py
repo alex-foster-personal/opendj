@@ -58,14 +58,15 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared import audio_quality, fs_residency
+from apps.shared import audio_quality, fs_residency, platform_paths
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
-from apps.shared import platform_paths
-from apps.shared.state import locations as track_locations
 from apps.shared.platform_paths import (
     MappedPath,
+)
+from apps.shared.platform_paths import (
     resolve_library_path as resolve_library_path,
 )
+from apps.shared.state import locations as track_locations
 from apps.vocals import cache as vocal_cache
 from apps.webui.server import beatgrid_diagnostics
 
