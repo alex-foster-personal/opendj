@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from apps.webui.crate_index import (
+from apps.shared.crate_index import (
     audit_manifest,
     ledger_digest,
     resolve_crate_audio,
