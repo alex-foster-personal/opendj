@@ -17,14 +17,14 @@ class EventHub(Protocol):
     def publish(self, topic: str, payload: dict[str, Any]) -> None: ...
 
 
-_hub: EventHub | None = None
+class _Slot:
+    hub: EventHub | None = None
 
 
 def set_hub(hub: EventHub | None) -> None:
-    global _hub
-    _hub = hub
+    _Slot.hub = hub
 
 
 def publish(topic: str, payload: dict[str, Any]) -> None:
-    if _hub is not None:
-        _hub.publish(topic, payload)
+    if _Slot.hub is not None:
+        _Slot.hub.publish(topic, payload)
