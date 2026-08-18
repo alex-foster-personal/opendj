@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { formatLoadLatency } from '../../src/lib/rb/format-load-latency.ts';
+import { loadTypeScriptModule } from './load-typescript.mjs';
+
+const { formatLoadLatency } = await loadTypeScriptModule('src/lib/rb/format-load-latency.ts');
 
 describe('formatLoadLatency', () => {
 	it('rounds seconds to one decimal', () => {
