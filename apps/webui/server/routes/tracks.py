@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
+from apps.engine_core.events import publish
 from apps.shared import audio_quality
 
 from .. import rb_vendor
@@ -166,4 +167,5 @@ def patch_track(
         stable_id, patch_dict, expected_etag=if_match, source="webui"
     )
     response.headers["ETag"] = compute_etag(updated.stable_id, updated.updated_at)
+    publish("library.changed", {"kind": "tracks", "ids": [updated.stable_id]})
     return _track_to_out(updated)

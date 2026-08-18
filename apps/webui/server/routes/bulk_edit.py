@@ -13,6 +13,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
+from apps.engine_core.events import publish
+
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_write_state
 from ..etag import compute_etag
@@ -99,6 +101,7 @@ def bulk_edit(
         )
         for track in tracks
     ]
+    publish("library.changed", {"kind": "tracks", "ids": [r.stable_id for r in results]})
 
     return BulkEditOut(applied_count=len(results), results=results)
 
