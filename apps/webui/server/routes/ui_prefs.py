@@ -13,6 +13,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.engine_core.events import publish
 from apps.shared.paths import DATA_DIR
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])
@@ -148,4 +149,5 @@ def put_ui_prefs(body: UiPrefsPatch, request: Request) -> UiPrefsOut:
         current["auto_sync"] = _parse_auto_sync(body.auto_sync.model_dump())
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    publish("library.changed", {"kind": "ui_prefs", "ids": []})
     return UiPrefsOut.model_validate(current)

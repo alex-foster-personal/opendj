@@ -7,6 +7,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 
+from apps.engine_core.events import publish
+
 from ..backend import Pairing, StateBackend
 from ..deps import get_read_state, get_write_state
 from ..errors import precondition_required
@@ -49,7 +51,9 @@ def create_pairing(
         direction=body.direction, source=body.source, notes=body.notes,
         created_at=now, updated_at=now,
     )
-    return _to_out(backend.create_pairing(p))
+    created = backend.create_pairing(p)
+    publish("library.changed", {"kind": "pairings", "ids": [created.pairing_id]})
+    return _to_out(created)
 
 
 @router.delete("/{pairing_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -63,4 +67,5 @@ def delete_pairing(
             "DELETE /pairings/{id} requires If-Match header"
         )
     backend.delete_pairing(pairing_id, expected_etag=if_match)
+    publish("library.changed", {"kind": "pairings", "ids": [pairing_id]})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

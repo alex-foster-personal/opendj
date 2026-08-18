@@ -60,6 +60,7 @@ from typing import Callable, Literal, Optional, TypeVar
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from apps.engine_core.events import publish
 from apps.reconcile import locate
 from apps.shared import audio_files, fs_residency, paths
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
@@ -577,6 +578,7 @@ def apply_relocate(
             candidate,
             body.expected_candidate_identity,
         )
+        publish("library.changed", {"kind": "reconcile", "ids": [stable_id]})
         return RelocateApplyOut(
             stable_id=stable_id, new_path=candidate.path, target="rekordbox",
             vendor_id=vendor_id, backup_path=backup_path,
@@ -601,6 +603,7 @@ def apply_relocate(
             "code": "RELOCATE_STATE_READBACK_FAILED",
             "message": "state-layer file_path did not read back after update",
         })
+    publish("library.changed", {"kind": "reconcile", "ids": [stable_id]})
     return RelocateApplyOut(
         stable_id=stable_id, new_path=candidate.path, target="state",
         vendor_id=None, backup_path=None,
