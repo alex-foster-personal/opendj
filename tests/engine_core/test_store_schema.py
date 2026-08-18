@@ -1,0 +1,426 @@
+"""Equivalence gate for the consolidated store schema.
+
+The consolidated module (apps/engine_core/store/schema.py) must produce
+BYTE-SEMANTICALLY the same tables and indexes as the ~17 legacy bootstraps
+it replaces. This test proves that by building two databases:
+
+* ``fresh``  -- one call to the consolidated ``apply_migrations``.
+* ``legacy`` -- every legacy bootstrap function imported and CALLED, on
+  temp DBs, exactly as production calls it.
+
+Then it compares normalised ``sqlite_master`` SQL, object by object.
+
+Direction of the gate: where the two disagree, the CONSOLIDATED module is
+wrong and gets fixed. This is consolidation, not redesign -- the legacy
+definition is the specification.
+"""
+from __future__ import annotations
+
+import re
+import sqlite3
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+# Everything below ``consolidated`` is a LEGACY bootstrap, imported from the
+# module that owns it today. The test calls each one the way production does.
+from apps.analysis.store import _ensure_analysis_tables
+from apps.dedup.schema import ensure_schema as dedup_ensure_schema
+from apps.engine_core.store import schema as consolidated
+from apps.launcher.scripts.bootstrap_db import apply_launcher_migration
+from apps.sets.state import _ensure_schema as sets_ensure_schema
+from apps.shared.fingerprints import FingerprintCache
+from apps.shared.hashing import HashCache
+from apps.shared.pairings.schema_sql import ensure_phase08_tables
+from apps.shared.play_orders.schema import apply_play_order_migrations
+from apps.shared.state.schema import apply_migrations as legacy_state_migrations
+from apps.spotify.state_writer import ensure_aux_tables
+from apps.voice.settings import SettingsStore
+from apps.webui.server.rb_vendor import _ensure_reversal_tables
+
+# --- sqlite_master normalisation ------------------------------------------
+
+_WS = re.compile(r"\s+")
+_IF_NOT_EXISTS = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
+
+
+def _normalise(sql: str) -> str:
+    """Strip the noise that carries no schema meaning.
+
+    * ``IF NOT EXISTS`` -- a creation-time flag, not part of the shape.
+    * identifier double-quotes -- SQLite re-emits a renamed table's DDL with
+      the name quoted (``track_fields`` arrives via ``ALTER TABLE
+      track_fields_v3 RENAME TO ...``), which is an artifact of HOW the
+      legacy ladder got there, not of what it built.
+    * whitespace runs -- indentation differs between the legacy files.
+    """
+    out = _IF_NOT_EXISTS.sub("", sql)
+    out = out.replace('"', "")
+    out = _WS.sub(" ", out)
+    return out.strip().rstrip(";").strip()
+
+
+def _shadow_prefixes(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Name prefixes of FTS5 shadow tables, derived from the live vtabs.
+
+    An ``fts5`` virtual table silently spawns ``<name>_data``, ``_idx``,
+    ``_content``, ``_docsize`` and ``_config``. They are implementation
+    detail of the one statement that made them, so they are excluded from
+    the comparison rather than enumerated in the schema module.
+    """
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND sql LIKE '%USING fts5%'"
+    ).fetchall()
+    return tuple(f"{r[0]}_" for r in rows)
+
+
+def objects(conn: sqlite3.Connection) -> dict[str, str]:
+    """``name -> normalised SQL`` for every real table/index in ``conn``.
+
+    Excludes SQLite internals (``sqlite_sequence``, autoindexes) and FTS5
+    shadow tables. Rows with NULL sql are implicit objects with no DDL.
+    """
+    shadows = _shadow_prefixes(conn)
+    result: dict[str, str] = {}
+    rows = conn.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index')"
+    ).fetchall()
+    for name, sql in rows:
+        if sql is None or str(name).startswith("sqlite_"):
+            continue
+        if any(str(name).startswith(prefix) for prefix in shadows):
+            continue
+        result[str(name)] = _normalise(str(sql))
+    return result
+
+
+# --- database builders ----------------------------------------------------
+
+
+def _connect(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def build_consolidated(tmp_path: Path) -> sqlite3.Connection:
+    """A DB created solely by the consolidated runner (fresh-DB path)."""
+    conn = _connect(tmp_path / "consolidated.db")
+    version = consolidated.apply_migrations(conn)
+    assert version == consolidated.SCHEMA_VERSION
+    return conn
+
+
+def build_legacy(tmp_path: Path) -> dict[str, str]:
+    """Run every legacy bootstrap and merge what each one created.
+
+    Bootstraps that legacy code points at the SHARED state.db run against one
+    connection, in the order production runs them. Bootstraps that legacy
+    code points at their own sidecar file (voice settings, dedup fallback,
+    fingerprint cache, hash cache) run against their own file -- calling them
+    the way production does is the whole point, so their DB layout is not
+    rewritten to suit the test.
+    """
+    merged: dict[str, str] = {}
+
+    # --- shared state.db path --------------------------------------------
+    state_path = tmp_path / "state.db"
+    state = _connect(state_path)
+    legacy_state_migrations(state)          # apps/shared/state/schema.py
+    _ensure_analysis_tables(state)          # apps/analysis/store.py
+    ensure_phase08_tables(state)            # apps/shared/pairings/schema_sql.py
+    apply_play_order_migrations(state)      # apps/shared/play_orders/schema.py
+    ensure_aux_tables(state)                # apps/spotify/state_writer.py
+    sets_ensure_schema(state, events_table="set_events")  # apps/sets/state.py
+    state.commit()
+    merged.update(objects(state))
+    state.close()
+
+    # apps/launcher/scripts/bootstrap_db.py -- reads the file back off disk,
+    # so it has to run after the state connection has committed and closed.
+    apply_launcher_migration(state_path)
+    state = _connect(state_path)
+    merged.update(objects(state))
+    state.close()
+
+    # --- sidecar files ----------------------------------------------------
+    # apps/voice/settings.py -- SettingsStore bootstraps in __post_init__.
+    SettingsStore(path=tmp_path / "settings.sqlite")
+    settings = _connect(tmp_path / "settings.sqlite")
+    merged.update(objects(settings))
+    settings.close()
+
+    # apps/dedup/schema.py -- returns its own open connection.
+    dedup = dedup_ensure_schema(tmp_path / "phase7.sqlite")
+    merged.update(objects(dedup))
+    dedup.close()
+
+    # apps/shared/fingerprints.py -- FingerprintCache bootstraps in __init__.
+    FingerprintCache(tmp_path / "fingerprints.sqlite")
+    fingerprints = _connect(tmp_path / "fingerprints.sqlite")
+    merged.update(objects(fingerprints))
+    fingerprints.close()
+
+    # apps/shared/hashing.py -- HashCache bootstraps in __init__.
+    hashes = HashCache(tmp_path / "hashes.sqlite")
+    merged.update(objects(hashes._conn))
+    hashes.close()
+
+    return merged
+
+
+# --- the equivalence gate -------------------------------------------------
+
+
+@pytest.fixture
+def fresh(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    conn = build_consolidated(tmp_path / "fresh")
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def legacy(tmp_path: Path) -> dict[str, str]:
+    return build_legacy(tmp_path / "legacy")
+
+
+def test_table_sets_are_identical(fresh: sqlite3.Connection) -> None:
+    """The declared table registry is exactly what the runner creates.
+
+    ``schema_meta`` is the one addition: migration infrastructure, created by
+    the runner rather than declared as domain data.
+    """
+    declared = set(consolidated.ALL_TABLES) | {"schema_meta"}
+    created = _table_names(fresh)
+    assert not declared - created, (
+        f"consolidated schema is missing tables: {sorted(declared - created)}"
+    )
+    assert not created - declared, (
+        f"consolidated schema invents tables: {sorted(created - declared)}"
+    )
+
+
+def _table_names(conn: sqlite3.Connection) -> set[str]:
+    shadows = _shadow_prefixes(conn)
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    return {
+        str(r[0])
+        for r in rows
+        if not str(r[0]).startswith("sqlite_")
+        and not any(str(r[0]).startswith(p) for p in shadows)
+    }
+
+
+def test_object_names_match_legacy(
+    fresh: sqlite3.Connection, legacy: dict[str, str]
+) -> None:
+    """Same set of tables AND indexes on both sides.
+
+    ``schema_meta`` is the one legitimate consolidated-only object beyond the
+    legacy set: it is migration infrastructure the legacy state ladder also
+    creates, so it appears on both sides anyway. Anything else appearing on
+    one side only is drift.
+    """
+    fresh_names = set(objects(fresh))
+    legacy_names = set(legacy)
+    assert fresh_names - legacy_names == set(), (
+        "consolidated schema creates objects no legacy bootstrap does: "
+        f"{sorted(fresh_names - legacy_names)}"
+    )
+    assert legacy_names - fresh_names == set(), (
+        "legacy bootstraps create objects the consolidated schema drops: "
+        f"{sorted(legacy_names - fresh_names)}"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(consolidated.ALL_TABLES))
+def test_table_definition_matches_legacy(
+    name: str, fresh: sqlite3.Connection, legacy: dict[str, str]
+) -> None:
+    """Table-by-table: the consolidated DDL is byte-semantically the legacy DDL."""
+    fresh_objects = objects(fresh)
+    assert name in legacy, f"no legacy bootstrap creates {name}"
+    assert name in fresh_objects, f"consolidated schema does not create {name}"
+    assert fresh_objects[name] == legacy[name], (
+        f"{name} drifted from its legacy definition.\n"
+        f"legacy:       {legacy[name]}\n"
+        f"consolidated: {fresh_objects[name]}"
+    )
+
+
+def test_index_definitions_match_legacy(
+    fresh: sqlite3.Connection, legacy: dict[str, str]
+) -> None:
+    """Index-by-index equivalence, including the partial-index WHERE clauses."""
+    fresh_objects = objects(fresh)
+    fresh_tables = _table_names(fresh)
+    fresh_indexes = {
+        name: sql for name, sql in fresh_objects.items() if name not in fresh_tables
+    }
+    assert fresh_indexes, "no indexes found -- the comparison would be vacuous"
+    for name, sql in sorted(fresh_indexes.items()):
+        assert name in legacy, f"consolidated index {name} has no legacy origin"
+        assert sql == legacy[name], (
+            f"index {name} drifted from its legacy definition.\n"
+            f"legacy:       {legacy[name]}\n"
+            f"consolidated: {sql}"
+        )
+
+
+def test_every_table_is_attributed_to_a_legacy_file() -> None:
+    """No table may enter the consolidated schema without a named origin."""
+    for domain, tables in consolidated.TABLES.items():
+        assert domain in consolidated.LEGACY_SOURCES, (
+            f"domain {domain!r} declares tables {tables} with no legacy source"
+        )
+        assert consolidated.LEGACY_SOURCES[domain].startswith("apps/")
+
+
+def test_vendor_sidecar_matches_rb_vendor(tmp_path: Path) -> None:
+    """The rekordbox-side reversal tables match rb_vendor's own DDL.
+
+    These live in the vendor master.db, not state.db, so they are compared
+    separately -- but the DDL still has exactly one home.
+    """
+    legacy_conn = _connect(tmp_path / "vendor_legacy.db")
+    _ensure_reversal_tables(legacy_conn)
+    legacy_objects = objects(legacy_conn)
+    legacy_conn.close()
+
+    fresh_conn = _connect(tmp_path / "vendor_fresh.db")
+    consolidated.ensure_vendor_sidecar_tables(fresh_conn)
+    fresh_objects = objects(fresh_conn)
+    fresh_conn.close()
+
+    assert fresh_objects == legacy_objects
+    assert set(fresh_objects) == set(consolidated.VENDOR_SIDECAR_TABLES)
+
+
+# --- runner behaviour -----------------------------------------------------
+
+
+def test_apply_migrations_is_idempotent(tmp_path: Path) -> None:
+    """A second call changes nothing -- same version, same objects."""
+    conn = _connect(tmp_path / "twice.db")
+    first = consolidated.apply_migrations(conn)
+    snapshot = objects(conn)
+    second = consolidated.apply_migrations(conn)
+    assert first == second == consolidated.SCHEMA_VERSION
+    assert objects(conn) == snapshot
+    conn.close()
+
+
+def test_fresh_db_is_not_marked_as_adopted(tmp_path: Path) -> None:
+    conn = _connect(tmp_path / "born_consolidated.db")
+    consolidated.apply_migrations(conn)
+    assert not consolidated.was_adopted(conn)
+    conn.close()
+
+
+def test_adopts_an_existing_legacy_db_without_recreating_it(tmp_path: Path) -> None:
+    """A live state.db keeps its rows; only the missing tables get created."""
+    path = tmp_path / "existing.db"
+    conn = _connect(path)
+    legacy_state_migrations(conn)
+    conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path, "
+        "created_at, updated_at) VALUES ('sid1', 'isrc', 'Keep Me', "
+        "'/music/keep.aiff', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+    )
+    conn.commit()
+
+    before = objects(conn)
+    assert "pairings" not in before, "fixture assumption: legacy state.db has no pairings"
+
+    consolidated.apply_migrations(conn)
+
+    assert consolidated.was_adopted(conn), "adoption must be recorded in schema_meta"
+    rows = conn.execute("SELECT title FROM tracks").fetchall()
+    assert rows == [("Keep Me",)], "adoption must not recreate existing tables"
+    after = objects(conn)
+    for name, sql in before.items():
+        assert after[name] == sql, f"adoption rewrote the existing {name}"
+    assert "pairings" in after, "adoption must create the tables that were missing"
+    conn.close()
+
+
+def test_adoption_replays_the_track_locations_backfill(tmp_path: Path) -> None:
+    """A DB adopted from legacy v3 gets the v4 data backfill, not just the table."""
+    path = tmp_path / "v3.db"
+    conn = _connect(path)
+    legacy_state_migrations(conn)
+    conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, title, file_path, "
+        "created_at, updated_at) VALUES ('sid2', 'isrc', 'Backfill Me', "
+        "'/music/backfill.aiff', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+    )
+    conn.execute("DELETE FROM track_locations")
+    conn.commit()
+
+    consolidated.apply_migrations(conn)
+
+    rows = conn.execute(
+        "SELECT stable_id, kind, role, file_path FROM track_locations"
+    ).fetchall()
+    assert rows == [("sid2", "local", "primary", "/music/backfill.aiff")]
+    conn.close()
+
+
+def test_adoption_refuses_a_pre_webui_track_fields(tmp_path: Path) -> None:
+    """Fail fast rather than adopt a table shape adoption cannot repair."""
+    conn = _connect(tmp_path / "v1.db")
+    # The legacy v1 track_fields: source CHECK without 'webui'. Adoption only
+    # creates missing objects, so it must refuse instead of silently leaving
+    # the narrow enum in place.
+    conn.execute(
+        "CREATE TABLE track_fields ("
+        "stable_id TEXT NOT NULL, field_name TEXT NOT NULL, "
+        "value_json TEXT NOT NULL, "
+        "source TEXT NOT NULL CHECK (source IN ('mik','manual')), "
+        "modified_at TEXT NOT NULL, PRIMARY KEY (stable_id, field_name))"
+    )
+    conn.commit()
+
+    with pytest.raises(consolidated.SchemaAdoptionError, match="webui"):
+        consolidated.apply_migrations(conn)
+    conn.close()
+
+
+def test_adoption_refuses_a_db_below_the_adoptable_floor(tmp_path: Path) -> None:
+    """schema_meta stamped at v1 means table rebuilds are still owed."""
+    conn = _connect(tmp_path / "stamped_v1.db")
+    conn.execute(
+        "CREATE TABLE schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO schema_meta(version, applied_at) VALUES (1, '2026-01-01T00:00:00Z')"
+    )
+    conn.commit()
+
+    with pytest.raises(consolidated.SchemaAdoptionError, match="v1"):
+        consolidated.apply_migrations(conn)
+    conn.close()
+
+
+def test_legacy_runners_become_no_ops_after_consolidation(tmp_path: Path) -> None:
+    """The legacy counters are stamped, so their runners do not re-bootstrap.
+
+    This is the property that lets the scattered bootstraps stay in the tree
+    during integration without racing the consolidated one.
+    """
+    conn = _connect(tmp_path / "stamped.db")
+    consolidated.apply_migrations(conn)
+    snapshot = objects(conn)
+
+    # Both legacy runners short-circuit on ``current >= SCHEMA_VERSION`` and
+    # return whatever MAX(version) they see -- for the shared-state runner
+    # that is now the consolidated stamp, which is the point.
+    assert legacy_state_migrations(conn) >= consolidated.LEGACY_SHARED_STATE_VERSION
+    assert apply_play_order_migrations(conn) == 1
+    assert objects(conn) == snapshot
+    conn.close()
