@@ -44,6 +44,7 @@ from typing import Any, Iterator, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
+from apps.engine_core.events import publish
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, evaluate
 from apps.smartlists.repo import (
@@ -393,6 +394,7 @@ def update_smartlist(
             "message": str(exc),
         }) from exc
     response.headers["ETag"] = _etag(smartlist_revision(row))
+    publish("library.changed", {"kind": "smartlists", "ids": [smartlist_id]})
     return _to_summary(row)
 
 

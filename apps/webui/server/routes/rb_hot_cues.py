@@ -29,6 +29,8 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
+from apps.engine_core.events import publish
+
 from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_write_state
@@ -158,6 +160,7 @@ def save_hot_cue(
         comment=body.comment,
         color_table_index=body.color_table_index,
     )
+    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
     return _mutation_response(row, response)
 
 
@@ -178,6 +181,7 @@ def clear_hot_cue(
     result = rb_vendor.clear_hot_cue(
         content.vendor_id, slot, expected_revision=if_match,
     )
+    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
     return _mutation_response(result, response)
 
 
@@ -202,6 +206,7 @@ def restore_hot_cue(
         expected_revision=if_match,
         reversal_id=body.reversal_id,
     )
+    publish("library.changed", {"kind": "hot_cues", "ids": [stable_id]})
     return _mutation_response(result, response)
 
 

@@ -37,6 +37,7 @@ from apps.dedup.find_clusters import (
     DEFAULT_DURATION_DELTA_S,
     DEFAULT_MAX_CLUSTER,
 )
+from apps.engine_core.events import publish
 from apps.shared import paths as dedup_paths
 
 from ..backend import StateBackend
@@ -619,6 +620,7 @@ def post_dedup_decision(
     )
     revision = _persist_decision(record, if_match)
     response.headers["ETag"] = revision
+    publish("library.changed", {"kind": "dedup", "ids": [str(cluster_id)]})
     return DecisionRecordOut(
         cluster_id=cluster_id,
         cluster_key=current_cluster_key,
