@@ -248,6 +248,7 @@ def pick_playable(
     policy: Optional[PickPolicy] = None,
     folder_path: Optional[str] = None,
     duration_ms: Optional[int] = None,
+    extra_paths: Sequence[tuple[str, str, Kind]] = (),
 ) -> Optional[PickedAudio]:
     """Return the single playable winner, or None when nothing works."""
     policy = policy or policy_from_env()
@@ -278,10 +279,11 @@ def pick_playable(
         if cand is not None:
             seen.add(str(cand.path))
             candidates.append(cand)
-    for raw, source, kind in (
+    implicit_paths: tuple[tuple[Optional[str], str, Kind], ...] = (
         (implicit_file, "file_path", "local"),
         (folder_path, "folder_path", "local"),
-    ):
+    )
+    for raw, source, kind in (*implicit_paths, *extra_paths):
         cand = _candidate_from_path(
             raw, kind=kind, source=source, duration_ms=duration,
         )

@@ -412,6 +412,12 @@ def resolve_playable_audio(
             raise
         if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
             raise
+    from apps.webui.crate_index import resolve_crate_audio
+
+    crate_audio = resolve_crate_audio(stable_id)
+    extra_paths: tuple[tuple[str, str, track_locations.Kind], ...] = (
+        ((str(crate_audio), "crate-index", "local"),) if crate_audio is not None else ()
+    )
     state = _open_ro(STATE_DB, "STATE_DB")
     try:
         exists = state.execute(
@@ -424,6 +430,7 @@ def resolve_playable_audio(
             stable_id,
             policy=track_locations.policy_from_env(share=share),
             folder_path=folder_path,
+            extra_paths=extra_paths,
         )
     finally:
         state.close()

@@ -311,6 +311,10 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
     )
     path = mapped.resolved
     if path is None or not path.is_file():
+        from apps.webui.crate_index import resolve_crate_audio
+
+        path = resolve_crate_audio(stable_id)
+    if path is None or not path.is_file():
         raise FileNotFoundError(
             f"track {stable_id!r} points at {row[0]}, which resolves as "
             f"{path} ({mapped.reason}) and is not a materialised file. "
