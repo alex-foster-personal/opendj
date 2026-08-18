@@ -117,16 +117,27 @@ def test_docs_workflow_present():
 
 def test_ci_and_docs_workflows_accept_all_normal_pull_request_bases():
     """Normal CI gates must accept every active integration PR base."""
+    # The rebuild bake-off lane is a CI-gated integration base (tranche PRs
+    # target it), but docs builds deliberately stay off lane traffic (cost;
+    # docs cover release surfaces only -- see
+    # docs/ci-actions-cost-review-2026-08-16.md).
     expected_pr_bases = [
         "master",
         "af--rekordbox-parity-ui",
         "codex--v2-integration",
     ]
     expected_push_bases = ["master", "af--rekordbox-parity-ui"]
+    lane_extra = {"ci.yml": ["af--rebuild-agentB-from-Fable"], "docs.yml": []}
     for workflow_name in ("ci.yml", "docs.yml"):
         triggers = _load_workflow(workflow_name)["on"]
-        assert triggers["pull_request"]["branches"] == expected_pr_bases
-        assert triggers["push"]["branches"] == expected_push_bases
+        assert (
+            triggers["pull_request"]["branches"]
+            == expected_pr_bases + lane_extra[workflow_name]
+        )
+        assert (
+            triggers["push"]["branches"]
+            == expected_push_bases + lane_extra[workflow_name]
+        )
 
 
 def test_release_workflow_remains_release_only():
