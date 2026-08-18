@@ -11,7 +11,7 @@
     "test:unit": "svelte-kit sync && node --test --test-concurrency=1 --test-timeout=60000 tests/unit/*.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
-    "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts || echo 'regen skipped'"
+    "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
