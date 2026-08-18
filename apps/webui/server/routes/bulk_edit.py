@@ -101,9 +101,13 @@ def bulk_edit(
         )
         for track in tracks
     ]
-    publish("library.changed", {"kind": "tracks", "ids": [r.stable_id for r in results]})
+    _publish_tracks_changed(results)
 
     return BulkEditOut(applied_count=len(results), results=results)
+
+
+def _publish_tracks_changed(results: list[BulkEditRowOut]) -> None:
+    publish("library.changed", {"kind": "tracks", "ids": [r.stable_id for r in results]})
 
 
 __all__ = ["router"]
