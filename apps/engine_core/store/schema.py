@@ -687,3 +687,225 @@ def ensure_vendor_sidecar_tables(conn: sqlite3.Connection) -> None:
     """
     for stmt in VENDOR_SIDECAR_DDL:
         conn.execute(stmt)
+
+
+# --- runner ---------------------------------------------------------------
+
+
+class SchemaAdoptionError(RuntimeError):
+    """A pre-existing DB cannot be adopted without a legacy migration first."""
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _ensure_meta(conn: sqlite3.Connection) -> None:
+    """Create ``schema_meta`` with the legacy shape, byte-for-byte.
+
+    Same DDL as apps/shared/state/schema.py._ensure_meta, so a DB that has
+    already been through the legacy runner sees an exact no-op.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            version    INTEGER PRIMARY KEY,
+            applied_at TEXT    NOT NULL
+        )
+        """
+    )
+
+
+def _legacy_version(conn: sqlite3.Connection) -> int:
+    """Highest legacy shared-state version stamped in ``schema_meta`` (0 = none)."""
+    row = conn.execute(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_meta WHERE version < ?",
+        (VERSION_OFFSET,),
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def consolidated_version(conn: sqlite3.Connection) -> int:
+    """Consolidated ladder version recorded in ``schema_meta`` (0 = none).
+
+    Reads the offset rows only, so the legacy 1..5 counter is invisible here.
+    The :data:`ADOPTION_VERSION` marker row is exactly ``VERSION_OFFSET`` and
+    therefore reads back as version 0 -- adoption records that the file was
+    adopted, it does not by itself advance the ladder.
+    """
+    row = conn.execute(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_meta WHERE version >= ?",
+        (VERSION_OFFSET,),
+    ).fetchone()
+    stamped = int(row[0]) if row is not None else 0
+    return max(stamped - VERSION_OFFSET, 0)
+
+
+def existing_objects(conn: sqlite3.Connection) -> set[str]:
+    """Names of every table (incl. virtual) already in ``conn``."""
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    return {str(r[0]) for r in rows}
+
+
+def missing_tables(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Consolidated tables that ``conn`` does not have yet, in declared order."""
+    present = existing_objects(conn)
+    return tuple(name for name in ALL_TABLES if name not in present)
+
+
+def _track_fields_accepts_webui(conn: sqlite3.Connection) -> bool:
+    """True iff the live ``track_fields`` CHECK already lists ``'webui'``.
+
+    The legacy v2->v3 step widened that enum by REBUILDING the table. Adoption
+    only creates missing objects, so a DB stuck on the narrow enum must go
+    through the legacy runner first -- this is the probe that catches it.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'track_fields'"
+    ).fetchone()
+    if row is None or row[0] is None:
+        return False
+    return "'webui'" in str(row[0])
+
+
+def _assert_adoptable(conn: sqlite3.Connection) -> None:
+    """Fail loudly if this DB carries a legacy shape adoption cannot repair."""
+    legacy = _legacy_version(conn)
+    if 0 < legacy < MIN_ADOPTABLE_LEGACY_VERSION:
+        raise SchemaAdoptionError(
+            f"state DB is at legacy shared-state schema v{legacy}; adoption "
+            f"needs v{MIN_ADOPTABLE_LEGACY_VERSION} or later because v1->v2 "
+            "and v2->v3 REBUILD track_field_history / track_fields and this "
+            "runner only creates missing objects. Run "
+            "apps.shared.state.schema.apply_migrations(conn) first."
+        )
+    if "track_fields" in existing_objects(conn) and not _track_fields_accepts_webui(conn):
+        raise SchemaAdoptionError(
+            "existing track_fields table predates the widened source CHECK "
+            "(no 'webui'); run apps.shared.state.schema.apply_migrations(conn) "
+            "first so the table is rebuilt, then re-run adoption."
+        )
+
+
+def _stamp_legacy_counters(conn: sqlite3.Connection) -> None:
+    """Mark the legacy counters as satisfied so their runners become no-ops.
+
+    Without this, ``apps.shared.state.schema.apply_migrations`` and
+    ``apps.shared.play_orders.schema.apply_play_order_migrations`` would each
+    re-run their whole ladder against a DB this module already built --
+    harmless (every statement is IF NOT EXISTS) but a second, competing
+    bootstrap is exactly what consolidation exists to remove.
+    """
+    now = _now()
+    for version in range(1, LEGACY_SHARED_STATE_VERSION + 1):
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_meta(version, applied_at) VALUES (?, ?)",
+            (version, now),
+        )
+    conn.execute(
+        "INSERT OR IGNORE INTO play_orders_schema_meta(version, applied_at) "
+        "VALUES (1, ?)",
+        (now,),
+    )
+
+
+def _record(conn: sqlite3.Connection, version: int) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_meta(version, applied_at) VALUES (?, ?)",
+        (version, _now()),
+    )
+
+
+def _create_all(conn: sqlite3.Connection, statements: list[str]) -> None:
+    for stmt in statements:
+        conn.execute(stmt)
+
+
+def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Bring a pre-existing DB up to the consolidated shape.
+
+    Creates only what is missing (every statement is already IF NOT EXISTS,
+    so this is belt-and-braces: the returned tuple is the audit trail of what
+    the file was actually short of), replays the data-bearing backfills, and
+    leaves the ADOPTION marker to the caller. Returns the tables that were
+    missing before the call.
+    """
+    _assert_adoptable(conn)
+    was_missing = missing_tables(conn)
+    _create_all(conn, _V1)
+    for stmt in _ADOPTION_BACKFILL:
+        conn.execute(stmt)
+    return was_missing
+
+
+def apply_migrations(conn: sqlite3.Connection) -> int:
+    """Bring ``conn`` to :data:`SCHEMA_VERSION`; return the resulting version.
+
+    Idempotent. Picks its own path:
+
+    * fresh DB (no engine tables, no schema_meta rows) -> create everything.
+    * existing DB -> adopt: verify, create only the missing objects, replay
+      idempotent backfills, and stamp :data:`ADOPTION_VERSION` so the file
+      records that it predates consolidation.
+
+    Raises :class:`SchemaAdoptionError` when the existing DB carries a legacy
+    shape that adoption cannot repair (see
+    :data:`MIN_ADOPTABLE_LEGACY_VERSION`).
+    """
+    _ensure_meta(conn)
+    current = consolidated_version(conn)
+    if current >= SCHEMA_VERSION:
+        return current
+
+    adopting = bool(_legacy_version(conn)) or bool(
+        existing_objects(conn) & set(ALL_TABLES)
+    )
+
+    conn.execute("BEGIN")
+    try:
+        if adopting:
+            _adopt(conn)
+            _record(conn, ADOPTION_VERSION)
+        else:
+            _create_all(conn, _V1)
+        _stamp_legacy_counters(conn)
+        _record(conn, VERSION_OFFSET + SCHEMA_VERSION)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+    return consolidated_version(conn)
+
+
+def was_adopted(conn: sqlite3.Connection) -> bool:
+    """True iff this DB reached the consolidated schema by adoption."""
+    row = conn.execute(
+        "SELECT 1 FROM schema_meta WHERE version = ?", (ADOPTION_VERSION,)
+    ).fetchone()
+    return row is not None
+
+
+__all__ = [
+    "ADOPTION_VERSION",
+    "ALL_TABLES",
+    "DOMAINS",
+    "LEGACY_SHARED_STATE_VERSION",
+    "LEGACY_SOURCES",
+    "MIGRATIONS",
+    "MIN_ADOPTABLE_LEGACY_VERSION",
+    "SCHEMA_VERSION",
+    "TABLES",
+    "VENDOR_SIDECAR_DDL",
+    "VENDOR_SIDECAR_TABLES",
+    "VERSION_OFFSET",
+    "SchemaAdoptionError",
+    "apply_migrations",
+    "consolidated_version",
+    "ensure_vendor_sidecar_tables",
+    "existing_objects",
+    "missing_tables",
+    "was_adopted",
+]
