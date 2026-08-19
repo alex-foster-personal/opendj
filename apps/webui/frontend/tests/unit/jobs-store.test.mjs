@@ -92,11 +92,43 @@ function jsonResponse(body, status = 200) {
 	});
 }
 
+/** The engine's health body: legacy fields plus the three handshake ones. */
+function engineHealth() {
+	return {
+		status: 'ok',
+		state_db: {
+			path: 'data/state/state.db',
+			tracks: 1,
+			playlists: 1,
+			pairings: 0,
+			last_writer_hostname: null,
+			last_writer_at: null
+		},
+		cloud: { lock_holder: null },
+		syncthing: null,
+		bind_host: '127.0.0.1',
+		version: '0.1.0',
+		contract_rev: 'sha256:2f6c',
+		engine_version: '0.1.0',
+		boot_id: 'boot-1'
+	};
+}
+
 before(async () => {
-	mod = await loadTypeScriptModule('src/lib/rb/jobs-store.svelte.ts', { viteApiBase: API_BASE });
+	// Loaded through the shared-graph entry so this store and the capability
+	// probe it consults live in one bundle. Every call below is gated on the
+	// serving daemon having a jobs API at all, so the suite first resolves the
+	// probe against a real engine health body; daemon-capabilities.test.mjs
+	// owns the legacy and not-yet-identified cases.
+	mod = await loadTypeScriptModule('tests/unit/fixtures/daemon-capability-entry.ts', {
+		viteApiBase: API_BASE
+	});
 	store = mod.jobsStore;
 	originalFetch = globalThis.fetch;
 	originalConsoleError = console.error;
+	globalThis.fetch = async () => jsonResponse(engineHealth());
+	assert.equal(await mod.capabilities.probe(), 'engine');
+	globalThis.fetch = originalFetch;
 });
 
 after(() => {

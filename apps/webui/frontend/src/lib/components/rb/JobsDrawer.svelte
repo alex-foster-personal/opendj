@@ -13,6 +13,7 @@
 	 * row moved between render and click) its 409 message is printed
 	 * verbatim under the row.
 	 */
+	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import {
 		cancelRefusal,
 		canCancel,
@@ -27,18 +28,24 @@
 
 	const open = $derived(jobsStore.drawerOpen);
 
+	/** Why this drawer is inert, or null when the daemon offers jobs. */
+	const refusal = $derived(jobsRefusal());
+
 	/**
-	 * Wire to the engine only while the drawer is open.
+	 * Wire to the engine only while the drawer is open AND the daemon serving
+	 * this page actually has a jobs API.
 	 *
 	 * The jobs endpoints and the jobs.updated topic exist on the ENGINE, not
-	 * on the legacy daemon that also serves this SPA during the bake-off, so
-	 * a page-load fetch would log a 404 on every legacy boot for a panel
-	 * nobody opened. Attaching on open (and detaching on close, via the
+	 * on the legacy daemon that also serves this SPA during the bake-off. The
+	 * capability probe has already established which one is answering, so a
+	 * legacy boot subscribes to nothing and fetches nothing rather than 404ing
+	 * to rediscover it. Attaching on open (and detaching on close, via the
 	 * returned teardown) also means reopening refetches instead of showing a
 	 * list that went stale while the drawer was shut.
 	 */
 	$effect(() => {
 		if (!jobsStore.drawerOpen) return;
+		if (refusal !== null) return;
 		return jobsStore.attach();
 	});
 
@@ -88,8 +95,8 @@
 				type="button"
 				class="jobs-refresh"
 				onclick={() => jobsStore.hydrate()}
-				disabled={jobsStore.loading}
-				title="Refetch the list from the engine"
+				disabled={jobsStore.loading || refusal !== null}
+				title={refusal ?? 'Refetch the list from the engine'}
 			>
 				{jobsStore.loading ? '...' : 'refresh'}
 			</button>
@@ -98,13 +105,19 @@
 			</button>
 		</header>
 
-		{#if jobsStore.error !== null}
+		{#if refusal !== null}
+			<!-- INERT: nothing was fetched and nothing is subscribed. -->
+			<p class="jobs-inert" title={refusal}>{refusal}</p>
+		{:else if jobsStore.error !== null}
 			<p class="jobs-error" role="alert" title={jobsStore.error}>
 				could not load jobs: {jobsStore.error}
 			</p>
 		{/if}
 
-		{#if jobsStore.jobs.length === 0}
+		{#if refusal !== null}
+			<!-- No list at all, not even an empty one: an empty list would claim
+			     the daemon told us it has no jobs, and it never spoke. -->
+		{:else if jobsStore.jobs.length === 0}
 			<p class="jobs-empty">no jobs yet</p>
 		{:else}
 			<ul class="jobs-list">
@@ -226,6 +239,11 @@
 	.jobs-empty {
 		color: var(--rb-text-dim);
 		margin: 4px 0;
+	}
+	.jobs-inert {
+		color: var(--rb-text-dim);
+		margin: 2px 0;
+		overflow-wrap: anywhere;
 	}
 	.jobs-error,
 	.jobs-refusal {

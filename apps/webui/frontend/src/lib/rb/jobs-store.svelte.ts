@@ -29,9 +29,14 @@
  *   ✔︎ 🎯 cancel()/reenqueue(): mirror the server's guards, and a 409 refusal
  *     surfaces the server's own message verbatim.
  *     [if] a refusal is swallowed or reworded [then ⛔️] broken
+ *   ✔︎ 🎯 hydrate()/attach() issue NOTHING when the serving daemon has no jobs
+ *     API, and say why. The legacy daemon does not serve /api/v1/jobs, so a
+ *     request there is a guaranteed 404 that teaches the user nothing.
+ *     [if] a legacy boot fires a jobs request at all [then ⛔️] broken
  */
 
 import type { components } from '../api-types';
+import { jobsRefusal } from '../api/capabilities.svelte';
 import { ApiError, api, unwrap } from '../api/client';
 import {
 	TOPIC_JOBS_UPDATED,
@@ -228,8 +233,17 @@ class JobsStore {
 	#detachers: Unsubscribe[] = [];
 
 	/** Replace the list from the server. A failure leaves the previous rows
-	 * on screen: a transient 500 must not look like "all your jobs vanished". */
+	 * on screen: a transient 500 must not look like "all your jobs vanished".
+	 *
+	 * Refuses BEFORE the request when the serving daemon has no jobs API. The
+	 * gate lives here rather than only in the drawer so that no call site can
+	 * reintroduce the 404 by calling the store directly. */
 	async hydrate(): Promise<void> {
+		const refusal = jobsRefusal();
+		if (refusal !== null) {
+			this.error = refusal;
+			return;
+		}
 		this.loading = true;
 		try {
 			const rows = await unwrap(
@@ -258,8 +272,17 @@ class JobsStore {
 	 *
 	 * Idempotent: attaching twice would otherwise double every upsert and
 	 * fire two refetches per resync.
+	 *
+	 * A daemon with no jobs API also has no jobs.updated topic, so this
+	 * subscribes to nothing and fetches nothing: it records why and hands back
+	 * a detacher that has nothing to detach.
 	 */
 	attach(bus: JobsBus = REAL_BUS): Unsubscribe {
+		const refusal = jobsRefusal();
+		if (refusal !== null) {
+			this.error = refusal;
+			return () => undefined;
+		}
 		if (this.#detachers.length > 0) return () => this.detach();
 		this.#detachers.push(
 			bus.subscribe(TOPIC_JOBS_UPDATED, (envelope) => {

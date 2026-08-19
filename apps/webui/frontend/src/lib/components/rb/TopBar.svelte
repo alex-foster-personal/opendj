@@ -31,6 +31,7 @@
 	import PerfMeters from './PerfMeters.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
+	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
 	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
 	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
@@ -43,6 +44,11 @@
 	}
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+
+	/** Why the JOBS toggle is inert, or null when the daemon offers jobs. A
+	 * different category from INERT_TITLE above: the feature is built, this
+	 * daemon simply does not serve it. */
+	const jobsUnavailable = $derived(jobsRefusal());
 
 	let pairingOpen = $state(false);
 	let autoPlayMenuOpen = $state(false);
@@ -364,10 +370,14 @@
 		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
 	</button>
 
-	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer -->
+	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
+	     Inert on a daemon with no jobs API, and the title says which. -->
 	<button
 		class="midi-label"
-		title="Engine jobs: what the daemon is running right now (live over the jobs.updated topic)"
+		class:rb-inert={jobsUnavailable !== null}
+		disabled={jobsUnavailable !== null}
+		title={jobsUnavailable ??
+			'Engine jobs: what the daemon is running right now (live over the jobs.updated topic)'}
 		aria-label="Jobs drawer"
 		aria-expanded={jobsStore.drawerOpen}
 		onclick={toggleJobsDrawer}

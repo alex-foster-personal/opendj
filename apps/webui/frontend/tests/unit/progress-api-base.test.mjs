@@ -9,10 +9,36 @@ let originalFetch;
 let requestedUrl;
 
 before(async () => {
-	progressApi = await loadTypeScriptModule('src/routes/progress-tree/progress-api.ts', {
+	// Loaded through the shared-graph entry so the fetcher and the capability
+	// probe it consults live in one bundle. The ledger is a LEGACY-daemon
+	// surface, so the suite first resolves the probe against a real legacy
+	// health body (one with no engine handshake fields); the engine and
+	// not-yet-identified cases belong to daemon-capabilities.test.mjs.
+	progressApi = await loadTypeScriptModule('tests/unit/fixtures/daemon-capability-entry.ts', {
 		viteApiBase: API_BASE
 	});
 	originalFetch = globalThis.fetch;
+	globalThis.fetch = async () =>
+		new Response(
+			JSON.stringify({
+				status: 'ok',
+				state_db: {
+					path: 'data/state/state.db',
+					tracks: 1,
+					playlists: 1,
+					pairings: 0,
+					last_writer_hostname: null,
+					last_writer_at: null
+				},
+				cloud: { lock_holder: null },
+				syncthing: null,
+				bind_host: '127.0.0.1',
+				version: '0.1.0'
+			}),
+			{ status: 200, headers: { 'content-type': 'application/json' } }
+		);
+	assert.equal(await progressApi.capabilities.probe(), 'legacy');
+	globalThis.fetch = originalFetch;
 });
 
 after(() => {
