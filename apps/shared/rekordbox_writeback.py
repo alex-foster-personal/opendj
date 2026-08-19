@@ -42,6 +42,7 @@ set above.  ``tests/test_rekordbox_writeback_gate.py`` iterates it, so:
   http.playlists.writeback.rollback           live master.db (restore backup)
   http.relocate.apply                         live master.db djmdContent.FolderPath
   http.usb-export.apply                       USB volume exportLibrary.db
+  module.relocate.write_folder_path           live master.db FolderPath patch
   module.playlist_writeback.service_apply     live master.db (service layer)
   module.playlist_writeback.service_rollback  live master.db (service layer)
   module.smartlists.rb_writer                 live master.db playlists
@@ -61,6 +62,17 @@ The USB sub-modules (``usb/copy.py``, ``usb/playlist_writer.py``,
 ``usb/marker.py``, ``usb/pioneer/writer_rbox.py``) are reachable only through
 the mapped entrypoints above, so they are covered transitively rather than
 guarded twice.  A NEW entrypoint into any of them must be added to this map.
+
+DELIBERATE OVER-BLOCK
+---------------------
+``POST /api/v1/relocate/{stable_id}/apply`` is gated whole, not just its
+rekordbox branch.  The route picks its branch at runtime from the track's
+vendor mapping, so a caller cannot know in advance whether a given relocate
+writes the live master.db or only state.db.  Refusing the whole route keeps
+"the control is visibly off" true, at the cost of also blocking relocates for
+the minority of tracks with no rekordbox mapping.  The narrower guard inside
+``_write_rekordbox_folder_path`` is kept as defence in depth so a future
+refactor that moves that write off the route still hits the gate.
 
 FLAG SEMANTICS
 --------------
@@ -150,6 +162,13 @@ WRITE_SURFACES: tuple[WriteSurface, ...] = (
         guard_site="apps/webui/server/routes/usb_export.py",
     ),
     # ----- module / CLI ---------------------------------------------------
+    WriteSurface(
+        surface_id="module.relocate.write_folder_path",
+        kind="module",
+        entrypoint="apps.webui.server.routes.relocate._write_rekordbox_folder_path",
+        target="live master.db djmdContent.FolderPath (defence in depth)",
+        guard_site="apps/webui/server/routes/relocate.py",
+    ),
     WriteSurface(
         surface_id="module.playlist_writeback.service_apply",
         kind="module",

@@ -306,6 +306,12 @@ def _probe_smartlists_rb_writer() -> None:
     writer._assert_safe_to_write()
 
 
+def _probe_relocate_write_folder_path() -> None:
+    from apps.webui.server.routes.relocate import _write_rekordbox_folder_path
+
+    _write_rekordbox_folder_path("9", "/gone/track.mp3", object(), "identity")
+
+
 def _probe_usb_pioneer_cli_write() -> None:
     from apps.sync.usb.pioneer.__main__ import _cmd_write
 
@@ -323,6 +329,7 @@ def _probe_usb_pioneer_agent_export() -> None:
 
 
 MODULE_PROBES: dict[str, Callable[[], None]] = {
+    "module.relocate.write_folder_path": _probe_relocate_write_folder_path,
     "module.playlist_writeback.service_apply": _probe_playlist_writeback_apply,
     "module.playlist_writeback.service_rollback": _probe_playlist_writeback_rollback,
     "module.smartlists.rb_writer": _probe_smartlists_rb_writer,

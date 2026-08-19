@@ -427,6 +427,7 @@ def _write_rekordbox_folder_path(
     install -- so the apply is deferred to a local verify pass rather than
     pretending to have succeeded.
     """
+    require_writeback_enabled("module.relocate.write_folder_path")
     if not paths.REKORDBOX_LIVE_DB.exists():
         raise HTTPException(status_code=503, detail={
             "code": "REKORDBOX_DB_UNAVAILABLE",
