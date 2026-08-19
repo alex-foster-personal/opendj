@@ -34,6 +34,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.engine_core.build_info import add_build_info_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
@@ -124,6 +125,13 @@ def create_app(
     # setup.import-rekordbox before anything can enqueue one.
     app.include_router(setup_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
+    # Identity before the SPA mount, like every other route: a Mount at "/"
+    # swallows anything registered after it. platform_paths.PROJECT_ROOT is
+    # the checkout root in a dev boot and the payload's app/ dir in a bundled
+    # one, which is exactly the distinction the resolver switches on.
+    add_build_info_route(
+        app, environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
+    )
 
     _drop_root_placeholder(app)
     _mount_spa(app)
