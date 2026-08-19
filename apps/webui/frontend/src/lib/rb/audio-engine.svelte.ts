@@ -164,17 +164,20 @@ import {
 	quantizedLoopEndpointsMs
 } from '$lib/player/transport/loops';
 import {
+	_positionForSegment,
 	commonSyncScheduleTimes,
 	deckReachedEnd,
 	normalizeEngagedLoopPositionSec,
 	normalizeScheduledTransportEntrySec,
 	pendingSyncWaitTarget,
 	playResumePositionSec,
+	projectedLoopAwareTransportPosition,
 	projectedTransportPosition,
 	safeSyncScheduleTime,
 	safeTransportScheduleTime,
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
+import type { _ClockSegment } from '$lib/player/transport/schedule-math';
 
 // ---------------------------------------------------- extracted re-exports
 //
@@ -204,6 +207,7 @@ export {
 	normalizeScheduledTransportEntrySec,
 	pendingSyncWaitTarget,
 	playResumePositionSec,
+	projectedLoopAwareTransportPosition,
 	projectedTransportPosition,
 	safeSyncScheduleTime,
 	safeTransportScheduleTime,
@@ -371,16 +375,6 @@ interface _ChannelNodes {
 	fader: GainNode;
 	xf: GainNode;
 	extsplit: ChannelSplitterNode | null;
-}
-
-interface _ClockSegment {
-	active: boolean;
-	loop: LoopState | null;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	masterTempoEnabled?: boolean;
-	keyShiftSemitones?: number;
 }
 
 export interface PresentedTransportSchedule extends _ClockSegment {
@@ -1585,35 +1579,6 @@ export function presentedSlipAnchor(
 	});
 }
 
-export function projectedLoopAwareTransportPosition(input: {
-	active: boolean;
-	loop: LoopState | null;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	projectAt: number;
-	durationSec: number;
-}): number {
-	for (const [name, value] of Object.entries(input)) {
-		if (name !== 'loop' && name !== 'active' && !Number.isFinite(value)) {
-			throw new RangeError(`${name} must be finite, got ${String(value)}`);
-		}
-	}
-	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
-	if (input.durationSec <= 0) throw new RangeError('durationSec must be positive');
-	return _positionForSegment(
-		{
-			active: input.active,
-			loop: input.loop,
-			startContextTime: input.startContextTime,
-			startPositionSec: input.startPositionSec,
-			tempoRatio: input.tempoRatio
-		},
-		input.projectAt,
-		input.durationSec
-	);
-}
-
 export function naturalEndNeedsRevisionedStop(
 	playing: boolean,
 	observation: Pick<
@@ -2259,20 +2224,6 @@ async function _resumeSlip(deck: DeckId): Promise<void> {
 	);
 	_clearSlip(deck);
 }
-
-function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
-	if (!segment.active) return segment.startPositionSec;
-	const elapsed = Math.max(0, at - segment.startContextTime);
-	const linear = segment.startPositionSec + elapsed * segment.tempoRatio;
-	const loop = segment.loop;
-	if (loop !== null && loop.engaged) {
-		const loopStart = loop.in_ms / 1000;
-		const loopEnd = loop.out_ms / 1000;
-		if (linear >= loopEnd) return loopStart + ((linear - loopStart) % (loopEnd - loopStart));
-	}
-	return Math.min(linear, durationSec);
-}
-
 function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
 	return {
 		active: pending.active,
