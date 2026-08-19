@@ -45,6 +45,23 @@ router = APIRouter(prefix="/stems", tags=["stems"])
 
 MODAL_TIER_KEYS: tuple[str, ...] = tuple(tier.key for tier in modal_tiers())
 
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+"""Where ``scripts/bench/tier_throughput.json`` lives.
+
+From THIS MODULE's location, not from the data dir. The measurements are
+repo content and the data dir is wherever the operator pointed ``--data-dir``,
+so deriving one from the other only works while they happen to be siblings --
+which they are not for any worktree run with its own data dir.
+"""
+
+
+def _ensure_throughput_loaded() -> None:
+    """Load the measured fits once. Cheap, idempotent, explicit."""
+    from apps.stems import tiers as tiercfg
+
+    if not tiercfg.THROUGHPUT:
+        tiercfg.load_measured_throughput(REPO_ROOT)
+
 
 class StemsPlanOut(BaseModel):
     """What separating this library at this tier would take."""
@@ -81,6 +98,7 @@ def get_stems_plan(
         )
     from apps.stems.tiers import get_tier
 
+    _ensure_throughput_loaded()
     try:
         buckets = library_buckets(_data_dir(request))
     except FileNotFoundError as exc:
