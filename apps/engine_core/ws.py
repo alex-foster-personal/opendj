@@ -101,7 +101,18 @@ class WsHub:
                 "WsHub.publish() before bind(): the hub was registered "
                 "without a running engine loop"
             )
-        body = json.dumps(payload, sort_keys=True)
+        # allow_nan=False is the whole point. Python's default emits the bare
+        # tokens NaN/Infinity, which are not JSON: the client's JSON.parse
+        # throws, the frame reads as malformed, and every status transition
+        # costs a full resync forever. Better to fail at the emit point,
+        # naming the topic, than to ship a frame nobody can parse.
+        try:
+            body = json.dumps(payload, sort_keys=True, allow_nan=False)
+        except ValueError as exc:
+            raise ValueError(
+                f"WsHub.publish({topic!r}): payload is not serializable as "
+                f"strict JSON ({exc}); no frame was emitted"
+            ) from exc
         loop.call_soon_threadsafe(self._dispatch, topic, body)
 
     def _dispatch(self, topic: str, body: str) -> None:
@@ -164,14 +175,21 @@ async def events_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=1011, reason="engine event hub not mounted")
         return
     await websocket.accept()
+    # attach() is pure and synchronous, so nothing can interleave between it
+    # and the try below. Everything that can FAIL -- starting with the hello
+    # send -- lives inside, because a client that dies before the hello lands
+    # would otherwise leave its subscriber in the hub forever, holding a
+    # 256-frame queue that nothing ever drains.
     subscriber, hello = hub.attach()
-    await websocket.send_text(hello)
-    # Only the send side runs as a task. The disconnect is awaited in this
-    # coroutine directly, so noticing a closed socket costs one scheduler hop
-    # rather than several -- an ASGI server that cancels the connection task
-    # right after delivering the disconnect must still find us finished.
-    pump = asyncio.create_task(_pump(websocket, subscriber))
+    pump: asyncio.Task[None] | None = None
     try:
+        await websocket.send_text(hello)
+        # Only the send side runs as a task. The disconnect is awaited in this
+        # coroutine directly, so noticing a closed socket costs one scheduler
+        # hop rather than several -- an ASGI server that cancels the connection
+        # task right after delivering the disconnect must still find us
+        # finished.
+        pump = asyncio.create_task(_pump(websocket, subscriber))
         while True:
             # The bus is one-way; reading exists only to notice the client
             # left, so whatever it sends is deliberately discarded.
@@ -179,7 +197,8 @@ async def events_endpoint(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         return
     finally:
-        pump.cancel()
+        if pump is not None:
+            pump.cancel()
         hub.detach(subscriber)
 
 
@@ -205,6 +224,7 @@ __all__ = [
     "TOPICS",
     "TOPIC_HEALTH_CHANGED",
     "TOPIC_JOBS_UPDATED",
+    "TOPIC_LIBRARY_CHANGED",
     "Subscriber",
     "WsHub",
     "events_endpoint",
