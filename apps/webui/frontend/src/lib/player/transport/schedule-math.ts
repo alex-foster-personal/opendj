@@ -137,6 +137,61 @@ export function safeTransportScheduleTime(
 	return nowContextTime + latencySec + safetySec;
 }
 
+/**
+ * LATENCY-03: the stage row for one scheduled transport mutation.
+ *
+ * `effectiveWhenSec` MUST be the POST-CLAMP time actually handed to the
+ * WebAudio call, never the time a call site requested. The two differ exactly
+ * when the not-in-the-past floor re-inflates a schedule, which is the failure
+ * this instrument exists to catch: an offset logged from the requested value
+ * would read 8ms while the real schedule sat at 128ms, and the guard would pass
+ * while the thing it guards was broken. Both are recorded so a clamp is visible
+ * as a gap between them rather than as silence.
+ *
+ * Every device floor travels WITH the sample: baseLatency and outputLatency are
+ * machine-specific, so a number compared across machines without them is a
+ * number compared against nothing.
+ */
+export function scheduleOffsetStages(input: {
+	contextTimeSec: number;
+	requestedWhenSec: number;
+	effectiveWhenSec: number;
+	processorLatencySec: number;
+	baseLatencySec: number;
+	outputLatencySec: number;
+	active: boolean;
+}): Record<string, number> {
+	for (const [name, value] of Object.entries(input)) {
+		if (name === 'active') continue;
+		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
+	}
+	if (typeof input.active !== 'boolean') {
+		throw new TypeError(`active must be boolean, got ${String(input.active)}`);
+	}
+	if (input.effectiveWhenSec < input.contextTimeSec) {
+		throw new RangeError(
+			`effective schedule ${input.effectiveWhenSec} precedes context time ` +
+				`${input.contextTimeSec}: a mutation cannot be scheduled in the past`
+		);
+	}
+	const round = (value: number): number => Math.round(value * 1000) / 1000;
+	const scheduledOffsetMs = (input.effectiveWhenSec - input.contextTimeSec) * 1000;
+	const processorLatencyMs = input.processorLatencySec * 1000;
+	return {
+		// The Class A budget turns on this one, post-clamp.
+		scheduled_offset_ms: round(scheduledOffsetMs),
+		// What the call site asked for. Below scheduled_offset_ms means a clamp fired.
+		requested_offset_ms: round((input.requestedWhenSec - input.contextTimeSec) * 1000),
+		// The margin the schedule policy owns, with the processor's share removed.
+		safety_ms: round(scheduledOffsetMs - processorLatencyMs),
+		// The processor's own self-reported latency - not this policy's to spend.
+		processor_latency_ms: round(processorLatencyMs),
+		base_latency_ms: round(input.baseLatencySec * 1000),
+		output_latency_ms: round(input.outputLatencySec * 1000),
+		active: input.active ? 1 : 0
+	};
+}
+
 export function projectedTransportPosition(input: {
 	now: number;
 	startContextTime: number;

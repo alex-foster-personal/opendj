@@ -193,6 +193,7 @@ import {
 	projectedTransportPosition,
 	safeSyncScheduleTime,
 	safeTransportScheduleTime,
+	scheduleOffsetStages,
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
@@ -241,6 +242,7 @@ export {
 	projectedTransportPosition,
 	safeSyncScheduleTime,
 	safeTransportScheduleTime,
+	scheduleOffsetStages,
 	supersedingScheduleTime
 };
 export { pausedSeekClock };
@@ -811,6 +813,15 @@ function _ensureGraph(): AudioContext {
 	}
 	if (_ctx !== null) return _ctx;
 	_ctx = new AudioContext();
+	// LATENCY-03: stamp the device floors this machine imposes, once, so a
+	// scheduled_offset_ms read later is never compared across machines by
+	// accident. outputLatency can still read 0 before the first render, which is
+	// exactly why every transport-schedule row carries its own live copy too.
+	recordPerfTiming('audio-context', {
+		sample_rate_hz: _ctx.sampleRate,
+		base_latency_ms: Math.round(_ctx.baseLatency * 1e6) / 1000,
+		output_latency_ms: Math.round(_ctx.outputLatency * 1e6) / 1000
+	});
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
 	// Silence belt for headless test agents (`?muted=1`): the LAST node before
@@ -1648,7 +1659,8 @@ async function _scheduleDeckSerial(
 	const processor = rt.processor;
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
-	const minimumSafeWhen = safeTransportScheduleTime(_ctx.currentTime, rt.latencySec);
+	const scheduleContextTime = _ctx.currentTime;
+	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, rt.latencySec);
 	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
 	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
 	const effectiveWhen = supersedingScheduleTime(
@@ -1656,6 +1668,20 @@ async function _scheduleDeckSerial(
 		latestPending?.startContextTime ?? null,
 		minimumSafeWhen
 	);
+	// LATENCY-03: scheduled_offset_ms is THE number the Class A budget turns on,
+	// and it is a value this function never returns to a caller. Captured HERE,
+	// downstream of both clamps (the minimumSafeWhen floor and the superseding
+	// pending boundary), from the same const handed to processor.schedule below.
+	// Emitted after the ack, so the log write never sits on the path it measures.
+	const scheduleStages = scheduleOffsetStages({
+		contextTimeSec: scheduleContextTime,
+		requestedWhenSec: when,
+		effectiveWhenSec: effectiveWhen,
+		processorLatencySec: rt.latencySec,
+		baseLatencySec: _ctx.baseLatency,
+		outputLatencySec: _ctx.outputLatency,
+		active
+	});
 	const scheduledTempoRatio = tempoRatio ?? latestPending?.tempoRatio ?? rt.controlTempoRatio;
 	const scheduledMasterTempoEnabled =
 		masterTempoEnabled ?? latestPending?.masterTempoEnabled ?? rt.controlMasterTempoEnabled;
@@ -1691,6 +1717,7 @@ async function _scheduleDeckSerial(
 	if (rt.processor !== processor) {
 		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
+	recordPerfTiming('transport-schedule', scheduleStages, deck);
 	acknowledgePresentedTransportSchedule(rt.presentation, {
 		revision,
 		active,
