@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
+import { engineBlockAfter } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 // 863c0eb6 - ControlExplainer wiring + Beat Sync phase-lock UX.
@@ -32,8 +33,11 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if ControlExplainer is unmounted from CUE/SLIP/BEAT SYNC/MASTER then the
 //   teaching chrome silently disappears
 
+// The engine half of this guard reads through engine-source.mjs, which tracks a
+// LIST of engine source files. T4 splits audio-engine.svelte.ts into player/*
+// behind a barrel; a guard hardcoding the old path would then grep re-exports
+// and assert against nothing while still reporting green.
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
-const ENGINE_SRC = readFileSync(`${SRC}/lib/rb/audio-engine.svelte.ts`, 'utf8');
 const DECK_HEADER_SRC = readFileSync(`${SRC}/lib/components/rb/deck/DeckHeader.svelte`, 'utf8');
 const JOG_DIAL_SRC = readFileSync(`${SRC}/lib/components/rb/deck/JogDial.svelte`, 'utf8');
 const TRANSPORT_SRC = readFileSync(
@@ -55,19 +59,21 @@ before(async () => {
  * cosmetic reformat must not fail this; a changed number must.
  */
 function enforcedBoundsFn() {
-	const match = ENGINE_SRC.match(
-		/function _tempoBounds\(deck: DeckId\): \{ min: number; max: number \} \{\n([\s\S]*?)\n\}/
-	);
-	assert.ok(
-		match,
-		'if _tempoBounds is renamed or reshaped then this drift guard must be re-pointed, not deleted'
-	);
-	const body = match[1].replace(/pitchRanges\[deck\]/g, 'pct');
+	// engineBlockAfter fails loudly when _tempoBounds is renamed, reshaped or
+	// absent from every listed engine source - it never hands back an empty body.
+	const body = engineBlockAfter(
+		'function _tempoBounds(deck: DeckId): { min: number; max: number } {'
+	).replace(/pitchRanges\[deck\]/g, 'pct');
 	return new Function('pct', body);
 }
 
 test('the advertised pitch window is the enforced pitch window, for every pitch range', () => {
 	const enforced = enforcedBoundsFn();
+	assert.ok(
+		Array.isArray(audio.PITCH_RANGES) && audio.PITCH_RANGES.length > 0,
+		'if PITCH_RANGES stops being a non-empty array then this comparison loops zero ' +
+			'times and passes without comparing anything'
+	);
 	for (const pct of audio.PITCH_RANGES) {
 		const advertised = autoPlay.tempoBoundsFromPitchRange(pct);
 		assert.deepEqual(
@@ -113,9 +119,7 @@ test('the Beat Sync explainer states that an impossible lock reverts the button'
 });
 
 test('setBeatSync clears the lit flag before rethrowing an impossible phase lock', () => {
-	const start = ENGINE_SRC.indexOf('setBeatSync(deck: DeckId, enabled: boolean)');
-	assert.ok(start > 0, 'setBeatSync must exist on the engine');
-	const body = ENGINE_SRC.slice(start, ENGINE_SRC.indexOf('setMasterTempo', start));
+	const body = engineBlockAfter('setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {');
 
 	const catchAt = body.indexOf('.catch(');
 	assert.ok(
