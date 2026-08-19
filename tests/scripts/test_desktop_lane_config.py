@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,7 @@ from scripts.desktop_lane_config import (
     dmg_filename,
     lane_identifier,
     lane_product_name,
+    manifest_stamp,
     overlay,
     product_slug,
     validate_label,
@@ -178,14 +180,118 @@ def test_shipped_config_points_at_the_bundled_setup_page() -> None:
     assert (setup_dir / "setup.js").is_file()
 
 
-def test_setup_page_and_rust_agree_on_the_default_engine_origin() -> None:
-    """One default, stated in two languages; drift would be silent."""
+@pytest.mark.requirement("INSTALL-14")
+def test_the_shell_bakes_no_default_engine_origin() -> None:
+    """The shell used to carry a hardcoded fallback port. It must not now.
+
+    A build that starts its own engine on an OS-assigned port has no default
+    address to bake, and a baked one is actively dangerous: two lanes on one
+    Mac would both fall back to the same number and each other's engine would
+    answer first. The setup page keeps its own default because it is also
+    openable in a plain browser, where nothing injects an origin.
+    """
     setup_js = (TAURI_CONF.parent.parent / "setup/setup.js").read_text(
         encoding="utf-8"
     )
     main_rs = (TAURI_CONF.parent / "src/main.rs").read_text(encoding="utf-8")
     assert "export const DEFAULT_ENGINE_ORIGIN = 'http://127.0.0.1:8685';" in setup_js
-    assert 'None => "http://127.0.0.1:8685",' in main_rs
+    assert "DEFAULT_ENGINE_ORIGIN" not in main_rs
+    assert "127.0.0.1:8685" not in main_rs
+    # The operator seam survives: an explicitly supplied origin still wins,
+    # which is how a packaged build gets driven against a chosen engine.
+    assert 'ENGINE_ORIGIN_ENV: &str = "OPENDJ_ENGINE_ORIGIN"' in main_rs
+
+
+# ----- the bundled engine ------------------------------------------------
+@pytest.mark.requirement("INSTALL-14")
+def test_the_bundle_stages_the_engine_payload_into_resources() -> None:
+    """Without this the dmg is a window onto somebody else's dev server."""
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    assert conf["bundle"]["resources"] == {"payload": "payload"}
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_the_payload_staging_dir_is_never_committed() -> None:
+    """174MB of derived interpreter must not be able to enter git."""
+    ignore = (TAURI_CONF.parent.parent / ".gitignore").read_text(encoding="utf-8")
+    assert "src-tauri/payload/" in ignore
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_the_shell_picks_its_port_from_the_os() -> None:
+    """A hardcoded port collides with the other lane and every dev server."""
+    engine_rs = (TAURI_CONF.parent / "src/engine.rs").read_text(encoding="utf-8")
+    assert 'TcpListener::bind("127.0.0.1:0")' in engine_rs
+    # Port 0 means "OS, pick one". Any real port number written next to the
+    # loopback address would be the hardcoding this replaces.
+    assert re.search(r"127\.0\.0\.1:\d{2,}", engine_rs) is None
+
+
+@pytest.mark.requirement("INSTALL-13")
+def test_the_shell_strips_writeback_before_spawning_the_engine() -> None:
+    """One-way safety is absolute: the shell removes an inherited opt-in.
+
+    A build launched from a developer's terminal inherits that terminal's
+    exported .env. Declining to SET the flag is not enough when it may
+    already be set.
+    """
+    engine_rs = (TAURI_CONF.parent / "src/engine.rs").read_text(encoding="utf-8")
+    assert '"MDT_REKORDBOX_WRITEBACK_ENABLED"' in engine_rs
+    assert '"MDT_DATA_DIR"' in engine_rs
+    assert "env_remove" in engine_rs
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_a_failed_boot_raises_a_dialog_rather_than_a_blank_window() -> None:
+    """The blank window IS the bug; the shell must have no path to it."""
+    main_rs = (TAURI_CONF.parent / "src/main.rs").read_text(encoding="utf-8")
+    engine_rs = (TAURI_CONF.parent / "src/engine.rs").read_text(encoding="utf-8")
+    assert "rfd::MessageDialog::new()" in main_rs
+    assert "std::process::exit(1)" in main_rs
+    # The window is only ever built after a healthy engine, so the failure
+    # path cannot reach WebviewWindowBuilder.
+    assert main_rs.index("fail_visibly(&failure)") < main_rs.index(
+        "WebviewWindowBuilder::new"
+    )
+    assert "wait_until_healthy" in engine_rs
+
+
+@pytest.mark.requirement("INSTALL-14")
+def test_the_engine_is_killed_as_a_process_group_on_exit() -> None:
+    """Otherwise a job outlives the app and holds the data dir's lock."""
+    main_rs = (TAURI_CONF.parent / "src/main.rs").read_text(encoding="utf-8")
+    engine_rs = (TAURI_CONF.parent / "src/engine.rs").read_text(encoding="utf-8")
+    assert ".process_group(0)" in engine_rs
+    assert "libc::killpg(pid, libc::SIGTERM)" in engine_rs
+    assert "libc::killpg(pid, libc::SIGKILL)" in engine_rs
+    assert "RunEvent::Exit" in main_rs
+    assert "supervisor.shutdown()" in main_rs
+
+
+# ----- build identity ----------------------------------------------------
+@pytest.mark.requirement("INSTALL-07")
+def test_the_shell_stamps_itself_at_compile_time() -> None:
+    """Both halves must be able to say what they are, separately."""
+    main_rs = (TAURI_CONF.parent / "src/main.rs").read_text(encoding="utf-8")
+    build_rs = (TAURI_CONF.parent / "build.rs").read_text(encoding="utf-8")
+    stamped = [
+        "OPENDJ_BUILD_GIT_SHA",
+        "OPENDJ_BUILD_GIT_SHA_FULL",
+        "OPENDJ_BUILD_GIT_BRANCH",
+        "OPENDJ_BUILD_GIT_DIRTY",
+        "OPENDJ_BUILD_AT_UTC",
+        "OPENDJ_BUILD_LANE_LABEL",
+    ]
+    for name in stamped:
+        assert f'option_env!("{name}")' in main_rs, name
+        # cargo does not track option_env! reads on its own, so a stamp
+        # missing from build.rs would leave the PREVIOUS value compiled in --
+        # the exact staleness this readout exists to expose.
+        assert f'"{name}",' in build_rs, name
+    assert "cargo:rerun-if-env-changed=" in build_rs
+    assert "globalThis.OPENDJ_SHELL_BUILD" in main_rs
+    # An unstamped shell must say so rather than invent a sha.
+    assert '"stamped": BUILD_GIT_SHA.is_some()' in main_rs
 
 
 # ----- CLI ---------------------------------------------------------------
@@ -275,3 +381,71 @@ def test_cli_rejects_a_bad_label_loudly() -> None:
     )
     assert result.returncode != 0
     assert "MDT_LANE_LABEL" in result.stderr
+
+
+# ----- manifest stamp emitter --------------------------------------------
+@pytest.mark.requirement("INSTALL-07")
+def test_stamp_reads_one_identity_field(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"identity": {"git_sha": "abc1234", "git_dirty": False}}),
+        encoding="utf-8",
+    )
+    assert manifest_stamp(manifest, "git_sha") == "abc1234"
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_stamp_emits_booleans_rust_can_read(tmp_path: Path) -> None:
+    """option_env! yields a string, and "False" is a true-ish string."""
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"identity": {"git_dirty": True}}), encoding="utf-8")
+    assert manifest_stamp(manifest, "git_dirty") == "1"
+    manifest.write_text(json.dumps({"identity": {"git_dirty": False}}), encoding="utf-8")
+    assert manifest_stamp(manifest, "git_dirty") == "0"
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_stamp_refuses_a_null_rather_than_stamping_one(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"identity": {"lane_label": None}}), encoding="utf-8")
+    with pytest.raises(LaneLabelError):
+        manifest_stamp(manifest, "lane_label")
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_stamp_names_the_fields_it_does_have(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"identity": {"git_sha": "abc"}}), encoding="utf-8")
+    with pytest.raises(LaneLabelError, match="git_sha"):
+        manifest_stamp(manifest, "git_shaa")
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_the_dmg_recipe_stamps_the_shell_from_the_payload_manifest() -> None:
+    """One git read for both halves; two reads can disagree."""
+    recipe = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    for name in (
+        "OPENDJ_BUILD_GIT_SHA",
+        "OPENDJ_BUILD_GIT_SHA_FULL",
+        "OPENDJ_BUILD_GIT_BRANCH",
+        "OPENDJ_BUILD_GIT_DIRTY",
+        "OPENDJ_BUILD_AT_UTC",
+        "OPENDJ_BUILD_LANE_LABEL",
+    ):
+        assert f"export {name}=$(stamp " in recipe, name
+    # The dmg must not be assembleable around a payload from another commit.
+    assert "rm -rf \"$payload\"" in recipe
+    assert "scripts.build_engine_payload --out \"$payload\"" in recipe
+    assert '[ "$shipped_sha" = "$OPENDJ_BUILD_GIT_SHA" ]' in recipe
+
+
+@pytest.mark.requirement("INSTALL-06")
+def test_the_dmg_recipe_refuses_an_unset_lane_label() -> None:
+    """An unlabelled bundled build would share the plain app's library."""
+    recipe = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    assert 'if [ -z "$label" ]; then' in recipe
+    assert "MDT_LANE_LABEL is unset" in recipe
+    # And it must refuse BEFORE spending a payload build or a cargo build.
+    assert recipe.index("MDT_LANE_LABEL is unset") < recipe.index(
+        "scripts.build_engine_payload"
+    )
