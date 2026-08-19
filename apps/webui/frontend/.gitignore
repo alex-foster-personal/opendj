@@ -5,3 +5,6 @@ build/
 .env.*
 !.env.example
 .vite/
+
+# Playwright artifacts from e2e/savepoint runs
+test-results/
