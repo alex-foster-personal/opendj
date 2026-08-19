@@ -7103,6 +7103,34 @@
         "title": "VoiceProbeResponse",
         "type": "object"
       },
+      "WriteSurfaceOut": {
+        "properties": {
+          "entrypoint": {
+            "title": "Entrypoint",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "surface_id": {
+            "title": "Surface Id",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface_id",
+          "kind",
+          "entrypoint",
+          "target"
+        ],
+        "title": "WriteSurfaceOut",
+        "type": "object"
+      },
       "WritebackApplyIn": {
         "properties": {
           "confirmed": {
@@ -7261,6 +7289,47 @@
           "vendors"
         ],
         "title": "WritebackCapabilitiesOut",
+        "type": "object"
+      },
+      "WritebackGateOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env_var": {
+            "title": "Env Var",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "surfaces": {
+            "items": {
+              "$ref": "#/components/schemas/WriteSurfaceOut"
+            },
+            "title": "Surfaces",
+            "type": "array"
+          },
+          "ui_title": {
+            "title": "Ui Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "code",
+          "message",
+          "ui_title",
+          "env_var",
+          "surfaces"
+        ],
+        "title": "WritebackGateOut",
         "type": "object"
       },
       "WritebackPlanOut": {
@@ -9942,6 +10011,27 @@
         "summary": "Reconcile Summary",
         "tags": [
           "reconcile"
+        ]
+      }
+    },
+    "/api/v1/rekordbox/writeback-gate": {
+      "get": {
+        "operationId": "read_writeback_gate_api_v1_rekordbox_writeback_gate_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackGateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Writeback Gate",
+        "tags": [
+          "rekordbox-gate"
         ]
       }
     },

@@ -44,6 +44,7 @@ from rich.progress import (
 from rich.table import Table
 
 from apps.shared import paths as _paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.usb import profile as profile_mod
 from apps.sync.usb.copy import (
     CopyResult,
@@ -230,6 +231,7 @@ def _run_plan(
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    require_writeback_enabled("module.sync.usb.apply")
 
     # --- mode resolution ----------------------------------------------------
     if not (args.cautious or args.bulk):

@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 import os
 import socket
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Optional
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,7 @@ from starlette.types import Scope
 
 from apps.play_analytics.api import router as play_analytics_router
 from apps.sets.api import router as sets_router
+from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.webui.port_config import (
     PortConfigError,
     resolve_backend_port,
@@ -31,7 +32,12 @@ from apps.webui.port_config import (
 
 from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
-from .errors import handle_backend_error, handle_conflict, handle_not_found
+from .errors import (
+    handle_backend_error,
+    handle_conflict,
+    handle_not_found,
+    handle_rekordbox_writeback_disabled,
+)
 from .routes import analysis as analysis_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
@@ -52,6 +58,7 @@ from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
 from .routes import reconcile as reconcile_routes
+from .routes import rekordbox_gate as rekordbox_gate_routes
 from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
@@ -95,20 +102,20 @@ class _SpaStaticFiles(StaticFiles):
 
 def create_app(
     *,
-    backend: Optional[StateBackend] = None,
+    backend: StateBackend | None = None,
     bind_host: str = "127.0.0.1",
-    hostname: Optional[str] = None,
-    lock_status_fn: Optional[Callable[[], Any]] = None,
-    syncthing_status_fn: Optional[Callable[[], Any]] = None,
+    hostname: str | None = None,
+    lock_status_fn: Callable[[], Any] | None = None,
+    syncthing_status_fn: Callable[[], Any] | None = None,
     state_db_path: str = "data/state/state.db",
     version: str = "0.1.0",
-    port: Optional[int] = None,
-    frontend_port: Optional[int] = None,
+    port: int | None = None,
+    frontend_port: int | None = None,
     enable_cors: bool = True,
     mount_frontend: bool = True,
-    client_error_log_dir: Optional[Path] = None,
-    client_event_log_dir: Optional[Path] = None,
-    stem_roots: Optional[Sequence[Path]] = None,
+    client_error_log_dir: Path | None = None,
+    client_event_log_dir: Path | None = None,
+    stem_roots: Sequence[Path] | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -161,6 +168,9 @@ def create_app(
         app.state.stem_roots = tuple(Path(root) for root in stem_roots)
 
     app.add_exception_handler(NotFoundError, handle_not_found)
+    app.add_exception_handler(
+        RekordboxWritebackDisabled, handle_rekordbox_writeback_disabled
+    )
     app.add_exception_handler(ConflictError, handle_conflict)
     app.add_exception_handler(BackendError, handle_backend_error)
 
@@ -249,6 +259,7 @@ def create_app(
     app.include_router(stems_routes.router, prefix=api_prefix)
     app.include_router(stem_tiers_routes.router, prefix=api_prefix)
     app.include_router(reconcile_routes.router, prefix=api_prefix)
+    app.include_router(rekordbox_gate_routes.router, prefix=api_prefix)
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
@@ -297,7 +308,7 @@ def _build_default_app() -> FastAPI:
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
     # else fall back to the in-memory backend (keeps dev + tests fast).
-    backend: Optional[StateBackend] = None
+    backend: StateBackend | None = None
     try:
         from .sqlite_backend import make_backend
         backend = make_backend()

@@ -45,6 +45,7 @@ from rich.table import Table
 from sqlalchemy import text
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 console = Console(width=120)
 
@@ -146,6 +147,7 @@ def _resolve_db_path(override: Path | None, *, live: bool) -> Path:
     if override is not None:
         return Path(override)
     if live:
+        require_writeback_enabled("module.reconcile.remove_track")
         return paths.REKORDBOX_LIVE_DB
     # Dry-run: read from a fresh snapshot of the live DB.
     paths.copy_live_dbs()

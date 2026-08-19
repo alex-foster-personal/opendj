@@ -126,3 +126,29 @@ def rb_pyrekordbox_db(tmp_rb_db: Path):
             db.close()
         except Exception:
             pass
+
+
+# ----- one-way rekordbox import gate ---------------------------------------
+# apps.shared.rekordbox_writeback ships OFF: no code path may write toward the
+# real rekordbox library, share directory, or a USB export. The test suite
+# inherits that default, so a suite with a forgotten monkeypatch is refused by
+# the gate instead of reaching a real target.
+#
+# Suites that exercise live-write MECHANICS (the seven safety rails, backup and
+# readback, USB plan/apply) against tmp fixtures opt back in per module with::
+#
+#     pytestmark = pytest.mark.rekordbox_writeback
+#
+# which is deliberately visible at the top of the file, so "this module runs
+# with rekordbox writes enabled" is never an invisible property.
+
+
+@pytest.fixture(autouse=True)
+def _rekordbox_writeback_gate(request, monkeypatch):
+    """Gate OFF by default; ON only for modules that opt in by marker."""
+    from apps.shared.rekordbox_writeback import REKORDBOX_WRITEBACK_ENABLED_ENV
+
+    if request.node.get_closest_marker("rekordbox_writeback") is not None:
+        monkeypatch.setenv(REKORDBOX_WRITEBACK_ENABLED_ENV, "1")
+    else:
+        monkeypatch.delenv(REKORDBOX_WRITEBACK_ENABLED_ENV, raising=False)

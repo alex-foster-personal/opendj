@@ -815,6 +815,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/rekordbox/writeback-gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Writeback Gate */
+        get: operations["read_writeback_gate_api_v1_rekordbox_writeback_gate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/relocate/candidates/{stable_id}": {
         parameters: {
             query?: never;
@@ -4372,6 +4389,17 @@ export interface components {
             /** Transcript */
             transcript: string;
         };
+        /** WriteSurfaceOut */
+        WriteSurfaceOut: {
+            /** Entrypoint */
+            entrypoint: string;
+            /** Kind */
+            kind: string;
+            /** Surface Id */
+            surface_id: string;
+            /** Target */
+            target: string;
+        };
         /** WritebackApplyIn */
         WritebackApplyIn: {
             /**
@@ -4435,6 +4463,21 @@ export interface components {
             playlist_id: string;
             /** Vendors */
             vendors: components["schemas"]["VendorCapabilityOut"][];
+        };
+        /** WritebackGateOut */
+        WritebackGateOut: {
+            /** Code */
+            code: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Env Var */
+            env_var: string;
+            /** Message */
+            message: string;
+            /** Surfaces */
+            surfaces: components["schemas"]["WriteSurfaceOut"][];
+            /** Ui Title */
+            ui_title: string;
         };
         /** WritebackPlanOut */
         WritebackPlanOut: {
@@ -6242,6 +6285,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReconcileSummary"];
+                };
+            };
+        };
+    };
+    read_writeback_gate_api_v1_rekordbox_writeback_gate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WritebackGateOut"];
                 };
             };
         };

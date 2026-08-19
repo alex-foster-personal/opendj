@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
 
@@ -119,6 +120,7 @@ def plan_export(body: PlanRequest) -> dict[str, Any] | JSONResponse:
 
 @router.post("/apply", response_model=ReceiptModel)
 def apply_export(body: ApplyRequest) -> dict[str, Any] | JSONResponse:
+    require_writeback_enabled("http.usb-export.apply")
     try:
         plan = workflow.ExportPlan.from_dict(body.plan.model_dump())
         receipt = workflow.apply_export(plan, confirmation=body.confirmation)

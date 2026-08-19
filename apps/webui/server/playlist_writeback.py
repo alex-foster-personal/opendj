@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Literal, Optional, Protocol
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.smartlists.diff import diff_sets
 
 Vendor = Literal["rekordbox", "djay"]
@@ -332,6 +333,8 @@ class WritebackService:
                 added=plan.added, removed=plan.removed, target_revision=plan.target_revision)
         if not confirmed:
             raise WritebackConflict("live writeback requires confirmed=true")
+        if vendor == "rekordbox":
+            require_writeback_enabled("module.playlist_writeback.service_apply")
         with self._writer(vendor, target_mode, target_path) as writer:
             backup, target_revision = writer.apply_with_backup_by_id(
                 target_id, desired_ids, plan.target_revision, plan.mapping_revision,
@@ -347,6 +350,8 @@ class WritebackService:
     ) -> WritebackRollbackResult:
         if not confirmed:
             raise WritebackConflict("rollback requires confirmed=true")
+        if vendor == "rekordbox":
+            require_writeback_enabled("module.playlist_writeback.service_rollback")
         with self._writer(vendor, target_mode, target_path) as writer:
             target_revision = writer.restore_backup(
                 backup_id, target_id, expected_target_revision,

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from apps.shared.events import publish
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
@@ -181,6 +182,8 @@ def apply_writeback(
     playlist_id: str, body: WritebackApplyIn, backend: StateBackend = Depends(get_write_state),
     service: WritebackService = Depends(get_writeback_service),
 ) -> WritebackApplyOut:
+    if body.vendor == "rekordbox":
+        require_writeback_enabled("http.playlists.writeback.apply")
     playlist = backend.get_playlist(playlist_id)
     try:
         result = service.apply(vendor=body.vendor, source_playlist_id=playlist_id, desired_ids=list(playlist.items),
@@ -200,6 +203,8 @@ def rollback_writeback(
     playlist_id: str, body: WritebackRollbackIn, backend: StateBackend = Depends(get_write_state),
     service: WritebackService = Depends(get_writeback_service),
 ) -> WritebackRollbackOut:
+    if body.vendor == "rekordbox":
+        require_writeback_enabled("http.playlists.writeback.rollback")
     backend.get_playlist(playlist_id)
     try:
         result = service.rollback(**body.model_dump())

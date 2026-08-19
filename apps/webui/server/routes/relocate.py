@@ -61,6 +61,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.reconcile import locate
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.shared import audio_files, fs_residency, paths
 from apps.shared.events import publish
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
@@ -532,6 +533,7 @@ def apply_relocate(
     if_match: Optional[str] = Header(None, alias="If-Match"),
     backend: StateBackend = Depends(get_write_state),
 ):
+    require_writeback_enabled("http.relocate.apply")
     if not body.confirm:
         raise HTTPException(status_code=422, detail={
             "code": "CONFIRM_REQUIRED",

@@ -52,6 +52,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 # Default backup directory for live RB DB copies taken before smartlist
 # playlist mutations. Mirrors apps.reconcile.apply's backup location so
@@ -237,6 +238,7 @@ class RBPlaylistWriter:
         """
         if not self.live:
             return
+        require_writeback_enabled("module.smartlists.rb_writer")
         if _rekordbox_running():
             raise RuntimeError(
                 "rekordbox: refusing to write -- Rekordbox appears to be "

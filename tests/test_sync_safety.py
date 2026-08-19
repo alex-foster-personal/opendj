@@ -14,7 +14,9 @@ from apps.sync.safety import (
     target_process_name,
 )
 
-pytestmark = pytest.mark.requirement("SYNC-04")
+# Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
+# import gate ON (root conftest reads the marker). Never a real rb target.
+pytestmark = [pytest.mark.requirement("SYNC-04"), pytest.mark.rekordbox_writeback]
 
 
 def _make_db(tmp_path: Path, name: str = "live.db") -> Path:

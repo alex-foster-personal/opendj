@@ -7,6 +7,8 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
+
 from .backend import BackendError, ConflictError, NotFoundError
 
 
@@ -48,6 +50,23 @@ async def handle_backend_error(request: Request, exc: BackendError) -> JSONRespo
     )
 
 
+async def handle_rekordbox_writeback_disabled(
+    request: Request, exc: RekordboxWritebackDisabled
+) -> JSONResponse:
+    """One-way import mode refused this write. 403, never a fake 200.
+
+    The body carries the machine-readable ``rekordbox_writeback_disabled``
+    code plus the mapped surface id, so an agent driving the API learns
+    exactly which write surface it hit and why nothing happened.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content=ErrorBody(
+            error=exc.code, message=exc.message, details={"surface": exc.surface_id}
+        ).model_dump(),
+    )
+
+
 def precondition_required(message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_428_PRECONDITION_REQUIRED,
@@ -56,4 +75,5 @@ def precondition_required(message: str) -> JSONResponse:
 
 
 __all__ = ["ConflictBody", "ErrorBody", "handle_backend_error",
-           "handle_conflict", "handle_not_found", "precondition_required"]
+           "handle_conflict", "handle_not_found",
+           "handle_rekordbox_writeback_disabled", "precondition_required"]

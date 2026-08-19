@@ -8,6 +8,12 @@ from collections.abc import Iterator
 from contextlib import nullcontext
 
 import pytest
+
+# This module exercises live-write MECHANICS against tmp fixtures, so it runs
+# with the one-way rekordbox import gate ON (root conftest reads the marker).
+# It never touches a real rekordbox target.
+pytestmark = pytest.mark.rekordbox_writeback
+
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app

@@ -35,6 +35,8 @@ import argparse
 import json
 import logging
 import sys
+
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +168,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         return 0
 
     # Apply path: import writer + rbox lazily.
+    require_writeback_enabled("module.sync.usb.pioneer.cli_write")
     try:
         from .writer_rbox import (
             OneLibraryWriteError,
@@ -258,6 +261,10 @@ def _cmd_diff_matrix(args: argparse.Namespace) -> int:
 
 
 def _cmd_agent_export(args: argparse.Namespace) -> int:
+    # Gated whole, not just --live: this subcommand drives the REAL rekordbox
+    # GUI with synthetic clicks, and a mis-click in a dry run can still mutate
+    # the library. One-way import mode refuses to operate rekordbox at all.
+    require_writeback_enabled("module.sync.usb.pioneer.agent_export")
     # Lazy import: the agent module pulls in anthropic + Quartz which
     # are not needed for the read subcommand.
     from .agent import AgentConfig, run_export_agent

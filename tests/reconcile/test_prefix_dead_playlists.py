@@ -5,6 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
+# This module exercises live-write MECHANICS against tmp fixtures, so it runs
+# with the one-way rekordbox import gate ON (root conftest reads the marker).
+# It never touches a real rekordbox target.
+pytestmark = pytest.mark.rekordbox_writeback
+
+
 from apps.reconcile import prefix_dead_playlists as prefixer
 
 
