@@ -191,6 +191,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assistant/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assistant Chat
+         * @description Stream one completion from OpenRouter, or explain why there is none.
+         *
+         *     The upstream status is checked BEFORE the response starts, so a refusal
+         *     arrives as a real HTTP error with a code rather than as a 200 whose body
+         *     turns out to be empty.
+         */
+        post: operations["assistant_chat_api_v1_assistant_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant Status
+         * @description Whether a chat can work at all, and which model would answer it.
+         */
+        get: operations["assistant_status_api_v1_assistant_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -1909,6 +1953,19 @@ export interface components {
             plan: components["schemas"]["PlanModel"];
         };
         /**
+         * AssistantStatusOut
+         * @description Enough for the sidebar to render an honest panel without a request.
+         *
+         *     Firing a chat to discover there is no key would cost a round trip and
+         *     show the user a failed message they did not send.
+         */
+        AssistantStatusOut: {
+            /** Configured */
+            configured: boolean;
+            /** Model */
+            model: string;
+        };
+        /**
          * AutoCueOut
          * @description One PROPOSED cue. ``kind`` is intro|drop|break|outro|'' (unlabelled).
          */
@@ -2127,6 +2184,27 @@ export interface components {
             etag: string;
             /** Stable Id */
             stable_id: string;
+        };
+        /**
+         * ChatIn
+         * @description A whole conversation, resent every turn -- the engine stores none of it.
+         */
+        ChatIn: {
+            /** Messages */
+            messages: components["schemas"]["ChatMessage"][];
+        };
+        /**
+         * ChatMessage
+         * @description One turn. Same three roles OpenRouter accepts, no tool calls.
+         */
+        ChatMessage: {
+            /** Content */
+            content: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "system" | "user" | "assistant";
         };
         /** ClientErrorIn */
         ClientErrorIn: {
@@ -5118,6 +5196,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assistant_chat_api_v1_assistant_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatIn"];
+            };
+        };
+        responses: {
+            /** @description The completion, streamed as plain UTF-8 text. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": unknown;
+                };
+            };
+            /** @description No OPENROUTER_API_KEY is configured. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description OpenRouter refused or could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assistant_status_api_v1_assistant_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantStatusOut"];
                 };
             };
         };

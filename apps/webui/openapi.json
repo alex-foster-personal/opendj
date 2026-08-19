@@ -277,6 +277,25 @@
         "title": "ApplyRequest",
         "type": "object"
       },
+      "AssistantStatusOut": {
+        "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "model"
+        ],
+        "title": "AssistantStatusOut",
+        "type": "object"
+      },
       "AutoCueOut": {
         "description": "One PROPOSED cue. ``kind`` is intro|drop|break|outro|'' (unlabelled).",
         "properties": {
@@ -847,6 +866,49 @@
           "etag"
         ],
         "title": "BulkEditRowOut",
+        "type": "object"
+      },
+      "ChatIn": {
+        "description": "A whole conversation, resent every turn -- the engine stores none of it.",
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "ChatIn",
+        "type": "object"
+      },
+      "ChatMessage": {
+        "description": "One turn. Same three roles OpenRouter accepts, no tool calls.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessage",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -8387,6 +8449,72 @@
         "summary": "Api Relabel",
         "tags": [
           "sets"
+        ]
+      }
+    },
+    "/api/v1/assistant/chat": {
+      "post": {
+        "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
+        "operationId": "assistant_chat_api_v1_assistant_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {}
+            },
+            "description": "The completion, streamed as plain UTF-8 text."
+          },
+          "409": {
+            "description": "No OPENROUTER_API_KEY is configured."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "OpenRouter refused or could not be reached."
+          }
+        },
+        "summary": "Assistant Chat",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/status": {
+      "get": {
+        "description": "Whether a chat can work at all, and which model would answer it.",
+        "operationId": "assistant_status_api_v1_assistant_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Status",
+        "tags": [
+          "assistant"
         ]
       }
     },
