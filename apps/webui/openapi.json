@@ -5344,6 +5344,10 @@
             "title": "Data Dir",
             "type": "string"
           },
+          "dev_mode": {
+            "title": "Dev Mode",
+            "type": "boolean"
+          },
           "dismissed": {
             "title": "Dismissed",
             "type": "boolean"
@@ -5421,6 +5425,7 @@
           "data_dir",
           "dismissed",
           "should_show_wizard",
+          "dev_mode",
           "stages",
           "folder_stages",
           "rekordbox",
@@ -10786,6 +10791,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
           }
         },
         "summary": "Dismiss",
@@ -10914,6 +10922,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
           }
         },
         "summary": "Setup Status",

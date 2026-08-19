@@ -38,6 +38,7 @@ from apps.shared import fs_access
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder as folder_ingest
 from apps.shared.state.writer import StateWriter
+from tests.engine_core.conftest import build_identity
 
 API = "/api/v1/setup"
 
@@ -106,6 +107,7 @@ def client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
     store.recover()
     app.state.engine_cfg = EngineConfig(data_dir=data_dir)
     app.state.jobs_store = store
+    app.state.build_identity = build_identity("payload")
     try:
         with TestClient(app) as test_client:
             yield test_client

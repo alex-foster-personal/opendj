@@ -137,6 +137,17 @@ class SetupStatusOut(BaseModel):
     data_dir: str
     dismissed: bool
     should_show_wizard: bool
+    #: True when this engine is running out of a git checkout rather than a
+    #: packaged build -- ``/api/v1/build-info`` reports ``source == "repo"``.
+    #: A developer working with a fresh ``--data-dir`` has an empty library
+    #: on every boot and must not be thrown at the wizard for it, so this
+    #: forces ``should_show_wizard`` false.
+    #:
+    #: Reported rather than merely applied: without it, "no wizard on an
+    #: empty library" is indistinguishable from a dismissal or a broken gate,
+    #: and the bug report reads "setup never appears". /setup stays reachable
+    #: by hand either way.
+    dev_mode: bool
     #: The rekordbox import's stages, in order.
     stages: list[str]
     #: The folder import's stages. Shorter on purpose: no snapshot and no

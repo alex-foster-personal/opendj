@@ -4,7 +4,8 @@ AGENT-NATIVE PARITY is the hard constraint here: every step the wizard walks
 a human through is a request an agent can make on its own, in the same
 order, with the same refusals. There is no browser-only state.
 
-    GET  /api/v1/setup/status            is the library empty, what is here
+    GET  /api/v1/setup/status            is the library empty, what is here,
+                                         and is this a developer checkout
     GET  /api/v1/setup/detect/rekordbox  what is installed, real paths
     POST /api/v1/setup/import            run the import AS A JOB
     POST /api/v1/setup/dismiss           skip (or un-skip) the wizard
@@ -26,6 +27,12 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ValidationError
 
+from apps.engine_core.build_info import (
+    BUILD_IDENTITY_STATE_ATTR,
+    CODE_BUILD_IDENTITY_UNAVAILABLE,
+    BuildIdentity,
+    BuildInfoUnavailable,
+)
 from apps.engine_core.jobs.api import JobOut
 from apps.engine_core.jobs.runner import known_kinds
 from apps.engine_core.jobs.store import JobStore
@@ -99,6 +106,18 @@ def _store(request: Request) -> JobStore:
     return store
 
 
+def _build_identity(request: Request) -> BuildIdentity:
+    identity = getattr(request.app.state, BUILD_IDENTITY_STATE_ATTR, None)
+    if identity is None:
+        raise RuntimeError(
+            f"build identity is not mounted on app.state."
+            f"{BUILD_IDENTITY_STATE_ATTR}; setup cannot tell a developer "
+            "checkout from an installed build, and it will not guess. "
+            "add_build_info_route mounts it."
+        )
+    return identity
+
+
 def _refuse(code: str, message: str, http_status: int) -> HTTPException:
     return HTTPException(
         status_code=http_status, detail={"code": code, "message": message}
@@ -161,7 +180,7 @@ def _last_import_out(
         ) from exc
 
 
-def _status_out(data_dir: Path) -> SetupStatusOut:
+def _status_out(data_dir: Path, dev_mode: bool) -> SetupStatusOut:
     counts = detect.library_counts(data_dir)
     saved = record.read(data_dir)
     return SetupStatusOut(
@@ -171,13 +190,42 @@ def _status_out(data_dir: Path) -> SetupStatusOut:
         state_db=FileProbeOut(**counts.state_db.to_dict()),
         data_dir=str(data_dir),
         dismissed=saved.dismissed,
-        should_show_wizard=counts.empty and not saved.dismissed,
+        dev_mode=dev_mode,
+        should_show_wizard=(
+            counts.empty and not saved.dismissed and not dev_mode
+        ),
         stages=list(STAGES),
         folder_stages=list(FOLDER_STAGES),
         last_import=_last_import_out(saved),
         rekordbox=_detection_out(data_dir),
         permissions=_permissions_out(),
     )
+
+
+def _status(request: Request) -> SetupStatusOut:
+    """The status model, with the wizard gate resolved against the build.
+
+    THE DEV-MODE RULE lives here, once, so /status and /dismiss cannot
+    disagree: an engine running out of a checkout (``source == "repo"``)
+    never auto-triggers the wizard. A developer boots with a throwaway
+    ``--data-dir`` all day, and an empty library is that dir being new, not
+    a first run in need of an import.
+
+    An identity that could not be resolved refuses under the SAME code
+    /api/v1/build-info uses. Picking a mode anyway would mean an installed
+    build with a broken manifest silently behaving like a checkout, which
+    is precisely the wizard-never-appears bug this flag exists to make
+    legible.
+    """
+    try:
+        source = _build_identity(request).require().source
+    except BuildInfoUnavailable as exc:
+        raise _refuse(
+            CODE_BUILD_IDENTITY_UNAVAILABLE,
+            str(exc),
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        ) from exc
+    return _status_out(_data_dir(request), dev_mode=source == "repo")
 
 
 def _live_import(store: JobStore) -> dict[str, Any] | None:
@@ -188,10 +236,19 @@ def _live_import(store: JobStore) -> dict[str, Any] | None:
 
 
 # ----- endpoints ----------------------------------------------------------
-@router.get("/status", response_model=SetupStatusOut)
+@router.get(
+    "/status",
+    response_model=SetupStatusOut,
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "this build cannot state its own identity, so the "
+            "wizard gate cannot be decided"
+        }
+    },
+)
 def setup_status(request: Request) -> SetupStatusOut:
     """Is this a first run? Counts come from state.db, not from memory."""
-    return _status_out(_data_dir(request))
+    return _status(request)
 
 
 @router.get("/detect/rekordbox", response_model=RekordboxDetectionOut)
@@ -372,12 +429,20 @@ def start_folder_import(request: Request, body: FolderImportIn) -> dict[str, Any
     return store.enqueue(SETUP_IMPORT_KIND, payload)
 
 
-@router.post("/dismiss", response_model=SetupStatusOut)
+@router.post(
+    "/dismiss",
+    response_model=SetupStatusOut,
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "this build cannot state its own identity, so the "
+            "wizard gate cannot be decided"
+        }
+    },
+)
 def dismiss(request: Request, body: SetupDismissIn) -> SetupStatusOut:
     """Skip the wizard, or re-arm it. Persisted engine-side, not in a tab."""
-    data_dir = _data_dir(request)
-    record.set_dismissed(data_dir, body.dismissed)
-    return _status_out(data_dir)
+    record.set_dismissed(_data_dir(request), body.dismissed)
+    return _status(request)
 
 
 @router.get("/stems", response_model=StemsSetupOut)

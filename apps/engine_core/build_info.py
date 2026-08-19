@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -58,6 +59,16 @@ from apps.engine_core.config import ENGINE_VERSION
 
 MANIFEST_ENV: str = "OPENDJ_PAYLOAD_MANIFEST"
 BUILD_INFO_PATH: str = "/api/v1/build-info"
+
+#: The error code a caller branches on when this engine cannot state what it
+#: is. Spelled once, so the /build-info body and every route that DERIVES
+#: behaviour from the identity refuse under the same name.
+CODE_BUILD_IDENTITY_UNAVAILABLE: str = "build_identity_unavailable"
+
+#: Where the resolved identity is mounted for other routers to read. It is
+#: resolved once, at construction, so a route that switches on the build
+#: source pays no git subprocess per request.
+BUILD_IDENTITY_STATE_ATTR: str = "build_identity"
 
 # Manifest keys the route refuses to serve without. A partial manifest is a
 # packaging bug, and rendering half an identity is worse than rendering none.
@@ -105,6 +116,39 @@ class BuildInfoOut(BaseModel):
     bundle_identifier: str | None = None
     app_version: str | None = None
     manifest_path: str | None = None
+
+
+@dataclass(frozen=True)
+class BuildIdentity:
+    """The one resolution attempt, kept so other routes can read its verdict.
+
+    A resolved identity is not just a readout: whether this engine is a
+    developer checkout or an installed build changes what other endpoints
+    should do (the setup wizard does not auto-trigger in a checkout). Those
+    endpoints must not re-resolve -- three git subprocesses per request, and
+    an answer that could disagree with the one /build-info already served --
+    so the attempt is mounted on ``app.state`` and read from there.
+
+    EXACTLY ONE of ``info`` and ``failure`` is set. A holder with neither
+    would be a third state nobody wrote a branch for.
+    """
+
+    info: BuildInfoOut | None
+    failure: str | None
+
+    def __post_init__(self) -> None:
+        if (self.info is None) == (self.failure is None):
+            raise ValueError(
+                "BuildIdentity carries either a resolved BuildInfoOut or the "
+                f"reason resolution failed, never both and never neither "
+                f"(info={self.info!r}, failure={self.failure!r})"
+            )
+
+    def require(self) -> BuildInfoOut:
+        """The identity, or the original failure. Never a guess."""
+        if self.info is None:
+            raise BuildInfoUnavailable(self.failure)
+        return self.info
 
 
 # ----- sources -----------------------------------------------------------
@@ -218,12 +262,23 @@ def add_build_info_route(app: FastAPI, *, environ: dict[str, str], repo_root: Pa
     reader, which it cannot. The FAILURE is cached too: a bundle with no
     readable manifest is broken for its whole life, and retrying the same
     stat on every request would only add latency to the fault.
+
+    The attempt is also MOUNTED on ``app.state`` under
+    ``BUILD_IDENTITY_STATE_ATTR``, because the build source is behaviour and
+    not only a readout: see ``apps.engine_core.setup.api``, whose wizard gate
+    is off in a developer checkout.
     """
     try:
         resolved: BuildInfoOut | None = resolve_build_info(environ, repo_root)
         failure: str | None = None
     except BuildInfoUnavailable as exc:
         resolved, failure = None, str(exc)
+
+    setattr(
+        app.state,
+        BUILD_IDENTITY_STATE_ATTR,
+        BuildIdentity(info=resolved, failure=failure),
+    )
 
     @app.get(
         BUILD_INFO_PATH,
@@ -241,7 +296,7 @@ def add_build_info_route(app: FastAPI, *, environ: dict[str, str], repo_root: Pa
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content={
-                    "error": "build_identity_unavailable",
+                    "error": CODE_BUILD_IDENTITY_UNAVAILABLE,
                     "message": failure,
                     "details": None,
                 },
@@ -250,9 +305,12 @@ def add_build_info_route(app: FastAPI, *, environ: dict[str, str], repo_root: Pa
 
 
 __all__ = [
+    "BUILD_IDENTITY_STATE_ATTR",
     "BUILD_INFO_PATH",
+    "CODE_BUILD_IDENTITY_UNAVAILABLE",
     "MANIFEST_ENV",
     "REQUIRED_IDENTITY_KEYS",
+    "BuildIdentity",
     "BuildInfoOut",
     "BuildInfoUnavailable",
     "add_build_info_route",

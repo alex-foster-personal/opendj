@@ -27,6 +27,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.engine_core.build_info import (
+    CODE_BUILD_IDENTITY_UNAVAILABLE,
+    BuildIdentity,
+)
 from apps.engine_core.config import EngineConfig
 from apps.engine_core.jobs.runner import (
     known_kinds,
@@ -38,6 +42,7 @@ from apps.engine_core.setup import detect, record
 from apps.engine_core.setup.api import STEMS_UNAVAILABLE_MESSAGE, router
 from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
 from apps.stems.job import JOB_KIND as STEMS_JOB_KIND
+from tests.engine_core.conftest import build_identity
 
 API = "/api/v1/setup"
 
@@ -67,23 +72,60 @@ def data_dir(tmp_path: Path) -> Path:
     return target
 
 
-@pytest.fixture
-def client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
+def _build_client(
+    data_dir: Path, jobs_db: Path, identity: BuildIdentity
+) -> Iterator[TestClient]:
     """The real router over a real JobStore. The runner is NOT started, so
     nothing claims a queued row out from under an assertion."""
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
-    store = JobStore(
-        tmp_path / "jobs.db", boot_id="boot-setup", owner_pid=os.getpid()
-    )
+    store = JobStore(jobs_db, boot_id="boot-setup", owner_pid=os.getpid())
     store.recover()
     app.state.engine_cfg = EngineConfig(data_dir=data_dir)
     app.state.jobs_store = store
+    app.state.build_identity = identity
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         store.close()
+
+
+@pytest.fixture
+def client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
+    """An INSTALLED build: the wizard is the first thing a new user meets.
+
+    ``payload`` is the identity the shipped dmg reports, so every existing
+    assertion in this file keeps describing the case it was written for.
+    The developer-checkout case gets its own fixture below.
+    """
+    yield from _build_client(
+        data_dir, tmp_path / "jobs.db", build_identity("payload")
+    )
+
+
+@pytest.fixture
+def dev_client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
+    """The same engine running out of a checkout (``source='repo'``)."""
+    yield from _build_client(
+        data_dir, tmp_path / "jobs.db", build_identity("repo")
+    )
+
+
+@pytest.fixture
+def unidentified_client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
+    """A build that cannot say what it is. There is no third mode to pick."""
+    yield from _build_client(
+        data_dir,
+        tmp_path / "jobs.db",
+        BuildIdentity(
+            info=None,
+            failure=(
+                "OPENDJ_PAYLOAD_MANIFEST=/nowhere/manifest.json but no file "
+                "is there."
+            ),
+        ),
+    )
 
 
 def _with_plain_copy(data_dir: Path) -> Path:
@@ -150,6 +192,59 @@ def test_a_populated_library_stops_the_wizard_showing(
     body = client.get(f"{API}/status").json()
     assert body["library_empty"] is False
     assert body["tracks"] == 1
+    assert body["should_show_wizard"] is False
+
+
+# ----- dev mode -----------------------------------------------------------
+# The wizard is for someone who just installed the app, not for the developer
+# who is running the engine out of their own checkout with an empty scratch
+# data dir. The engine already knows which it is -- /api/v1/build-info calls
+# it `source` -- so the gate is derived from that rather than from a second,
+# guessable signal.
+#
+# - if a repo checkout still auto-triggers the wizard then every dev boot
+#   with a fresh --data-dir lands on setup instead of the library -> broken
+# - if the suppression is invisible then nobody can tell a dev-mode skip from
+#   a dismissal, and the bug report says "the wizard never appears" -> broken
+# - if an unreadable build identity picks a mode anyway then an installed
+#   build with a broken manifest silently behaves like a checkout -> broken
+def test_a_developer_checkout_never_auto_triggers_the_wizard(
+    dev_client: TestClient,
+) -> None:
+    """Empty library, nothing dismissed, and still no wizard: source=repo."""
+    body = dev_client.get(f"{API}/status").json()
+    assert body["library_empty"] is True
+    assert body["dismissed"] is False
+    assert body["dev_mode"] is True
+    assert body["should_show_wizard"] is False
+
+
+def test_an_installed_build_still_shows_the_wizard_on_a_first_run(
+    client: TestClient,
+) -> None:
+    """source=payload is unchanged: empty and not dismissed means show it."""
+    body = client.get(f"{API}/status").json()
+    assert body["library_empty"] is True
+    assert body["dismissed"] is False
+    assert body["dev_mode"] is False
+    assert body["should_show_wizard"] is True
+
+
+def test_status_refuses_when_the_build_cannot_say_what_it_is(
+    unidentified_client: TestClient,
+) -> None:
+    """No guess, no default: the same 503 and reason /build-info gives."""
+    response = unidentified_client.get(f"{API}/status")
+    assert response.status_code == 503, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == CODE_BUILD_IDENTITY_UNAVAILABLE
+    assert "OPENDJ_PAYLOAD_MANIFEST" in detail["message"]
+
+
+def test_dismiss_reports_dev_mode_too(dev_client: TestClient) -> None:
+    """/dismiss returns the same status model, so it carries the same flag."""
+    body = dev_client.post(f"{API}/dismiss", json={"dismissed": False}).json()
+    assert body["dev_mode"] is True
     assert body["should_show_wizard"] is False
 
 

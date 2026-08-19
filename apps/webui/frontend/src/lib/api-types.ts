@@ -1360,6 +1360,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/telemetry/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Clients
+         * @description Every client seen since engine boot, plus the one-glance summary.
+         */
+        get: operations["list_clients_api_v1_telemetry_clients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/telemetry/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Heartbeat
+         * @description Upsert one client's liveness. Server-stamped; the client sends no time.
+         */
+        post: operations["record_heartbeat_api_v1_telemetry_heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks": {
         parameters: {
             query?: never;
@@ -2160,6 +2200,40 @@ export interface components {
             /** Stored */
             stored: boolean;
         };
+        /** ClientOut */
+        ClientOut: {
+            /** App Version */
+            app_version: string;
+            /** Client Id */
+            client_id: string;
+            /**
+             * In Use
+             * @description Open AND the page is visible on screen.
+             */
+            in_use: boolean;
+            /**
+             * Is Open
+             * @description Checked in within the in-use window.
+             */
+            is_open: boolean;
+            /**
+             * Last Seen At
+             * @description Server wall-clock time of the last heartbeat.
+             */
+            last_seen_at: string;
+            /** Page Visible */
+            page_visible: boolean;
+            /**
+             * Seconds Since Seen
+             * @description Server monotonic seconds since it checked in.
+             */
+            seconds_since_seen: number;
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "desktop-shell" | "browser";
+        };
         /** ClusterOut */
         ClusterOut: {
             /** Cluster Id */
@@ -2568,6 +2642,20 @@ export interface components {
              */
             peers_connected: number;
         };
+        /** HeartbeatIn */
+        HeartbeatIn: {
+            /** App Version */
+            app_version: string;
+            /** Client Id */
+            client_id: string;
+            /** Page Visible */
+            page_visible: boolean;
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "desktop-shell" | "browser";
+        };
         /** HotCueMutationOut */
         HotCueMutationOut: {
             cue: components["schemas"]["AnlzCueOut"] | null;
@@ -2907,6 +2995,23 @@ export interface components {
             to_stable_id: string;
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * PassiveActivityOut
+         * @description Backstop signal: ordinary traffic classified by User-Agent.
+         *
+         *     Telemetry and health paths are excluded, so an agent polling this
+         *     endpoint cannot manufacture the activity it is asking about.
+         */
+        PassiveActivityOut: {
+            /** By Surface */
+            by_surface: {
+                [key: string]: components["schemas"]["SurfaceActivityOut"];
+            };
+            /** Last Request At */
+            last_request_at: string | null;
+            /** Seconds Since Last Request */
+            seconds_since_last_request: number | null;
         };
         /**
          * PendingTrackOut
@@ -3671,6 +3776,8 @@ export interface components {
         SetupStatusOut: {
             /** Data Dir */
             data_dir: string;
+            /** Dev Mode */
+            dev_mode: boolean;
             /** Dismissed */
             dismissed: boolean;
             /** Folder Stages */
@@ -3989,6 +4096,13 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** SurfaceActivityOut */
+        SurfaceActivityOut: {
+            /** Last Request At */
+            last_request_at: string | null;
+            /** Seconds Since Request */
+            seconds_since_request: number | null;
+        };
         /**
          * TierEstimateOut
          * @description Cost of one track at one tier. ``measured`` false means we do not know.
@@ -4295,6 +4409,24 @@ export interface components {
             hide_todo_settings?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /** UsageClientsOut */
+        UsageClientsOut: {
+            /** Clients */
+            clients: components["schemas"]["ClientOut"][];
+            /** In Use Window Seconds */
+            in_use_window_seconds: number;
+            passive_activity: components["schemas"]["PassiveActivityOut"];
+            summary: components["schemas"]["UsageSummaryOut"];
+        };
+        /** UsageSummaryOut */
+        UsageSummaryOut: {
+            /** Any Client In Use */
+            any_client_in_use: boolean;
+            /** Any Client Open */
+            any_client_open: boolean;
+            /** Desktop Shell Open */
+            desktop_shell_open: boolean;
         };
         /** UsbVolumeOut */
         UsbVolumeOut: {
@@ -6670,6 +6802,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description this build cannot state its own identity, so the wizard gate cannot be decided */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     start_import_api_v1_setup_import_post: {
@@ -6775,6 +6914,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SetupStatusOut"];
                 };
+            };
+            /** @description this build cannot state its own identity, so the wizard gate cannot be decided */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -7194,6 +7340,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TierOut"][];
+                };
+            };
+        };
+    };
+    list_clients_api_v1_telemetry_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageClientsOut"];
+                };
+            };
+        };
+    };
+    record_heartbeat_api_v1_telemetry_heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeartbeatIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

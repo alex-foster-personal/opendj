@@ -43,6 +43,7 @@ from apps.engine_core.setup.jobs import (
     SetupPayloadError,
     build_argv,
 )
+from tests.engine_core.conftest import build_identity
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 FIXTURE_RB: Path = (
@@ -212,6 +213,7 @@ def live_client(data_dir: Path, tmp_path: Path) -> Iterator[TestClient]:
     app.state.engine_cfg = EngineConfig(data_dir=data_dir)
     app.state.jobs_store = store
     app.state.jobs_runner = runner
+    app.state.build_identity = build_identity("payload")
     try:
         with TestClient(app) as test_client:
             yield test_client
