@@ -36,6 +36,17 @@ pytestmark = pytest.mark.requirement("SYNC-ONEWAY-02")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Build OUTPUT that lands under apps/: `just dmg` stages the engine payload (a
+# copy of this repo's Python plus its installed dependency closure, pyrekordbox
+# included) into apps/desktop/src-tauri/payload, and tauri-build mirrors it
+# into target/. Derived bytes, gitignored, rebuilt from scratch -- sweeping
+# them re-flags every already-classified surface a second time through its
+# copy. Mirrors CFG.DERIVED in scripts/quality_gate.py.
+DERIVED_BUILD_OUTPUT = (
+    "apps/desktop/src-tauri/payload/",
+    "apps/desktop/src-tauri/target/",
+)
+
 # The gate suite itself. Every test in these files must build its paths from
 # tmp_path; see test_no_gate_test_can_name_a_real_library_location.
 GATE_SUITE = (
@@ -179,6 +190,8 @@ def test_every_rekordbox_db_constructor_is_gated_or_allowlisted() -> None:
     unclassified: dict[str, list[str]] = {}
     for path in sorted((REPO_ROOT / "apps").rglob("*.py")):
         relative = path.relative_to(REPO_ROOT).as_posix()
+        if relative.startswith(DERIVED_BUILD_OUTPUT):
+            continue
         if relative in guarded or relative in READ_ONLY_DB_HANDLES:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -329,6 +342,8 @@ def test_no_unmapped_module_names_a_live_rekordbox_target() -> None:
     unaccounted: list[str] = []
     for path in sorted((REPO_ROOT / "apps").rglob("*.py")):
         relative = path.relative_to(REPO_ROOT).as_posix()
+        if relative.startswith(DERIVED_BUILD_OUTPUT):
+            continue
         if relative in guarded or relative in IMPORT_DIRECTION_ONLY:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
