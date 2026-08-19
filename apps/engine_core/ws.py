@@ -31,7 +31,12 @@ SLOW_CONSUMER_REASON: str = "slow consumer"
 HELLO_TOPIC: str = "hello"
 TOPIC_JOBS_UPDATED: str = "jobs.updated"
 TOPIC_HEALTH_CHANGED: str = "health.changed"
-TOPICS: tuple[str, ...] = (TOPIC_JOBS_UPDATED, TOPIC_HEALTH_CHANGED)
+TOPIC_LIBRARY_CHANGED: str = "library.changed"
+TOPICS: tuple[str, ...] = (
+    TOPIC_JOBS_UPDATED,
+    TOPIC_HEALTH_CHANGED,
+    TOPIC_LIBRARY_CHANGED,
+)
 
 
 def _now() -> str:
