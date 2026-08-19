@@ -29,6 +29,7 @@
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
+	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
@@ -184,6 +185,11 @@
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
 >	<!-- left: live audio health + prefetch count, then mode dropdown -->
 	<PerfMeters />
+
+	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
+	     while no stems job is active, so it costs no space the rest of the
+	     time; clicking it opens the JOBS drawer for the per-job detail. -->
+	<StemsProgress />
 
 	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
 		PERFORMANCE

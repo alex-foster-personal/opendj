@@ -1103,6 +1103,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stems Plan */
+        get: operations["get_stems_plan_api_v1_stems_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/tiers": {
         parameters: {
             query?: never;
@@ -3288,6 +3305,46 @@ export interface components {
         StemPartOut: {
             /** Media Type */
             media_type: string;
+        };
+        /**
+         * StemsPlanOut
+         * @description What separating this library at this tier would take.
+         */
+        StemsPlanOut: {
+            /**
+             * Estimate Seconds
+             * @description wall-clock floor for the pending batch, GPU side only
+             */
+            estimate_seconds: number;
+            /**
+             * Estimate Usd
+             * @description GPU cost of the pending batch
+             */
+            estimate_usd: number;
+            /**
+             * Pending
+             * @description audio on disk, no bundle yet: the work
+             */
+            pending: number;
+            /**
+             * Ready
+             * @description already has a stem bundle on disk
+             */
+            ready: number;
+            /** Tier */
+            tier: string;
+            /** Tier Name */
+            tier_name: string;
+            /**
+             * Total
+             * @description library rows carrying a file path
+             */
+            total: number;
+            /**
+             * Unavailable
+             * @description library row exists, its file does not
+             */
+            unavailable: number;
         };
         /** SuggestNextIn */
         SuggestNextIn: {
@@ -6223,6 +6280,38 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stems_plan_api_v1_stems_plan_get: {
+        parameters: {
+            query?: {
+                /** @description Modal rung: S, M or L */
+                tier?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemsPlanOut"];
                 };
             };
             /** @description Validation Error */
