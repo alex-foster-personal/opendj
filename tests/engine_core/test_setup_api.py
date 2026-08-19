@@ -28,10 +28,16 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.engine_core.config import EngineConfig
+from apps.engine_core.jobs.runner import (
+    known_kinds,
+    register_worker,
+    unregister_worker,
+)
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.setup import detect, record
 from apps.engine_core.setup.api import STEMS_UNAVAILABLE_MESSAGE, router
 from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
+from apps.stems.job import JOB_KIND as STEMS_JOB_KIND
 
 API = "/api/v1/setup"
 
@@ -279,13 +285,52 @@ def test_dismissal_survives_a_new_client(
 
 
 # ----- stems --------------------------------------------------------------
-def test_the_stems_step_is_honest_about_not_being_wired(
-    client: TestClient,
+@pytest.fixture
+def unwired_stems() -> Iterator[None]:
+    """A chassis that never wired the stems kind.
+
+    The registry is process-global and any earlier test that built a full
+    engine leaves ``stems.separate`` in it, so the unavailable branch has to
+    be arranged rather than assumed -- otherwise this file passes or fails
+    on test ORDER, which is the opposite of evidence.
+
+    Restored through the composition root rather than by hand, because
+    ``unregister_worker`` drops the kind's observer and reconciler too and
+    putting back only the worker would leave the session subtly wrong.
+    """
+    from apps.engine_core.app import _register_job_kinds
+
+    was_wired = STEMS_JOB_KIND in known_kinds()
+    unregister_worker(STEMS_JOB_KIND)
+    yield
+    if was_wired:
+        _register_job_kinds()
+
+
+def test_the_stems_step_says_no_when_the_kind_is_not_registered(
+    client: TestClient, unwired_stems: None
 ) -> None:
+    """The tester's own words, not a shrug: no worker, no library pass."""
     body = client.get(f"{API}/stems").json()
     assert body["available"] is False
     assert body["reason"] == STEMS_UNAVAILABLE_MESSAGE
-    assert body["library_scan_endpoint"] is None
+
+
+def test_the_stems_step_says_yes_once_the_kind_is_registered(
+    client: TestClient, unwired_stems: None
+) -> None:
+    """af--stems-modal landed, so 'not yet available' became the lie.
+
+    The verdict is read off the registry, which means registering the kind
+    here -- exactly what the composition root does -- flips it.
+    """
+    register_worker(STEMS_JOB_KIND, lambda _payload: ["true"])
+    body = client.get(f"{API}/stems").json()
+    assert body["available"] is True
+    assert body["reason"] != STEMS_UNAVAILABLE_MESSAGE
+    assert body["job_kind"] == STEMS_JOB_KIND
+    assert body["plan_endpoint"] == "/api/v1/stems/plan"
+    assert body["enqueue_endpoint"] == "/api/v1/jobs"
 
 
 def test_the_stems_step_still_returns_real_tiers(client: TestClient) -> None:

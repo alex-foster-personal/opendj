@@ -8,7 +8,8 @@ order, with the same refusals. There is no browser-only state.
     GET  /api/v1/setup/detect/rekordbox  what is installed, real paths
     POST /api/v1/setup/import            run the import AS A JOB
     POST /api/v1/setup/dismiss           skip (or un-skip) the wizard
-    GET  /api/v1/setup/stems             can stems analysis run at all
+    GET  /api/v1/setup/stems             can stems analysis run at all,
+                                         read off the job registry
 
 Refusals carry ``{"code", "message"}`` so a caller can branch on the code
 instead of pattern-matching prose. The codes are the ones in
@@ -20,12 +21,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from apps.engine_core.jobs.api import JobOut
+from apps.engine_core.jobs.runner import known_kinds
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.setup import detect, record
 from apps.engine_core.setup.importer import FOLDER_STAGES, STAGES
@@ -33,6 +35,21 @@ from apps.engine_core.setup.jobs import (
     SETUP_IMPORT_KIND,
     SetupPayloadError,
     build_argv,
+)
+from apps.engine_core.setup.schemas import (
+    AccessProbeOut,
+    FileProbeOut,
+    FolderImportIn,
+    FolderLastImportOut,
+    FolderScanOut,
+    LastImportOut,
+    PermissionsOut,
+    RekordboxDetectionOut,
+    SetupDismissIn,
+    SetupImportIn,
+    SetupStatusOut,
+    StemTierOut,
+    StemsSetupOut,
 )
 
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -48,221 +65,18 @@ _LIVE_STATUSES: frozenset[str] = frozenset(
 #: house rule is that an unavailable feature says so rather than pretending.
 STEMS_UNAVAILABLE_MESSAGE: str = "stems analysis not yet available"
 
+#: The other half of the same honesty. Once af--stems-modal's job kind is
+#: registered, saying "not yet available" would be the lie, so the verdict
+#: reads off the registry and picks the sentence that is true.
+STEMS_READY_MESSAGE: str = (
+    "stems separation is wired; ask /api/v1/stems/plan for the batch size "
+    "and cost before enqueueing"
+)
+
 #: How many example paths /detect/folder returns. Enough to recognise the
 #: folder, small enough that a 40,000-file library is not serialised into a
 #: response nobody asked for.
 SCAN_SAMPLE_SIZE: int = 5
-
-
-# ----- wire models --------------------------------------------------------
-class FileProbeOut(BaseModel):
-    """One real path and whether it is actually there."""
-
-    path: str
-    exists: bool
-    size_bytes: int | None = None
-    modified_at: str | None = None
-
-
-class RekordboxDetectionOut(BaseModel):
-    """The 'detect rekordbox' step, reported without touching the install."""
-
-    installed: bool
-    live_db: FileProbeOut
-    share_dir: FileProbeOut
-    working_copy: FileProbeOut
-    plain_copy: FileProbeOut
-    key_available: bool
-    key_detail: str
-    import_source: str | None = None
-    import_source_encrypted: bool | None = None
-    blockers: list[str] = Field(default_factory=list)
-    rekordbox_running: bool
-
-
-class AccessProbeOut(BaseModel):
-    """One folder, and whether this process can actually read it.
-
-    ``exists`` true with ``readable`` false and ``denied`` true is the macOS
-    TCC case: the folder is there and full of music, and the listing is
-    refused, so anything that counted files inside it would report zero.
-    """
-
-    path: str
-    exists: bool
-    readable: bool
-    denied: bool
-    detail: str
-
-
-class PermissionsOut(BaseModel):
-    """The folder-access answer, and what to do about a refusal."""
-
-    all_readable: bool
-    denied: list[str] = Field(default_factory=list)
-    roots: list[AccessProbeOut] = Field(default_factory=list)
-    how_to_grant: str
-
-
-class LastImportOut(BaseModel):
-    """What the previous rekordbox import did. Mirrors ``ImportOutcome``.
-
-    Typed rather than a free-form object: a caller reading a track count off
-    an untyped dict has no contract, and the wizard's "done" screen is built
-    entirely out of these numbers.
-    """
-
-    kind: Literal["rekordbox"] = "rekordbox"
-    started_at: str
-    finished_at: str
-    source: str
-    source_was_encrypted: bool
-    ingested_from: str
-    tracks: int
-    playlists: int
-    analyses_linked: int
-    analyses_expected: int
-    rekordbox_tracks: int
-    share_root: str
-    rekordbox_was_running: bool
-    #: Present on records written by this engine version. Older records have
-    #: no such field, and defaulting it to [] would claim "nothing was
-    #: denied" about a run that never asked -- so the wizard checks
-    #: `permissions` for the live answer and treats this as history only.
-    unreadable_music_roots: list[str] = Field(default_factory=list)
-
-
-class FolderLastImportOut(BaseModel):
-    """What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.
-
-    A different model rather than optional fields on the rekordbox one,
-    because the two describe different work: there is no decrypt here, no
-    playlists, and -- the field that matters --
-    ``tracks_without_analysis``, which equals the tracks written.
-    """
-
-    kind: Literal["folder"] = "folder"
-    started_at: str
-    finished_at: str
-    roots: list[str] = Field(default_factory=list)
-    unreadable_roots: list[str] = Field(default_factory=list)
-    files_seen: int
-    files_dataless: int
-    files_without_tags: int
-    tracks: int
-    tracks_written: int
-    tracks_without_analysis: int
-    analysis_available: bool = False
-    analysis_detail: str
-
-
-class SetupStatusOut(BaseModel):
-    """Everything the wizard needs to decide whether to show itself."""
-
-    library_empty: bool
-    tracks: int
-    playlists: int
-    state_db: FileProbeOut
-    data_dir: str
-    dismissed: bool
-    should_show_wizard: bool
-    #: The rekordbox import's stages, in order.
-    stages: list[str]
-    #: The folder import's stages. Shorter on purpose: no snapshot and no
-    #: decrypt, because there is no rekordbox database in that path.
-    folder_stages: list[str]
-    last_import: LastImportOut | FolderLastImportOut | None = Field(
-        default=None, discriminator="kind"
-    )
-    rekordbox: RekordboxDetectionOut
-    #: Folder access, inlined so the wizard's first render already knows
-    #: whether a count of zero means "empty" or "not allowed to look".
-    permissions: PermissionsOut
-
-
-class SetupImportIn(BaseModel):
-    """Import options. Both are the same knobs the CLI exposes."""
-
-    source: str | None = Field(
-        default=None,
-        description=(
-            "explicit rekordbox database to read; omit to auto-detect"
-        ),
-    )
-    limit: int | None = Field(
-        default=None,
-        ge=1,
-        description="ingest at most N tracks (smoke-test aid)",
-    )
-    refresh_decrypt: bool = Field(
-        default=False,
-        description=(
-            "re-decrypt the encrypted snapshot instead of reusing an "
-            "existing master.plain.db; the wizard's half of the ingest-rb "
-            "CLI's --refresh-decrypt"
-        ),
-    )
-
-
-class FolderImportIn(BaseModel):
-    """Point at one or more folders of audio files. No rekordbox involved."""
-
-    folders: list[str] = Field(
-        min_length=1,
-        description="absolute paths to walk; at least one",
-    )
-    limit: int | None = Field(
-        default=None, ge=1, description="import at most N files"
-    )
-
-
-class FolderScanOut(BaseModel):
-    """What a candidate folder actually holds, before anything is imported.
-
-    ``audio_files`` counts what could be READ. When ``denied`` is true that
-    number is not a count of the folder, it is a count of nothing, and
-    ``detail`` says so -- which is the difference between "this folder is
-    empty" and "macOS would not let me look".
-    """
-
-    path: str
-    exists: bool
-    readable: bool
-    denied: bool
-    detail: str
-    audio_files: int
-    icloud_placeholders: int
-    how_to_grant: str
-    sample: list[str] = Field(default_factory=list)
-
-
-class SetupDismissIn(BaseModel):
-    dismissed: bool = True
-
-
-class StemTierOut(BaseModel):
-    """One real separation rung, straight out of apps.stems.tiers."""
-
-    key: str
-    name: str
-    where: str
-    availability: str
-    unavailable_because: str
-
-
-class StemsSetupOut(BaseModel):
-    """Whether the wizard's stems step can actually start anything.
-
-    ``available`` false is the honest answer while nothing can run a
-    library-wide separation pass; ``reason`` is what the UI shows. The
-    ``tiers`` list is real data either way, never a placeholder.
-    """
-
-    available: bool
-    reason: str
-    per_track_endpoint: str
-    library_scan_endpoint: str | None = None
-    tiers: list[StemTierOut]
 
 
 # ----- helpers ------------------------------------------------------------
@@ -568,12 +382,18 @@ def dismiss(request: Request, body: SetupDismissIn) -> SetupStatusOut:
 
 @router.get("/stems", response_model=StemsSetupOut)
 def stems_availability() -> StemsSetupOut:
-    """Can a library-wide stems pass be started from setup? Honestly, no.
+    """Can a library-wide stems pass be started from setup?
 
-    The per-track separation endpoints are real and are named here. What
-    does not exist is anything that runs them across a whole library, so
-    the wizard's stems step renders its real choices and then says so.
+    ANSWERED FROM EVIDENCE, never from a constant. The verdict is whether
+    this engine actually has a worker registered for ``stems.separate``: a
+    legacy boot, or a chassis whose composition root never wired the kind,
+    genuinely cannot run one and says so in the tester's own words.
+
+    The tier ladder is real either way. An unavailable rung carries the
+    reason it is unavailable, so the wizard renders true choices rather
+    than a placeholder list.
     """
+    from apps.stems import job as stems_job
     from apps.stems import tiers as tiercfg
 
     ladder = [
@@ -586,11 +406,14 @@ def stems_availability() -> StemsSetupOut:
         )
         for tier in tiercfg.ladder()
     ]
+    registered = stems_job.JOB_KIND in known_kinds()
     return StemsSetupOut(
-        available=False,
-        reason=STEMS_UNAVAILABLE_MESSAGE,
+        available=registered,
+        reason=STEMS_READY_MESSAGE if registered else STEMS_UNAVAILABLE_MESSAGE,
+        job_kind=stems_job.JOB_KIND,
+        plan_endpoint="/api/v1/stems/plan",
+        enqueue_endpoint="/api/v1/jobs",
         per_track_endpoint="/api/v1/stems/generate",
-        library_scan_endpoint=None,
         tiers=ladder,
     )
 
@@ -619,7 +442,11 @@ def _blocker_message(code: str, found: detect.RekordboxDetection) -> str:
     return render(found) if render is not None else f"setup refused with {code}"
 
 
+#: Re-exported so ``from ...setup.api import SetupStatusOut`` keeps working
+#: for callers that were written before the models moved to
+#: :mod:`apps.engine_core.setup.schemas`. The models themselves live there.
 __all__ = [
+    "STEMS_READY_MESSAGE",
     "STEMS_UNAVAILABLE_MESSAGE",
     "AccessProbeOut",
     "FileProbeOut",

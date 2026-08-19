@@ -5539,25 +5539,26 @@
         "type": "object"
       },
       "StemsSetupOut": {
-        "description": "Whether the wizard's stems step can actually start anything.\n\n``available`` false is the honest answer while nothing can run a\nlibrary-wide separation pass; ``reason`` is what the UI shows. The\n``tiers`` list is real data either way, never a placeholder.",
+        "description": "Whether a library-wide separation pass can be started here.\n\nThe agent-facing half of the wizard's stems step. The browser mounts\naf--stems-modal's StemsPrompt component, which asks\n``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same\nverdict, and is told exactly which two calls drive the flow.\n\n``available`` is EVIDENCE, not a constant: it reports whether the\n``stems.separate`` job kind is actually registered in this engine. The\n``tiers`` list is real data either way, never a placeholder.",
         "properties": {
           "available": {
             "title": "Available",
             "type": "boolean"
           },
-          "library_scan_endpoint": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Library Scan Endpoint"
+          "enqueue_endpoint": {
+            "title": "Enqueue Endpoint",
+            "type": "string"
+          },
+          "job_kind": {
+            "title": "Job Kind",
+            "type": "string"
           },
           "per_track_endpoint": {
             "title": "Per Track Endpoint",
+            "type": "string"
+          },
+          "plan_endpoint": {
+            "title": "Plan Endpoint",
             "type": "string"
           },
           "reason": {
@@ -5575,6 +5576,9 @@
         "required": [
           "available",
           "reason",
+          "job_kind",
+          "plan_endpoint",
+          "enqueue_endpoint",
           "per_track_endpoint",
           "tiers"
         ],
@@ -10476,7 +10480,7 @@
     },
     "/api/v1/setup/stems": {
       "get": {
-        "description": "Can a library-wide stems pass be started from setup? Honestly, no.\n\nThe per-track separation endpoints are real and are named here. What\ndoes not exist is anything that runs them across a whole library, so\nthe wizard's stems step renders its real choices and then says so.",
+        "description": "Can a library-wide stems pass be started from setup?\n\nANSWERED FROM EVIDENCE, never from a constant. The verdict is whether\nthis engine actually has a worker registered for ``stems.separate``: a\nlegacy boot, or a chassis whose composition root never wired the kind,\ngenuinely cannot run one and says so in the tester's own words.\n\nThe tier ladder is real either way. An unavailable rung carries the\nreason it is unavailable, so the wizard renders true choices rather\nthan a placeholder list.",
         "operationId": "stems_availability_api_v1_setup_stems_get",
         "responses": {
           "200": {

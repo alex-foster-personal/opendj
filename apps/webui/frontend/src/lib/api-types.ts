@@ -1086,11 +1086,16 @@ export interface paths {
         };
         /**
          * Stems Availability
-         * @description Can a library-wide stems pass be started from setup? Honestly, no.
+         * @description Can a library-wide stems pass be started from setup?
          *
-         *     The per-track separation endpoints are real and are named here. What
-         *     does not exist is anything that runs them across a whole library, so
-         *     the wizard's stems step renders its real choices and then says so.
+         *     ANSWERED FROM EVIDENCE, never from a constant. The verdict is whether
+         *     this engine actually has a worker registered for ``stems.separate``: a
+         *     legacy boot, or a chassis whose composition root never wired the kind,
+         *     genuinely cannot run one and says so in the tester's own words.
+         *
+         *     The tier ladder is real either way. An unavailable rung carries the
+         *     reason it is unavailable, so the wizard renders true choices rather
+         *     than a placeholder list.
          */
         get: operations["stems_availability_api_v1_setup_stems_get"];
         put?: never;
@@ -3806,19 +3811,28 @@ export interface components {
         };
         /**
          * StemsSetupOut
-         * @description Whether the wizard's stems step can actually start anything.
+         * @description Whether a library-wide separation pass can be started here.
          *
-         *     ``available`` false is the honest answer while nothing can run a
-         *     library-wide separation pass; ``reason`` is what the UI shows. The
+         *     The agent-facing half of the wizard's stems step. The browser mounts
+         *     af--stems-modal's StemsPrompt component, which asks
+         *     ``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same
+         *     verdict, and is told exactly which two calls drive the flow.
+         *
+         *     ``available`` is EVIDENCE, not a constant: it reports whether the
+         *     ``stems.separate`` job kind is actually registered in this engine. The
          *     ``tiers`` list is real data either way, never a placeholder.
          */
         StemsSetupOut: {
             /** Available */
             available: boolean;
-            /** Library Scan Endpoint */
-            library_scan_endpoint?: string | null;
+            /** Enqueue Endpoint */
+            enqueue_endpoint: string;
+            /** Job Kind */
+            job_kind: string;
             /** Per Track Endpoint */
             per_track_endpoint: string;
+            /** Plan Endpoint */
+            plan_endpoint: string;
             /** Reason */
             reason: string;
             /** Tiers */
