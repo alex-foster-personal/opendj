@@ -11,6 +11,12 @@ deletion never happened, so a drift test existed only to hold the two copies
 level. Its four callers now provision through the schema module, and that
 drift test is deleted alongside the copy it was watching -- with one home
 there is nothing left to drift.
+
+Wave 4 (S8) moved this module out of ``apps/webui/server/rb_vendor_pkg/``. The
+``apps.engine_core.store.schema`` import below is the edge that closed the
+``engine_core <-> webui`` package cycle while this module lived under
+``apps.webui``; raised from ``apps.adapters`` it closes no loop. The body is
+unchanged.
 """
 from __future__ import annotations
 

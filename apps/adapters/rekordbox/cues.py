@@ -16,6 +16,10 @@ Seam for S0: :func:`_new_cue_id`, :func:`_live_slot_snapshot`,
 they did in ``rb_vendor``. Replacing it with the domain error type is
 ``adapters/rekordbox/errors.py``, which the map assigns to slice S0 -- doing it
 here would fork that decision and change every asserted status code.
+
+Wave 4 (S8) moved this module from the interim
+``apps/webui/server/rb_vendor_pkg/`` staging location to the mapped home. The
+body is unchanged.
 """
 from __future__ import annotations
 

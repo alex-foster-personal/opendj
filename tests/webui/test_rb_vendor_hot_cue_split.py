@@ -28,11 +28,12 @@ from pathlib import Path
 
 import pytest
 
+from apps.adapters import rekordbox as rb_adapter
+from apps.adapters.rekordbox import reversal as rb_reversal
+from apps.adapters.rekordbox import writer as rb_writer
 from apps.engine_core.store import schema as store_schema
 from apps.shared import rb_frames
 from apps.webui.server import rb_vendor
-from apps.webui.server.rb_vendor_pkg import reversal as rb_reversal
-from apps.webui.server.rb_vendor_pkg import writer as rb_writer
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
@@ -98,11 +99,17 @@ def test_no_hot_cue_sidecar_ddl_outside_the_schema_module() -> None:
     names; a drift test used to keep the two copies level instead of removing
     one. Scanning source rather than asserting on a symbol is deliberate --
     a reintroduced copy under a new name is the same defect.
+
+    Both trees are scanned because S8 split the family across them: the
+    hot-cue cluster now lives in ``apps/adapters/rekordbox/`` while the rest
+    of the vendor surface is still staged under ``apps/webui/server/``.
+    Scanning only one would let a copy reappear in the other.
     """
-    server = Path(rb_vendor.__file__).parent
+    trees = (Path(rb_vendor.__file__).parent, Path(rb_adapter.__file__).parent)
     offenders = [
         f"{path}: {table}"
-        for path in sorted(server.rglob("*.py"))
+        for tree in trees
+        for path in sorted(tree.rglob("*.py"))
         for table in SIDECAR_TABLES
         if f"CREATE TABLE IF NOT EXISTS {table}" in path.read_text()
     ]
@@ -142,18 +149,21 @@ def test_both_rekordbox_writers_share_one_frame_conversion() -> None:
     long as nobody edited one of them.
     """
     from apps.sync import rb_writer as sync_rb_writer
-    from apps.webui.server.rb_vendor_pkg import writer as hot_cue_writer
 
     assert sync_rb_writer._msec_to_frame is rb_frames.msec_to_frame
-    assert hot_cue_writer.msec_to_frame is rb_frames.msec_to_frame
+    assert rb_writer.msec_to_frame is rb_frames.msec_to_frame
 
 
 def test_the_one_home_is_importable_without_the_web_layer() -> None:
     """apps.sync may not import apps.webui (.importlinter, hard-fail).
 
-    This is why the shared core holds the definition rather than the
-    decomposition map's adapters/rekordbox/cues.py, which is staged under
-    apps/webui/server for the duration of T3b.
+    That was the original reason the shared core holds the definition rather
+    than the decomposition map's adapters/rekordbox/cues.py: cues.py was
+    staged under apps/webui/server. S8 has since moved it to
+    apps/adapters/rekordbox/, so the contract no longer objects -- but cues.py
+    still imports fastapi (the map's errors.py is an unbuilt S0 carry-over),
+    and folding the primitive back into it would pull the web framework into
+    apps.sync. The indirection survives until that debt is paid.
     """
     assert rb_frames.__name__.startswith("apps.shared.")
 

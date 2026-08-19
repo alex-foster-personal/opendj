@@ -64,16 +64,16 @@ from apps.shared.platform_paths import (
 )
 from apps.shared.state import locations as track_locations
 from apps.vocals import cache as vocal_cache
-from apps.webui.server.rb_vendor_pkg import cues as _hot_cue_model
-from apps.webui.server.rb_vendor_pkg import writer as _hot_cue_writer
-from apps.webui.server.rb_vendor_pkg.cues import HotCueSlotError as HotCueSlotError
-from apps.webui.server.rb_vendor_pkg.writer import _open_rw as _open_rw
+from apps.adapters.rekordbox import cues as _hot_cue_model
+from apps.adapters.rekordbox import writer as _hot_cue_writer
+from apps.adapters.rekordbox.cues import HotCueSlotError as HotCueSlotError
+from apps.adapters.rekordbox.writer import _open_rw as _open_rw
 
 # The djmdCue row -> snapshot mapping is shared by the write surface (C10,
-# cues.py) and the cue read (C4, rb_vendor_pkg/db.py). cues.py is its one
-# home; db.py currently reaches it back through this facade by design (see
-# its module docstring), so the name has to stay bound here.
-from apps.webui.server.rb_vendor_pkg.cues import _cue_snapshot_from_row
+# adapters/rekordbox/cues.py) and the cue read (C4, rb_vendor_pkg/db.py).
+# cues.py is its one home; db.py currently reaches it back through this facade
+# by design (see its module docstring), so the name has to stay bound here.
+from apps.adapters.rekordbox.cues import _cue_snapshot_from_row
 
 log = logging.getLogger(__name__)
 
@@ -690,12 +690,14 @@ from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import cached_beatgrid
 # re-imported below.
 from apps.webui.server.rb_vendor_pkg.anlz import build_anlz_payload
 
-# ----- hot-cue write surface (moved to rb_vendor_pkg, T3b slice S4) --------
+# ----- hot-cue write surface (moved out, T3b slices S4 then S8) ------------
 #
-# The implementation now lives in apps/webui/server/rb_vendor_pkg/
+# The implementation now lives in apps/adapters/rekordbox/
 # ({cues,reversal,writer}.py) per .planning/t3b-decomposition-map.md section 2
-# rows 10-12. What stays here is the wiring: the package takes its
-# master.plain.db connection by injection rather than owning a path constant,
+# rows 10-12 -- S4 split it out of this file, S8 moved it out of apps.webui
+# into the mapped adapter root. What stays here is the wiring: the package
+# takes its master.plain.db connection by injection rather than owning a path
+# constant,
 # and these wrappers are what bind it to THIS module's MASTER_PLAIN_DB /
 # _open_rw / _open_ro. Both factories resolve those names from this module's
 # namespace at call time, so the long-standing test seams

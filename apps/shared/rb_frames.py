@@ -6,17 +6,23 @@ millisecond-to-frame conversion existed twice, byte-identical, in
 docstring named the other copy without either ever being consolidated.
 
 The map nominates ``adapters/rekordbox/cues.py`` as the single home. That
-works at the package's final root, but not at its interim one: the split is
-staged under ``apps/webui/server/rb_vendor_pkg/`` for the duration of T3b, and
-``.importlinter``'s ``webui-is-the-top-layer`` contract forbids ``apps.sync``
-(or any other domain package) from importing ``apps.webui`` -- a hard-fail
-contract whose own comment reads "Never add a line here: add the inversion
-instead". ``apps.shared`` is the layer both writers may legally import, and
+works at the package's final root, but not at the interim one: the split was
+staged under ``apps/webui/server/rb_vendor_pkg/``, and ``.importlinter``'s
+``webui-is-the-top-layer`` contract forbids ``apps.sync`` (or any other domain
+package) from importing ``apps.webui`` -- a hard-fail contract whose own
+comment reads "Never add a line here: add the inversion instead".
+``apps.shared`` is the layer both writers may legally import, and
 ``rb_color_palette.py`` is the standing precedent for a small rekordbox
-conversion primitive living here. ``rb_vendor_pkg.cues`` re-exports it, so the
-adapter surface is exactly what the map specifies and there is still one
-definition. When the package leaves ``apps/webui``, this module folds into
-``cues.py`` and the indirection disappears.
+conversion primitive living here. ``apps.adapters.rekordbox.cues`` re-exports
+it, so the adapter surface is exactly what the map specifies and there is
+still one definition.
+
+T3b wave 4 moved that package to ``apps/adapters/rekordbox/``, so the contract
+no longer blocks the fold. What still does is ``cues.py``'s ``fastapi``
+import: the map's ``adapters/rekordbox/errors.py`` (target #3, slice S0) was
+never built, and folding this primitive into a module that raises
+``HTTPException`` would drag the web framework into ``apps.sync``. This module
+disappears into ``cues.py`` once that error type lands.
 """
 from __future__ import annotations
 

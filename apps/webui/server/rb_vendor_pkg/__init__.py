@@ -14,12 +14,17 @@ Modules:
   beatgrid_issue_cache -- C8 beatgrid-issue sidecar cache.
   anlz -- PMAI waveform decode, PVDI vocals, ANLZ tag decode, payload
           assembly (C2/C3/C6/C9).
-  cues -- pure hot-cue modelling and validation, owns no connection (C10).
-  reversal -- hot-cue reversal-token lifecycle and slot generations (C10).
-  writer -- the only read-write surface into master.plain.db (C10).
 
 This package is a staging location: the map's final homes (S8 relocates)
 are ``store/caches/`` for the caches and ``adapters/rekordbox/`` for db,
 anlz, cues, reversal and writer.
+
+S8 has moved the hot-cue cluster (C10: cues, reversal, writer) on to
+``apps/adapters/rekordbox/``. That relocation is what closed the
+``engine_core <-> webui`` package cycle: :mod:`apps.adapters.rekordbox.reversal`
+is the module that imports the one sidecar-DDL home in
+``apps.engine_core.store.schema``. The modules still listed above reach back
+into ``rb_vendor`` for the C0/C1 constants and path helpers that slice S0
+never extracted, so they cannot follow until that extraction lands.
 """
 from __future__ import annotations

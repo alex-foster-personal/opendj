@@ -41,6 +41,12 @@ state and hash to the same CAS revision, and every write path provisions on
 demand inside its own exclusive transaction anyway. The read now takes a
 read-only connection, which makes the property structural rather than a
 convention a later edit could quietly break.
+
+Wave 4 (S8) moved this module out of ``apps/webui/server/rb_vendor_pkg/`` into
+the mapped adapter root. The injected-factory design above is what makes the
+move a pure relocation: the module never named a path, so leaving ``apps.webui``
+took no rewiring and the ``rb_vendor`` test seams still bite. The body is
+unchanged.
 """
 from __future__ import annotations
 
