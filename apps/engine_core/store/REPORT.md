@@ -89,6 +89,55 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 
 Shares `schema_meta` but stamps at `VERSION_OFFSET = 1000`: rows 1..5 are legacy, `1000` is the `ADOPTION_VERSION` marker (this file predates consolidation), `1001` is consolidated v1. Fresh DBs get 1..5 stamped (so the legacy runner no-ops) plus 1001 and no 1000 row. `apply_migrations` refuses below `MIN_ADOPTABLE_LEGACY_VERSION = 3`.
 
+### Known cosmetic readout: `schema version: 1001 (target 5)` (R3 #4)
+
+After the consolidated runner has stamped a DB, the legacy CLI prints
+
+```
+schema version: 1001 (target 5)
+```
+
+which reads as a DB nine hundred and ninety-six versions past its own target. It is cosmetic -- nothing branches on it -- but it is confusing enough to be worth naming.
+
+Cause: `apps/shared/state/schema.py:255` `_current_version` takes an **unfiltered** `SELECT COALESCE(MAX(version), 0) FROM schema_meta`, so it reads the offset rows the consolidated runner writes. This module already reads its own counter with a range filter for exactly this reason (`_legacy_version` uses `WHERE version < VERSION_OFFSET`, `consolidated_version` uses `>=`), and the offset was chosen so the two counters could never be confused for one another -- which is what makes the readout wrong rather than the design wrong.
+
+Deliberately NOT fixed here: `apps/shared/state` is frozen for this tranche, and the honest fix is one line in the legacy module, not a contortion in this one. The consolidated runner already stamps nothing that belongs in the legacy counter's range, so there is nothing to correct on our side of the ownership line.
+
+Post-parity fix, for whoever unfreezes `apps/shared/state`: give `_current_version` the same `WHERE version < VERSION_OFFSET` filter its consolidated counterpart uses. The print site is `apps/shared/state/cli.py:32`.
+
+## Unledgered tables in live DBs (R3, blocks a clean adoption once branches land)
+
+The consolidated ladder is built from what the merged tree reaches. Real state DBs hold more than that, because unmerged branches have already shipped DDL into them. Measured against `state.db` (9,986 tracks) on Wed 19 Aug 2026: **six tables and three views** exist in the live file that the ladder does not declare.
+
+From `adddff8a` (`feat(mik): retain analysis for audio we do not have`), created by that branch's `_V4`:
+
+| Object | Type |
+|---|---|
+| `track_availability` | table |
+| `unmatched_source_analysis` | table |
+| `track_energy_segments` | table |
+| `analysis_field_verification` | table |
+| `tracks_available` | view |
+| `tracks_unavailable` | view |
+| `track_fields_available` | view |
+
+From `6f39ab99` (`origin/codex--checkpoint-dirty-routing-20260730`), `apps/shared/pairings/capture_repo.py`:
+
+| Object | Type |
+|---|---|
+| `pairing_alignments` | table |
+| `pairing_sync_snapshots` | table |
+
+R3 attributed all six tables to `adddff8a`; the split above is what the live file and `git log -S` actually show. Two branches, one symptom.
+
+Three consequences, all real today:
+
+1. **The ladder must adopt these when those branches merge.** Until then adoption leaves them alone -- the shape audit only inspects objects the ladder itself creates -- which is correct behaviour but means the consolidated schema is knowingly incomplete against production files.
+
+2. **Version number 4 means two different things.** `adddff8a` stamps `schema_meta` v4 for the availability tables; the merged ladder stamps v4 for `track_locations` plus its backfill. The live DB carries both sets of objects and a single `4` row (applied Tue 28 Jul 2026), so the counter cannot say which one ran. This is the mechanism behind O-15's `_V5 = _V4` repair step: a DB stamped at 4 by the other branch still owed the `track_locations` work, and re-running v4 as v5 was how it got it. It is also the concrete argument for reading live shapes rather than trusting counters -- on this file the counter is not evidence of anything.
+
+3. **Views are not hypothetical here.** The three `*_available` views are why `existing_objects()` had to stop filtering `type = 'table'` (R3 #6): a view sharing a ladder table's name silently absorbs `CREATE TABLE IF NOT EXISTS`, and this DB is proof the namespace is already shared in production.
+
 ## Durability split (decided, R3 recommendation, adopted by the integrator)
 
 The open question was whether the sidecar-file domains (`settings`, the dedup tables, `fingerprints`, `file_hashes`) belong in the consolidated state.db ladder. It is now settled, and the line is **regenerable vs durable**, not "which file did legacy happen to use".
