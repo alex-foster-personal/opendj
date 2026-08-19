@@ -159,11 +159,25 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stats", help="print table counts + source breakdown")
     ins = sub.add_parser("inspect", help="print one track as open-dj JSON")
     ins.add_argument("stable_id", help="40-char hex stable_id to inspect")
-    ing = sub.add_parser("ingest-rb", help="Rekordbox -> state.db adapter")
+    ing = sub.add_parser(
+        "ingest-rb",
+        help="Rekordbox -> state.db adapter",
+        description=(
+            "Ingest the decrypted Rekordbox working copy "
+            f"({state_paths.REKORDBOX_PLAIN_DB}) into the state DB. That copy "
+            "is static by convention: when it is already present it is reused "
+            "as-is, and when it is absent the encrypted snapshot "
+            f"({state_paths.REKORDBOX_WORKING_DB}) is decrypted into it first. "
+            "Pass --refresh-decrypt to re-decrypt an existing copy."
+        ),
+    )
     ing.add_argument(
         "--rb-db",
         default=None,
-        help="override Rekordbox DB (default: paths.REKORDBOX_WORKING_DB)",
+        help=(
+            "ingest this plain-SQLite Rekordbox DB verbatim, skipping the "
+            f"decrypt step (default: {state_paths.REKORDBOX_PLAIN_DB})"
+        ),
     )
     ing.add_argument(
         "--write",
@@ -174,6 +188,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--stale-ok",
         action="store_true",
         help="allow running against a working copy older than the live DB",
+    )
+    ing.add_argument(
+        "--refresh-decrypt",
+        action="store_true",
+        help=(
+            "re-decrypt the encrypted snapshot even when a plain copy exists "
+            "(then rm -rf data/state/anlz-cache/, which embeds djmdCue data)"
+        ),
     )
     ing.add_argument(
         "--limit",
