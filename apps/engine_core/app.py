@@ -187,6 +187,12 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         port=cfg.port,
         stem_roots=stems.roots,
         mount_frontend=False,
+        # Browser diagnostics belong to THIS engine's data dir. The legacy
+        # default is a process-global path under $HOME, which left an engine
+        # started with --data-dir writing outside its own sandbox and two
+        # parallel lanes appending to one another's log.
+        client_error_log_dir=cfg.logs_dir,
+        client_event_log_dir=cfg.logs_dir,
     )
 
 
