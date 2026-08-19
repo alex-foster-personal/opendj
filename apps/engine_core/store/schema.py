@@ -5,8 +5,20 @@ Today ``state.db`` is bootstrapped from ~17 places: only
 ladder, and everything else runs ad-hoc ``CREATE TABLE IF NOT EXISTS``
 on first use from whichever module happens to own the domain. This
 module is the consolidation target: every table and index the engine
-owns, declared once, in one migration ladder, with a comment naming the
-legacy file each definition came from.
+owns, declared once, with a comment naming the legacy file each
+definition came from.
+
+Two groups, because they do not mean the same thing:
+
+* **durable** (:data:`DOMAINS`, applied by :func:`apply_migrations` to
+  ``state.db``) -- rows that cannot be recomputed. Identity, provenance,
+  playlists, analysis, and human judgment such as duplicate clusters and
+  tag provenance. This ladder never wipes.
+* **regenerable caches** (:data:`CACHE_DOMAINS`, applied by
+  :func:`apply_cache_migrations` to a separate ``cache.db``) -- rows
+  derived from audio files, where deleting the file is a legal recovery
+  move. Kept out of the durable ladder so that promise stays true. See
+  ``REPORT.md``, "Durability split".
 
 This is CONSOLIDATION, NOT REDESIGN. Where a legacy definition is odd
 (a missing index, a CHECK that drifted, a FK that one bootstrap declares
@@ -27,14 +39,32 @@ Two entry paths, both through :func:`apply_migrations`:
 
 * **fresh DB** -- no consolidated marker, no pre-existing engine tables:
   ``MIGRATIONS[0]`` runs and creates the whole consolidated schema.
-* **existing DB** -- adoption. The runner verifies which of the expected
-  objects already exist, creates only the missing ones, replays the
-  legacy backfills that are data-bearing (idempotent), and records the
-  adoption as its own :data:`ADOPTION_VERSION` row in ``schema_meta``.
-  Adoption refuses (loudly) to run against a DB below
-  :data:`MIN_ADOPTABLE_LEGACY_VERSION`, because those legacy steps are
-  table REBUILDS (PK change, widened CHECK) rather than pure creates and
-  must be applied by the legacy runner first.
+* **existing DB** -- adoption. The runner creates only the missing
+  objects, replays the legacy backfills that are data-bearing
+  (idempotent), and records the adoption as its own
+  :data:`ADOPTION_VERSION` row in ``schema_meta``.
+
+Adoption is gated BEFORE anything is written, and the gate reads live
+shapes rather than trusting the counter:
+
+* :func:`_assert_adoptable` refuses a DB below
+  :data:`MIN_ADOPTABLE_LEGACY_VERSION`, and independently probes every
+  table the legacy ladder repairs by REBUILDING it (``track_fields``'
+  widened CHECK, ``track_field_history``'s surrogate PK). This runner
+  only creates missing objects, so it can never repair those shapes.
+  The probes run whatever the counter says: an absent or truncated
+  ``schema_meta`` reads the same as a fresh file, so the counter cannot
+  be the gate.
+* :func:`_audit_existing_shapes` compares every pre-existing object the
+  ladder would create against the shape it would create, and refuses on
+  a mismatch. Necessary because every statement here is ``IF NOT
+  EXISTS``, which makes name-presence and shape-presence different
+  facts -- including the table/view case, where a view silently absorbs
+  a ``CREATE TABLE``.
+
+The transaction is ``BEGIN IMMEDIATE`` with a runner-owned
+:data:`BUSY_TIMEOUT_MS`, because this is a read-then-write sequence and
+a deferred lock upgrade is the one wait SQLite will not retry.
 
 Scope note: tables that legacy code creates inside a *vendor* database
 (rekordbox ``master.db``) are declared here too, as
