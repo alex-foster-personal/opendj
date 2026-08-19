@@ -38,6 +38,15 @@ TERMINAL_STATUSES: frozenset[str] = frozenset(
 )
 LIVE_STATUSES: tuple[str, ...] = ("running", "cancelling")
 
+# finish() is the ONLY terminal write, so the statuses it is allowed to write
+# OVER are enumerated rather than left to the caller. 'queued' is excluded
+# because queued -> running is claim_queued's transition and skipping it would
+# terminate a row no worker ever touched; the terminal statuses are excluded
+# because a second finish silently erases what actually happened the first
+# time. 'unknown' stays legal: that is the reconcile path resolving a row the
+# engine genuinely could not call.
+FINISH_SOURCES: frozenset[str] = frozenset({"running", "cancelling", "unknown"})
+
 RESTART_ERROR: str = "engine restarted; outcome unknown"
 
 JOBS_TOPIC: str = "jobs.updated"
@@ -264,49 +273,183 @@ class JobStore:
     def finish(
         self, job_id: str, status: str, *, error: str | None = None
     ) -> dict[str, Any]:
+        """Terminal write, gated on the SOURCE status being a legal one.
+
+        The check and the write are one BEGIN IMMEDIATE. Reading the status
+        in a separate statement would let a concurrent transition land in the
+        gap, which is how a late finish used to overwrite a row that had
+        already moved on.
+        """
         if status not in TERMINAL_STATUSES:
             raise ValueError(f"{status!r} is not a terminal status")
         with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status=?, error=?, finished_at=? WHERE id=?",
-                (status, error, _now(), job_id),
-            )
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._assert_finishable(job_id, status)
+                self._conn.execute(
+                    "UPDATE jobs SET status=?, error=?, finished_at=? "
+                    "WHERE id=?",
+                    (status, error, _now(), job_id),
+                )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
         return self._emit(job_id)
 
     def begin_cancel(self, job_id: str) -> dict[str, Any]:
         """running -> cancelling. The row is only 'cancelled' once the group
         is confirmed dead, so a stuck worker never reads as tidily stopped."""
-        job = self.get(job_id)
-        if job["status"] != "running":
-            raise JobConflict(
-                f"job {job_id} is {job['status']}; only a running job cancels"
-            )
         with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status='cancelling' WHERE id=?", (job_id,)
-            )
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._assert_cancellable(job_id)
+                self._conn.execute(
+                    "UPDATE jobs SET status='cancelling' WHERE id=?", (job_id,)
+                )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
         return self._emit(job_id)
 
-    def reenqueue(self, job_id: str) -> dict[str, Any]:
-        """Reset a terminal row back to 'queued' with attempt+1."""
-        job = self.get(job_id)
-        if job["status"] not in TERMINAL_STATUSES:
-            raise JobConflict(
-                f"job {job_id} is {job['status']}; only a terminal job "
-                "re-enqueues"
+    def reenqueue(
+        self, job_id: str, *, expect_attempt: int | None = None
+    ) -> dict[str, Any]:
+        """Reset a terminal row back to 'queued' with attempt+1.
+
+        The terminal-status check and the transition are ONE BEGIN IMMEDIATE,
+        so two concurrent re-enqueues cannot both pass the check and stack two
+        attempts (and, once the supervisor claims them, two workers) onto one
+        row. ``expect_attempt`` makes the swap conditional on the exact row
+        the caller inspected.
+        """
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._assert_requeueable(job_id, expect_attempt)
+                self._requeue(job_id)
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        return self._emit(job_id)
+
+    def resolve_and_requeue(
+        self,
+        job_id: str,
+        *,
+        expect_status: str,
+        expect_attempt: int,
+        resolution: str,
+        resolution_error: str,
+    ) -> dict[str, Any]:
+        """<expect_status> -> <resolution> -> queued as ONE compare-and-swap.
+
+        Two callers can both read the same 'unknown' row and both ask a
+        reconcile hook what really happened. Only one of them may act on that
+        reading, so the transition is conditional on the status AND attempt
+        the caller actually saw. The loser gets JobConflict instead of
+        stamping its stale verdict over a row the winner already put back in
+        flight -- which used to force a RUNNING row through failed -> queued,
+        spawning a second worker while NULLing the first one's pgid so nothing
+        could ever reap it.
+
+        One event is published, for the final queued row: the intermediate
+        resolution never exists durably, so announcing it would advertise a
+        state no reader could ever have observed.
+        """
+        if resolution not in TERMINAL_STATUSES:
+            raise ValueError(f"{resolution!r} is not a terminal status")
+        if expect_status not in FINISH_SOURCES:
+            raise ValueError(
+                f"{expect_status!r} is not a status finish() may resolve"
             )
         with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status='queued', progress=0, message=NULL, "
-                "error=NULL, attempt=attempt+1, started_at=NULL, "
-                "finished_at=NULL, owner_pid=?, owner_boot_id=?, "
-                "worker_pid=NULL, worker_pgid=NULL, worker_argv=NULL, "
-                "worker_started_at=NULL WHERE id=?",
-                (self.owner_pid, self.boot_id, job_id),
-            )
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._assert_unchanged(job_id, expect_status, expect_attempt)
+                self._conn.execute(
+                    "UPDATE jobs SET status=?, error=?, finished_at=? "
+                    "WHERE id=?",
+                    (resolution, resolution_error, _now(), job_id),
+                )
+                self._requeue(job_id)
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
         return self._emit(job_id)
 
     # ----- internals -----------------------------------------------------
+    def _row_state(self, job_id: str) -> sqlite3.Row:
+        """status + attempt, read INSIDE the caller's open transaction."""
+        row = self._conn.execute(
+            "SELECT status, attempt FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if row is None:
+            raise JobNotFound(f"no job {job_id!r}")
+        return row
+
+    def _assert_finishable(self, job_id: str, status: str) -> None:
+        current = str(self._row_state(job_id)["status"])
+        if current not in FINISH_SOURCES:
+            raise JobConflict(
+                f"job {job_id} is {current!r}; finish() only writes over "
+                f"{sorted(FINISH_SOURCES)}, so this {status!r} would erase an "
+                "outcome that is already recorded"
+            )
+
+    def _assert_cancellable(self, job_id: str) -> None:
+        current = str(self._row_state(job_id)["status"])
+        if current != "running":
+            raise JobConflict(
+                f"job {job_id} is {current}; only a running job cancels"
+            )
+
+    def _assert_unchanged(
+        self, job_id: str, expect_status: str, expect_attempt: int
+    ) -> None:
+        row = self._row_state(job_id)
+        if (
+            str(row["status"]) != expect_status
+            or int(row["attempt"]) != expect_attempt
+        ):
+            raise JobConflict(
+                f"job {job_id} is now {row['status']!r} attempt "
+                f"{row['attempt']}, not the {expect_status!r} attempt "
+                f"{expect_attempt} that was reconciled; another caller "
+                "resolved it first, so this one is refused rather than "
+                "applied on top"
+            )
+
+    def _assert_requeueable(
+        self, job_id: str, expect_attempt: int | None
+    ) -> None:
+        row = self._row_state(job_id)
+        status = str(row["status"])
+        if status not in TERMINAL_STATUSES:
+            raise JobConflict(
+                f"job {job_id} is {status}; only a terminal job re-enqueues"
+            )
+        if expect_attempt is not None and int(row["attempt"]) != expect_attempt:
+            raise JobConflict(
+                f"job {job_id} is on attempt {row['attempt']}, not the "
+                f"{expect_attempt} this caller inspected; it was re-enqueued "
+                "by someone else first"
+            )
+
+    def _requeue(self, job_id: str) -> None:
+        """The queued-reset UPDATE. Callers own the surrounding transaction."""
+        self._conn.execute(
+            "UPDATE jobs SET status='queued', progress=0, message=NULL, "
+            "error=NULL, attempt=attempt+1, started_at=NULL, "
+            "finished_at=NULL, owner_pid=?, owner_boot_id=?, "
+            "worker_pid=NULL, worker_pgid=NULL, worker_argv=NULL, "
+            "worker_started_at=NULL WHERE id=?",
+            (self.owner_pid, self.boot_id, job_id),
+        )
+
     def _reap_row(self, row: dict[str, Any]) -> str:
         if row.get("worker_pgid") is None:
             return "no worker pgid recorded; nothing to reap"
@@ -370,6 +513,7 @@ def statuses() -> Iterable[str]:
 
 
 __all__ = [
+    "FINISH_SOURCES",
     "JOBS_TOPIC",
     "LIVE_STATUSES",
     "RESTART_ERROR",

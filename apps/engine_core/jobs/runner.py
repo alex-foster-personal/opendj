@@ -106,23 +106,32 @@ def reconcile(job: dict[str, Any]) -> str:
 
 
 def resolve_and_reenqueue(store: JobStore, job_id: str) -> dict[str, Any]:
-    """Re-enqueue, refusing while the previous outcome is still unknown."""
+    """Re-enqueue, refusing while the previous outcome is still unknown.
+
+    The reconcile hook runs OUTSIDE the write transaction (it can do arbitrary
+    IO and holding sqlite's write lock across it would stall every reader),
+    so the verdict it returns is applied as a compare-and-swap against the
+    exact row it was asked about. A caller whose row moved underneath it lost
+    the race and is refused with JobConflict.
+    """
     job = store.get(job_id)
-    if job["status"] == "unknown":
-        resolved = reconcile(job)
-        if resolved == "unknown":
-            raise JobConflict(
-                f"job {job_id} ended 'unknown' and no reconcile hook for kind "
-                f"{job['kind']!r} could establish what the worker actually "
-                "did. Re-enqueueing could repeat a side effect that already "
-                "landed. Register a reconcile hook or resolve it by hand."
-            )
-        store.finish(
-            job_id,
-            resolved,
-            error=f"reconciled by the {job['kind']} hook as {resolved}",
+    if job["status"] != "unknown":
+        return store.reenqueue(job_id, expect_attempt=job["attempt"])
+    resolved = reconcile(job)
+    if resolved == "unknown":
+        raise JobConflict(
+            f"job {job_id} ended 'unknown' and no reconcile hook for kind "
+            f"{job['kind']!r} could establish what the worker actually "
+            "did. Re-enqueueing could repeat a side effect that already "
+            "landed. Register a reconcile hook or resolve it by hand."
         )
-    return store.reenqueue(job_id)
+    return store.resolve_and_requeue(
+        job_id,
+        expect_status="unknown",
+        expect_attempt=job["attempt"],
+        resolution=resolved,
+        resolution_error=f"reconciled by the {job['kind']} hook as {resolved}",
+    )
 
 
 # ----- execution ---------------------------------------------------------
