@@ -30,6 +30,8 @@
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import VibeMeter from './VibeMeter.svelte';
+	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
+	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
 	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
 	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
@@ -362,6 +364,17 @@
 		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
 	</button>
 
+	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer -->
+	<button
+		class="midi-label"
+		title="Engine jobs: what the daemon is running right now (live over the jobs.updated topic)"
+		aria-label="Jobs drawer"
+		aria-expanded={jobsStore.drawerOpen}
+		onclick={toggleJobsDrawer}
+	>
+		JOBS
+	</button>
+
 	<!-- text-command entry: closest rekordbox-parity hook for apps/voice
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
 	<CommandEntry />
@@ -439,6 +452,9 @@
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
+
+<!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
+<JobsDrawer />
 
 <!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
      panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
