@@ -151,7 +151,7 @@ describe('Open DJ desktop shell', () => {
 		// cannot be told apart from "the driver's input goes nowhere".
 		await firstRow.click();
 		await browser.waitUntil(
-			async () => (await firstRow.getAttribute('class')).includes('rb-row-selected'),
+			async () => ((await firstRow.getAttribute('class')) ?? '').includes('rb-row-selected'),
 			{
 				timeout: LOAD_TIMEOUT_MS,
 				timeoutMsg: 'a click on the first row did not select it: input is not reaching the app'
@@ -175,7 +175,7 @@ describe('Open DJ desktop shell', () => {
 		// and this tier asserts what only the real shell can answer: that the
 		// SHIPPED webview creates a worklet and decodes real audio.
 		const stableId = await firstRow.getAttribute('data-stable-id');
-		expect(stableId).not.toBeNull();
+		if (stableId === null) throw new Error('first track row has no data-stable-id attribute');
 		await browser.execute((id: string) => {
 			const ipc = (
 				window as {
