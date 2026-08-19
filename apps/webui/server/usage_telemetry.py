@@ -19,7 +19,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal, get_args
 
 Surface = Literal["desktop-shell", "browser"]
@@ -53,7 +53,7 @@ def classify_user_agent(user_agent: str) -> Surface | None:
     """
     if "AppleWebKit/" in user_agent and "Safari/" not in user_agent:
         return "desktop-shell"
-    elif (
+    if (
         "Safari/" in user_agent
         or "Chrome/" in user_agent
         or "Firefox/" in user_agent
@@ -88,7 +88,7 @@ class ClientHeartbeat:
 
 def _utc_now() -> str:
     return (
-        datetime.now(timezone.utc)
+        datetime.now(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )
