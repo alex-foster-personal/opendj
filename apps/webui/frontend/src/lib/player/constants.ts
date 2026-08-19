@@ -55,6 +55,59 @@ export const SYNC_SCHEDULE_SAFETY_S = 0.1;
  * concept, one name, so the two lanes cannot diverge on it.
  */
 export const TRANSPORT_IMMEDIATE_SAFETY_S = 0.008;
+/**
+ * ONSET RAMP of a Signalsmith stretch processor, as a fraction of its STFT
+ * block length. This is what an immediate transport schedule must lead by, and
+ * round 2 replaced the processor's self-report with it.
+ *
+ * It is deliberately NOT that self-report. `latency()` reports the LIVE-INPUT
+ * latency, and our decks are never in live-input mode: they play from loaded
+ * buffers, on a worklet path that re-seeks the algorithm every render quantum
+ * and so compensates the whole term itself. Measured: given enough lead, audio
+ * arrives EXACTLY when scheduled with no trace of the reported 120ms, so
+ * leading by 120ms was paying for a delay that does not exist.
+ *
+ * What a short lead actually costs is a SOFT START - the output ramps up rather
+ * than arriving square. Measured offline at 44100Hz, lateness to 90 percent of
+ * steady-state RMS is a straight line of slope -1 down to a floor:
+ *
+ *     lateness(lead) = max(0, RAMP - lead),   RAMP ~= 0.37 x blockMs
+ *
+ * fitted across six block sizes: 120 -> 43.4ms (0.36x), 60 -> 21.9ms (0.37x),
+ * 40 -> 14.9ms (0.37x), 30 -> 11.4ms (0.38x), 20 -> 7.9ms (0.40x), 10 -> 3.8ms
+ * (0.38x). The 90 percent point is used rather than the 50 percent point
+ * (0.21x) because a start that has only reached half level is still audibly
+ * soft.
+ *
+ * `latency()` equals the block length exactly for this processor, so the ramp
+ * is derivable from the number every deck already caches. Above the ramp the
+ * lead buys nothing measurable - lead 48ms and lead 128ms give 1.3ms and 2.3ms
+ * lateness at the shipped block - which is why charging the full self-report to
+ * a plain play/pause was ~84ms of dead weight.
+ *
+ * Apparatus, the per-block sweep and the falsification checks:
+ * `.planning/latency-round2-design.md`.
+ */
+export const PROCESSOR_ONSET_RAMP_FACTOR = 0.37;
+/**
+ * `AudioContext` construction options, in ONE named place.
+ *
+ * Deliberately EMPTY, and that is a measured decision rather than an omission.
+ * The spec default for `latencyHint` is already `'interactive'`, so passing the
+ * category buys nothing (measured identical to unset). A NUMERIC hint does move
+ * the device floor, but neither monotonically nor safely: Chrome honours the
+ * hint UPWARD too, so 0.02 made `outputLatency` WORSE (48.0ms against 32.0ms
+ * unset), and the only real win - 0.002, giving 2.9/24.0ms against 5.8/32.0ms -
+ * shrinks the output buffer and so raises underrun probability under four decks
+ * of worklets. A mid-set dropout costs more than the ~11ms it buys. Full probe
+ * table: `.planning/latency-round2-design.md`, appendix.
+ *
+ * It is a named constant rather than a bare `new AudioContext()` because every
+ * shipping DJ application (rekordbox, Serato, Traktor) exposes a user-facing
+ * buffer/latency setting, and this is the single seam such a control would
+ * write to. Building that control is NOT in scope here; not foreclosing it is.
+ */
+export const AUDIO_CONTEXT_OPTIONS: Readonly<AudioContextOptions> = Object.freeze({});
 export const ANALYSER_FFT_SIZE = 4096;
 export const CONTEXT_WAIT_POLL_MS = 25;
 export const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;

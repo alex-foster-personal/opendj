@@ -46,12 +46,19 @@ before(async () => {
 	math = await loadTypeScriptModule('src/lib/player/transport/schedule-math.ts');
 });
 
-/** One schedule, with every clamp already resolved by the caller. */
+/**
+ * One schedule, with every clamp already resolved by the caller.
+ *
+ * The shipping ROUND 2 shape: a 120ms processor self-report, a 44.4ms
+ * onset-ramp lead derived from it (0.37x), and the 8ms immediate safety on top,
+ * i.e. a 52.4ms scheduled offset.
+ */
 function stages(overrides = {}) {
 	return math.scheduleOffsetStages({
 		contextTimeSec: 10,
-		requestedWhenSec: 10.128,
-		effectiveWhenSec: 10.128,
+		requestedWhenSec: 10.0524,
+		effectiveWhenSec: 10.0524,
+		processorLeadSec: 0.0444,
 		processorLatencySec: 0.12,
 		baseLatencySec: 0.005805,
 		outputLatencySec: 0.032,
@@ -66,16 +73,52 @@ function stages(overrides = {}) {
 
 test('the logged offset is the gap from context time to the effective schedule', () => {
 	const row = stages();
-	assert.equal(row.scheduled_offset_ms, 128);
+	assert.equal(row.scheduled_offset_ms, 52.4);
 	assert.equal(row.processor_latency_ms, 120);
+	assert.equal(
+		row.processor_lead_ms,
+		44.4,
+		'the lead the floor actually charged must be logged separately from the ' +
+			'self-report, or the 78ms round 2 gave back is invisible in the record'
+	);
 	assert.equal(
 		row.safety_ms,
 		8,
-		'safety_ms is the part the schedule policy owns; the processor latency is not ' +
-			'this policy to spend, so it must be reported separately rather than folded in'
+		'safety_ms is the part the schedule policy owns, i.e. the offset with the ' +
+			'processor LEAD removed. Subtracting the self-report instead would make it ' +
+			'read -67.6ms, which sails through a "<= 30ms" ceiling while meaning nothing'
 	);
 	assert.equal(row.active, 1);
 	assert.equal(stages({ active: false }).active, 0);
+});
+
+test('SABOTAGE: a lead larger than the self-report is refused, not logged', () => {
+	// The inversion this guards: passing latency where the lead belongs (or a
+	// ramp factor above 1) puts the schedule back at 128ms while every field
+	// still looks plausible. safety_ms alone would not catch it - it would read
+	// exactly 8ms again, because the offset moved with the lead.
+	assert.throws(
+		() =>
+			stages({
+				requestedWhenSec: 10.128,
+				effectiveWhenSec: 10.128,
+				// The two arguments swapped: the ramp fraction reported as the
+				// self-report, the block charged as the lead.
+				processorLeadSec: 0.12,
+				processorLatencySec: 0.0444
+			}),
+		/exceeds the self-report/
+	);
+	assert.throws(() => stages({ processorLeadSec: -0.001 }), RangeError);
+	// The boundary itself is legal: a processor whose ramp IS its whole latency.
+	assert.doesNotThrow(() =>
+		stages({
+			requestedWhenSec: 10.128,
+			effectiveWhenSec: 10.128,
+			processorLeadSec: 0.12,
+			processorLatencySec: 0.12
+		})
+	);
 });
 
 test('every sample carries its own device floor, so it cannot be compared blind', () => {
@@ -215,8 +258,8 @@ test('the log write stays off the click-to-audio path it measures', () => {
 	);
 });
 
-test('the audio graph stamps this machine device floors once at build', () => {
-	const body = engineBlockAfter('function _ensureGraph(): AudioContext {');
+test('the audio graph stamps this machine device floors, carrying every term', () => {
+	const body = engineBlockAfter('function _stampContextDeviceFloors(ctx: AudioContext): void {');
 	assert.ok(
 		body.includes("recordPerfTiming('audio-context'"),
 		'without the device floors on record, a scheduled_offset_ms from one machine gets ' +
@@ -225,4 +268,53 @@ test('the audio graph stamps this machine device floors once at build', () => {
 	for (const field of ['sample_rate_hz', 'base_latency_ms', 'output_latency_ms']) {
 		assert.ok(body.includes(field), `the device floor stamp must carry ${field}`);
 	}
+});
+
+test('the device-floor row is re-stamped once the context is actually running', () => {
+	// AudioContext.outputLatency reads 0.00 while the context is SUSPENDED, and
+	// a context is suspended at construction until a user gesture resumes it. A
+	// build-only stamp therefore under-reports the device floor by the whole
+	// output term, silently, and every later reader of that row inherits it.
+	const helper = engineBlockAfter(
+		'function _stampContextDeviceFloors(ctx: AudioContext): void {'
+	);
+	assert.ok(
+		helper.includes("const running = ctx.state === 'running'"),
+		'if the stamp does not read the context state then it cannot know whether the ' +
+			'outputLatency it just recorded is a real floor or a suspended-context zero'
+	);
+	assert.ok(
+		helper.includes('context_running'),
+		'the row must say which reading it is, or a consumer cannot tell the ' +
+			'authoritative stamp from the placeholder'
+	);
+	assert.ok(
+		helper.includes('if (running && _runningContextFloorsStamped) return;'),
+		'the running stamp must be idempotent - both the statechange listener and ' +
+			'_resumeContext can reach it, and a ring full of duplicate rows is noise'
+	);
+
+	const build = engineBlockAfter('function _ensureGraph(): AudioContext {');
+	assert.ok(
+		build.includes('_stampContextDeviceFloors('),
+		'the build-time stamp must survive: it is the only reading available if the ' +
+			'context never runs'
+	);
+	assert.ok(
+		build.includes('_runningContextFloorsStamped = false;'),
+		'if the flag is not reset with the context then a rebuilt graph keeps quoting ' +
+			"the previous device's floors"
+	);
+	assert.ok(
+		build.includes("stampedContext.state === 'running'"),
+		'if nothing listens for the state transition then a context resumed outside ' +
+			'_resumeContext never gets its authoritative row'
+	);
+
+	const resume = engineBlockAfter('async function _resumeContext(): Promise<AudioContext> {');
+	assert.ok(
+		resume.includes('_stampContextDeviceFloors(ctx)'),
+		'the resume path is the belt for the statechange listener; without it the ' +
+			'authoritative row depends on one event firing'
+	);
 });

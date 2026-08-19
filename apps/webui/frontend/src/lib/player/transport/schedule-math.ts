@@ -17,7 +17,11 @@
  * without a cycle.
  */
 
-import { SYNC_SCHEDULE_SAFETY_S, TRANSPORT_IMMEDIATE_SAFETY_S } from '$lib/player/constants';
+import {
+	PROCESSOR_ONSET_RAMP_FACTOR,
+	SYNC_SCHEDULE_SAFETY_S,
+	TRANSPORT_IMMEDIATE_SAFETY_S
+} from '$lib/player/constants';
 import type { LoopState } from '$lib/rb/types';
 
 export function supersedingScheduleTime(
@@ -114,6 +118,56 @@ export function safeSyncScheduleTime(
 }
 
 /**
+ * The lead an IMMEDIATE transport schedule must give the processor for the
+ * start to arrive CRISP rather than soft.
+ *
+ * This is the round-2 replacement for passing the processor's own
+ * `latency()` self-report as the lead. Two facts make the substitution safe,
+ * both measured (`.planning/latency-round2-design.md`):
+ *
+ * 1. The self-report is a LIVE-INPUT figure. In buffer mode - the only mode our
+ *    decks ever use - the worklet compensates it internally, so audio scheduled
+ *    with ample lead arrives exactly on time with no trace of it. Leading by
+ *    the self-report bought nothing.
+ * 2. What a short lead DOES cost is the onset ramp, and the ramp is a fixed
+ *    fraction of the STFT block. Because `latency()` equals the block length
+ *    exactly for this processor, the ramp is derivable from the same cached
+ *    number, with no new query on the transport path.
+ *
+ * The durable rule this encodes: lead by what the processor measurably NEEDS,
+ * not by what it reports about itself. A future processor plugs in by supplying
+ * its own `rampFactor` rather than by re-teaching every call site.
+ *
+ * `rampFactor` is bounded to (0, 1]: the ramp is a fraction OF the block, so a
+ * factor above 1 means the derivation was inverted somewhere, and a factor of 0
+ * means a start with no lead at all, which is measurably soft.
+ */
+export function processorOnsetLeadSec(
+	processorLatencySec: number,
+	rampFactor: number = PROCESSOR_ONSET_RAMP_FACTOR
+): number {
+	for (const [name, value] of Object.entries({ processorLatencySec, rampFactor })) {
+		if (!Number.isFinite(value) || value < 0) {
+			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
+		}
+	}
+	if (rampFactor <= 0) {
+		throw new RangeError(
+			`rampFactor must be greater than zero, got ${rampFactor}: a zero lead means ` +
+				'every scheduled start pays the whole onset ramp as lateness'
+		);
+	}
+	if (rampFactor > 1) {
+		throw new RangeError(
+			`rampFactor ${rampFactor} exceeds 1: the onset ramp is a FRACTION of the block ` +
+				'length, so a factor above 1 means the derivation was inverted and the lead ' +
+				'is larger than the self-report it was meant to replace'
+		);
+	}
+	return processorLatencySec * rampFactor;
+}
+
+/**
  * The earliest context time a PLAIN transport mutation may be scheduled at.
  *
  * The default safety is the immediate-transport margin, not the beat-sync one:
@@ -122,19 +176,25 @@ export function safeSyncScheduleTime(
  * slow (LATENCY-01). A caller that genuinely needs decks to agree on one shared
  * instant passes `SYNC_SCHEDULE_SAFETY_S` explicitly, or uses
  * `safeSyncScheduleTime`.
+ *
+ * ROUND 2 renamed the middle argument from `latencySec` to `processorLeadSec`,
+ * because what belongs there stopped being the processor's self-report and
+ * became `processorOnsetLeadSec(...)` of it. The old name would now describe
+ * the wrong quantity, and a call site handing this function a raw `latency()`
+ * on the strength of that name would silently reinstate the 128ms schedule.
  */
 export function safeTransportScheduleTime(
 	nowContextTime: number,
-	latencySec: number,
+	processorLeadSec: number,
 	safetySec = TRANSPORT_IMMEDIATE_SAFETY_S
 ): number {
-	for (const [name, value] of Object.entries({ nowContextTime, latencySec, safetySec })) {
+	for (const [name, value] of Object.entries({ nowContextTime, processorLeadSec, safetySec })) {
 		if (!Number.isFinite(value) || value < 0) {
 			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
 		}
 	}
 	if (safetySec === 0) throw new RangeError('safetySec must be greater than zero');
-	return nowContextTime + latencySec + safetySec;
+	return nowContextTime + processorLeadSec + safetySec;
 }
 
 /**
@@ -151,11 +211,20 @@ export function safeTransportScheduleTime(
  * Every device floor travels WITH the sample: baseLatency and outputLatency are
  * machine-specific, so a number compared across machines without them is a
  * number compared against nothing.
+ *
+ * ROUND 2 split the processor term in two, because they stopped being the same
+ * number. `processorLeadSec` is what the schedule floor actually CHARGED (the
+ * onset-ramp lead); `processorLatencySec` is what the processor SAYS about
+ * itself. Reporting only the self-report would make `safety_ms` - defined as
+ * the offset with the processor's share removed - read as a large negative and
+ * quietly pass a `<= 30ms` ceiling while meaning nothing. Both are logged, so
+ * the gap between them is exactly the dead weight round 2 removed.
  */
 export function scheduleOffsetStages(input: {
 	contextTimeSec: number;
 	requestedWhenSec: number;
 	effectiveWhenSec: number;
+	processorLeadSec: number;
 	processorLatencySec: number;
 	baseLatencySec: number;
 	outputLatencySec: number;
@@ -174,18 +243,35 @@ export function scheduleOffsetStages(input: {
 				`${input.contextTimeSec}: a mutation cannot be scheduled in the past`
 		);
 	}
+	if (input.processorLeadSec < 0 || input.processorLatencySec < 0) {
+		throw new RangeError(
+			`processor lead ${input.processorLeadSec} and latency ${input.processorLatencySec} ` +
+				'must be non-negative'
+		);
+	}
+	if (input.processorLeadSec > input.processorLatencySec) {
+		throw new RangeError(
+			`processor lead ${input.processorLeadSec}s exceeds the self-report ` +
+				`${input.processorLatencySec}s: the onset-ramp lead is a FRACTION of the block ` +
+				'the self-report equals, so a larger lead means round 2 got inverted and the ' +
+				'schedule is now slower than the 128ms it replaced'
+		);
+	}
 	const round = (value: number): number => Math.round(value * 1000) / 1000;
 	const scheduledOffsetMs = (input.effectiveWhenSec - input.contextTimeSec) * 1000;
-	const processorLatencyMs = input.processorLatencySec * 1000;
+	const processorLeadMs = input.processorLeadSec * 1000;
 	return {
 		// The Class A budget turns on this one, post-clamp.
 		scheduled_offset_ms: round(scheduledOffsetMs),
 		// What the call site asked for. Below scheduled_offset_ms means a clamp fired.
 		requested_offset_ms: round((input.requestedWhenSec - input.contextTimeSec) * 1000),
 		// The margin the schedule policy owns, with the processor's share removed.
-		safety_ms: round(scheduledOffsetMs - processorLatencyMs),
-		// The processor's own self-reported latency - not this policy's to spend.
-		processor_latency_ms: round(processorLatencyMs),
+		safety_ms: round(scheduledOffsetMs - processorLeadMs),
+		// The onset-ramp lead the floor actually charged for the processor.
+		processor_lead_ms: round(processorLeadMs),
+		// What the processor says about ITSELF. Round 2 stopped spending this;
+		// it stays logged so the gap to processor_lead_ms is visible.
+		processor_latency_ms: round(input.processorLatencySec * 1000),
 		base_latency_ms: round(input.baseLatencySec * 1000),
 		output_latency_ms: round(input.outputLatencySec * 1000),
 		active: input.active ? 1 : 0

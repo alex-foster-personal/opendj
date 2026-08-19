@@ -130,6 +130,7 @@ import type {
 } from '$lib/rb/types';
 import {
 	ANALYSER_FFT_SIZE,
+	AUDIO_CONTEXT_OPTIONS,
 	CONTEXT_WAIT_POLL_MS,
 	CONTEXT_WAIT_STALL_TIMEOUT_MS,
 	DECK_IDS,
@@ -189,6 +190,7 @@ import {
 	normalizeScheduledTransportEntrySec,
 	pendingSyncWaitTarget,
 	playResumePositionSec,
+	processorOnsetLeadSec,
 	projectedLoopAwareTransportPosition,
 	projectedTransportPosition,
 	safeSyncScheduleTime,
@@ -238,6 +240,7 @@ export {
 	normalizeScheduledTransportEntrySec,
 	pendingSyncWaitTarget,
 	playResumePositionSec,
+	processorOnsetLeadSec,
 	projectedLoopAwareTransportPosition,
 	projectedTransportPosition,
 	safeSyncScheduleTime,
@@ -405,6 +408,10 @@ function _emptyRuntime(): _DeckRuntime {
 }
 
 let _ctx: AudioContext | null = null;
+/** LATENCY-03: has the authoritative (running-context) device-floor row been
+ * emitted for the CURRENT context? Reset with the context, never sticky across
+ * one, or a rebuilt graph would keep quoting the previous device's floors. */
+let _runningContextFloorsStamped = false;
 let _masterGain: GainNode | null = null;
 /** Opt-in startup mute, last node before the destination. Never bypassed. */
 let _masterMuteGain: GainNode | null = null;
@@ -807,20 +814,53 @@ function _parseExternalRouting(): Map<DeckId, number> | null {
 	return routing;
 }
 
+/**
+ * LATENCY-03: stamp this machine's device floors onto the perf ring, so a
+ * `scheduled_offset_ms` read later is never compared across machines by
+ * accident.
+ *
+ * Emitted TWICE, because the build-time reading is not trustworthy on its own:
+ * `AudioContext.outputLatency` reads 0.00 while the context is SUSPENDED, and a
+ * context is suspended at construction until a user gesture resumes it.
+ * Verified: a freshly built, not-yet-resumed context reports
+ * `baseLatency=5.80ms outputLatency=0.00ms state=suspended`, i.e. the row
+ * silently under-reports the device floor by the whole 32ms output term. So the
+ * build stamp is kept (it is the only reading available if the context never
+ * runs) and a second, authoritative stamp is taken on the FIRST observation of
+ * a running context. `context_running` says which is which.
+ *
+ * Per-schedule rows are unaffected: they already read both floors live at emit
+ * time and carry their own copies. This is the one-time row only.
+ */
+function _stampContextDeviceFloors(ctx: AudioContext): void {
+	const running = ctx.state === 'running';
+	if (running && _runningContextFloorsStamped) return;
+	if (running) _runningContextFloorsStamped = true;
+	recordPerfTiming('audio-context', {
+		sample_rate_hz: ctx.sampleRate,
+		base_latency_ms: Math.round(ctx.baseLatency * 1e6) / 1000,
+		output_latency_ms: Math.round(ctx.outputLatency * 1e6) / 1000,
+		// 0 means outputLatency above may be a suspended-context zero, not a floor.
+		context_running: running ? 1 : 0
+	});
+}
+
 function _ensureGraph(): AudioContext {
 	if (typeof window === 'undefined') {
 		throw new Error('AudioEngine requires a browser AudioContext (no SSR usage)');
 	}
 	if (_ctx !== null) return _ctx;
-	_ctx = new AudioContext();
-	// LATENCY-03: stamp the device floors this machine imposes, once, so a
-	// scheduled_offset_ms read later is never compared across machines by
-	// accident. outputLatency can still read 0 before the first render, which is
-	// exactly why every transport-schedule row carries its own live copy too.
-	recordPerfTiming('audio-context', {
-		sample_rate_hz: _ctx.sampleRate,
-		base_latency_ms: Math.round(_ctx.baseLatency * 1e6) / 1000,
-		output_latency_ms: Math.round(_ctx.outputLatency * 1e6) / 1000
+	// Construction options travel through ONE named constant so a future
+	// user-facing buffer/latency setting has a single place to write to.
+	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
+	_runningContextFloorsStamped = false;
+	_stampContextDeviceFloors(_ctx);
+	// A context that is allowed to start running immediately never fires
+	// statechange, so the build stamp above already caught it; one that starts
+	// suspended is re-stamped here the moment it runs, whichever path resumed it.
+	const stampedContext = _ctx;
+	stampedContext.addEventListener('statechange', () => {
+		if (stampedContext.state === 'running') _stampContextDeviceFloors(stampedContext);
 	});
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
@@ -1718,7 +1758,8 @@ async function _scheduleDeckSerial(
 	if (processor === null) throw new Error(`_scheduleDeck: deck ${deck} processor is missing`);
 	if (_ctx === null) throw new Error('_scheduleDeck: audio graph not initialised');
 	const scheduleContextTime = _ctx.currentTime;
-	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, rt.latencySec);
+	const processorLeadSec = _transportLeadSec(deck);
+	const minimumSafeWhen = safeTransportScheduleTime(scheduleContextTime, processorLeadSec);
 	const safeRequestedWhen = Math.max(when, minimumSafeWhen);
 	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
 	const effectiveWhen = supersedingScheduleTime(
@@ -1735,6 +1776,7 @@ async function _scheduleDeckSerial(
 		contextTimeSec: scheduleContextTime,
 		requestedWhenSec: when,
 		effectiveWhenSec: effectiveWhen,
+		processorLeadSec,
 		processorLatencySec: rt.latencySec,
 		baseLatencySec: _ctx.baseLatency,
 		outputLatencySec: _ctx.outputLatency,
@@ -2064,10 +2106,69 @@ function _projectPositionAt(deck: DeckId, when: number): number {
 	return _positionForSegment(_controlSegmentAt(rt, when), when, rt.durationSec);
 }
 
+/**
+ * The lead an IMMEDIATE (Class A) transport mutation must give deck `deck`'s
+ * processor, derived from the measured ONSET RAMP rather than the processor's
+ * `latency()` self-report (round 2; see `processorOnsetLeadSec`).
+ *
+ * Every plain-transport schedule floor on this engine goes through here, so
+ * play, pause, cue, seek, loop entry, key shift, the natural-end stop and the
+ * safety loop all get the same term from one place and cannot drift apart.
+ *
+ * BEAT SYNC deliberately does NOT use it: a group launch is planned from
+ * `maxLatency` (the raw self-report) plus `SYNC_SCHEDULE_SAFETY_S`, which keeps
+ * the shared instant comfortably clear of every participant's ramp.
+ */
+function _transportLeadSec(deck: DeckId): number {
+	return processorOnsetLeadSec(_rt[deck].latencySec);
+}
+
+/**
+ * UNIFORMITY: every loaded deck must report the same processor latency.
+ *
+ * For the Signalsmith worklet `latency()` equals the STFT block length exactly,
+ * and the block length sets the onset ramp (0.37x, see
+ * `PROCESSOR_ONSET_RAMP_FACTOR`). Two decks configured with different blocks
+ * therefore have different ramps, and two different ramps launched at ONE
+ * shared beat-sync instant do not start together: one deck is still ramping
+ * while the other is at level, so the group's first beat smears. That is the
+ * constraint the round-2 design names as the price of making the block
+ * configurable at all, and it is why STEP 2 must be a global setting rather
+ * than a per-deck "high quality mode".
+ *
+ * Checked at LOAD, before the candidate processor is published, so a mixed
+ * fleet fails the load that would have created it rather than going audibly
+ * wrong later under sync. Tolerance is one sample: `latency()` quantises the
+ * block to whole samples, so exact equality would be brittle across rates.
+ */
+function _assertUniformProcessorBlock(
+	deck: DeckId,
+	latencySec: number,
+	sampleRateHz: number
+): void {
+	if (!Number.isFinite(sampleRateHz) || sampleRateHz <= 0) {
+		throw new RangeError(`sampleRateHz must be finite and positive, got ${sampleRateHz}`);
+	}
+	const toleranceSec = 1 / sampleRateHz;
+	for (const other of DECK_IDS) {
+		if (other === deck) continue;
+		const otherRuntime = _rt[other];
+		if (otherRuntime.processor === null) continue;
+		if (Math.abs(otherRuntime.latencySec - latencySec) <= toleranceSec) continue;
+		throw new Error(
+			`deck ${deck} processor reports ${latencySec}s latency but loaded deck ${other} ` +
+				`reports ${otherRuntime.latencySec}s. latency() equals the STFT block for this ` +
+				'processor, so a mixed fleet means mixed onset ramps, and a beat-sync group ' +
+				'launched at one shared instant would smear its first beat. Block configuration ' +
+				'must be global (see STRETCH_BLOCK_MS), never per deck.'
+		);
+	}
+}
+
 function _futureScheduleTime(deck: DeckId): number {
 	if (_ctx === null) throw new Error('_futureScheduleTime: audio graph not initialised');
+	const minimumSafeWhen = safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck));
 	const rt = _rt[deck];
-	const minimumSafeWhen = safeTransportScheduleTime(_ctx.currentTime, rt.latencySec);
 	const latestPending = rt.pending[rt.pending.length - 1] ?? null;
 	return supersedingScheduleTime(
 		minimumSafeWhen,
@@ -2150,7 +2251,7 @@ function _publishPresentedTransport(
 			};
 			void _scheduleDeck(
 				deck,
-				safeTransportScheduleTime(_ctx.currentTime, rt.latencySec),
+				safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
 				safety.in_ms / 1000,
 				true,
 				undefined,
@@ -2163,7 +2264,7 @@ function _publishPresentedTransport(
 		}
 		void _scheduleDeck(
 			deck,
-			safeTransportScheduleTime(_ctx.currentTime, rt.latencySec),
+			safeTransportScheduleTime(_ctx.currentTime, _transportLeadSec(deck)),
 			rt.durationSec,
 			false
 		)
@@ -2265,6 +2366,9 @@ async function _resumeContext(): Promise<AudioContext> {
 	if (ctx.state !== 'running') {
 		throw new Error(`AudioContext did not enter running state; current state is ${ctx.state}`);
 	}
+	// Belt for the statechange listener: whichever fires first, the authoritative
+	// device-floor row is emitted exactly once (the helper is idempotent).
+	_stampContextDeviceFloors(ctx);
 	return ctx;
 }
 
@@ -2564,6 +2668,13 @@ async function _synchronizeFollowers(
 		}
 		const masterGrid = _requireBeatGrid(masterState, 'Beat Sync');
 		const now = ctx.currentTime;
+		// Deliberately the RAW self-report, not the round-2 onset lead. A group
+		// launch has a constraint a single deck does not: the shared instant must
+		// clear the WORST participant's onset ramp, or one deck is still ramping
+		// while another is at level and the group's first beat smears. Keeping
+		// maxLatency here leaves the sync lead at latency + 100ms, i.e. ~2.7x the
+		// ramp, so that constraint holds with margin and holds automatically at
+		// any block size. Shrinking it is a separate, gated change.
 		const maxLatency = Math.max(
 			masterRuntime.latencySec,
 			...followers.map((deck) => _requireLoaded(deck, 'Beat Sync follower').rt.latencySec)
@@ -2955,6 +3066,7 @@ class RbAudioEngine implements AudioEngine {
 				candidateStemState = unavailableStemDeckState(stemProbe.error);
 			}
 			latencySec = await time('processorLatency', processor.latencySec());
+			_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);
 			stages.totalBeforeSwap = perfMs();
 		} catch (exc) {
 			stages.failedAt = perfMs();
@@ -3110,8 +3222,9 @@ class RbAudioEngine implements AudioEngine {
 		if (activeMaster === null) {
 			// Nothing is playing, so this deck is about to BECOME master: there is
 			// no other transport to align with and no reason to pay the beat-sync
-			// margin. Immediate-transport safety (LATENCY-01).
-			const when = safeTransportScheduleTime(ctx.currentTime, _rt[deck].latencySec);
+			// margin. Immediate-transport safety (LATENCY-01), led by the onset
+			// ramp rather than the processor's self-report (LATENCY round 2).
+			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			try {
 				await _scheduleDeck(deck, when, startSec, true);
 				_assignMaster(deck);
@@ -3122,8 +3235,9 @@ class RbAudioEngine implements AudioEngine {
 			}
 		} else if (activeMaster === deck || !st.beat_sync_enabled) {
 			// Either this deck IS the master, or Beat Sync is off on it. Sync is
-			// explicitly not in play, so this is plain transport (LATENCY-01).
-			const when = safeTransportScheduleTime(ctx.currentTime, _rt[deck].latencySec);
+			// explicitly not in play, so this is plain transport (LATENCY-01),
+			// led by the onset ramp (LATENCY round 2).
+			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			await _scheduleDeck(deck, when, startSec, true);
 			st.sync_error = null;
 		} else {

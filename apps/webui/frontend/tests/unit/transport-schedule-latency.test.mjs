@@ -137,7 +137,7 @@ test('a caller that genuinely needs the sync margin still passes it explicitly',
 
 test('the not-in-the-past guard is still a guard: zero and negatives are refused', () => {
 	assert.throws(() => math.safeTransportScheduleTime(10, 0.2, 0), /safetySec/);
-	assert.throws(() => math.safeTransportScheduleTime(10, -0.1), /latencySec/);
+	assert.throws(() => math.safeTransportScheduleTime(10, -0.1), /processorLeadSec/);
 	assert.throws(() => math.safeTransportScheduleTime(-1, 0.1), /nowContextTime/);
 	assert.throws(() => math.safeTransportScheduleTime(Number.NaN, 0.1), /nowContextTime/);
 });
