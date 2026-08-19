@@ -775,8 +775,13 @@ def reconcile_library_manifest(
         raise RuntimeError(
             "crate library reconciliation requires MDT_LIBRARY_MODE=remote"
         )
-    from apps.agentbox.crate_state import reconcile_snapshot, snapshot_from_manifest
+    from apps.agentbox.crate_state import (
+        normalise_manifest,
+        reconcile_snapshot,
+        snapshot_from_manifest,
+    )
 
+    normalise_manifest(manifest)
     snapshot = snapshot_from_manifest(manifest)
     return reconcile_snapshot(
         state_db,
@@ -1369,6 +1374,7 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             state_db=state_db,
             crate_root=crate_root,
         )
+        write_json(manifest_path, manifest)
         reconciliation = audit_payload(
             manifest,
             crate_root=crate_root,
