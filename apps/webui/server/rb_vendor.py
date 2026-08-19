@@ -53,12 +53,12 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
+from typing import Any, Iterator, Mapping, Optional, Sequence
 
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared import audio_quality, fs_residency, platform_paths
+from apps.shared import fs_residency, platform_paths
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
 from apps.shared.platform_paths import (
     MappedPath,
@@ -165,8 +165,6 @@ _PREVIEW_CACHE: dict[str, tuple[str, float, str, int]] = {}
 # per cache entry so unrelated tracks remain independent.
 _ANLZ_CACHE_LOCKS_GUARD = threading.Lock()
 _ANLZ_CACHE_LOCKS: dict[Path, threading.Lock] = {}
-
-_SQL_CHUNK: int = 500  # keep IN (...) under SQLite's var cap
 
 
 @dataclass(frozen=True)
@@ -948,272 +946,17 @@ def count_cues(vendor_id: str) -> int:
 
 
 # ----- bulk row hydration (contract items 1-4) --------------------------------
-
-
-def _chunked(seq: Sequence[str], size: int = _SQL_CHUNK) -> Iterator[Sequence[str]]:
-    for i in range(0, len(seq), size):
-        yield seq[i : i + size]
-
-
-def bulk_rb_meta(stable_ids: Sequence[str]) -> dict[str, RbRowMeta]:
-    """Bulk stable_id -> rekordbox row meta (folder/anlz/comment/genre).
-
-    One chunked query against state.db (vendor mapping) + one against
-    master.plain.db (djmdContent) instead of a per-row resolve. Missing
-    state.db means no vendor mappings can exist (make_backend would be on
-    InMemoryBackend) -- an empty result is the true state, not a fallback.
-    A missing master.plain.db while mappings exist still fails loudly via
-    :func:`_open_ro`. Ids without a live mapping/content row are absent
-    from the result (real states: non-rekordbox track, deleted row).
-    """
-    ids = list(dict.fromkeys(stable_ids))
-    if not ids or not STATE_DB.exists():
-        return {}
-    state = _open_ro(STATE_DB, "STATE_DB")
-    try:
-        vendor_by_sid: dict[str, str] = {}
-        for chunk in _chunked(ids):
-            placeholders = ",".join("?" * len(chunk))
-            for sid, vid in state.execute(
-                "SELECT stable_id, vendor_id FROM track_vendor_ids "
-                f"WHERE vendor = 'rekordbox' AND stable_id IN ({placeholders})",
-                tuple(chunk),
-            ):
-                vendor_by_sid[str(sid)] = str(vid)
-    finally:
-        state.close()
-    if not vendor_by_sid:
-        return {}
-
-    master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
-    try:
-        content_by_vid: dict[str, tuple[Any, ...]] = {}
-        vendor_ids = sorted(set(vendor_by_sid.values()))
-        for chunk in _chunked(vendor_ids):
-            placeholders = ",".join("?" * len(chunk))
-            for vid, folder, adp, comment, genre, play_count in master.execute(
-                "SELECT c.ID, c.FolderPath, c.AnalysisDataPath, c.Commnt, "
-                "       g.Name, c.DJPlayCount "
-                "FROM djmdContent c "
-                "LEFT JOIN djmdGenre g "
-                "       ON g.ID = c.GenreID AND g.rb_local_deleted = 0 "
-                f"WHERE c.ID IN ({placeholders}) AND c.rb_local_deleted = 0",
-                tuple(chunk),
-            ):
-                content_by_vid[str(vid)] = (folder, adp, comment, genre, play_count)
-    finally:
-        master.close()
-
-    out: dict[str, RbRowMeta] = {}
-    for sid, vid in vendor_by_sid.items():
-        content = content_by_vid.get(vid)
-        if content is None:
-            continue
-        folder, adp, comment, genre, play_count = content
-        out[sid] = RbRowMeta(
-            vendor_id=vid,
-            folder_path=folder or None,
-            analysis_data_path=adp or None,
-            comment=comment or None,
-            genre=genre or None,
-            play_count=int(play_count or 0),
-        )
-    return out
-
-
-def bulk_file_size(paths: Iterable[str]) -> dict[str, Optional[int]]:
-    """Disk-truth size in bytes per library path (None = not on disk).
-
-    FR-1 item 4: never stat 8k files per request. Each unique path is
-    stat'ed at most once per :data:`FILE_EXISTS_TTL_S`; within the TTL,
-    repeats are dict lookups. Callers pass only real local paths
-    (streaming URIs have no disk truth and must be excluded upstream).
-    """
-    now = time.monotonic()
-    wanted = {p for p in paths if p}
-    out: dict[str, Optional[int]] = {}
-    stale: list[str] = []
-    with _FILE_EXISTS_LOCK:
-        for path in wanted:
-            hit = _FILE_EXISTS_CACHE.get(path)
-            if hit is not None and now - hit[0] < FILE_EXISTS_TTL_S:
-                out[path] = hit[1]
-            else:
-                stale.append(path)
-    for path in stale:
-        mapped = resolve_asset_path(path)
-        out[path] = _stat_size(mapped.resolved)
-    if stale:
-        with _FILE_EXISTS_LOCK:
-            for path in stale:
-                _FILE_EXISTS_CACHE[path] = (now, out[path])
-    return out
-
-
-def _stat_size(resolved: Optional[Path]) -> Optional[int]:
-    """Materialised st_size, or None when missing / not a file / dataless stub."""
-    if resolved is None:
-        return None
-    return fs_residency.materialised_size(resolved)
-
-
-def bulk_file_exists(paths: Iterable[str]) -> dict[str, bool]:
-    """Disk-truth existence per path, derived from the same cached stat."""
-    return {p: size is not None for p, size in bulk_file_size(paths).items()}
-
-
-def bulk_availability(
-    stable_ids: Sequence[str],
-    state_file_paths: Mapping[str, Optional[str]],
-    metas: Optional[Mapping[str, RbRowMeta]] = None,
-) -> dict[str, bool]:
-    """``file_exists`` per stable_id: rekordbox FolderPath when mapped,
-    else the state-layer file_path; streaming URIs and missing paths are
-    False. ``metas`` lets callers reuse an existing bulk_rb_meta result."""
-    if metas is None:
-        metas = bulk_rb_meta(stable_ids)
-    folder_by_sid: dict[str, Optional[str]] = {}
-    for sid in stable_ids:
-        meta = metas.get(sid)
-        folder_by_sid[sid] = (
-            meta.folder_path if meta is not None else state_file_paths.get(sid)
-        )
-    exists = bulk_file_exists(
-        path for path in folder_by_sid.values() if path and not is_streaming_path(path)
-    )
-    loc_paths: dict[str, list[str]] = {sid: [] for sid in stable_ids}
-    if STATE_DB.exists():
-        state = _open_ro(STATE_DB, "STATE_DB")
-        try:
-            loc_paths = track_locations.list_location_paths(state, list(stable_ids))
-        finally:
-            state.close()
-    extra = [p for paths in loc_paths.values() for p in paths if p]
-    extra_exists = bulk_file_exists(extra) if extra else {}
-    return {
-        sid: (
-            bool(path)
-            and not is_streaming_path(path)
-            and exists.get(path, False)
-        )
-        or any(extra_exists.get(p) for p in loc_paths.get(sid, []))
-        for sid, path in folder_by_sid.items()
-    }
-
-
-def bulk_quality(
-    stable_ids: Sequence[str],
-    folder_by_sid: Mapping[str, Optional[str]],
-    duration_ms_by_sid: Mapping[str, Optional[int]],
-) -> dict[str, dict]:
-    """Venue-rung quality dict per stable_id (apps.shared.audio_quality).
-
-    Sizes come from :func:`bulk_file_size`, i.e. the SAME TTL'd stat pass
-    that already answers file_exists -- so a 1000-row listing pays no extra
-    stat for the badge. Streaming URIs and missing files get an honest
-    UNKNOWN rather than a guessed rung.
-    """
-    sizes = bulk_file_size(
-        path for path in folder_by_sid.values() if path and not is_streaming_path(path)
-    )
-    out: dict[str, dict] = {}
-    for sid in stable_ids:
-        path = folder_by_sid.get(sid)
-        if not path:
-            out[sid] = audio_quality.classify(None, None).as_dict()
-        elif is_streaming_path(path):
-            out[sid] = audio_quality.Quality(
-                None, None, "", False, "streaming track, no local file"
-            ).as_dict()
-        else:
-            size = sizes.get(path)
-            if size is None:
-                out[sid] = audio_quality.Quality(
-                    None, None, Path(path).suffix.lower(), False, "file missing"
-                ).as_dict()
-            else:
-                out[sid] = audio_quality.classify(
-                    path, duration_ms_by_sid.get(sid), size
-                ).as_dict()
-    return out
-
-
-def build_track_rows(tracks: Sequence[Any]) -> list[dict[str, Any]]:
-    """Hydrated track rows (contract item 4) for playlist detail + listings.
-
-    ``tracks`` are backend ``Track`` dataclasses in the order to render
-    (playlist membership order / page order). One bulk vendor lookup, one
-    cached stat pass and per-row cached preview extraction replace the
-    old 29x per-row GET fan-out. Field names match the shared API
-    contract exactly: title, artist, key, bpm, rating, duration_ms,
-    genre, comments, etag, preview_b64, preview_max, file_exists,
-    is_streaming, quality, play_count, vocals, stems.
-    """
-    from .etag import compute_etag
-    from .stem_artifacts import bulk_stem_summaries
-
-    stable_ids = [t.stable_id for t in tracks]
-    metas = bulk_rb_meta(stable_ids)
-    available = bulk_availability(
-        stable_ids,
-        {t.stable_id: t.file_path for t in tracks},
-        metas,
-    )
-    folder_by_sid = {
-        t.stable_id: (
-            metas[t.stable_id].folder_path
-            if metas.get(t.stable_id) is not None
-            else t.file_path
-        )
-        for t in tracks
-    }
-    quality = bulk_quality(
-        stable_ids,
-        folder_by_sid,
-        {t.stable_id: t.duration_ms for t in tracks},
-    )
-    stems = bulk_stem_summaries(stable_ids)
-    rows: list[dict[str, Any]] = []
-    for track in tracks:
-        meta = metas.get(track.stable_id)
-        folder = meta.folder_path if meta is not None else track.file_path
-        preview_b64, preview_max = (
-            preview_strip(meta.analysis_data_path) if meta is not None else (None, None)
-        )
-        content = RbContent(
-            stable_id=track.stable_id,
-            vendor_id=meta.vendor_id if meta is not None else "",
-            folder_path=folder,
-            image_path=None,
-            analysis_data_path=(meta.analysis_data_path if meta is not None else None),
-            length_s=None,
-            comment=None,
-            genre=None,
-        )
-        rows.append(
-            {
-                "stable_id": track.stable_id,
-                "title": track.title,
-                "artist": track.artist,
-                "key": track.key,
-                "bpm": track.bpm,
-                "rating": track.rating,
-                "duration_ms": track.duration_ms,
-                "genre": meta.genre if meta is not None else None,
-                "comments": meta.comment if meta is not None else None,
-                "etag": compute_etag(track.stable_id, track.updated_at),
-                "preview_b64": preview_b64,
-                "preview_max": preview_max,
-                "file_exists": available[track.stable_id],
-                "is_streaming": is_streaming_path(folder),
-                "quality": quality[track.stable_id],
-                "play_count": meta.play_count if meta is not None else 0,
-                "vocals": vocals_for_content(content),
-                "stems": stems[track.stable_id],
-            }
-        )
-    return rows
-
+# Moved to rb_vendor_pkg/track_rows.py (T3b S3, .planning/t3b-decomposition-map.md
+# item 15); re-exported here (explicit self-aliased re-export, matching the
+# ``resolve_library_path as resolve_library_path`` precedent above) so the
+# route importers and test modules that reach these through ``rb_vendor``
+# never change until the facade is retired in T3b wave 4 (S8).
+from .rb_vendor_pkg.track_rows import build_track_rows as build_track_rows
+from .rb_vendor_pkg.track_rows import bulk_availability as bulk_availability
+from .rb_vendor_pkg.track_rows import bulk_file_exists as bulk_file_exists
+from .rb_vendor_pkg.track_rows import bulk_file_size as bulk_file_size
+from .rb_vendor_pkg.track_rows import bulk_quality as bulk_quality
+from .rb_vendor_pkg.track_rows import bulk_rb_meta as bulk_rb_meta
 
 # ----- ANLZ payload (waveform + beatgrid + phrases) ---------------------------
 
