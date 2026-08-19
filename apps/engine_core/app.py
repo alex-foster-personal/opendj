@@ -43,13 +43,20 @@ from apps.engine_core.config import (
 )
 from apps.engine_core.contract import compute_contract_rev
 from apps.engine_core.jobs.api import router as jobs_router
-from apps.engine_core.jobs.runner import JobRunner
+from apps.engine_core.jobs.runner import (
+    JobRunner,
+    register_progress_observer,
+    register_reconcile,
+    register_worker,
+)
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
+from apps.stems import job as stems_job
+from apps.stems.api import router as stems_plan_router
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server.app import FRONTEND_BUILD_DIR, _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
@@ -104,7 +111,13 @@ def create_app(
             [job["id"] for job in recovered],
         )
     runner = JobRunner(store)
+    # The chassis ships zero kinds; each kind opts in here. Registration is
+    # process-global and idempotent, and it must happen before the jobs router
+    # can be reached, or an enqueue for a real kind would 400 as unknown.
+    _register_job_kinds()
     app.include_router(jobs_router, prefix=API_PREFIX)
+    # Engine-only: the plan describes a run only an engine can start.
+    app.include_router(stems_plan_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
 
     _drop_root_placeholder(app)
@@ -122,6 +135,24 @@ def create_app(
 
     _wrap_lifespan(app, cfg=cfg, hub=hub, store=store, runner=runner, lock=lock)
     return app
+
+
+# ----- job kinds ---------------------------------------------------------
+def _register_job_kinds() -> None:
+    """Wire every domain's job kind into the chassis registry.
+
+    THE COMPOSITION ROOT, and the only place that knows both halves. The
+    chassis ships zero kinds and a domain package must not import the chassis
+    (that is a package cycle the architecture gate fails on), so the wiring
+    lands here, where the engine already depends on both by definition.
+
+    Idempotent: the registries are plain dicts keyed by kind, so a second
+    create_app in the same process (every test module that builds an app)
+    rebinds the same functions rather than accumulating them.
+    """
+    register_worker(stems_job.JOB_KIND, stems_job.build_argv)
+    register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
+    register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
 
 
 # ----- legacy composition ------------------------------------------------
