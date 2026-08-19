@@ -79,16 +79,35 @@ export const TRANSPORT_IMMEDIATE_SAFETY_S = 0.008;
  * (0.21x) because a start that has only reached half level is still audibly
  * soft.
  *
- * `latency()` equals the block length exactly for this processor, so the ramp
- * is derivable from the number every deck already caches. Above the ramp the
- * lead buys nothing measurable - lead 48ms and lead 128ms give 1.3ms and 2.3ms
- * lateness at the shipped block - which is why charging the full self-report to
- * a plain play/pause was ~84ms of dead weight.
+ * The value is 0.39 and NOT the 0.37 mean of that fit, which is the correction
+ * the implementation-time verification bought. The lead has to COVER the ramp,
+ * so the right constant is the largest knee observed, not the average one -
+ * fitting the mean leaves the biggest block sitting just below its own knee.
+ * Measured directly on the knee, same apparatus, reproducible bit-for-bit
+ * across runs (lateness to 90 percent, against each block's own long-lead
+ * baseline):
  *
- * Apparatus, the per-block sweep and the falsification checks:
+ *   block 120: lead 44.4ms (0.37x) -> 4.53ms late;  46.8ms (0.39x) -> -0.04ms
+ *   block  60: lead 22.2ms (0.37x) -> 0.00ms late;  23.4ms (0.39x) -> -0.04ms
+ *   block  30: lead 11.1ms (0.37x) -> 1.39ms late;  11.7ms (0.39x) ->  0.48ms
+ *   block  20: lead  7.4ms (0.37x) -> 0.94ms late;   7.8ms (0.39x) ->  1.36ms
+ *
+ * (long-lead baselines, i.e. the measurement noise floor: 0.96ms at block 120,
+ * 1.41ms at 60, 1.54ms at 30, 1.25ms at 20.) At 0.39 every block is at or
+ * inside its own baseline; at 0.37 the shipped 120ms block is 4.5ms soft, which
+ * is the one place it mattered. The extra 2.4ms of lead is cheap against
+ * removing 4.5ms of audible softness: what a DJ hears is the onset.
+ *
+ * `latency()` equals the block length exactly for this processor, so the ramp
+ * is derivable from the number every deck already caches. Above the knee the
+ * lead buys nothing measurable - lead 46.8ms and lead 128ms are indistinguish-
+ * able at the shipped block - which is why charging the full self-report to a
+ * plain play/pause was ~73ms of dead weight.
+ *
+ * Apparatus, the per-block sweep, the knee sweep and the falsification checks:
  * `.planning/latency-round2-design.md`.
  */
-export const PROCESSOR_ONSET_RAMP_FACTOR = 0.37;
+export const PROCESSOR_ONSET_RAMP_FACTOR = 0.39;
 /**
  * `AudioContext` construction options, in ONE named place.
  *

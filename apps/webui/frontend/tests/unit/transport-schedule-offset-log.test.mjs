@@ -49,16 +49,16 @@ before(async () => {
 /**
  * One schedule, with every clamp already resolved by the caller.
  *
- * The shipping ROUND 2 shape: a 120ms processor self-report, a 44.4ms
- * onset-ramp lead derived from it (0.37x), and the 8ms immediate safety on top,
- * i.e. a 52.4ms scheduled offset.
+ * The shipping ROUND 2 shape: a 120ms processor self-report, a 46.8ms
+ * onset-ramp lead derived from it (0.39x), and the 8ms immediate safety on top,
+ * i.e. a 54.8ms scheduled offset.
  */
 function stages(overrides = {}) {
 	return math.scheduleOffsetStages({
 		contextTimeSec: 10,
-		requestedWhenSec: 10.0524,
-		effectiveWhenSec: 10.0524,
-		processorLeadSec: 0.0444,
+		requestedWhenSec: 10.0548,
+		effectiveWhenSec: 10.0548,
+		processorLeadSec: 0.0468,
 		processorLatencySec: 0.12,
 		baseLatencySec: 0.005805,
 		outputLatencySec: 0.032,
@@ -73,11 +73,11 @@ function stages(overrides = {}) {
 
 test('the logged offset is the gap from context time to the effective schedule', () => {
 	const row = stages();
-	assert.equal(row.scheduled_offset_ms, 52.4);
+	assert.equal(row.scheduled_offset_ms, 54.8);
 	assert.equal(row.processor_latency_ms, 120);
 	assert.equal(
 		row.processor_lead_ms,
-		44.4,
+		46.8,
 		'the lead the floor actually charged must be logged separately from the ' +
 			'self-report, or the 78ms round 2 gave back is invisible in the record'
 	);
@@ -86,7 +86,7 @@ test('the logged offset is the gap from context time to the effective schedule',
 		8,
 		'safety_ms is the part the schedule policy owns, i.e. the offset with the ' +
 			'processor LEAD removed. Subtracting the self-report instead would make it ' +
-			'read -67.6ms, which sails through a "<= 30ms" ceiling while meaning nothing'
+			'read -65.2ms, which sails through a "<= 30ms" ceiling while meaning nothing'
 	);
 	assert.equal(row.active, 1);
 	assert.equal(stages({ active: false }).active, 0);
@@ -105,7 +105,7 @@ test('SABOTAGE: a lead larger than the self-report is refused, not logged', () =
 				// The two arguments swapped: the ramp fraction reported as the
 				// self-report, the block charged as the lead.
 				processorLeadSec: 0.12,
-				processorLatencySec: 0.0444
+				processorLatencySec: 0.0468
 			}),
 		/exceeds the self-report/
 	);

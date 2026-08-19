@@ -26,14 +26,23 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
  *   `latency()` equals blockMs exactly, so the ramp is derivable from the
  *   number every deck already caches.
  *
- * So the transport lead becomes 0.37 x the self-report: 44.4ms instead of
- * 120ms at the shipped block, for a 52.4ms scheduled offset instead of 128ms,
- * with measurably identical onset behaviour (lead 48ms -> 1.3ms lateness, lead
- * 128ms -> 2.3ms) and byte-identical audio.
+ * The implementation-time verification then corrected the constant from that
+ * 0.37 mean fit to 0.39. The lead must COVER the ramp, so the right value is
+ * the largest knee observed rather than the average: 0.37 x 120 = 44.4ms sits
+ * just under the shipped block's 45.6ms knee and measured 4.53ms late, while
+ * 0.39 x 120 = 46.8ms measured -0.04ms, i.e. indistinguishable from a 128ms
+ * lead. Every block size swept is at or inside its own noise floor at 0.39.
+ *
+ * So the transport lead becomes 0.39 x the self-report: 46.8ms instead of
+ * 120ms at the shipped block, for a 54.8ms scheduled offset instead of 128ms,
+ * with measurably identical onset behaviour and byte-identical audio.
  *
  * Regression lines:
  * - if the plain transport lead is the processor's self-report again then the
- *   scheduled offset is back at 128ms and ~78ms is being paid for nothing
+ *   scheduled offset is back at 128ms and ~73ms is being paid for nothing
+ * - if the lead stops covering the measured knee then the offset improves
+ *   while the start goes audibly soft, which is a worse trade wearing the
+ *   costume of a better number
  * - if the derived lead is not strictly smaller than the self-report then the
  *   derivation was inverted and the fix is a regression
  * - if the ramp factor leaves (0, 1] then it is no longer a fraction of the
@@ -65,6 +74,16 @@ const STEP_1_OFFSET_CEILING_MS = 60;
  * 43ms of lateness. A guard with only a ceiling would call that an improvement.
  */
 const STEP_1_OFFSET_FLOOR_MS = 40;
+/**
+ * Resolution of the ramp sweep itself. The apparatus reads onset against a
+ * 64-sample sliding RMS, and its own noise floor is ~1.5ms: a long lead
+ * measures 0.96ms late at block 120 and 1.25ms at block 20 when the true answer
+ * is zero. 0.5ms is well inside that, and exists for exactly one row - block
+ * 20's ramp reads 7.9ms while 0.39x gives 7.8ms, a 0.1ms shortfall an order of
+ * magnitude below what the sweep can resolve. The KNEE bound below is the sharp
+ * check; this one must not fail on a rounding artefact.
+ */
+const RAMP_SWEEP_RESOLUTION_MS = 0.5;
 
 let constants;
 let math;
@@ -91,16 +110,20 @@ function moduleSource(relativePath) {
 //-----------------------------------------------------------------------------
 
 test('the onset-ramp factor is the measured fraction of the block, not a round number', () => {
-	assert.equal(constants.PROCESSOR_ONSET_RAMP_FACTOR, 0.37);
+	assert.equal(constants.PROCESSOR_ONSET_RAMP_FACTOR, 0.39);
 	assert.ok(
 		constants.PROCESSOR_ONSET_RAMP_FACTOR > 0 && constants.PROCESSOR_ONSET_RAMP_FACTOR <= 1,
 		'the ramp is a FRACTION of the block length; outside (0, 1] it is not a ramp'
 	);
 });
 
-test('the derived lead reproduces the measured ramp at every block size swept', () => {
+test('the derived lead COVERS the measured ramp at every block size swept', () => {
 	// blockMs -> measured lateness to 90 percent of steady RMS at lead 0, i.e.
-	// the ramp itself. The fit must land within a millisecond of each.
+	// the ramp itself. The lead must sit at or above each, because a lead below
+	// the ramp is spent as audible softness rather than saved. This is the
+	// correction the implementation-time knee sweep bought: fitting the MEAN of
+	// these (0.37) left the shipped 120ms block 4.5ms soft, since 0.37 x 120 =
+	// 44.4ms lands under its 45.6ms knee.
 	for (const [blockMs, measuredRampMs] of [
 		[120, 43.4],
 		[60, 21.9],
@@ -111,10 +134,34 @@ test('the derived lead reproduces the measured ramp at every block size swept', 
 	]) {
 		const leadMs = math.processorOnsetLeadSec(blockMs / 1000) * 1000;
 		assert.ok(
-			Math.abs(leadMs - measuredRampMs) <= 1,
-			`if the derived lead at block ${blockMs}ms is ${leadMs.toFixed(2)}ms rather than ` +
-				`the measured ${measuredRampMs}ms ramp then the model no longer matches the ` +
-				'apparatus it was fitted to'
+			leadMs >= measuredRampMs - RAMP_SWEEP_RESOLUTION_MS,
+			`the derived lead at block ${blockMs}ms is ${leadMs.toFixed(2)}ms, below the ` +
+				`measured ${measuredRampMs}ms ramp: that shortfall is paid as a soft start, ` +
+				'and the scheduled offset improves while what the DJ hears gets worse'
+		);
+		assert.ok(
+			leadMs - measuredRampMs <= 4,
+			`the derived lead at block ${blockMs}ms clears the ramp by ` +
+				`${(leadMs - measuredRampMs).toFixed(2)}ms; beyond the knee the lead is dead ` +
+				'weight again, which is the whole defect round 2 set out to remove'
+		);
+	}
+});
+
+test('the factor clears the measured KNEE at each block, which the mean fit did not', () => {
+	// Measured directly, reproducible bit-for-bit across runs. Below its knee a
+	// block is audibly soft even though the ramp fit says it should be clean.
+	for (const [blockMs, kneeMs] of [
+		[120, 45.6],
+		[60, 22.2],
+		[30, 11.7]
+	]) {
+		const leadMs = math.processorOnsetLeadSec(blockMs / 1000) * 1000;
+		assert.ok(
+			leadMs >= kneeMs,
+			`block ${blockMs}ms has its onset knee at ${kneeMs}ms and the lead is ` +
+				`${leadMs.toFixed(2)}ms; 0.37 x 120 = 44.4ms measured 4.53ms late here, which ` +
+				'is exactly the regression this bound exists to stop coming back'
 		);
 	}
 });
@@ -157,20 +204,20 @@ test('a plain transport schedule at the shipped block lands inside the step-1 wi
 			'though the logged number looks better'
 	);
 	assert.ok(
-		Math.abs(offsetMs - 52.4) < 1e-9,
-		`the four-term decomposition says 44.4ms ramp lead + 8ms safety = 52.4ms, got ${offsetMs}ms`
+		Math.abs(offsetMs - 54.8) < 1e-9,
+		`the four-term decomposition says 46.8ms ramp lead + 8ms safety = 54.8ms, got ${offsetMs}ms`
 	);
 });
 
-test('the step-2 block would land the offset near 19ms, and still cover its own ramp', () => {
+test('the step-2 block would land the offset near 20ms, and still cover its own ramp', () => {
 	// Not shipped (STRETCH_BLOCK_MS is null); pinned so the number quoted in the
 	// design table cannot drift away from the arithmetic that produced it.
 	const now = 10;
 	const lead = math.processorOnsetLeadSec(0.03);
 	const offsetMs = (math.safeTransportScheduleTime(now, lead) - now) * 1000;
 	assert.ok(
-		Math.abs(offsetMs - 19.1) < 1e-9,
-		`block 30ms: 11.1ms ramp lead + 8ms safety = 19.1ms, got ${offsetMs}ms`
+		Math.abs(offsetMs - 19.7) < 1e-9,
+		`block 30ms: 11.7ms ramp lead + 8ms safety = 19.7ms, got ${offsetMs}ms`
 	);
 	assert.ok(
 		Math.abs(offsetMs - lead * 1000 - constants.TRANSPORT_IMMEDIATE_SAFETY_S * 1000) < 1e-9,
@@ -186,7 +233,7 @@ test('the step-2 block would land the offset near 19ms, and still cover its own 
 test('SABOTAGE: a ramp factor outside (0, 1] is refused', () => {
 	assert.throws(() => math.processorOnsetLeadSec(0.12, 1.0001), /exceeds 1/);
 	assert.throws(() => math.processorOnsetLeadSec(0.12, 0), /greater than zero/);
-	assert.throws(() => math.processorOnsetLeadSec(0.12, -0.37), /rampFactor/);
+	assert.throws(() => math.processorOnsetLeadSec(0.12, -0.39), /rampFactor/);
 	assert.throws(() => math.processorOnsetLeadSec(-0.12), /processorLatencySec/);
 	assert.throws(() => math.processorOnsetLeadSec(Number.NaN), /processorLatencySec/);
 	// The boundary is legal: a processor whose ramp IS its whole reported term.
