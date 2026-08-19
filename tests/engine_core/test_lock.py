@@ -7,11 +7,15 @@ here is about the refusal being loud and NAMING the incumbent.
 
 from __future__ import annotations
 
+import fcntl
 import json
+import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from apps.engine_core import lock as lock_module
 from apps.engine_core.config import (
     CONCURRENCY_ENV,
     PROGRESS_LEDGER_NAME,
@@ -22,7 +26,12 @@ from apps.engine_core.config import (
     assert_single_worker,
     build_config,
 )
-from apps.engine_core.lock import EngineLock, EngineLockError
+from apps.engine_core.lock import (
+    HEARTBEAT_TTL_S,
+    EngineLock,
+    EngineLockError,
+    _swap_reason,
+)
 
 
 def test_second_boot_refuses_and_names_the_holder(tmp_path: Path) -> None:
@@ -36,6 +45,113 @@ def test_second_boot_refuses_and_names_the_holder(tmp_path: Path) -> None:
         assert str(holder.path) in message, message
         assert "heartbeat_age=" in message, message
         assert "boot-b" not in message, message
+
+
+def test_a_healthy_holder_is_not_something_the_operator_is_told_to_kill(
+    tmp_path: Path,
+) -> None:
+    """The refusal must not prescribe killing a perfectly good engine.
+
+    The old wording ("Stop it before booting a second engine") read as an
+    instruction, and the person acting on it would take down the healthy
+    instance that is currently serving. A live holder means nothing is wrong;
+    the correct action is to use it.
+    """
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, boot_id="boot-a"), pytest.raises(EngineLockError) as refusal:
+        EngineLock(lock_path, boot_id="boot-b").acquire()
+    message = str(refusal.value)
+    assert "alive and healthy" in message, message
+    assert "already running" in message, message
+    for kill_word in ("Stop it", "kill it", "Kill it"):
+        assert kill_word not in message, (
+            f"the healthy-holder refusal tells the operator to {kill_word!r}: "
+            f"{message}"
+        )
+
+
+def test_the_wedged_holder_refusal_still_says_to_kill_it(
+    tmp_path: Path,
+) -> None:
+    """A holder that stopped heartbeating IS the case that needs a kill."""
+    lock_path = tmp_path / ".engine.lock"
+    with EngineLock(lock_path, boot_id="boot-a"):
+        # Age the recorded heartbeat past the TTL without touching the flock,
+        # which is what a wedged-but-live engine looks like from outside.
+        stale = json.loads(lock_path.read_text(encoding="utf-8"))
+        stale["heartbeat_at"] = (
+            datetime.now(UTC) - timedelta(seconds=HEARTBEAT_TTL_S * 2)
+        ).isoformat(timespec="milliseconds")
+        _overwrite_without_unlinking(lock_path, json.dumps(stale))
+
+        with pytest.raises(EngineLockError) as refusal:
+            EngineLock(lock_path, boot_id="boot-b").acquire()
+    message = str(refusal.value)
+    assert "stale" in message, message
+    assert "wedged" in message, message
+    assert "kill it before booting" in message, message
+
+
+def test_acquire_refuses_a_lock_file_swapped_under_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """flock is inode-based, so a lock on a replaced file guards nothing.
+
+    The hazard is a swap landing between the open and the flock: the acquirer
+    ends up holding an exclusive lock on an inode that no longer has a name,
+    believes it is the singleton, and boots alongside whoever locks the new
+    file. The swap is driven from inside flock() so the race is exact rather
+    than hoped for.
+    """
+    lock_path = tmp_path / ".engine.lock"
+    lock_path.write_text("{}", encoding="utf-8")
+    real_flock = fcntl.flock
+
+    def _swap_then_lock(fd: int, operation: int) -> None:
+        real_flock(fd, operation)
+        if operation & fcntl.LOCK_EX:
+            lock_path.unlink()
+            lock_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(lock_module.fcntl, "flock", _swap_then_lock)
+
+    lock = EngineLock(lock_path, boot_id="boot-b")
+    with pytest.raises(EngineLockError) as refusal:
+        lock.acquire()
+    message = str(refusal.value)
+    assert "replaced" in message, message
+    assert "Refusing to start" in message, message
+    assert not lock.held, "a refused acquire must not leave the lock held"
+
+
+def test_swap_detection_names_both_shapes(tmp_path: Path) -> None:
+    """The guard itself: replaced inode and vanished name are both refusals."""
+    lock_path = tmp_path / ".engine.lock"
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        assert _swap_reason(fd, lock_path) is None, "the intact case must pass"
+
+        lock_path.unlink()
+        lock_path.write_text("{}", encoding="utf-8")
+        replaced = _swap_reason(fd, lock_path)
+
+        lock_path.unlink()
+        vanished = _swap_reason(fd, lock_path)
+    finally:
+        os.close(fd)
+
+    assert replaced is not None and "replaced" in replaced, replaced
+    assert vanished is not None and "unlinked" in vanished, vanished
+
+
+def _overwrite_without_unlinking(path: Path, blob: str) -> None:
+    """Rewrite in place: unlinking would trip the inode check under test."""
+    fd = os.open(path, os.O_WRONLY)
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, blob.encode("utf-8"))
+    finally:
+        os.close(fd)
 
 
 def test_lock_is_reusable_after_a_clean_release(tmp_path: Path) -> None:

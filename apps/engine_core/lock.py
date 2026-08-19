@@ -91,6 +91,11 @@ class EngineLock:
             holder = _read_holder(fd)
             os.close(fd)
             raise EngineLockError(_refusal(self.path, holder)) from exc
+        swapped = _swap_reason(fd, self.path)
+        if swapped is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+            raise EngineLockError(swapped)
         self._fd = fd
         self._write()
 
@@ -161,11 +166,46 @@ def _read_holder(fd: int) -> LockHolder:
     )
 
 
+def _swap_reason(fd: int, path: Path) -> str | None:
+    """Did the path stop referring to the inode we just locked?
+
+    flock is attached to an INODE, not to a name. ``rm .engine.lock`` followed
+    by a fresh create leaves this process holding an exclusive lock on an
+    inode with no name, while the next engine opens the new file, locks it
+    uncontended, and boots -- two live engines on one jobs db, which is the
+    exact outcome this lock exists to prevent. So the held fd and the path are
+    compared after the flock succeeds, and a mismatch refuses the boot.
+    """
+    held = os.fstat(fd)
+    try:
+        current = os.stat(path)
+    except FileNotFoundError:
+        return (
+            f"engine lock {path} was unlinked while it was being acquired, so "
+            "the flock now guards a deleted inode and would not stop a second "
+            "engine from booting. Refusing to start. Retry once nothing is "
+            "deleting the lock file."
+        )
+    if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+        return (
+            f"engine lock {path} was replaced while it was being acquired "
+            f"(inode {held.st_ino} -> {current.st_ino}), so the flock guards "
+            "the old inode and would not stop a second engine from booting. "
+            "Refusing to start. Retry once nothing is recreating the lock file."
+        )
+    return None
+
+
 def _refusal(path: Path, holder: LockHolder) -> str:
     if holder.is_live:
+        # Nothing is wrong here: the other engine is doing its job. Telling an
+        # operator to stop a HEALTHY engine is advice that costs them their
+        # running instance for no reason.
         return (
-            f"engine already running on {path}: {holder.describe()}. "
-            "Stop it before booting a second engine."
+            f"engine lock {path} is held by another engine that is alive and "
+            f"healthy: {holder.describe()}. This boot must not proceed -- two "
+            "engines on one jobs db is the corruption this lock prevents. Use "
+            "the engine that is already running."
         )
     # The flock is still held, so the holder process is alive even though it
     # stopped heartbeating. Stealing the lock from a wedged-but-live engine
