@@ -59,6 +59,11 @@ REAP_RETRY_ERROR: str = (
     "engine restarted again; the worker group was still unreaped"
 )
 
+# A queued row has no worker, so 'cancelled' is the honest terminal status
+# rather than the 'unknown' a lost worker earns: there is provably nothing
+# running, because nothing was ever spawned.
+CANCEL_BEFORE_SPAWN: str = "cancelled while queued; no worker was ever spawned"
+
 JOBS_TOPIC: str = "jobs.updated"
 
 _SCHEMA: str = f"""
@@ -235,7 +240,18 @@ class JobStore:
         return [_decode(row) for row in rows]
 
     def claim_queued(self, *, limit: int = 1) -> list[dict[str, Any]]:
-        """Oldest queued rows, marked running under THIS boot_id."""
+        """Oldest queued rows, marked running under THIS boot_id.
+
+        The UPDATE re-asserts ``status='queued'`` even though the SELECT ran
+        inside the same BEGIN IMMEDIATE. That makes the claim a
+        compare-and-swap rather than a blind write, which is what
+        ``cancel_queued`` races against: a cancelled row must never be
+        resurrected into 'running' by a claim that read it a moment earlier.
+
+        A row whose swap matches nothing is DROPPED from the batch instead of
+        being reported as claimed. Reporting it would hand the supervisor a
+        job to spawn a worker for, which is the whole failure this guards.
+        """
         claimed: list[dict[str, Any]] = []
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
@@ -245,17 +261,21 @@ class JobStore:
                     "ORDER BY created_at LIMIT ?",
                     (limit,),
                 ).fetchall()
+                won: list[str] = []
                 for row in rows:
-                    self._conn.execute(
+                    swapped = self._conn.execute(
                         "UPDATE jobs SET status='running', started_at=?, "
-                        "owner_pid=?, owner_boot_id=?, error=NULL WHERE id=?",
+                        "owner_pid=?, owner_boot_id=?, error=NULL "
+                        "WHERE id=? AND status='queued'",
                         (_now(), self.owner_pid, self.boot_id, row["id"]),
                     )
+                    if swapped.rowcount == 1:
+                        won.append(str(row["id"]))
                 self._conn.execute("COMMIT")
             except BaseException:
                 self._conn.execute("ROLLBACK")
                 raise
-            claimed = [self._read(row["id"]) for row in rows]
+            claimed = [self._read(job_id) for job_id in won]
         for job in claimed:
             self._publish(job)
         return claimed
@@ -334,6 +354,39 @@ class JobStore:
                     "UPDATE jobs SET status=?, error=?, finished_at=? "
                     "WHERE id=?",
                     (status, error, _now(), job_id),
+                )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+        return self._emit(job_id)
+
+    def cancel_queued(self, job_id: str) -> dict[str, Any] | None:
+        """queued -> cancelled as ONE compare-and-swap, or None if not queued.
+
+        A queued row has no worker, so there is no group whose death has to be
+        proven and no reason to route it through 'cancelling': the transition
+        is legal and complete in one step. It has to be a compare-and-swap
+        because the supervisor's ``claim_queued`` is the thing it is racing --
+        exactly one of the two may win, and if the claim wins, this call must
+        report that rather than stamping 'cancelled' over a row a worker is
+        already running.
+
+        None is that report -- "the row is not queued, take the running path"
+        -- and is the ONLY non-queued outcome that is not an error. Every
+        illegal status is refused loudly by ``begin_cancel`` a moment later,
+        so nothing is swallowed here.
+        """
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                if str(self._row_state(job_id)["status"]) != "queued":
+                    self._conn.execute("COMMIT")
+                    return None
+                self._conn.execute(
+                    "UPDATE jobs SET status='cancelled', error=?, "
+                    "finished_at=? WHERE id=? AND status='queued'",
+                    (CANCEL_BEFORE_SPAWN, _now(), job_id),
                 )
                 self._conn.execute("COMMIT")
             except BaseException:
@@ -445,10 +498,18 @@ class JobStore:
             )
 
     def _assert_cancellable(self, job_id: str) -> None:
+        """The gate for the RUNNING half of cancel.
+
+        The queued half never reaches here: ``cancel_queued`` settles it
+        first. So anything this refuses is a row that is already terminal, or
+        already on its way out through 'cancelling'.
+        """
         current = str(self._row_state(job_id)["status"])
         if current != "running":
             raise JobConflict(
-                f"job {job_id} is {current}; only a running job cancels"
+                f"job {job_id} is {current}; cancel settles a queued row "
+                "outright and stops a running one, so there is nothing to "
+                "stop here"
             )
 
     def _assert_unchanged(
@@ -597,6 +658,7 @@ def statuses() -> Iterable[str]:
 
 
 __all__ = [
+    "CANCEL_BEFORE_SPAWN",
     "FINISH_SOURCES",
     "JOBS_TOPIC",
     "LIVE_STATUSES",

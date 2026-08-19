@@ -240,7 +240,19 @@ class JobRunner:
         log.info("shutdown reaped the worker for job %s: %s", job_id, outcome)
 
     async def cancel(self, job_id: str) -> dict[str, Any]:
-        """running -> cancelling -> (group proven dead) -> cancelled."""
+        """queued -> cancelled outright, or running -> cancelling -> cancelled.
+
+        A QUEUED row is settled in one step and never spawns anything: it has
+        no worker, so there is no group whose death has to be proven. That
+        transition is a compare-and-swap inside the store against the very
+        BEGIN IMMEDIATE the supervisor claims through, so the cancel and the
+        claim cannot both win. If the claim got there first, cancel_queued
+        reports None and this falls through to the running path -- which is
+        the correct answer, not a failure.
+        """
+        settled = self.store.cancel_queued(job_id)
+        if settled is not None:
+            return settled
         worker = self._running.get(job_id)
         self.store.begin_cancel(job_id)
         if worker is None:

@@ -171,6 +171,24 @@ def test_cancel_takes_a_live_worker_down(
     assert response.json()["status"] == "cancelled", response.text
 
 
+def test_cancelling_a_queued_job_is_200_and_cancelled(
+    client: TestClient, kinds: None
+) -> None:
+    """C14: queued -> cancelled is a legal transition, not a 409.
+
+    No supervisor is running here, so the row is still genuinely queued when
+    the endpoint is called -- the state an agent hits when it changes its mind
+    before a worker slot frees up.
+    """
+    job_id = client.post(API, json={"kind": "test-echo"}).json()["id"]
+    response = client.post(f"{API}/{job_id}/cancel")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "cancelled", body
+    assert body["worker_pgid"] is None, body
+    assert body["started_at"] is None, body
+
+
 # ----- documented refusals -----------------------------------------------
 def test_unknown_kind_is_400(client: TestClient, kinds: None) -> None:
     response = client.post(API, json={"kind": "no-such-kind"})
@@ -190,12 +208,16 @@ def test_no_such_job_is_404(client: TestClient, path: str) -> None:
     assert "no job" in response.json()["detail"], response.text
 
 
-def test_cancelling_a_queued_job_is_409(client: TestClient, kinds: None) -> None:
-    """Only a running job cancels; a queued one has nothing to stop."""
+def test_cancelling_a_terminal_job_is_409(
+    client: TestClient, store: JobStore, kinds: None
+) -> None:
+    """A settled row has nothing left to stop, and its outcome is not ours."""
     job_id = client.post(API, json={"kind": "test-echo"}).json()["id"]
+    store.claim_queued()
+    store.finish(job_id, "succeeded")
     response = client.post(f"{API}/{job_id}/cancel")
     assert response.status_code == 409, response.text
-    assert "only a running job cancels" in response.json()["detail"]
+    assert "nothing to stop" in response.json()["detail"], response.text
 
 
 def test_reenqueueing_a_running_job_is_409(
