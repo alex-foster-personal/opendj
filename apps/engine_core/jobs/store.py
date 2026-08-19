@@ -59,6 +59,19 @@ REAP_RETRY_ERROR: str = (
     "engine restarted again; the worker group was still unreaped"
 )
 
+# A claimed row with no recorded pgid. "nothing to reap" was true only for
+# the harmless half of that: it also covers a worker that WAS forked, with the
+# engine dying before the write that would have named it. Nothing can find
+# that process again, so the row is the only place the possibility can be
+# recorded and it has to be recorded, not smoothed over.
+SPAWN_WINDOW_ERROR: str = (
+    "no worker pgid was ever recorded for this row, so there is no reap "
+    "target. Two conditions produce that and this engine cannot tell them "
+    "apart: no worker was ever forked, or one was and the engine died in the "
+    "window between the fork and the write, leaving a live process with "
+    "nothing that can now identify it"
+)
+
 # A queued row has no worker, so 'cancelled' is the honest terminal status
 # rather than the 'unknown' a lost worker earns: there is provably nothing
 # running, because nothing was ever spawned.
@@ -580,9 +593,10 @@ class JobStore:
 
     def _reap_row(self, row: dict[str, Any]) -> ReapResult:
         if row.get("worker_pgid") is None:
-            return ReapResult(
-                "no worker pgid recorded; nothing to reap", group_cleared=True
-            )
+            # group_cleared stays True: there is no pgid to retry against, so
+            # holding the row open would re-report the same dead end on every
+            # future boot without ever learning anything new.
+            return ReapResult(SPAWN_WINDOW_ERROR, group_cleared=True)
         argv_raw = row.get("worker_argv")
         started_at = row.get("worker_started_at")
         if not argv_raw or started_at is None:
@@ -664,6 +678,7 @@ __all__ = [
     "LIVE_STATUSES",
     "REAP_RETRY_ERROR",
     "RESTART_ERROR",
+    "SPAWN_WINDOW_ERROR",
     "STATUSES",
     "TERMINAL_STATUSES",
     "JobConflict",

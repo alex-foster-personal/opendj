@@ -35,6 +35,7 @@ from apps.engine_core.jobs.reap import (
 from apps.engine_core.jobs.store import (
     REAP_RETRY_ERROR,
     RESTART_ERROR,
+    SPAWN_WINDOW_ERROR,
     JobStore,
 )
 
@@ -195,7 +196,13 @@ def test_a_verified_reap_stops_being_retried(tmp_path: Path) -> None:
 def test_a_row_with_no_worker_is_recovered_and_needs_no_retry(
     tmp_path: Path,
 ) -> None:
-    """A row that never got as far as spawning is settled on the first pass."""
+    """A row with no recorded pgid is settled on the first pass.
+
+    It is settled because there is nothing to retry AGAINST, not because it is
+    harmless: the same row shape covers a worker that was forked and lost in
+    the window before the write (C16). The error says so; what is asserted
+    here is only that the row stops being re-examined.
+    """
     db_path = tmp_path / "jobs.db"
     boot_a = _store(db_path, "boot-a")
     boot_a.recover()
@@ -207,7 +214,7 @@ def test_a_row_with_no_worker_is_recovered_and_needs_no_retry(
     recovered = boot_b.recover()
     assert [row["id"] for row in recovered] == [job["id"]]
     assert recovered[0]["status"] == "unknown"
-    assert "nothing to reap" in recovered[0]["error"], recovered[0]["error"]
+    assert SPAWN_WINDOW_ERROR in recovered[0]["error"], recovered[0]["error"]
     assert boot_b.recover() == []
     boot_b.close()
 

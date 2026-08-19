@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import sqlite3
+import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -57,6 +58,24 @@ _ERRORS = (OSError, ValueError, RuntimeError, LookupError, sqlite3.Error)
 # off instead of dying, and resets the moment a drain succeeds.
 _DRAIN_BACKOFF_S: float = 1.0
 _DRAIN_BACKOFF_MAX_S: float = 30.0
+
+# How long shutdown waits for a claimed job to come out the far side of its
+# fork. A fork+exec is milliseconds; anything near this budget means something
+# is wrong, so expiry is logged by job id rather than passed over.
+_SPAWN_SETTLE_S: float = 5.0
+_SPAWN_SETTLE_POLL_S: float = 0.01
+
+# A 'running' row this engine holds no worker for. Naming the two ways in is
+# the point: "holds no worker" describes the engine's bookkeeping, which is
+# the thing a reader already knows, and says nothing about the process that
+# may still be running because of it.
+ORPHANED_WORKER_ERROR: str = (
+    "cancel found the row running with no worker held by this engine. The "
+    "spawn window between the fork and the worker_pgid write is one way in, "
+    "and a row claimed by a runner this process has since replaced is the "
+    "other; either way a worker may still be running with nothing left that "
+    "can identify it, so the outcome cannot be established from here"
+)
 
 
 class UnknownJobKind(LookupError):
@@ -185,17 +204,59 @@ class JobRunner:
         Leaving workers running after shutdown would orphan process groups
         whose owner_boot_id is about to become foreign -- exactly the mess
         boot recovery exists to clean up. Cheaper to not create it.
+
+        "Every in-flight job" means every job the supervisor CLAIMED, which is
+        why the spawn window is settled first. Iterating only the workers this
+        runner already holds skipped anything still forking, and the gather at
+        the end then waited for that worker to finish by itself.
         """
         supervisor, self._supervisor = self._supervisor, None
         if supervisor is not None:
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
+        await self._settle_spawn_window()
         for job_id in list(self._running):
             await self._cancel_for_shutdown(job_id)
         if self._tasks:
             await asyncio.gather(
                 *self._tasks.values(), return_exceptions=True
             )
+
+    async def _settle_spawn_window(self) -> None:
+        """Wait for every claimed job to finish forking, so none is skipped.
+
+        ``_tasks`` is the claim-time truth and ``_running`` the
+        registration-time one; between them sits the fork. A shutdown that
+        walked ``_running`` alone walked straight past a job still inside that
+        window -- nothing cancelled it, and the final gather then blocked
+        until the worker finished on its own, with its process group outliving
+        the engine that was supposed to own it.
+
+        Waiting is what closes it, and the wait is short by construction:
+        ``_run`` registers with nothing allowed to yield between the fork
+        returning and the write, so a task leaves the window the instant exec
+        returns. A job that somehow does not is reported by name -- the
+        shutdown continues, because the alternative is abandoning the workers
+        it CAN still cancel.
+        """
+        deadline = time.monotonic() + _SPAWN_SETTLE_S
+        while True:
+            forking = [
+                job_id for job_id in self._tasks if job_id not in self._running
+            ]
+            if not forking:
+                return
+            if time.monotonic() >= deadline:
+                log.error(
+                    "shutdown waited %.0fs and jobs %s are still between the "
+                    "fork and their registration; their worker groups may "
+                    "outlive this engine, and only boot recovery can reach "
+                    "them now",
+                    _SPAWN_SETTLE_S,
+                    forking,
+                )
+                return
+            await asyncio.sleep(_SPAWN_SETTLE_POLL_S)
 
     async def _cancel_for_shutdown(self, job_id: str) -> None:
         """cancel(), tolerating a row that finished on its own mid-shutdown.
@@ -256,14 +317,7 @@ class JobRunner:
         worker = self._running.get(job_id)
         self.store.begin_cancel(job_id)
         if worker is None:
-            return self.store.finish(
-                job_id,
-                "unknown",
-                error=(
-                    "cancel requested but this engine holds no worker for the "
-                    "row; the outcome cannot be established from here"
-                ),
-            )
+            return self.store.finish(job_id, "unknown", error=ORPHANED_WORKER_ERROR)
         worker.cancelled = True
         outcome = await asyncio.to_thread(reap, worker.identity)
         # Reaps OUR zombie: the pgid a dead leader still holds is released
@@ -390,12 +444,20 @@ class JobRunner:
         """Spawn the worker, then never return while its tree is still alive.
 
         Everything after the spawn is guarded: a store write failing here is a
-        genuine possibility (that is C5), and the row it fails is the ONLY
-        record of the process group. Letting the exception out without killing
-        the group would leave a live worker that nothing points at -- not the
-        runner, which has dropped it, and not boot recovery, which reaps what
-        the rows name. So the group dies first and the error propagates after,
-        for _guarded_run to record.
+        genuine possibility, and the row it fails is the ONLY record of the
+        process group. Letting the exception out without killing the group
+        would leave a live worker that nothing points at -- not the runner,
+        which has dropped it, and not boot recovery, which reaps what the rows
+        name. So the group dies first and the error propagates after, for
+        _guarded_run to record.
+
+        The order below is load-bearing, not incidental. From the instant
+        create_subprocess_exec returns there is a live process that only
+        ``worker_pgid`` can ever name again, so the write that records it is
+        the first statement after the fork and NOTHING may yield before it.
+        An await slipped into that window widens the one stretch in which an
+        engine death orphans a worker beyond anything's reach -- see
+        store.SPAWN_WINDOW_ERROR for what the next boot has to say about it.
         """
         job_id = job["id"]
         argv = worker_argv(job["kind"], job["payload"])
@@ -409,6 +471,7 @@ class JobRunner:
         worker = _Worker(proc=proc, identity=identity)
         self._running[job_id] = worker
         try:
+            self.store.record_worker(job_id, pid=proc.pid, identity=identity)
             await self._drive_worker(job_id, worker)
         except BaseException:
             await self._abandon(job_id, worker)
@@ -424,9 +487,11 @@ class JobRunner:
         )
 
     async def _drive_worker(self, job_id: str, worker: _Worker) -> None:
+        """Read the worker to its end. The identity is ALREADY persisted here:
+        _run writes it before this is entered, so the spawn window stays as
+        narrow as it can be no matter what is added to the top of this."""
         proc = worker.proc
         identity = worker.identity
-        self.store.record_worker(job_id, pid=proc.pid, identity=identity)
 
         # stderr is drained concurrently: waiting until stdout EOF would
         # deadlock the worker as soon as it filled the 64K stderr pipe.
@@ -556,6 +621,7 @@ def _log_supervisor_exit(task: asyncio.Task[None]) -> None:
 
 
 __all__ = [
+    "ORPHANED_WORKER_ERROR",
     "RECONCILE_RESULTS",
     "JobRunner",
     "ReconcileHook",
