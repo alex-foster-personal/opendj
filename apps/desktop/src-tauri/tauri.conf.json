@@ -4,14 +4,14 @@
   "version": "0.1.0",
   "identifier": "com.opendj.desktop",
   "build": {
-    "devUrl": "http://127.0.0.1:8683"
+    "devUrl": "http://127.0.0.1:8685"
   },
   "app": {
     "windows": [
       {
         "label": "main",
         "title": "Open DJ",
-        "url": "http://127.0.0.1:8683",
+        "url": "http://127.0.0.1:8685",
         "width": 1280,
         "height": 800
       }
