@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { listTracks, type Track } from '$lib/api';
 	import VirtualTable from '$lib/components/VirtualTable.svelte';
-	import { capabilities } from '$lib/api/capabilities.svelte';
-	import { getSetupStatus, setupRefusal } from '$lib/setup/setup-api';
+	import FirstRunOverlay from '$lib/components/rb/FirstRunOverlay.svelte';
+	import { resolveFirstRun } from '$lib/setup/first-run';
 	import { pushToast } from '$lib/stores.svelte';
 
+	let showFirstRun = $state(false);
 	let tracks = $state<Track[]>([]);
 	let nextCursor = $state<string | null>(null);
 	let loading = $state(false);
@@ -33,29 +33,20 @@
 	}
 
 	/**
-	 * The first-run gate. An empty library that has not been dismissed sends
-	 * the user to the wizard instead of showing an empty table with no
-	 * explanation.
+	 * The first-run gate. An empty library that has not been dismissed dims
+	 * the page and offers the wizard, instead of showing an empty table with
+	 * no explanation -- and instead of navigating away, which is what this
+	 * used to do. The app stays on screen behind the ask.
 	 *
-	 * The daemon decides, not the browser: `should_show_wizard` is
-	 * `library_empty && !dismissed` computed engine-side, so a reload, a
-	 * second tab and an agent all get the same answer. A legacy boot has no
-	 * setup API, so the gate simply does not run there.
+	 * The daemon decides, not the browser: `should_show_wizard` is computed
+	 * engine-side (and is already false for a developer checkout), so a
+	 * reload, a second tab and an agent all get the same answer. The rule
+	 * itself lives in $lib/setup/first-run, under test.
 	 */
-	async function firstRunGate(): Promise<void> {
-		await capabilities.probe();
-		if (setupRefusal() !== null) return;
-		try {
-			if ((await getSetupStatus()).should_show_wizard) await goto('/setup');
-		} catch (exc) {
-			// Never blocks the library: a status probe that fails is a reason to
-			// show the tracks, not to strand the user on a blank page.
-			console.error('[library] first-run check failed', exc);
-		}
-	}
-
 	onMount(() => {
-		void firstRunGate();
+		void resolveFirstRun().then((show) => {
+			showFirstRun = show;
+		});
 		void fetchPage();
 	});
 
@@ -78,6 +69,10 @@
 
 {#if loading}
 	<p>Loading...</p>
+{/if}
+
+{#if showFirstRun}
+	<FirstRunOverlay />
 {/if}
 
 <style>
