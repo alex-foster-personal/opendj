@@ -105,10 +105,6 @@ def enqueue_job(request: Request, body: JobIn) -> dict[str, Any]:
     try:
         worker_argv(body.kind, body.payload)
     except (UnknownJobKind, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
-    except ValueError as exc:
         # The kind knows the shape of its own payload and this one is wrong.
         # That is the caller's mistake, so it is a 400 carrying the kind's own
         # sentence -- not a 500, which reads as "the engine broke" and sends
