@@ -15,7 +15,10 @@
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
     "publisher": "open-dj",
     "shortDescription": "Open DJ desktop shell",
-    "longDescription": "Native window for Open DJ. The Open DJ engine must be running locally; the app shows setup instructions naming the address it tried when the engine is not reachable.",
+    "longDescription": "Open DJ. The app carries its own engine: a relocatable CPython runtime, the engine code and the built interface, staged into Contents/Resources/payload by scripts/build_engine_payload.py. Launching the app starts that engine on a free loopback port and opens a window onto it. No source checkout is required.",
+    "resources": {
+      "payload": "payload"
+    },
     "macOS": {
       "minimumSystemVersion": "10.15"
     }

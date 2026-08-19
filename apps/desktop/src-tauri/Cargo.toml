@@ -1,18 +1,30 @@
 [package]
 name = "opendj-desktop"
 version = "0.1.0"
-description = "Open DJ desktop shell -- Tauri 2 thin window over the local engine"
+description = "Open DJ desktop shell -- Tauri 2 window that boots its bundled engine"
 edition = "2021"
-rust-version = "1.77"
+# Raised from 1.77 when the shell gained the sidecar. rfd's macOS backend
+# resolves through objc2, whose floor is 1.77.2, and cargo's MSRV-aware
+# resolver picks dependency versions against THIS number: leaving it at 1.77
+# silently selects older, unrelated crate versions rather than failing.
+rust-version = "1.82"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-# Sole use: escaping the engine origin into the bootstrap init script.
-# Already in the tree as a tauri dependency, so this adds no build cost.
+# Escaping the engine origin and the build stamp into the bootstrap init
+# script. Already in the tree as a tauri dependency, so this adds no build cost.
 serde_json = "1"
+# The engine is spawned into its own process group so app exit can kill the
+# whole group; killpg is the syscall that does it. Also already in the tree.
+libc = "0.2"
+# Native modal for the one failure this shell cannot recover from: the engine
+# did not come up. Without it that failure is a blank window, which is the
+# exact outcome the bundled-engine work exists to remove. default-features
+# off keeps the Linux-only portal/gtk backends out of the build.
+rfd = { version = "0.15", default-features = false }
 
 [[bin]]
 name = "opendj-desktop"

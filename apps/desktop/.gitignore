@@ -2,5 +2,11 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+# The engine payload the bundler copies into Contents/Resources/payload.
+# ~174MB of relocatable CPython, the locked dependency closure, the engine
+# source and the built SPA -- all of it derived, all of it rebuilt by
+# scripts/build_engine_payload.py. tauri.conf.json names this exact path, so
+# a build without it fails rather than shipping a hollow shell.
+src-tauri/payload/
 *.log
 .DS_Store
