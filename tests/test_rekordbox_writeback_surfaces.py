@@ -30,6 +30,10 @@ import pytest
 
 from apps.shared.rekordbox_writeback import WRITE_SURFACES
 
+# 02: classification by who OPENS the target, which is what the constructor
+# and injected-handle sweeps here enforce.
+pytestmark = pytest.mark.requirement("SYNC-ONEWAY-02")
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # The gate suite itself. Every test in these files must build its paths from

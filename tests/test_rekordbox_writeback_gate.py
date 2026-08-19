@@ -76,6 +76,14 @@ from apps.shared.rekordbox_writeback import (
     writeback_enabled,
 )
 
+# 01 is the inventory-and-refusal contract this suite iterates four ways;
+# 04 is the surface-not-path rule the remove_track alias and symlink probes
+# below pin down.
+pytestmark = [
+    pytest.mark.requirement("SYNC-ONEWAY-01"),
+    pytest.mark.requirement("SYNC-ONEWAY-04"),
+]
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 GATED = tuple(s for s in WRITE_SURFACES if s.gated)

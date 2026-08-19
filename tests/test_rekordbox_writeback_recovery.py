@@ -59,6 +59,14 @@ def _never_called_factory(*_args, **_kwargs):
     raise AssertionError("no writer should be opened on this path")
 
 
+# 03 is recovery staying ungated with every non-gate rail still firing;
+# 04 is the crate and ssh containment lanes resolving locally and refusing
+# '..' remotely.
+pytestmark = [
+    pytest.mark.requirement("SYNC-ONEWAY-03"),
+    pytest.mark.requirement("SYNC-ONEWAY-04"),
+]
+
 VALID_BACKUP_ID = "0" * 32
 
 

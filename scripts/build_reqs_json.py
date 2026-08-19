@@ -34,12 +34,18 @@ COVERAGE_MATRIX_TEMPLATE: Path = REPO_ROOT / "coverage-matrix.md"
 
 # ------------------------------------------------------------------ parser
 
-_CATEGORY_RE = re.compile(r"^###\s+(.+?)\s+\(([A-Z]+)\)\s*$")
+# A category code may carry more than one segment (SYNC-ONEWAY), so it is one
+# or more all-caps segments rather than a single run of letters. A bare RECON
+# still matches, so every pre-existing ID parses exactly as it did before.
+# This widened after SYNC-ONEWAY-01..04 parsed as nothing at all: the
+# requirement count simply did not move, which is a silent miss, not an error.
+_CODE = r"[A-Z]+(?:-[A-Z]+)*"
+_CATEGORY_RE = re.compile(rf"^###\s+(.+?)\s+\(({_CODE})\)\s*$")
 _BULLET_V1_RE = re.compile(
-    r"^-\s+(?:\[( |x)\]\s+)?\*\*([A-Z]+-\d+[a-z]?)\*\*(.*)$"
+    rf"^-\s+(?:\[( |x)\]\s+)?\*\*({_CODE}-\d+[a-z]?)\*\*(.*)$"
 )
 # v2 bullets often lack a checkbox: `- **CROSS-01**: Linux support`
-_BULLET_V2_RE = re.compile(r"^-\s+\*\*([A-Z]+-\d+[a-z]?)\*\*\s*:?\s*(.*)$")
+_BULLET_V2_RE = re.compile(rf"^-\s+\*\*({_CODE}-\d+[a-z]?)\*\*\s*:?\s*(.*)$")
 _SHIPPED_PHASE_RE = re.compile(r"\(shipped\s+(Phase\s+[\w.]+)\)", re.IGNORECASE)
 _TRACE_ROW_RE = re.compile(
     r"^\|\s*([A-Z]+-\d+|[A-Z]+-\*|[A-Z]+-[\d.]+(?:\.\.\d+)?(?:,\s*[A-Z]+-\d+)*)"
