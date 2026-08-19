@@ -9,6 +9,8 @@
  * surfacing corruption loudly is the point.
  */
 
+import type { Client } from 'openapi-fetch';
+
 import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
 import {
 	BUILD_STATES,
@@ -233,11 +235,37 @@ export function validateProgressResponse(raw: unknown): ProgressResponse {
 	return { meta, areas, file_git: fileGit };
 }
 
+/**
+ * The fan-out ledger is a LEGACY-DAEMON surface, not an engine one.
+ *
+ * `apps/engine_core/app.py` drops the progress router outright (the rebuild's
+ * "no decoy ledger" rule: ledger writes go to the shared daemon only), so
+ * `/api/v1/progress` is absent from the engine's OpenAPI document, and
+ * therefore from the generated `paths` in `api-types.ts`, which has described
+ * the engine since T5. This route still has to type its one GET, so it
+ * declares that single path itself and views the shared client through it:
+ * same instance, same base URL, same throwing middleware, only the path table
+ * differs. The body stays `unknown` because `validateProgressResponse` below
+ * is the real contract check, field by field.
+ *
+ * Consequence worth stating plainly: this GET 404s when the SPA is served by
+ * the engine. That is true today and was true before the contract switch --
+ * the switch only stopped the types from hiding it. If the ledger UI is
+ * retired from the rebuilt app, delete this declaration with the route.
+ */
+type LedgerPaths = {
+	'/api/v1/progress': {
+		get: { responses: { 200: { content: { 'application/json': unknown } } } };
+	};
+};
+
+const ledgerApi = api as unknown as Client<LedgerPaths>;
+
 export async function fetchProgress(): Promise<ProgressResponse> {
 	const endpoint = `${API_BASE}/api/v1/progress`;
 	let data: unknown;
 	try {
-		data = await unwrap(api.GET('/api/v1/progress', {}));
+		data = await unwrap(ledgerApi.GET('/api/v1/progress', {}));
 	} catch (error) {
 		if (error instanceof ApiError) {
 			const bodyText = await error.response.text();

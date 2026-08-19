@@ -389,10 +389,99 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
-        get: operations["health_api_v1_health_get"];
+        /** Engine Health */
+        get: operations["engine_health_api_v1_health_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_v1_jobs_get"];
+        put?: never;
+        /** Enqueue Job */
+        post: operations["enqueue_job_api_v1_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Kinds
+         * @description The registered worker kinds. Empty until a kind registers one.
+         */
+        get: operations["list_kinds_api_v1_jobs_kinds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_v1_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_api_v1_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/reenqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reenqueue Job */
+        post: operations["reenqueue_job_api_v1_jobs__job_id__reenqueue_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -667,66 +756,6 @@ export interface paths {
         };
         /** Get Writeback Targets */
         get: operations["get_writeback_targets_api_v1_playlists__playlist_id__writeback_targets_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/progress": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Progress
-         * @description Full parsed tree + ledger-file git provenance + per-area rollups.
-         */
-        get: operations["get_progress_api_v1_progress_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/progress/nodes/{node_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Patch Progress Node
-         * @description Guarded partial update of one node; atomic YAML rewrite, no git commit.
-         */
-        patch: operations["patch_progress_node_api_v1_progress_nodes__node_id__patch"];
-        trace?: never;
-    };
-    "/api/v1/progress/schema": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Progress Schema
-         * @description Agent-discoverable node schema, allowed statuses, and PATCH rules.
-         */
-        get: operations["get_progress_schema_api_v1_progress_schema_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1725,42 +1754,6 @@ export interface components {
             /** Vendor Id */
             vendor_id: string | null;
         };
-        /**
-         * BuildPatchIn
-         * @description Partial 'build' object; only supplied fields are merged (see PATCH_RULES).
-         *
-         *     'updated' is never accepted from the client -- the server always stamps
-         *     it on any build PATCH, so there is no ambiguity about who wrote it.
-         */
-        BuildPatchIn: {
-            /** Branch */
-            branch?: string | null;
-            /** Pr */
-            pr?: string | null;
-            /** Stage */
-            stage?: string | null;
-            /** State */
-            state?: ("active" | "idle" | "blocked" | "hanging") | null;
-            /** Worktree */
-            worktree?: string | null;
-        };
-        /**
-         * BuildableIn
-         * @description Buildability classification; both fields required, replaces wholesale.
-         *
-         *     tier says WHERE the node's iterative build loop can run (cloud/hybrid/
-         *     local); reason is a one-line justification grounded in what the node
-         *     touches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.
-         */
-        BuildableIn: {
-            /** Reason */
-            reason: string;
-            /**
-             * Tier
-             * @enum {string}
-             */
-            tier: "cloud" | "hybrid" | "local";
-        };
         /** BulkEditIn */
         BulkEditIn: {
             /** Expected Etags */
@@ -1889,13 +1882,6 @@ export interface components {
             /** Revision */
             revision: string;
         };
-        /** CommitIn */
-        CommitIn: {
-            /** Note */
-            note: string;
-            /** Sha */
-            sha: string;
-        };
         /** CopilotTrackOut */
         CopilotTrackOut: {
             /** Artist */
@@ -1959,6 +1945,30 @@ export interface components {
             revision: string;
             /** Survivor */
             survivor: string;
+        };
+        /**
+         * EngineHealthOut
+         * @description Legacy health plus the handshake fields. Extension, not a rewrite.
+         */
+        EngineHealthOut: {
+            /** Bind Host */
+            bind_host: string;
+            /** Boot Id */
+            boot_id: string;
+            cloud: components["schemas"]["HealthCloud"];
+            /** Contract Rev */
+            contract_rev: string;
+            /** Engine Version */
+            engine_version: string;
+            state_db: components["schemas"]["HealthStateDb"];
+            /**
+             * Status
+             * @default ok
+             */
+            status: string;
+            syncthing?: components["schemas"]["HealthSyncthing"] | null;
+            /** Version */
+            version: string;
         };
         /** ErrorBody */
         ErrorBody: {
@@ -2123,21 +2133,6 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /** HealthOut */
-        HealthOut: {
-            /** Bind Host */
-            bind_host: string;
-            cloud: components["schemas"]["HealthCloud"];
-            state_db: components["schemas"]["HealthStateDb"];
-            /**
-             * Status
-             * @default ok
-             */
-            status: string;
-            syncthing?: components["schemas"]["HealthSyncthing"] | null;
-            /** Version */
-            version: string;
-        };
         /** HealthStateDb */
         HealthStateDb: {
             /** Last Writer At */
@@ -2208,6 +2203,63 @@ export interface components {
              */
             slot: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
         };
+        /** JobIn */
+        JobIn: {
+            /** External Ref */
+            external_ref?: string | null;
+            /** Kind */
+            kind: string;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** JobKindsOut */
+        JobKindsOut: {
+            /** Kinds */
+            kinds: string[];
+        };
+        /** JobOut */
+        JobOut: {
+            /** Attempt */
+            attempt: number;
+            /** Created At */
+            created_at: string;
+            /** Error */
+            error?: string | null;
+            /** External Ref */
+            external_ref?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Message */
+            message?: string | null;
+            /** Owner Boot Id */
+            owner_boot_id: string;
+            /** Owner Pid */
+            owner_pid?: number | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Progress */
+            progress: number;
+            /** Started At */
+            started_at?: string | null;
+            /** Status */
+            status: string;
+            /** Worker Argv */
+            worker_argv?: string[] | null;
+            /** Worker Pgid */
+            worker_pgid?: number | null;
+            /** Worker Pid */
+            worker_pid?: number | null;
+            /** Worker Started At */
+            worker_started_at?: number | null;
+        };
         /**
          * LabelRequest
          * @description Body for the relabel endpoint.
@@ -2220,18 +2272,6 @@ export interface components {
              * @default web_ui
              */
             labeler: string;
-        };
-        /**
-         * LinksPatchIn
-         * @description Partial 'links' object; each supplied key REPLACES that key's list.
-         */
-        LinksPatchIn: {
-            /** Issues */
-            issues?: string[] | null;
-            /** Refs */
-            refs?: string[] | null;
-            /** Specs */
-            specs?: string[] | null;
         };
         /** MemberOut */
         MemberOut: {
@@ -2375,30 +2415,6 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
-        };
-        /** NodePatch */
-        NodePatch: {
-            build?: components["schemas"]["BuildPatchIn"] | null;
-            buildable?: components["schemas"]["BuildableIn"] | null;
-            /** Commits Append */
-            commits_append?: components["schemas"]["CommitIn"][] | null;
-            links?: components["schemas"]["LinksPatchIn"] | null;
-            /** Note */
-            note?: string | null;
-            /** Status */
-            status?: ("missing" | "spiked" | "building" | "partial" | "built" | "verified" | "merged" | "user-finalized" | "working") | null;
-            /** Tests Append */
-            tests_append?: string[] | null;
-            verified?: components["schemas"]["VerifiedIn"] | null;
-        };
-        /** NodePatchOut */
-        NodePatchOut: {
-            /** Meta Updated */
-            meta_updated: string;
-            /** Node */
-            node: {
-                [key: string]: unknown;
-            };
         };
         /** PairingCreate */
         PairingCreate: {
@@ -3772,13 +3788,6 @@ export interface components {
             /** Vendor */
             vendor: string;
         };
-        /** VerifiedIn */
-        VerifiedIn: {
-            /** By */
-            by: string;
-            /** Method */
-            method: string;
-        };
         /** VoiceProbeRequest */
         VoiceProbeRequest: {
             /** Text */
@@ -4729,7 +4738,7 @@ export interface operations {
             };
         };
     };
-    health_api_v1_health_get: {
+    engine_health_api_v1_health_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4744,7 +4753,184 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthOut"];
+                    "application/json": components["schemas"]["EngineHealthOut"];
+                };
+            };
+        };
+    };
+    list_jobs_api_v1_jobs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_job_api_v1_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_kinds_api_v1_jobs_kinds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobKindsOut"];
+                };
+            };
+        };
+    };
+    get_job_api_v1_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_v1_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reenqueue_job_api_v1_jobs__job_id__reenqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5424,114 +5610,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_progress_api_v1_progress_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Strong validator for the exact progress ledger bytes */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    patch_progress_node_api_v1_progress_nodes__node_id__patch: {
-        parameters: {
-            query?: never;
-            header?: {
-                "If-Match"?: string | null;
-            };
-            path: {
-                node_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NodePatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Strong validator for the exact progress ledger bytes */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NodePatchOut"];
-                };
-            };
-            /** @description If-Match is stale; refresh the ledger before retrying */
-            409: {
-                headers: {
-                    /** @description Strong validator for the exact progress ledger bytes */
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description If-Match header is required for every progress write */
-            428: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Writes are disabled because the cloud lock is unavailable or held by a peer */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_progress_schema_api_v1_progress_schema_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
         };
