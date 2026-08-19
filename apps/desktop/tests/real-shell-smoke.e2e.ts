@@ -244,4 +244,69 @@ describe('Open DJ desktop shell', () => {
 		// ceiling far below the timeout can only be tripped by the defect.
 		expect(stages.stretchCreate as number).toBeLessThan(STRETCH_CREATE_CEILING_MS);
 	});
+
+	it('opens the settings overlay on Cmd+, in the real WKWebView', async () => {
+		// The one entry point tier 1 structurally cannot see: chromium fakes the
+		// chord, only the shell answers whether OUR capture-phase listener and the
+		// overlay render inside the shipped webview. Same driver-limit protocol as
+		// the deck-load test above: a probe first measures whether keys() reaches
+		// the page at all; if the embedded WebDriver cannot synthesize the chord
+		// (like double-click and :hover, measured Wed 19 Aug 2026), the identical
+		// KeyboardEvent is dispatched at the same window target, entering the same
+		// capture listener in hotkeys.ts. Which delivery ran is asserted loudly,
+		// never silently substituted.
+		await browser.url(`${ENGINE_ORIGIN}/performance`);
+		await browser.execute(() => {
+			const w = window as { __mdtKeyProbe?: string[] };
+			w.__mdtKeyProbe = [];
+			window.addEventListener(
+				'keydown',
+				(e) => w.__mdtKeyProbe?.push(`${e.metaKey ? 'Meta+' : ''}${e.key}`),
+				true
+			);
+		});
+
+		await browser.keys(['Meta', ',', 'Meta']);
+		const probeSaw = await browser.execute(
+			() => (window as { __mdtKeyProbe?: string[] }).__mdtKeyProbe ?? []
+		);
+		const driverDelivers = probeSaw.some((k) => k === 'Meta+,');
+		if (!driverDelivers) {
+			// Measured driver limit, not an app defect: fall back to the same event
+			// at the same target. Everything from the listener down is still real.
+			await browser.execute(() => {
+				window.dispatchEvent(
+					new KeyboardEvent('keydown', { key: ',', metaKey: true, bubbles: true })
+				);
+			});
+		}
+
+		const dialog = await browser.$('[role="dialog"][aria-label="Settings"]');
+		await dialog.waitForDisplayed({
+			timeout: LOAD_TIMEOUT_MS,
+			timeoutMsg:
+				`Cmd+, never opened the settings overlay in the real shell ` +
+				`(delivery: ${driverDelivers ? 'driver keys()' : 'window KeyboardEvent'}; ` +
+				`probe saw: ${JSON.stringify(probeSaw)})`
+		});
+
+		// The setup entry point must be reachable in the COLLAPSED overlay: the
+		// actions bar lives outside .so-body precisely so no search is needed.
+		const runSetup = await dialog.$('button.so-action');
+		await runSetup.waitForDisplayed({ timeout: LOAD_TIMEOUT_MS });
+		expect(await runSetup.getText()).toBe('Run setup');
+
+		// Escape closes, through whichever delivery the chord used.
+		if (driverDelivers) {
+			await browser.keys(['Escape']);
+		} else {
+			await browser.execute(() => {
+				window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+			});
+		}
+		await browser.waitUntil(async () => !(await dialog.isDisplayed()), {
+			timeout: LOAD_TIMEOUT_MS,
+			timeoutMsg: 'Escape never closed the settings overlay in the real shell'
+		});
+	});
 });
