@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Open DJ</title>
+		<link rel="stylesheet" href="setup.css" />
+	</head>
+	<body>
+		<!--
+			The shell's bootstrap page. It is deliberately NOT part of the
+			SvelteKit app: the SvelteKit app is served BY the engine, so it is
+			exactly the thing that cannot load when the engine is down. This
+			page ships inside the .app bundle and is therefore always
+			available.
+
+			Two outcomes only, both honest:
+			  - engine reachable   -> navigate to it, this page disappears
+			  - engine unreachable -> render the setup screen below
+
+			There is no third "maybe" state and no spinner that never ends.
+		-->
+		<main id="root" data-state="checking">
+			<section id="checking-view" class="view">
+				<h1>Starting Open DJ</h1>
+				<p class="lede">
+					Looking for the Open DJ engine at
+					<code id="checking-origin">(resolving)</code>
+				</p>
+			</section>
+
+			<section id="unreachable-view" class="view" hidden>
+				<h1 id="headline">Open DJ cannot reach its engine</h1>
+
+				<p class="lede">
+					This window is running. The engine it needs is not
+					answering.
+				</p>
+
+				<dl class="facts">
+					<dt>Address tried</dt>
+					<dd><code id="probe-url">(unknown)</code></dd>
+
+					<dt>Result</dt>
+					<dd id="probe-detail">(unknown)</dd>
+
+					<dt>
+						<span
+							title="How many times this window has tried to open a connection to the engine since it launched."
+							>Attempts</span
+						>
+					</dt>
+					<dd>
+						<span
+							id="attempts"
+							title="How many times this window has tried to open a connection to the engine since it launched."
+							>0</span
+						>
+					</dd>
+				</dl>
+
+				<h2>What Open DJ is</h2>
+				<p>
+					Open DJ is a native window onto a local engine process. The
+					window ships in this app. The engine does not: it runs from
+					a source checkout on this machine and serves the whole user
+					interface over HTTP. No engine means no interface, which is
+					what you are looking at.
+				</p>
+				<p class="note">
+					Bundling the engine inside this app is not implemented yet.
+					See PARITY-TODO.md.
+				</p>
+
+				<h2>Start the engine</h2>
+				<ol class="steps">
+					<li>Open Terminal.</li>
+					<li>
+						Install <code>uv</code> if you do not have it (one
+						binary, no Python required first):
+						<pre><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+					</li>
+					<li>
+						Change into the <code>music-dj-tools</code> checkout you
+						were given.
+					</li>
+					<li>
+						Start the engine, pointing it at an absolute data
+						directory:
+						<pre><code id="engine-command">(resolving)</code></pre>
+					</li>
+					<li>
+						Leave that Terminal window open. This window retries on
+						its own, or press <strong>Check now</strong>.
+					</li>
+				</ol>
+
+				<div class="actions">
+					<button id="retry" type="button">Check now</button>
+					<span
+						class="countdown"
+						id="countdown"
+						title="Seconds until this window retries the connection on its own."
+					></span>
+				</div>
+
+				<details class="probe-explainer">
+					<summary>What exactly was tested</summary>
+					<p>
+						A cross origin <code>fetch</code> in
+						<code>no-cors</code> mode against
+						<code id="probe-url-echo">(unknown)</code>. The browser
+						sandbox will not let this page read a cross origin
+						response body, so this test proves reachability only:
+						that something accepted a TCP connection and answered
+						HTTP at that address. It does not prove the responder is
+						the Open DJ engine, and it does not read the engine's
+						health payload. Once the window navigates to the engine
+						origin, every later request is same origin and the real
+						interface reports its own status.
+					</p>
+				</details>
+			</section>
+		</main>
+
+		<script type="module" src="setup.js"></script>
+	</body>
+</html>

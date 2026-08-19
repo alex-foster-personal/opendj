@@ -10,6 +10,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# Sole use: escaping the engine origin into the bootstrap init script.
+# Already in the tree as a tauri dependency, so this adds no build cost.
+serde_json = "1"
 
 [[bin]]
 name = "opendj-desktop"

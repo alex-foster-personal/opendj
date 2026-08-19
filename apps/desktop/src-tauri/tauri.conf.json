@@ -4,22 +4,20 @@
   "version": "0.1.0",
   "identifier": "com.opendj.desktop",
   "build": {
-    "devUrl": "http://127.0.0.1:8685"
+    "frontendDist": "../setup"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Open DJ",
-        "url": "http://127.0.0.1:8685",
-        "width": 1280,
-        "height": 800
-      }
-    ]
+    "windows": []
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": ["dmg"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
-    "publisher": "open-dj"
+    "publisher": "open-dj",
+    "shortDescription": "Open DJ desktop shell",
+    "longDescription": "Native window for Open DJ. The Open DJ engine must be running locally; the app shows setup instructions naming the address it tried when the engine is not reachable.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   }
 }
