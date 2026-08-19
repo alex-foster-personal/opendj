@@ -17,7 +17,7 @@
  * without a cycle.
  */
 
-import { SYNC_SCHEDULE_SAFETY_S } from '$lib/player/constants';
+import { SYNC_SCHEDULE_SAFETY_S, TRANSPORT_IMMEDIATE_SAFETY_S } from '$lib/player/constants';
 import type { LoopState } from '$lib/rb/types';
 
 export function supersedingScheduleTime(
@@ -86,6 +86,11 @@ export function pendingSyncWaitTarget(
 	return unsafePendingTimes.length === 0 ? null : Math.max(...unsafePendingTimes);
 }
 
+/**
+ * The shared context time a beat-sync group launches at. Keeps the 100ms
+ * `SYNC_SCHEDULE_SAFETY_S` margin deliberately: every participant must
+ * acknowledge before this instant or the group is audibly out of phase.
+ */
 export function safeSyncScheduleTime(
 	nowContextTime: number,
 	maxLatencySec: number,
@@ -108,10 +113,20 @@ export function safeSyncScheduleTime(
 	);
 }
 
+/**
+ * The earliest context time a PLAIN transport mutation may be scheduled at.
+ *
+ * The default safety is the immediate-transport margin, not the beat-sync one:
+ * this function's job is only "not in the past", and charging a single deck's
+ * play/pause the 100ms multi-deck alignment margin is what made the button feel
+ * slow (LATENCY-01). A caller that genuinely needs decks to agree on one shared
+ * instant passes `SYNC_SCHEDULE_SAFETY_S` explicitly, or uses
+ * `safeSyncScheduleTime`.
+ */
 export function safeTransportScheduleTime(
 	nowContextTime: number,
 	latencySec: number,
-	safetySec = SYNC_SCHEDULE_SAFETY_S
+	safetySec = TRANSPORT_IMMEDIATE_SAFETY_S
 ): number {
 	for (const [name, value] of Object.entries({ nowContextTime, latencySec, safetySec })) {
 		if (!Number.isFinite(value) || value < 0) {

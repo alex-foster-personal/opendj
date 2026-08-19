@@ -142,7 +142,6 @@ import {
 	HEADPHONE_OPERATION_TIMEOUT_MS,
 	PARAM_SMOOTH_S,
 	PITCH_RANGES,
-	SYNC_SCHEDULE_SAFETY_S,
 	TRIM_MAX_GAIN
 } from '$lib/player/constants';
 import type { PitchRange } from '$lib/player/constants';
@@ -3015,7 +3014,10 @@ class RbAudioEngine implements AudioEngine {
 			: resumeSec;
 		const activeMaster = _syncMaster();
 		if (activeMaster === null) {
-			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
+			// Nothing is playing, so this deck is about to BECOME master: there is
+			// no other transport to align with and no reason to pay the beat-sync
+			// margin. Immediate-transport safety (LATENCY-01).
+			const when = safeTransportScheduleTime(ctx.currentTime, _rt[deck].latencySec);
 			try {
 				await _scheduleDeck(deck, when, startSec, true);
 				_assignMaster(deck);
@@ -3025,7 +3027,9 @@ class RbAudioEngine implements AudioEngine {
 				throw error;
 			}
 		} else if (activeMaster === deck || !st.beat_sync_enabled) {
-			const when = ctx.currentTime + _rt[deck].latencySec + SYNC_SCHEDULE_SAFETY_S;
+			// Either this deck IS the master, or Beat Sync is off on it. Sync is
+			// explicitly not in play, so this is plain transport (LATENCY-01).
+			const when = safeTransportScheduleTime(ctx.currentTime, _rt[deck].latencySec);
 			await _scheduleDeck(deck, when, startSec, true);
 			st.sync_error = null;
 		} else {

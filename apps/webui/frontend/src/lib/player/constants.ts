@@ -26,8 +26,35 @@ export const EQ_MAX_DB = 6;
 export const TRIM_MAX_GAIN = 2;
 /** Smoothing time-constant for AudioParam changes (anti-zipper). */
 export const PARAM_SMOOTH_S = 0.01;
-/** Future schedule margin after the slower deck processor's reported latency. */
+/**
+ * BEAT-SYNC ALIGNMENT margin, on top of the slower deck processor's reported
+ * latency. It buys the coordinator room to plan several decks against ONE
+ * shared context time and have every processor acknowledge before that time
+ * arrives: a follower that misses the common instant is audibly out of phase,
+ * not merely late. 100ms is sized for that multi-deck handshake.
+ *
+ * It is NOT the generic "do not schedule in the past" guard. Charging it to a
+ * single-deck play/pause put ~100ms between the maintainer's click and the sound
+ * (LATENCY-01 budget is 30ms p99), which is what
+ * `TRANSPORT_IMMEDIATE_SAFETY_S` below exists to fix. Sync pays for sync;
+ * plain transport does not.
+ */
 export const SYNC_SCHEDULE_SAFETY_S = 0.1;
+/**
+ * IMMEDIATE (Class A) transport not-in-the-past guard: the smallest margin that
+ * keeps a scheduled change strictly ahead of the render quantum, once the deck's
+ * own reported output latency has already been added by the caller.
+ *
+ * 8ms is about three 128-frame render quanta at 48kHz (~2.7ms each), and still
+ * three at 44.1kHz (~2.9ms each), so the processor reliably receives the change
+ * before it renders the block it lands in, while the margin itself stays inside
+ * the LATENCY-01 30ms p99 budget. Nothing here aligns two decks - anything that
+ * must agree on a shared instant passes `SYNC_SCHEDULE_SAFETY_S` explicitly.
+ *
+ * Name and value are shared verbatim with the sister rebuild lane's fix: one
+ * concept, one name, so the two lanes cannot diverge on it.
+ */
+export const TRANSPORT_IMMEDIATE_SAFETY_S = 0.008;
 export const ANALYSER_FFT_SIZE = 4096;
 export const CONTEXT_WAIT_POLL_MS = 25;
 export const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
