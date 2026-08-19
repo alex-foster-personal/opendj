@@ -972,6 +972,62 @@
         "title": "ClientEventOut",
         "type": "object"
       },
+      "ClientOut": {
+        "properties": {
+          "app_version": {
+            "title": "App Version",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "in_use": {
+            "description": "Open AND the page is visible on screen.",
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "is_open": {
+            "description": "Checked in within the in-use window.",
+            "title": "Is Open",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "description": "Server wall-clock time of the last heartbeat.",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "page_visible": {
+            "title": "Page Visible",
+            "type": "boolean"
+          },
+          "seconds_since_seen": {
+            "description": "Server monotonic seconds since it checked in.",
+            "title": "Seconds Since Seen",
+            "type": "number"
+          },
+          "surface": {
+            "enum": [
+              "desktop-shell",
+              "browser"
+            ],
+            "title": "Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "surface",
+          "page_visible",
+          "app_version",
+          "last_seen_at",
+          "seconds_since_seen",
+          "is_open",
+          "in_use"
+        ],
+        "title": "ClientOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -1988,6 +2044,42 @@
         "title": "HealthSyncthing",
         "type": "object"
       },
+      "HeartbeatIn": {
+        "properties": {
+          "app_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "App Version",
+            "type": "string"
+          },
+          "client_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "page_visible": {
+            "title": "Page Visible",
+            "type": "boolean"
+          },
+          "surface": {
+            "enum": [
+              "desktop-shell",
+              "browser"
+            ],
+            "title": "Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "surface",
+          "page_visible",
+          "app_version"
+        ],
+        "title": "HeartbeatIn",
+        "type": "object"
+      },
       "HotCueMutationOut": {
         "properties": {
           "cue": {
@@ -2955,6 +3047,47 @@
           "updated_at"
         ],
         "title": "PairingOut",
+        "type": "object"
+      },
+      "PassiveActivityOut": {
+        "description": "Backstop signal: ordinary traffic classified by User-Agent.\n\nTelemetry and health paths are excluded, so an agent polling this\nendpoint cannot manufacture the activity it is asking about.",
+        "properties": {
+          "by_surface": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceActivityOut"
+            },
+            "title": "By Surface",
+            "type": "object"
+          },
+          "last_request_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Request At"
+          },
+          "seconds_since_last_request": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Last Request"
+          }
+        },
+        "required": [
+          "last_request_at",
+          "seconds_since_last_request",
+          "by_surface"
+        ],
+        "title": "PassiveActivityOut",
         "type": "object"
       },
       "PendingTrackOut": {
@@ -5790,6 +5923,38 @@
         "title": "SuggestionOut",
         "type": "object"
       },
+      "SurfaceActivityOut": {
+        "properties": {
+          "last_request_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Request At"
+          },
+          "seconds_since_request": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Request"
+          }
+        },
+        "required": [
+          "last_request_at",
+          "seconds_since_request"
+        ],
+        "title": "SurfaceActivityOut",
+        "type": "object"
+      },
       "TierEstimateOut": {
         "description": "Cost of one track at one tier. ``measured`` false means we do not know.",
         "properties": {
@@ -6739,6 +6904,58 @@
           }
         },
         "title": "UiPrefsPatch",
+        "type": "object"
+      },
+      "UsageClientsOut": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientOut"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "in_use_window_seconds": {
+            "title": "In Use Window Seconds",
+            "type": "number"
+          },
+          "passive_activity": {
+            "$ref": "#/components/schemas/PassiveActivityOut"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/UsageSummaryOut"
+          }
+        },
+        "required": [
+          "clients",
+          "summary",
+          "passive_activity",
+          "in_use_window_seconds"
+        ],
+        "title": "UsageClientsOut",
+        "type": "object"
+      },
+      "UsageSummaryOut": {
+        "properties": {
+          "any_client_in_use": {
+            "title": "Any Client In Use",
+            "type": "boolean"
+          },
+          "any_client_open": {
+            "title": "Any Client Open",
+            "type": "boolean"
+          },
+          "desktop_shell_open": {
+            "title": "Desktop Shell Open",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "any_client_open",
+          "any_client_in_use",
+          "desktop_shell_open"
+        ],
+        "title": "UsageSummaryOut",
         "type": "object"
       },
       "UsbVolumeOut": {
@@ -11219,6 +11436,70 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/telemetry/clients": {
+      "get": {
+        "description": "Every client seen since engine boot, plus the one-glance summary.",
+        "operationId": "list_clients_api_v1_telemetry_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageClientsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/heartbeat": {
+      "post": {
+        "description": "Upsert one client's liveness. Server-stamped; the client sends no time.",
+        "operationId": "record_heartbeat_api_v1_telemetry_heartbeat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Heartbeat",
+        "tags": [
+          "telemetry"
         ]
       }
     },

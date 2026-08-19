@@ -68,12 +68,14 @@ from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
+from .routes import telemetry as telemetry_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import voice_probe as voice_probe_routes
 from .share_gate import share_gate_middleware, share_host
+from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +135,7 @@ def create_app(
     client_error_log_dir: Path | None = None,
     client_event_log_dir: Path | None = None,
     stem_roots: Sequence[Path] | None = None,
+    usage_store: UsageStore | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -183,6 +186,10 @@ def create_app(
     )
     if stem_roots is not None:
         app.state.stem_roots = tuple(Path(root) for root in stem_roots)
+    # Usage telemetry is per-process by design: "is the app open" is a
+    # question about now, so a restart honestly resets it to "nobody has
+    # checked in yet". Tests inject a store with a fake clock.
+    app.state.usage_store = usage_store if usage_store is not None else UsageStore()
 
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(
@@ -243,6 +250,18 @@ def create_app(
     app.middleware("http")(share_gate_middleware)
 
     @app.middleware("http")
+    async def record_passive_usage(request: Request, call_next):
+        # Backstop for the heartbeat: ordinary traffic from a real webview or
+        # browser is evidence someone has the app open. The store drops
+        # telemetry/health paths and non-app user agents, so agents polling
+        # this API cannot manufacture the activity they are asking about.
+        app.state.usage_store.record_request(
+            path=request.url.path,
+            user_agent=request.headers.get("user-agent", ""),
+        )
+        return await call_next(request)
+
+    @app.middleware("http")
     async def add_bind_warning(request: Request, call_next):
         response = await call_next(request)
         if bind_host and bind_host != "127.0.0.1" and bind_host != "localhost":
@@ -287,6 +306,7 @@ def create_app(
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
     app.include_router(usb_volumes_routes.router, prefix=api_prefix)
+    app.include_router(telemetry_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)
     app.include_router(play_analytics_router)
