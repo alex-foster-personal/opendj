@@ -29,6 +29,46 @@ import type {
 export const STRETCH_CREATE_TIMEOUT_MS = 15_000;
 export const STRETCH_COMMAND_TIMEOUT_MS = 5_000;
 
+/**
+ * LATENCY round 2, STEP 2: the STFT block length to configure every processor
+ * with, or `null` to leave the library on its own default.
+ *
+ * SHIPS AS `null`, which is byte-identical to the behaviour before round 2:
+ * with no `configure()` call the vendored library takes its `{preset:
+ * 'default'}` branch, giving a 120ms block at 44100Hz.
+ *
+ * Setting it to 30 is prepared and measured but NOT enabled. The mechanism:
+ * `latency()` equals the block exactly, and the onset ramp is 0.37x the block,
+ * so the schedule floor (ramp lead + 8ms immediate safety) moves 52ms -> 19ms.
+ * The cost is real and is why the flag is off: a 30ms window at 44100Hz
+ * resolves ~33Hz per bin against ~8Hz today, i.e. four times worse frequency
+ * resolution, which is the direction a phase-vocoder is most sensitive in
+ * (bass and tonal stability). That trade is gated on the cross-lane quality
+ * methodology, not on this file.
+ *
+ * THREE rules if it is ever flipped:
+ *  1. GLOBAL ONLY. Every deck and every stem branch must get the same block, or
+ *     participants have different onset ramps and a beat-sync group's first
+ *     beat smears (`_assertUniformProcessorBlock`, `assertStretchBlockApplied`).
+ *  2. CREATE TIME ONLY. Reconfiguring a PLAYING deck was measured to drop its
+ *     output to effective silence (-33 to -50dB) for 10-45ms. Before `load()`
+ *     no audio exists, so that hole cannot be punched.
+ *  3. REFRESH THE CACHES. `rt.latencySec` and `AlignedStemDeckProcessor`'s own
+ *     copy are both snapshots; `latency()` updates truthfully after configure,
+ *     but only if somebody re-reads it.
+ *
+ * `.planning/latency-round2-design.md` section 4 has the block-by-block table.
+ */
+export const STRETCH_BLOCK_MS: number | null = null;
+
+/**
+ * Tolerance for "the configured block took". `latency()` quantises the block to
+ * whole samples (blockMs 5 reports 5.011ms at 44100Hz = 221 samples), so exact
+ * equality would be brittle; 0.05ms is about two samples at 44100Hz and far
+ * tighter than any block size we would choose between.
+ */
+export const STRETCH_BLOCK_TOLERANCE_MS = 0.05;
+
 export const STRETCH_NODE_OPTIONS = Object.freeze({
 	numberOfInputs: 1,
 	numberOfOutputs: 1,
@@ -140,6 +180,32 @@ export function buildStretchSchedule(
 		...(change.loopStart === undefined ? {} : { loopStart: change.loopStart }),
 		...(change.loopEnd === undefined ? {} : { loopEnd: change.loopEnd })
 	};
+}
+
+/**
+ * The configured block must be the block the processor actually adopted.
+ *
+ * A `configure()` that silently no-ops on ONE stem branch is caught by the
+ * existing cross-branch latency assertion. A `configure()` that no-ops on ALL
+ * of them is not: every branch agrees, at the wrong value, and the deck runs a
+ * different block from the rest of the fleet with a schedule floor sized for
+ * neither. This is the check with teeth for that case, and it runs per
+ * processor, at creation, before any audio exists.
+ */
+export function assertStretchBlockApplied(latencySec: number, blockMs: number): void {
+	_assertFiniteNonNegative('Signalsmith latency', latencySec);
+	if (!Number.isFinite(blockMs) || blockMs <= 0) {
+		throw new RangeError(`blockMs must be a finite positive number, got ${blockMs}`);
+	}
+	const reportedMs = latencySec * 1000;
+	if (Math.abs(reportedMs - blockMs) > STRETCH_BLOCK_TOLERANCE_MS) {
+		throw new StretchProcessorError(
+			`Signalsmith block configuration did not take: asked for ${blockMs}ms, processor ` +
+				`reports ${reportedMs}ms. Block configuration must be identical on every deck ` +
+				'and every stem branch - a mixed fleet gives participants different onset ramps, ' +
+				'so a beat-sync group launch smears its first beat.'
+		);
+	}
 }
 
 export function assertStretchLoadIsFresh(loadedDurationSec: number): void {
@@ -280,6 +346,16 @@ export class StretchDeckProcessor {
 			STRETCH_CREATE_TIMEOUT_MS
 		);
 		const processor = new StretchDeckProcessor(context, node, options);
+		// STEP 2, off by default. Deliberately here and nowhere else: this is the
+		// only moment a processor exists with no audio loaded and nothing
+		// scheduled, and reconfiguring later was measured to silence a playing
+		// deck for 10-45ms. `configure()` re-reads both latency terms from WASM,
+		// so the check below reads the value the processor actually adopted.
+		const blockMs = STRETCH_BLOCK_MS;
+		if (blockMs !== null) {
+			await processor.#command(() => node.configure({ blockMs }), 'block configuration');
+			assertStretchBlockApplied(await processor.latencySec(), blockMs);
+		}
 		const onInputTime = options.onInputTime;
 		if (onInputTime !== undefined) {
 			await processor.#command(
