@@ -10,6 +10,7 @@
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { onMount } from 'svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
+	import { api, unwrap } from '$lib/api/client';
 	import {
 		ConflictError,
 		RbApiError,
@@ -23,8 +24,7 @@
 		searchCollection,
 		parseStemSummary,
 		parseVocals,
-		vocalsOf,
-		RB_API_BASE
+		vocalsOf
 	} from '$lib/rb/api-rb';
 	import type {
 		PlaylistSummaryHydrated,
@@ -434,13 +434,12 @@
 
 	async function _pingHealth(): Promise<{ be: boolean; lib: boolean }> {
 		try {
-			const r = await fetch(`${RB_API_BASE}/api/v1/health`, {
-				method: 'GET',
-				cache: 'no-store',
-				signal: AbortSignal.timeout(2000)
-			});
-			if (!r.ok) return { be: false, lib: false };
-			const body = (await r.json()) as { state_db?: { tracks?: number } };
+			const body = await unwrap(
+				api.GET('/api/v1/health', {
+					cache: 'no-store',
+					signal: AbortSignal.timeout(2000)
+				})
+			);
 			return { be: true, lib: (body.state_db?.tracks ?? 0) > 0 };
 		} catch {
 			return { be: false, lib: false };
