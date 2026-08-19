@@ -35,7 +35,8 @@
 	import { deckHoverUi } from '$lib/rb/deck-hover.svelte';
 	import { setConfirmPref, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
-	import { beginTrackDrag, endTrackDrag } from '$lib/rb/track-drag.svelte';
+	import { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
+	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
 	import type { DeckId } from '$lib/rb/types';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
@@ -599,7 +600,6 @@
 	// Grip-initiated only (not the whole row): the row's own click/dblclick
 	// keep selecting/loading a deck. _dragSourceOrder is plain state, not a
 	// rune - it only matters for the lifetime of one drag gesture.
-	const MIME_TRACK = 'application/x-mdt-stable-id';
 	let _dragSourceOrder: number | null = null;
 
 	function onRowDragStart(event: DragEvent, row: BrowserRow): void {
@@ -611,12 +611,23 @@
 			selectedIds.includes(row.stable_id) && selectedIds.length > 1
 				? selectedIds
 				: [row.stable_id];
-		event.dataTransfer?.setData(MIME_TRACK, ids.join(','));
+		// The MIME is still set for cross-app interop; drop targets accept on
+		// the in-app state because WKWebView hides it during dragover.
+		event.dataTransfer?.setData(TRACK_STABLE_MIME, ids.join(','));
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		// Without an explicit drag image WebKit snapshots this <tr> plus every
+		// composited layer overlapping it, so the whole browser panel appears
+		// to come along for the ride.
+		installTrackDragGhost(event, {
+			title: row.title ?? row.stable_id,
+			artist: row.artist ?? '',
+			count: ids.length
+		});
 		beginTrackDrag(ids);
 	}
 
 	function onRowDragEnd(): void {
+		removeTrackDragGhost();
 		endTrackDrag();
 	}
 

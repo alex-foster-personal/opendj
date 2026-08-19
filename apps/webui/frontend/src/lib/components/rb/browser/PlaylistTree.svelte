@@ -11,7 +11,11 @@
 	import { RbApiError } from '$lib/rb/api-rb';
 	import { tick } from 'svelte';
 	import ColumnBrowser, { type ColumnTrackRow } from './ColumnBrowser.svelte';
-	import { TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
+	import {
+		acceptTrackDragOver,
+		droppedStableIds,
+		endTrackDrag
+	} from '$lib/rb/track-drag.svelte';
 	import { encodePlaylistDrag, PLAYLIST_DRAG_MIME } from './pane-contract.svelte';
 
 	let {
@@ -60,21 +64,12 @@
 	/** playlist_id currently under a track drag, for the drop outline. */
 	let dropTargetId: string | null = $state(null);
 
-	/** Ids from a TrackTable row drag, or [] when the drag is not ours. */
-	function _draggedStableIds(event: DragEvent): string[] {
-		const raw = event.dataTransfer?.getData(TRACK_STABLE_MIME) ?? '';
-		return raw
-			.split(',')
-			.map((id) => id.trim())
-			.filter((id) => id !== '');
-	}
-
 	function _onTrackDragOver(event: DragEvent, node: PlaylistNode): void {
 		// All Tracks is a view, not a playlist, so it can never receive a drop.
 		if (ondroptracks === undefined || node.kind !== 'playlist') return;
-		if (![...(event.dataTransfer?.types ?? [])].includes(TRACK_STABLE_MIME)) return;
-		event.preventDefault();
-		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy';
+		// Same WKWebView rule as the deck drop targets: accept on the in-app
+		// drag state, never on dataTransfer.types (see track-drag.svelte.ts).
+		if (!acceptTrackDragOver(event)) return;
 		dropTargetId = node.playlist_id;
 	}
 
@@ -86,7 +81,8 @@
 		if (ondroptracks === undefined || node.kind !== 'playlist') return;
 		event.preventDefault();
 		dropTargetId = null;
-		const ids = _draggedStableIds(event);
+		const ids = droppedStableIds(event);
+		endTrackDrag();
 		if (ids.length === 0) return;
 		ondroptracks(node.playlist_id, ids);
 	}
