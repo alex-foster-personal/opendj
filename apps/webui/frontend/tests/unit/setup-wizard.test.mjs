@@ -22,6 +22,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { engineHealth, jsonResponse } from './setup-fixtures.mjs';
 
 const API_BASE = 'https://setup.example.test';
 
@@ -29,34 +30,6 @@ let mod;
 let wizard;
 let originalFetch;
 let requests;
-
-function jsonResponse(body, status = 200) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { 'content-type': 'application/json' }
-	});
-}
-
-function engineHealth() {
-	return {
-		status: 'ok',
-		state_db: {
-			path: 'data/state/state.db',
-			tracks: 0,
-			playlists: 0,
-			pairings: 0,
-			last_writer_hostname: null,
-			last_writer_at: null
-		},
-		cloud: { lock_holder: null },
-		syncthing: null,
-		bind_host: '127.0.0.1',
-		version: '0.1.0',
-		contract_rev: 'sha256:2f6c',
-		engine_version: '0.1.0',
-		boot_id: 'boot-1'
-	};
-}
 
 function fileProbe(path, exists = true) {
 	return { path, exists, size_bytes: exists ? 1024 : null, modified_at: null };
