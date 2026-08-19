@@ -26,6 +26,21 @@ factories that read ``MASTER_PLAIN_DB`` and ``_open_rw`` from its own module
 namespace at call time, which is what keeps its two long-standing test seams
 (``monkeypatch.setattr(rb_vendor, "MASTER_PLAIN_DB", ...)`` and
 ``monkeypatch.setattr(rb_vendor, "_open_rw", ...)``) working through the move.
+
+D5 (map section 3): :func:`fetch_hot_cue_slots` reads like a read and used to
+write. It opened **read-write**, ran DDL and an ``INSERT OR IGNORE`` inside its
+own ``BEGIN IMMEDIATE``, so every ``GET /tracks/{id}/hot-cues`` -- which the
+deck-load path issues per track -- took an exclusive transaction on the user's
+rekordbox database just to look at eight slots.
+
+The map offers a rename (``provision_and_fetch_hot_cue_slots``) or, better,
+splitting the provisioning out. The provisioning turns out to be redundant
+rather than merely misplaced, so it is deleted and the honest name is the one
+it already had: an absent sidecar row and a row at generation 0 are the same
+state and hash to the same CAS revision, and every write path provisions on
+demand inside its own exclusive transaction anyway. The read now takes a
+read-only connection, which makes the property structural rather than a
+convention a later edit could quietly break.
 """
 from __future__ import annotations
 
@@ -36,7 +51,6 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from apps.engine_core.store.schema import ensure_vendor_sidecar_tables
 from apps.shared.rb_frames import msec_to_frame
 
 from .cues import (
@@ -54,6 +68,7 @@ from .reversal import (
     _bump_slot_generation,
     _create_reversal,
     _load_reversal,
+    _read_slot_generations,
     _slot_generation,
 )
 
@@ -78,23 +93,20 @@ def _open_rw(path: Path, label: str) -> sqlite3.Connection:
 def fetch_hot_cue_slots(
     vendor_id: str,
     *,
-    open_rw: ConnectMaster,
+    open_ro: ConnectMaster,
 ) -> list[dict[str, Any]]:
-    """Read all eight slot states, including revisions for empty slots."""
-    master = open_rw()
+    """Read all eight slot states, including revisions for empty slots.
+
+    Read-only, and therefore takes a read-only connection: no transaction, no
+    DDL, no sidecar provisioning. See the module docstring for why dropping
+    the provisioning write cannot change a single returned revision.
+    """
+    master = open_ro()
     try:
-        master.execute("BEGIN IMMEDIATE")
-        ensure_vendor_sidecar_tables(master)
         snapshots = {
             kind: _live_slot_snapshot(master, vendor_id, kind) for kind in _KINDS
         }
-        generations = {
-            kind: _slot_generation(master, vendor_id, kind) for kind in _KINDS
-        }
-        master.commit()
-    except Exception:
-        master.rollback()
-        raise
+        generations = _read_slot_generations(master, vendor_id, _KINDS)
     finally:
         master.close()
     return [

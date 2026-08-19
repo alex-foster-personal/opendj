@@ -693,15 +693,24 @@ from apps.webui.server.rb_vendor_pkg.anlz import build_anlz_payload
 # (monkeypatch.setattr(rb_vendor, "MASTER_PLAIN_DB", ...) and
 # monkeypatch.setattr(rb_vendor, "_open_rw", ...)) still bite.
 #
+# fetch_hot_cue_slots is now genuinely read-only (map section 3, D5): it used
+# to open RW and run DDL plus an INSERT OR IGNORE inside its own
+# BEGIN IMMEDIATE, so every GET of the hot-cue bank took a write transaction
+# on the user's rekordbox database.
+#
 
 
 def _connect_master_rw() -> sqlite3.Connection:
     return _open_rw(MASTER_PLAIN_DB, "MASTER_DB")
 
 
+def _connect_master_ro() -> sqlite3.Connection:
+    return _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
+
+
 def fetch_hot_cue_slots(vendor_id: str) -> list[dict[str, Any]]:
     """Read all eight slot states, including revisions for empty slots."""
-    return _hot_cue_writer.fetch_hot_cue_slots(vendor_id, open_rw=_connect_master_rw)
+    return _hot_cue_writer.fetch_hot_cue_slots(vendor_id, open_ro=_connect_master_ro)
 
 
 def save_hot_cue(

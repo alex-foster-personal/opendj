@@ -14,6 +14,12 @@ Regression one-liners:
     then broken (D3)
   - if the 44.1 kHz frame heuristic changes value then every InFrame this
     repo has ever written is inconsistent and broken (D3)
+  - if reading the hot-cue bank takes a write transaction then broken (D5)
+  - if reading the hot-cue bank provisions sidecar rows then broken (D5)
+  - if the read-only slot read reports different revisions than the old
+    provisioning read then broken (D5)
+  - if a slot's revision stops changing across a save then the CAS token is
+    no longer bound to slot state and broken (D5)
 """
 from __future__ import annotations
 
@@ -26,6 +32,7 @@ from apps.engine_core.store import schema as store_schema
 from apps.shared import rb_frames
 from apps.webui.server import rb_vendor
 from apps.webui.server.rb_vendor_pkg import reversal as rb_reversal
+from apps.webui.server.rb_vendor_pkg import writer as rb_writer
 
 pytestmark = pytest.mark.requirement("CAT-05")
 
@@ -162,3 +169,102 @@ def test_msec_to_frame_keeps_the_44_1khz_heuristic(msec: int, frame: int) -> Non
     here against the module that now owns the conversion.
     """
     assert rb_frames.msec_to_frame(msec) == frame
+
+
+# ----- D5: reading the hot-cue bank does not write --------------------------
+
+
+
+def test_fetch_hot_cue_slots_takes_no_write_transaction(
+    master_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A GET of the hot-cue bank must not touch the user's live rekordbox DB.
+
+    Before D5 this opened read-write, ran DDL and an INSERT OR IGNORE inside
+    its own BEGIN IMMEDIATE, so every read of eight slots took an exclusive
+    lock on master.plain.db.
+    """
+    statements: list[str] = []
+    open_ro = rb_vendor._open_ro
+
+    def traced(path: Path, label: str) -> sqlite3.Connection:
+        conn = open_ro(path, label)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(rb_vendor, "_open_ro", traced)
+    monkeypatch.setattr(
+        rb_vendor,
+        "_open_rw",
+        lambda path, label: pytest.fail("fetch_hot_cue_slots opened read-write"),
+    )
+    rb_vendor.fetch_hot_cue_slots(VENDOR_ID)
+
+    assert statements, "trace callback saw nothing; the test is not measuring"
+    # Verb of each statement, not a substring scan: column names like
+    # `updated_at` and `rb_local_deleted` contain mutating verbs.
+    verbs = {stmt.split(maxsplit=1)[0].upper() for stmt in statements}
+    assert verbs <= {"SELECT", "PRAGMA"}, f"read path issued {verbs - {'SELECT', 'PRAGMA'}}"
+
+
+def test_fetch_hot_cue_slots_provisions_nothing(master_db: Path) -> None:
+    slots = rb_vendor.fetch_hot_cue_slots(VENDOR_ID)
+    assert len(slots) == len(rb_vendor.HOT_CUE_SLOTS)
+    assert all(row["cue"] is None for row in slots)
+    assert _tables(master_db).isdisjoint(SIDECAR_TABLES)
+
+
+def test_read_only_revisions_match_the_provisioning_read(master_db: Path) -> None:
+    """The generation a read reports equals the one provisioning would create.
+
+    This is the whole argument for deleting the write: an absent sidecar row
+    and a row at generation 0 are the same state, so both paths hash to the
+    same CAS token. Compared against the real provisioning helper, not a
+    restatement of it.
+    """
+    read_only = rb_vendor.fetch_hot_cue_slots(VENDOR_ID)
+
+    conn = sqlite3.connect(str(master_db))
+    try:
+        provisioned = {
+            kind: rb_reversal._slot_generation(conn, VENDOR_ID, kind)
+            for kind in range(1, len(rb_vendor.HOT_CUE_SLOTS) + 1)
+        }
+        conn.commit()
+    finally:
+        conn.close()
+
+    after_provisioning = rb_vendor.fetch_hot_cue_slots(VENDOR_ID)
+    assert provisioned == dict.fromkeys(provisioned, 0)
+    assert read_only == after_provisioning
+
+
+def test_read_slot_generations_reports_live_bumps(master_db: Path) -> None:
+    before = _revision(rb_vendor.fetch_hot_cue_slots(VENDOR_ID), "B")
+    rb_vendor.save_hot_cue(VENDOR_ID, "B", 2_000, expected_revision=before)
+    after = _revision(rb_vendor.fetch_hot_cue_slots(VENDOR_ID), "B")
+    assert after != before, "read path must see the generation the write bumped"
+
+    conn = sqlite3.connect(f"file:{master_db}?mode=ro", uri=True)
+    try:
+        generations = rb_reversal._read_slot_generations(conn, VENDOR_ID, (1, 2, 3))
+    finally:
+        conn.close()
+    assert generations[2] == 1, "slot B (Kind 2) was bumped exactly once"
+    assert generations[1] == 0 and generations[3] == 0
+
+
+def test_writer_read_path_needs_no_write_capable_connection(master_db: Path) -> None:
+    """The read path is satisfiable by a query_only connection.
+
+    Injecting the factory directly, so this holds for any caller of the
+    adapter and not only for the rb_vendor facade.
+    """
+
+    def open_query_only() -> sqlite3.Connection:
+        conn = sqlite3.connect(f"file:{master_db}?mode=ro", uri=True)
+        conn.execute("PRAGMA query_only = ON")
+        return conn
+
+    slots = rb_writer.fetch_hot_cue_slots(VENDOR_ID, open_ro=open_query_only)
+    assert [row["slot"] for row in slots] == list(rb_vendor.HOT_CUE_SLOTS)

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from fastapi import HTTPException
@@ -25,6 +25,50 @@ from fastapi import HTTPException
 from apps.engine_core.store.schema import ensure_vendor_sidecar_tables
 
 from .cues import _rb_timestamp
+
+_SLOT_REVISION_TABLE = "rb_hot_cue_slot_revision"
+
+# An unprovisioned slot and a slot provisioned at generation 0 are the same
+# state: `_slot_generation` INSERTs `Generation = 0` and hands back 0. So the
+# read path can report 0 for a missing row, produce a byte-identical CAS
+# revision, and never take a write transaction (D5).
+_UNPROVISIONED_GENERATION = 0
+
+
+def _slot_revision_table_exists(conn: sqlite3.Connection) -> bool:
+    """True once any write path has provisioned the sidecar.
+
+    A vendor DB never written through this surface simply has no sidecar
+    tables yet. That is a legitimate state with a defined answer -- every slot
+    at generation 0 -- not a missing table to paper over.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (_SLOT_REVISION_TABLE,),
+    ).fetchone()
+    return row is not None
+
+
+def _read_slot_generations(
+    conn: sqlite3.Connection,
+    vendor_id: str,
+    kinds: Iterable[int],
+) -> dict[int, int]:
+    """Slot generations for ``kinds``, provisioning none of them.
+
+    Read-only counterpart to :func:`_slot_generation`, and the reason
+    ``GET /tracks/{id}/hot-cues`` no longer writes. One query for the whole
+    bank instead of one INSERT-then-SELECT per slot.
+    """
+    wanted = list(kinds)
+    if not _slot_revision_table_exists(conn):
+        return dict.fromkeys(wanted, _UNPROVISIONED_GENERATION)
+    rows = conn.execute(
+        f"SELECT Kind, Generation FROM {_SLOT_REVISION_TABLE} WHERE ContentID = ?",
+        (vendor_id,),
+    ).fetchall()
+    stored = {int(kind): int(generation) for kind, generation in rows}
+    return {kind: stored.get(kind, _UNPROVISIONED_GENERATION) for kind in wanted}
 
 
 def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
