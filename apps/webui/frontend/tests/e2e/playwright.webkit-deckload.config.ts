@@ -1,5 +1,6 @@
 /**
- * WebKit performance-controls gate against the PRODUCTION artifact.
+ * WebKit gate against the PRODUCTION artifact: deck load, and the ways into
+ * setup.
  *
  * Playwright's webkit project shares the WKWebView engine core, so this is
  * the only gate in the repo that reproduces the class of failure where the
@@ -11,6 +12,17 @@
  *   - webkit, not chromium.
  *   - the SPA is served by the ENGINE from `apps/webui/frontend/build`, not
  *     by vite. Dev serves packages untransformed; the artifact does not.
+ *
+ * TWO SUITES, ONE SERVER. setup-entry-points.spec.ts was written config-less
+ * so the root chromium/vite config would pick it up, and that run still
+ * happens. It is ALSO run here, because everything it asserts is exactly what
+ * a tester meets in the installed app and nowhere else: the Cmd+, accelerator
+ * that has to survive the production transform, and the build identity chip
+ * whose whole reason to exist is stating the EPHEMERAL port the packaged
+ * engine bound. Under vite the chip reads the dev origin, which is the one
+ * address that was never in question. Neither suite needs a fixture the other
+ * does not, so they share this engine and its throwaway library rather than
+ * paying a second 180s boot.
  *
  * The library is a throwaway fixture built by the real folder ingest over
  * generated audio (see support/deckload_fixture.py). It is NOT the lane data
@@ -24,12 +36,16 @@
  * - ✔︎ The production build must already exist; a stale/absent build fails at
  *   config load with the command to run, never mid-test as a mystery.
  * - ✔︎ No retries and one worker: a flaky worklet is the defect under test.
+ * - ✔︎ Both tier-1 artifact suites run here: the deck-load contract and the
+ *   setup entry points.
  *
  * Acceptance tests:
  *
  * - [if] `build/index.html` is missing [then ⛔️] the run starts.
  * - [if] the port is one of the reserved lane ports [then ⛔️] the config loads.
  * - [if] a test fails [then ⛔️] Playwright retries it and hides the flake.
+ * - [if] setup-entry-points.spec.ts is skipped by this config [then ⛔️] the
+ *   accelerator and the chip are gated on webkit.
  */
 import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -118,7 +134,10 @@ const ENGINE_COMMAND = [
 
 export default defineConfig({
 	testDir: '.',
-	testMatch: 'webkit-deckload.spec.ts',
+	// Named individually, never a glob: this directory holds a dozen suites
+	// with their own servers and real-library fixtures, and a pattern that
+	// widened by accident would point them all at this one engine.
+	testMatch: ['webkit-deckload.spec.ts', 'setup-entry-points.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
