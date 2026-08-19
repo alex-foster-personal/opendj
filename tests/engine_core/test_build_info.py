@@ -215,7 +215,7 @@ def test_a_timestamp_without_a_zone_is_refused_not_assumed() -> None:
 
 @pytest.mark.requirement("INSTALL-07")
 def test_an_unparseable_timestamp_is_refused_not_guessed() -> None:
-    with pytest.raises(BuildInfoUnavailable, match="not.*ISO-8601"):
+    with pytest.raises(BuildInfoUnavailable, match=r"not.*ISO-8601"):
         head_time_as_utc("last tuesday")
 
 

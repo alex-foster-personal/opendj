@@ -308,14 +308,16 @@ def _eval_complexity() -> list[Metric]:
                 worst_value = value
                 worst_name = f"{file}:{block['lineno']} {block['name']}"
 
-    _, mi_raw = _uv("radon", "mi", *paths, "-j", allow_fail=True)
+    _, mi_raw = _uv("radon", "mi", *paths, "-e", excludes, "-j", allow_fail=True)
     mi = json.loads(mi_raw)
     low_mi = sorted(
         (
             (file, data["mi"])
             for file, data in mi.items()
             if isinstance(data, dict) and "rank" in data
-            and data["rank"] != "A" and not _is_vendored(file)
+            and data["rank"] != "A"
+            and not _is_vendored(file)
+            and not _is_derived(file)
         ),
         key=lambda kv: kv[1],
     )
