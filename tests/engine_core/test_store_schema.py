@@ -17,6 +17,8 @@ definition is the specification.
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -618,6 +620,119 @@ def test_a_failing_rollback_is_reported_but_never_swallows_the_cause(
     )
     assert "simulated rollback failure" in notes
     conn.close()
+
+
+class _RecordingConnection(sqlite3.Connection):
+    """Records every statement executed, so the lock mode can be asserted."""
+
+    statements: list[str]
+
+    def execute(self, sql: str, *args: object) -> sqlite3.Cursor:  # type: ignore[override]
+        self.statements.append(sql.strip())
+        return super().execute(sql, *args)
+
+
+def test_migration_takes_the_write_lock_up_front(tmp_path: Path) -> None:
+    """F4 (R3 #7): the runner is read-then-write, so it must BEGIN IMMEDIATE.
+
+    A plain ``BEGIN`` opens DEFERRED: the read snapshot is taken first and the
+    write lock is only requested at the first write. If another connection
+    takes RESERVED in that window, SQLite returns SQLITE_BUSY on the upgrade
+    and does NOT retry it, whatever busy_timeout says, because retrying an
+    upgrade can deadlock. Taking the write lock at BEGIN makes the wait
+    honour the timeout instead.
+    """
+    path = tmp_path / "lockmode.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), factory=_RecordingConnection)
+    conn.statements = []
+    consolidated.apply_migrations(conn)
+
+    begins = [s for s in conn.statements if s.upper().startswith("BEGIN")]
+    assert begins == ["BEGIN IMMEDIATE"], (
+        f"runner must open its transaction IMMEDIATE, issued {begins}"
+    )
+    conn.close()
+
+
+def _impatient_connect(path: Path) -> sqlite3.Connection:
+    """A connection with NO caller-supplied busy timeout.
+
+    ``sqlite3.connect`` defaults to ``timeout=5.0`` and stamps busy_timeout to
+    5000ms, so a test using the default would be measuring Python's default
+    rather than the runner. ``timeout=0`` is what a caller that tunes its own
+    connections can hand us, and it is the case the runner has to cover: the
+    migration's contention behaviour must not depend on how someone else built
+    the connection.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return sqlite3.connect(str(path), timeout=0)
+
+
+def test_migration_sets_its_own_busy_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F4: a contended DB must wait for the lock, not fail instantly.
+
+    The runner inherited whatever busy timeout the caller happened to set. On
+    a connection opened ``timeout=0`` that is no wait at all, so a concurrent
+    writer made ``apply_migrations`` fail in 0.000s with a bare 'database is
+    locked' -- indistinguishable, to the caller, from a permanently unusable
+    file. The runner now stamps its own timeout instead of inheriting one.
+    """
+    monkeypatch.setattr(consolidated, "BUSY_TIMEOUT_MS", 500)
+    path = tmp_path / "contended.db"
+    holder = _connect(path)
+    holder.execute("CREATE TABLE canary (x INTEGER)")
+    holder.commit()
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("INSERT INTO canary VALUES (1)")
+
+    victim = _impatient_connect(path)
+    started = time.monotonic()
+    with pytest.raises(sqlite3.OperationalError, match="locked"):
+        consolidated.apply_migrations(victim)
+    waited = time.monotonic() - started
+
+    assert waited >= 0.4, (
+        f"gave up after {waited:.3f}s -- the 500ms busy timeout was not applied"
+    )
+    victim.close()
+    holder.rollback()
+    holder.close()
+
+
+def test_migration_succeeds_when_the_lock_clears_within_the_timeout(
+    tmp_path: Path,
+) -> None:
+    """F4: the timeout is there to let contention resolve, not just to delay."""
+    path = tmp_path / "transient_lock.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Released from a second thread, so this one opts out of the same-thread check.
+    holder = sqlite3.connect(str(path), check_same_thread=False)
+    holder.execute("CREATE TABLE canary (x INTEGER)")
+    holder.commit()
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("INSERT INTO canary VALUES (1)")
+
+    released = threading.Event()
+
+    def _release() -> None:
+        time.sleep(0.3)
+        holder.rollback()
+        released.set()
+
+    releaser = threading.Thread(target=_release)
+    releaser.start()
+    try:
+        victim = _impatient_connect(path)
+        version = consolidated.apply_migrations(victim)
+        assert version == consolidated.SCHEMA_VERSION
+        assert released.is_set(), "fixture: the lock should have been held first"
+        victim.close()
+    finally:
+        releaser.join()
+        holder.close()
 
 
 def test_legacy_runners_become_no_ops_after_consolidation(tmp_path: Path) -> None:

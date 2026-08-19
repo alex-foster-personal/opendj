@@ -70,6 +70,15 @@ consolidated"."""
 LEGACY_SHARED_STATE_VERSION: int = 5
 """Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
 
+BUSY_TIMEOUT_MS: int = 5000
+"""How long the runner waits for a competing writer before giving up.
+
+Stamped onto the connection by :func:`apply_migrations` rather than inherited.
+``sqlite3.connect`` has a caller-side ``timeout`` argument that defaults to 5s
+but is 0 for any caller that tunes its own connections -- and a migration that
+gives up in 0.000s because of how someone else opened the file is a hidden
+default, not a policy. The runner owns this one."""
+
 MIN_ADOPTABLE_LEGACY_VERSION: int = 3
 """Below this the legacy ladder still owes table REBUILDS -- v1->v2 rewrites
 ``track_field_history``'s primary key and v2->v3 widens the ``track_fields``
@@ -1054,6 +1063,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     shape that adoption cannot repair (see
     :data:`MIN_ADOPTABLE_LEGACY_VERSION`).
     """
+    conn.execute(f"PRAGMA busy_timeout = {int(BUSY_TIMEOUT_MS)}")
     _ensure_meta(conn)
     current = consolidated_version(conn)
     if current >= SCHEMA_VERSION:
@@ -1073,7 +1083,15 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
         _assert_adoptable(conn)
     _audit_existing_shapes(conn)
 
-    conn.execute("BEGIN")
+    # IMMEDIATE, not the default DEFERRED: this runner reads (the census and
+    # the audit above, plus missing_tables inside _adopt) and then writes. A
+    # deferred transaction takes its read snapshot first and only requests the
+    # write lock at the first CREATE; if a competing writer takes RESERVED in
+    # that window, SQLite returns SQLITE_BUSY on the upgrade and will NOT
+    # retry it whatever busy_timeout says, because retrying an upgrade can
+    # deadlock. Taking the write lock up front makes the wait honour the
+    # timeout instead of failing outright.
+    conn.execute("BEGIN IMMEDIATE")
     try:
         if adopting:
             _adopt(conn)
@@ -1101,6 +1119,7 @@ def was_adopted(conn: sqlite3.Connection) -> bool:
 __all__ = [
     "ADOPTION_VERSION",
     "ALL_TABLES",
+    "BUSY_TIMEOUT_MS",
     "DOMAINS",
     "LEGACY_SHARED_STATE_VERSION",
     "LEGACY_SOURCES",
