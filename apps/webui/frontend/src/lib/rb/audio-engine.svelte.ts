@@ -158,6 +158,23 @@ import {
 	parseCamelotKey
 } from '$lib/player/key/camelot';
 import type { CamelotKey } from '$lib/player/key/camelot';
+import {
+	exactBeatLoopRangeMs,
+	loopEndpointsWithinDurationMs,
+	quantizedLoopEndpointsMs
+} from '$lib/player/transport/loops';
+import {
+	commonSyncScheduleTimes,
+	deckReachedEnd,
+	normalizeEngagedLoopPositionSec,
+	normalizeScheduledTransportEntrySec,
+	pendingSyncWaitTarget,
+	playResumePositionSec,
+	projectedTransportPosition,
+	safeSyncScheduleTime,
+	safeTransportScheduleTime,
+	supersedingScheduleTime
+} from '$lib/player/transport/schedule-math';
 
 // ---------------------------------------------------- extracted re-exports
 //
@@ -179,6 +196,19 @@ export {
 	parseCamelotKey
 };
 export type { CamelotKey };
+export { exactBeatLoopRangeMs, loopEndpointsWithinDurationMs, quantizedLoopEndpointsMs };
+export {
+	commonSyncScheduleTimes,
+	deckReachedEnd,
+	normalizeEngagedLoopPositionSec,
+	normalizeScheduledTransportEntrySec,
+	pendingSyncWaitTarget,
+	playResumePositionSec,
+	projectedTransportPosition,
+	safeSyncScheduleTime,
+	safeTransportScheduleTime,
+	supersedingScheduleTime
+};
 
 // ------------------------------------------------------------ rune stores
 
@@ -1334,201 +1364,6 @@ export function syncChangeRequiresReschedule(
 	return desiredActive && beatSyncEnabled && master !== null && master !== deck;
 }
 
-export function quantizedLoopEndpointsMs(
-	beats: readonly AnlzBeat[],
-	loop: { in_ms: number; out_ms: number },
-	quantizeEnabled: boolean
-): { in_ms: number; out_ms: number } {
-	if (
-		!Number.isFinite(loop.in_ms) ||
-		!Number.isFinite(loop.out_ms) ||
-		loop.in_ms < 0 ||
-		loop.out_ms <= loop.in_ms
-	) {
-		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
-	}
-	if (!quantizeEnabled) return { ...loop };
-	const snapped = {
-		in_ms: quantizeToNearestBeat(beats, loop.in_ms / 1000) * 1000,
-		out_ms: quantizeToNearestBeat(beats, loop.out_ms / 1000) * 1000
-	};
-	if (snapped.out_ms <= snapped.in_ms) {
-		throw new RangeError(
-			`quantized loop collapsed at ${snapped.in_ms}ms; choose endpoints spanning distinct PQTZ beats`
-		);
-	}
-	return snapped;
-}
-
-/** Bound a valid loop to the decoded audio duration. Overshoot is expected
- * for a final PQTZ interval that extends past the decoded buffer boundary;
- * an empty loop remains an explicit error. */
-export function loopEndpointsWithinDurationMs(
-	loop: { in_ms: number; out_ms: number },
-	durationMs: number
-): { in_ms: number; out_ms: number } {
-	if (!Number.isFinite(durationMs) || durationMs <= 0) {
-		throw new RangeError(`decoded duration must be finite and positive, got ${durationMs}`);
-	}
-	if (
-		!Number.isFinite(loop.in_ms) ||
-		!Number.isFinite(loop.out_ms) ||
-		loop.in_ms < 0 ||
-		loop.out_ms <= loop.in_ms
-	) {
-		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
-	}
-	const out_ms = Math.min(loop.out_ms, durationMs);
-	if (out_ms <= loop.in_ms) {
-		throw new RangeError(
-			`loop would be empty at decoded duration ${durationMs}ms, got ${loop.in_ms}..${loop.out_ms}`
-		);
-	}
-	return { in_ms: loop.in_ms, out_ms };
-}
-
-export function exactBeatLoopRangeMs(
-	beats: readonly AnlzBeat[],
-	positionMs: number,
-	beatCount: number,
-	startMs?: number
-): { in_ms: number; out_ms: number } {
-	if (!Number.isInteger(beatCount) || beatCount <= 0) {
-		throw new RangeError(`beatCount must be a positive integer, got ${beatCount}`);
-	}
-	const anchorMs = startMs ?? positionMs;
-	if (!Number.isFinite(anchorMs) || anchorMs < 0) {
-		throw new RangeError(`loop anchor must be a finite non-negative number, got ${anchorMs}`);
-	}
-	const startSec = quantizeToNearestBeat(beats, anchorMs / 1000);
-	const startIndex = beats.findIndex((beat) => beat.t === startSec);
-	const endIndex = startIndex + beatCount;
-	if (startIndex < 0 || endIndex >= beats.length) {
-		throw new RangeError(
-			`${beatCount} PQTZ beats do not fit from loop anchor ${anchorMs}ms`
-		);
-	}
-	return { in_ms: startSec * 1000, out_ms: beats[endIndex].t * 1000 };
-}
-
-export function supersedingScheduleTime(
-	requestedContextTime: number,
-	pendingContextTime: number | null,
-	minimumContextTime = 0
-): number {
-	if (!Number.isFinite(requestedContextTime) || requestedContextTime < 0) {
-		throw new RangeError(
-			`requestedContextTime must be finite and non-negative, got ${requestedContextTime}`
-		);
-	}
-	if (!Number.isFinite(minimumContextTime) || minimumContextTime < 0) {
-		throw new RangeError(
-			`minimumContextTime must be finite and non-negative, got ${minimumContextTime}`
-		);
-	}
-	if (requestedContextTime < minimumContextTime) {
-		throw new RangeError(
-			`requestedContextTime ${requestedContextTime} precedes minimumContextTime ` +
-				`${minimumContextTime}`
-		);
-	}
-	if (pendingContextTime === null) return requestedContextTime;
-	if (!Number.isFinite(pendingContextTime) || pendingContextTime < 0) {
-		throw new RangeError(
-			`pendingContextTime must be finite and non-negative, got ${pendingContextTime}`
-		);
-	}
-	if (pendingContextTime < minimumContextTime) return requestedContextTime;
-	return Math.min(requestedContextTime, pendingContextTime);
-}
-
-export function commonSyncScheduleTimes(
-	syncAtContextTime: number,
-	participantCount: number
-): number[] {
-	if (!Number.isFinite(syncAtContextTime) || syncAtContextTime < 0) {
-		throw new RangeError(
-			`syncAtContextTime must be finite and non-negative, got ${syncAtContextTime}`
-		);
-	}
-	if (!Number.isInteger(participantCount) || participantCount <= 0) {
-		throw new RangeError(`participant count must be a positive integer, got ${participantCount}`);
-	}
-	return Array.from({ length: participantCount }, () => syncAtContextTime);
-}
-
-export function pendingSyncWaitTarget(
-	requestedSafeContextTime: number,
-	pendingContextTimes: readonly number[]
-): number | null {
-	if (!Number.isFinite(requestedSafeContextTime) || requestedSafeContextTime < 0) {
-		throw new RangeError(
-			`requestedSafeContextTime must be finite and non-negative, got ${requestedSafeContextTime}`
-		);
-	}
-	const unsafePendingTimes = pendingContextTimes.filter((contextTime) => {
-		if (!Number.isFinite(contextTime) || contextTime < 0) {
-			throw new RangeError(
-				`pending sync context time must be finite and non-negative, got ${contextTime}`
-			);
-		}
-		return contextTime < requestedSafeContextTime;
-	});
-	return unsafePendingTimes.length === 0 ? null : Math.max(...unsafePendingTimes);
-}
-
-export function safeSyncScheduleTime(
-	nowContextTime: number,
-	maxLatencySec: number,
-	masterReadyContextTime: number,
-	safetySec = SYNC_SCHEDULE_SAFETY_S
-): number {
-	for (const [name, value] of Object.entries({
-		nowContextTime,
-		maxLatencySec,
-		masterReadyContextTime,
-		safetySec
-	})) {
-		if (!Number.isFinite(value) || value < 0) {
-			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
-		}
-	}
-	return Math.max(
-		nowContextTime + maxLatencySec + safetySec,
-		masterReadyContextTime + safetySec
-	);
-}
-
-export function safeTransportScheduleTime(
-	nowContextTime: number,
-	latencySec: number,
-	safetySec = SYNC_SCHEDULE_SAFETY_S
-): number {
-	for (const [name, value] of Object.entries({ nowContextTime, latencySec, safetySec })) {
-		if (!Number.isFinite(value) || value < 0) {
-			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
-		}
-	}
-	if (safetySec === 0) throw new RangeError('safetySec must be greater than zero');
-	return nowContextTime + latencySec + safetySec;
-}
-
-export function projectedTransportPosition(input: {
-	now: number;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	projectAt: number;
-}): number {
-	for (const [name, value] of Object.entries(input)) {
-		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
-	}
-	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
-	if (input.projectAt < input.now) throw new RangeError('projectAt must not precede now');
-	const projectionEpoch = Math.max(input.now, input.startContextTime);
-	return input.startPositionSec + Math.max(0, input.projectAt - projectionEpoch) * input.tempoRatio;
-}
-
 /** The key UI must not lead the listener. This accessor resolves only the
  * schedule revision which has crossed the output presentation clock. */
 export function presentedKeyShiftSemitonesAt(
@@ -1777,70 +1612,6 @@ export function projectedLoopAwareTransportPosition(input: {
 		input.projectAt,
 		input.durationSec
 	);
-}
-
-export function normalizeEngagedLoopPositionSec(
-	positionSec: number,
-	loop: LoopState | null
-): number {
-	if (!Number.isFinite(positionSec) || positionSec < 0) {
-		throw new RangeError(`positionSec must be finite and non-negative, got ${positionSec}`);
-	}
-	if (loop === null || !loop.engaged) return positionSec;
-	const loopStartSec = loop.in_ms / 1000;
-	const loopEndSec = loop.out_ms / 1000;
-	const loopSpanSec = loopEndSec - loopStartSec;
-	if (!Number.isFinite(loopSpanSec) || loopStartSec < 0 || loopSpanSec <= 0) {
-		throw new RangeError(`engaged loop must satisfy 0 <= in_ms < out_ms`);
-	}
-	if (positionSec >= loopStartSec && positionSec < loopEndSec) return positionSec;
-	const wrappedOffsetSec =
-		((positionSec - loopStartSec) % loopSpanSec + loopSpanSec) % loopSpanSec;
-	return loopStartSec + wrappedOffsetSec;
-}
-
-export function normalizeScheduledTransportEntrySec(
-	positionSec: number,
-	durationSec: number,
-	loop: LoopState | null,
-	active: boolean
-): number {
-	if (!Number.isFinite(durationSec) || durationSec <= 0) {
-		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
-	}
-	if (!Number.isFinite(positionSec) || positionSec < 0 || positionSec > durationSec) {
-		throw new RangeError(
-			`positionSec must be within 0..${durationSec}, got ${positionSec}`
-		);
-	}
-	if (typeof active !== 'boolean') {
-		throw new TypeError(`active must be boolean, got ${String(active)}`);
-	}
-	if (!active) return positionSec;
-	const normalizedPositionSec = normalizeEngagedLoopPositionSec(positionSec, loop);
-	if (normalizedPositionSec > durationSec) {
-		throw new RangeError(
-			`normalized loop position ${normalizedPositionSec} exceeds duration ${durationSec}`
-		);
-	}
-	return normalizedPositionSec;
-}
-
-export function deckReachedEnd(
-	positionSec: number,
-	durationSec: number,
-	loop: LoopState | null
-): boolean {
-	return !loop?.engaged && positionSec >= durationSec;
-}
-
-/** Play on a finished (end-of-track) deck restarts from 0; otherwise resume. */
-export function playResumePositionSec(
-	positionSec: number,
-	durationSec: number,
-	loop: LoopState | null
-): number {
-	return deckReachedEnd(positionSec, durationSec, loop) ? 0 : positionSec;
 }
 
 export function naturalEndNeedsRevisionedStop(
