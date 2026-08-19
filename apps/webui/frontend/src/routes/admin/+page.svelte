@@ -7,8 +7,17 @@
 	 * Data comes from GET /api/v1/bench/kpi, never from the file directly, so an
 	 * agent can curl exactly what is rendered here. Errors are loud: a daemon
 	 * that cannot serve the ledger renders a banner, not an empty grid.
+	 *
+	 * TABS. The panel had exactly one section and therefore no tab strip. Setup
+	 * is the second operator surface that belongs here (an operator panel with
+	 * no route back into first-run setup is the gap this closes), so the strip
+	 * exists now. It is a real ARIA tablist of buttons: "KPI ledger" is this
+	 * page, "Setup" leaves for /setup through the shared entry point, so the
+	 * three doors into the wizard behave identically.
 	 */
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import KpiTile from './KpiTile.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
@@ -16,6 +25,24 @@
 
 	let ledger = $state<KpiLedger | null>(null);
 	let error = $state<string | null>(null);
+
+	// ----- tabs --------------------------------------------------------------
+	let setupBusy = $state(false);
+	let setupError = $state<string | null>(null);
+	/** Only a FINAL refusal disables the Setup tab; an unfinished health probe
+	 * is resolved by the click itself. */
+	const setupBlocked = $derived(runSetupBlocked());
+
+	async function onSetupTab(): Promise<void> {
+		if (setupBusy) return;
+		setupBusy = true;
+		setupError = null;
+		try {
+			setupError = await runSetup(goto);
+		} finally {
+			setupBusy = false;
+		}
+	}
 
 	const metrics = $derived(ledger ? Object.entries(ledger.kpis) : []);
 	const latestRun = $derived(ledger ? ledger.snapshots[ledger.snapshots.length - 1] : null);
@@ -30,6 +57,34 @@
 </script>
 
 <h2>Admin</h2>
+
+<!-- A div, not a nav: a nav is non-interactive and cannot carry role=tablist.
+     Same shape as the browser's PaneTabs strip. -->
+<div class="admin-tabs" role="tablist" aria-label="admin sections">
+	<button
+		type="button"
+		class="admin-tab on"
+		role="tab"
+		aria-selected="true"
+		title="The demucs farm KPI ledger, served by GET /api/v1/bench/kpi. This tab is the page you are on."
+	>
+		KPI ledger
+	</button>
+	<button
+		type="button"
+		class="admin-tab"
+		role="tab"
+		aria-selected="false"
+		onclick={() => void onSetupTab()}
+		disabled={setupBusy || setupBlocked !== null}
+		title={setupBlocked ?? RUN_SETUP_TITLE}
+	>
+		{setupBusy ? 'Opening setup...' : 'Setup'}
+	</button>
+	{#if setupError !== null}
+		<span class="admin-tab-err" title={setupError}>{setupError}</span>
+	{/if}
+</div>
 
 <section class="panel">
 	<h3>Demucs farm KPI ledger</h3>
@@ -91,6 +146,40 @@
 		--kpi-ok: #2e9e63;
 	}
 
+	.admin-tabs {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin: 0.5rem 0 1rem;
+		border-bottom: 1px solid var(--border, #1c222c);
+	}
+	.admin-tab {
+		padding: 6px 14px;
+		border: 1px solid transparent;
+		border-bottom: none;
+		border-radius: 6px 6px 0 0;
+		background: transparent;
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.admin-tab:hover:not(:disabled) {
+		color: var(--fg);
+	}
+	.admin-tab.on {
+		background: var(--chip-bg);
+		border-color: var(--border, #1c222c);
+		color: var(--accent);
+	}
+	.admin-tab:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.admin-tab-err {
+		font-size: 0.78rem;
+		color: var(--danger);
+	}
 	.panel {
 		max-width: 1180px;
 	}
