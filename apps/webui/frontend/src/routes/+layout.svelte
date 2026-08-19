@@ -11,6 +11,7 @@
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
+	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 
 	let { children } = $props();
 
@@ -122,6 +123,7 @@
 {/if}
 
 <SettingsOverlay />
+<BuildIdentity />
 
 <div class="toast-stack">
 	{#each toasts as toast (toast.id)}

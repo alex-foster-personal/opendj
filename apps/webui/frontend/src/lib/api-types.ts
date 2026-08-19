@@ -243,6 +243,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/build-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Build Info */
+        get: operations["build_info_api_v1_build_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bulk-edit": {
         parameters: {
             query?: never;
@@ -1996,6 +2013,49 @@ export interface components {
             title: string | null;
             /** Vendor Id */
             vendor_id: string | null;
+        };
+        /**
+         * BuildInfoOut
+         * @description The identity contract the UI and any agent read.
+         *
+         *     ``built_at_kind`` exists because the two sources measure different
+         *     moments: a payload knows when it was packaged, a checkout only knows when
+         *     HEAD was committed. Labelling which one is on screen costs one field and
+         *     removes a whole class of "why does this say yesterday" confusion.
+         */
+        BuildInfoOut: {
+            /** App Version */
+            app_version?: string | null;
+            /**
+             * Built At Kind
+             * @enum {string}
+             */
+            built_at_kind: "payload-build" | "head-commit";
+            /** Built At Utc */
+            built_at_utc: string;
+            /** Bundle Identifier */
+            bundle_identifier?: string | null;
+            /** Engine Version */
+            engine_version: string;
+            /** Git Branch */
+            git_branch: string;
+            /** Git Dirty */
+            git_dirty: boolean;
+            /** Git Sha */
+            git_sha: string;
+            /** Git Sha Full */
+            git_sha_full: string;
+            /** Lane Label */
+            lane_label?: string | null;
+            /** Manifest Path */
+            manifest_path?: string | null;
+            /** Product Name */
+            product_name?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "payload" | "repo";
         };
         /** BulkEditIn */
         BulkEditIn: {
@@ -5035,6 +5095,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    build_info_api_v1_build_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildInfoOut"];
+                };
+            };
+            /** @description this build cannot state its own identity */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -623,6 +623,118 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
+      "BuildInfoOut": {
+        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "built_at_kind": {
+            "enum": [
+              "payload-build",
+              "head-commit"
+            ],
+            "title": "Built At Kind",
+            "type": "string"
+          },
+          "built_at_utc": {
+            "title": "Built At Utc",
+            "type": "string"
+          },
+          "bundle_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Identifier"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "git_branch": {
+            "title": "Git Branch",
+            "type": "string"
+          },
+          "git_dirty": {
+            "title": "Git Dirty",
+            "type": "boolean"
+          },
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
+          },
+          "git_sha_full": {
+            "title": "Git Sha Full",
+            "type": "string"
+          },
+          "lane_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Label"
+          },
+          "manifest_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Path"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "source": {
+            "enum": [
+              "payload",
+              "repo"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "engine_version",
+          "git_sha",
+          "git_sha_full",
+          "git_branch",
+          "git_dirty",
+          "built_at_utc",
+          "built_at_kind"
+        ],
+        "title": "BuildInfoOut",
+        "type": "object"
+      },
       "BulkEditIn": {
         "properties": {
           "expected_etags": {
@@ -8401,6 +8513,30 @@
         "summary": "Get Ratings File",
         "tags": [
           "bench"
+        ]
+      }
+    },
+    "/api/v1/build-info": {
+      "get": {
+        "operationId": "build_info_api_v1_build_info_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildInfoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "this build cannot state its own identity"
+          }
+        },
+        "summary": "Build Info",
+        "tags": [
+          "health"
         ]
       }
     },
