@@ -39,7 +39,10 @@
 	);
 
 	// Local write-round-trip busy state, separate from `pending` (transport
-	// commands) so a save/clear in flight only disables its own slot.
+	// commands) so a save/clear in flight only disables its own slot. `pending`
+	// itself no longer disables anything: greying every pad out for the duration
+	// of an unrelated transport command is the same one-frame blink the play
+	// button had (LATENCY-01 visual feedback). It stays visible as aria-busy.
 	let busySlot: HotCueSlot | null = $state(null);
 	let undo: { slot: HotCueSlot; revision: string; reversalId: string } | null = $state(null);
 
@@ -102,7 +105,8 @@
 				class="slot"
 				class:filled={entry.cue !== null}
 				class:loop={entry.cue !== null && entry.cue.is_loop}
-				disabled={pending || busySlot !== null}
+				disabled={busySlot !== null}
+				aria-busy={pending}
 				title={entry.cue === null
 					? 'empty hot cue slot - click to save the current position'
 					: (entry.cue.comment ?? `hot cue ${entry.slot}`)}

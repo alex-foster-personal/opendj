@@ -1619,6 +1619,16 @@ async function _scheduleDeck(
 	const predecessor = rt.scheduleTail;
 	let release!: () => void;
 	rt.desiredActive = active;
+	// LATENCY-01 visual feedback (<=16ms, one frame): the play glyph reads
+	// st.playing, and st.playing used to be written only AFTER the AudioWorklet
+	// MessagePort round trip acknowledged the schedule. That made the button's
+	// appearance causally downstream of the audio thread - fast today only
+	// because that RPC happens to be ~2ms, and not independently fast at all: a
+	// worklet stall, a stem deck's four parallel schedules or a busy sync scope
+	// drags the glyph along with it. Write the INTENT here, in the same
+	// synchronous turn as the input, before any await. The post-ack write in
+	// _scheduleDeckSerial stays as the reconcile-to-truth.
+	deckStates[deck].playing = active;
 	rt.scheduleIntentCount += 1;
 	rt.scheduleTail = new Promise<void>((resolve) => {
 		release = resolve;
@@ -1638,10 +1648,58 @@ async function _scheduleDeck(
 			loop,
 			keyShiftSemitones
 		);
+	} catch (error) {
+		// Reconcile the optimistic write to the STANDING intent, not to the value
+		// it had before: a newer command may already have superseded this one, and
+		// rolling back to a stale value would clobber it. A processor failure and
+		// a mid-queue reload both reset desiredActive to false first, so this
+		// lands on "not playing" for a genuinely failed start.
+		deckStates[deck].playing = rt.desiredActive;
+		throw error;
 	} finally {
 		rt.scheduleIntentCount -= 1;
 		release();
 	}
+}
+
+/**
+ * Re-read the processor's OWN self-reported latency and heal our snapshot.
+ *
+ * `rt.latencySec` is read once, at load. Signalsmith's `configure()` ends by
+ * re-reading `_inputLatency()` / `_outputLatency()` from WASM and `latency()`
+ * returns their live sum (vendored 1.3.2, SignalsmithStretch.js:215-216), so
+ * the library tracks its own reconfiguration and our copy does not. A stale
+ * copy would corrupt two things at once: the schedule floor computed from it,
+ * and the `processor_latency_ms` term the logged decomposition is read against.
+ *
+ * Never awaited by the transport path - the schedule is already posted when
+ * this runs, so it adds no latency to the thing it measures. A move is recorded
+ * loudly rather than absorbed: schedules taken before it used the old value.
+ */
+async function _observeLiveProcessorLatency(
+	deck: DeckId,
+	processor: _DeckProcessor
+): Promise<void> {
+	let liveLatencySec: number;
+	try {
+		liveLatencySec = await processor.latencySec();
+	} catch (error) {
+		// The deck was unloaded or the processor torn down while a diagnostic
+		// query was in flight. Recorded, never swallowed - a read that keeps
+		// failing means the instrument has gone blind.
+		recordPerfEvent('processor-latency-read-failed', String(error), deck);
+		return;
+	}
+	const rt = _rt[deck];
+	if (rt.processor !== processor) return; // deck moved on; this reading is not its
+	if (Math.abs(liveLatencySec - rt.latencySec) <= 1e-9) return;
+	recordPerfEvent(
+		'processor-latency-drift',
+		`deck ${deck} processor latency moved ${rt.latencySec}s -> ${liveLatencySec}s; ` +
+			'schedules and logged offsets before this point used the stale value',
+		deck
+	);
+	rt.latencySec = liveLatencySec;
 }
 
 async function _scheduleDeckSerial(
@@ -1718,6 +1776,15 @@ async function _scheduleDeckSerial(
 		throw new Error(`_scheduleDeck: deck ${deck} processor was replaced before acknowledgement`);
 	}
 	recordPerfTiming('transport-schedule', scheduleStages, deck);
+	// LATENCY-03: rt.latencySec is a snapshot taken once at load, but Signalsmith
+	// re-reads both latency terms from WASM at the end of every configure() and
+	// latency() returns their live sum - so the library self-tracks and our copy
+	// does not. Nothing reconfigures today; the point is that when something
+	// does, the instrument must not keep quoting a dead number. Fire-and-forget
+	// so it costs the transport path nothing: the row above carries the value
+	// this schedule actually used, and the check that follows heals the snapshot
+	// for the next one and shouts if it moved.
+	void _observeLiveProcessorLatency(deck, processor);
 	acknowledgePresentedTransportSchedule(rt.presentation, {
 		revision,
 		active,

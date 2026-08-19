@@ -21,6 +21,17 @@
 
 	const hasTrack: boolean = $derived(deck.stable_id !== null);
 
+	// LATENCY-01 visual feedback: `pending` must NOT reach `disabled`. It used
+	// to, and the measured mutation sequence for a single click was
+	// disabled@1.8ms -> data-state@2.8ms -> disabled@6.2ms: the button greyed
+	// out roughly one frame BEFORE it flipped, then came back. On a 60Hz display
+	// that renders as a blink on every press, and a control that flickers reads
+	// as slower than one that does not, whatever the clock says. Re-entrancy is
+	// already handled where it belongs - the command dispatcher serializes per
+	// deck-and-sync scope - not by making the button unclickable for 10ms.
+	// `aria-busy` keeps the in-flight state observable to agents and assistive
+	// tech without touching layout, paint or interactivity.
+
 	// Copy mirrors audio-engine pressCue / pause - click only, no hold-to-preview.
 	const cueTitle: string = $derived(
 		!hasTrack
@@ -50,7 +61,8 @@
 	<ControlExplainer title={cueTitle} bullets={cueBullets} demo="cue">
 		<button
 			class="round cue"
-			disabled={!hasTrack || pending}
+			disabled={!hasTrack}
+			aria-busy={pending}
 			title={cueTitle}
 			aria-label="cue"
 			data-performance-control="cue"
@@ -62,7 +74,8 @@
 	<button
 		class="round play"
 		class:playing={deck.playing}
-		disabled={!hasTrack || pending}
+		disabled={!hasTrack}
+		aria-busy={pending}
 		title={playTitle}
 		aria-label={deck.playing ? 'pause' : 'play'}
 		aria-pressed={deck.playing}
