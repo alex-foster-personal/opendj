@@ -16,6 +16,8 @@ definition is the specification.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -833,6 +835,102 @@ def test_migration_succeeds_when_the_lock_clears_within_the_timeout(
     finally:
         releaser.join()
         holder.close()
+
+
+# --- the real-DB invariant ------------------------------------------------
+
+REAL_STATE_DB = Path(
+    os.environ.get(
+        "ODJ_REAL_STATE_DB",
+        "/Users/dev/code/music-dj-tools-wt-rebuild-agentB-from-Fable-data"
+        "/state/state.db",
+    )
+)
+"""A live state.db to adopt. Overridable; skipped when absent.
+
+Always copied before use -- this suite must never touch the real file.
+"""
+
+
+LEDGER_TABLES = frozenset({"schema_meta", "play_orders_schema_meta"})
+"""The two migration counters. Not domain data -- adoption is SUPPOSED to write
+here, and the module excludes ``schema_meta`` from ``TABLES`` for exactly this
+reason. Stamping ``play_orders_schema_meta`` is what makes the legacy play-order
+runner a no-op instead of a second competing bootstrap."""
+
+
+def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    names = sorted(_table_names(conn))
+    return {
+        name: int(conn.execute(f"SELECT COUNT(*) FROM '{name}'").fetchone()[0])
+        for name in names
+    }
+
+
+@pytest.mark.skipif(
+    not REAL_STATE_DB.exists(), reason=f"no live state DB at {REAL_STATE_DB}"
+)
+def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> None:
+    """The invariant the whole runner exists to protect.
+
+    A real library adopts: every pre-existing object keeps its shape, every
+    pre-existing table keeps its exact row count, and the missing domains are
+    created empty. This is the test that the hardening had to not break -- the
+    shape audit in particular could have refused every real file if the
+    consolidated DDL disagreed with what the legacy ladder actually stores.
+
+    Runs against a COPY. The original is never opened for writing.
+    """
+    working = tmp_path / "real_state_copy.db"
+    working.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REAL_STATE_DB, working)
+
+    conn = _connect(working)
+    before_objects = objects(conn)
+    before_counts = _row_counts(conn)
+    assert before_counts.get("tracks", 0) > 0, "fixture: the live DB should have tracks"
+
+    consolidated.apply_migrations(conn)
+
+    assert consolidated.was_adopted(conn), "a live DB must take the adoption path"
+
+    after_objects = objects(conn)
+    for name, sql in before_objects.items():
+        assert after_objects[name] == sql, f"adoption rewrote the existing {name}"
+
+    after_counts = _row_counts(conn)
+    changed = {
+        name: (before, after_counts[name])
+        for name, before in before_counts.items()
+        if after_counts[name] != before and name not in LEDGER_TABLES
+    }
+    assert not changed, f"adoption changed row counts: {changed}"
+
+    # In particular the v4 track_locations backfill must find nothing to do:
+    # it is INSERT OR IGNORE, so on a DB that already ran it, it is a no-op.
+    assert after_counts["track_locations"] == before_counts["track_locations"]
+
+    stamped = {
+        int(row[0])
+        for row in conn.execute(
+            "SELECT version FROM schema_meta WHERE version >= ?",
+            (consolidated.VERSION_OFFSET,),
+        ).fetchall()
+    }
+    assert stamped == {
+        consolidated.ADOPTION_VERSION,
+        consolidated.VERSION_OFFSET + consolidated.SCHEMA_VERSION,
+    }, f"adoption wrote unexpected ledger rows: {sorted(stamped)}"
+    assert after_counts["schema_meta"] == before_counts["schema_meta"] + 2, (
+        "adoption should add exactly the two marker rows"
+    )
+
+    created = set(after_counts) - set(before_counts) - LEDGER_TABLES
+    non_empty = {n: after_counts[n] for n in created if after_counts[n]}
+    assert non_empty == {}, (
+        f"newly created tables should be empty, got rows in {non_empty}"
+    )
+    conn.close()
 
 
 def test_legacy_runners_become_no_ops_after_consolidation(tmp_path: Path) -> None:
