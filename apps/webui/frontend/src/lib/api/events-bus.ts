@@ -208,29 +208,53 @@ export function getRetryDelayMs(): number {
 
 // ------------------------------------------------------------------ dispatch
 
+/** Call one subscriber in isolation.
+ *
+ * The ONLY deliberate swallow in this module, and it earns its keep: the bus
+ * fans one frame out to unrelated components, so a single throwing subscriber
+ * would otherwise starve every subscriber registered after it and lose the
+ * frame entirely. Since a missed invalidation is the expensive failure here
+ * (permanently stale UI) and a noisy log is the cheap one, the throw is
+ * contained and reported rather than allowed to take the fan-out down. */
+function _callListener(label: string, invoke: () => void): void {
+	try {
+		invoke();
+	} catch (exc) {
+		console.error(`[events-bus] a ${label} listener threw, continuing the fan-out: ${String(exc)}`);
+	}
+}
+
 function _setState(next: ConnectionState): void {
 	if (_state === next) return;
 	_state = next;
-	for (const listener of [..._connectionListeners]) listener(next);
+	for (const listener of [..._connectionListeners]) {
+		_callListener('connection-state', () => listener(next));
+	}
 }
 
 function _fireResync(reason: ResyncReason): void {
 	// Copied before iterating: a resync handler that unsubscribes (a component
 	// tearing down mid-refetch) must not mutate the set being walked.
-	for (const listener of [..._resyncListeners]) listener(reason);
+	for (const listener of [..._resyncListeners]) {
+		_callListener('resync', () => listener(reason));
+	}
 }
 
 function _fireEnvelope(envelope: EventEnvelope): void {
 	const bucket = _topicListeners.get(envelope.topic);
 	if (bucket !== undefined) {
-		for (const listener of [...bucket]) listener(envelope);
+		for (const listener of [...bucket]) {
+			_callListener(`topic=${envelope.topic}`, () => listener(envelope));
+		}
 	}
 	if (envelope.topic !== TOPIC_LIBRARY_CHANGED) return;
 	const change = _readLibraryChanged(envelope.payload);
 	if (change === null) return;
 	const kindBucket = _kindListeners.get(change.kind);
 	if (kindBucket === undefined) return;
-	for (const listener of [...kindBucket]) listener(change.ids, envelope);
+	for (const listener of [...kindBucket]) {
+		_callListener(`kind=${change.kind}`, () => listener(change.ids, envelope));
+	}
 }
 
 /** Decode a `library.changed` payload, or null when it does not match the
@@ -398,11 +422,18 @@ const _defaultScheduler: Scheduler = {
 
 /**
  * Open the bus and keep it open. Idempotent: calling it while already
- * connecting or open is a no-op, so mounting twice (HMR, a remount) does not
- * open a second socket.
+ * connecting, open, or WAITING TO RETRY is a no-op, so mounting twice (HMR, a
+ * remount) does not open a second socket.
+ *
+ * The retry-armed window matters as much as the live-socket one. Between a
+ * close and its scheduled reopen `_socket` is null but the bus is still very
+ * much alive, so guarding on `_socket` alone let a remount open a socket that
+ * the pending timer then immediately orphaned, unclosed and unreferenced. It
+ * would also have collapsed the backoff to zero, which is exactly the wrong
+ * behaviour against a daemon that is down.
  */
 export function connect(url?: string, options: ConnectOptions = {}): void {
-	if (_socket !== null) return;
+	if (_socket !== null || _retryTimer !== null) return;
 	_url = _resolveUrl(url);
 	_socketFactory = options.socketFactory ?? _defaultSocketFactory;
 	_scheduler = options.scheduler ?? _defaultScheduler;
@@ -415,7 +446,22 @@ function _open(): void {
 		throw new Error('events-bus: _open() before connect() configured the url');
 	}
 	_setState('connecting');
-	const socket = _socketFactory(_url);
+	let socket: WebSocketLike;
+	try {
+		socket = _socketFactory(_url);
+	} catch (exc) {
+		// The WebSocket constructor throws SYNCHRONOUSLY on a SecurityError
+		// (ws:// from an https page) or a SyntaxError (malformed url), so there
+		// is no socket to deliver a close event and nothing arms a retry. Left
+		// alone the throw escapes connect(), the bus stays pinned in
+		// 'connecting' and never reconnects. It is just a failed attempt: state
+		// closed, normal backoff, try again.
+		console.error(`[events-bus] opening ${_url} threw: ${String(exc)}`);
+		_socket = null;
+		_setState('closed');
+		if (!_shuttingDown) _scheduleReconnect();
+		return;
+	}
 	_socket = socket;
 	socket.onopen = () => {
 		if (_socket !== socket) return;
@@ -485,6 +531,15 @@ export function disconnect(): void {
 		socket.close();
 	}
 	_lastSeq = null;
+	// The hello describes the engine we were just talking to. Keeping it would
+	// let a later connect() diff a fresh engine's contract_rev against a dead
+	// one and report a change that is really just a restart, or worse hand
+	// getHello() a contract_rev no live engine is serving.
+	_hello = null;
+	// Backoff belongs to one connection attempt streak. A deliberate close ends
+	// that streak, so the next connect() starts at the floor rather than
+	// inheriting a 10s delay from whatever went wrong last time.
+	_retryDelayMs = BACKOFF_BASE_MS;
 	_setState('closed');
 }
 

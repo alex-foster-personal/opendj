@@ -364,6 +364,74 @@ test('a library.changed with malformed ids is an error, not a crash', () => {
 	assert.match(errors[0], /non string\[\] ids/);
 });
 
+// ------------------------------------------------------- listener isolation
+// C6 - the bus fans one frame out to unrelated components. Without isolation a
+// single throwing subscriber starves every subscriber registered after it AND
+// loses the frame, which on this bus means permanently stale UI.
+
+test('a throwing topic subscriber does not starve the subscribers after it', () => {
+	const reached = [];
+	bus.subscribe('jobs.updated', () => {
+		reached.push('first');
+		throw new Error('subscriber exploded');
+	});
+	bus.subscribe('jobs.updated', (envelope) => reached.push(`second:${envelope.seq}`));
+	const socket = connectAndHello({ seqStart: 0 });
+
+	socket.deliver('jobs.updated', 1, {});
+
+	assert.deepEqual(reached, ['first', 'second:1']);
+	assert.equal(errors.length, 1, 'contained, never silent');
+	assert.match(errors[0], /subscriber exploded/);
+});
+
+test('a throwing resync listener does not stop the rest of the invalidation', () => {
+	const reached = [];
+	bus.subscribeResync(() => {
+		reached.push('first');
+		throw new Error('resync exploded');
+	});
+	bus.subscribeResync((reason) => reached.push(`second:${reason}`));
+	const socket = connectAndHello({ seqStart: 0 });
+
+	socket.deliver('jobs.updated', 5, {}); // A gap: 1 through 4 were missed.
+
+	assert.deepEqual(reached, ['first', 'second:gap']);
+	assert.equal(errors.length, 2);
+	assert.match(errors[0], /seq gap/);
+	assert.match(errors[1], /resync exploded/);
+});
+
+test('a throwing kind listener does not swallow the frame for the next one', () => {
+	const reached = [];
+	bus.subscribeKind('tracks', () => {
+		reached.push('first');
+		throw new Error('kind exploded');
+	});
+	bus.subscribeKind('tracks', (ids) => reached.push(`second:${ids.join(',')}`));
+	const socket = connectAndHello({ seqStart: 0 });
+
+	socket.deliver('library.changed', 1, { kind: 'tracks', ids: ['t1'] });
+
+	assert.deepEqual(reached, ['first', 'second:t1']);
+	assert.match(errors[0], /kind exploded/);
+});
+
+test('a throwing connection-state listener does not wedge the state machine', () => {
+	const seen = [];
+	bus.subscribeConnectionState(() => {
+		throw new Error('status dot exploded');
+	});
+	bus.subscribeConnectionState((state) => seen.push(state));
+
+	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
+	sockets.at(-1).open();
+
+	assert.deepEqual(seen, ['connecting', 'open']);
+	assert.equal(errors.length, 2);
+	assert.match(errors[0], /status dot exploded/);
+});
+
 // -------------------------------------------------------- reconnect/backoff
 
 test('connection state walks connecting to open to closed', () => {
@@ -466,6 +534,80 @@ test('connect is idempotent, so mounting twice does not open a second socket', (
 	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
 
 	assert.equal(sockets.length, 1);
+});
+
+test('connect during the retry-armed window does not open a socket the timer orphans', () => {
+	// C2 - between a close and its scheduled reopen `_socket` is null while the
+	// bus is still very much alive. Guarding on `_socket` alone let a remount
+	// (+layout's onMount calls connect(), and HMR remounts it) open a socket
+	// that the pending timer then immediately abandoned, unclosed.
+	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
+	sockets.at(-1).open();
+	sockets.at(-1).serverClose();
+	assert.equal(scheduler.pendingCount, 1, 'the close armed a retry');
+
+	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
+
+	assert.equal(sockets.length, 1, 'the armed retry already owns the next socket');
+	assert.equal(scheduler.pendingCount, 1, 'and connect did not arm a second one');
+
+	scheduler.tick();
+	assert.equal(sockets.length, 2, 'exactly one replacement socket, not two');
+	sockets.at(-1).open();
+	assert.equal(bus.getConnectionState(), 'open');
+	assert.deepEqual(scheduler.delays, [500], 'and the backoff was not collapsed');
+});
+
+test('a socketFactory that throws is a failed attempt, not a permanently dead bus', () => {
+	// C7 - the WebSocket constructor throws SYNCHRONOUSLY on a SecurityError
+	// (ws:// from an https page) or a SyntaxError (bad url). With no socket to
+	// deliver a close, nothing armed a retry and the throw escaped connect()
+	// with the bus pinned in 'connecting' forever.
+	let throwsLeft = 2;
+	const throwingFactory = (url) => {
+		if (throwsLeft > 0) {
+			throwsLeft -= 1;
+			throw new Error('SecurityError: insecure WebSocket from an https page');
+		}
+		return _factory(url);
+	};
+
+	bus.connect(WS_URL, { socketFactory: throwingFactory, scheduler });
+	assert.equal(bus.getConnectionState(), 'closed', 'a throw is a closed attempt');
+	assert.equal(sockets.length, 0, 'nothing was constructed');
+
+	scheduler.tick(); // Second attempt throws too.
+	scheduler.tick(); // Third attempt gets a socket.
+	assert.equal(sockets.length, 1);
+	sockets.at(-1).open();
+
+	assert.equal(bus.getConnectionState(), 'open', 'the bus recovers on its own');
+	assert.deepEqual(scheduler.delays, [500, 1000], 'each throw arms the normal backoff');
+	assert.equal(errors.length, 2);
+	assert.match(errors[0], /SecurityError/);
+});
+
+test('disconnect forgets the dead engine hello and rearms backoff at the floor', () => {
+	const socket = connectAndHello({ contractRev: 'rev-1' });
+	socket.serverClose();
+	assert.equal(bus.getRetryDelayMs(), 1000, 'the failed connection already doubled it');
+
+	bus.disconnect();
+
+	assert.equal(bus.getHello(), null, 'a dead engine contract_rev is not a live contract');
+	assert.equal(bus.getRetryDelayMs(), 500, 'the next streak starts at the floor');
+});
+
+test('a fresh engine after a deliberate disconnect is not reported as contract drift', () => {
+	connectAndHello({ contractRev: 'rev-1' });
+	bus.disconnect();
+
+	bus.connect(WS_URL, { socketFactory: _factory, scheduler });
+	sockets.at(-1).open();
+	sockets.at(-1).hello({ contractRev: 'rev-2' });
+
+	assert.equal(bus.getHello().contract_rev, 'rev-2');
+	assert.deepEqual(errors, [], 'nothing was diffed against the torn-down engine');
 });
 
 test('disconnect closes the socket and stops retrying', () => {
