@@ -1,0 +1,241 @@
+"""Build the webkit performance-suite fixture library. No mocked data.
+
+The webkit suite drives the PRODUCTION build served by the engine daemon, so
+it needs a library the engine can actually serve. It cannot use the lane data
+dir (one engine holds a singleton lock on it) and it must never touch the
+primary checkout's ``data/``. This module builds a throwaway one instead:
+
+1. Real audio is GENERATED here (stdlib ``wave`` only): a stereo click train
+   at a known BPM over a quiet sustained tone, so decode, playback and
+   position measurement all have real signal to work on.
+2. The library rows are written by the REAL folder ingest
+   (``python -m apps.shared.state.cli ingest-folder``), not by hand. That
+   adapter reads tags and writes NO bpm, NO key and NO beatgrid, and says so.
+   The engine has a first-class path for exactly those rows
+   (``empty_anlz_payload``: "a deck can load and play with no grid/waveform").
+
+What that honestly leaves OUT is named rather than faked: these tracks have no
+rekordbox vendor mapping, so ``/anlz`` serves an empty-but-valid payload and
+there is no beatgrid. The only in-repo beatgrid producer for arbitrary audio
+is ``apps.analysis`` (librosa+madmom), which is deliberately absent from the
+repo venv, so nothing here invents one.
+
+Idempotent: re-running with an existing, verified fixture is a no-op, because
+Playwright evaluates its config (and this builder) once per process.
+
+Usage::
+
+    uv run --no-sync python apps/webui/frontend/tests/e2e/support/deckload_fixture.py \
+        --data-dir /abs/path/to/tests/e2e/fixtures/deckload-data
+
+Acceptance tests:
+
+- [if] the ingest writes zero tracks [then] the builder exits non-zero.
+- [if] a generated wav is header-only (no PCM frames) [then] it exits non-zero.
+- [if] --data-dir is relative [then] it exits non-zero before writing anything.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import sqlite3
+import struct
+import subprocess
+import sys
+import wave
+from dataclasses import dataclass
+from pathlib import Path
+
+REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
+
+SAMPLE_RATE_HZ: int = 44_100
+CHANNELS: int = 2
+SAMPLE_WIDTH_BYTES: int = 2
+
+#: Click transient: a short 1 kHz burst on every beat. Loud enough to be an
+#: obvious onset, short enough not to smear into the next beat.
+CLICK_HZ: float = 1_000.0
+CLICK_MS: float = 12.0
+CLICK_PEAK: float = 0.60
+
+#: Sustained bed under the clicks so the decoded buffer is never near-silent
+#: and a stretch processor has continuous material to work on.
+BED_HZ: float = 220.0
+BED_PEAK: float = 0.12
+
+
+@dataclass(frozen=True)
+class FixtureTrack:
+    """One generated file. ``bpm`` is a property of the audio, not metadata."""
+
+    filename: str
+    bpm: float
+    seconds: float
+
+
+#: Two tracks, because the suite loads deck 1 AND deck 2 and a single shared
+#: file would hide any per-deck state bleed. Both are long enough that a
+#: transport test can play, pause and seek without hitting the end.
+FIXTURE_TRACKS: tuple[FixtureTrack, ...] = (
+    FixtureTrack(filename="webkit-fixture-a-128bpm.wav", bpm=128.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-b-124bpm.wav", bpm=124.0, seconds=60.0),
+)
+
+AUDIO_SUBDIR: str = "fixture-audio"
+
+
+# ----- audio generation ------------------------------------------------------
+def _click_envelope(sample_index: int, beat_period_samples: float) -> float:
+    """Linear-decay envelope for the click that starts at each beat."""
+    click_len = SAMPLE_RATE_HZ * CLICK_MS / 1000.0
+    since_beat = sample_index % beat_period_samples
+    if since_beat >= click_len:
+        return 0.0
+    return 1.0 - (since_beat / click_len)
+
+
+def write_click_train_wav(path: Path, track: FixtureTrack) -> int:
+    """Write one stereo 16-bit click train. Returns the PCM frame count."""
+    frame_count = int(round(track.seconds * SAMPLE_RATE_HZ))
+    beat_period_samples = SAMPLE_RATE_HZ * 60.0 / track.bpm
+    peak = float(2**15 - 1)
+    frames = bytearray()
+    for n in range(frame_count):
+        bed = BED_PEAK * math.sin(2.0 * math.pi * BED_HZ * n / SAMPLE_RATE_HZ)
+        env = _click_envelope(n, beat_period_samples)
+        click = (
+            CLICK_PEAK * env * math.sin(2.0 * math.pi * CLICK_HZ * n / SAMPLE_RATE_HZ)
+            if env > 0.0
+            else 0.0
+        )
+        value = max(-1.0, min(1.0, bed + click))
+        sample = int(value * peak)
+        frames += struct.pack("<hh", sample, sample)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(CHANNELS)
+        handle.setsampwidth(SAMPLE_WIDTH_BYTES)
+        handle.setframerate(SAMPLE_RATE_HZ)
+        handle.writeframes(bytes(frames))
+    return frame_count
+
+
+def _wav_frame_count(path: Path) -> int:
+    with wave.open(str(path), "rb") as handle:
+        return handle.getnframes()
+
+
+def ensure_audio(audio_dir: Path) -> list[Path]:
+    """Generate every missing/short fixture wav. Returns the file list."""
+    written: list[Path] = []
+    for track in FIXTURE_TRACKS:
+        path = audio_dir / track.filename
+        expected = int(round(track.seconds * SAMPLE_RATE_HZ))
+        if path.is_file() and _wav_frame_count(path) == expected:
+            written.append(path)
+            continue
+        actual = write_click_train_wav(path, track)
+        if actual != expected:
+            raise SystemExit(
+                f"[ERROR] {path} wrote {actual} frames, expected {expected}"
+            )
+        written.append(path)
+    for path in written:
+        if _wav_frame_count(path) <= 0:
+            raise SystemExit(f"[ERROR] {path} has no PCM frames")
+    return written
+
+
+# ----- real ingest -----------------------------------------------------------
+def _state_cli(data_dir: Path, *args: str) -> None:
+    """Run the REAL shared-state CLI against this fixture data dir."""
+    env = dict(os.environ)
+    env["MDT_DATA_DIR"] = str(data_dir)
+    # The engine refuses WEB_CONCURRENCY; keep the builder's env identical to
+    # the one the engine will boot under so a surprise cannot hide here.
+    env.pop("WEB_CONCURRENCY", None)
+    command = [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "apps.shared.state.cli",
+        *args,
+    ]
+    result = subprocess.run(
+        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        raise SystemExit(
+            f"[ERROR] {' '.join(args)} failed with exit code {result.returncode}"
+        )
+    sys.stdout.write(result.stdout)
+
+
+def _track_rows(state_db: Path) -> list[tuple[str, str | None, str | None]]:
+    conn = sqlite3.connect(f"file:{state_db}?mode=ro", uri=True)
+    try:
+        return [
+            (str(sid), title, file_path)
+            for sid, title, file_path in conn.execute(
+                "SELECT stable_id, title, file_path FROM tracks ORDER BY title"
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
+    """Generate the audio, run the real ingest, verify the result."""
+    audio_dir = data_dir / AUDIO_SUBDIR
+    files = ensure_audio(audio_dir)
+    state_db = data_dir / "state" / "state.db"
+    rows = _track_rows(state_db) if state_db.is_file() else []
+    if len(rows) != len(files):
+        _state_cli(data_dir, "init")
+        _state_cli(
+            data_dir, "ingest-folder", "--root", str(audio_dir), "--write"
+        )
+        rows = _track_rows(state_db)
+    if len(rows) != len(files):
+        raise SystemExit(
+            f"[ERROR] fixture ingest wrote {len(rows)} track(s) for "
+            f"{len(files)} audio file(s) in {audio_dir}"
+        )
+    for stable_id, _title, file_path in rows:
+        if not file_path or not Path(file_path).is_file():
+            raise SystemExit(
+                f"[ERROR] track {stable_id} has no readable file_path: {file_path!r}"
+            )
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="deckload_fixture",
+        description="Build the webkit performance-suite fixture library.",
+    )
+    parser.add_argument(
+        "--data-dir",
+        required=True,
+        help="absolute path of the throwaway fixture data dir",
+    )
+    args = parser.parse_args(argv)
+    data_dir = Path(args.data_dir).expanduser()
+    if not data_dir.is_absolute():
+        raise SystemExit(f"[ERROR] --data-dir must be absolute, got {args.data_dir!r}")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    rows = build(data_dir)
+    print(f"[OK] fixture library at {data_dir} with {len(rows)} track(s):")
+    for stable_id, title, file_path in rows:
+        print(f"  {stable_id}  {title!r}  {file_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
