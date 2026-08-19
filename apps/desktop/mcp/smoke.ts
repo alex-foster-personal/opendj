@@ -14,7 +14,7 @@
  *        (retina 2x leaking through = mushy text for vision models)
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -34,6 +34,7 @@ const ENGINE_ORIGIN = `http://127.0.0.1:${ENGINE_PORT}`;
 const WEBDRIVER_ORIGIN = `http://127.0.0.1:${WEBDRIVER_PORT}`;
 const DATA_DIR = join(DESKTOP_ROOT, 'mcp', '.smoke-data');
 const SANDBOX_HOME = join(DATA_DIR, 'sandbox-home');
+const TRACE_ROOT = join(DATA_DIR, 'traces');
 
 const children: ChildProcess[] = [];
 let failures = 0;
@@ -111,6 +112,15 @@ async function main(): Promise<void> {
 	children.push(shell);
 	await waitForHttp(`${WEBDRIVER_ORIGIN}/status`, 60_000);
 
+	//----- pre-seed an EXPIRED trace session: boot must prune it -----
+	const expiredDir = join(TRACE_ROOT, 'expired-session');
+	mkdirSync(expiredDir, { recursive: true });
+	writeFileSync(
+		join(expiredDir, 'meta.json'),
+		JSON.stringify({ started_epoch_ms: Date.now() - 72 * 3_600_000 })
+	);
+	writeFileSync(join(TRACE_ROOT, 'index.jsonl'), `{"kind":"start","dir":"${expiredDir}"}\n`);
+
 	//----- connect an MCP client over stdio, exactly as an agent would -----
 	const transport = new StdioClientTransport({
 		command: 'pnpm',
@@ -119,7 +129,8 @@ async function main(): Promise<void> {
 		env: {
 			...process.env,
 			MDT_WEBVIEW_MCP_WEBDRIVER: WEBDRIVER_ORIGIN,
-			MDT_WEBVIEW_MCP_ENGINE: ENGINE_ORIGIN
+			MDT_WEBVIEW_MCP_ENGINE: ENGINE_ORIGIN,
+			MDT_WEBVIEW_MCP_TRACE_DIR: TRACE_ROOT
 		}
 	});
 	const client = new Client({ name: 'webview-mcp-smoke', version: '0.0.1' });
@@ -177,6 +188,25 @@ async function main(): Promise<void> {
 	);
 	check('Escape closes the dialog (diff shows removal)', escape.includes('- '), escape.slice(0, 600));
 
+	//----- 6b: a REAL click by fresh ref (also feeds the trace a click rect) -----
+	const tree3 = textOf(await client.callTool({ name: 'ui_tree', arguments: {} }));
+	const v3 = Number(tree3.match(/^\[v(\d+)\]/)?.[1]);
+	const settingsBtnRef = tree3
+		.split('\n')
+		.find((l) => l.includes('"Open settings"'))
+		?.match(/@(e\d+)/)?.[1];
+	check('fresh tree has the Open settings button', !!settingsBtnRef && Number.isFinite(v3), tree3.slice(0, 300));
+	if (settingsBtnRef) {
+		const clicked = textOf(
+			await client.callTool({
+				name: 'act',
+				arguments: { kind: 'click', ref: settingsBtnRef, tree_version: v3 }
+			})
+		);
+		check('clicking Open settings by ref reopens the dialog', clicked.includes('Settings'), clicked.slice(0, 500));
+		await client.callTool({ name: 'act', arguments: { kind: 'chord', text: 'Escape' } });
+	}
+
 	//----- 7: screenshot descaled to CSS pixels -----
 	const shot = (await client.callTool({ name: 'screenshot', arguments: {} })) as {
 		content: Array<{ type: string; data?: string; mimeType?: string }>;
@@ -205,6 +235,26 @@ async function main(): Promise<void> {
 	check('eval_js returns the live pathname', evaled.includes('/performance'), evaled);
 
 	await client.close();
+
+	//----- 9: session trace artifacts -----
+	check('expired trace session was pruned at boot', !existsSync(expiredDir), expiredDir);
+	const sessions = readdirSync(TRACE_ROOT, { withFileTypes: true })
+		.filter((d) => d.isDirectory())
+		.map((d) => join(TRACE_ROOT, d.name));
+	check('exactly one live trace session exists', sessions.length === 1, JSON.stringify(sessions));
+	if (sessions.length === 1) {
+		const sessionDir = sessions[0];
+		const events = readFileSync(join(sessionDir, 'events.jsonl'), 'utf8').trim().split('\n');
+		check(`trace recorded every tool call (${events.length} events)`, events.length >= 8, events.join('|').slice(0, 300));
+		const frames = readdirSync(join(sessionDir, 'frames')).filter((f) => f.endsWith('.png'));
+		check(`trace saved frames (${frames.length})`, frames.length >= 3, JSON.stringify(frames));
+		const actEvent = events.map((l) => JSON.parse(l) as { tool: string; rect?: unknown; frame?: string }).find((e) => e.tool === 'act' && e.rect);
+		check('a click event carries its target rect for the cursor animation', !!actEvent, events.filter((l) => l.includes('"act"')).join('|').slice(0, 300));
+		const player = readFileSync(join(sessionDir, 'trace.html'), 'utf8');
+		check('trace.html player has the events embedded', player.includes('"tool":"act"') && !player.includes('/*__EVENTS__*/[]'), player.slice(0, 200));
+		const index = readFileSync(join(TRACE_ROOT, 'index.jsonl'), 'utf8');
+		check('index.jsonl lists the live session, not the pruned one', index.includes(sessionDir) && !index.includes('expired-session'), index);
+	}
 }
 
 main()

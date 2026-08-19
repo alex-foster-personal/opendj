@@ -64,6 +64,23 @@ just webview-mcp-smoke
 Boots a fixture engine + debug shell + the MCP over real stdio and asserts the
 whole loop, including stale-ref rejection and retina descaling. No mocks.
 
+## Session traces (Devin-style visual replay)
+
+Every MCP session records itself: one PNG frame per action plus an events log,
+rendered by a self-contained `trace.html` player that animates a fading red
+cursor trail curving to each click (the cursor is generated -- input is
+synthetic events -- so the player draws the honest equivalent). Typing and
+chords appear as captions. Use it to check what today's agents actually did
+and what they obviously missed.
+
+- Location: `~/.cache/opendj-webview-mcp/traces/<session>/trace.html`
+  (override with `MDT_WEBVIEW_MCP_TRACE_DIR`, disable with `=off`).
+- Index: `traces/index.jsonl` -- one line per session, machine-readable.
+- Expiry: sessions older than 48h are deleted on server boot (creation time
+  from each session's `meta.json`; unrecognized dirs are never touched).
+- Open it: serve the session dir over HTTP (`python3 -m http.server <port>`)
+  or open `trace.html` directly in a browser from disk.
+
 ## When NOT to use this
 
 - Iterating on UI/logic: use tier 0 (vite dev in a browser) -- it is faster.

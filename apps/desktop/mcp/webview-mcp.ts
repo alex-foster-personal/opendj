@@ -35,6 +35,18 @@
  *        tells the caller to re-observe; nothing is clicked
  *   [if] screenshot of a 2x display [then] output width equals CSS width
  */
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	writeFileSync
+} from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -59,6 +71,118 @@ const ENGINE_BASE = _requireEnv('MDT_WEBVIEW_MCP_ENGINE');
 const MAX_IMAGE_WIDTH_DEFAULT = 1456; // ~1585 tokens at Anthropic's (w*h)/750
 const DIFF_LINE_CAP = 80;
 const ACT_SETTLE_MS = 300;
+
+/**
+ * Session traces: Devin-style visual replay of everything this MCP did.
+ * Default root is documented (README + status tool), overridable, and 'off'
+ * disables recording entirely. Traces expire: anything older than
+ * TRACE_TTL_HOURS is deleted on server boot (creation time from meta.json,
+ * never guessed from dir names; unknown dirs are left alone).
+ */
+const TRACE_ROOT =
+	process.env.MDT_WEBVIEW_MCP_TRACE_DIR ?? join(homedir(), '.cache', 'opendj-webview-mcp', 'traces');
+const TRACE_ENABLED = TRACE_ROOT !== 'off';
+const TRACE_TTL_HOURS = 48;
+
+//----- trace recording --------------------------------------------------------
+
+interface TraceEvent {
+	t: number; // ms since session start
+	tool: string;
+	detail: string;
+	caption?: string; // drawn on the frame in the player (typed text, chords)
+	rect?: { x: number; y: number; w: number; h: number }; // CSS px click target
+	viewport?: { w: number; h: number };
+	frame?: string; // relative path of the frame showing state AFTER this event
+}
+
+class Trace {
+	readonly dir: string;
+	private readonly _startedAt = Date.now();
+	private readonly _events: TraceEvent[] = [];
+	private _frameCounter = 0;
+	private readonly _template: string;
+
+	constructor() {
+		const stamp = new Date(this._startedAt).toISOString().replace(/[:.]/g, '-');
+		this.dir = join(TRACE_ROOT, `${stamp}-pid${process.pid}`);
+		mkdirSync(join(this.dir, 'frames'), { recursive: true });
+		writeFileSync(
+			join(this.dir, 'meta.json'),
+			JSON.stringify({ session: this.dir, started_epoch_ms: this._startedAt, pid: process.pid })
+		);
+		appendFileSync(
+			join(TRACE_ROOT, 'index.jsonl'),
+			`${JSON.stringify({ kind: 'start', dir: this.dir, started: new Date(this._startedAt).toISOString() })}\n`
+		);
+		this._template = readFileSync(
+			join(dirname(fileURLToPath(import.meta.url)), 'trace-player.html'),
+			'utf8'
+		);
+	}
+
+	record(event: Omit<TraceEvent, 't'>): void {
+		this._events.push({ t: Date.now() - this._startedAt, ...event });
+		appendFileSync(join(this.dir, 'events.jsonl'), `${JSON.stringify(this._events.at(-1))}\n`);
+		// Rewritten per event on purpose: the player stays valid even if this
+		// process is killed mid-session (events are tiny; frames are the weight).
+		writeFileSync(
+			join(this.dir, 'trace.html'),
+			this._template.replace('/*__EVENTS__*/[]', JSON.stringify(this._events))
+		);
+	}
+
+	saveFrame(png: Buffer): string {
+		this._frameCounter += 1;
+		const name = `frames/${String(this._frameCounter).padStart(3, '0')}.png`;
+		writeFileSync(join(this.dir, name), png);
+		return name;
+	}
+
+	static pruneExpired(): void {
+		if (!existsSync(TRACE_ROOT)) return;
+		const cutoff = Date.now() - TRACE_TTL_HOURS * 3_600_000;
+		const kept: string[] = [];
+		for (const entry of readdirSync(TRACE_ROOT, { withFileTypes: true })) {
+			if (!entry.isDirectory()) continue;
+			const sessionDir = join(TRACE_ROOT, entry.name);
+			const metaPath = join(sessionDir, 'meta.json');
+			if (!existsSync(metaPath)) continue; // not ours to delete
+			const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { started_epoch_ms: number };
+			if (meta.started_epoch_ms < cutoff) {
+				rmSync(sessionDir, { recursive: true, force: true });
+			} else {
+				kept.push(sessionDir);
+			}
+		}
+		const indexPath = join(TRACE_ROOT, 'index.jsonl');
+		if (existsSync(indexPath)) {
+			const survivors = readFileSync(indexPath, 'utf8')
+				.split('\n')
+				.filter((line) => line && kept.some((dir) => line.includes(dir)));
+			writeFileSync(indexPath, survivors.length ? `${survivors.join('\n')}\n` : '');
+		}
+	}
+}
+
+let trace: Trace | null = null;
+if (TRACE_ENABLED) {
+	mkdirSync(TRACE_ROOT, { recursive: true });
+	Trace.pruneExpired();
+	trace = new Trace();
+}
+
+/** Full-window frame for the trace, same descale rules as the screenshot tool. */
+async function _traceFrame(): Promise<string | undefined> {
+	if (!trace) return undefined;
+	const b64 = await wd.screenshotBase64();
+	const page = await wd.execute<{ w: number }>('return { w: window.innerWidth };');
+	const png = await sharp(Buffer.from(b64, 'base64'))
+		.resize({ width: Math.min(MAX_IMAGE_WIDTH_DEFAULT, page.w), withoutEnlargement: true })
+		.png()
+		.toBuffer();
+	return trace.saveFrame(png);
+}
 
 //----- minimal raw W3C WebDriver client -------------------------------------
 
@@ -276,7 +400,9 @@ if (kind === 'click') {
   el.dispatchEvent(new PointerEvent('pointerup', opts));
   el.dispatchEvent(new MouseEvent('mouseup', opts));
   el.click();
-  return { ok: true, delivery: 'synthetic-dom-events' };
+  return { ok: true, delivery: 'synthetic-dom-events',
+    rect: { x: r.x, y: r.y, w: r.width, h: r.height },
+    viewport: { w: window.innerWidth, h: window.innerHeight } };
 }
 if (kind === 'type') {
   if (!el) return { error: 'type needs a ref' };
@@ -287,7 +413,10 @@ if (kind === 'type') {
   setter.set.call(el, text);
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
-  return { ok: true, delivery: 'synthetic-dom-events', value: el.value };
+  const tr = el.getBoundingClientRect();
+  return { ok: true, delivery: 'synthetic-dom-events', value: el.value,
+    rect: { x: tr.x, y: tr.y, w: tr.width, h: tr.height },
+    viewport: { w: window.innerWidth, h: window.innerHeight } };
 }
 if (kind === 'chord') {
   const parts = text.split('+');
@@ -383,7 +512,11 @@ server.registerTool(
 			content: [
 				{
 					type: 'text',
-					text: JSON.stringify({ webdriver: driver, engine, page }, null, 1)
+					text: JSON.stringify(
+						{ webdriver: driver, engine, page, trace: trace ? trace.dir : 'off' },
+						null,
+						1
+					)
 				}
 			]
 		};
@@ -406,6 +539,7 @@ server.registerTool(
 		const response = await fetch(`${ENGINE_BASE}${target}`);
 		const body = await response.text();
 		if (!response.ok) throw new Error(`engine GET ${target} -> ${response.status}: ${body}`);
+		trace?.record({ tool: 'app_state', detail: target });
 		return { content: [{ type: 'text', text: body }] };
 	}
 );
@@ -422,6 +556,8 @@ server.registerTool(
 		const absolute = url.startsWith('http') ? url : `${ENGINE_BASE}${url}`;
 		await wd.navigate(absolute);
 		lastTree = null;
+		await new Promise((resolve) => setTimeout(resolve, ACT_SETTLE_MS));
+		trace?.record({ tool: 'navigate', detail: absolute, frame: await _traceFrame() });
 		return { content: [{ type: 'text', text: `navigated to ${absolute}. Re-observe with ui_tree.` }] };
 	}
 );
@@ -439,6 +575,7 @@ server.registerTool(
 	async ({ selector }) => {
 		const snap = await _snapshotTree(selector);
 		const header = `[v${snap.version}] ${snap.title} ${snap.url} viewport=${snap.viewport.w}x${snap.viewport.h} refs=${snap.refCount}`;
+		trace?.record({ tool: 'ui_tree', detail: `v${snap.version} ${snap.url} refs=${snap.refCount}` });
 		return { content: [{ type: 'text', text: `${header}\n${snap.tree}` }] };
 	}
 );
@@ -483,6 +620,11 @@ server.registerTool(
 			cssWidth ?? Math.round((meta.width ?? 0) / scale)
 		);
 		const png = await image.resize({ width: targetWidth, withoutEnlargement: true }).png().toBuffer();
+		trace?.record({
+			tool: 'screenshot',
+			detail: selector ?? 'full window',
+			frame: trace.saveFrame(png)
+		});
 		return {
 			content: [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }]
 		};
@@ -511,12 +653,23 @@ server.registerTool(
 			throw new Error(`act kind=${kind} requires text`);
 		}
 		const before = lastTree;
-		const result = await wd.execute<{ error?: string; ok?: boolean; delivery?: string }>(
-			ACT_SCRIPT,
-			[kind, ref ?? null, tree_version ?? null, text ?? null]
-		);
+		const result = await wd.execute<{
+			error?: string;
+			ok?: boolean;
+			delivery?: string;
+			rect?: { x: number; y: number; w: number; h: number };
+			viewport?: { w: number; h: number };
+		}>(ACT_SCRIPT, [kind, ref ?? null, tree_version ?? null, text ?? null]);
 		if (result.error) throw new Error(result.error);
 		await new Promise((resolve) => setTimeout(resolve, ACT_SETTLE_MS));
+		trace?.record({
+			tool: 'act',
+			detail: `${kind} ${ref ?? ''} ${text ?? ''}`.trim(),
+			caption: kind === 'chord' ? `chord: ${text}` : kind === 'type' ? `typed: "${text}"` : undefined,
+			rect: result.rect,
+			viewport: result.viewport,
+			frame: await _traceFrame()
+		});
 		const after = await _snapshotTree();
 		const diff = before
 			? _diffTrees(before.lines, after.tree.split('\n'))
@@ -544,6 +697,7 @@ server.registerTool(
 	},
 	async ({ script }) => {
 		const value = await wd.execute<unknown>(script);
+		trace?.record({ tool: 'eval_js', detail: script.slice(0, 80) });
 		const text = JSON.stringify(value);
 		return {
 			content: [{ type: 'text', text: text.length > 8000 ? `${text.slice(0, 8000)}...(capped)` : text }]
