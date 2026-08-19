@@ -9,6 +9,7 @@
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { onMount } from 'svelte';
+	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import {
 		ConflictError,
 		RbApiError,
@@ -398,10 +399,34 @@
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
 		);
+
+		// ---- library listing freshness -------------------------------------
+		// FAST PATH: the engine tells us the moment a track changes, from any
+		// writer (this tab, another tab, the CLI, an agent). One targeted
+		// refetch, no idle polling.
+		const unsubscribeTracks = subscribeKind('tracks', () => void _refreshLibraryRows());
+		// A resync means the bus knows it missed events but not which, so the
+		// only sound response is to refetch as if everything changed.
+		const unsubscribeResync = subscribeResync(() => void _refreshLibraryRows());
+		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
+		// WS is down (daemon restarting, engine built without the hub) it is
+		// the only thing keeping this pane honest. It is 60s rather than
+		// aggressive because it is a fallback, and it stands down entirely
+		// while the bus is open, where it would only duplicate work the
+		// subscriptions above already do on demand.
+		const LIBRARY_FALLBACK_POLL_MS = 60_000;
+		const libraryFallbackTimer = setInterval(() => {
+			if (getConnectionState() === 'open') return;
+			void _refreshLibraryRows();
+		}, LIBRARY_FALLBACK_POLL_MS);
+
 		return () => {
 			connAlive = false;
 			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
+			clearInterval(libraryFallbackTimer);
+			unsubscribeTracks();
+			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 		};
@@ -684,6 +709,52 @@
 	async function _refreshPlaylists(): Promise<void> {
 		playlists = await listPlaylistsHydrated();
 		await _sweepBlankPlaylists(playlists);
+	}
+
+	/**
+	 * Re-read the library listing WITHOUT disturbing the user: the all-tracks
+	 * count plus every loaded pane's rows, replaced in place so selection and
+	 * scroll survive.
+	 *
+	 * Deliberately NOT routed through _loadPane: beginLoad() clears
+	 * selected_id, selected_ids and scroll_top, which is correct for a
+	 * user-initiated playlist switch and destructive for a background
+	 * invalidation. Editing one track's rating must not scroll the pane back
+	 * to the top and drop a 40-row multi-selection.
+	 *
+	 * Failures log rather than toast: this runs unattended (WS events and a
+	 * 60s timer), so a toast per failure during a daemon restart would bury
+	 * the UI in noise. The stale rows stay on screen and the next event or
+	 * tick retries.
+	 */
+	async function _refreshLibraryRows(): Promise<void> {
+		try {
+			const healthRes = await getHealth();
+			allTracksCount = healthRes.health.state_db.tracks;
+		} catch (exc) {
+			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
+		}
+		for (const p of panes) {
+			// A blank pane has nothing to refresh, and a pane mid-load already
+			// has a newer load token that owns its rows.
+			if (p.playlist_id === null || p.loading) continue;
+			try {
+				const result =
+					p.playlist_id === 'all'
+						? await _fetchAllRows()
+						: await _fetchPlaylistRows(p.playlist_id);
+				p.rows = result.rows;
+				p.truncated = result.truncated;
+				p.etag = result.etag;
+				// A selection pointing at a row the change deleted cannot
+				// survive; everything still present stays selected.
+				const present = new Set(result.rows.map((row) => row.stable_id));
+				p.selected_ids = p.selected_ids.filter((id) => present.has(id));
+				if (p.selected_id !== null && !present.has(p.selected_id)) p.selected_id = null;
+			} catch (exc) {
+				console.error(`[library-refresh] pane ${p.playlist_id} refresh failed: ${String(exc)}`);
+			}
+		}
 	}
 
 	/** Auto-delete blank untitled empties (never renamed / non-empty). */

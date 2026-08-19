@@ -8,6 +8,7 @@
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
+	import { connect as connectEventsBus } from '$lib/api/events-bus';
 
 	let { children } = $props();
 
@@ -24,6 +25,9 @@
 	});
 
 	onMount(() => {
+		// One bus for the page lifetime. connect() is idempotent and reconnects
+		// on its own, so it is never torn down on navigation.
+		connectEventsBus();
 		refreshHealth();
 		void hydrateConfirmPrefsFromDisk();
 		const uninstallSettings = installSettingsHotkeys();
