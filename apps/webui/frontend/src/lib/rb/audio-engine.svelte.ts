@@ -160,6 +160,11 @@ import {
 	pitchRanges
 } from '$lib/player/state.svelte';
 import {
+	attachMasterMuteNode,
+	isMasterMuted,
+	setMasterMuted
+} from '$lib/player/master-mute.svelte';
+import {
 	_assertKeyShift,
 	camelotKeysAreCompatible,
 	composeStretchSemitones,
@@ -268,6 +273,11 @@ export {
 	mixerState,
 	pitchRanges
 };
+
+// Opt-in startup master mute (`?muted=1`), re-exported at the engine barrel so
+// the topbar toggle and any test agent reach it on the same import as the rest
+// of the player surface. See player/master-mute.svelte.ts.
+export { isMasterMuted, setMasterMuted };
 
 function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
 	return _hotCuesFrom(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
@@ -395,6 +405,8 @@ function _emptyRuntime(): _DeckRuntime {
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
+/** Opt-in startup mute, last node before the destination. Never bypassed. */
+let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
 interface _HeadphoneNodes {
 	cueSum: GainNode;
@@ -802,9 +814,16 @@ function _ensureGraph(): AudioContext {
 	_ctx = new AudioContext();
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
+	// Silence belt for headless test agents (`?muted=1`): the LAST node before
+	// the destination, so a mute is one gain value and every node upstream --
+	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
+	// identically. See player/master-mute.svelte.ts.
+	_masterMuteGain = _ctx.createGain();
+	attachMasterMuteNode(_masterMuteGain);
 	const routing = _parseExternalRouting();
 	if (routing === null) {
-		_masterGain.connect(_ctx.destination);
+		_masterMuteGain.connect(_ctx.destination);
+		_masterGain.connect(_masterMuteGain);
 	} else {
 		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
 		const dest = _ctx.destination;
@@ -816,9 +835,16 @@ function _ensureGraph(): AudioContext {
 		}
 		dest.channelCount = dest.maxChannelCount;
 		dest.channelInterpretation = 'discrete';
+		// The mute node inherits the discrete multichannel contract, otherwise
+		// the default speakers interpretation would downmix the per-deck USB
+		// pairs on their way through it.
+		_masterMuteGain.channelCount = dest.channelCount;
+		_masterMuteGain.channelCountMode = 'explicit';
+		_masterMuteGain.channelInterpretation = 'discrete';
+		_masterMuteGain.connect(dest);
 		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
 		_externalMerger.channelInterpretation = 'discrete';
-		_externalMerger.connect(dest);
+		_externalMerger.connect(_masterMuteGain);
 	}
 	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
@@ -2684,6 +2710,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		_headphoneGeneration += 1;
 		_disposeHeadphoneGraph();
+		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -2694,6 +2721,10 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		// The mute VALUE survives teardown on purpose: a route remount must not
+		// hand a headless agent its audio back. Only the node is released.
+		attachMasterMuteNode(null);
+		_masterMuteGain = null;
 		_externalMerger = null;
 		_ctx = null;
 		_masterDeck = null;
