@@ -1,7 +1,8 @@
 # apps/desktop -- Open DJ desktop shell
 
-Tauri 2 native window wrapping the local engine's web UI. This is a scaffold
-(compiles via `cargo check`; `cargo tauri build` has not been exercised yet).
+Tauri 2 native window wrapping the local engine's web UI. Compiles via
+`cargo check` and launches via `cargo tauri build --debug --no-bundle`;
+see `.planning/evidence/shell-smoke-2026-08-19.png` for a launch smoke test.
 
 ## Thin-shell rule (non-negotiable)
 
@@ -39,8 +40,16 @@ maintenance trap this thin-shell rule exists to avoid.
   `http://127.0.0.1:8683` (the engine URL). The port is hardcoded for now --
   **TODO: read it from the same config the engine uses instead of hardcoding
   it.**
-- `bundle.active` is `false`; this scaffold has only been verified with
-  `cargo check`, not a full `cargo tauri build`.
+- `bundle.active` is `false`; no packaged `.app`/installer has been produced.
+  `cargo tauri build --debug --no-bundle` has been verified: it produces a
+  launchable `target/debug/opendj-desktop` binary that opens a native window
+  and successfully loads whatever the engine currently serves at
+  `http://127.0.0.1:8683` in its WKWebView (confirmed via a fresh `GET /` in
+  the engine's access log plus a window screenshot -- see
+  `.planning/evidence/shell-smoke-2026-08-19.png`). That smoke test hit a
+  running engine with no SPA build mounted, so the window showed the API's
+  JSON placeholder response rather than the real UI -- the shell itself
+  works, the SPA build is the separate missing piece.
 - Icons under `src-tauri/icons/` are generated from the existing open-dj
   brand mark (`apps/webui/frontend/static/icon-512.png`), converted to RGBA
   (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
@@ -50,8 +59,9 @@ maintenance trap this thin-shell rule exists to avoid.
 
 ```sh
 cd apps/desktop/src-tauri
-cargo check          # verified working
-cargo tauri build     # not yet exercised -- needs `cargo install tauri-cli` first
+cargo check                             # verified working
+cargo tauri build --debug --no-bundle   # verified working -- see Current state above
+cargo tauri build                       # release + bundle -- not yet exercised
 ```
 
 productName: `Open DJ`
