@@ -38,8 +38,10 @@ export const STRETCH_COMMAND_TIMEOUT_MS = 5_000;
  * 'default'}` branch, giving a 120ms block at 44100Hz.
  *
  * Setting it to 30 is prepared and measured but NOT enabled. The mechanism:
- * `latency()` equals the block exactly, and the onset ramp is 0.37x the block,
- * so the schedule floor (ramp lead + 8ms immediate safety) moves 52ms -> 19ms.
+ * `latency()` equals the block exactly (verified against the real library: a
+ * `configure({blockMs: 30})` makes `latency()` report 30.00ms), and the onset
+ * ramp is 0.39x the block, so the schedule floor (ramp lead + 8ms immediate
+ * safety) moves 54.8ms -> 19.7ms, with a measured onset lateness of 0.48ms.
  * The cost is real and is why the flag is off: a 30ms window at 44100Hz
  * resolves ~33Hz per bin against ~8Hz today, i.e. four times worse frequency
  * resolution, which is the direction a phase-vocoder is most sensitive in
