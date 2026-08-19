@@ -337,11 +337,16 @@ test('an empty ledger is an error, not an empty grid that looks like "no runs ye
 });
 
 test('an HTTP failure surfaces the status and body, never an empty grid', async () => {
+	// openapi-fetch builds a Request before calling fetch; empty VITE_API_BASE
+	// is fine in the browser but Node needs an absolute base to construct it.
+	const kpiApiNet = await loadTypeScriptModule('src/routes/admin/kpi-api.ts', {
+		viteApiBase: 'https://kpi-api.example.test'
+	});
 	const original = globalThis.fetch;
-	globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => 'ledger unreadable' });
+	globalThis.fetch = async () => new Response('ledger unreadable', { status: 500 });
 	try {
 		await assert.rejects(
-			kpiApi.fetchKpiLedger(),
+			kpiApiNet.fetchKpiLedger(),
 			/GET \/api\/v1\/bench\/kpi failed \(HTTP 500\): ledger unreadable/
 		);
 	} finally {
