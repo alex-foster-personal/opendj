@@ -2,11 +2,8 @@
 	import { onMount } from 'svelte';
 	import { listTracks, type Track } from '$lib/api';
 	import VirtualTable from '$lib/components/VirtualTable.svelte';
-	import FirstRunOverlay from '$lib/components/rb/FirstRunOverlay.svelte';
-	import { resolveFirstRun } from '$lib/setup/first-run';
 	import { pushToast } from '$lib/stores.svelte';
 
-	let showFirstRun = $state(false);
 	let tracks = $state<Track[]>([]);
 	let nextCursor = $state<string | null>(null);
 	let loading = $state(false);
@@ -33,20 +30,15 @@
 	}
 
 	/**
-	 * The first-run gate. An empty library that has not been dismissed dims
-	 * the page and offers the wizard, instead of showing an empty table with
-	 * no explanation -- and instead of navigating away, which is what this
-	 * used to do. The app stays on screen behind the ask.
+	 * No first-run gate here any more, deliberately.
 	 *
-	 * The daemon decides, not the browser: `should_show_wizard` is computed
-	 * engine-side (and is already false for a developer checkout), so a
-	 * reload, a second tab and an agent all get the same answer. The rule
-	 * itself lives in $lib/setup/first-run, under test.
+	 * It used to live on this page, which meant the ask only existed on one
+	 * route and only over an empty table. It is now ONE gate in the root
+	 * layout, raising the setup overlay over the performance view -- see
+	 * raiseSetupOnFirstRun in src/routes/+layout.svelte. A second copy here
+	 * would be a second decision about the same thing.
 	 */
 	onMount(() => {
-		void resolveFirstRun().then((show) => {
-			showFirstRun = show;
-		});
 		void fetchPage();
 	});
 
@@ -69,10 +61,6 @@
 
 {#if loading}
 	<p>Loading...</p>
-{/if}
-
-{#if showFirstRun}
-	<FirstRunOverlay />
 {/if}
 
 <style>

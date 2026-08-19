@@ -30,6 +30,7 @@ import { capabilities } from '../api/capabilities.svelte';
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
+	finalSetupRefusal,
 	folderIsImportable,
 	getSetupStatus,
 	isFatalBlocker,
@@ -168,6 +169,17 @@ class SetupWizard {
 	jobId = $state<string | null>(null);
 	busy = $state(false);
 	error = $state<string | null>(null);
+	/**
+	 * Whether detection has ever answered, tracked separately from the answer
+	 * itself.
+	 *
+	 * `detection === null` used to mean three different things -- never asked,
+	 * asking now, and asked-and-failed -- and the detect step painted all three
+	 * as one grey "Looking..." that nothing would ever clear. A first-run user
+	 * on a healthy machine read that as "no rekordbox found", which is the bug
+	 * this field exists to make impossible.
+	 */
+	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
 
 	goTo(step: WizardStep): void {
 		this.step = step;
@@ -194,10 +206,16 @@ class SetupWizard {
 	 * success, so this costs one request for the page, not one per call.
 	 */
 	async load(): Promise<void> {
+		this.detectState = 'scanning';
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
+			// FAILED, not "still looking". The caller re-runs load() once the
+			// capability probe finally identifies an engine, so a daemon that
+			// was merely slow to boot heals itself instead of stranding the
+			// step on a scanning state nothing will ever clear.
+			this.detectState = 'failed';
 			return;
 		}
 		this.busy = true;
@@ -208,29 +226,58 @@ class SetupWizard {
 			this.status = await getSetupStatus();
 			this.detection = this.status.rekordbox;
 			this.error = null;
+			this.detectState = 'answered';
 		} catch (exc) {
 			this.error = _message(exc);
+			this.detectState = 'failed';
 		} finally {
 			this.busy = false;
 		}
 	}
 
-	/** Re-run detection on demand, for the "I have fixed it, look again" case. */
+	/** Re-run detection on demand, for the "I have fixed it, look again" case.
+	 *
+	 * Probes FIRST, like load() and runSetup(), because this button is also
+	 * the manual retry for a daemon that was not up when the overlay mounted.
+	 * Reading the refusal synchronously would answer a legitimate retry with a
+	 * sentence about an unfinished health GET and change nothing. */
 	async redetect(): Promise<void> {
+		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
+			this.detectState = 'failed';
 			return;
 		}
 		this.busy = true;
+		this.detectState = 'scanning';
 		try {
 			this.detection = await detectRekordbox();
 			this.error = null;
+			this.detectState = 'answered';
 		} catch (exc) {
 			this.error = _message(exc);
+			this.detectState = 'failed';
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/**
+	 * Load once, or re-load a previous attempt that could not reach the engine.
+	 *
+	 * THE BOOT RACE this closes: the overlay can mount in the same tick the
+	 * root layout fires its one health GET, and in the packaged app the engine
+	 * may not be listening yet at all. `load()` then returns early having
+	 * asked nothing, and NOTHING re-ran it -- the detect step sat on a grey
+	 * in-flight sentence permanently, on a machine where rekordbox was right
+	 * there. Callers drive this from an effect on `capabilities.flavor`, so
+	 * the retry is demand-driven off a state change and never a poll.
+	 */
+	async ensureLoaded(): Promise<void> {
+		if (this.detectState === 'answered' || this.detectState === 'scanning') return;
+		if (finalSetupRefusal() !== null) return;
+		await this.load();
 	}
 
 	/** Switch branch. The previous branch's findings are dropped rather than
@@ -350,6 +397,9 @@ class SetupWizard {
 			this.status = await setDismissed(false);
 			this.step = 'welcome';
 			this.error = null;
+			// Re-arming is a fresh run: whatever detection said last time is
+			// history, and ensureLoaded() must ask again rather than reuse it.
+			this.detectState = 'idle';
 		} catch (exc) {
 			this.error = _message(exc);
 		} finally {
@@ -368,6 +418,7 @@ class SetupWizard {
 		this.jobId = null;
 		this.busy = false;
 		this.error = null;
+		this.detectState = 'idle';
 	}
 }
 

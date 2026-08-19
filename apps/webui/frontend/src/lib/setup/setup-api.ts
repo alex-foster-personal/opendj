@@ -87,6 +87,31 @@ export function setupRefusal(): string | null {
 	return capabilities.flavor === 'legacy' ? SETUP_MISSING : UNIDENTIFIED;
 }
 
+/**
+ * Why the setup surface is FINALLY refused, or null when it is not.
+ *
+ * Deliberately narrower than `setupRefusal()`, which folds two very different
+ * answers into one string: "this daemon does not serve setup" (final) and
+ * "the health probe has not answered yet" (temporary). A SURFACE that renders
+ * the second one has just told a first-run user their setup failed, in the
+ * first tick after load, on a perfectly healthy engine -- and then disabled
+ * the buttons that would have fixed it. That is the exact failure the wizard
+ * overlay exists to remove, so components gate on THIS and render the
+ * unfinished probe as a scanning state instead.
+ *
+ * Same rule `runSetupBlocked()` already applies to the entry-point button;
+ * that function now delegates here so the two cannot drift.
+ */
+export function finalSetupRefusal(): string | null {
+	return capabilities.flavor === 'legacy' ? SETUP_MISSING : null;
+}
+
+/** True while the daemon flavor is still unresolved, so a surface can say
+ * "checking" instead of inventing a verdict. */
+export function setupProbePending(): boolean {
+	return capabilities.flavor === 'unknown';
+}
+
 export async function getSetupStatus(): Promise<SetupStatus> {
 	return unwrap(api.GET('/api/v1/setup/status'));
 }

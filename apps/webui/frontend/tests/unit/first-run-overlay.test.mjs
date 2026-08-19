@@ -1,18 +1,20 @@
 /**
- * The first-run gate on the library page: an overlay, not a redirect.
+ * The first-run gate: ONE gate, in the root layout, raising the setup OVERLAY
+ * over the performance view.
  *
  * A brand new user landing on an empty table with no explanation is the
- * problem; being thrown onto /setup before they have seen the app is the
- * overcorrection. The gate now dims the library and offers one button, so
- * the thing they just installed is visible underneath the ask.
+ * problem; being thrown onto a standalone /setup page before they have seen
+ * the app is the overcorrection. The gate now raises a dialog over the app's
+ * own front door, so the thing they just installed is visible underneath the
+ * ask and the wizard is minimisable while a 10,000-track import runs.
  *
  * The decision is a pure function plus one async resolver, executed here for
  * real. Only the markup facts a node:test harness cannot render are pinned by
  * source shape, the way capability-gating-markup.test.mjs pins its own.
  *
  * Regression lines:
- * - if the page goes back to goto('/setup') then the app auto-navigates away
- *   from itself before the user has seen it
+ * - if the gate moves back onto the library page then the ask exists on one
+ *   route only, and never on the route the packaged app actually lands on
  * - if the gate stops honouring setupRefusal then a legacy boot fires a
  *   request at an endpoint that is guaranteed to 404
  * - if a failed status probe shows the overlay anyway then a transient error
@@ -20,6 +22,8 @@
  * - if the overlay stops being fixed + full-inset then it no longer dims the
  *   app it is explaining
  * - if the overlay is opaque then the "see what you installed" point is gone
+ * - if the overlay stops being a labelled dialog then no test and no screen
+ *   reader can find the one surface a first-run user meets
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -133,26 +137,67 @@ test('a failed status probe shows the library, not the overlay', async () => {
 
 // -------------------------------------------------------------- the markup
 
-test('the library page no longer navigates away to /setup', () => {
+test('the gate lives in the root layout, not on the library page', () => {
+	// One gate. A copy on the library page would be a second decision about
+	// the same thing, and it would never fire on /performance -- the route
+	// the packaged shell actually lands on.
 	const page = read('src/routes/+page.svelte');
-	assert.doesNotMatch(page, /goto\(\s*['"]\/setup['"]\s*\)/);
-	assert.match(page, /FirstRunOverlay/);
-	assert.match(page, /resolveFirstRun\(\)/);
+	assert.doesNotMatch(page, /resolveFirstRun\(\)/);
+	assert.doesNotMatch(page, /FirstRunOverlay/);
+
+	const layout = read('src/routes/+layout.svelte');
+	assert.match(layout, /resolveFirstRun\(\)/);
+	assert.match(layout, /openSetupOverlay\(\)/);
+	assert.match(layout, /<SetupOverlay \/>/);
+	// The destination is spelled once, in run-setup.ts.
+	assert.match(layout, /SETUP_HOST_ROUTE/);
+	assert.doesNotMatch(layout, /goto\(\s*['"]\/performance['"]\s*\)/);
 });
 
 test('the overlay dims the app rather than covering it', () => {
-	const overlay = read('src/lib/components/rb/FirstRunOverlay.svelte');
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /position:\s*fixed/);
 	assert.match(overlay, /inset:\s*0/);
 	// Translucent on purpose: the point is that the app is visible beneath.
-	assert.match(overlay, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.45\)/);
+	assert.match(overlay, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.55\)/);
 	assert.match(overlay, /z-index/);
 });
 
-test('the overlay says what it is and offers exactly one way forward', () => {
-	const overlay = read('src/lib/components/rb/FirstRunOverlay.svelte');
-	assert.match(overlay, /Open DJ/);
-	assert.match(overlay, /Import your library to get started/);
-	assert.match(overlay, /Run setup/);
-	assert.match(overlay, /goto\(\s*['"]\/setup['"]\s*\)/);
+test('the overlay is a labelled dialog hosting the wizard steps', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /role="dialog"/);
+	assert.match(overlay, /aria-modal="true"/);
+	assert.match(overlay, /aria-label="First-run setup"/);
+	// The steps are REUSED, not rewritten: same store, same step names.
+	assert.match(overlay, /from '\$lib\/setup\/wizard\.svelte'/);
+	assert.match(overlay, /WIZARD_STEPS/);
+	assert.match(overlay, /setupWizard\.beginImport/);
+	assert.match(overlay, /setupWizard\.beginFolderImport/);
+});
+
+test('the overlay mounts the assistant sidebar on the agreed contract', () => {
+	// The sidebar's internals belong to another lane; { visible } is the
+	// whole contract and this component must not reach past it.
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /import AssistantSidebar from '\$lib\/components\/assistant\/AssistantSidebar\.svelte'/);
+	assert.match(overlay, /<AssistantSidebar visible=\{true\} \/>/);
+});
+
+test('the overlay can be minimised to a chip without closing', () => {
+	// A 10,000-track import must not hold the whole screen hostage, and the
+	// chip must reopen the SAME wizard rather than restart it.
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /collapseSetupOverlay\(\)/);
+	assert.match(overlay, /expandSetupOverlay\(\)/);
+	assert.match(overlay, /class="su-chip"/);
+	assert.match(overlay, /Importing \{pct\}%/);
+});
+
+test('/setup is a door into the overlay, never a 404 and never a second wizard', () => {
+	const route = read('src/routes/setup/+page.svelte');
+	assert.match(route, /openSetupOverlay\(\)/);
+	assert.match(route, /goto\(SETUP_HOST_ROUTE, \{ replaceState: true \}\)/);
+	// The wizard markup lives in exactly one place now.
+	assert.doesNotMatch(route, /WIZARD_STEPS/);
+	assert.doesNotMatch(route, /beginImport/);
 });

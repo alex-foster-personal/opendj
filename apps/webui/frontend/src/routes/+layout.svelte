@@ -1,10 +1,15 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
+	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
+	import { resolveFirstRun } from '$lib/setup/first-run';
+	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
+	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { startAppInstruments } from '$lib/rb/app-init';
@@ -41,10 +46,34 @@
 		connectEventsBus();
 	});
 
+	/**
+	 * THE first-run gate, at the root so there is exactly one of it.
+	 *
+	 * It used to live on the library page, which meant the ask only existed on
+	 * one route and only over an empty table. Setup is now an OVERLAY, so the
+	 * gate raises it and puts the performance view behind it -- the app the
+	 * user just installed, visible, with one step left.
+	 *
+	 * The daemon decides, not the browser: `should_show_wizard` is computed
+	 * engine-side (and is already false for a developer checkout), so a
+	 * reload, a second tab and an agent all get the same answer. The rule
+	 * itself lives in $lib/setup/first-run, under test.
+	 */
+	function raiseSetupOnFirstRun(): void {
+		void resolveFirstRun().then((show) => {
+			if (!show) return;
+			openSetupOverlay();
+			// Already on a performance route (the packaged shell's landing
+			// route) means no navigation at all; the overlay is simply raised.
+			if (!isPerformance) void goto(SETUP_HOST_ROUTE);
+		});
+	}
+
 	onMount(() => {
 		// THE capability probe: one health GET, before anything daemon-specific
 		// decides whether it is real. Every other surface reads the answer.
 		void capabilities.probe();
+		raiseSetupOnFirstRun();
 		refreshHealth();
 		void hydrateConfirmPrefsFromDisk();
 		const uninstallSettings = installSettingsHotkeys();
@@ -131,6 +160,11 @@
 {/if}
 
 <SettingsOverlay />
+<!-- The first-run wizard, over whatever route is on screen. Mounted at the
+     root for the same reason SettingsOverlay is: /performance bypasses the app
+     shell, and the one surface a brand new user meets cannot be missing there
+     of all places. -->
+<SetupOverlay />
 
 <div class="toast-stack">
 	{#each toasts as toast (toast.id)}

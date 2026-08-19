@@ -51,11 +51,22 @@
  */
 
 import { capabilities } from '../api/capabilities.svelte';
-import { setupRefusal } from './setup-api';
+import { openSetupOverlay } from './overlay.svelte';
+import { finalSetupRefusal, setupRefusal } from './setup-api';
 import { setupWizard } from './wizard.svelte';
 
-/** The wizard's route. Spelled once so three entry points cannot disagree. */
+/** The wizard's route. Spelled once so three entry points cannot disagree.
+ *
+ * It is now a DOOR, not a destination: /setup opens the setup overlay and
+ * hands the browser straight on to SETUP_HOST_ROUTE, because the wizard is an
+ * overlay over the live app rather than a page of its own. Deep links, agent
+ * flows and older bookmarks all still land somewhere real. */
 export const SETUP_ROUTE = '/setup';
+
+/** The page the setup overlay is drawn OVER. The performance view is the
+ * app's actual front door, so the ask arrives with its subject behind it
+ * instead of over an empty table. */
+export const SETUP_HOST_ROUTE = '/performance';
 
 /** The label every entry point shows, so they are recognisably the same door. */
 export const RUN_SETUP_LABEL = 'Run setup';
@@ -81,7 +92,7 @@ export const RUN_SETUP_TITLE =
  * for real.
  */
 export function runSetupBlocked(): string | null {
-	return capabilities.flavor === 'legacy' ? setupRefusal() : null;
+	return finalSetupRefusal();
 }
 
 /**
@@ -101,6 +112,10 @@ export async function runSetup(navigate: (path: string) => unknown): Promise<str
 	// reopen() records the server's message rather than throwing, so the
 	// navigation gate is that field and not an exception.
 	if (setupWizard.error !== null) return setupWizard.error;
+	// Raise the overlay BEFORE navigating. /setup would raise it too, but a
+	// caller that is already on the host route never navigates at all, and an
+	// entry point whose only effect was a no-op goto is a dead button.
+	openSetupOverlay();
 	await navigate(SETUP_ROUTE);
 	return null;
 }

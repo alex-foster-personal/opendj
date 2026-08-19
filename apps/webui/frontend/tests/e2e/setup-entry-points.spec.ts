@@ -33,12 +33,33 @@
  * listener is there. A broken accelerator still fails, because the gate only
  * removes the race, never the assertion.
  *
+ * WHAT THE WIZARD IS NOW. It is an OVERLAY over the live performance view,
+ * not a page. /setup is still a door -- bookmarks, SETUP_ROUTE and agent
+ * flows all point at it -- but it opens the dialog and hands the browser on
+ * to the host route. So every entry point below is checked for the DIALOG,
+ * and the URL it settles on is the app, not a wizard screen.
+ *
+ * THE FAILURE STATES ARE CHECKED WITHOUT A SINGLE STUB. Under the webkit
+ * artifact config the engine runs with HOME pointed at a sandbox directory,
+ * so `~/Library/Pioneer/rekordbox/master.db` genuinely is not there and
+ * detection genuinely reports `rekordbox_not_found`. Under the chromium/vite
+ * config it is the lane engine on a machine that has rekordbox, so detection
+ * genuinely succeeds. The suite therefore ASKS the API which world it is in
+ * and asserts the matching contract -- real data both times, and the harder
+ * half runs exactly where a tester meets it.
+ *
  * Requirements:
  *
  * - ✔︎ Cmd+, opens the settings surface from the app shell AND from
  *   /performance, because the accelerator is installed at the root layout.
- * - ✔︎ "Run setup" from that surface lands on /setup with the wizard rendered.
- * - ✔︎ The /admin Setup tab lands on /setup.
+ * - ✔︎ "Run setup" from that surface opens the setup dialog over the app.
+ * - ✔︎ The /admin Setup tab opens the same dialog.
+ * - ✔︎ /setup deep-links to the same dialog rather than 404ing or rendering a
+ *   second wizard.
+ * - ✔︎ The detect step ALWAYS offers three enabled ways forward, whatever
+ *   detection found.
+ * - ✔︎ A fatal blocker renders as an alert in the danger colour, with the
+ *   reason Continue is refused visible INLINE.
  * - ✔︎ No console errors on the way, so a working navigation cannot hide a
  *   broken request.
  *
@@ -48,12 +69,16 @@
  *   label-only outside the app shell.
  * - [if] "Run setup" is present but inert [then ⛔️] the entry point is
  *   decoration.
- * - [if] the Setup tab navigates anywhere other than /setup [then ⛔️] the
- *   operator panel's route into setup is wrong.
- * - [if] /setup renders its "daemon not identified yet" refusal after either
- *   entry point [then ⛔️] the capability probe is being raced again.
+ * - [if] the Setup tab opens no dialog [then ⛔️] the operator panel's route
+ *   into setup is wrong.
+ * - [if] the overlay renders its "daemon not identified yet" refusal after
+ *   any entry point [then ⛔️] the capability probe is being raced again.
  * - [if] a chord is pressed before the root layout's onMount has run [then ⛔️]
  *   the suite reports a lost keystroke as a missing accelerator.
+ * - [if] any of the three escape buttons is disabled on the detect step
+ *   [then ⛔️] a first-run user can be dead-ended, which is the whole bug.
+ * - [if] a fatal blocker's sentence is not red [then ⛔️] the failure reads as
+ *   ordinary prose, which is exactly what a tester reported.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -63,7 +88,15 @@ import { test, expect, type Page } from '@playwright/test';
 const SETTINGS_CHORD = process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma';
 
 const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
+const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run setup' });
 const runSetupButton = (page: Page) => page.getByRole('button', { name: 'Run setup', exact: true });
+
+/** The route the overlay is drawn over. Spelled once here, and it must match
+ * SETUP_HOST_ROUTE in $lib/setup/run-setup. */
+const HOST_ROUTE = /\/performance\/?$/;
+
+/** The three ways forward the detect step must ALWAYS offer. */
+const ESCAPE_LABELS = ['Look again', 'Choose a folder instead', 'Continue without importing'];
 
 /** The sentence that means the capability probe was read before it answered.
  * It must never be on screen after a deliberate navigation into setup. */
@@ -86,13 +119,35 @@ async function gotoShellReady(page: Page, path: string): Promise<void> {
 	);
 }
 
+/**
+ * The wizard is on screen as an OVERLAY over the app.
+ *
+ * Not a URL assertion about /setup any more: /setup is a door that opens the
+ * dialog and hands the browser on to the host route, so asserting the old URL
+ * would pin the redirect's transient middle rather than the outcome.
+ */
 async function expectWizard(page: Page): Promise<void> {
-	await expect(page).toHaveURL(/\/setup\/?$/);
-	// The page heading, plus the step the wizard opens on. "Welcome" is a step
-	// label in the stepper, not a heading, so it is matched as text.
-	await expect(page.getByRole('heading', { name: 'First-run setup' })).toBeVisible();
-	await expect(page.locator('.steps .step').first()).toContainText('Welcome');
+	const dialog = setupDialog(page);
+	await expect(dialog).toBeVisible();
+	await expect(page).toHaveURL(HOST_ROUTE);
+	await expect(dialog.getByRole('heading', { name: 'First-run setup' })).toBeVisible();
+	await expect(dialog.locator('.steps .step').first()).toContainText('Welcome');
 	await expect(page.getByText(PROBE_RACE)).toHaveCount(0);
+	// The app is BEHIND it, not replaced by it. .perf-root is the performance
+	// view's own root; an overlay that covered the app would have no reason to
+	// be an overlay.
+	await expect(page.locator('.perf-root').first()).toBeVisible();
+}
+
+/** What detection genuinely reports on the engine behind THIS run. No stub:
+ * the webkit config sandboxes HOME so rekordbox really is absent, and the
+ * vite config talks to a lane engine where it really is present. */
+async function fatalBlockers(page: Page): Promise<string[]> {
+	const body = await page.evaluate(async () => {
+		const response = await fetch('/api/v1/setup/detect/rekordbox');
+		return (await response.json()) as { blockers?: string[] };
+	});
+	return (body.blockers ?? []).filter((code) => code !== 'rekordbox_share_missing');
 }
 
 test.describe('setup entry points', () => {
@@ -140,6 +195,122 @@ test.describe('setup entry points', () => {
 			'true'
 		);
 		await tabs.getByRole('tab', { name: 'Setup' }).click();
+		await expectWizard(page);
+	});
+
+	test('/setup deep-links into the overlay instead of 404ing', async ({ page }) => {
+		// Bookmarks, SETUP_ROUTE and "open /setup" agent instructions all still
+		// exist. They must land on the wizard, not on a dead route and not on a
+		// second copy of it.
+		await gotoShellReady(page, '/setup');
+		await expectWizard(page);
+		// One wizard on screen, not two.
+		await expect(page.getByRole('heading', { name: 'First-run setup' })).toHaveCount(1);
+	});
+
+	test('the detect step always offers three enabled ways forward', async ({ page }) => {
+		// THE regression this suite exists for: a tester met a detect step whose
+		// only enabled control was one he did not recognise as an escape. None
+		// of these three is gated on what detection found.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+
+		for (const label of ESCAPE_LABELS) {
+			const button = dialog.getByRole('button', { name: label, exact: true });
+			await expect(button, `${label} must be on screen`).toBeVisible();
+			await expect(button, `${label} must never be disabled`).toBeEnabled();
+			// House rule: a control says what it does and what it will change.
+			await expect(button).toHaveAttribute('title', /\/api\/v1\/setup\//);
+		}
+	});
+
+	test('detection reports itself honestly, in the right colour', async ({ page }) => {
+		// Real data both ways. Under the webkit artifact config the engine's
+		// HOME is a sandbox, so rekordbox genuinely is not there; under vite it
+		// is the lane engine on a machine that has it.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+
+		// The scanning state must resolve into a verdict, never stick.
+		await expect(dialog.locator('.probes li').first()).toBeVisible();
+
+		const fatal = await fatalBlockers(page);
+		const continueButton = dialog.getByRole('button', { name: 'Continue', exact: true });
+
+		if (fatal.length === 0) {
+			await expect(continueButton).toBeEnabled();
+			await expect(dialog.locator('.why')).toHaveCount(0);
+			return;
+		}
+
+		// A fatal blocker: red, announced, and the reason is ON SCREEN rather
+		// than hidden in a hover title.
+		const alert = dialog.locator('p.fatal[role="alert"]').first();
+		await expect(alert).toBeVisible();
+		await expect(alert).toHaveCSS('color', 'rgb(255, 90, 90)');
+		await expect(continueButton).toBeDisabled();
+		const why = dialog.locator('.why');
+		await expect(why).toBeVisible();
+		await expect(why).toContainText('Continue is not available');
+		await expect(why).toContainText('Use one of the three options above instead');
+		// The probe line that is the REASON is red too, not plain prose.
+		await expect(dialog.locator('.probes li.danger').first()).toHaveCSS(
+			'color',
+			'rgb(255, 90, 90)'
+		);
+	});
+
+	test('the overlay minimises to a chip and comes back', async ({ page }) => {
+		// A 10,000-track import must not hold the whole screen hostage, and the
+		// chip must reopen the SAME wizard rather than restart it.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await expect(dialog.locator('.steps .step.current')).toContainText('Find your music');
+
+		await dialog.getByRole('button', { name: 'Minimise' }).click();
+		await expect(setupDialog(page)).toHaveCount(0);
+		const chip = page.locator('.su-chip');
+		await expect(chip).toBeVisible();
+		// The performance UI is fully usable behind the chip.
+		await expect(page.locator('.perf-root').first()).toBeVisible();
+
+		await chip.click();
+		await expect(setupDialog(page)).toBeVisible();
+		// Same step, not a restart.
+		await expect(setupDialog(page).locator('.steps .step.current')).toContainText(
+			'Find your music'
+		);
+	});
+
+	test('continuing without importing closes into an honest empty state', async ({ page }) => {
+		// the maintainer's directive: a next step must ALWAYS be available. The last
+		// resort is leaving, and leaving must not be silent.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Continue without importing', exact: true })
+			.click();
+
+		await expect(setupDialog(page)).toHaveCount(0);
+		await expect(page.locator('.perf-root').first()).toBeVisible();
+
+		const dismissed = await page.evaluate(async () => {
+			const response = await fetch('/api/v1/setup/status');
+			return ((await response.json()) as { dismissed: boolean }).dismissed;
+		});
+		expect(dismissed, 'the dismissal is engine-side, not a tab-local flag').toBe(true);
+
+		// Re-openable, always: put it back so the next test starts clean.
+		await page.keyboard.press(SETTINGS_CHORD);
+		await runSetupButton(page).click();
 		await expectWizard(page);
 	});
 
