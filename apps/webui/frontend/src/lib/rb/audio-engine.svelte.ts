@@ -128,32 +128,57 @@ import type {
 	StemDeckState,
 	SyncMode
 } from '$lib/rb/types';
+import {
+	ANALYSER_FFT_SIZE,
+	CONTEXT_WAIT_POLL_MS,
+	CONTEXT_WAIT_STALL_TIMEOUT_MS,
+	DECK_IDS,
+	EQ_FREQ_HIGH_HZ,
+	EQ_FREQ_LOW_HZ,
+	EQ_FREQ_MID_HZ,
+	EQ_MAX_DB,
+	EQ_MID_Q,
+	EQ_MIN_DB,
+	HEADPHONE_OPERATION_TIMEOUT_MS,
+	PARAM_SMOOTH_S,
+	PITCH_RANGES,
+	SYNC_SCHEDULE_SAFETY_S,
+	TRIM_MAX_GAIN
+} from '$lib/player/constants';
+import type { PitchRange } from '$lib/player/constants';
+import {
+	_assertKeyShift,
+	camelotKeysAreCompatible,
+	composeStretchSemitones,
+	deriveKeySyncNudge,
+	deriveKeySyncSemitones,
+	deriveKeySyncTargetManualShift,
+	effectiveCamelotKey,
+	masterTempoSemitones,
+	parseCamelotKey
+} from '$lib/player/key/camelot';
+import type { CamelotKey } from '$lib/player/key/camelot';
 
-// -------------------------------------------------------------- constants
+// ---------------------------------------------------- extracted re-exports
+//
+// T4 S1. The DSP constants moved to player/constants.ts and the Camelot
+// algebra to player/key/camelot.ts. Everything they used to export from here
+// is re-exported below, so every existing importer of
+// $lib/rb/audio-engine.svelte keeps working unchanged.
 
-export const DECK_IDS: readonly DeckId[] = [1, 2, 3, 4] as const;
-
-/** Pitch fader range in percent; 100 renders as WIDE in the jog readout. */
-export type PitchRange = 8 | 16 | 100;
-export const PITCH_RANGES: readonly PitchRange[] = [8, 16, 100] as const;
-
-const EQ_FREQ_LOW_HZ = 250;
-const EQ_FREQ_MID_HZ = 1200;
-const EQ_FREQ_HIGH_HZ = 5000;
-const EQ_MID_Q = 1.0;
-/** Knob 0 -> full cut (DJ-mixer style deep cut), knob 1 -> gentle boost. */
-const EQ_MIN_DB = -26;
-const EQ_MAX_DB = 6;
-/** TRIM knob 0..1 maps linearly to 0..2x amplitude (0.5 = unity). */
-const TRIM_MAX_GAIN = 2;
-/** Smoothing time-constant for AudioParam changes (anti-zipper). */
-const PARAM_SMOOTH_S = 0.01;
-/** Future schedule margin after the slower deck processor's reported latency. */
-const SYNC_SCHEDULE_SAFETY_S = 0.1;
-const ANALYSER_FFT_SIZE = 4096;
-const CONTEXT_WAIT_POLL_MS = 25;
-const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
-const HEADPHONE_OPERATION_TIMEOUT_MS = 5_000;
+export { DECK_IDS, PITCH_RANGES };
+export type { PitchRange };
+export {
+	camelotKeysAreCompatible,
+	composeStretchSemitones,
+	deriveKeySyncNudge,
+	deriveKeySyncSemitones,
+	deriveKeySyncTargetManualShift,
+	effectiveCamelotKey,
+	masterTempoSemitones,
+	parseCamelotKey
+};
+export type { CamelotKey };
 
 // ------------------------------------------------------------ rune stores
 
@@ -952,193 +977,6 @@ function _applyCrossfader(): void {
 		if (nodes === null) continue;
 		_setParam(nodes.xf.gain, _xfGainFor(mixerState.channels[deck].assign, x));
 	}
-}
-
-export function masterTempoSemitones(tempoRatio: number, enabled: boolean): number {
-	if (!Number.isFinite(tempoRatio) || tempoRatio <= 0) {
-		throw new RangeError(`tempo ratio must be a finite positive number, got ${tempoRatio}`);
-	}
-	return enabled ? 0 : 12 * Math.log2(tempoRatio);
-}
-
-/** Parsed, canonical Camelot key. `root` is a chromatic pitch class where C
- * is 0. Only numbered Camelot notation is accepted, never a guessed musical
- * key label. */
-export interface CamelotKey {
-	number: number;
-	mode: 'A' | 'B';
-	root: number;
-}
-
-const CAMELOT_ROOTS: Record<CamelotKey['mode'], readonly number[]> = {
-	// 1A = Ab minor through 12A = C# minor.
-	A: [8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1],
-	// 1B = B major through 12B = E major.
-	B: [11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4]
-};
-
-function _pitchClass(semitones: number): number {
-	return ((semitones % 12) + 12) % 12;
-}
-
-/** Return null for non-Camelot metadata so callers can fail explicitly at
- * their operation boundary rather than inventing a harmonic relationship. */
-export function parseCamelotKey(value: string | null): CamelotKey | null {
-	if (typeof value !== 'string') return null;
-	const match = /^(1[0-2]|[1-9])([ab])$/i.exec(value.trim());
-	if (match === null) return null;
-	const number = Number(match[1]);
-	const mode = match[2].toUpperCase() as CamelotKey['mode'];
-	return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
-}
-
-function _assertKeyShift(semitones: number): asserts semitones is number {
-	if (!Number.isInteger(semitones)) {
-		throw new TypeError(`key shift must be an integer number of semitones, got ${semitones}`);
-	}
-	if (semitones < -12 || semitones > 12) {
-		throw new RangeError(`key shift must be within -12..12 semitones, got ${semitones}`);
-	}
-}
-
-function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
-	_assertKeyShift(semitones);
-	const root = _pitchClass(key.root + semitones);
-	const number = CAMELOT_ROOTS[key.mode].indexOf(root) + 1;
-	if (number === 0) throw new Error(`Camelot ${key.mode} root ${root} cannot be represented`);
-	return { number, mode: key.mode, root };
-}
-
-/** Audible Camelot label after an integer manual key shift (mode preserved). */
-export function effectiveCamelotKey(key: string | null, semitones: number): string | null {
-	const parsed = parseCamelotKey(key);
-	if (parsed === null) return key;
-	if (semitones === 0) return `${parsed.number}${parsed.mode}`;
-	_assertKeyShift(semitones);
-	const shifted = _shiftCamelotKey(parsed, semitones);
-	return `${shifted.number}${shifted.mode}`;
-}
-
-function _camelotCircularDistance(left: number, right: number): number {
-	const raw = Math.abs(left - right);
-	return Math.min(raw, 12 - raw);
-}
-
-/** AlphaTheta/Pioneer least-change families: same-wheel and cross-wheel keys
- * are compatible at the same Camelot number and one step either direction.
- * That makes the six named relationships (A/A and A/B, each same/+1/-1)
- * symmetric and preserves 1 <-> 12 wraparound. */
-export function camelotKeysAreCompatible(
-	deckKey: string | null,
-	masterKey: string | null
-): boolean {
-	const deck = parseCamelotKey(deckKey);
-	const master = parseCamelotKey(masterKey);
-	if (deck === null || master === null) return false;
-	return _camelotCircularDistance(deck.number, master.number) <= 1;
-}
-
-function _assertEffectiveAudibleSemitones(name: string, value: number): void {
-	if (!Number.isFinite(value)) {
-		throw new RangeError(`${name} effective audible semitones must be finite, got ${value}`);
-	}
-}
-
-function _circularPitchDistance(left: number, right: number): number {
-	const distance = Math.abs(_pitchClass(left - right));
-	return Math.min(distance, 12 - distance);
-}
-
-function _keySyncNudgeCandidates(): number[] {
-	const candidates: number[] = [];
-	for (let magnitude = 0; magnitude <= 12; magnitude += 1) {
-		if (magnitude === 0) candidates.push(0);
-		else candidates.push(-magnitude, magnitude);
-	}
-	return candidates;
-}
-
-/** Pick the smallest integer manual nudge whose audible pitch is closest to
- * one of the six Pioneer-compatible Camelot family roots. The source deck
- * mode is retained, while each deck and master may already have a fractional
- * Signalsmith offset from Master Tempo-off tempo compensation. */
-export function deriveKeySyncNudge(
-	deckKey: string | null,
-	masterKey: string | null,
-	deckEffectiveAudibleSemitones: number,
-	masterEffectiveAudibleSemitones: number,
-	deckManualShiftSemitones: number
-): number {
-	const deck = parseCamelotKey(deckKey);
-	const master = parseCamelotKey(masterKey);
-	if (deck === null) throw new Error('KEY SYNC requires a parseable Camelot key on the deck');
-	if (master === null) throw new Error('KEY SYNC requires a parseable Camelot key on the master');
-	_assertEffectiveAudibleSemitones('deck', deckEffectiveAudibleSemitones);
-	_assertEffectiveAudibleSemitones('master', masterEffectiveAudibleSemitones);
-	_assertKeyShift(deckManualShiftSemitones);
-
-	let bestNudge: number | null = null;
-	let bestDistance = Number.POSITIVE_INFINITY;
-	for (const nudge of _keySyncNudgeCandidates()) {
-		const nextManualShift = deckManualShiftSemitones + nudge;
-		if (nextManualShift < -12 || nextManualShift > 12) continue;
-		const deckAudibleRoot = deck.root + deckEffectiveAudibleSemitones + nudge;
-		for (let number = 1; number <= 12; number += 1) {
-			if (_camelotCircularDistance(number, master.number) > 1) continue;
-			const familyRoot = CAMELOT_ROOTS[deck.mode][number - 1] + masterEffectiveAudibleSemitones;
-			const distance = _circularPitchDistance(deckAudibleRoot, familyRoot);
-			if (distance < bestDistance - 1e-12) {
-				bestDistance = distance;
-				bestNudge = nudge;
-			}
-		}
-	}
-	if (bestNudge === null) {
-		throw new RangeError('KEY SYNC cannot apply a compatible nudge within -12..12 manual semitones');
-	}
-	return bestNudge;
-}
-
-/** Convert a listener-facing KEY SYNC nudge to the absolute manual schedule value. */
-export function deriveKeySyncTargetManualShift(
-	deckKey: string | null,
-	masterKey: string | null,
-	deckEffectiveAudibleSemitones: number,
-	masterEffectiveAudibleSemitones: number,
-	presentedManualShiftSemitones: number
-): number {
-	_assertKeyShift(presentedManualShiftSemitones);
-	const nudge = deriveKeySyncNudge(
-		deckKey,
-		masterKey,
-		deckEffectiveAudibleSemitones,
-		masterEffectiveAudibleSemitones,
-		presentedManualShiftSemitones
-	);
-	const target = presentedManualShiftSemitones + nudge;
-	_assertKeyShift(target);
-	return target;
-}
-
-/** Legacy zero-offset convenience wrapper, returning the final manual shift. */
-export function deriveKeySyncSemitones(
-	deckKey: string | null,
-	masterKey: string | null,
-	masterKeyShiftSemitones = 0
-): number {
-	_assertKeyShift(masterKeyShiftSemitones);
-	return deriveKeySyncNudge(deckKey, masterKey, 0, masterKeyShiftSemitones, 0);
-}
-
-/** Signalsmith receives one native semitone field. Key shift composes additively
- * with the existing Master Tempo compensation, never by changing transport rate. */
-export function composeStretchSemitones(
-	tempoRatio: number,
-	masterTempoEnabled: boolean,
-	keyShiftSemitones: number
-): number {
-	_assertKeyShift(keyShiftSemitones);
-	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
 }
 
 export interface DeckControlSettings {
