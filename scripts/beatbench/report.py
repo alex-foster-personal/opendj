@@ -272,6 +272,15 @@ def render_report(payload: dict[str, Any]) -> str:
         "The KPI is agreement with rekordbox, so every figure below is a distance from what "
         "rekordbox already believes, not an independent judgement of correctness.",
         "",
+        "> **KNOWN ARTIFACT, scorer v1.0.0: do not quote the BPM columns.** Candidate "
+        "tempo is derived as `60 / median(inter-beat interval)`. Quantized beat times "
+        "snap that median, so the derived BPM lands a clean 1.0 or 2.0 BPM off. "
+        "Re-deriving from the SAME beat times by least-squares fit moves beat_this from "
+        "47.0% to 82.5% within 1.0 BPM on fixed grids. Every BPM column below "
+        "understates every candidate. The position columns (F-measure, raw and shifted "
+        "offsets, downbeat agreement) come straight from raw beat times and are "
+        "unaffected. Fix is resume item 1 in specs/beat-mapping-bench.md.",
+        "",
         "## Denominator",
         "",
         "| bucket | rows |",
