@@ -67,9 +67,6 @@ from apps.vocals import cache as vocal_cache
 from apps.webui.server.rb_vendor_pkg import cues as _hot_cue_model
 from apps.webui.server.rb_vendor_pkg import writer as _hot_cue_writer
 from apps.webui.server.rb_vendor_pkg.cues import HotCueSlotError as HotCueSlotError
-from apps.webui.server.rb_vendor_pkg.reversal import (
-    _ensure_reversal_tables as _ensure_reversal_tables,
-)
 from apps.webui.server.rb_vendor_pkg.writer import _open_rw as _open_rw
 
 # The djmdCue row -> snapshot mapping is shared by the write surface (C10,

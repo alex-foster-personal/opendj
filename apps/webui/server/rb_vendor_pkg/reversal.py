@@ -1,7 +1,16 @@
 """Hot-cue reversal tokens and slot generations (the CAS undo ledger).
 
-Moved verbatim from ``apps/webui/server/rb_vendor.py`` C10 (source lines
-1919-2030) per ``.planning/t3b-decomposition-map.md`` section 2 row 11.
+Moved from ``apps/webui/server/rb_vendor.py`` C10 (source lines 1919-2030) per
+``.planning/t3b-decomposition-map.md`` section 2 row 11.
+
+D2 (map section 3): ``_ensure_reversal_tables`` was **deleted** rather than
+moved. ``apps/engine_core/store/schema.py`` already carried byte-identical DDL
+as ``VENDOR_SIDECAR_DDL`` / :func:`ensure_vendor_sidecar_tables`, commented
+"declared here so the DDL has one home"; the canonical home had moved but the
+deletion never happened, so a drift test existed only to hold the two copies
+level. Its four callers now provision through the schema module, and that
+drift test is deleted alongside the copy it was watching -- with one home
+there is nothing left to drift.
 """
 from __future__ import annotations
 
@@ -13,25 +22,13 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from apps.engine_core.store.schema import ensure_vendor_sidecar_tables
+
 from .cues import _rb_timestamp
 
 
-def _ensure_reversal_tables(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS rb_hot_cue_reversal ("
-        "ID TEXT PRIMARY KEY, ContentID TEXT NOT NULL, Kind INTEGER NOT NULL, "
-        "PreimageJson TEXT, PostRevision TEXT NOT NULL, CreatedAt TEXT NOT NULL, "
-        "ConsumedAt TEXT)"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS rb_hot_cue_slot_revision ("
-        "ContentID TEXT NOT NULL, Kind INTEGER NOT NULL, Generation INTEGER NOT NULL, "
-        "PRIMARY KEY (ContentID, Kind))"
-    )
-
-
 def _slot_generation(conn: sqlite3.Connection, vendor_id: str, kind: int) -> int:
-    _ensure_reversal_tables(conn)
+    ensure_vendor_sidecar_tables(conn)
     conn.execute(
         "INSERT OR IGNORE INTO rb_hot_cue_slot_revision (ContentID, Kind, Generation) "
         "VALUES (?, ?, 0)",
@@ -67,7 +64,7 @@ def _create_reversal(
     preimage: Mapping[str, Any] | None,
     post_revision: str,
 ) -> str:
-    _ensure_reversal_tables(conn)
+    ensure_vendor_sidecar_tables(conn)
     reversal_id = secrets.token_urlsafe(32)
     conn.execute(
         "INSERT INTO rb_hot_cue_reversal "
@@ -93,7 +90,7 @@ def _load_reversal(
     vendor_id: str,
     kind: int,
 ) -> dict[str, Any] | None:
-    _ensure_reversal_tables(conn)
+    ensure_vendor_sidecar_tables(conn)
     row = conn.execute(
         "SELECT ContentID, Kind, PreimageJson, PostRevision, ConsumedAt "
         "FROM rb_hot_cue_reversal WHERE ID = ?",

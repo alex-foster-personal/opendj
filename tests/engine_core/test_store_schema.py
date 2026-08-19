@@ -40,7 +40,6 @@ from apps.shared.play_orders.schema import apply_play_order_migrations
 from apps.shared.state.schema import apply_migrations as legacy_state_migrations
 from apps.spotify.state_writer import ensure_aux_tables
 from apps.voice.settings import SettingsStore
-from apps.webui.server.rb_vendor import _ensure_reversal_tables
 
 # --- sqlite_master normalisation ------------------------------------------
 
@@ -371,24 +370,22 @@ def test_cache_table_definition_matches_legacy(
     )
 
 
-def test_vendor_sidecar_matches_rb_vendor(tmp_path: Path) -> None:
-    """The rekordbox-side reversal tables match rb_vendor's own DDL.
+def test_vendor_sidecar_tables_are_created_by_the_one_home(tmp_path: Path) -> None:
+    """The rekordbox-side reversal tables have exactly one DDL home.
 
-    These live in the vendor master.db, not state.db, so they are compared
-    separately -- but the DDL still has exactly one home.
+    Replaces test_vendor_sidecar_matches_rb_vendor (T3b D2). That test compared
+    this module's DDL against a byte-identical copy in
+    ``apps/webui/server/rb_vendor.py``; the copy is now deleted and the hot-cue
+    writer provisions through :func:`ensure_vendor_sidecar_tables`, so there is
+    no second definition left to drift from. What still needs pinning is that
+    this entry point creates the tables it claims to.
     """
-    legacy_conn = _connect(tmp_path / "vendor_legacy.db")
-    _ensure_reversal_tables(legacy_conn)
-    legacy_objects = objects(legacy_conn)
-    legacy_conn.close()
+    conn = _connect(tmp_path / "vendor.db")
+    consolidated.ensure_vendor_sidecar_tables(conn)
+    created = objects(conn)
+    conn.close()
 
-    fresh_conn = _connect(tmp_path / "vendor_fresh.db")
-    consolidated.ensure_vendor_sidecar_tables(fresh_conn)
-    fresh_objects = objects(fresh_conn)
-    fresh_conn.close()
-
-    assert fresh_objects == legacy_objects
-    assert set(fresh_objects) == set(consolidated.VENDOR_SIDECAR_TABLES)
+    assert set(created) == set(consolidated.VENDOR_SIDECAR_TABLES)
 
 
 # --- runner behaviour -----------------------------------------------------

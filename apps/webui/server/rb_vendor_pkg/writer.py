@@ -36,6 +36,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from apps.engine_core.store.schema import ensure_vendor_sidecar_tables
+
 from .cues import (
     HOT_CUE_SLOTS,
     _cue_revision,
@@ -51,7 +53,6 @@ from .cues import (
 from .reversal import (
     _bump_slot_generation,
     _create_reversal,
-    _ensure_reversal_tables,
     _load_reversal,
     _slot_generation,
 )
@@ -83,7 +84,7 @@ def fetch_hot_cue_slots(
     master = open_rw()
     try:
         master.execute("BEGIN IMMEDIATE")
-        _ensure_reversal_tables(master)
+        ensure_vendor_sidecar_tables(master)
         snapshots = {
             kind: _live_slot_snapshot(master, vendor_id, kind) for kind in _KINDS
         }
@@ -195,7 +196,7 @@ def save_hot_cue(
                 ),
             )
             if update.rowcount != 1:
-                raise RuntimeError("save_hot_cue: scoped cue row disappeared")  # noqa: TRY301 -- must raise inside the txn so rollback fires
+                raise RuntimeError("save_hot_cue: scoped cue row disappeared")  # noqa: TRY301 (rollback)
         else:
             cue_id = _new_cue_id(master)
             master.execute(
@@ -219,7 +220,7 @@ def save_hot_cue(
             )
         current = _live_slot_snapshot(master, vendor_id, kind)
         if current is None:
-            raise RuntimeError("save_hot_cue: committed slot disappeared")  # noqa: TRY301 -- must raise inside the txn so rollback fires
+            raise RuntimeError("save_hot_cue: committed slot disappeared")  # noqa: TRY301 (rollback)
         generation = _bump_slot_generation(master, vendor_id, kind)
         revision = _cue_revision(vendor_id, kind, generation, current)
         reversal_id = _create_reversal(
@@ -266,7 +267,7 @@ def clear_hot_cue(
                 (_rb_timestamp(), preimage["id"], vendor_id, kind),
             )
             if update.rowcount != 1:
-                raise RuntimeError("clear_hot_cue: scoped cue row disappeared")  # noqa: TRY301 -- must raise inside the txn so rollback fires
+                raise RuntimeError("clear_hot_cue: scoped cue row disappeared")  # noqa: TRY301 (rollback)
         current = _live_slot_snapshot(master, vendor_id, kind)
         generation = _bump_slot_generation(master, vendor_id, kind)
         revision = _cue_revision(vendor_id, kind, generation, current)
@@ -309,7 +310,7 @@ def restore_hot_cue(
         revision = _cue_revision(vendor_id, kind, generation, current)
         _require_current_revision(expected_revision, revision)
         if reversal["post_revision"] != revision:
-            raise HTTPException(  # noqa: TRY301 -- rollback depends on this
+            raise HTTPException(  # noqa: TRY301 (rollback)
                 status_code=409,
                 detail={
                     "code": "HOT_CUE_REVERSAL_STALE",
