@@ -3,9 +3,16 @@
 We do not re-implement any ORM — we just expose a small set of dataclasses
 (:class:`RBTrack`, :class:`RBPlaylist`) and iterator helpers that hide the
 rough edges (nullable relationships, BPM×100 storage, streaming FolderPaths).
+
+This module also owns the one SQLCipher decrypt routine in the repo
+(:func:`decrypt_to_plain` / :func:`ensure_plain_db`): the live ``master.db``
+and its ``data/master.db.copy`` snapshot are encrypted, while every reader
+here consumes the decrypted ``data/master.plain.db``.
 """
 from __future__ import annotations
 
+import contextlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -13,6 +20,128 @@ from typing import Iterator
 from pyrekordbox import Rekordbox6Database
 
 from . import paths, platform_paths
+
+
+class RekordboxDecryptError(RuntimeError):
+    """Raised when SQLCipher decryption of a Rekordbox master.db fails."""
+
+
+# ----- SQLCipher decrypt (single source of truth) ------------------------
+#
+# Callers: ``apps.shared.state.ingest.rekordbox.run_cli`` (the ingest-rb CLI)
+# and ``scripts/make_rb_fixture.py``. Both go through here so the ATTACH +
+# ``sqlcipher_export`` incantation exists exactly once.
+
+
+def decrypt_to_plain(
+    src_encrypted: Path, plain_out: Path, *, key: str = ""
+) -> Path:
+    """Decrypt ``src_encrypted`` to plain SQLite at ``plain_out``.
+
+    Opens the source through pyrekordbox (which applies the SQLCipher key),
+    then ATTACHes a brand-new keyless DB and copies every table across with
+    ``sqlcipher_export``. Faster than a schema+row rebuild and preserves the
+    schema exactly.
+
+    Writes to a sibling temp file and renames on success, so a failed
+    decrypt never leaves a half-written ``master.plain.db`` that later runs
+    would mistake for a good one.
+
+    Parameters
+    ----------
+    key
+        SQLCipher key. Empty (the default) lets pyrekordbox supply its own,
+        which is what every production call site wants.
+
+    Raises
+    ------
+    FileNotFoundError
+        ``src_encrypted`` does not exist.
+    RekordboxDecryptError
+        The key is unavailable/wrong or the source is not a SQLCipher DB.
+    """
+    src_encrypted = Path(src_encrypted)
+    plain_out = Path(plain_out)
+    if not src_encrypted.exists():
+        raise FileNotFoundError(
+            f"Encrypted Rekordbox DB not found at {src_encrypted}"
+        )
+
+    plain_out.parent.mkdir(parents=True, exist_ok=True)
+    tmp_out = plain_out.with_name(plain_out.name + ".decrypting")
+    _unlink_db(tmp_out)
+
+    db = None
+    try:
+        db = Rekordbox6Database(path=str(src_encrypted), key=key)
+        con = db.engine.raw_connection()
+        cur = con.cursor()
+        # Quote the literal path defensively; ATTACH takes no bind params
+        # for the KEY clause in every sqlcipher build we support.
+        escaped = str(tmp_out).replace("'", "''")
+        cur.execute(f"ATTACH DATABASE '{escaped}' AS plain KEY ''")
+        cur.execute("SELECT sqlcipher_export('plain')")
+        cur.execute("DETACH DATABASE plain")
+    except Exception as exc:
+        _unlink_db(tmp_out)
+        raise RekordboxDecryptError(
+            f"failed to decrypt {src_encrypted} to {plain_out}: {exc}"
+        ) from exc
+    finally:
+        if db is not None:
+            # A close failure here must not mask a successful decrypt, nor
+            # shadow the RekordboxDecryptError raised above.
+            with contextlib.suppress(Exception):
+                db.close()
+
+    _unlink_db(plain_out)
+    os.replace(tmp_out, plain_out)
+    return plain_out
+
+
+def ensure_plain_db(
+    *,
+    encrypted: Path | None = None,
+    plain: Path | None = None,
+    refresh: bool = False,
+    key: str = "",
+) -> tuple[Path, bool]:
+    """Guarantee a decrypted working copy exists; return ``(path, decrypted)``.
+
+    ``decrypted`` is True when this call did the decryption, False when an
+    existing ``plain`` copy was reused. Reuse is the documented convention:
+    ``data/master.plain.db`` is static, and refreshing it means re-decrypting
+    on purpose (``refresh=True``) plus clearing ``data/state/anlz-cache/``.
+
+    Raises
+    ------
+    FileNotFoundError
+        Neither a usable plain copy nor the encrypted snapshot exists. The
+        message names the command that produces the snapshot.
+    RekordboxDecryptError
+        The snapshot exists but could not be decrypted.
+    """
+    src = Path(encrypted) if encrypted is not None else paths.REKORDBOX_WORKING_DB
+    out = Path(plain) if plain is not None else paths.REKORDBOX_PLAIN_DB
+
+    if out.exists() and not refresh:
+        return out, False
+
+    if not src.exists():
+        raise FileNotFoundError(
+            f"No decrypted Rekordbox DB at {out} and no encrypted snapshot at "
+            f"{src}. Snapshot the live master.db first with "
+            f"`python -m apps.audit.rekordbox_vs_music` (it calls "
+            f"apps.shared.paths.copy_live_dbs), then rerun."
+        )
+
+    return decrypt_to_plain(src, out, key=key), True
+
+
+def _unlink_db(path: Path) -> None:
+    """Remove ``path`` plus any SQLite sidecar files, ignoring absences."""
+    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        candidate.unlink(missing_ok=True)
 
 
 def is_streaming_path(p: str | None) -> bool:
@@ -287,6 +416,9 @@ def iter_analysis(db: Rekordbox6Database) -> "Iterator":
 __all__ = [
     "RBTrack",
     "RBPlaylist",
+    "RekordboxDecryptError",
+    "decrypt_to_plain",
+    "ensure_plain_db",
     "open_db",
     "iter_tracks",
     "iter_playlists",
