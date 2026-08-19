@@ -967,6 +967,41 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		await expect(loop).toHaveAttribute('title', 'track has no beatgrid - beat loop unavailable');
 	});
 
+	test('a gridless deck plays and pauses, with BEAT SYNC and Q inert', async () => {
+		// THE GRIDLESS TRANSPORT CONTRACT, specs/design_decision_02.md. The
+		// engine genuinely refuses beat sync, quantized cue and beat loops
+		// without a grid. The defect was that the refusal leaked into TRANSPORT,
+		// so an unanalysed track could not be played at all - and an unanalysed
+		// track is precisely what a DJ has just dragged in.
+		//
+		// This suite's whole library is gridless (no rekordbox vendor mapping,
+		// so /anlz serves the empty-but-valid payload), which is why the case
+		// the decision record asked for needs no fixture of its own: this deck
+		// IS the case. Two halves, both load bearing. Play and pause must be
+		// untouched by the missing grid, and the two controls that really do
+		// need one must SAY so rather than accept a press and then fail.
+		await _ensurePlaying(page, 1, true);
+		expect((await _query(page)).decks[1].playing).toBe(true);
+
+		await _control(page, 1, 'play').click();
+		await _waitForAudible(page, 1, false);
+
+		const paused = await _query(page);
+		expect(paused.decks[1].playing).toBe(false);
+		// Transport that works but surfaces "beat grid must contain at least 2
+		// beats" on the way is still the reported defect, so the absence of a
+		// refusal is asserted rather than inferred from the deck having moved.
+		expect(paused.decks[1].command_error).toBeNull();
+
+		// Honestly inert, not lit-but-dead: disabled AND self-describing, which
+		// is the house contract for a control with no real data source.
+		for (const control of ['beat-sync', 'quantize'] as const) {
+			const button = _control(page, 1, control);
+			await expect(button, `${control} must be disabled on a gridless deck`).toBeDisabled();
+			await expect(button).toHaveAttribute('data-state', 'inert');
+		}
+	});
+
 	test('a library row dragged onto a deck loads it', async () => {
 		const row = page.locator(TRACK_ROW).first();
 		const stableId = await row.getAttribute('data-stable-id');
