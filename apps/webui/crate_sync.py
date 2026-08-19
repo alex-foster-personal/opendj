@@ -728,13 +728,21 @@ def owner_manifest(
 
 
 def audit_payload(
-    manifest: dict[str, object], *, crate_root: Path
+    manifest: dict[str, object], *, crate_root: Path, state_db: Path | None = None
 ) -> dict[str, object]:
     audit = audit_manifest(manifest, crate_root=crate_root)
     payload = audit.as_dict()
     payload["source_host"] = manifest.get("source_host")
     payload["scope"] = manifest.get("scope")
     payload["track_count"] = len(manifest.get("track_files", {}))
+    if "library" in manifest:
+        if state_db is None:
+            raise RuntimeError("library ledger audit requires state.db")
+        from apps.agentbox.crate_state import audit_snapshot, snapshot_from_manifest
+
+        library = audit_snapshot(state_db, snapshot_from_manifest(manifest))
+        payload["library"] = library
+        payload["ok"] = payload["ok"] is True and library["ok"] is True
     return payload
 
 
@@ -746,6 +754,30 @@ def assert_audit_ok(payload: dict[str, object], *, label: str) -> None:
         f"missing={len(payload.get('missing', []))}, "
         f"size={len(payload.get('size_mismatches', []))}, "
         f"mtime={len(payload.get('mtime_mismatches', []))}"
+        + (
+            ", library=false"
+            if isinstance(payload.get("library"), dict)
+            and payload["library"].get("ok") is not True
+            else ""
+        )
+    )
+
+
+def reconcile_library_manifest(
+    manifest: dict[str, object], *, state_db: Path, crate_root: Path
+) -> dict[str, object]:
+    """Apply owner records only on the explicit remote replica."""
+    if library_mode.library_mode() != "remote":
+        raise RuntimeError(
+            "crate library reconciliation requires MDT_LIBRARY_MODE=remote"
+        )
+    from apps.agentbox.crate_state import reconcile_snapshot, snapshot_from_manifest
+
+    snapshot = snapshot_from_manifest(manifest)
+    return reconcile_snapshot(
+        state_db,
+        snapshot,
+        backup_dir=crate_root / "state-backups",
     )
 
 
@@ -788,6 +820,46 @@ def remote_audit(*, dest_host: str, crate_root: Path) -> dict[str, object]:
     return payload
 
 
+def remote_reconcile(*, dest_host: str, crate_root: Path) -> dict[str, object]:
+    command = f"cd {shlex.quote(str(REMOTE_REPO))} && exec " + shlex.join(
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-m",
+            "apps.webui.crate_sync",
+            "--reconcile-state",
+            "--remote",
+            "--json",
+            "--crate-root",
+            str(crate_root),
+        ]
+    )
+    result = subprocess.run(
+        ssh_agentbox_argv(command, ssh_host=dest_host),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit {result.returncode}"
+        )
+        raise RuntimeError(f"replica state reconciliation failed: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"replica state reconciliation returned invalid JSON: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise TypeError("replica state reconciliation JSON must be an object")
+    return payload
+
+
 def apply_plan(
     plan: SyncPlan,
     *,
@@ -817,6 +889,7 @@ def manifest_payload(
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
     spike_verified: bool,
+    library_snapshot: dict[str, object],
 ) -> dict[str, object]:
     files: list[dict[str, object]] = []
     for item in plan.files:
@@ -849,6 +922,8 @@ def manifest_payload(
                     f"stable_id {stable_id} maps to two crate audio files: "
                     f"{prior} and {item.dest}"
                 )
+    from apps.agentbox.crate_state import snapshot_digest
+
     return {
         "bytes": plan_bytes(plan),
         "count": len(plan.files),
@@ -856,7 +931,9 @@ def manifest_payload(
         "files": files,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "ledger_digest": ledger_digest(files),
-        "schema_version": 2,
+        "library": library_snapshot,
+        "library_digest": snapshot_digest(library_snapshot),
+        "schema_version": 3,
         "scope": plan.scope,
         "skipped_absent": plan.skipped_absent,
         "skipped_streaming": plan.skipped_streaming,
@@ -1072,6 +1149,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="GET audio+anlz for the spike set and record spike_verified",
     )
+    mode.add_argument(
+        "--reconcile-state",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     filt = parser.add_mutually_exclusive_group()
     filt.add_argument("--playlist", default=None, help="spike one playlist by name")
     filt.add_argument(
@@ -1148,6 +1230,23 @@ def _stable_ids_arg(raw: Optional[str]) -> Optional[tuple[str, ...]]:
     if not ids:
         raise RuntimeError("--stable-ids was set but named no id")
     return ids
+
+
+def _owner_library_snapshot(
+    state_db: Path,
+    *,
+    playlist: str | None,
+    stable_ids: Sequence[str] | None,
+    preload1: bool,
+) -> dict[str, object]:
+    from apps.agentbox.crate_state import build_snapshot
+
+    selected = preload1_stable_ids() if preload1 else stable_ids
+    return build_snapshot(
+        state_db,
+        playlist_name=playlist,
+        stable_ids=selected,
+    )
 
 
 def _filtered(args: argparse.Namespace) -> bool:
@@ -1247,9 +1346,37 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
         manifest = load_manifest(manifest_path)
         if not manifest:
             raise RuntimeError(f"no crate manifest at {manifest_path}")
-        payload = audit_payload(manifest, crate_root=crate_root)
+        payload = audit_payload(
+            manifest,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
         sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return 0 if payload["ok"] is True else 1
+
+    if args.reconcile_state:
+        if side != "remote":
+            raise RuntimeError("--reconcile-state is a remote-only operation")
+        manifest = load_manifest(manifest_path)
+        if not manifest:
+            raise RuntimeError(f"no crate manifest at {manifest_path}")
+        state_reconciliation = reconcile_library_manifest(
+            manifest,
+            state_db=state_db,
+            crate_root=crate_root,
+        )
+        reconciliation = audit_payload(
+            manifest,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
+        assert_audit_ok(reconciliation, label="replica")
+        result = {
+            "state_reconciliation": state_reconciliation,
+            "reconciliation": reconciliation,
+        }
+        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        return 0
 
     if args.verify_spike:
         ids = _stable_ids_arg(args.stable_ids) or preload1_stable_ids()
@@ -1305,12 +1432,22 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             crate_root=crate_root,
         )
         write_json(path_map_path, path_map_document(user_maps))
+        state_reconciliation = reconcile_library_manifest(
+            payload,
+            state_db=state_db,
+            crate_root=crate_root,
+        )
         write_json(manifest_path, payload)
-        reconciliation = audit_payload(payload, crate_root=crate_root)
+        reconciliation = audit_payload(
+            payload,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
         assert_audit_ok(reconciliation, label="replica")
         result = {
             "direction": "pull",
             "transferred_files": transferred,
+            "state_reconciliation": state_reconciliation,
             "reconciliation": reconciliation,
         }
         sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
@@ -1331,6 +1468,12 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
         crate_root=crate_root,
         user_maps=user_maps,
         spike_verified=False,
+        library_snapshot=_owner_library_snapshot(
+            state_db,
+            playlist=args.playlist,
+            stable_ids=_stable_ids_arg(args.stable_ids),
+            preload1=args.preload1,
+        ),
     )
 
     if args.dry_run:
@@ -1358,8 +1501,18 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
     map_doc = path_map_document(user_maps)
     if dest_kind == "local":
         write_json(path_map_path, map_doc)
+        if library_mode.library_mode() == "remote":
+            reconcile_library_manifest(
+                payload,
+                state_db=state_db,
+                crate_root=crate_root,
+            )
         write_json(manifest_path, payload)
-        reconciliation = audit_payload(payload, crate_root=crate_root)
+        reconciliation = audit_payload(
+            payload,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
         assert_audit_ok(reconciliation, label="replica")
     else:
         with tempfile.TemporaryDirectory(prefix="mdt-crate-") as tmp:
@@ -1370,7 +1523,8 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             write_json(tmp_manifest, payload)
             _rsync_to_host(tmp_map, args.to, REMOTE_REPO / "data" / "path-map.json")
             _rsync_to_host(tmp_manifest, args.to, crate_root / "manifest.json")
-        reconciliation = remote_audit(dest_host=args.to, crate_root=crate_root)
+        remote_result = remote_reconcile(dest_host=args.to, crate_root=crate_root)
+        reconciliation = remote_result["reconciliation"]
     result = {
         "direction": "push",
         "transferred_files": transferred,
