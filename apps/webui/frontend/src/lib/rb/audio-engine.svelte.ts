@@ -94,6 +94,13 @@ import {
 	validateBeatGrid
 } from '$lib/rb/beat-sync-math';
 import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import {
+	effectiveBeatSync,
+	effectiveQuantize,
+	GRID_FEATURE_TIP,
+	gridFeaturesInert,
+	hasRealBeatGrid
+} from '$lib/player/grid-features';
 import { beatFourLeadInSec, syncSeekBlendDurationSec } from '$lib/rb/sync-seek-blend';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -1560,6 +1567,12 @@ function _setPausedPosition(deck: DeckId, positionMs: number): void {
 	rt.startCtxTime = _ctx?.currentTime ?? 0;
 }
 
+/**
+ * The grid a GRID-DEPENDENT operation cannot proceed without.
+ *
+ * Reserved for operations that are meaningless with no grid: engaging Beat
+ * Sync, and beat loops. Transport must never call this - see _quantizeGrid.
+ */
 function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[] {
 	const beats = st.anlz?.beatgrid.beats;
 	try {
@@ -1571,6 +1584,24 @@ function _requireBeatGrid(st: DeckState, operation: string): readonly AnlzBeat[]
 		);
 	}
 	return beats ?? [];
+}
+
+/**
+ * The grid to snap to, or null when quantize is off or this deck has no grid.
+ * Never throws.
+ *
+ * This is the transport path's only route to the beat grid. Transport is never
+ * gated by a grid-dependent feature: on a track with no real PQTZ grid,
+ * quantize simply has no effect and play, pause and cue use exact playhead
+ * times. pause() in particular must be unrefusable - a deck the DJ cannot stop
+ * is worse than one that starts unquantized.
+ *
+ * effectiveQuantize is the authority on WHETHER to snap; hasRealBeatGrid is
+ * re-asked only to narrow readonly AnlzBeat[] | undefined for the caller.
+ */
+function _quantizeGrid(st: DeckState): readonly AnlzBeat[] | null {
+	const beats = st.anlz?.beatgrid.beats;
+	return effectiveQuantize(st) && hasRealBeatGrid(beats) ? beats : null;
 }
 
 function _assignMaster(deck: DeckId | null): void {
@@ -3192,7 +3223,11 @@ class RbAudioEngine implements AudioEngine {
 	async play(deck: DeckId): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'play');
 		if (rt.desiredActive) return; // transport already running is a valid state
-		if (st.beat_sync_enabled) _requireBeatGrid(st, 'play Beat Sync');
+		// NOT st.beat_sync_enabled: the flag defaults ON, and a track with no
+		// real grid has nothing to phase-lock with. Reading the effective flag
+		// routes such a deck down the plain-transport branch instead of
+		// refusing to start it at all.
+		const syncActive = effectiveBeatSync(st);
 		const needsScheduledMutation = transportNeedsScheduledMutation({
 			playing: st.playing,
 			audible: st.audible,
@@ -3233,10 +3268,11 @@ class RbAudioEngine implements AudioEngine {
 				st.sync_error = String(error);
 				throw error;
 			}
-		} else if (activeMaster === deck || !st.beat_sync_enabled) {
-			// Either this deck IS the master, or Beat Sync is off on it. Sync is
-			// explicitly not in play, so this is plain transport (LATENCY-01),
-			// led by the onset ramp (LATENCY round 2).
+		} else if (activeMaster === deck || !syncActive) {
+			// Either this deck IS the master, or Beat Sync is not in effect on
+			// it (switched off, or lit but with no grid to lock to). Sync is not
+			// in play, so this is plain transport (LATENCY-01), led by the onset
+			// ramp (LATENCY round 2).
 			const when = safeTransportScheduleTime(ctx.currentTime, _transportLeadSec(deck));
 			await _scheduleDeck(deck, when, startSec, true);
 			st.sync_error = null;
@@ -3252,7 +3288,10 @@ class RbAudioEngine implements AudioEngine {
 		const { st, rt } = _requireLoaded(deck, 'pause');
 		if (!rt.desiredActive) return; // already paused is a valid state
 		if (_ctx === null) throw new Error('pause: audio graph not initialised');
-		const pauseBeats = st.quantize_enabled ? _requireBeatGrid(st, 'pause cue') : null;
+		// Unrefusable by construction: with no grid the memory cue lands on the
+		// exact pause point instead of a snapped one. A deck that cannot be
+		// stopped is the worst failure this transport has.
+		const pauseBeats = _quantizeGrid(st);
 		const when = _futureScheduleTime(deck);
 		const positionSec = await _scheduleDeck(
 			deck,
@@ -3277,9 +3316,8 @@ class RbAudioEngine implements AudioEngine {
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
 			throw new RangeError(`cueJump: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
 		}
-		const targetMs = st.quantize_enabled
-			? quantizedPositionMs(_requireBeatGrid(st, 'cueJump quantize'), ms, true)
-			: ms;
+		const seekBeats = _quantizeGrid(st);
+		const targetMs = seekBeats !== null ? quantizedPositionMs(seekBeats, ms, true) : ms;
 		if (targetMs > durMs) {
 			throw new RangeError(`cueJump: quantized target ${targetMs} exceeds duration ${durMs}`);
 		}
@@ -3306,7 +3344,7 @@ class RbAudioEngine implements AudioEngine {
 			const syncPlan = planSeekSync({
 				deck,
 				transportActive: rt.desiredActive,
-				beatSyncEnabled: st.beat_sync_enabled,
+				beatSyncEnabled: effectiveBeatSync(st),
 				activeMaster,
 				beatSyncMax: uiPrefs.beat_sync_max,
 				candidates: DECK_IDS.map((id) => ({
@@ -3314,7 +3352,10 @@ class RbAudioEngine implements AudioEngine {
 					// desiredActive covers the schedule-ack window where playing
 					// lags; otherwise BeatSyncMax can miss a just-started follower.
 					playing: deckStates[id].playing || _rt[id].desiredActive,
-					beatSyncEnabled: deckStates[id].beat_sync_enabled
+					// Effective, not raw: a gridless deck dragged into a
+					// BeatSyncMax re-anchor would fail the plan and turn one
+					// operator's seek into another deck's sync error.
+					beatSyncEnabled: effectiveBeatSync(deckStates[id])
 				}))
 			});
 			if (syncPlan.kind === 'follower') {
@@ -3364,9 +3405,11 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		if (st.cue_ms === null) {
-			st.cue_ms = st.quantize_enabled
-				? quantizedPositionMs(_requireBeatGrid(st, 'pressCue quantize'), st.position_ms, true)
-				: st.position_ms;
+			const cueBeats = _quantizeGrid(st);
+			st.cue_ms =
+				cueBeats !== null
+					? quantizedPositionMs(cueBeats, st.position_ms, true)
+					: st.position_ms;
 		} else {
 			await this.quantizedSeek(deck, st.cue_ms);
 		}
@@ -3388,7 +3431,9 @@ class RbAudioEngine implements AudioEngine {
 			);
 		}
 		const activeMaster = _syncMaster();
-		if (st.playing && st.beat_sync_enabled && activeMaster !== null && activeMaster !== deck) {
+		// Effective, not raw: refusing a pitch move because a lit-but-inert
+		// BEAT SYNC "owns" the tempo would strand a gridless deck's fader.
+		if (st.playing && effectiveBeatSync(st) && activeMaster !== null && activeMaster !== deck) {
 			throw new Error(`setTempoRatio: disable Beat Sync before changing follower deck ${deck}`);
 		}
 		if (st.playing) {
@@ -3399,7 +3444,7 @@ class RbAudioEngine implements AudioEngine {
 							(candidate) =>
 								candidate !== deck &&
 								deckStates[candidate].playing &&
-								deckStates[candidate].beat_sync_enabled
+								effectiveBeatSync(deckStates[candidate])
 						)
 					: [];
 			if (followers.length > 0) {
@@ -3468,9 +3513,13 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		const durMs = _durationSec(deck) * 1000;
-		const snapped = st.quantize_enabled
-			? quantizedLoopEndpointsMs(_requireBeatGrid(st, 'setLoop quantize'), loop, true)
-			: quantizedLoopEndpointsMs([], loop, false);
+		// Same rule as the rest of transport: quantize with a grid, exact
+		// endpoints without one. A manual in/out loop is not grid-dependent.
+		const loopBeats = _quantizeGrid(st);
+		const snapped =
+			loopBeats !== null
+				? quantizedLoopEndpointsMs(loopBeats, loop, true)
+				: quantizedLoopEndpointsMs([], loop, false);
 		const bounded = loopEndpointsWithinDurationMs(snapped, durMs);
 		const nextLoop: LoopState = { ...bounded, engaged: true, beat_length: null };
 		if (wasPlaying) {
@@ -3553,7 +3602,14 @@ class RbAudioEngine implements AudioEngine {
 
 	setQuantize(deck: DeckId, enabled: boolean): void {
 		if (typeof enabled !== 'boolean') throw new TypeError('setQuantize: enabled must be boolean');
-		deckStates[deck].quantize_enabled = enabled;
+		const st = deckStates[deck];
+		st.quantize_enabled = enabled;
+		// Inert, never refused. The UI already renders Q disabled with this
+		// exact sentence; the toast is for the IPC and CLI paths, where there
+		// is no hovered button to read and a silent no-op would be a lie.
+		if (enabled && gridFeaturesInert(st)) {
+			pushToast(`Deck ${deck} QUANTIZE ${GRID_FEATURE_TIP}`, 'info');
+		}
 	}
 
 	setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {
@@ -3562,6 +3618,13 @@ class RbAudioEngine implements AudioEngine {
 		st.beat_sync_enabled = enabled;
 		if (!enabled) {
 			st.sync_error = null;
+			return Promise.resolve();
+		}
+		// Same contract as setQuantize: the flag keeps the value the DJ chose,
+		// the deck has nothing to lock to, and that is said out loud rather
+		// than thrown into command_error.
+		if (gridFeaturesInert(st)) {
+			pushToast(`Deck ${deck} BEAT SYNC ${GRID_FEATURE_TIP}`, 'info');
 			return Promise.resolve();
 		}
 		if (!_rt[deck].desiredActive) return Promise.resolve();
@@ -3738,7 +3801,9 @@ class RbAudioEngine implements AudioEngine {
 			!syncChangeRequiresReschedule(
 				deck,
 				_rt[deck].desiredActive,
-				st.beat_sync_enabled,
+				// Effective: a lit-but-inert BEAT SYNC has no schedule to
+				// re-anchor, and asking for one would throw on the missing grid.
+				effectiveBeatSync(st),
 				master
 			)
 		) {
@@ -3761,8 +3826,13 @@ class RbAudioEngine implements AudioEngine {
 			return;
 		}
 		// masterSwitchFollowers only returns already playing, already
-		// beat-synced decks - re-anchoring them to the new master.
-		const followers = masterSwitchFollowers(deck, deckStates);
+		// beat-synced decks - re-anchoring them to the new master. A deck whose
+		// BEAT SYNC is lit but inert (no real grid) is not one of them: it never
+		// locked, so there is nothing to re-anchor and _requireBeatGrid would
+		// turn one operator's MASTER press into that deck's sync error.
+		const followers = masterSwitchFollowers(deck, deckStates).filter((candidate) =>
+			effectiveBeatSync(deckStates[candidate])
+		);
 		await _synchronizeFollowers(deck, followers, { reanchorDecks: new Set(followers) });
 		_assignMaster(deck);
 	}
