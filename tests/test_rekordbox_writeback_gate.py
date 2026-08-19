@@ -1,20 +1,34 @@
 """One-way import gate: nothing here may write toward real rekordbox data.
 
 This suite is the review gate for W1-D.  It iterates
-:data:`apps.shared.rekordbox_writeback.WRITE_SURFACES` three ways, so the map
+:data:`apps.shared.rekordbox_writeback.WRITE_SURFACES` four ways, so the map
 cannot rot in either direction:
 
-  * every mapped surface still CALLS the guard at its declared guard site
-    (static) -- a refactor that drops a guard fails here;
-  * every mapped surface REFUSES when the flag is off (behavioural) -- and it
-    refuses with the one distinct error, never a silent no-op or fake success;
-  * every module in ``apps/`` that names a live rekordbox target is either a
-    mapped guard site or explicitly allowlisted as import-direction-only -- a
-    new write path that nobody mapped fails here.
+  * every GATED surface still CALLS the guard at its declared guard site
+    (static) -- a refactor that drops a guard fails here.  Every UNGATED
+    surface must NOT call it, so a deliberate, argued exception (rollback)
+    cannot be quietly re-gated either;
+  * every gated surface REFUSES when the flag is off (behavioural) -- with the
+    one distinct error, never a silent no-op or fake success;
+  * every module in ``apps/`` that NAMES a live rekordbox target is either a
+    mapped guard site or explicitly allowlisted as import-direction-only;
+  * every module in ``apps/`` that CONSTRUCTS a rekordbox DB handle is either
+    a mapped guard site or explicitly allowlisted as read-only, with a reason.
 
-No live rekordbox database, share directory, or USB volume is touched: every
-probe is refused before it can reach a filesystem target, which is precisely
-the property under test.
+The last sweep is the structural one.  A marker sweep can only see writers
+that name a path constant, so it is blind to a writer that takes its path from
+an argument or a CLI flag, and completely blind to one handed an already-open
+handle.  Both shapes existed in this tree and both were live-write lanes
+sitting behind a green suite (``apps/dedup/apply.py --rb-db``,
+``apps.sync.rb_writer.write_cues(db, ...)``).
+
+No live rekordbox database, share directory, or USB volume is touched. Every
+path a probe builds comes from ``tmp_path``, and every probe is refused before
+it can reach a filesystem target anyway -- which is precisely the property
+under test. A fixture that names a real library location is how a suite like
+this eventually writes to one by accident, so there are none here; the ban is
+enforced by ``test_no_gate_test_can_name_a_real_library_location`` in
+tests/test_rekordbox_writeback_surfaces.py.
 
 NO @pytest.mark.requirement markers here on purpose: the proposed requirement
 lines (SYNC-ONEWAY-01..04, see the W1-D handoff) are not in reqs.json yet, and
@@ -22,10 +36,22 @@ a marker for an unknown ID lands in coverage-matrix.md as an orphan. Add the
 markers in the same change that adds the requirement lines.
 
 Regression lines:
-  - if a mapped surface stops calling require_writeback_enabled then broken
-  - if any mapped surface answers 200/None while the flag is off then broken
+  - if a gated surface stops calling require_writeback_enabled then broken
+  - if an ungated surface starts calling it then the argued exception was
+    reverted by accident, so broken
+  - if any gated surface answers 200/None while the flag is off then broken
   - if a new apps/ module names REKORDBOX_LIVE_DB without being mapped or
     allowlisted then broken
+  - if a new apps/ module opens a rekordbox DB handle without being mapped or
+    read-only allowlisted then broken
+  - if remove_track --db <path> reaches a DB path without passing the gate
+    then broken
+  - if a `..`-alias or a symlink of a --db target refuses differently from the
+    plain path then the gate has become path-shaped, so broken
+  - if rollback refuses while the gate is off then undo was taken away from a
+    user who already has a bad write, so broken
+  - if a backup_id that is not uuid4().hex reaches a path join then broken
+  - if a crate --map can aim a local copy outside the crate root then broken
   - if the flag reads a typo like "ture" as either on or off then broken
   - if turning the flag on does not let the guard through then the code was
     deleted rather than disabled
@@ -52,30 +78,11 @@ from apps.shared.rekordbox_writeback import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-HTTP_SURFACES = tuple(s for s in WRITE_SURFACES if s.kind == "http")
-MODULE_SURFACES = tuple(s for s in WRITE_SURFACES if s.kind == "module")
+GATED = tuple(s for s in WRITE_SURFACES if s.gated)
+UNGATED = tuple(s for s in WRITE_SURFACES if not s.gated)
+HTTP_SURFACES = tuple(s for s in GATED if s.kind == "http")
+MODULE_SURFACES = tuple(s for s in GATED if s.kind == "module")
 
-# Modules that NAME a live rekordbox target but only ever read from it, or
-# copy it INTO the app. Import direction is the whole point of this gate, so
-# these are allowed -- each with the reason it is allowed, so a future reader
-# can audit the list instead of trusting it.
-IMPORT_DIRECTION_ONLY: dict[str, str] = {
-    "apps/shared/platform_paths.py": "defines the constants; touches nothing",
-    "apps/shared/paths.py": "copy_live_dbs snapshots live -> data/, import direction",
-    "apps/shared/rekordbox_db.py": "opens the WORKING copy; live path only in an error string",
-    "apps/shared/library_integrity.py": "reads to report integrity",
-    "apps/shared/state/ingest/rekordbox.py": "ingests rekordbox -> state.db, import direction",
-    "apps/shared/rekordbox_writeback.py": "the gate itself",
-    "apps/audit/session_history.py": "reads play history",
-    "apps/sync/playlist_apply.py": "writes djay; reads the rb live db for TSAF leaf validation",
-    "apps/webui/crate_sync.py": "reads SHARE_ROOT, writes the replica crate only",
-    "apps/sync/usb/pioneer/reader.py": "reads an exportLibrary.db",
-    "apps/sync/usb/pioneer/differ.py": "diffs two exportLibrary.db reads",
-    "apps/sync/usb/pioneer/__init__.py": "package docstring",
-    "apps/sync/usb/pioneer/writer_rbox.py": "reached only via the two mapped USB entrypoints",
-}
-
-LIVE_TARGET_MARKERS = ("REKORDBOX_LIVE_DB", "SHARE_ROOT", "exportLibrary")
 
 
 @pytest.fixture(autouse=True)
@@ -120,15 +127,30 @@ def test_guard_lets_a_mapped_surface_through_once_enabled(
 ) -> None:
     """KEPT, not deleted: turning the flag on restores every write path."""
     monkeypatch.setenv(REKORDBOX_WRITEBACK_ENABLED_ENV, "1")
-    for surface in WRITE_SURFACES:
+    for surface in GATED:
         require_writeback_enabled(surface.surface_id)
+
+
+@pytest.mark.parametrize("surface", UNGATED, ids=lambda s: s.surface_id)
+def test_guard_refuses_to_gate_a_deliberately_ungated_surface(surface) -> None:
+    """An argued exception may only be reverted in the map, never at a call site."""
+    with pytest.raises(KeyError, match="deliberately"):
+        require_writeback_enabled(surface.surface_id)
+
+
+def test_every_ungated_surface_states_its_reason() -> None:
+    for surface in UNGATED:
+        assert len(surface.reason) > 40, (
+            f"{surface.surface_id} is ungated with no argument for why; an "
+            "exception to a data-safety gate has to carry its reasoning"
+        )
 
 
 # ----- the map: static half -------------------------------------------------
 
 
-@pytest.mark.parametrize("surface", WRITE_SURFACES, ids=lambda s: s.surface_id)
-def test_every_mapped_surface_calls_the_guard_at_its_guard_site(surface) -> None:
+@pytest.mark.parametrize("surface", GATED, ids=lambda s: s.surface_id)
+def test_every_gated_surface_calls_the_guard_at_its_guard_site(surface) -> None:
     source = (REPO_ROOT / surface.guard_site).read_text(encoding="utf-8")
     expected = f'require_writeback_enabled("{surface.surface_id}")'
     assert expected in source, (
@@ -137,36 +159,21 @@ def test_every_mapped_surface_calls_the_guard_at_its_guard_site(surface) -> None
     )
 
 
-def test_surface_ids_are_unique() -> None:
-    ids = [surface.surface_id for surface in WRITE_SURFACES]
-    assert len(ids) == len(set(ids))
-
-
-def test_no_unmapped_module_names_a_live_rekordbox_target() -> None:
-    """A new write path that nobody wrote into the map fails review here."""
-    guarded = {surface.guard_site for surface in WRITE_SURFACES}
-    unaccounted: list[str] = []
-    for path in sorted((REPO_ROOT / "apps").rglob("*.py")):
-        relative = path.relative_to(REPO_ROOT).as_posix()
-        if relative in guarded or relative in IMPORT_DIRECTION_ONLY:
-            continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if any(marker in text for marker in LIVE_TARGET_MARKERS):
-            unaccounted.append(relative)
-    assert not unaccounted, (
-        "these modules name a live rekordbox target but are neither a mapped "
-        "guard site nor allowlisted as import-direction-only: "
-        f"{unaccounted}. Add a WriteSurface (and a guard), or add an entry to "
-        "IMPORT_DIRECTION_ONLY with the reason it only reads."
+@pytest.mark.parametrize("surface", UNGATED, ids=lambda s: s.surface_id)
+def test_every_ungated_surface_has_no_guard_at_its_site(surface) -> None:
+    """The exception is deliberate; re-gating it must be a decision, not a diff."""
+    source = (REPO_ROOT / surface.guard_site).read_text(encoding="utf-8")
+    unwanted = f'require_writeback_enabled("{surface.surface_id}")'
+    assert unwanted not in source, (
+        f"{surface.guard_site} gates {surface.surface_id}, which is mapped as "
+        f"deliberately ungated ({surface.reason}). Flip gated=True in the map "
+        "if that decision has genuinely changed."
     )
 
 
-def test_allowlist_has_no_stale_entries() -> None:
-    missing = [
-        relative for relative in IMPORT_DIRECTION_ONLY
-        if not (REPO_ROOT / relative).is_file()
-    ]
-    assert not missing, f"IMPORT_DIRECTION_ONLY names files that no longer exist: {missing}"
+def test_surface_ids_are_unique() -> None:
+    ids = [surface.surface_id for surface in WRITE_SURFACES]
+    assert len(ids) == len(set(ids))
 
 
 # ----- the map: behavioural half, HTTP --------------------------------------
@@ -186,36 +193,37 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(create_app(backend=backend))
 
 
-def _http_probe(surface_id: str, client: TestClient, playlist_id: str):
-    """Fire the smallest schema-valid request that reaches each handler."""
+def _http_probe(surface_id: str, client: TestClient, playlist_id: str, tmp: Path):
+    """Fire the smallest schema-valid request that reaches each handler.
+
+    Every path in every body is built under ``tmp``. Nothing here may name a
+    real library location even in a string that is never opened: the guard is
+    the first statement in each handler, so these bodies are only ever meant to
+    get past request validation, and a plausible-looking real path in a fixture
+    is exactly how a probe eventually gets pointed at the actual database.
+    """
     writeback_apply = {
-        "vendor": "rekordbox", "target_mode": "live", "target_path": "/nope.db",
+        "vendor": "rekordbox", "target_mode": "live", "target_path": str(tmp / "nope.db"),
         "target_id": "t-1", "plan_token": "tok", "dry_run": False, "confirmed": True,
-    }
-    writeback_rollback = {
-        "vendor": "rekordbox", "target_mode": "live", "target_path": "/nope.db",
-        "target_id": "t-1", "backup_id": "b-1",
-        "expected_target_revision": "rev-1", "confirmed": True,
     }
     usb_plan = {
         "plan_id": "p-1", "schema_version": 1, "scope": "onelibrary_overlay_only",
-        "template_path": "/nope/template.db", "template_sha256": "0" * 64,
-        "target_root": "/Volumes/nope", "volume_label": "NOPE",
+        "template_path": str(tmp / "template.db"), "template_sha256": "0" * 64,
+        # A RELATIVE layout string the schema requires, joined against the tmp
+        # target_root above and nothing else.
+        "target_root": str(tmp / "volume"), "volume_label": "NOPE",
         "volume_uuid": "0000", "authorization_id": "auth-1",
         "output_relative_path": "PIONEER/rekordbox/exportLibrary.db",
         "playlists": [], "track_updates": [],
     }
     if surface_id == "http.playlists.writeback.apply":
         return client.post(f"/api/v1/playlists/{playlist_id}/writeback/apply", json=writeback_apply)
-    if surface_id == "http.playlists.writeback.rollback":
-        return client.post(
-            f"/api/v1/playlists/{playlist_id}/writeback/rollback", json=writeback_rollback
-        )
     if surface_id == "http.relocate.apply":
         return client.post(
             "/api/v1/relocate/no-such-track/apply",
             json={
-                "new_path": "/nope/track.mp3", "expected_original_path": "/gone/track.mp3",
+                "new_path": str(tmp / "track.mp3"),
+                "expected_original_path": str(tmp / "gone.mp3"),
                 "expected_vendor_id": "9", "expected_candidate_identity": "x", "confirm": True,
             },
             headers={"If-Match": "etag"},
@@ -228,8 +236,10 @@ def _http_probe(surface_id: str, client: TestClient, playlist_id: str):
 
 
 @pytest.mark.parametrize("surface", HTTP_SURFACES, ids=lambda s: s.surface_id)
-def test_http_surface_refuses_while_the_gate_is_off(surface, client: TestClient) -> None:
-    response = _http_probe(surface.surface_id, client, "pl-1")
+def test_http_surface_refuses_while_the_gate_is_off(
+    surface, client: TestClient, tmp_path: Path
+) -> None:
+    response = _http_probe(surface.surface_id, client, "pl-1", tmp_path)
     assert response.status_code == 403, (
         f"{surface.entrypoint} answered {response.status_code}, not a refusal"
     )
@@ -266,7 +276,11 @@ def test_gate_status_endpoint_follows_the_env(
 # ----- the map: behavioural half, modules -----------------------------------
 
 
-def _probe_playlist_writeback_apply() -> None:
+def _never_called_factory(*_args, **_kwargs):
+    raise AssertionError("the gate must refuse before any writer is opened")
+
+
+def _probe_playlist_writeback_apply(tmp: Path) -> None:
     from apps.webui.server import playlist_writeback as module
 
     plan = SimpleNamespace(
@@ -278,90 +292,105 @@ def _probe_playlist_writeback_apply() -> None:
     object.__setattr__(service, "plan", lambda **_kwargs: plan)
     service.apply(
         vendor="rekordbox", source_playlist_id="pl-1", desired_ids=["a"],
-        target_mode="live", target_path="/nope.db", target_id="t-1",
+        target_mode="live", target_path=str(tmp / "nope.db"), target_id="t-1",
         plan_token="tok", dry_run=False, confirmed=True,
     )
 
 
-def _probe_playlist_writeback_rollback() -> None:
-    from apps.webui.server import playlist_writeback as module
-
-    module.WritebackService(writer_factory=_never_called_factory).rollback(
-        vendor="rekordbox", target_mode="live", target_path="/nope.db",
-        target_id="t-1", backup_id="b-1", expected_target_revision="rev", confirmed=True,
-    )
-
-
-def _never_called_factory(*_args, **_kwargs):
-    raise AssertionError("the gate must refuse before any writer is opened")
-
-
-def _probe_smartlists_rb_writer() -> None:
+def _probe_smartlists_rb_writer(tmp: Path) -> None:
     from apps.smartlists.rb_writer import RBPlaylistWriter
 
     writer = RBPlaylistWriter(
         db=object(), state_conn=sqlite3.connect(":memory:"), live=True,
-        live_db_path=Path("/nope/master.db"),
+        live_db_path=tmp / "master.db",
     )
     writer._assert_safe_to_write()
 
 
-def _probe_relocate_write_folder_path() -> None:
+def _probe_relocate_write_folder_path(tmp: Path) -> None:
     from apps.webui.server.routes.relocate import _write_rekordbox_folder_path
 
-    _write_rekordbox_folder_path("9", "/gone/track.mp3", object(), "identity")
+    _write_rekordbox_folder_path("9", str(tmp / "gone.mp3"), object(), "identity")
 
 
-def _probe_usb_pioneer_cli_write() -> None:
+def _probe_usb_pioneer_cli_write(tmp: Path) -> None:
     from apps.sync.usb.pioneer.__main__ import _cmd_write
 
     _cmd_write(SimpleNamespace(
-        playlist=[], track=[], template="/nope/t.db", output="/nope/o.db", apply=True,
+        playlist=[], track=[], template=str(tmp / "t.db"), output=str(tmp / "o.db"),
+        apply=True,
     ))
 
 
-def _probe_usb_pioneer_agent_export() -> None:
+def _probe_usb_pioneer_agent_export(tmp: Path) -> None:
     from apps.sync.usb.pioneer.__main__ import _cmd_agent_export
 
     _cmd_agent_export(SimpleNamespace(
-        playlist="Warmup", usb="/Volumes/nope", live=False, max_steps=1, verbose=False,
+        playlist="Warmup", usb=str(tmp / "volume"), live=False, max_steps=1, verbose=False,
     ))
 
 
-MODULE_PROBES: dict[str, Callable[[], None]] = {
+def _probe_sync_rb_writer_write_cues(_tmp: Path) -> None:
+    """The target is the HANDLE, so the probe hands it one and expects a refusal.
+
+    A `db` that raises on any attribute use proves the guard fired before the
+    writer touched it. There is no path to build here at all, which is exactly
+    why neither the marker sweep nor the constructor sweep could see this one.
+    """
+    from apps.sync.rb_writer import write_cues
+
+    class _Explodes:
+        def __getattr__(self, name: str):
+            raise AssertionError(f"write_cues reached db.{name} past the gate")
+
+    write_cues(_Explodes(), "1", [])
+
+
+def _probe_dedup_apply(tmp: Path) -> None:
+    """--rb-db is an argument, so the probe must not rely on a path constant."""
+    from apps.dedup.apply import run_apply
+
+    run_apply(rb_db_path=tmp / "master.db", live=True)
+
+
+MODULE_PROBES: dict[str, Callable[[Path], None]] = {
     "module.relocate.write_folder_path": _probe_relocate_write_folder_path,
     "module.playlist_writeback.service_apply": _probe_playlist_writeback_apply,
-    "module.playlist_writeback.service_rollback": _probe_playlist_writeback_rollback,
     "module.smartlists.rb_writer": _probe_smartlists_rb_writer,
-    "module.sync.apply_ratings": lambda: __import__(
+    "module.sync.rb_writer.write_cues": _probe_sync_rb_writer_write_cues,
+    "module.dedup.apply": _probe_dedup_apply,
+    "module.sync.apply_ratings": lambda _tmp: __import__(
         "apps.sync.apply_ratings", fromlist=["_live_rb_db_path"]
     )._live_rb_db_path(True),
-    "module.sync.apply_analysis": lambda: __import__(
+    "module.sync.apply_analysis": lambda _tmp: __import__(
         "apps.sync.apply_analysis", fromlist=["_live_rb_db_path"]
     )._live_rb_db_path(True),
-    "module.sync.apply_cues": lambda: __import__(
+    "module.sync.apply_cues": lambda _tmp: __import__(
         "apps.sync.apply_cues", fromlist=["live_run"]
     ).live_run([{"rb_content_id": "1"}], flag_ok=True, cautious=True),
-    "module.sync.safety.live_write_session": lambda: __import__(
+    "module.sync.safety.live_write_session": lambda tmp: __import__(
         "apps.sync.safety", fromlist=["LiveWriteSession"]
     ).LiveWriteSession(
-        target="rekordbox", reason="probe", flag_ok=True, db_path=Path("/nope/master.db"),
+        target="rekordbox", reason="probe", flag_ok=True, db_path=tmp / "master.db",
     ).__enter__(),
-    "module.reconcile.apply": lambda: __import__(
+    "module.reconcile.apply": lambda _tmp: __import__(
         "apps.reconcile.apply", fromlist=["_open_live_db"]
     )._open_live_db(),
-    "module.reconcile.remove_track": lambda: __import__(
+    # The OVERRIDE, not None. Probing with None only exercises the constant
+    # branch, and the --db branch returned before ever reaching the guard: a
+    # fully working live-write lane behind a green test.
+    "module.reconcile.remove_track": lambda tmp: __import__(
         "apps.reconcile.remove_track", fromlist=["_resolve_db_path"]
-    )._resolve_db_path(None, live=True),
-    "module.reconcile.prefix_dead_playlists": lambda: __import__(
+    )._resolve_db_path(tmp / "master.db", live=True),
+    "module.reconcile.prefix_dead_playlists": lambda _tmp: __import__(
         "apps.reconcile.prefix_dead_playlists", fromlist=["_apply"]
     )._apply([]),
-    "module.sync.usb.pioneer.export_workflow": lambda: __import__(
+    "module.sync.usb.pioneer.export_workflow": lambda _tmp: __import__(
         "apps.sync.usb.pioneer.export_workflow", fromlist=["apply_export"]
     ).apply_export(object(), confirmation="p-1"),
-    "module.sync.usb.apply": lambda: __import__(
+    "module.sync.usb.apply": lambda tmp: __import__(
         "apps.sync.usb.apply", fromlist=["main"]
-    ).main(["--profile", "/nope/profile.yaml", "--cautious"]),
+    ).main(["--profile", str(tmp / "profile.yaml"), "--cautious"]),
     "module.sync.usb.pioneer.cli_write": _probe_usb_pioneer_cli_write,
     "module.sync.usb.pioneer.agent_export": _probe_usb_pioneer_agent_export,
 }
@@ -373,9 +402,64 @@ def test_every_module_surface_has_a_probe() -> None:
 
 
 @pytest.mark.parametrize("surface", MODULE_SURFACES, ids=lambda s: s.surface_id)
-def test_module_surface_refuses_while_the_gate_is_off(surface) -> None:
+def test_module_surface_refuses_while_the_gate_is_off(surface, tmp_path: Path) -> None:
     with pytest.raises(RekordboxWritebackDisabled) as caught:
-        MODULE_PROBES[surface.surface_id]()
+        MODULE_PROBES[surface.surface_id](tmp_path)
     assert caught.value.surface_id == surface.surface_id
     assert caught.value.code == WRITEBACK_DISABLED_CODE
     assert caught.value.to_dict()["surface"] == surface.surface_id
+
+
+# ----- the gate is not path-shaped, so aliases cannot slip past it ----------
+
+
+def _db_override_forms(tmp_path: Path) -> dict[str, Path]:
+    """The same target written three ways, all under tmp_path.
+
+    ``Path.__eq__`` and ``Path.is_relative_to`` are LEXICAL: neither collapses
+    ``..`` nor follows a symlink. Any gate written as "is this path the live
+    DB?" would answer no to two of these three and let the write through. This
+    gate is written on the SURFACE instead, so all three refuse identically --
+    these probes are what pins that property in place.
+    """
+    protected = tmp_path / "rekordbox" / "master.db"
+    protected.parent.mkdir(parents=True, exist_ok=True)
+    protected.write_bytes(b"")
+    alias = tmp_path / "rekordbox" / ".." / "rekordbox" / "master.db"
+    link = tmp_path / "link-to-master.db"
+    link.symlink_to(protected)
+    return {"straight": protected, "dotdot-alias": alias, "symlink": link}
+
+
+@pytest.mark.parametrize("form", ["straight", "dotdot-alias", "symlink"])
+def test_remove_track_refuses_every_alias_of_a_db_override(
+    tmp_path: Path, form: str
+) -> None:
+    """``--db <..-alias>`` and ``--db <symlink>`` refuse exactly like the plain path."""
+    from apps.reconcile.remove_track import _resolve_db_path
+
+    with pytest.raises(RekordboxWritebackDisabled) as caught:
+        _resolve_db_path(_db_override_forms(tmp_path)[form], live=True)
+    assert caught.value.surface_id == "module.reconcile.remove_track"
+
+
+def test_remove_track_refuses_both_the_constant_and_the_db_override(
+    tmp_path: Path,
+) -> None:
+    """``--db`` accepts any path and _open_db unlocks an encrypted file, so the
+    override branch is a live-write lane in its own right. ``None`` exercises
+    the constant branch, which is the only one the original probe covered."""
+    from apps.reconcile.remove_track import _resolve_db_path
+
+    for override in (None, tmp_path / "master.db"):
+        with pytest.raises(RekordboxWritebackDisabled) as caught:
+            _resolve_db_path(override, live=True)
+        assert caught.value.surface_id == "module.reconcile.remove_track"
+
+
+def test_remove_track_dry_run_with_an_override_still_reads(tmp_path: Path) -> None:
+    """Import direction is untouched: a dry run against a fixture still resolves."""
+    from apps.reconcile.remove_track import _resolve_db_path
+
+    fixture = tmp_path / "plain.db"
+    assert _resolve_db_path(fixture, live=False) == fixture

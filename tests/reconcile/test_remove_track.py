@@ -15,6 +15,11 @@ import pytest
 
 from apps.reconcile import remove_track
 
+# This module exercises live-write MECHANICS against tmp fixtures, so it runs
+# with the one-way rekordbox import gate ON (root conftest reads the marker).
+# It never touches a real rekordbox target.
+pytestmark = pytest.mark.rekordbox_writeback
+
 # ------------------------------------------------------------------ helpers
 
 

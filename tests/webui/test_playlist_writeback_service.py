@@ -10,12 +10,6 @@ from pathlib import Path
 
 import pytest
 
-# This module exercises live-write MECHANICS against tmp fixtures, so it runs
-# with the one-way rekordbox import gate ON (root conftest reads the marker).
-# It never touches a real rekordbox target.
-pytestmark = pytest.mark.rekordbox_writeback
-
-
 from apps.webui.server.playlist_writeback import (
     VendorPlaylist,
     WritebackBackup,
@@ -25,6 +19,11 @@ from apps.webui.server.playlist_writeback import (
 )
 from apps.webui.server.routes.playlist_writeback import get_writeback_service
 from apps.webui.server.sqlite_backend import SqliteBackend
+
+# This module exercises live-write MECHANICS against tmp fixtures, so it runs
+# with the one-way rekordbox import gate ON (root conftest reads the marker).
+# It never touches a real rekordbox target.
+pytestmark = pytest.mark.rekordbox_writeback
 
 
 def _revision(target_id: str, members: list[str]) -> str:

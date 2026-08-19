@@ -53,8 +53,8 @@ from rich.console import Console
 from rich.table import Table
 
 from apps.reconcile import locate as _locate
-from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 console = Console(width=120)
 

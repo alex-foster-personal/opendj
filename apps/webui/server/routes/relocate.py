@@ -61,10 +61,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.reconcile import locate
-from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.shared import audio_files, fs_residency, paths
 from apps.shared.events import publish
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from .. import rb_vendor
 from ..backend import StateBackend, Track

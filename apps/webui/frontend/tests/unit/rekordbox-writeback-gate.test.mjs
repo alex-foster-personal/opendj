@@ -16,8 +16,10 @@
  *   live against a daemon that has not said writes are allowed
  * - if a failed probe is memoized then a daemon that came up late stays locked out
  * - if a second probe() re-requests after a success then it is a poll, not a probe
- * - if the apply/rollback/relocate handler stops returning early then a lost
+ * - if the apply/relocate handler stops returning early then a lost
  *   `disabled` attribute becomes a live request against the real library
+ * - if ROLLBACK becomes gated then undo was taken away from a user who
+ *   already has a bad write, and the UI contradicts the daemon
  * - if the tooltip drifts from UI_REFUSAL_TITLE in
  *   apps/shared/rekordbox_writeback.py then the UI and the server disagree
  * - if the refusal is reworded as PARITY-TODO then "not built" and "switched
@@ -184,7 +186,7 @@ test('the reconcile page probes the gate at mount', () => {
 	assert.match(reconcilePage, /void rekordboxWriteback\.probe\(\)/);
 });
 
-test('apply and rollback are disabled by the refusal and titled with it', () => {
+test('apply is disabled by the refusal and titled with it', () => {
 	// `[^>]*` cannot be used to walk to the next attribute: the disabled
 	// expression itself contains `>` (plan.unresolved.length > 0).
 	assert.match(
@@ -192,21 +194,26 @@ test('apply and rollback are disabled by the refusal and titled with it', () => 
 		/onclick=\{onApply\}[\s\S]{0,300}?disabled=\{[\s\S]{0,200}?writebackRefusal !== null\}/
 	);
 	assert.match(writebackPage, /onclick=\{onApply\}[\s\S]{0,300}?title=\{writebackRefusal \?\?/);
-	assert.match(
-		writebackPage,
-		/onclick=\{onRollback\}[\s\S]{0,300}?disabled=\{[\s\S]{0,200}?writebackRefusal !== null\}/
-	);
-	assert.match(writebackPage, /onclick=\{onRollback\}[\s\S]{0,300}?title=\{writebackRefusal \?\?/);
 });
 
-test('the writeback handlers refuse before firing, not just visually', () => {
+test('rollback stays reachable: undo is not taken away in one-way mode', () => {
+	// A recovery path only exists AFTER a gated apply already wrote. Disabling
+	// it strands the user with a bad write and no undo, which is worse for the
+	// data this gate protects. The server agrees: that surface is mapped
+	// gated=False, so a UI that greys it out would be lying about the daemon.
+	const rollbackButton = writebackPage.match(/onclick=\{onRollback\}[\s\S]{0,300}?>/);
+	assert.ok(rollbackButton, 'the rollback button is gone entirely');
+	assert.doesNotMatch(rollbackButton[0], /writebackRefusal/);
+	assert.doesNotMatch(
+		writebackPage,
+		/async function onRollback\(\): Promise<void> \{\s*\n\s*if \(writebackRefusal !== null\) return;/
+	);
+});
+
+test('the apply handler refuses before firing, not just visually', () => {
 	assert.match(
 		writebackPage,
 		/async function onApply\(\): Promise<void> \{\s*\n\s*if \(writebackRefusal !== null\) return;/
-	);
-	assert.match(
-		writebackPage,
-		/async function onRollback\(\): Promise<void> \{\s*\n\s*if \(writebackRefusal !== null\) return;/
 	);
 });
 

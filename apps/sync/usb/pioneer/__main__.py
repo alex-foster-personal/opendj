@@ -35,10 +35,10 @@ import argparse
 import json
 import logging
 import sys
-
-from apps.shared.rekordbox_writeback import require_writeback_enabled
 from pathlib import Path
 from typing import Any
+
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from .reader import read_usb_export, validate_invariants
 

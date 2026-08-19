@@ -145,7 +145,10 @@ def crate_dest(
     posix = source.as_posix()
     if posix.startswith("/PIONEER/"):
         return crate_root / "pioneer-share" / posix.lstrip("/")
-    share = platform_paths.SHARE_ROOT
+    # Resolve BOTH sides: relative_to is lexical, so an unresolved SHARE_ROOT
+    # here would let a `..`-bearing or symlinked source dodge the share branch
+    # and fall through to the user maps.
+    share = platform_paths.SHARE_ROOT.resolve(strict=False)
     try:
         rel = source.resolve(strict=False).relative_to(share)
     except ValueError:
@@ -437,6 +440,55 @@ def _rsync_to_host(source: Path, dest_host: str, dest: Path) -> None:
         raise RuntimeError(f"rsync {source} -> {dest_host}:{dest} failed: {detail}")
 
 
+class CrateDestinationEscape(RuntimeError):
+    """A ``--map`` aimed a copy outside the replica crate.
+
+    ``crate_dest`` returns a user ``--map`` target verbatim, so
+    ``--dest local --map /Users/me/Music=<SHARE_ROOT>/Contents`` would
+    mkdir + copy2 straight INTO the real Pioneer share. Containment used to be
+    enforced on the ssh-PULL lane only; the local-copy and ssh-push lanes both
+    took the mapped path as given, which is the only reason this module could
+    be allowlisted as "reads SHARE_ROOT, writes the replica crate".
+    """
+
+
+def _assert_within_crate(dest: Path, crate_root: Path, *, local: bool) -> None:
+    """Refuse a destination that leaves the replica crate.
+
+    Path comparison in pathlib is LEXICAL. ``Path('/crate/../etc')
+    .is_relative_to('/crate')`` is True even though resolving it escapes, and
+    ``Path.__eq__`` does not resolve either, so a containment check written on
+    unresolved paths is decoration. Two cases, and both sides get the same
+    treatment in each:
+
+      * ``local=True``  -- the destination is on this filesystem, so resolve
+        BOTH sides. That collapses ``..`` and follows symlinks, which is the
+        only way a symlink pointing into the Pioneer share is caught.
+      * ``local=False`` -- the destination lives on another host and cannot be
+        resolved from here at all. Reject any ``..`` component outright (so
+        there is nothing left to collapse) and compare normalised paths. A
+        remote symlink is out of reach either way; the ssh forced command is
+        what bounds that lane.
+    """
+    if local:
+        candidate = dest.resolve(strict=False)
+        root = crate_root.resolve(strict=False)
+    else:
+        if ".." in dest.parts or ".." in crate_root.parts:
+            raise CrateDestinationEscape(
+                f"remote crate destination contains '..' and cannot be resolved "
+                f"from here: {dest}"
+            )
+        candidate = Path(os.path.normpath(dest.as_posix()))
+        root = Path(os.path.normpath(crate_root.as_posix()))
+    if not candidate.is_relative_to(root):
+        raise CrateDestinationEscape(
+            f"crate destination escapes the replica crate: {dest} resolves to "
+            f"{candidate}, which is not under {root}. A --map target must stay "
+            "inside --crate-root; no lane may write into the real Pioneer share."
+        )
+
+
 def _copy_local(source: Path, dest: Path) -> bool:
     if dest.is_file():
         source_stat = source.stat()
@@ -526,6 +578,10 @@ def _rsync_plan_to_host(
     for (source_root, dest_root), relative_paths in sorted(
         groups.items(), key=lambda pair: str(pair[0][1])
     ):
+        # Same containment the pull lane has always had. This lane mkdir -p's
+        # dest_root on the remote host, so an unchecked --map target could
+        # create a tree anywhere the ssh user can write.
+        _assert_within_crate(dest_root, crate_root, local=False)
         mkdir = ssh_agentbox_argv(
             f"mkdir -p {shlex.quote(dest_root.as_posix())}",
             ssh_host=dest_host,
@@ -637,7 +693,6 @@ def _rsync_manifest_from_host(
     if not OWNER_SSH_KEY.is_file():
         raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
     groups: dict[tuple[Path, Path], list[Path]] = {}
-    resolved_crate = crate_root.resolve()
     for entry in _manifest_files(manifest):
         source = Path(str(entry["source"]))
         source_root = Path(str(entry["source_root"]))
@@ -652,8 +707,11 @@ def _rsync_manifest_from_host(
             raise RuntimeError(f"owner source mapping drift: {source}")
         if dest_root / relative != dest:
             raise RuntimeError(f"owner destination mapping drift: {dest}")
-        if not dest.resolve(strict=False).is_relative_to(resolved_crate):
-            raise RuntimeError(f"owner destination escapes crate: {dest}")
+        # This lane writes LOCALLY (rsync pulls from the owner into the crate),
+        # so both sides resolve: `..` collapses and a symlink aimed back at the
+        # Pioneer share is followed rather than trusted.
+        _assert_within_crate(dest, crate_root, local=True)
+        _assert_within_crate(dest_root, crate_root, local=True)
         groups.setdefault((source_root, dest_root), []).append(relative)
 
     changed = 0
@@ -807,6 +865,7 @@ def apply_plan(
     changed = 0
     for item in plan.files:
         if dest_kind == "local":
+            _assert_within_crate(item.dest, crate_root, local=True)
             changed += int(_copy_local(item.source, item.dest))
     return changed
 

@@ -67,11 +67,17 @@ def _canonical_live_path(vendor: Vendor) -> Path:
 def _require_exact_live_target(vendor: Vendor, target_mode: TargetMode, target_path: str) -> Path:
     if target_mode != "live":
         raise ValueError(f"{vendor}: target_mode must be the explicit literal 'live'")
-    expected = _canonical_live_path(vendor)
-    actual = Path(target_path)
+    # Path.__eq__ is LEXICAL: it collapses neither `..` nor symlinks, so
+    # '/live/../live/master.db' and a symlink pointing at master.db both
+    # compare unequal to the canonical path while addressing the same file.
+    # Resolve BOTH sides, and hand back the RESOLVED path so the handle that
+    # gets opened is the one that was actually validated.
+    expected = _canonical_live_path(vendor).resolve(strict=False)
+    actual = Path(target_path).resolve(strict=False)
     if actual != expected:
         raise ValueError(
-            f"{vendor}: refusing target {actual}; exact live target is {expected}. "
+            f"{vendor}: refusing target {Path(target_path)} (resolves to {actual}); "
+            f"exact live target is {expected}. "
             "Working copies are never writeback targets."
         )
     if not actual.exists():
@@ -350,8 +356,12 @@ class WritebackService:
     ) -> WritebackRollbackResult:
         if not confirmed:
             raise WritebackConflict("rollback requires confirmed=true")
-        if vendor == "rekordbox":
-            require_writeback_enabled("module.playlist_writeback.service_rollback")
+        # DELIBERATELY NOT GATED (mapped as gated=False): a recovery path only
+        # exists after a gated apply already wrote, and gating it would trap
+        # the user with a bad write and no undo. Every other rail still runs --
+        # confirmed above, then pgrep, the exclusive target lock, the CAS on
+        # current membership, and the manifest-provenance check inside
+        # RBPlaylistWriter.restore_backup.
         with self._writer(vendor, target_mode, target_path) as writer:
             target_revision = writer.restore_backup(
                 backup_id, target_id, expected_target_revision,

@@ -8,12 +8,6 @@ from collections.abc import Iterator
 from contextlib import nullcontext
 
 import pytest
-
-# This module exercises live-write MECHANICS against tmp fixtures, so it runs
-# with the one-way rekordbox import gate ON (root conftest reads the marker).
-# It never touches a real rekordbox target.
-pytestmark = pytest.mark.rekordbox_writeback
-
 from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
@@ -25,6 +19,15 @@ from apps.webui.server.playlist_writeback import (
     WritebackService,
 )
 from apps.webui.server.routes.playlist_writeback import get_writeback_service
+
+# This module exercises live-write MECHANICS against tmp fixtures, so it runs
+# with the one-way rekordbox import gate ON (root conftest reads the marker).
+# It never touches a real rekordbox target.
+pytestmark = pytest.mark.rekordbox_writeback
+# Backup ids are uuid4().hex and get joined into a path under
+# data/writeback-backups, so the format is pattern-bound at the route now: a
+# short label like "b1" is refused as 422 before the handler runs.
+BACKUP_ID = "b" * 32
 
 
 class _Writer:
@@ -50,7 +53,7 @@ class _Writer:
             self.backup = current
             self.members = list(stable_members)
             after = hashlib.sha256(json.dumps({"target_id": playlist_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-            return WritebackBackup("b1"), after
+            return WritebackBackup(BACKUP_ID), after
     def restore_backup(self, backup_id, target_id, expected):
         current = hashlib.sha256(json.dumps({"target_id": target_id, "members": self.members}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if current != expected:
@@ -87,9 +90,9 @@ def test_http_plan_apply_and_rollback_share_serializable_contract(client: TestCl
     refused = client.post("/api/v1/playlists/pl-001/writeback/apply", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","plan_token":token,"dry_run":False})
     assert refused.status_code == 409
     applied = client.post("/api/v1/playlists/pl-001/writeback/apply", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","plan_token":token,"dry_run":False,"confirmed":True})
-    assert applied.status_code == 200 and applied.json()["backup_id"] == "b1"
+    assert applied.status_code == 200 and applied.json()["backup_id"] == BACKUP_ID
     body = applied.json()
-    rolled_back = client.post("/api/v1/playlists/pl-001/writeback/rollback", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","backup_id":"b1","expected_target_revision":body["target_revision"],"confirmed":True})
+    rolled_back = client.post("/api/v1/playlists/pl-001/writeback/rollback", json={"vendor":"rekordbox","target_mode":"live","target_path":"/fixture/live.db","target_id":"native-1","backup_id":BACKUP_ID,"expected_target_revision":body["target_revision"],"confirmed":True})
     assert rolled_back.status_code == 200 and rolled_back.json()["rolled_back"] is True
 
 

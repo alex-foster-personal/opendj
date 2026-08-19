@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Literal
+
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 TargetName = Literal["rekordbox", "djay"]

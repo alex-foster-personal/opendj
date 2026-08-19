@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from apps.shared.events import publish
 from apps.shared.rekordbox_writeback import require_writeback_enabled
@@ -99,7 +99,11 @@ class WritebackRollbackIn(BaseModel):
     target_mode: TargetModeLiteral
     target_path: str
     target_id: str
-    backup_id: str
+    # uuid4().hex and nothing else: this value is joined into a path under
+    # data/writeback-backups, so an unconstrained string containing ``../``
+    # reads a file of the caller's choosing. Refused as 422 before the handler
+    # runs; writeback_backup._require_backup_id re-checks at the join itself.
+    backup_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     expected_target_revision: str
     confirmed: bool = False
 
@@ -203,8 +207,13 @@ def rollback_writeback(
     playlist_id: str, body: WritebackRollbackIn, backend: StateBackend = Depends(get_write_state),
     service: WritebackService = Depends(get_writeback_service),
 ) -> WritebackRollbackOut:
-    if body.vendor == "rekordbox":
-        require_writeback_enabled("http.playlists.writeback.rollback")
+    # DELIBERATELY NOT GATED (mapped as gated=False). Rollback only exists
+    # after a gated apply already wrote, so refusing it here would trap the
+    # user with a bad write and no undo. It cannot be aimed anywhere: the
+    # preimage is minted only by that apply, backup_id is pattern-bound above,
+    # the target path is pinned to the canonical live DB, and the service
+    # CAS-checks current membership. See apps/shared/rekordbox_writeback.py,
+    # "RECOVERY PATHS ARE NOT GATED".
     backend.get_playlist(playlist_id)
     try:
         result = service.rollback(**body.model_dump())

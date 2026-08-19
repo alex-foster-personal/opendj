@@ -228,17 +228,27 @@ class RBPlaylistWriter:
     backup_dir: Path = field(default_factory=lambda: DEFAULT_BACKUP_DIR)
     _backup_taken: Path | None = field(default=None, init=False, repr=False)
 
-    def _assert_safe_to_write(self, *, take_backup: bool = True) -> None:
-        """Run the pgrep gate + take a one-shot backup.
+    def _assert_safe_to_write(
+        self, *, take_backup: bool = True, one_way_gate: bool = True
+    ) -> None:
+        """Run the one-way gate, the pgrep gate, and take a one-shot backup.
 
         No-op when ``live=False`` (keeps unit tests with duck-typed DBs
         working unchanged). When ``live=True`` and Rekordbox is open we
         raise :class:`RuntimeError`; the materialiser catches it and
         records a per-writer failure so other writers still run.
+
+        ``one_way_gate=False`` is passed by :meth:`restore_backup` alone. A
+        rollback is a recovery path: it can only exist after a gated apply
+        already wrote, so refusing it strands the user with a bad write and no
+        undo. Only the gate rail is skipped there; pgrep and the backup rail
+        below, and the lock / CAS / manifest-provenance rails in the caller,
+        all still run.
         """
         if not self.live:
             return
-        require_writeback_enabled("module.smartlists.rb_writer")
+        if one_way_gate:
+            require_writeback_enabled("module.smartlists.rb_writer")
         if _rekordbox_running():
             raise RuntimeError(
                 "rekordbox: refusing to write -- Rekordbox appears to be "
@@ -438,7 +448,12 @@ class RBPlaylistWriter:
 
         from apps.smartlists.writeback_backup import exclusive_target_lock, read_reversal
         from apps.webui.server.playlist_writeback import WritebackConflict
-        self._assert_safe_to_write(take_backup=False)
+
+        # Recovery path: the one-way gate rail is skipped here on purpose (see
+        # _assert_safe_to_write). pgrep still runs, and the lock, the CAS on
+        # current membership, and read_reversal's provenance check below are
+        # what stop a stale or foreign restore.
+        self._assert_safe_to_write(take_backup=False, one_way_gate=False)
         with exclusive_target_lock(self.live_db_path):
             session = getattr(self.db, "session", None)
             if session is None:
