@@ -5,6 +5,25 @@
  * build for an hour because nothing on screen distinguished it from a good
  * one. So the assertions are about what is REFUSED -- no fabricated sha, no
  * silent blank, no "aligned" verdict pulled out of an unknown.
+ *
+ * The chip also answers WHERE this app is. The packaged engine binds an
+ * EPHEMERAL port, so the address differs every launch; a tester who wanted to
+ * open the app in a browser guessed the dev port and got nothing.
+ *
+ * Regression lines:
+ * - if engineBaseUrl invents an address when it cannot derive one then the
+ *   reader is sent to a port nothing is listening on
+ * - if a configured VITE_API_BASE stops beating the page origin then a dev
+ *   build names the Vite server instead of the daemon it talks to
+ * - if the chip goes back to position:fixed then it floats on top of the
+ *   sidebar and the browser panel's connectivity dots again
+ * - if the foldout stops opening upward then it resizes the tray row it
+ *   lives in
+ * - if the app shell loses its bottom tray then the chip has nowhere to sit
+ * - if the browser panel's bottom bar stops mounting the chip then
+ *   /performance shows no build identity at all
+ * - if the address loses its selectable text or its copy control then
+ *   finding the app's URL is a transcription exercise again
  */
 
 import assert from 'node:assert/strict';
@@ -225,4 +244,145 @@ test('the component carries no build-time literal of its own', async () => {
 	// moment the next commit lands, which is the whole bug.
 	assert.equal(/\b[0-9a-f]{7,40}\b/.test(source.replace(/#[0-9a-f]{3,8}\b/g, '')), false);
 	assert.equal(/\d{4}-\d{2}-\d{2}T/.test(source), false);
+});
+
+// ----- where this app is --------------------------------------------------
+test('an engine-served page reports its own origin as the engine', () => {
+	const state = mod.engineBaseUrl({ origin: 'http://127.0.0.1:56146' }, '');
+	assert.equal(state.kind, 'ok');
+	assert.equal(state.url, 'http://127.0.0.1:56146');
+	assert.equal(state.source, 'served');
+});
+
+test('a trailing slash is trimmed, so the address is pasteable as-is', () => {
+	const state = mod.engineBaseUrl({ origin: 'http://127.0.0.1:56146/' }, '');
+	assert.equal(state.url, 'http://127.0.0.1:56146');
+});
+
+test('a configured API base beats the page origin', () => {
+	// The dev flow: this page came from Vite, the daemon is somewhere else.
+	// Naming the page's own origin here would send the reader to the wrong
+	// process entirely.
+	const state = mod.engineBaseUrl(
+		{ origin: 'http://127.0.0.1:9411', href: 'http://127.0.0.1:9411/performance' },
+		'http://127.0.0.1:8699'
+	);
+	assert.equal(state.kind, 'ok');
+	assert.equal(state.url, 'http://127.0.0.1:8699');
+	assert.equal(state.source, 'configured');
+});
+
+test('a relative API base is resolved against the document, not guessed', () => {
+	const state = mod.engineBaseUrl(
+		{ origin: 'http://127.0.0.1:9411', href: 'http://127.0.0.1:9411/performance' },
+		'/daemon'
+	);
+	assert.equal(state.kind, 'ok');
+	assert.equal(state.url, 'http://127.0.0.1:9411/daemon');
+	assert.equal(state.source, 'configured');
+});
+
+test('no origin and no configured base is a fault, never a plausible address', () => {
+	const state = mod.engineBaseUrl(null, '');
+	assert.equal(state.kind, 'fault');
+	// The exact failure this readout exists to prevent: a made-up port.
+	assert.doesNotMatch(state.reason, /127\.0\.0\.1:\d+/);
+	assert.doesNotMatch(state.reason, /localhost:\d+/);
+});
+
+test('an opaque origin is a fault rather than the string "null"', () => {
+	const state = mod.engineBaseUrl({ origin: 'null' }, '');
+	assert.equal(state.kind, 'fault');
+});
+
+test('a relative base with no document to resolve it against is a fault', () => {
+	const state = mod.engineBaseUrl({ origin: 'http://127.0.0.1:9411' }, '/daemon');
+	assert.equal(state.kind, 'fault');
+	assert.match(state.reason, /relative/);
+});
+
+test('the address explains where it came from, and a fault says why not', () => {
+	const served = mod.explainEngineUrl({
+		kind: 'ok',
+		url: 'http://127.0.0.1:56146',
+		source: 'served'
+	});
+	assert.match(served, /served BY the engine/);
+	assert.match(served, /http:\/\/127\.0\.0\.1:56146/);
+
+	const configured = mod.explainEngineUrl({
+		kind: 'ok',
+		url: 'http://127.0.0.1:8699',
+		source: 'configured'
+	});
+	assert.match(configured, /VITE_API_BASE/);
+
+	const fault = mod.explainEngineUrl({ kind: 'fault', reason: 'no origin' });
+	assert.match(fault, /cannot be determined: no origin/);
+});
+
+// ----- the tray contract --------------------------------------------------
+// Markup facts a node:test harness cannot render, pinned by source shape --
+// the same way the layout-mount test above already does.
+test('the chip is a tray citizen, not a floating overlay', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	// position:fixed is what made it sit ON TOP of the sidebar and the
+	// connectivity dots. margin-left:auto is what puts it at the RIGHT end of
+	// whichever tray mounts it.
+	// The DECLARATION, not the prose: the header comment explains the move and
+	// necessarily names the thing it moved away from.
+	assert.doesNotMatch(source, /position:\s*fixed;/);
+	assert.match(source, /position:\s*relative;/);
+	assert.match(source, /margin-left:\s*auto/);
+	// The foldout opens upward from the tray, so the 18px row never resizes.
+	assert.match(source, /bottom:\s*100%/);
+});
+
+test('the foldout states the address, selectable, with a copy control', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /engineBaseUrl\(\)/);
+	assert.match(source, /explainEngineUrl/);
+	assert.match(source, /user-select:\s*all/);
+	assert.match(source, /class="copy"/);
+	assert.match(source, /clipboard\.writeText/);
+	// A copy that silently did nothing is worse than no copy button.
+	assert.match(source, /copy refused/);
+});
+
+test('the app shell mounts the chip inside a bottom tray', async () => {
+	const { readFileSync } = await import('node:fs');
+	const layout = readFileSync(
+		new URL('../../src/routes/+layout.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(layout, /class="app-tray"/);
+	// The tray wraps the chip; a mount outside it would be the old floating
+	// placement wearing a new class name.
+	assert.match(layout, /<footer class="app-tray"[^>]*>\s*<BuildIdentity \/>\s*<\/footer>/);
+	// Full width of the shell grid, so "right" means the window's right edge.
+	assert.match(layout, /grid-column:\s*1\s*\/\s*-1/);
+});
+
+test('the performance route mounts the chip in the browser bottom bar', async () => {
+	const { readFileSync } = await import('node:fs');
+	const panel = readFileSync(
+		new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(panel, /import BuildIdentity from '\.\/BuildIdentity\.svelte';/);
+	// Inside the bottom bar and before the resize grip, which is the far
+	// right-hand corner of that tray.
+	const bar = panel.slice(panel.indexOf('<div class="bottom-bar">'));
+	const mount = bar.indexOf('<BuildIdentity />');
+	const grip = bar.indexOf('<span class="grip"');
+	assert.ok(mount > 0, 'the bottom bar mounts the build identity');
+	assert.ok(mount < grip, 'the chip sits before the grip in the tray');
 });
