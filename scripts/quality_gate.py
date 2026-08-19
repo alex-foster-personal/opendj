@@ -71,6 +71,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 # ----- config --------------------------------------------------------------
 
@@ -100,9 +101,17 @@ class CFG:
     KNIP: str = "knip@6.32.2"
     JSCPD: str = "jscpd@5.0.15"
     # Paths excluded from size/complexity scoring: vendored, not ours.
+    #
+    # Third-party source only. "rb_vendor" in a filename is not a licence:
+    # apps/webui/server/rb_vendor.py sat here until T3b and it is first-party
+    # business logic (CAS hot-cue writes, reversible undo, ANLZ caching,
+    # waveform decode). Exempting it is the most plausible reason it reached
+    # 2,267 lines without the 600-line gate ever firing. It is now scored like
+    # everything else, and its debt is carried in ops/quality/baseline.json as
+    # a number that only shrinks, which is what makes the T3b split a
+    # burn-down instead of a promise.
     VENDORED: tuple[str, ...] = (
         "apps/sync/usb/pioneer/_vendor",
-        "apps/webui/server/rb_vendor.py",
     )
 
 
@@ -693,22 +702,25 @@ def _print_metrics(metrics: list[Metric], baseline: dict[str, float]) -> None:
 
 def _write_baseline(metrics: list[Metric]) -> None:
     BASELINE.parent.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(
-        json.dumps(
-            {
-                "generated": datetime.now(UTC).isoformat(timespec="seconds"),
-                "note": "Allowances only ever shrink. See ops/quality/README.md.",
-                # REPORT_ONLY metrics are deliberately absent: this file is a
-                # list of allowances, and a number nothing is allowed to exceed
-                # does not belong in it.
-                "metrics": {
-                    m.key: m.value for m in metrics if m.key not in REPORT_ONLY
-                },
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    payload: dict[str, Any] = {
+        "generated": datetime.now(UTC).isoformat(timespec="seconds"),
+        "note": "Allowances only ever shrink. See ops/quality/README.md.",
+    }
+    # Carry `burn_down` across rewrites. It names WHY a specific allowance was
+    # raised and which refactor is committed to lowering it again. Dropping it
+    # on the next --update-baseline would turn a tracked burn-down into an
+    # anonymous number nobody remembers agreeing to.
+    if BASELINE.exists():
+        existing = json.loads(BASELINE.read_text())
+        if "burn_down" in existing:
+            payload["burn_down"] = existing["burn_down"]
+    # REPORT_ONLY metrics are deliberately absent: this file is a list of
+    # allowances, and a number nothing is allowed to exceed does not belong
+    # in it.
+    payload["metrics"] = {
+        m.key: m.value for m in metrics if m.key not in REPORT_ONLY
+    }
+    BASELINE.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"\n[quality] baseline written to {BASELINE}")
 
 
