@@ -25,6 +25,17 @@ import type {
 	SignalsmithStretchNode,
 	SignalsmithStretchSchedule
 } from 'signalsmith-stretch';
+import stretchWorkletModuleUrl from '../../../node_modules/signalsmith-stretch/SignalsmithStretch.mjs?url';
+
+// The package's default worklet bootstrap Function.toString()s its own bundled
+// code into a Blob. Production bundling breaks that string: esbuild lowers the
+// processor's class field into a chunk-scope helper the blob never contains, so
+// inside the AudioWorkletGlobalScope the processor constructor throws before
+// its ready handshake and creation times out with no processorerror. Loading
+// the untransformed package file (relative path because the package exports
+// map blocks subpaths) removes every toString round-trip; the file
+// self-registers when it detects a worklet scope.
+createSignalsmithStretch.moduleUrl = stretchWorkletModuleUrl;
 
 export const STRETCH_CREATE_TIMEOUT_MS = 15_000;
 export const STRETCH_COMMAND_TIMEOUT_MS = 5_000;
