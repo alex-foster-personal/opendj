@@ -44,11 +44,13 @@ TAURI_CONF: Path = REPO_ROOT / "apps/desktop/src-tauri/tauri.conf.json"
 
 
 # ----- label validation --------------------------------------------------
+@pytest.mark.requirement("INSTALL-06")
 @pytest.mark.parametrize("raw", [None, "", "   "])
 def test_absent_label_is_none(raw: str | None) -> None:
     assert validate_label(raw) is None
 
 
+@pytest.mark.requirement("INSTALL-06")
 @pytest.mark.parametrize("raw", ["B", "b", "A", "agentB", "2"])
 def test_simple_labels_survive(raw: str) -> None:
     assert validate_label(raw) == raw.strip()
@@ -57,24 +59,29 @@ def test_simple_labels_survive(raw: str) -> None:
 @pytest.mark.parametrize(
     "raw", ["b b", "../x", "-b", "b.", "b/c", "lane b", "b_c", "b-c", "é"]
 )
+@pytest.mark.requirement("INSTALL-06")
 def test_unsafe_labels_are_refused_not_sanitised(raw: str) -> None:
     with pytest.raises(LaneLabelError):
         validate_label(raw)
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_label_is_trimmed_before_use() -> None:
     assert validate_label("  B  ") == "B"
 
 
 # ----- identifier and product name ---------------------------------------
+@pytest.mark.requirement("INSTALL-06")
 def test_unset_label_leaves_identifier_untouched() -> None:
     assert lane_identifier(BASE_IDENTIFIER, None) == BASE_IDENTIFIER
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_label_suffixes_identifier_lowercased() -> None:
     assert lane_identifier(BASE_IDENTIFIER, "B") == "com.opendj.desktop.lane-b"
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_identifier_suffix_is_case_insensitive_for_apple() -> None:
     # Apple treats identifiers case-insensitively, so 'B' and 'b' must not
     # produce two identifiers that collide on disk but differ in config.
@@ -83,19 +90,23 @@ def test_identifier_suffix_is_case_insensitive_for_apple() -> None:
     )
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_unset_label_leaves_product_name_untouched() -> None:
     assert lane_product_name(BASE_PRODUCT, None) == BASE_PRODUCT
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_label_appears_in_product_name() -> None:
     assert lane_product_name(BASE_PRODUCT, "B") == "Open DJ (B)"
 
 
 # ----- overlay -----------------------------------------------------------
+@pytest.mark.requirement("INSTALL-06")
 def test_unlabelled_overlay_is_empty_so_the_build_is_unchanged() -> None:
     assert overlay(BASE_PRODUCT, BASE_IDENTIFIER, None) == {}
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_labelled_overlay_sets_both_clash_keys() -> None:
     assert overlay(BASE_PRODUCT, BASE_IDENTIFIER, "B") == {
         "productName": "Open DJ (B)",
@@ -127,10 +138,12 @@ def test_dmg_name_is_shell_safe(label: str | None) -> None:
     assert "(" not in name and ")" not in name
 
 
+@pytest.mark.requirement("INSTALL-05")
 def test_arch_is_read_from_the_built_artifact() -> None:
     assert arch_from_built_name("Open DJ (B)_0.1.0_aarch64.dmg") == "aarch64"
 
 
+@pytest.mark.requirement("INSTALL-05")
 def test_arch_refuses_a_name_it_cannot_parse() -> None:
     with pytest.raises(LaneLabelError):
         arch_from_built_name("opendj.dmg")
@@ -150,6 +163,7 @@ def test_shipped_config_is_the_unlabelled_product() -> None:
     assert conf["identifier"] == BASE_IDENTIFIER
 
 
+@pytest.mark.requirement("INSTALL-02")
 def test_shipped_config_points_at_the_bundled_setup_page() -> None:
     """The window must load the bundled page, never a bare engine URL.
 
@@ -186,10 +200,12 @@ def _run_cli(*args: str) -> str:
     return result.stdout.strip()
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_cli_emits_an_empty_overlay_without_a_label() -> None:
     assert _run_cli("overlay", "--config", str(TAURI_CONF), "--label", "") == "{}"
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_cli_emits_the_lane_overlay() -> None:
     emitted = json.loads(
         _run_cli("overlay", "--config", str(TAURI_CONF), "--label", "B")
@@ -211,6 +227,7 @@ def test_cli_names_the_labelled_artifact() -> None:
     assert name == "OpenDJ-B-0.1.0-aarch64.dmg"
 
 
+@pytest.mark.requirement("INSTALL-04")
 def test_notary_profile_without_a_signing_identity_is_refused() -> None:
     """Notarizing an unsigned app is impossible, so refuse before building.
 
@@ -238,6 +255,7 @@ def test_notary_profile_without_a_signing_identity_is_refused() -> None:
     assert "Compiling" not in combined
 
 
+@pytest.mark.requirement("INSTALL-06")
 def test_cli_rejects_a_bad_label_loudly() -> None:
     result = subprocess.run(
         [
