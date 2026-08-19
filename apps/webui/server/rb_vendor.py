@@ -111,7 +111,8 @@ AUDIO_MEDIA_TYPES: dict[str, str] = {
     ".m4a": "audio/mp4",
     ".mp4": "audio/mp4",
 }
-STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
+# Re-export, not a copy: the one prefix set lives in platform_paths (T3b D1).
+STREAMING_PREFIXES: tuple[str, ...] = platform_paths.STREAMING_PREFIXES
 ARTWORK_FILENAMES: dict[str, str] = {
     "s": "artwork_s.jpg",
     "m": "artwork_m.jpg",
@@ -309,7 +310,15 @@ def _asset_sibling(mapped: MappedPath, candidate: Path) -> MappedPath:
 
 
 def is_streaming_path(folder_path: Optional[str]) -> bool:
-    return bool(folder_path) and str(folder_path).startswith(STREAMING_PREFIXES)
+    """True iff ``folder_path`` is a non-empty streaming-service URI.
+
+    Alias of :func:`apps.shared.platform_paths.is_streaming_uri`, which is
+    the one definition (T3b map D1). Empty/None stays False here: this feeds
+    the wire field ``is_streaming`` in :func:`build_track_rows`, and a track
+    with no FolderPath is pathless, not streaming. Callers asking "is there
+    a local file" want ``platform_paths.is_unplayable_path`` instead.
+    """
+    return platform_paths.is_streaming_uri(folder_path)
 
 
 # ----- per-asset resolution --------------------------------------------------
