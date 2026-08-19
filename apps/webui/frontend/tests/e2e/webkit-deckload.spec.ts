@@ -76,6 +76,8 @@
  * - [if] a key nudge does not move the tone by a semitone [then ⛔️] key passes.
  * - [if] CUE does not return the playhead to the cue point [then ⛔️] cue passes.
  * - [if] the playhead leaves the loop window [then ⛔️] the loop test passes.
+ * - [if] a deck refuses a dragover [then ⛔️] the drag test passes.
+ * - [if] a deck ignores a drop whose transfer is empty [then ⛔️] it passes.
  */
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
@@ -117,6 +119,10 @@ const SPECTRUM_SAMPLES = 5;
 /** Max spread across those captures before the measurement is called unstable.
  * One analyser bin is ~10.8 Hz, so this is a little over two bins. */
 const SPECTRUM_SPREAD_TOLERANCE_HZ = 25;
+
+/** Ceiling on the settle phase before a measurement. A tempo change reaches the
+ * analyser in a few hundred ms; anything near this is a stuck graph. */
+const SPECTRUM_SETTLE_TIMEOUT_MS = 8_000;
 
 /** Fractional tolerance on a frequency ratio assertion (~1.4 bins at 2 kHz). */
 const FREQUENCY_RATIO_TOLERANCE = 0.0075;
@@ -219,6 +225,16 @@ async function _prepareGridlessDeck(page: Page, deck: DeckId): Promise<void> {
 
 const TRACK_ROW = '[data-testid="track-row"]';
 
+/**
+ * TRACK_STABLE_MIME from src/lib/rb/track-drag.svelte.ts, restated rather than
+ * imported: that module is a runes module and evaluating it in this node
+ * process would fail. The empty-transfer test would notice a drift anyway - it
+ * asserts an EMPTY payload, and a wrong MIME here would read empty for the
+ * wrong reason, which is why the payload-carrying test asserts the stable id
+ * through this same constant.
+ */
+const TRACK_STABLE_MIME = 'application/x-mdt-stable-id';
+
 async function _openAllTracks(page: Page): Promise<void> {
 	await page.getByText('All Tracks', { exact: true }).first().click();
 	await expect(page.locator(TRACK_ROW).first()).toBeVisible({ timeout: 30_000 });
@@ -228,6 +244,75 @@ async function _openAllTracks(page: Page): Promise<void> {
  * Double-click the title cell of row `index`. The app's own smart-load picks
  * the deck (least-recently-loaded of CH1/CH2), which is the flow a DJ uses.
  */
+/** What a dispatched drag gesture observed, read from the events themselves. */
+interface DragGestureReport {
+	dragOverAccepted: boolean;
+	typesDuringDragOver: string[];
+	payloadOnDrop: string;
+}
+
+/**
+ * Drag a library row onto a deck by DISPATCHING the HTML5 sequence.
+ *
+ * Playwright's mouse API cannot do this: moving the mouse with a button held
+ * produces pointer events, and no browser synthesizes a native drag from them,
+ * so `dragTo` and manual mouse-drags never reach an ondrop handler. The events
+ * are therefore constructed here and dispatched at the app's OWN handlers -
+ * the row's ondragstart, the deck's ondragover and ondrop. Nothing in the app
+ * is stubbed: the drag begins because the row's real dragstart handler ran.
+ *
+ * `carryPayload: false` offers the deck a transfer that carries nothing, which
+ * is what WKWebView hands a drop target in protected drag mode.
+ */
+async function _dragRowToDeck(
+	page: Page,
+	rowIndex: number,
+	deck: DeckId,
+	options: { carryPayload: boolean }
+): Promise<DragGestureReport> {
+	return page.evaluate(
+		({ rowSelector, index, deckId, carryPayload, mime }) => {
+			const row = document.querySelectorAll(rowSelector)[index];
+			if (!(row instanceof HTMLElement)) throw new Error(`no track row at index ${index}`);
+			const target = document.querySelector(`section.rb-deck[data-deck="${deckId}"]`);
+			if (!(target instanceof HTMLElement)) throw new Error(`no deck ${deckId}`);
+
+			const start = new DataTransfer();
+			row.dispatchEvent(
+				new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: start })
+			);
+
+			const carried = carryPayload ? start : new DataTransfer();
+			const over = new DragEvent('dragover', {
+				bubbles: true,
+				cancelable: true,
+				dataTransfer: carried
+			});
+			target.dispatchEvent(over);
+			const report = {
+				dragOverAccepted: over.defaultPrevented,
+				typesDuringDragOver: [...carried.types],
+				payloadOnDrop: carried.getData(mime)
+			};
+
+			target.dispatchEvent(
+				new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: carried })
+			);
+			// The real gesture always ends with a dragend, and the app removes its
+			// drag ghost there. Skipping it would leave DOM litter behind.
+			row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: carried }));
+			return report;
+		},
+		{
+			rowSelector: TRACK_ROW,
+			index: rowIndex,
+			deckId: deck,
+			carryPayload: options.carryPayload,
+			mime: TRACK_STABLE_MIME
+		}
+	);
+}
+
 async function _dblClickLoad(page: Page, index: number): Promise<string> {
 	const row = page.locator(TRACK_ROW).nth(index);
 	const stableId = await row.getAttribute('data-stable-id');
@@ -387,6 +472,37 @@ async function _captureDominantHz(page: Page, deck: DeckId): Promise<number> {
 }
 
 /**
+ * Wait until the deck's spectrum has REACHED steady state, then return.
+ *
+ * A tempo or key change does not reach the analyser instantly: the stretch
+ * processor is already several blocks ahead, and the AnalyserNode sits after
+ * it, so the first capture after a command can still show the OLD pitch. That
+ * is a transition, not a disagreement, and measuring across it was worth a
+ * 320Hz spread on a correct app.
+ *
+ * This is a settle phase, NOT a retry that hides a bad reading: nothing
+ * measured here is used as a result, the measurement window afterwards still
+ * keeps every sample it takes, and a spectrum that never settles fails here
+ * with its whole history attached.
+ */
+async function _waitForSpectrumSettled(page: Page, deck: DeckId): Promise<void> {
+	const seen: number[] = [];
+	const deadline = Date.now() + SPECTRUM_SETTLE_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		seen.push(await _captureDominantHz(page, deck));
+		const recent = seen.slice(-2);
+		if (recent.length === 2 && Math.abs(recent[0] - recent[1]) < SPECTRUM_SPREAD_TOLERANCE_HZ) {
+			return;
+		}
+		await page.waitForTimeout(80);
+	}
+	throw new Error(
+		`deck ${deck} spectrum never settled within ${SPECTRUM_SETTLE_TIMEOUT_MS}ms: ` +
+			seen.map((hz) => hz.toFixed(1)).join(', ')
+	);
+}
+
+/**
  * Dominant frequency of ONE deck, as the median of SPECTRUM_SAMPLES captures.
  *
  * Every sample is kept and the SPREAD is asserted: a disagreeing capture fails
@@ -394,6 +510,7 @@ async function _captureDominantHz(page: Page, deck: DeckId): Promise<number> {
  * mode that made an earlier harness report a pass it had not earned.
  */
 async function _dominantHz(page: Page, deck: DeckId): Promise<number> {
+	await _waitForSpectrumSettled(page, deck);
 	const samples: number[] = [];
 	for (let i = 0; i < SPECTRUM_SAMPLES; i++) {
 		samples.push(await _captureDominantHz(page, deck));
@@ -848,6 +965,62 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		const loop = _control(page, 1, 'loop');
 		await expect(loop).toBeDisabled();
 		await expect(loop).toHaveAttribute('title', 'track has no beatgrid - beat loop unavailable');
+	});
+
+	test('a library row dragged onto a deck loads it', async () => {
+		const row = page.locator(TRACK_ROW).first();
+		const stableId = await row.getAttribute('data-stable-id');
+		if (stableId === null) throw new Error('row 0 has no data-stable-id');
+		// Click first, as a user does: a drag started from a row that is part of a
+		// multi-row selection carries EVERY selected id, and this test asserts one.
+		await row.click();
+
+		const gesture = await _dragRowToDeck(page, 0, 3, { carryPayload: true });
+
+		// The dragover must have been ACCEPTED: an unaccepted dragover means the
+		// element never became a drop target and ondrop would never fire in a
+		// real gesture, however the drop event behaves when dispatched by hand.
+		expect(gesture.dragOverAccepted, 'deck 3 refused the dragover').toBe(true);
+		expect(gesture.payloadOnDrop).toBe(stableId);
+
+		await _waitForDeckLoaded(page, 3);
+		expect((await _query(page)).decks[3].stable_id).toBe(stableId);
+		await expect(page.locator('section.rb-deck[data-deck="3"] .title')).not.toHaveText(
+			'No track loaded'
+		);
+	});
+
+	test('a drop whose transfer carries nothing still loads the deck', async () => {
+		// THE WEBKIT CASE. WKWebView hides custom MIME types during dragover and
+		// its protected drag mode can hand back an empty getData, so a target that
+		// gates on dataTransfer.types never calls preventDefault, never becomes a
+		// drop target, and ondrop never fires: dragging a track onto a deck does
+		// nothing at all in the packaged app while every chromium test passes.
+		// Here the drag is begun through the row's own dragstart handler, then the
+		// deck is offered a transfer that carries NOTHING.
+		const row = page.locator(TRACK_ROW).first();
+		const stableId = await row.getAttribute('data-stable-id');
+		if (stableId === null) throw new Error('row 0 has no data-stable-id');
+		await row.click();
+
+		const gesture = await _dragRowToDeck(page, 0, 4, { carryPayload: false });
+
+		expect(
+			gesture.typesDuringDragOver,
+			'this variant is only meaningful with an EMPTY transfer'
+		).toHaveLength(0);
+		expect(gesture.payloadOnDrop).toBe('');
+		expect(
+			gesture.dragOverAccepted,
+			'deck 4 refused a dragover whose types were empty - this is the exact ' +
+				'WKWebView defect: acceptance must come from the in-app drag state'
+		).toBe(true);
+
+		await _waitForDeckLoaded(page, 4);
+		expect((await _query(page)).decks[4].stable_id).toBe(stableId);
+		await expect(page.locator('section.rb-deck[data-deck="4"] .title')).not.toHaveText(
+			'No track loaded'
+		);
 	});
 
 	test('no uncaught page errors were raised during the run', () => {
