@@ -36,33 +36,116 @@ maintenance trap this thin-shell rule exists to avoid.
 
 ## Current state
 
-- `src-tauri/tauri.conf.json` points the single window at
-  `http://127.0.0.1:8683` (the engine URL). The port is hardcoded for now --
-  **TODO: read it from the same config the engine uses instead of hardcoding
-  it.**
-- `bundle.active` is `false`; no packaged `.app`/installer has been produced.
-  `cargo tauri build --debug --no-bundle` has been verified: it produces a
-  launchable `target/debug/opendj-desktop` binary that opens a native window
-  and successfully loads whatever the engine currently serves at
-  `http://127.0.0.1:8683` in its WKWebView (confirmed via a fresh `GET /` in
-  the engine's access log plus a window screenshot -- see
-  `.planning/evidence/shell-smoke-2026-08-19.png`). That smoke test hit a
-  running engine with no SPA build mounted, so the window showed the API's
-  JSON placeholder response rather than the real UI -- the shell itself
-  works, the SPA build is the separate missing piece.
+- The window no longer points straight at the engine. It loads the bundled
+  bootstrap page in `setup/`, which probes the engine and either navigates
+  to it or renders the setup screen (see "The engine gap" below).
+- `bundle.active` is `true` with a `dmg` target. `just dmg` builds and then
+  proves the artifact by mounting it, and is the only supported way to
+  produce one.
 - Icons under `src-tauri/icons/` are generated from the existing open-dj
   brand mark (`apps/webui/frontend/static/icon-512.png`), converted to RGBA
   (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
   opaque RGB).
 
+## The engine gap
+
+A packaged app on a tester's Mac has no engine: no Python, no checkout, no
+daemon on `:8685`. The SPA cannot cover this, because the SPA is served BY
+the engine -- when the engine is down there is nothing to load. So the
+bootstrap page lives in the shell bundle instead, where it is always
+available.
+
+`setup/index.html` + `setup/setup.js` do exactly two things:
+
+- engine reachable -> navigate the window to the engine origin and get out
+  of the way. Verified against a real packaged build: the loopback server's
+  access log shows `GET /api/v1/health` followed by `GET /`, which proves
+  WKWebView permits navigating from the `tauri://localhost` app origin to a
+  loopback HTTP origin.
+- engine unreachable -> render a setup screen naming the exact address
+  tried, the failure, the attempt count and the command that fixes it. See
+  `.planning/evidence/dmg-setup-screen-2026-08-19.png`.
+
+There is no third state: no blank window, no endless spinner, no fake data.
+
+The probe is a `no-cors` fetch, and the screen says so under "What exactly
+was tested". The engine's CORS allowlist covers the dev-server origins
+only, so a normal cross-origin read from `tauri://localhost` would be
+blocked before it could tell "refused" from "absent". `no-cors` yields one
+honest bit: the connection was accepted, or it was not.
+
+**Known limitation:** the setup screen guards STARTUP only. Once the window
+has navigated to the engine, an engine that dies mid-session leaves the
+webview on a dead page; recovering that is the SPA's job, not the shell's.
+
+### Why the engine is not bundled (yet)
+
+The chosen strategy is deliberate: **the .app expects a repo checkout**, and
+says so on screen. The obvious alternative -- pip-install the wheel into
+the bundle and drive it from a Tauri sidecar -- does not work today. The
+wheel ships `apps/*` only (`[tool.setuptools.packages.find]`,
+`pyproject.toml`) and excludes `data*`, `scripts*`, `open-dj*`, yet at least
+eight production call sites derive a repo root via `parents[N]` and reach
+into exactly those excluded directories: `apps/open_dj/schema_loader.py`
+wants `open-dj/schema/`, `apps/stems/cli.py` and `apps/vocals/` want
+`scripts/*_worker.py`, `apps/webui/server/routes/progress.py` wants
+`data/progress-tree.yaml` and shells out to git at the root. Only
+`platform_paths.py` has an env escape hatch. An installed-wheel engine
+therefore boots and then breaks silently on the first path touch, which is
+the worst possible failure for a first external tester.
+
+A sidecar becomes viable once the engine is bundled as a repo-shaped tree
+(or those directories are explicitly carried as package data). That is
+tracked separately and is not this shell's work.
+
+### Engine origin
+
+| Source | When | Wins over |
+| --- | --- | --- |
+| `?engine=` query param | tests | everything |
+| `OPENDJ_ENGINE_ORIGIN` env var | runtime, road-tests | the baked default |
+| `OPENDJ_DEFAULT_ENGINE_ORIGIN` | compile time, via `just dmg` | the constant |
+| `http://127.0.0.1:8685` | shipped default | -- |
+
+Non-loopback or malformed values are refused, never silently replaced.
+
 ## Build
 
 ```sh
-cd apps/desktop/src-tauri
-cargo check                             # verified working
-cargo tauri build --debug --no-bundle   # verified working -- see Current state above
-cargo tauri build                       # release + bundle -- not yet exercised
+just dmg                                # release + dmg + mount verification
+cd apps/desktop/src-tauri && cargo check
 ```
+
+`just dmg` reads two optional `.env` values, both unset in a plain
+checkout:
+
+- `MDT_LANE_LABEL` -- suffixes the bundle identifier and productName so two
+  bake-off lanes coexist on one Mac. `B` yields productName `Open DJ (B)`,
+  identifier `com.opendj.desktop.lane-b`, artifact
+  `OpenDJ-B-0.1.0-aarch64.dmg`. The identifier is the real clash key:
+  macOS derives Application Support, Caches and WebKit storage from it.
+  Derived by `scripts/desktop_lane_config.py`, which refuses a label it
+  cannot turn into a safe identifier rather than sanitising it.
+- `MDT_DESKTOP_ENGINE_ORIGIN` -- bakes the engine address the build looks
+  for, so two lanes do not both default to `:8685` and answer for each
+  other.
+
+The window title is `productName`, so the overlay labels the window with no
+second place to edit.
+
+### Not signed, not notarized
+
+`codesign` reports `adhoc, linker-signed` with `Sealed Resources=none`, and
+`spctl -a` already rejects the bundle on the machine that built it. A
+tester who downloads the dmg also gets `com.apple.quarantine`, so Finder
+refuses to open the app at all. Until a Developer ID identity exists, a
+tester must run:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Open DJ.app"
+```
+
+The build is also `aarch64` only: an Intel Mac cannot run this artifact.
 
 productName: `Open DJ`
 identifier: `com.opendj.desktop`
