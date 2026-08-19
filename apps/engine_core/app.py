@@ -107,6 +107,7 @@ def create_app(
     app.include_router(jobs_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
 
+    _drop_root_placeholder(app)
     _mount_spa(app)
 
     contract_rev = compute_contract_rev(app.openapi())
@@ -162,6 +163,21 @@ def _drop_api_routes(app: FastAPI, prefix: str) -> int:
     dropped = len(app.router.routes) - len(kept)
     app.router.routes[:] = kept
     return dropped
+
+
+def _drop_root_placeholder(app: FastAPI) -> None:
+    """Drop the legacy "/" JSON placeholder so the SPA mount can own "/".
+
+    The legacy composition registers it even with ``mount_frontend=False``,
+    and Starlette matches routes before mounts, so it would shadow the SPA
+    at exactly "/". Drop-if-present, not drop-or-raise: whether legacy
+    registers it depends on its own flags.
+    """
+    app.router.routes[:] = [
+        route
+        for route in app.router.routes
+        if not (isinstance(route, APIRoute) and route.path == "/")
+    ]
 
 
 def _drop_or_raise(app: FastAPI, prefix: str, what: str) -> None:
