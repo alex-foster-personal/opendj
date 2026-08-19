@@ -1,4 +1,11 @@
-"""Shared error response schemas + exception handlers."""
+"""Shared error response schemas + exception handlers.
+
+``_request`` throughout: FastAPI's exception-handler contract is
+``(request, exc)`` and both are passed positionally, so the first parameter has
+to exist whether or not a handler reads it. The underscore says "required by
+the framework, deliberately unused" instead of leaving four ARG001s that read
+as coupling debt.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -25,14 +32,14 @@ class ConflictBody(BaseModel):
     etag: str
 
 
-async def handle_not_found(request: Request, exc: NotFoundError) -> JSONResponse:
+async def handle_not_found(_request: Request, exc: NotFoundError) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content=ErrorBody(error="not_found", message=str(exc)).model_dump(),
     )
 
 
-async def handle_conflict(request: Request, exc: ConflictError) -> JSONResponse:
+async def handle_conflict(_request: Request, exc: ConflictError) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
         headers={"ETag": exc.etag},
@@ -43,7 +50,7 @@ async def handle_conflict(request: Request, exc: ConflictError) -> JSONResponse:
     )
 
 
-async def handle_backend_error(request: Request, exc: BackendError) -> JSONResponse:
+async def handle_backend_error(_request: Request, exc: BackendError) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=ErrorBody(error="invalid_patch", message=str(exc)).model_dump(),
@@ -51,7 +58,7 @@ async def handle_backend_error(request: Request, exc: BackendError) -> JSONRespo
 
 
 async def handle_rekordbox_writeback_disabled(
-    request: Request, exc: RekordboxWritebackDisabled
+    _request: Request, exc: RekordboxWritebackDisabled
 ) -> JSONResponse:
     """One-way import mode refused this write. 403, never a fake 200.
 
