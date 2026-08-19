@@ -1,0 +1,12 @@
+# Mirrors apps/webui/frontend/pnpm-workspace.yaml.
+#
+# esbuild backs tsx, which runs the TypeScript wdio config and specs.
+#
+# edgedriver and geckodriver arrive transitively from webdriverio and are
+# deliberately DENIED: the embedded provider drives this app's own WKWebView
+# natively, so downloading Edge and Firefox drivers would be pure cost for
+# browsers this tier never launches.
+allowBuilds:
+  edgedriver: false
+  esbuild: true
+  geckodriver: false

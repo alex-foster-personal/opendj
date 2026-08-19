@@ -26,6 +26,26 @@ libc = "0.2"
 # off keeps the Linux-only portal/gtk backends out of the build.
 rfd = { version = "0.15", default-features = false }
 
+# DEBUG BUILDS ONLY, and deliberately expressed as a cfg-gated DEPENDENCY
+# rather than a Cargo feature: this crate serves an unauthenticated W3C
+# WebDriver endpoint on 127.0.0.1:4445 that will evaluate arbitrary JavaScript
+# in the window. Gating the dependency makes shipping it in the release dmg a
+# compile-time impossibility rather than a promise someone has to remember.
+#
+# It is what makes a real-shell e2e possible on macOS at all. WKWebView exposes
+# no WebDriver, so `tauri-driver` supports only Windows and Linux -- Tauri's own
+# docs say "macOS has no WKWebView driver tool available". This plugin instead
+# drives the WKWebView natively (objc2) and returns results through a
+# WKScriptMessageHandler, NOT through Tauri IPC. That distinction is the whole
+# reason it works here: this shell navigates to a remote http:// engine origin,
+# and Tauri v2 classifies that as Origin::Remote and denies IPC to it unless a
+# capability explicitly grants it.
+#
+# NOTE: `tauri-plugin-wdio` is a DIFFERENT crate that DOES route over IPC and
+# would be dead on the engine origin. Not that one.
+[target.'cfg(debug_assertions)'.dependencies]
+tauri-plugin-wdio-webdriver = "1"
+
 [[bin]]
 name = "opendj-desktop"
 path = "src/main.rs"

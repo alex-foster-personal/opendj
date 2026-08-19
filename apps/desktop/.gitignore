@@ -1,5 +1,11 @@
 node_modules/
 dist/
+
+# Real-shell (tier 2) fixture library: generated audio plus a state.db built by
+# the real folder ingest at test setup. Reproducible in seconds, never shared
+# with another data dir, and never a snapshot of anyone's real library.
+tests/fixtures/
+
 src-tauri/target/
 src-tauri/gen/
 # The engine payload the bundler copies into Contents/Resources/payload.

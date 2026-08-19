@@ -207,7 +207,17 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
 }
 
 fn main() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // DEBUG BUILDS ONLY. The dependency itself is gated on cfg(debug_assertions)
+    // in Cargo.toml, so a release build cannot compile this line in at all.
+    // It registers the embedded WebDriver server that lets a real-shell e2e
+    // drive this window on macOS. It adds NO #[tauri::command] handlers and its
+    // permission set is empty, so the rule above holds exactly as written.
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+
+    let app = builder
         .setup(move |app| {
             let handle = app.handle().clone();
 
