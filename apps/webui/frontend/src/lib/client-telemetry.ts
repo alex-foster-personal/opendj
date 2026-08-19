@@ -1,4 +1,4 @@
-const VISITOR_ENDPOINT = '/api/v1/client-events';
+import { api } from './api/client';
 
 let fallbackId = 0;
 
@@ -36,7 +36,7 @@ export function installVisitorTelemetry(): void {
 			: `visitor-${now}-${++fallbackId}`;
 	const payload = {
 		client_event_id: clientEventId,
-		kind: 'page-view',
+		kind: 'page-view' as const,
 		url: telemetryUrl(window.location),
 		path: bounded(window.location.pathname || '/', 2048),
 		referrer: telemetryReferrer(document.referrer),
@@ -47,12 +47,12 @@ export function installVisitorTelemetry(): void {
 		viewport_width: Math.max(0, Math.round(window.innerWidth)),
 		viewport_height: Math.max(0, Math.round(window.innerHeight))
 	};
-	void fetch(VISITOR_ENDPOINT, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(payload),
-		keepalive: true
-	}).catch(() => {
-		// Visitor telemetry must never interfere with the application path.
-	});
+	void api
+		.POST('/api/v1/client-events', {
+			body: payload,
+			keepalive: true
+		})
+		.catch(() => {
+			// Visitor telemetry must never interfere with the application path.
+		});
 }
