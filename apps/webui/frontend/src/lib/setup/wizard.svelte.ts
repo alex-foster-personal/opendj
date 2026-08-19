@@ -26,6 +26,7 @@
  *     [if] a failed refresh blanks an already-rendered detection [then ⛔️] broken
  */
 
+import { capabilities } from '../api/capabilities.svelte';
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
@@ -181,8 +182,19 @@ class SetupWizard {
 		this.goTo(previousStep(this.step));
 	}
 
-	/** Load status + detection. Called when the wizard opens. */
+	/**
+	 * Load status + detection. Called when the wizard opens.
+	 *
+	 * The probe is awaited FIRST. `setupRefusal()` reads the capability store,
+	 * which the root layout fills from one health GET in its own onMount; this
+	 * mount runs in the same tick, so reading the refusal synchronously loses
+	 * that race and pins "daemon not identified yet" on a perfectly healthy
+	 * engine -- permanently, because nothing re-runs load(). Observed on the
+	 * packaged app when /setup was opened directly. probe() is memoized on
+	 * success, so this costs one request for the page, not one per call.
+	 */
 	async load(): Promise<void> {
+		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
@@ -324,6 +336,10 @@ class SetupWizard {
 
 	/** Re-arm the wizard from settings. The inverse of skip(). */
 	async reopen(): Promise<void> {
+		// Same probe-before-refusal order as load(): this is the other door
+		// into the wizard, and a click in the first tick after page load must
+		// not be answered with a sentence about an unfinished health GET.
+		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
