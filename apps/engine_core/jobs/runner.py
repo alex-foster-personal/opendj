@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -27,7 +28,7 @@ from apps.engine_core.jobs.reap import (
     process_group_exists,
     reap,
 )
-from apps.engine_core.jobs.store import JobConflict, JobStore
+from apps.engine_core.jobs.store import JobConflict, JobNotFound, JobStore
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +46,17 @@ _WORKERS: dict[str, WorkerArgv] = {}
 _RECONCILERS: dict[str, ReconcileHook] = {}
 
 _TAIL_LINES: int = 20
-_ERRORS = (OSError, ValueError, RuntimeError, LookupError)
+
+# sqlite3.Error is NOT an OSError, so without it here a store write failing
+# mid-run escaped the guard entirely and left the row 'running' forever with
+# no worker behind it.
+_ERRORS = (OSError, ValueError, RuntimeError, LookupError, sqlite3.Error)
+
+# The supervisor is the ONLY thing draining the queue, so a transient store
+# error must not end queue supervision for the life of the process. It backs
+# off instead of dying, and resets the moment a drain succeeds.
+_DRAIN_BACKOFF_S: float = 1.0
+_DRAIN_BACKOFF_MAX_S: float = 30.0
 
 
 class UnknownJobKind(LookupError):
@@ -180,11 +191,53 @@ class JobRunner:
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
         for job_id in list(self._running):
-            await self.cancel(job_id)
+            await self._cancel_for_shutdown(job_id)
         if self._tasks:
             await asyncio.gather(
                 *self._tasks.values(), return_exceptions=True
             )
+
+    async def _cancel_for_shutdown(self, job_id: str) -> None:
+        """cancel(), tolerating a row that finished on its own mid-shutdown.
+
+        A raise here used to abandon the whole shutdown: the remaining jobs
+        were never cancelled and the caller's close()/unbind() never ran.
+
+        What is tolerated is the STATUS WRITE, never the kill. A row that
+        raced us to a terminal status has a settled status and a still-live
+        process, and leaving that process running is precisely the orphaned
+        group this method exists to prevent -- so the worker is reaped either
+        way, and only the row is left alone.
+        """
+        try:
+            await self.cancel(job_id)
+        except (JobConflict, JobNotFound) as exc:
+            log.info(
+                "shutdown left job %s's status alone (%s); reaping its worker "
+                "anyway",
+                job_id,
+                exc,
+            )
+            await self._reap_without_writing(job_id)
+        except (OSError, sqlite3.Error) as exc:
+            log.error(
+                "shutdown could not cancel job %s (%r); reaping its worker "
+                "before the engine lets go of the lock",
+                job_id,
+                exc,
+            )
+            await self._reap_without_writing(job_id)
+
+    async def _reap_without_writing(self, job_id: str) -> None:
+        """Kill the worker group, leaving the row exactly as it stands."""
+        worker = self._running.get(job_id)
+        if worker is None:
+            return
+        # Stops _run racing us to a status it is no longer entitled to write.
+        worker.cancelled = True
+        outcome = await asyncio.to_thread(reap, worker.identity)
+        await worker.proc.wait()
+        log.info("shutdown reaped the worker for job %s: %s", job_id, outcome)
 
     async def cancel(self, job_id: str) -> dict[str, Any]:
         """running -> cancelling -> (group proven dead) -> cancelled."""
@@ -215,11 +268,34 @@ class JobRunner:
 
     # ----- internals -----------------------------------------------------
     async def _supervise(self) -> None:
+        """Claim and spawn until cancelled, surviving a failed drain.
+
+        A store error used to kill this task outright, and with it every
+        future job in the process: nothing else claims queued rows. So the
+        loop logs and backs off instead. asyncio.CancelledError is a
+        BaseException and passes straight through, which is what stop()
+        relies on to shut the supervisor down.
+        """
+        backoff = 0.0
         while True:
-            free = self.max_concurrent - len(self._running)
-            if free > 0:
-                for job in self.store.claim_queued(limit=free):
-                    self._spawn(job)
+            try:
+                free = self.max_concurrent - len(self._running)
+                if free > 0:
+                    for job in self.store.claim_queued(limit=free):
+                        self._spawn(job)
+            except _ERRORS as exc:
+                backoff = min(
+                    max(backoff * 2, _DRAIN_BACKOFF_S), _DRAIN_BACKOFF_MAX_S
+                )
+                log.error(
+                    "engine job supervisor could not drain the queue, "
+                    "retrying in %.1fs: %r",
+                    backoff,
+                    exc,
+                )
+                await asyncio.sleep(backoff)
+                continue
+            backoff = 0.0
             await asyncio.sleep(self.poll_s)
 
     def _spawn(self, job: dict[str, Any]) -> None:
@@ -233,13 +309,50 @@ class JobRunner:
         try:
             await self._run(job)
         except _ERRORS as exc:
-            self.store.finish(
-                job_id, "failed", error=f"{type(exc).__name__}: {exc}"
-            )
+            self._record_failure(job_id, f"{type(exc).__name__}: {exc}")
         finally:
             self._running.pop(job_id, None)
 
+    def _record_failure(self, job_id: str, error: str) -> None:
+        """Last-chance terminal write for a run that blew up.
+
+        If even THIS write fails there is nowhere left to put the outcome, so
+        it goes to the log as loudly as possible and the row is left for boot
+        recovery -- which is exactly the case recovery exists for. Swallowing
+        it would leave a row 'running' with no worker and no explanation.
+        """
+        try:
+            self.store.finish(job_id, "failed", error=error)
+        except JobConflict as exc:
+            # Already terminal: cancel() or _run got there first, and their
+            # verdict is the true one. Not an error, but worth a trace.
+            log.info(
+                "job %s was already terminal when its run failed (%s); "
+                "original error: %s",
+                job_id,
+                exc,
+                error,
+            )
+        except (sqlite3.Error, JobNotFound) as exc:
+            log.error(
+                "could not record the failure of job %s (%s); the row is left "
+                "for boot recovery. original error: %s",
+                job_id,
+                exc,
+                error,
+            )
+
     async def _run(self, job: dict[str, Any]) -> None:
+        """Spawn the worker, then never return while its tree is still alive.
+
+        Everything after the spawn is guarded: a store write failing here is a
+        genuine possibility (that is C5), and the row it fails is the ONLY
+        record of the process group. Letting the exception out without killing
+        the group would leave a live worker that nothing points at -- not the
+        runner, which has dropped it, and not boot recovery, which reaps what
+        the rows name. So the group dies first and the error propagates after,
+        for _guarded_run to record.
+        """
         job_id = job["id"]
         argv = worker_argv(job["kind"], job["payload"])
         proc = await asyncio.create_subprocess_exec(
@@ -251,6 +364,24 @@ class JobRunner:
         identity = WorkerIdentity.capture(proc.pid, argv)
         worker = _Worker(proc=proc, identity=identity)
         self._running[job_id] = worker
+        try:
+            await self._drive_worker(job_id, worker)
+        except BaseException:
+            await self._abandon(job_id, worker)
+            raise
+
+    async def _abandon(self, job_id: str, worker: _Worker) -> None:
+        """Take the worker tree down after the run gave up on it."""
+        worker.cancelled = True
+        outcome = await asyncio.to_thread(reap, worker.identity)
+        await worker.proc.wait()
+        log.warning(
+            "job %s abandoned its worker; reaped the group: %s", job_id, outcome
+        )
+
+    async def _drive_worker(self, job_id: str, worker: _Worker) -> None:
+        proc = worker.proc
+        identity = worker.identity
         self.store.record_worker(job_id, pid=proc.pid, identity=identity)
 
         # stderr is drained concurrently: waiting until stdout EOF would

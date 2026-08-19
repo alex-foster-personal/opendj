@@ -268,10 +268,17 @@ def _wrap_lifespan(
             # Jobs stop while the hub is still live, so a client that is
             # still connected sees the cancellations instead of inferring
             # them from a dropped socket.
-            await runner.stop()
-            events.set_hub(None)
-            hub.unbind()
-            store.close()
+            #
+            # try/finally, because a stop() that raises must not strand the
+            # db handle and the hub binding: the process is going away either
+            # way, and a leaked connection on the jobs db is what makes the
+            # NEXT boot fight for the lock.
+            try:
+                await runner.stop()
+            finally:
+                events.set_hub(None)
+                hub.unbind()
+                store.close()
 
     app.router.lifespan_context = _lifespan
 
