@@ -132,10 +132,14 @@ branch. `ApiError` carries `status`, `code`, `message`, the raw `response`
 - **Non-daemon origins.** `local-agent.ts` talks to a separate local agent
   process, not the FastAPI app. It is not in the schema and does not convert.
   Same for liveness probes against `window.location.origin`.
-- **`src/lib/api.ts` converts LAST.** Every other module imports `API_BASE`
-  from it today. `client.ts` deliberately resolves the base URL itself so it
-  never has to import `api.ts`; when `api.ts` finally converts, its `API_BASE`
-  becomes a re-export of the client's and the duplicate goes away.
+- **`src/lib/api.ts` converted LAST, and is now done.** Every other module
+  imports `API_BASE` from it, so it went after them all; its `API_BASE` is now
+  a re-export of the client's and the duplicate resolution is gone. `client.ts`
+  still resolves the base URL itself rather than importing `api.ts`, because it
+  is the root of the dependency graph and that import would be a cycle.
+  Its hand-written response interfaces stay hand-written: they have already
+  drifted from the generated schemas (see the module docstring), so step 4 does
+  not apply to them.
 
 ## Test-side changes (this bites every module)
 
