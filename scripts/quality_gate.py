@@ -223,10 +223,15 @@ def _python_files() -> list[Path]:
 
 def _frontend_files() -> list[Path]:
     src = FRONTEND / "src"
+    # api-types.ts is emitted by openapi-typescript ("Do not make direct
+    # changes"); its length tracks the API surface, not hand-written bloat,
+    # so sizing it would gate every new endpoint. Same principle as keeping
+    # the desktop payload out of the Python scans.
+    generated = {src / "lib" / "api-types.ts"}
     return [
         p
         for p in src.rglob("*")
-        if p.suffix in {".ts", ".svelte", ".js"} and p.is_file()
+        if p.suffix in {".ts", ".svelte", ".js"} and p.is_file() and p not in generated
     ]
 
 
