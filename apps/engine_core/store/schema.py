@@ -994,6 +994,33 @@ def _create_all(conn: sqlite3.Connection, statements: list[str]) -> None:
         conn.execute(stmt)
 
 
+def _rollback_without_masking(
+    conn: sqlite3.Connection, original: BaseException
+) -> None:
+    """Undo a partial migration without ever displacing ``original``.
+
+    SQLite auto-rolls-back on some failures (SQLITE_FULL, SQLITE_IOERR). After
+    one of those, an unconditional ``ROLLBACK`` raises "cannot rollback - no
+    transaction is active", and that secondary error propagates INSTEAD of the
+    real one -- so a full disk gets reported as a transaction-state complaint
+    and the operator debugs the wrong thing.
+
+    Two guards: skip the rollback when no transaction is live, and if it fails
+    regardless (a connection broken worse than that), attach the failure to
+    ``original`` as a note. Noting rather than raising keeps the cause intact;
+    noting rather than passing keeps a possibly half-migrated file visible.
+    """
+    if not conn.in_transaction:
+        return
+    try:
+        conn.execute("ROLLBACK")
+    except sqlite3.Error as rollback_failure:
+        original.add_note(
+            f"rollback after the above failure ALSO failed: {rollback_failure!r}. "
+            "The database may hold a partially applied migration."
+        )
+
+
 def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     """Bring a pre-existing DB up to the consolidated shape.
 
@@ -1056,8 +1083,8 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
         _stamp_legacy_counters(conn)
         _record(conn, VERSION_OFFSET + SCHEMA_VERSION)
         conn.execute("COMMIT")
-    except Exception:
-        conn.execute("ROLLBACK")
+    except Exception as original:
+        _rollback_without_masking(conn, original)
         raise
 
     return consolidated_version(conn)

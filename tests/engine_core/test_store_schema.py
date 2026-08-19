@@ -556,6 +556,70 @@ def test_shape_audit_accepts_a_real_legacy_state_db(tmp_path: Path) -> None:
     conn.close()
 
 
+class _RollbackHostileConnection(sqlite3.Connection):
+    """A connection whose ROLLBACK fails while a transaction is still live.
+
+    Stands in for the case the ``in_transaction`` guard alone cannot cover: a
+    connection broken badly enough that the undo itself errors.
+    """
+
+    def execute(self, sql: str, *args: object) -> sqlite3.Cursor:  # type: ignore[override]
+        if sql.strip().upper().startswith("ROLLBACK"):
+            raise sqlite3.OperationalError("simulated rollback failure")
+        return super().execute(sql, *args)
+
+
+def test_rollback_after_an_auto_rollback_does_not_mask_the_original_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F3 (R3 #2): the caller must see the failure that actually happened.
+
+    SQLite auto-rolls-back on SQLITE_FULL and SQLITE_IOERR. The runner's
+    ``except`` then issued an unconditional ROLLBACK, which raised "cannot
+    rollback - no transaction is active", and THAT replaced the real error on
+    the way out -- so a full disk was reported as a transaction-state
+    complaint.
+    """
+    conn = _connect(tmp_path / "auto_rolled_back.db")
+
+    def _explode(target: sqlite3.Connection) -> None:
+        target.execute("ROLLBACK")  # what SQLite does for us on IOERR/FULL
+        raise RuntimeError("simulated disk I/O error")
+
+    monkeypatch.setattr(consolidated, "_stamp_legacy_counters", _explode)
+
+    with pytest.raises(RuntimeError, match="simulated disk I/O error"):
+        consolidated.apply_migrations(conn)
+    conn.close()
+
+
+def test_a_failing_rollback_is_reported_but_never_swallows_the_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F3: guarding is not silently ignoring -- a failed undo must still surface.
+
+    The original exception propagates unchanged; the rollback failure rides
+    along as a note so a partially applied migration is never invisible.
+    """
+    path = tmp_path / "hostile.db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), factory=_RollbackHostileConnection)
+
+    def _explode(target: sqlite3.Connection) -> None:
+        raise RuntimeError("simulated ladder failure")
+
+    monkeypatch.setattr(consolidated, "_stamp_legacy_counters", _explode)
+
+    with pytest.raises(RuntimeError, match="simulated ladder failure") as caught:
+        consolidated.apply_migrations(conn)
+    notes = " ".join(getattr(caught.value, "__notes__", []))
+    assert "rollback" in notes.lower(), (
+        f"the failed rollback must be reported alongside the cause, got {notes!r}"
+    )
+    assert "simulated rollback failure" in notes
+    conn.close()
+
+
 def test_legacy_runners_become_no_ops_after_consolidation(tmp_path: Path) -> None:
     """The legacy counters are stamped, so their runners do not re-bootstrap.
 
