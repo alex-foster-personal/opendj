@@ -9,7 +9,7 @@
  * surfacing corruption loudly is the point.
  */
 
-import { API_BASE } from '$lib/api';
+import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
 import {
 	BUILD_STATES,
 	EFFORTS,
@@ -235,17 +235,17 @@ export function validateProgressResponse(raw: unknown): ProgressResponse {
 
 export async function fetchProgress(): Promise<ProgressResponse> {
 	const endpoint = `${API_BASE}/api/v1/progress`;
-	let r: Response;
+	let data: unknown;
 	try {
-		r = await fetch(endpoint, { headers: { Accept: 'application/json' } });
-	} catch (e) {
+		data = await unwrap(api.GET('/api/v1/progress', {}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			const bodyText = await error.response.text();
+			throw new Error(`GET /api/v1/progress failed: ${error.status} ${bodyText.slice(0, 300)}`);
+		}
 		throw new Error(
-			`daemon unreachable at ${endpoint} (${e instanceof Error ? e.message : String(e)})`
+			`daemon unreachable at ${endpoint} (${error instanceof Error ? error.message : String(error)})`
 		);
 	}
-	if (!r.ok) {
-		const body = await r.text();
-		throw new Error(`GET /api/v1/progress failed: ${r.status} ${body.slice(0, 300)}`);
-	}
-	return validateProgressResponse(await r.json());
+	return validateProgressResponse(data);
 }
