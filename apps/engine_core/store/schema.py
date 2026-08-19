@@ -519,7 +519,16 @@ _DEDUP: tuple[str, ...] = (
 
 
 # ==========================================================================
-# DOMAIN: content caches (audio fingerprints, file digests)
+# CACHE DOMAIN: regenerable content caches (audio fingerprints, file digests)
+#
+# NOT part of the durable ladder. These two tables are pure derived data:
+# every row can be recomputed from the audio file it describes, and legacy
+# code already treats them as disposable (HashCache DROPs and recreates the
+# whole table on a PRAGMA user_version mismatch, O-12). The durable ladder
+# must never wipe, so a domain whose legal recovery move IS a wipe cannot
+# live in it. They belong in a separate cache DB file; :func:`apply_cache_
+# migrations` is their entry point. See REPORT.md, "Durability split".
+#
 # Legacy sources:
 #   fingerprints -- apps/shared/fingerprints.py (_CACHE_SCHEMA). A SECOND,
 #     divergent ``fingerprints`` definition lives in apps/sync/fingerprint.py;
@@ -597,10 +606,21 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "sets": _SETS,
     "settings": _SETTINGS,
     "dedup": _DEDUP,
-    "caches": _CACHES,
     "launcher": _LAUNCHER,
 }
-"""Every consolidated domain -> its DDL statements, in creation order."""
+"""Every DURABLE consolidated domain -> its DDL statements, in creation order.
+
+Regenerable caches are deliberately absent; see :data:`CACHE_DOMAINS`."""
+
+CACHE_DOMAINS: dict[str, tuple[str, ...]] = {
+    "caches": _CACHES,
+}
+"""Regenerable cache domains, owned by a SEPARATE cache DB file.
+
+Split out of :data:`DOMAINS` so the durable ladder's semantics stay honest: a
+durable ladder never wipes, and these tables' legal recovery move is exactly a
+wipe. Applied by :func:`apply_cache_migrations`, never by
+:func:`apply_migrations`."""
 
 LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
@@ -614,7 +634,10 @@ LEGACY_SOURCES: dict[str, str] = {
     "caches": "apps/shared/fingerprints.py + apps/shared/hashing.py",
     "launcher": "apps/launcher/scripts/bootstrap_db.py",
 }
-"""Domain -> the legacy file its DDL was lifted from, verbatim."""
+"""Domain -> the legacy file its DDL was lifted from, verbatim.
+
+Covers both :data:`DOMAINS` and :data:`CACHE_DOMAINS`: where a definition came
+from is a fact about the definition, not about which file now stores it."""
 
 TABLES: dict[str, tuple[str, ...]] = {
     "state_core": (
@@ -635,14 +658,23 @@ TABLES: dict[str, tuple[str, ...]] = {
     "sets": ("sets", "set_events"),
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),
-    "caches": ("fingerprints", "file_hashes"),
     "launcher": ("tracks_fts", "tracks_frecency"),
 }
-"""Domain -> the tables it owns. ``schema_meta`` is excluded on purpose: it is
-migration infrastructure, created by the runner, not domain data."""
+"""Durable domain -> the tables it owns. ``schema_meta`` is excluded on
+purpose: it is migration infrastructure, created by the runner, not domain
+data. Cache tables live in :data:`CACHE_TABLES`."""
+
+CACHE_TABLES: dict[str, tuple[str, ...]] = {
+    "caches": ("fingerprints", "file_hashes"),
+}
+"""Cache domain -> the tables it owns, in the cache DB file."""
 
 ALL_TABLES: tuple[str, ...] = tuple(
     name for names in TABLES.values() for name in names
+)
+
+ALL_CACHE_TABLES: tuple[str, ...] = tuple(
+    name for names in CACHE_TABLES.values() for name in names
 )
 
 
@@ -1108,6 +1140,31 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     return consolidated_version(conn)
 
 
+def apply_cache_migrations(conn: sqlite3.Connection) -> None:
+    """Create the regenerable content caches. Idempotent.
+
+    ``conn`` is meant to be a SEPARATE cache DB file (``cache.db``), not the
+    engine state DB. The split is about semantics, not tidiness: every row
+    here is derived from an audio file and can be recomputed, so wiping the
+    file is a legal recovery move. The durable ladder must never wipe, and
+    keeping a wipe-able domain inside it would make that promise a lie -- the
+    legacy ``HashCache`` already DROPs and recreates its whole table on a
+    version mismatch (REPORT.md O-12).
+
+    No version counter: this is one flat DDL set, and a counter on a file
+    whose recovery move is deletion would be ceremony. If a shape ever needs
+    to change, the cache is rebuilt.
+
+    NOTE: nothing in the engine calls this yet. Wiring the cache DB into the
+    daemon is a later tranche; this function exists so ownership of the DDL is
+    unambiguous now, and so :func:`apply_migrations` can honestly claim the
+    durable ladder holds only durable judgment.
+    """
+    for statements in CACHE_DOMAINS.values():
+        for statement in statements:
+            conn.execute(statement)
+
+
 def was_adopted(conn: sqlite3.Connection) -> bool:
     """True iff this DB reached the consolidated schema by adoption."""
     row = conn.execute(
@@ -1118,8 +1175,11 @@ def was_adopted(conn: sqlite3.Connection) -> bool:
 
 __all__ = [
     "ADOPTION_VERSION",
+    "ALL_CACHE_TABLES",
     "ALL_TABLES",
     "BUSY_TIMEOUT_MS",
+    "CACHE_DOMAINS",
+    "CACHE_TABLES",
     "DOMAINS",
     "LEGACY_SHARED_STATE_VERSION",
     "LEGACY_SOURCES",
@@ -1131,6 +1191,7 @@ __all__ = [
     "VENDOR_SIDECAR_TABLES",
     "VERSION_OFFSET",
     "SchemaAdoptionError",
+    "apply_cache_migrations",
     "apply_migrations",
     "consolidated_version",
     "ensure_vendor_sidecar_tables",

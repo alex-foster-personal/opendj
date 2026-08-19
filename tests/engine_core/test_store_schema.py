@@ -146,6 +146,19 @@ def build_legacy(tmp_path: Path) -> dict[str, str]:
     merged.update(objects(dedup))
     dedup.close()
 
+    return merged
+
+
+def build_legacy_caches(tmp_path: Path) -> dict[str, str]:
+    """Run the REGENERABLE-cache bootstraps only.
+
+    Split from ``build_legacy`` because these two domains left the durable
+    ladder (F5): they are compared against ``apply_cache_migrations``, not
+    against ``apply_migrations``. Each still runs against its own sidecar
+    file, exactly as production calls it.
+    """
+    merged: dict[str, str] = {}
+
     # apps/shared/fingerprints.py -- FingerprintCache bootstraps in __init__.
     FingerprintCache(tmp_path / "fingerprints.sqlite")
     fingerprints = _connect(tmp_path / "fingerprints.sqlite")
@@ -173,6 +186,20 @@ def fresh(tmp_path: Path) -> Iterator[sqlite3.Connection]:
 @pytest.fixture
 def legacy(tmp_path: Path) -> dict[str, str]:
     return build_legacy(tmp_path / "legacy")
+
+
+@pytest.fixture
+def fresh_caches(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    """The cache DB the engine will eventually keep separate from state.db."""
+    conn = _connect(tmp_path / "fresh_caches" / "cache.db")
+    consolidated.apply_cache_migrations(conn)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def legacy_caches(tmp_path: Path) -> dict[str, str]:
+    return build_legacy_caches(tmp_path / "legacy_caches")
 
 
 def test_table_sets_are_identical(fresh: sqlite3.Connection) -> None:
@@ -262,11 +289,84 @@ def test_index_definitions_match_legacy(
 
 def test_every_table_is_attributed_to_a_legacy_file() -> None:
     """No table may enter the consolidated schema without a named origin."""
-    for domain, tables in consolidated.TABLES.items():
+    declared = {**consolidated.TABLES, **consolidated.CACHE_TABLES}
+    for domain, tables in declared.items():
         assert domain in consolidated.LEGACY_SOURCES, (
             f"domain {domain!r} declares tables {tables} with no legacy source"
         )
         assert consolidated.LEGACY_SOURCES[domain].startswith("apps/")
+
+
+# --- durability split (F5) ------------------------------------------------
+
+
+def test_durable_ladder_excludes_the_regenerable_caches(
+    fresh: sqlite3.Connection,
+) -> None:
+    """F5: regenerable caches must not sit inside the durable ladder.
+
+    ``fingerprints`` and ``file_hashes`` are pure derived data -- every row is
+    recomputable from the audio file it describes, and the legacy HashCache
+    already DROPs and recreates the whole table on a version mismatch (O-12).
+    A durable ladder never wipes; a domain whose legal recovery move IS a wipe
+    therefore cannot live in it without making that promise false.
+    """
+    for table in consolidated.ALL_CACHE_TABLES:
+        assert table not in consolidated.ALL_TABLES, (
+            f"{table} is regenerable and must not be in the durable ladder"
+        )
+    created = _table_names(fresh)
+    assert not created & set(consolidated.ALL_CACHE_TABLES), (
+        "apply_migrations created cache tables in state.db: "
+        f"{sorted(created & set(consolidated.ALL_CACHE_TABLES))}"
+    )
+
+
+def test_cache_migrations_create_every_declared_cache_table(
+    fresh_caches: sqlite3.Connection,
+) -> None:
+    """F5: the DDL did not get dropped on the way out of the ladder."""
+    created = _table_names(fresh_caches)
+    assert created == set(consolidated.ALL_CACHE_TABLES), (
+        f"cache DB holds {sorted(created)}, "
+        f"declared {sorted(consolidated.ALL_CACHE_TABLES)}"
+    )
+
+
+def test_cache_migrations_are_idempotent(tmp_path: Path) -> None:
+    """F5: same contract as the durable runner -- a second call changes nothing."""
+    conn = _connect(tmp_path / "cache_twice.db")
+    consolidated.apply_cache_migrations(conn)
+    snapshot = objects(conn)
+    consolidated.apply_cache_migrations(conn)
+    assert objects(conn) == snapshot
+    conn.close()
+
+
+def test_cache_object_names_match_legacy(
+    fresh_caches: sqlite3.Connection, legacy_caches: dict[str, str]
+) -> None:
+    """F5: moving the domain out of the ladder must not change what it builds."""
+    assert set(objects(fresh_caches)) == set(legacy_caches)
+
+
+@pytest.mark.parametrize("name", sorted(consolidated.ALL_CACHE_TABLES))
+def test_cache_table_definition_matches_legacy(
+    name: str, fresh_caches: sqlite3.Connection, legacy_caches: dict[str, str]
+) -> None:
+    """F5: cache tables are compared against apply_cache_migrations output.
+
+    Same equivalence gate as the durable tables, run against the entry point
+    that now owns them.
+    """
+    fresh_objects = objects(fresh_caches)
+    assert name in legacy_caches, f"no legacy bootstrap creates {name}"
+    assert name in fresh_objects, f"apply_cache_migrations does not create {name}"
+    assert fresh_objects[name] == legacy_caches[name], (
+        f"{name} drifted from its legacy definition.\n"
+        f"legacy:       {legacy_caches[name]}\n"
+        f"consolidated: {fresh_objects[name]}"
+    )
 
 
 def test_vendor_sidecar_matches_rb_vendor(tmp_path: Path) -> None:

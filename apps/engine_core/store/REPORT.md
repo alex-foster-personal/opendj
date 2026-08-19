@@ -30,11 +30,16 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 | `duplicate_clusters` | `apps/dedup/schema.py` | `ensure_schema` | ad-hoc ALTER, O-13 |
 | `track_aliases` | `apps/dedup/schema.py` | `ensure_schema` | own DB file today |
 | `tag_provenance` | `apps/dedup/schema.py` | `ensure_schema` | own DB file today |
-| `fingerprints` | `apps/shared/fingerprints.py` | `FingerprintCache.__init__` | shape collides, O-3 |
-| `file_hashes` | `apps/shared/hashing.py` | `HashCache._ensure_schema` | no migration path, O-12 |
 | `tracks_fts` | `apps/launcher/scripts/bootstrap_db.py` | `apply_launcher_migration` | name collides, O-4 |
 | `tracks_frecency` | `apps/launcher/scripts/bootstrap_db.py` | `apply_launcher_migration` | FK drift, O-5 |
 | `schema_meta` | `apps/shared/state/schema.py` | `_ensure_meta` | infra, created by the runner |
+
+### Cache DB inventory (`apply_cache_migrations`, NOT the durable ladder)
+
+| Table | Legacy source file | Bootstrap entrypoint | Notes |
+|---|---|---|---|
+| `fingerprints` | `apps/shared/fingerprints.py` | `FingerprintCache.__init__` | shape collides, O-3 |
+| `file_hashes` | `apps/shared/hashing.py` | `HashCache._ensure_schema` | no migration path, O-12 |
 
 ### Deliberately excluded
 
@@ -84,6 +89,15 @@ Scope: every `CREATE TABLE` / `CREATE INDEX` / `CREATE VIRTUAL TABLE` reachable 
 
 Shares `schema_meta` but stamps at `VERSION_OFFSET = 1000`: rows 1..5 are legacy, `1000` is the `ADOPTION_VERSION` marker (this file predates consolidation), `1001` is consolidated v1. Fresh DBs get 1..5 stamped (so the legacy runner no-ops) plus 1001 and no 1000 row. `apply_migrations` refuses below `MIN_ADOPTABLE_LEGACY_VERSION = 3`.
 
-## Open decision (integrator review)
+## Durability split (decided, R3 recommendation, adopted by the integrator)
 
-The sidecar-file domains (`settings`, dedup tables, `fingerprints`, `file_hashes`) are currently in the consolidated state.db ladder, matching the inventory brief. If the rebuild intends those to stay in separate DB files, they move out of `_V1` into their own exported DDL groups -- a small change; the test's per-domain structure already supports it.
+The open question was whether the sidecar-file domains (`settings`, the dedup tables, `fingerprints`, `file_hashes`) belong in the consolidated state.db ladder. It is now settled, and the line is **regenerable vs durable**, not "which file did legacy happen to use".
+
+**Out of the ladder** -- `fingerprints` and `file_hashes` move to `apply_cache_migrations(conn)`, intended for a separate `cache.db`.
+
+Rationale: both are pure derived data. Every row is recomputable from the audio file it describes, so **wiping the file is a legal recovery move**, and legacy already treats it that way -- `HashCache._ensure_schema` DROPs and recreates its whole table on a `PRAGMA user_version` mismatch (O-12). A durable ladder must never wipe. Keeping a domain whose legal recovery move IS a wipe inside the durable ladder makes that promise false: either the ladder eventually grows a wipe path (and durable rows become collateral), or the cache can never be reset without a migration it does not deserve. Splitting the file splits the semantics, and the ladder's claim about itself becomes honest.
+
+**Stays in the ladder** -- `settings`, `duplicate_clusters`, `track_aliases`, `tag_provenance`.
+
+Rationale: these hold **judgment, not derivation**. A duplicate cluster's canonical pick, an alias mapping, a tag's chosen provenance and the daemon's settings are decisions -- some of them the user's -- that cannot be recomputed from the audio. Losing them is data loss, not a cache miss. They were in separate files for historical reasons (each phase created its own sidecar), which is a fact about how the code grew, not about what the rows mean.
+
