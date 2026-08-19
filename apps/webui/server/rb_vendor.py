@@ -41,36 +41,41 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import Any, Optional
+from typing import Any
 
 from apps.adapters.rekordbox import config as _config
 from apps.adapters.rekordbox import cues as _hot_cue_model
 from apps.adapters.rekordbox import writer as _hot_cue_writer
-from apps.adapters.rekordbox.cues import HotCueSlotError as HotCueSlotError
-from apps.adapters.rekordbox.cues import _cue_snapshot_from_row as _cue_snapshot_from_row
-from apps.adapters.rekordbox.errors import _open_ro as _open_ro
-from apps.adapters.rekordbox.errors import not_found as not_found
-from apps.adapters.rekordbox.models import RbContent as RbContent
-from apps.adapters.rekordbox.models import RbRowMeta as RbRowMeta
-from apps.adapters.rekordbox.paths import _asset_sibling as _asset_sibling
-from apps.adapters.rekordbox.paths import anlz_dir as anlz_dir
-from apps.adapters.rekordbox.paths import artwork_file as artwork_file
-from apps.adapters.rekordbox.paths import audio_file as audio_file
-from apps.adapters.rekordbox.paths import empty_anlz_payload as empty_anlz_payload
-from apps.adapters.rekordbox.paths import empty_hot_cue_slots as empty_hot_cue_slots
-from apps.adapters.rekordbox.paths import is_streaming_path as is_streaming_path
-from apps.adapters.rekordbox.paths import local_audio_file as local_audio_file
-from apps.adapters.rekordbox.paths import resolve_asset_path as resolve_asset_path
-from apps.adapters.rekordbox.paths import resolve_content as resolve_content
+from apps.adapters.rekordbox.cues import HotCueSlotError, _cue_snapshot_from_row
+from apps.adapters.rekordbox.errors import _open_ro, not_found
+from apps.adapters.rekordbox.models import RbContent, RbRowMeta
 from apps.adapters.rekordbox.paths import (
-    resolve_playable_audio as resolve_playable_audio,
+    _asset_sibling,
+    anlz_dir,
+    artwork_file,
+    audio_file,
+    empty_anlz_payload,
+    empty_hot_cue_slots,
+    is_streaming_path,
+    local_audio_file,
+    resolve_asset_path,
+    resolve_content,
+    resolve_playable_audio,
+    resolve_share_path,
 )
-from apps.adapters.rekordbox.paths import resolve_share_path as resolve_share_path
-from apps.adapters.rekordbox.writer import _open_rw as _open_rw
-from apps.shared.platform_paths import resolve_library_path as resolve_library_path
+from apps.adapters.rekordbox.writer import _open_rw
+from apps.shared.platform_paths import resolve_library_path
 
 # ANLZ decode, caches, cue reads and the browser read model (C2-C9).
 from apps.webui.server.rb_vendor_pkg.anlz import (
+    _PREVIEW_CACHE,
+    _PREVIEW_LOCK,
+    _PREVIEW_SOURCES,
+    _PVDI_FIXED_HEADER,
+    _PVDI_HOP,
+    _PVDI_RATE,
+    _PWAV_HEIGHT_MASK,
+    _PWV4_LUMINANCE_BYTE,
     PREVIEW_COLUMNS,
     VOCAL_INTENSITY_MIN,
     VOCAL_MERGE_GAP_S,
@@ -83,14 +88,6 @@ from apps.webui.server.rb_vendor_pkg.anlz import (
     _mono_bands,
     _peak_downsample_cols,
     _phrases_payload,
-    _PREVIEW_CACHE,
-    _PREVIEW_LOCK,
-    _PREVIEW_SOURCES,
-    _PVDI_FIXED_HEADER,
-    _PVDI_HOP,
-    _PVDI_RATE,
-    _PWAV_HEIGHT_MASK,
-    _PWV4_LUMINANCE_BYTE,
     _read_pwav_mono,
     _read_pwv4_mono,
     _read_pwv6_tri,
@@ -162,8 +159,8 @@ def save_hot_cue(
     in_ms: int,
     *,
     expected_revision: str,
-    comment: Optional[str] = None,
-    color_table_index: Optional[int] = None,
+    comment: str | None = None,
+    color_table_index: int | None = None,
 ) -> dict[str, Any]:
     """CAS-save a hot cue and return its atomic preimage for one-step undo."""
     return _hot_cue_writer.save_hot_cue(
@@ -209,38 +206,86 @@ def restore_hot_cue(
     )
 
 
+# Every name this module re-exports, private helpers included. That is
+# unusual for an __all__ and correct for this one: the file's entire job is
+# re-export, and a name absent here is a name no importer may rely on. It is
+# also what marks the imports above as deliberate rather than unused, now
+# that ruff lints this file.
 __all__ = [
     "HOT_CUE_SLOTS",
     "PREVIEW_COLUMNS",
-    "RbContent",
-    "RbRowMeta",
     "VOCAL_INTENSITY_MIN",
     "VOCAL_MERGE_GAP_S",
     "VOCAL_MIN_REGION_S",
+    "_PREVIEW_CACHE",
+    "_PREVIEW_LOCK",
+    "_PREVIEW_SOURCES",
+    "_PVDI_FIXED_HEADER",
+    "_PVDI_HOP",
+    "_PVDI_RATE",
+    "_PWAV_HEIGHT_MASK",
+    "_PWV4_LUMINANCE_BYTE",
     "HotCueSlotError",
+    "RbContent",
+    "RbRowMeta",
+    "_anlz_mtime",
+    "_asset_sibling",
+    "_bands_payload",
+    "_beatgrid_issue_cache_path",
+    "_beatgrid_payload",
+    "_cache_lock",
+    "_cache_path",
+    "_cue_snapshot_from_row",
+    "_downsample_max",
+    "_ensure_beatgrid_issue_cached",
+    "_first_tags",
+    "_iter_pmai_sections",
+    "_load_cached_payload",
+    "_mono_bands",
+    "_open_ro",
+    "_open_rw",
+    "_peak_downsample_cols",
+    "_phrases_payload",
+    "_read_beatgrid_issue_cache_entry",
+    "_read_pwav_mono",
+    "_read_pwv4_mono",
+    "_read_pwv6_tri",
+    "_store_beatgrid_issue_cache",
+    "_store_cached_payload",
+    "_tri_bands",
+    "_vocal_regions",
     "anlz_dir",
     "artwork_file",
     "audio_file",
-    "resolve_playable_audio",
     "build_anlz_payload",
     "build_track_rows",
     "bulk_availability",
     "bulk_file_exists",
+    "bulk_file_size",
+    "bulk_quality",
     "bulk_rb_meta",
     "cached_beatgrid_issue",
     "clear_hot_cue",
     "count_cues",
     "demucs_vocals_payload",
+    "empty_anlz_payload",
+    "empty_hot_cue_slots",
     "fetch_cues",
     "fetch_hot_cue_slots",
     "is_streaming_path",
+    "local_audio_file",
     "merge_demucs_vocals",
     "not_found",
+    "playlist_order_index",
     "preview_strip",
     "read_pvdi",
+    "resolve_asset_path",
     "resolve_content",
+    "resolve_library_path",
+    "resolve_playable_audio",
     "resolve_share_path",
     "restore_hot_cue",
     "save_hot_cue",
+    "vocals_for_content",
     "vocals_payload",
 ]
