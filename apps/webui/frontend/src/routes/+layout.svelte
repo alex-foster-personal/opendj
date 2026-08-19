@@ -7,7 +7,7 @@
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
-	import { startUsageHeartbeat } from '$lib/rb/usage-heartbeat';
+	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
@@ -47,14 +47,13 @@
 		refreshHealth();
 		void hydrateConfirmPrefsFromDisk();
 		const uninstallSettings = installSettingsHotkeys();
-		// Tell the engine this page exists, so "is the app open" is something
-		// it can answer on its own (GET /api/v1/telemetry/clients) instead of
-		// anyone having to ask a human.
-		const stopUsageHeartbeat = startUsageHeartbeat();
+		// Page-lifetime instruments: usage heartbeat + the DevTools perf log
+		// globals the e2e latency floor reads. See $lib/rb/app-init.
+		const stopInstruments = startAppInstruments();
 		const id = setInterval(refreshHealth, 30_000);
 		return () => {
 			uninstallSettings();
-			stopUsageHeartbeat();
+			stopInstruments();
 			clearInterval(id);
 		};
 	});
