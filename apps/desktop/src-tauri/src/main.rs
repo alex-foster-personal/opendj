@@ -31,8 +31,17 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 const ENGINE_ORIGIN_ENV: &str = "OPENDJ_ENGINE_ORIGIN";
 
 const WINDOW_LABEL: &str = "main";
-const WINDOW_WIDTH: f64 = 1280.0;
-const WINDOW_HEIGHT: f64 = 800.0;
+
+/// The size the window opens at, in LOGICAL POINTS -- not pixels. On a 2x
+/// Retina display these are half the physical pixel count, which is the unit
+/// `inner_size` takes and the unit CSS sees.
+///
+/// Sized for the app's own layout (decks, waveforms and browser side by side)
+/// rather than for any particular screen: `starting_window_size` shrinks it to
+/// whatever monitor it actually opens on, so a number larger than a laptop
+/// display is a target, not a bug.
+const STARTING_WINDOW_W_PT: f64 = 2035.0;
+const STARTING_WINDOW_H_PT: f64 = 1449.0;
 
 /// The engine's log, inside the app's own data directory so a tester can be
 /// asked for one path rather than talked through Console.app.
@@ -64,6 +73,64 @@ fn shell_build_identity(app_version: &str) -> serde_json::Value {
         "built_at_utc": BUILD_AT_UTC,
         "lane_label": BUILD_LANE_LABEL,
     })
+}
+
+// ----- window size --------------------------------------------------------
+/// The monitor's usable area in LOGICAL POINTS, or None when it cannot be read.
+///
+/// Tauri reports monitor geometry in PHYSICAL pixels, so the raw numbers are
+/// twice the points on a 2x display; dividing by the monitor's scale factor
+/// puts them in the same unit as `STARTING_WINDOW_*_PT`. Comparing the two
+/// without that divide is how a 1449pt-tall window "fits" a 900pt-tall screen.
+///
+/// `work_area`, not `size`: the usable region excludes the macOS menu bar and
+/// the Dock, and a window that opens underneath the Dock is not a window that
+/// fits.
+///
+/// The scale factor is checked rather than trusted. `to_logical` would have
+/// done the divide, but it asserts on a non-positive factor, and a panic here
+/// is the blank window this shell exists to eliminate.
+fn usable_area_pt(app: &AppHandle) -> Option<(f64, f64)> {
+    let monitor = match app.primary_monitor() {
+        Ok(Some(found)) => found,
+        Ok(None) => {
+            eprintln!("[WARN] no primary monitor reported; opening unclamped");
+            return None;
+        }
+        Err(err) => {
+            eprintln!("[WARN] could not read the primary monitor ({err}); opening unclamped");
+            return None;
+        }
+    };
+    let scale = monitor.scale_factor();
+    if !scale.is_finite() || scale <= 0.0 {
+        eprintln!("[WARN] monitor reported scale factor {scale}; opening unclamped");
+        return None;
+    }
+    let usable = monitor.work_area().size;
+    Some((
+        f64::from(usable.width) / scale,
+        f64::from(usable.height) / scale,
+    ))
+}
+
+/// The configured starting size, shrunk to fit the monitor it opens on.
+///
+/// Per dimension, NOT aspect-preserving: a window too wide for a narrow
+/// monitor should lose width and keep its height.
+///
+/// `None` means no monitor could be resolved, and the configured size is then
+/// applied unchanged. There is nothing to clamp against, and the OS constrains
+/// an oversize window on its own, so inventing a fallback screen size would be
+/// a guess that could only be wrong.
+fn starting_window_size(usable_pt: Option<(f64, f64)>) -> (f64, f64) {
+    match usable_pt {
+        None => (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT),
+        Some((usable_w, usable_h)) => (
+            STARTING_WINDOW_W_PT.min(usable_w),
+            STARTING_WINDOW_H_PT.min(usable_h),
+        ),
+    }
 }
 
 // ----- supervisor ---------------------------------------------------------
@@ -173,9 +240,10 @@ fn main() {
             // The window title IS productName, so the per-lane `--config`
             // overlay labels the window without a second place to edit.
             let title = package.name.clone();
+            let (width, height) = starting_window_size(usable_area_pt(&handle));
             WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title(title)
-                .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
+                .inner_size(width, height)
                 .initialization_script(script)
                 .build()?;
 
@@ -196,4 +264,51 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // - if the clamp stops shrinking then the window opens taller than the
+    //   screen and its own title bar is off the top -> broken
+    // - if it clamps both dimensions when only one overflows then a wide
+    //   monitor gets a needlessly short window -> broken
+    // - if an unresolvable monitor shrinks to some assumed screen size then
+    //   the app opens small for a reason nobody can see -> broken
+
+    /// A 2560x1440 monitor with the menu bar and Dock taken out, in points.
+    const ROOMY: (f64, f64) = (2560.0, 1440.0);
+    /// A 14-inch MacBook Pro's usable area in points, which both configured
+    /// dimensions exceed.
+    const LAPTOP: (f64, f64) = (1512.0, 916.0);
+
+    #[test]
+    fn a_monitor_smaller_than_the_target_shrinks_both_dimensions() {
+        assert_eq!(starting_window_size(Some(LAPTOP)), LAPTOP);
+    }
+
+    #[test]
+    fn only_the_dimension_that_overflows_is_clamped() {
+        // Wide enough, not tall enough: the width must survive intact.
+        let (width, height) = starting_window_size(Some(ROOMY));
+        assert_eq!(width, STARTING_WINDOW_W_PT);
+        assert_eq!(height, ROOMY.1);
+    }
+
+    #[test]
+    fn a_monitor_big_enough_for_the_target_leaves_it_alone() {
+        assert_eq!(
+            starting_window_size(Some((4000.0, 3000.0))),
+            (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT)
+        );
+    }
+
+    #[test]
+    fn an_unresolvable_monitor_applies_the_configured_size_unchanged() {
+        assert_eq!(
+            starting_window_size(None),
+            (STARTING_WINDOW_W_PT, STARTING_WINDOW_H_PT)
+        );
+    }
 }
