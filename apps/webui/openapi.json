@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "AccessProbeOut": {
+        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
+        "properties": {
+          "denied": {
+            "title": "Denied",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "readable",
+          "denied",
+          "detail"
+        ],
+        "title": "AccessProbeOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -1639,6 +1673,173 @@
         "title": "FindReplaceRowOut",
         "type": "object"
       },
+      "FolderImportIn": {
+        "description": "Point at one or more folders of audio files. No rekordbox involved.",
+        "properties": {
+          "folders": {
+            "description": "absolute paths to walk; at least one",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Folders",
+            "type": "array"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "import at most N files",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "FolderImportIn",
+        "type": "object"
+      },
+      "FolderLastImportOut": {
+        "description": "What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.\n\nA different model rather than optional fields on the rekordbox one,\nbecause the two describe different work: there is no decrypt here, no\nplaylists, and -- the field that matters --\n``tracks_without_analysis``, which equals the tracks written.",
+        "properties": {
+          "analysis_available": {
+            "default": false,
+            "title": "Analysis Available",
+            "type": "boolean"
+          },
+          "analysis_detail": {
+            "title": "Analysis Detail",
+            "type": "string"
+          },
+          "files_dataless": {
+            "title": "Files Dataless",
+            "type": "integer"
+          },
+          "files_seen": {
+            "title": "Files Seen",
+            "type": "integer"
+          },
+          "files_without_tags": {
+            "title": "Files Without Tags",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "folder",
+            "default": "folder",
+            "title": "Kind",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "tracks_without_analysis": {
+            "title": "Tracks Without Analysis",
+            "type": "integer"
+          },
+          "tracks_written": {
+            "title": "Tracks Written",
+            "type": "integer"
+          },
+          "unreadable_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "files_seen",
+          "files_dataless",
+          "files_without_tags",
+          "tracks",
+          "tracks_written",
+          "tracks_without_analysis",
+          "analysis_detail"
+        ],
+        "title": "FolderLastImportOut",
+        "type": "object"
+      },
+      "FolderScanOut": {
+        "description": "What a candidate folder actually holds, before anything is imported.\n\n``audio_files`` counts what could be READ. When ``denied`` is true that\nnumber is not a count of the folder, it is a count of nothing, and\n``detail`` says so -- which is the difference between \"this folder is\nempty\" and \"macOS would not let me look\".",
+        "properties": {
+          "audio_files": {
+            "title": "Audio Files",
+            "type": "integer"
+          },
+          "denied": {
+            "title": "Denied",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "how_to_grant": {
+            "title": "How To Grant",
+            "type": "string"
+          },
+          "icloud_placeholders": {
+            "title": "Icloud Placeholders",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "sample": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "readable",
+          "denied",
+          "detail",
+          "audio_files",
+          "icloud_placeholders",
+          "how_to_grant"
+        ],
+        "title": "FolderScanOut",
+        "type": "object"
+      },
       "GenerateIn": {
         "properties": {
           "stable_id": {
@@ -2153,6 +2354,88 @@
           "class"
         ],
         "title": "LabelRequest",
+        "type": "object"
+      },
+      "LastImportOut": {
+        "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
+        "properties": {
+          "analyses_expected": {
+            "title": "Analyses Expected",
+            "type": "integer"
+          },
+          "analyses_linked": {
+            "title": "Analyses Linked",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "ingested_from": {
+            "title": "Ingested From",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rekordbox",
+            "default": "rekordbox",
+            "title": "Kind",
+            "type": "string"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "rekordbox_tracks": {
+            "title": "Rekordbox Tracks",
+            "type": "integer"
+          },
+          "rekordbox_was_running": {
+            "title": "Rekordbox Was Running",
+            "type": "boolean"
+          },
+          "share_root": {
+            "title": "Share Root",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_was_encrypted": {
+            "title": "Source Was Encrypted",
+            "type": "boolean"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "unreadable_music_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Music Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "source",
+          "source_was_encrypted",
+          "ingested_from",
+          "tracks",
+          "playlists",
+          "analyses_linked",
+          "analyses_expected",
+          "rekordbox_tracks",
+          "share_root",
+          "rekordbox_was_running"
+        ],
+        "title": "LastImportOut",
         "type": "object"
       },
       "MemberOut": {
@@ -2762,6 +3045,39 @@
           "added_at"
         ],
         "title": "PendingTrackOut",
+        "type": "object"
+      },
+      "PermissionsOut": {
+        "description": "The folder-access answer, and what to do about a refusal.",
+        "properties": {
+          "all_readable": {
+            "title": "All Readable",
+            "type": "boolean"
+          },
+          "denied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Denied",
+            "type": "array"
+          },
+          "how_to_grant": {
+            "title": "How To Grant",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/AccessProbeOut"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "all_readable",
+          "how_to_grant"
+        ],
+        "title": "PermissionsOut",
         "type": "object"
       },
       "PlanModel": {
@@ -4787,11 +5103,31 @@
             "title": "Dismissed",
             "type": "boolean"
           },
+          "folder_stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Folder Stages",
+            "type": "array"
+          },
           "last_import": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "discriminator": {
+                  "mapping": {
+                    "folder": "#/components/schemas/FolderLastImportOut",
+                    "rekordbox": "#/components/schemas/LastImportOut"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LastImportOut"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FolderLastImportOut"
+                  }
+                ]
               },
               {
                 "type": "null"
@@ -4802,6 +5138,9 @@
           "library_empty": {
             "title": "Library Empty",
             "type": "boolean"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/PermissionsOut"
           },
           "playlists": {
             "title": "Playlists",
@@ -4838,7 +5177,9 @@
           "dismissed",
           "should_show_wizard",
           "stages",
-          "rekordbox"
+          "folder_stages",
+          "rekordbox",
+          "permissions"
         ],
         "title": "SetupStatusOut",
         "type": "object"
@@ -9895,6 +10236,52 @@
         ]
       }
     },
+    "/api/v1/setup/detect/folder": {
+      "get": {
+        "description": "Look inside a candidate folder WITHOUT importing it.\n\nThis is the no-rekordbox branch's version of the detect step. The count\nit returns is only meaningful when ``denied`` is false: macOS answers a\nblocked listing with an empty one, so \"0 audio files\" from a denied\nfolder would be a fabrication.",
+        "operationId": "detect_folder_api_v1_setup_detect_folder_get",
+        "parameters": [
+          {
+            "description": "absolute folder path to inspect",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "description": "absolute folder path to inspect",
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detect Folder",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
     "/api/v1/setup/detect/rekordbox": {
       "get": {
         "description": "Report the rekordbox install WITHOUT opening or copying anything.",
@@ -9996,6 +10383,70 @@
           }
         },
         "summary": "Start Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/import/folder": {
+      "post": {
+        "description": "Queue a folder import: tags only, no analysis, and it says so.\n\nIts own endpoint rather than a mode flag on /import, because its\nrefusals are different ones: a folder can be absent, unreadable, or\ngenuinely empty, and none of those is a rekordbox problem.",
+        "operationId": "start_folder_import_api_v1_setup_import_folder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Folder Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/permissions": {
+      "get": {
+        "description": "Can this process read the folders the music lives in?\n\nReported, never refused on. macOS answers a blocked listing with an\nEMPTY one rather than an error, which is how a library with 40,000\ntracks in it becomes a library with none and nobody is told. Every\ncount this API reports afterwards has to be read against the ``denied``\nlist here: zero files in a folder we were not allowed to open is not\nzero files.",
+        "operationId": "permissions_api_v1_setup_permissions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Permissions",
         "tags": [
           "setup"
         ]

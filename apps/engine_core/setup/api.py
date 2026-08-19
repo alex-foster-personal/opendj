@@ -20,15 +20,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field, ValidationError
 
 from apps.engine_core.jobs.api import JobOut
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.setup import detect, record
-from apps.engine_core.setup.importer import STAGES
+from apps.engine_core.setup.importer import FOLDER_STAGES, STAGES
 from apps.engine_core.setup.jobs import (
     SETUP_IMPORT_KIND,
     SetupPayloadError,
@@ -47,6 +47,11 @@ _LIVE_STATUSES: frozenset[str] = frozenset(
 #: once, asserted by the tests, and rendered verbatim by the wizard -- the
 #: house rule is that an unavailable feature says so rather than pretending.
 STEMS_UNAVAILABLE_MESSAGE: str = "stems analysis not yet available"
+
+#: How many example paths /detect/folder returns. Enough to recognise the
+#: folder, small enough that a 40,000-file library is not serialised into a
+#: response nobody asked for.
+SCAN_SAMPLE_SIZE: int = 5
 
 
 # ----- wire models --------------------------------------------------------
@@ -75,6 +80,82 @@ class RekordboxDetectionOut(BaseModel):
     rekordbox_running: bool
 
 
+class AccessProbeOut(BaseModel):
+    """One folder, and whether this process can actually read it.
+
+    ``exists`` true with ``readable`` false and ``denied`` true is the macOS
+    TCC case: the folder is there and full of music, and the listing is
+    refused, so anything that counted files inside it would report zero.
+    """
+
+    path: str
+    exists: bool
+    readable: bool
+    denied: bool
+    detail: str
+
+
+class PermissionsOut(BaseModel):
+    """The folder-access answer, and what to do about a refusal."""
+
+    all_readable: bool
+    denied: list[str] = Field(default_factory=list)
+    roots: list[AccessProbeOut] = Field(default_factory=list)
+    how_to_grant: str
+
+
+class LastImportOut(BaseModel):
+    """What the previous rekordbox import did. Mirrors ``ImportOutcome``.
+
+    Typed rather than a free-form object: a caller reading a track count off
+    an untyped dict has no contract, and the wizard's "done" screen is built
+    entirely out of these numbers.
+    """
+
+    kind: Literal["rekordbox"] = "rekordbox"
+    started_at: str
+    finished_at: str
+    source: str
+    source_was_encrypted: bool
+    ingested_from: str
+    tracks: int
+    playlists: int
+    analyses_linked: int
+    analyses_expected: int
+    rekordbox_tracks: int
+    share_root: str
+    rekordbox_was_running: bool
+    #: Present on records written by this engine version. Older records have
+    #: no such field, and defaulting it to [] would claim "nothing was
+    #: denied" about a run that never asked -- so the wizard checks
+    #: `permissions` for the live answer and treats this as history only.
+    unreadable_music_roots: list[str] = Field(default_factory=list)
+
+
+class FolderLastImportOut(BaseModel):
+    """What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.
+
+    A different model rather than optional fields on the rekordbox one,
+    because the two describe different work: there is no decrypt here, no
+    playlists, and -- the field that matters --
+    ``tracks_without_analysis``, which equals the tracks written.
+    """
+
+    kind: Literal["folder"] = "folder"
+    started_at: str
+    finished_at: str
+    roots: list[str] = Field(default_factory=list)
+    unreadable_roots: list[str] = Field(default_factory=list)
+    files_seen: int
+    files_dataless: int
+    files_without_tags: int
+    tracks: int
+    tracks_written: int
+    tracks_without_analysis: int
+    analysis_available: bool = False
+    analysis_detail: str
+
+
 class SetupStatusOut(BaseModel):
     """Everything the wizard needs to decide whether to show itself."""
 
@@ -85,9 +166,18 @@ class SetupStatusOut(BaseModel):
     data_dir: str
     dismissed: bool
     should_show_wizard: bool
+    #: The rekordbox import's stages, in order.
     stages: list[str]
-    last_import: dict[str, Any] | None = None
+    #: The folder import's stages. Shorter on purpose: no snapshot and no
+    #: decrypt, because there is no rekordbox database in that path.
+    folder_stages: list[str]
+    last_import: LastImportOut | FolderLastImportOut | None = Field(
+        default=None, discriminator="kind"
+    )
     rekordbox: RekordboxDetectionOut
+    #: Folder access, inlined so the wizard's first render already knows
+    #: whether a count of zero means "empty" or "not allowed to look".
+    permissions: PermissionsOut
 
 
 class SetupImportIn(BaseModel):
@@ -112,6 +202,38 @@ class SetupImportIn(BaseModel):
             "CLI's --refresh-decrypt"
         ),
     )
+
+
+class FolderImportIn(BaseModel):
+    """Point at one or more folders of audio files. No rekordbox involved."""
+
+    folders: list[str] = Field(
+        min_length=1,
+        description="absolute paths to walk; at least one",
+    )
+    limit: int | None = Field(
+        default=None, ge=1, description="import at most N files"
+    )
+
+
+class FolderScanOut(BaseModel):
+    """What a candidate folder actually holds, before anything is imported.
+
+    ``audio_files`` counts what could be READ. When ``denied`` is true that
+    number is not a count of the folder, it is a count of nothing, and
+    ``detail`` says so -- which is the difference between "this folder is
+    empty" and "macOS would not let me look".
+    """
+
+    path: str
+    exists: bool
+    readable: bool
+    denied: bool
+    detail: str
+    audio_files: int
+    icloud_placeholders: int
+    how_to_grant: str
+    sample: list[str] = Field(default_factory=list)
 
 
 class SetupDismissIn(BaseModel):
@@ -176,6 +298,55 @@ def _detection_out(data_dir: Path) -> RekordboxDetectionOut:
     )
 
 
+def _permissions_out() -> PermissionsOut:
+    probes = detect.music_root_access()
+    denied = detect.denied_roots(probes)
+    return PermissionsOut(
+        all_readable=not denied,
+        denied=denied,
+        roots=[AccessProbeOut(**probe.to_dict()) for probe in probes],
+        how_to_grant=detect.GRANT_INSTRUCTIONS,
+    )
+
+
+_LAST_IMPORT_MODELS: dict[str, type[BaseModel]] = {
+    "rekordbox": LastImportOut,
+    "folder": FolderLastImportOut,
+}
+
+
+def _last_import_out(
+    saved: record.SetupRecord,
+) -> LastImportOut | FolderLastImportOut | None:
+    """Validate the stored outcome into its wire model, or fail loudly.
+
+    Dispatched on the record's own ``kind`` rather than on which keys happen
+    to be present: guessing the shape is how a folder import ends up
+    rendered as a rekordbox one with its numbers silently missing.
+
+    ``record.read`` already refuses a record it cannot parse, so a dict that
+    does not fit its declared model means an outcome was written by a
+    different engine version without bumping RECORD_VERSION -- a bug worth a
+    500 rather than a "done" screen quietly missing its numbers.
+    """
+    if saved.last_import is None:
+        return None
+    kind = saved.last_import.get("kind")
+    model = _LAST_IMPORT_MODELS.get(str(kind))
+    if model is None:
+        raise record.SetupRecordError(
+            f"the stored import outcome declares kind {kind!r}; this engine "
+            f"knows {sorted(_LAST_IMPORT_MODELS)}"
+        )
+    try:
+        return model(**saved.last_import)  # type: ignore[return-value]
+    except ValidationError as exc:
+        raise record.SetupRecordError(
+            f"the stored {kind} import outcome does not match this engine's "
+            f"{model.__name__} model: {exc}"
+        ) from exc
+
+
 def _status_out(data_dir: Path) -> SetupStatusOut:
     counts = detect.library_counts(data_dir)
     saved = record.read(data_dir)
@@ -188,8 +359,10 @@ def _status_out(data_dir: Path) -> SetupStatusOut:
         dismissed=saved.dismissed,
         should_show_wizard=counts.empty and not saved.dismissed,
         stages=list(STAGES),
-        last_import=saved.last_import,
+        folder_stages=list(FOLDER_STAGES),
+        last_import=_last_import_out(saved),
         rekordbox=_detection_out(data_dir),
+        permissions=_permissions_out(),
     )
 
 
@@ -211,6 +384,20 @@ def setup_status(request: Request) -> SetupStatusOut:
 def detect_rekordbox_endpoint(request: Request) -> RekordboxDetectionOut:
     """Report the rekordbox install WITHOUT opening or copying anything."""
     return _detection_out(_data_dir(request))
+
+
+@router.get("/permissions", response_model=PermissionsOut)
+def permissions() -> PermissionsOut:
+    """Can this process read the folders the music lives in?
+
+    Reported, never refused on. macOS answers a blocked listing with an
+    EMPTY one rather than an error, which is how a library with 40,000
+    tracks in it becomes a library with none and nobody is told. Every
+    count this API reports afterwards has to be read against the ``denied``
+    list here: zero files in a folder we were not allowed to open is not
+    zero files.
+    """
+    return _permissions_out()
 
 
 @router.post(
@@ -258,6 +445,108 @@ def start_import(request: Request, body: SetupImportIn) -> dict[str, Any]:
         payload["limit"] = body.limit
     if body.refresh_decrypt:
         payload["refresh_decrypt"] = True
+
+    try:
+        build_argv(payload)
+    except SetupPayloadError as exc:
+        raise _refuse(
+            "setup_payload_invalid", str(exc), status.HTTP_400_BAD_REQUEST
+        ) from exc
+
+    return store.enqueue(SETUP_IMPORT_KIND, payload)
+
+
+@router.get("/detect/folder", response_model=FolderScanOut)
+def detect_folder(
+    path: Annotated[
+        str, Query(min_length=1, description="absolute folder path to inspect")
+    ],
+) -> FolderScanOut:
+    """Look inside a candidate folder WITHOUT importing it.
+
+    This is the no-rekordbox branch's version of the detect step. The count
+    it returns is only meaningful when ``denied`` is false: macOS answers a
+    blocked listing with an empty one, so "0 audio files" from a denied
+    folder would be a fabrication.
+    """
+    from apps.shared import fs_access
+
+    target = Path(path).expanduser()
+    probe = fs_access.probe_readable(target)
+    audio = 0
+    placeholders = 0
+    sample: list[str] = []
+    if probe.readable:
+        from apps.shared.state.ingest import folder as folder_ingest
+
+        found, _denied, placeholders = folder_ingest.collect_audio([target])
+        audio = len(found)
+        sample = [str(entry.path) for entry in found[:SCAN_SAMPLE_SIZE]]
+    return FolderScanOut(
+        path=str(target),
+        exists=probe.exists,
+        readable=probe.readable,
+        denied=probe.denied,
+        detail=probe.detail,
+        audio_files=audio,
+        icloud_placeholders=placeholders,
+        how_to_grant=fs_access.GRANT_INSTRUCTIONS,
+        sample=sample,
+    )
+
+
+@router.post(
+    "/import/folder",
+    response_model=JobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_folder_import(request: Request, body: FolderImportIn) -> dict[str, Any]:
+    """Queue a folder import: tags only, no analysis, and it says so.
+
+    Its own endpoint rather than a mode flag on /import, because its
+    refusals are different ones: a folder can be absent, unreadable, or
+    genuinely empty, and none of those is a rekordbox problem.
+    """
+    from apps.shared import fs_access
+
+    data_dir = _data_dir(request)
+    store = _store(request)
+
+    running = _live_import(store)
+    if running is not None:
+        raise _refuse(
+            detect.CODE_IMPORT_ALREADY_RUNNING,
+            f"setup import {running['id']} is already {running['status']}; "
+            "cancel it before starting another",
+            status.HTTP_409_CONFLICT,
+        )
+
+    probes = fs_access.probe_all([Path(folder) for folder in body.folders])
+    if not any(probe.readable for probe in probes):
+        denied = fs_access.denied_roots(probes)
+        if denied:
+            raise _refuse(
+                detect.CODE_ACCESS_DENIED,
+                f"macOS refused to list {', '.join(denied)}. "
+                f"{fs_access.GRANT_INSTRUCTIONS}",
+                status.HTTP_403_FORBIDDEN,
+            )
+        raise _refuse(
+            detect.CODE_REKORDBOX_NOT_FOUND,
+            "none of "
+            f"{', '.join(probe.path for probe in probes)} is a readable "
+            "folder: "
+            + "; ".join(f"{probe.path} {probe.detail}" for probe in probes),
+            status.HTTP_409_CONFLICT,
+        )
+
+    payload: dict[str, Any] = {
+        "data_dir": str(data_dir),
+        "mode": "folder",
+        "roots": body.folders,
+    }
+    if body.limit is not None:
+        payload["limit"] = body.limit
 
     try:
         build_argv(payload)
@@ -332,7 +621,13 @@ def _blocker_message(code: str, found: detect.RekordboxDetection) -> str:
 
 __all__ = [
     "STEMS_UNAVAILABLE_MESSAGE",
+    "AccessProbeOut",
     "FileProbeOut",
+    "FolderImportIn",
+    "FolderLastImportOut",
+    "FolderScanOut",
+    "LastImportOut",
+    "PermissionsOut",
     "RekordboxDetectionOut",
     "SetupDismissIn",
     "SetupImportIn",

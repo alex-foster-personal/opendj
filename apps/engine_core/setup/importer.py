@@ -44,6 +44,15 @@ STAGE_PROGRESS: dict[str, float] = {
 }
 STAGES: tuple[str, ...] = tuple(STAGE_PROGRESS)
 
+#: The folder import has no rekordbox database, so no snapshot and no
+#: decrypt. Three stages, and the wizard renders whichever list applies.
+FOLDER_STAGE_PROGRESS: dict[str, float] = {
+    "detect": 0.05,
+    "scan": 0.20,
+    "ingest": 1.00,
+}
+FOLDER_STAGES: tuple[str, ...] = tuple(FOLDER_STAGE_PROGRESS)
+
 
 class SetupImportError(RuntimeError):
     """A stage refused. ``code`` is one of :data:`detect.CODES`."""
@@ -69,6 +78,15 @@ class ImportOutcome:
     rekordbox_tracks: int
     share_root: str
     rekordbox_was_running: bool
+    #: Folders macOS refused to list during this run. The caveat that has to
+    #: travel WITH the counts above: an import that could not read the music
+    #: folder still imports every row rekordbox knows about, and every one of
+    #: those rows points at a file this process cannot see.
+    unreadable_music_roots: list[str] = dataclasses.field(default_factory=list)
+    #: Discriminator for the stored record. The two import paths produce
+    #: completely different numbers and a reader must not have to guess which
+    #: it is holding from which keys happen to be present.
+    kind: str = "rekordbox"
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -118,9 +136,142 @@ def run_import(
         rekordbox_tracks=analyses["rekordbox_linked"],
         share_root=str(detect.resolve_share_root()),
         rekordbox_was_running=was_running,
+        unreadable_music_roots=detect.denied_roots(detect.music_root_access()),
     )
     record.set_last_import(data_dir, outcome.to_dict())
     return outcome
+
+
+@dataclasses.dataclass
+class FolderImportOutcome:
+    """What a folder import did. Every denominator is named separately.
+
+    ``tracks_without_analysis`` is not a warning that got attached late: a
+    folder import reads tags and nothing else, so this equals the number of
+    tracks it wrote, and reporting it is what stops the result being mistaken
+    for an analysed library.
+    """
+
+    started_at: str
+    finished_at: str
+    roots: list[str]
+    unreadable_roots: list[str]
+    files_seen: int
+    files_dataless: int
+    files_without_tags: int
+    tracks: int
+    tracks_written: int
+    tracks_without_analysis: int
+    analysis_available: bool = False
+    analysis_detail: str = (
+        "a folder import reads tags only: no BPM, no key and no beatgrid are "
+        "written, and none are guessed"
+    )
+    kind: str = "folder"
+
+    def to_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def run_folder_import(
+    data_dir: Path,
+    *,
+    emit: Emit,
+    roots: list[Path],
+    limit: int | None = None,
+) -> FolderImportOutcome:
+    """Import audio files from ``roots``. No rekordbox anywhere in this path.
+
+    The three failure modes it distinguishes: a folder that is not there, a
+    folder macOS refuses to list, and a folder that is genuinely empty. The
+    middle one is the whole reason this is not just a walk -- a blocked
+    listing and an empty one look identical from ``os.walk``.
+    """
+    from apps.shared import fs_access
+    from apps.shared.state import db as state_db
+    from apps.shared.state.ingest import folder as folder_ingest
+    from apps.shared.state.writer import StateWriter
+
+    started_at = _now()
+    if not roots:
+        raise SetupImportError(
+            detect.CODE_REKORDBOX_NOT_FOUND,
+            "a folder import needs at least one folder to walk",
+        )
+
+    probes = fs_access.probe_all(roots)
+    emit(
+        FOLDER_STAGE_PROGRESS["detect"],
+        f"detect: checking {len(probes)} folder(s)",
+    )
+    denied = fs_access.denied_roots(probes)
+    if denied and not any(probe.readable for probe in probes):
+        raise SetupImportError(
+            detect.CODE_ACCESS_DENIED,
+            f"macOS refused to list {', '.join(denied)}. "
+            f"{fs_access.GRANT_INSTRUCTIONS}",
+        )
+    missing = [probe.path for probe in probes if not probe.exists]
+    if missing and not any(probe.readable for probe in probes):
+        raise SetupImportError(
+            detect.CODE_REKORDBOX_NOT_FOUND,
+            f"no such folder: {', '.join(missing)}",
+        )
+
+    state_path = data_dir / "state" / detect.STATE_DB_NAME
+    conn = state_db.open_rw(state_path)
+    writer = StateWriter(conn, actor="setup-folder-import")
+    try:
+        report = folder_ingest.ingest_folder(
+            writer,
+            roots,
+            dry_run=False,
+            limit=limit,
+            on_progress=_folder_progress(emit),
+        )
+    finally:
+        writer.close()
+        conn.close()
+
+    counts = detect.library_counts(data_dir)
+    outcome = FolderImportOutcome(
+        started_at=started_at,
+        finished_at=_now(),
+        roots=report.roots,
+        unreadable_roots=report.unreadable_roots,
+        files_seen=report.files_seen,
+        files_dataless=report.files_dataless,
+        files_without_tags=report.files_without_tags,
+        tracks=counts.tracks,
+        tracks_written=report.tracks_inserted + report.tracks_unchanged,
+        tracks_without_analysis=report.tracks_without_analysis,
+    )
+    emit(
+        FOLDER_STAGE_PROGRESS["ingest"],
+        (
+            f"ingest: {outcome.tracks_written} of {outcome.files_seen} "
+            f"readable files imported, none analysed"
+            + (
+                f"; {len(outcome.unreadable_roots)} folder(s) could not be read"
+                if outcome.unreadable_roots
+                else ""
+            )
+        ),
+    )
+    record.set_last_import(data_dir, outcome.to_dict())
+    return outcome
+
+
+def _folder_progress(emit: Emit):
+    """Map the ingest's ``(done, total, message)`` onto the job's 0..1 bar."""
+    low = FOLDER_STAGE_PROGRESS["scan"]
+    high = FOLDER_STAGE_PROGRESS["ingest"]
+
+    def report(done: int, total: int, message: str) -> None:
+        fraction = done / total if total > 0 else 1.0
+        emit(low + (high - low) * fraction, f"ingest: {message}")
+
+    return report
 
 
 # ----- stages -------------------------------------------------------------
@@ -381,10 +532,14 @@ def _now() -> str:
 
 
 __all__ = [
+    "FOLDER_STAGES",
+    "FOLDER_STAGE_PROGRESS",
     "STAGES",
     "STAGE_PROGRESS",
     "Emit",
+    "FolderImportOutcome",
     "ImportOutcome",
     "SetupImportError",
+    "run_folder_import",
     "run_import",
 ]

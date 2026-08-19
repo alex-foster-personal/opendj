@@ -111,6 +111,13 @@ def _cmd_ingest_rb(args: argparse.Namespace) -> int:
     return _rb.run_cli(args)
 
 
+def _cmd_ingest_folder(args: argparse.Namespace) -> int:
+    """Run the folder ingest adapter (dry-run unless ``--write``)."""
+    from .ingest import folder as _folder
+
+    return _folder.run_cli(args)
+
+
 def _table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
     for name in state_schema.TABLES:
@@ -203,6 +210,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="process at most N tracks (debug / smoke-test aid)",
     )
+
+    fol = sub.add_parser(
+        "ingest-folder",
+        help="filesystem folder -> state.db adapter (no rekordbox needed)",
+        description=(
+            "Walk one or more folders of audio files into state.db. Reads "
+            "tags only: no BPM, no key, no beatgrid, and the summary says "
+            "how many tracks that leaves with no analysis. A folder macOS "
+            "refuses to list is reported as unreadable, never as empty."
+        ),
+    )
+    fol.add_argument(
+        "--root",
+        action="append",
+        required=True,
+        help="folder to walk; repeat for several",
+    )
+    fol.add_argument(
+        "--write",
+        action="store_true",
+        help="persist changes (default: dry-run, rolled back)",
+    )
+    fol.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="process at most N files (debug / smoke-test aid)",
+    )
     return parser
 
 
@@ -211,6 +246,7 @@ _COMMANDS = {
     "stats": _cmd_stats,
     "inspect": _cmd_inspect,
     "ingest-rb": _cmd_ingest_rb,
+    "ingest-folder": _cmd_ingest_folder,
 }
 
 

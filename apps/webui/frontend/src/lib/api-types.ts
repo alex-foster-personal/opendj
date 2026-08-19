@@ -917,6 +917,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup/detect/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detect Folder
+         * @description Look inside a candidate folder WITHOUT importing it.
+         *
+         *     This is the no-rekordbox branch's version of the detect step. The count
+         *     it returns is only meaningful when ``denied`` is false: macOS answers a
+         *     blocked listing with an empty one, so "0 audio files" from a denied
+         *     folder would be a fabrication.
+         */
+        get: operations["detect_folder_api_v1_setup_detect_folder_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/setup/detect/rekordbox": {
         parameters: {
             query?: never;
@@ -975,6 +1000,57 @@ export interface paths {
          *     refusal into a failed row somebody has to go and read.
          */
         post: operations["start_import_api_v1_setup_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/import/folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Folder Import
+         * @description Queue a folder import: tags only, no analysis, and it says so.
+         *
+         *     Its own endpoint rather than a mode flag on /import, because its
+         *     refusals are different ones: a folder can be absent, unreadable, or
+         *     genuinely empty, and none of those is a rekordbox problem.
+         */
+        post: operations["start_folder_import_api_v1_setup_import_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permissions
+         * @description Can this process read the folders the music lives in?
+         *
+         *     Reported, never refused on. macOS answers a blocked listing with an
+         *     EMPTY one rather than an error, which is how a library with 40,000
+         *     tracks in it becomes a library with none and nobody is told. Every
+         *     count this API reports afterwards has to be read against the ``denied``
+         *     list here: zero files in a folder we were not allowed to open is not
+         *     zero files.
+         */
+        get: operations["permissions_api_v1_setup_permissions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1657,6 +1733,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccessProbeOut
+         * @description One folder, and whether this process can actually read it.
+         *
+         *     ``exists`` true with ``readable`` false and ``denied`` true is the macOS
+         *     TCC case: the folder is there and full of music, and the listing is
+         *     refused, so anything that counted files inside it would report zero.
+         */
+        AccessProbeOut: {
+            /** Denied */
+            denied: boolean;
+            /** Detail */
+            detail: string;
+            /** Exists */
+            exists: boolean;
+            /** Path */
+            path: string;
+            /** Readable */
+            readable: boolean;
+        };
         /** AiApplyIn */
         AiApplyIn: {
             /** Instruction */
@@ -2249,6 +2345,94 @@ export interface components {
             /** Would Change */
             would_change: boolean;
         };
+        /**
+         * FolderImportIn
+         * @description Point at one or more folders of audio files. No rekordbox involved.
+         */
+        FolderImportIn: {
+            /**
+             * Folders
+             * @description absolute paths to walk; at least one
+             */
+            folders: string[];
+            /**
+             * Limit
+             * @description import at most N files
+             */
+            limit?: number | null;
+        };
+        /**
+         * FolderLastImportOut
+         * @description What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.
+         *
+         *     A different model rather than optional fields on the rekordbox one,
+         *     because the two describe different work: there is no decrypt here, no
+         *     playlists, and -- the field that matters --
+         *     ``tracks_without_analysis``, which equals the tracks written.
+         */
+        FolderLastImportOut: {
+            /**
+             * Analysis Available
+             * @default false
+             */
+            analysis_available: boolean;
+            /** Analysis Detail */
+            analysis_detail: string;
+            /** Files Dataless */
+            files_dataless: number;
+            /** Files Seen */
+            files_seen: number;
+            /** Files Without Tags */
+            files_without_tags: number;
+            /** Finished At */
+            finished_at: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "folder";
+            /** Roots */
+            roots?: string[];
+            /** Started At */
+            started_at: string;
+            /** Tracks */
+            tracks: number;
+            /** Tracks Without Analysis */
+            tracks_without_analysis: number;
+            /** Tracks Written */
+            tracks_written: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+        };
+        /**
+         * FolderScanOut
+         * @description What a candidate folder actually holds, before anything is imported.
+         *
+         *     ``audio_files`` counts what could be READ. When ``denied`` is true that
+         *     number is not a count of the folder, it is a count of nothing, and
+         *     ``detail`` says so -- which is the difference between "this folder is
+         *     empty" and "macOS would not let me look".
+         */
+        FolderScanOut: {
+            /** Audio Files */
+            audio_files: number;
+            /** Denied */
+            denied: boolean;
+            /** Detail */
+            detail: string;
+            /** Exists */
+            exists: boolean;
+            /** How To Grant */
+            how_to_grant: string;
+            /** Icloud Placeholders */
+            icloud_placeholders: number;
+            /** Path */
+            path: string;
+            /** Readable */
+            readable: boolean;
+            /** Sample */
+            sample?: string[];
+        };
         /** GenerateIn */
         GenerateIn: {
             /** Stable Id */
@@ -2411,6 +2595,47 @@ export interface components {
              * @default web_ui
              */
             labeler: string;
+        };
+        /**
+         * LastImportOut
+         * @description What the previous rekordbox import did. Mirrors ``ImportOutcome``.
+         *
+         *     Typed rather than a free-form object: a caller reading a track count off
+         *     an untyped dict has no contract, and the wizard's "done" screen is built
+         *     entirely out of these numbers.
+         */
+        LastImportOut: {
+            /** Analyses Expected */
+            analyses_expected: number;
+            /** Analyses Linked */
+            analyses_linked: number;
+            /** Finished At */
+            finished_at: string;
+            /** Ingested From */
+            ingested_from: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rekordbox";
+            /** Playlists */
+            playlists: number;
+            /** Rekordbox Tracks */
+            rekordbox_tracks: number;
+            /** Rekordbox Was Running */
+            rekordbox_was_running: boolean;
+            /** Share Root */
+            share_root: string;
+            /** Source */
+            source: string;
+            /** Source Was Encrypted */
+            source_was_encrypted: boolean;
+            /** Started At */
+            started_at: string;
+            /** Tracks */
+            tracks: number;
+            /** Unreadable Music Roots */
+            unreadable_music_roots?: string[];
         };
         /** MemberOut */
         MemberOut: {
@@ -2632,6 +2857,20 @@ export interface components {
             suggested_sources: components["schemas"]["SuggestedSourcesOut"];
             /** Title */
             title: string;
+        };
+        /**
+         * PermissionsOut
+         * @description The folder-access answer, and what to do about a refusal.
+         */
+        PermissionsOut: {
+            /** All Readable */
+            all_readable: boolean;
+            /** Denied */
+            denied?: string[];
+            /** How To Grant */
+            how_to_grant: string;
+            /** Roots */
+            roots?: components["schemas"]["AccessProbeOut"][];
         };
         /** PlanModel */
         PlanModel: {
@@ -3352,12 +3591,13 @@ export interface components {
             data_dir: string;
             /** Dismissed */
             dismissed: boolean;
+            /** Folder Stages */
+            folder_stages: string[];
             /** Last Import */
-            last_import?: {
-                [key: string]: unknown;
-            } | null;
+            last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
             /** Library Empty */
             library_empty: boolean;
+            permissions: components["schemas"]["PermissionsOut"];
             /** Playlists */
             playlists: number;
             rekordbox: components["schemas"]["RekordboxDetectionOut"];
@@ -6183,6 +6423,38 @@ export interface operations {
             };
         };
     };
+    detect_folder_api_v1_setup_detect_folder_get: {
+        parameters: {
+            query: {
+                /** @description absolute folder path to inspect */
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get: {
         parameters: {
             query?: never;
@@ -6265,6 +6537,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_folder_import_api_v1_setup_import_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderImportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    permissions_api_v1_setup_permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionsOut"];
                 };
             };
         };

@@ -34,9 +34,35 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
         "--data-dir",
         _data_dir(payload),
     ]
+    argv += _mode_args(payload)
     argv += _source_args(payload)
     argv += _limit_args(payload)
     argv += _refresh_args(payload)
+    return argv
+
+
+def _mode_args(payload: dict[str, Any]) -> list[str]:
+    """rekordbox by default; folder mode needs at least one absolute root.
+
+    Relative roots are refused for the same reason a relative data dir is:
+    the worker's cwd is the engine's, which is not somewhere the operator
+    chose, so a relative path would walk a folder nobody asked about.
+    """
+    mode = payload.get("mode", "rekordbox")
+    if mode not in {"rekordbox", "folder"}:
+        raise _reject("mode", mode, "must be 'rekordbox' or 'folder'")
+    if mode == "rekordbox":
+        return []
+    roots = payload.get("roots")
+    if not isinstance(roots, list) or not roots:
+        raise _reject("roots", roots, "must be a non-empty list in folder mode")
+    argv = ["--mode", "folder"]
+    for root in roots:
+        if not isinstance(root, str) or not root.strip():
+            raise _reject("roots", root, "entries must be non-empty strings")
+        if not Path(root).is_absolute():
+            raise _reject("roots", root, "entries must be absolute paths")
+        argv += ["--root", root]
     return argv
 
 

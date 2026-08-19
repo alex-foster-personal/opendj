@@ -23,7 +23,13 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
+
+if TYPE_CHECKING:  # no runtime import: the env contract has to be set first
+    from apps.engine_core.setup.importer import (
+        FolderImportOutcome,
+        ImportOutcome,
+    )
 
 EXIT_OK: int = 0
 EXIT_FAILED: int = 1
@@ -53,6 +59,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="re-decrypt the snapshot instead of reusing the plain copy",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("rekordbox", "folder"),
+        default="rekordbox",
+        help="import a rekordbox library, or walk plain folders of audio",
+    )
+    parser.add_argument(
+        "--root",
+        action="append",
+        default=[],
+        help="folder to walk in --mode folder; repeat for several",
+    )
     return parser
 
 
@@ -78,37 +96,72 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_FAILED
 
     # Env contract first, imports second. See the module docstring.
+    if args.mode == "folder" and not args.root:
+        print("[ERROR] --mode folder needs at least one --root", file=sys.stderr)
+        return EXIT_FAILED
+
     os.environ["MDT_DATA_DIR"] = str(data_dir)
-    from apps.engine_core.setup.importer import SetupImportError, run_import
+    from apps.engine_core.setup.importer import (
+        SetupImportError,
+        run_folder_import,
+        run_import,
+    )
 
     progress_stream = sys.stdout
     emit = _emitter(progress_stream)
-    emit(0.0, "starting the rekordbox import")
+    emit(0.0, f"starting the {args.mode} import")
 
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            outcome = run_import(
-                data_dir,
-                emit=emit,
-                source=Path(args.source) if args.source else None,
-                limit=args.limit,
-                refresh_decrypt=args.refresh_decrypt,
-            )
+            if args.mode == "folder":
+                summary = _folder_summary(
+                    run_folder_import(
+                        data_dir,
+                        emit=emit,
+                        roots=[Path(root).expanduser() for root in args.root],
+                        limit=args.limit,
+                    )
+                )
+            else:
+                summary = _rekordbox_summary(
+                    run_import(
+                        data_dir,
+                        emit=emit,
+                        source=Path(args.source) if args.source else None,
+                        limit=args.limit,
+                        refresh_decrypt=args.refresh_decrypt,
+                    )
+                )
         except SetupImportError as exc:
             # The code goes to stderr, which the runner keeps as the job's
             # error tail. Nothing partial is claimed on stdout.
             print(f"[ERROR] {exc.code}: {exc}", file=sys.stderr)
             return EXIT_FAILED
 
-    emit(
-        1.0,
-        (
-            f"imported {outcome.tracks} tracks and {outcome.playlists} "
-            f"playlists; {outcome.analyses_linked} of "
-            f"{outcome.analyses_expected} analyses resolve"
-        ),
-    )
+    emit(1.0, summary)
     return EXIT_OK
+
+
+def _rekordbox_summary(outcome: ImportOutcome) -> str:
+    return (
+        f"imported {outcome.tracks} tracks and {outcome.playlists} "
+        f"playlists; {outcome.analyses_linked} of "
+        f"{outcome.analyses_expected} analyses resolve"
+    )
+
+
+def _folder_summary(outcome: FolderImportOutcome) -> str:
+    """Says what was NOT done as loudly as what was."""
+    denied = outcome.unreadable_roots
+    caveat = (
+        f"; {len(denied)} folder(s) could not be read ({', '.join(denied)})"
+        if denied
+        else ""
+    )
+    return (
+        f"imported {outcome.tracks_written} of {outcome.files_seen} "
+        f"readable audio files, none of them analysed{caveat}"
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - process entry point

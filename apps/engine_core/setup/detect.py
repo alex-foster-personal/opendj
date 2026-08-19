@@ -19,6 +19,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.shared import platform_paths
+from apps.shared.fs_access import (  # re-exported: ONE access probe in the tree
+    GRANT_INSTRUCTIONS,
+    AccessProbe,
+    denied_roots,
+    music_root_access,
+    probe_all,
+    probe_readable,
+)
 from apps.shared.paths import REKORDBOX_PLAIN_DB, REKORDBOX_WORKING_DB
 
 # ----- refusal codes ------------------------------------------------------
@@ -28,6 +36,7 @@ CODE_SHARE_MISSING: str = "rekordbox_share_missing"
 CODE_DECRYPT_FAILED: str = "rekordbox_decrypt_failed"
 CODE_INGEST_FAILED: str = "rekordbox_ingest_failed"
 CODE_IMPORT_ALREADY_RUNNING: str = "setup_import_already_running"
+CODE_ACCESS_DENIED: str = "music_folder_access_denied"
 
 CODES: tuple[str, ...] = (
     CODE_REKORDBOX_NOT_FOUND,
@@ -36,6 +45,7 @@ CODES: tuple[str, ...] = (
     CODE_DECRYPT_FAILED,
     CODE_INGEST_FAILED,
     CODE_IMPORT_ALREADY_RUNNING,
+    CODE_ACCESS_DENIED,
 )
 
 # Names, not paths: the constants they come from are bound to the PROCESS
@@ -292,25 +302,32 @@ def data_dir_from_env(default: Path) -> Path:
 
 __all__ = [
     "CODES",
+    "CODE_ACCESS_DENIED",
     "CODE_DECRYPT_FAILED",
     "CODE_IMPORT_ALREADY_RUNNING",
     "CODE_INGEST_FAILED",
     "CODE_KEY_UNAVAILABLE",
     "CODE_REKORDBOX_NOT_FOUND",
     "CODE_SHARE_MISSING",
+    "GRANT_INSTRUCTIONS",
     "PLAIN_COPY_NAME",
     "SQLITE_MAGIC",
     "WORKING_COPY_NAME",
+    "AccessProbe",
     "FileProbe",
     "LibraryCounts",
     "RekordboxDetection",
     "choose_import_source",
     "data_dir_from_env",
+    "denied_roots",
     "detect_rekordbox",
     "is_plain_sqlite",
     "key_status",
     "library_counts",
+    "music_root_access",
     "probe",
+    "probe_all",
+    "probe_readable",
     "rekordbox_is_running",
     "resolve_share_root",
 ]
