@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response, status
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from ..backend import Pairing, StateBackend
 from ..deps import get_read_state, get_write_state

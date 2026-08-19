@@ -21,8 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from apps.engine_core import events
 from apps.engine_core.jobs.reap import WorkerIdentity, reap
+from apps.shared import events
 
 STATUSES: tuple[str, ...] = (
     "queued",

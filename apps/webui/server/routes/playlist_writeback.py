@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state

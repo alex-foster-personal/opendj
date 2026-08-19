@@ -44,7 +44,7 @@ from typing import Any, Iterator, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 from apps.shared.smartlists import SmartlistRow, SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, evaluate
 from apps.smartlists.repo import (

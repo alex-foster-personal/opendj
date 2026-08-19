@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from ..backend import (
     BatchConflictError,

@@ -29,7 +29,7 @@ import regex
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_read_state, get_write_state

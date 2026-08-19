@@ -47,7 +47,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from ..backend import StateBackend
 from ..deps import get_write_state

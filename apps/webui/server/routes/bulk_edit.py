@@ -13,7 +13,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_write_state

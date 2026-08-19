@@ -13,7 +13,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 from apps.shared.paths import DATA_DIR
 
 router = APIRouter(prefix="/ui-prefs", tags=["ui-prefs"])

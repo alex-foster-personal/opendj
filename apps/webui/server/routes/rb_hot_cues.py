@@ -29,7 +29,7 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from apps.engine_core.events import publish
+from apps.shared.events import publish
 
 from .. import rb_vendor
 from ..backend import StateBackend

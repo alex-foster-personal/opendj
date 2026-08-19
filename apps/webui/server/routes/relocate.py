@@ -60,9 +60,9 @@ from typing import Callable, Literal, Optional, TypeVar
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from apps.engine_core.events import publish
 from apps.reconcile import locate
 from apps.shared import audio_files, fs_residency, paths
+from apps.shared.events import publish
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
 
 from .. import rb_vendor

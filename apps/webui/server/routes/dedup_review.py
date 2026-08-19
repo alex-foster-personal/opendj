@@ -37,8 +37,8 @@ from apps.dedup.find_clusters import (
     DEFAULT_DURATION_DELTA_S,
     DEFAULT_MAX_CLUSTER,
 )
-from apps.engine_core.events import publish
 from apps.shared import paths as dedup_paths
+from apps.shared.events import publish
 
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state

@@ -6,8 +6,8 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
-from apps.engine_core.events import publish
 from apps.shared import audio_quality
+from apps.shared.events import publish
 
 from .. import rb_vendor
 from ..backend import StateBackend, Track, TrackFilter

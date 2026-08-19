@@ -34,7 +34,6 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
-from apps.engine_core import events
 from apps.engine_core.config import (
     ENGINE_VERSION,
     EngineBootError,
@@ -48,7 +47,7 @@ from apps.engine_core.jobs.runner import JobRunner
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
-from apps.shared import platform_paths
+from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
 from apps.shared.paths import STATE_DB
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
