@@ -29,15 +29,17 @@
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
+	folderIsImportable,
 	getSetupStatus,
-	getStemsSetup,
 	isFatalBlocker,
+	scanFolder,
 	setDismissed,
 	setupRefusal,
+	startFolderImport,
 	startImport,
+	type FolderScan,
 	type RekordboxDetection,
 	type SetupStatus,
-	type StemsSetup
 } from './setup-api';
 
 export const WIZARD_STEPS = [
@@ -53,12 +55,15 @@ export type WizardStep = (typeof WIZARD_STEPS)[number];
 
 export const STEP_TITLES: Record<WizardStep, string> = {
 	welcome: 'Welcome',
-	detect: 'Find rekordbox',
+	detect: 'Find your music',
 	confirm: 'Confirm the import',
 	progress: 'Importing',
 	stems: 'Stems analysis',
 	done: 'Done'
 };
+
+/** Which library the wizard is importing FROM. */
+export type ImportSource = 'rekordbox' | 'folder';
 
 /** The job kind the import runs as. Mirrors SETUP_IMPORT_KIND. */
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
@@ -88,7 +93,9 @@ export function fatalBlockers(detection: RekordboxDetection | null): string[] {
 }
 
 export interface AdvanceContext {
+	source: ImportSource;
 	detection: RekordboxDetection | null;
+	folderScan: FolderScan | null;
 	job: Job | null;
 }
 
@@ -98,8 +105,22 @@ export interface AdvanceContext {
  * The progress step refuses while the job is still live on purpose: a wizard
  * that lets you walk past a running import is a wizard whose "done" screen is
  * a guess.
+ *
+ * On the detect step the refusal depends on which source is selected, and a
+ * fatal rekordbox blocker must NOT block someone who has switched to a
+ * folder -- that is the whole point of the folder branch.
  */
 export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
+	if (step === 'detect' && ctx.source === 'folder') {
+		if (ctx.folderScan === null) return 'no folder has been checked yet';
+		if (ctx.folderScan.denied) {
+			return 'macOS is blocking that folder; grant access and check again';
+		}
+		if (!folderIsImportable(ctx.folderScan)) {
+			return `nothing importable in ${ctx.folderScan.path}`;
+		}
+		return null;
+	}
 	if (step === 'detect') {
 		if (ctx.detection === null) return 'detection has not answered yet';
 		const fatal = fatalBlockers(ctx.detection);
@@ -134,9 +155,13 @@ function _message(exc: unknown): string {
 
 class SetupWizard {
 	step = $state<WizardStep>('welcome');
+	/** rekordbox by default; 'folder' is the no-rekordbox branch. */
+	source = $state<ImportSource>('rekordbox');
 	status = $state<SetupStatus | null>(null);
 	detection = $state<RekordboxDetection | null>(null);
-	stems = $state<StemsSetup | null>(null);
+	/** The folder the operator typed, and what the daemon found in it. */
+	folderPath = $state('');
+	folderScan = $state<FolderScan | null>(null);
 	/** The id of the job this wizard started. The row itself lives in
 	 * jobsStore; duplicating it here would give the UI two truths. */
 	jobId = $state<string | null>(null);
@@ -196,16 +221,55 @@ class SetupWizard {
 		}
 	}
 
-	async loadStems(): Promise<void> {
+	/** Switch branch. The previous branch's findings are dropped rather than
+	 * left on screen describing something the operator is no longer doing. */
+	useSource(source: ImportSource): void {
+		this.source = source;
+		this.error = null;
+		if (source === 'rekordbox') this.folderScan = null;
+	}
+
+	/** Look inside the typed folder. Never imports anything. */
+	async checkFolder(path: string): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
 			return;
 		}
+		const trimmed = path.trim();
+		if (trimmed === '') {
+			this.error = 'type a folder path first';
+			return;
+		}
 		this.busy = true;
 		try {
-			this.stems = await getStemsSetup();
+			this.folderPath = trimmed;
+			this.folderScan = await scanFolder(trimmed);
 			this.error = null;
+		} catch (exc) {
+			this.error = _message(exc);
+		} finally {
+			this.busy = false;
+		}
+	}
+
+	/** Enqueue the folder import, advancing only once the server accepted it. */
+	async beginFolderImport(): Promise<void> {
+		const refusal = setupRefusal();
+		if (refusal !== null) {
+			this.error = refusal;
+			return;
+		}
+		if (!folderIsImportable(this.folderScan)) {
+			this.error = 'check a folder with audio files in it first';
+			return;
+		}
+		this.busy = true;
+		try {
+			const job = await startFolderImport({ folders: [this.folderPath] });
+			this.jobId = job.id;
+			this.error = null;
+			this.goTo('progress');
 		} catch (exc) {
 			this.error = _message(exc);
 		} finally {
@@ -280,9 +344,11 @@ class SetupWizard {
 	/** Drop everything, for tests. */
 	_resetForTests(): void {
 		this.step = 'welcome';
+		this.source = 'rekordbox';
 		this.status = null;
 		this.detection = null;
-		this.stems = null;
+		this.folderPath = '';
+		this.folderScan = null;
 		this.jobId = null;
 		this.busy = false;
 		this.error = null;

@@ -31,7 +31,10 @@ export type FileProbe = components['schemas']['FileProbeOut'];
 export type Permissions = components['schemas']['PermissionsOut'];
 export type AccessProbe = components['schemas']['AccessProbeOut'];
 export type SetupImportOptions = components['schemas']['SetupImportIn'];
+export type FolderImportOptions = components['schemas']['FolderImportIn'];
+export type FolderScan = components['schemas']['FolderScanOut'];
 export type SetupJob = components['schemas']['JobOut'];
+export type LastImport = NonNullable<SetupStatus['last_import']>;
 
 /** Mirrors detect.CODES in apps/engine_core/setup/detect.py. A code outside
  * this list is contract drift, so the wizard shows the server's message rather
@@ -57,6 +60,14 @@ export const STAGE_LABELS: Record<string, string> = {
 	decrypt: 'Decrypt the working copy',
 	ingest: 'Read tracks and playlists into the library',
 	analysis: 'Check the waveform analyses are reachable'
+};
+
+/** The folder import's stages. Fewer, because there is no database to
+ * snapshot and nothing to decrypt. */
+export const FOLDER_STAGE_LABELS: Record<string, string> = {
+	detect: 'Check the folders can be read',
+	scan: 'Walk them for audio files',
+	ingest: 'Read tags into the library (no analysis)'
 };
 
 const SETUP_MISSING =
@@ -119,6 +130,47 @@ export function accessCaveat(permissions: Permissions | null): string | null {
  * watches through the jobs store rather than polling here. */
 export async function startImport(options: SetupImportOptions): Promise<SetupJob> {
 	return unwrap(api.POST('/api/v1/setup/import', { body: options }));
+}
+
+/** Look inside a candidate folder WITHOUT importing it.
+ *
+ * `audio_files` is only a real count when `denied` is false. A denied folder
+ * answers 0 because macOS refused the listing, and rendering that 0 as
+ * "empty" is the exact failure this endpoint exists to prevent.
+ */
+export async function scanFolder(path: string): Promise<FolderScan> {
+	return unwrap(
+		api.GET('/api/v1/setup/detect/folder', { params: { query: { path } } })
+	);
+}
+
+/** Enqueue a folder import: tags only, no analysis, and it says so. */
+export async function startFolderImport(
+	options: FolderImportOptions
+): Promise<SetupJob> {
+	return unwrap(api.POST('/api/v1/setup/import/folder', { body: options }));
+}
+
+/** What a scanned folder means, in one sentence a human can act on.
+ *
+ * The denied branch never quotes the file count: a count taken behind a
+ * permission wall is a count of nothing, not a count of the folder.
+ */
+export function folderVerdict(scan: FolderScan): string {
+	if (scan.denied) return `${scan.detail}. ${scan.how_to_grant}`;
+	if (!scan.exists) return `Nothing at ${scan.path}.`;
+	if (!scan.readable) return `${scan.path} could not be read: ${scan.detail}.`;
+	if (scan.audio_files === 0) return `${scan.path} is readable but holds no audio files.`;
+	const placeholders =
+		scan.icloud_placeholders > 0
+			? ` ${scan.icloud_placeholders} more are iCloud placeholders with no local copy, and are skipped.`
+			: '';
+	return `${scan.audio_files} audio file${scan.audio_files === 1 ? '' : 's'} found.${placeholders}`;
+}
+
+/** True when this folder can actually be imported. */
+export function folderIsImportable(scan: FolderScan | null): boolean {
+	return scan !== null && scan.readable && scan.audio_files > 0;
 }
 
 /** Skip the wizard, or re-arm it. Persisted engine-side, so an agent reading

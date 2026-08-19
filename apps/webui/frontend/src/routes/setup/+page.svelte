@@ -2,11 +2,19 @@
 	import { onMount } from 'svelte';
 
 	import { goto } from '$app/navigation';
+	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import { jobsStore, errorTail } from '$lib/rb/jobs-store.svelte';
+	// StemsPrompt paints from the --rb-* palette, which theme.css scopes under
+	// .perf-root on purpose so it cannot leak into the app's own accent. The
+	// mount below is wrapped in that class; without this import every colour
+	// var it reads would be undefined.
+	import '$lib/rb/theme.css';
 	import {
+		FOLDER_STAGE_LABELS,
 		STAGE_LABELS,
 		accessCaveat,
 		blockerSentence,
+		folderVerdict,
 		formatBytes,
 		setupRefusal
 	} from '$lib/setup/setup-api';
@@ -24,7 +32,6 @@
 	const step = $derived(setupWizard.step);
 	const detection = $derived(setupWizard.detection);
 	const status = $derived(setupWizard.status);
-	const stems = $derived(setupWizard.stems);
 
 	/** The job row, straight out of the jobs store. Never a local copy: the
 	 * store is fed by the engine's events bus and duplicating the row here
@@ -36,16 +43,37 @@
 	);
 
 	const lastImport = $derived(status?.last_import ?? null);
+	/** Folders macOS refused during the LAST import, whichever kind it was.
+	 * Both outcome models carry the list under their own name; the caveat it
+	 * feeds is the same sentence either way. */
+	const importDenied = $derived(
+		lastImport === null
+			? []
+			: lastImport.kind === 'folder'
+				? (lastImport.unreadable_roots ?? [])
+				: (lastImport.unreadable_music_roots ?? [])
+	);
 	const permissions = $derived(status?.permissions ?? null);
 	const deniedRoots = $derived(permissions?.denied ?? []);
 	const caveat = $derived(accessCaveat(permissions));
 	const blockers = $derived(detection?.blockers ?? []);
 	const fatal = $derived(fatalBlockers(detection));
-	const nextRefusal = $derived(advanceRefusal(step, { detection, job }));
+	const source = $derived(setupWizard.source);
+	const folderScan = $derived(setupWizard.folderScan);
+	const nextRefusal = $derived(
+		advanceRefusal(step, { source, detection, folderScan, job })
+	);
 	const pct = $derived(importPct(job));
+	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
+	const stageNames = $derived(
+		(source === 'folder' ? status?.folder_stages : status?.stages) ?? []
+	);
 
 	let refreshDecrypt = $state(false);
-	let stemsChoice = $state<'now' | 'later'>('later');
+	let folderInput = $state('');
+	/** The separation job StemsPrompt started, if the tester said yes. Held
+	 * only so the done screen can name it; the TopBar bar owns its progress. */
+	let stemsJobId = $state<string | null>(null);
 
 	onMount(() => {
 		void setupWizard.load();
@@ -58,12 +86,6 @@
 		if (setupWizard.step !== 'progress') return;
 		if (refusal !== null) return;
 		return jobsStore.attach();
-	});
-
-	$effect(() => {
-		if (setupWizard.step !== 'stems') return;
-		if (setupWizard.stems !== null) return;
-		void setupWizard.loadStems();
 	});
 
 	async function skipWizard(): Promise<void> {
@@ -151,6 +173,106 @@
 
 	<!-- ----------------------------------------------------------- detect -->
 	{#if step === 'detect'}
+		<div class="panel">
+			{#if deniedRoots.length > 0}
+				<p class="blocker fatal" role="alert">
+					{caveat}
+				</p>
+				<p class="muted">{permissions?.how_to_grant}</p>
+			{/if}
+
+			<fieldset class="choice">
+				<legend>Where is your music coming from?</legend>
+				<label>
+					<input
+						type="radio"
+						name="import-source"
+						checked={source === 'rekordbox'}
+						onchange={() => setupWizard.useSource('rekordbox')}
+					/>
+					A rekordbox collection on this machine
+				</label>
+				<label>
+					<input
+						type="radio"
+						name="import-source"
+						checked={source === 'folder'}
+						onchange={() => setupWizard.useSource('folder')}
+					/>
+					A folder of audio files (no rekordbox needed)
+				</label>
+			</fieldset>
+		</div>
+	{/if}
+
+	{#if step === 'detect' && source === 'folder'}
+		<div class="panel">
+			<h3>Point at a folder</h3>
+			<p class="muted">
+				This reads tags only. No BPM, no key and no beatgrid are written,
+				and none are guessed -- the library you get is unanalysed, and the
+				last screen will say so.
+			</p>
+			<form class="folder-form" onsubmit={(event) => event.preventDefault()}>
+				<input
+					type="text"
+					placeholder="/Users/you/Music"
+					bind:value={folderInput}
+					aria-label="Folder to import"
+				/>
+				<button
+					type="submit"
+					onclick={() => setupWizard.checkFolder(folderInput)}
+					disabled={setupWizard.busy || refusal !== null}
+					title={refusal ?? 'Look inside this folder without importing it'}
+				>
+					Check this folder
+				</button>
+			</form>
+
+			{#if folderScan !== null}
+				<p class="blocker" class:fatal={folderScan.denied} role="status">
+					{folderVerdict(folderScan)}
+				</p>
+				{#if folderScan.readable}
+					<p class="counts">
+						<strong
+							title="Readable audio files found under this folder. iCloud placeholders are counted separately and never opened."
+						>
+							{folderScan.audio_files} audio files
+						</strong>
+						{#if folderScan.icloud_placeholders > 0}
+							,
+							<strong
+								title="Files that exist but whose bytes live in iCloud. They are skipped, never downloaded."
+							>
+								{folderScan.icloud_placeholders} iCloud placeholders skipped
+							</strong>
+						{/if}
+					</p>
+					<ul class="probes">
+						{#each folderScan.sample as example (example)}
+							<li><code>{example}</code></li>
+						{/each}
+					</ul>
+				{/if}
+			{/if}
+
+			<div class="actions">
+				<button type="button" class="secondary" onclick={() => setupWizard.back()}>Back</button>
+				<button
+					type="button"
+					onclick={() => setupWizard.beginFolderImport()}
+					disabled={nextRefusal !== null || setupWizard.busy}
+					title={nextRefusal ?? 'Import this folder'}
+				>
+					Import this folder
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if step === 'detect' && source === 'rekordbox'}
 		<div class="panel">
 			<h3>What is on this machine</h3>
 			{#if detection === null}
@@ -251,8 +373,8 @@
 			{/if}
 			<p>These are the stages it will report:</p>
 			<ol class="stages">
-				{#each status?.stages ?? [] as stage (stage)}
-					<li><strong>{stage}</strong> {STAGE_LABELS[stage] ?? ''}</li>
+				{#each stageNames as stage (stage)}
+					<li><strong>{stage}</strong> {stageLabels[stage] ?? ''}</li>
 				{/each}
 			</ol>
 			{#if detection?.plain_copy.exists}
@@ -335,48 +457,33 @@
 				It is what makes acapella and instrumental playback possible.
 			</p>
 
-			{#if stems === null}
-				<p class="muted">Asking the engine what it can run...</p>
-			{:else}
-				<fieldset class="choice" disabled={!stems.available}>
-					<legend>Analyse the library after the import?</legend>
-					<label>
-						<input type="radio" bind:group={stemsChoice} value="now" />
-						Yes, start separating the whole library now
-					</label>
-					<label>
-						<input type="radio" bind:group={stemsChoice} value="later" />
-						No, I will do individual tracks later
-					</label>
-				</fieldset>
+			<!--
+				MOUNTED, not rebuilt. StemsPrompt is af--stems-modal's component and
+				the props below are the entire contract between the two lanes. It
+				refuses to ask the question until GET /api/v1/stems/plan has told it
+				how many tracks, how long and how much, so this wizard deliberately
+				pre-fetches nothing and passes no numbers in -- a second source for
+				those figures is a second thing that can disagree with the run.
 
-				{#if !stems.available}
-					<p class="blocker" role="status">{stems.reason}</p>
-					<p class="muted">
-						Individual tracks can already be separated from the track menu,
-						which posts to <code>{stems.per_track_endpoint}</code>. What does
-						not exist yet is anything that runs it across a whole library, so
-						this choice cannot be acted on.
-					</p>
-				{/if}
+				Once it enqueues, tracks light up one at a time through
+				library.changed and the TopBar bar owns the progress. Nothing here
+				polls.
+			-->
+			<div class="perf-root stems-mount">
+				<StemsPrompt
+					onenqueued={(jobId) => {
+						stemsJobId = jobId;
+						setupWizard.next();
+					}}
+					onskip={() => setupWizard.next()}
+				/>
+			</div>
 
-				<h4>Separation tiers this engine knows about</h4>
-				<table class="library tiers">
-					<thead>
-						<tr><th>Tier</th><th>Runs</th><th>Available</th></tr>
-					</thead>
-					<tbody>
-						{#each stems.tiers as tier (tier.key)}
-							<tr>
-								<td><code>{tier.key}</code> {tier.name}</td>
-								<td>{tier.where}</td>
-								<td title={tier.unavailable_because || 'This tier can run'}>
-									{tier.availability}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+			{#if stemsJobId !== null}
+				<p class="muted" title={`Engine job ${stemsJobId}`}>
+					Separation is running in the background as job
+					<code>{stemsJobId}</code>. You can finish setup now.
+				</p>
 			{/if}
 
 			<div class="actions">
@@ -390,7 +497,7 @@
 	{#if step === 'done'}
 		<div class="panel">
 			<h3>Done</h3>
-			{#if lastImport !== null}
+			{#if lastImport !== null && lastImport.kind === 'rekordbox'}
 				<p class="counts">
 					Imported
 					<strong title="Tracks written into the engine's state database">
@@ -415,6 +522,49 @@
 						reachable.
 					{/if}
 				</p>
+				{#if importDenied.length > 0}
+					<p class="blocker fatal" role="alert">
+						macOS blocked
+						<span title="Music folders that could not be listed during the import">
+							{importDenied.length}
+						</span>
+						folder(s) during this import ({importDenied.join(', ')}), so the
+						counts above cover only what could be read.
+					</p>
+				{/if}
+			{:else if lastImport !== null && lastImport.kind === 'folder'}
+				<p class="counts">
+					Imported
+					<strong title="Tracks written into the engine's state database">
+						{lastImport.tracks_written} tracks
+					</strong>
+					from
+					<strong title="Readable audio files found under the folders you chose">
+						{lastImport.files_seen} readable audio files
+					</strong>.
+				</p>
+				<p class="blocker" role="status">
+					<span
+						title="Imported tracks with no BPM, key or beatgrid. A folder import reads tags only."
+					>
+						{lastImport.tracks_without_analysis}
+					</span>
+					of them have no analysis at all. {lastImport.analysis_detail}.
+				</p>
+				{#if lastImport.files_dataless > 0}
+					<p class="muted">
+						<span title="Files present but stored in iCloud with no local copy. They were skipped, never downloaded.">
+							{lastImport.files_dataless}
+						</span>
+						iCloud placeholders were skipped rather than downloaded.
+					</p>
+				{/if}
+				{#if importDenied.length > 0}
+					<p class="blocker fatal" role="alert">
+						macOS blocked {importDenied.join(', ')}, so the counts above cover
+						only what could be read.
+					</p>
+				{/if}
 			{:else}
 				<p class="muted">
 					No import was recorded for this data directory. The library is
@@ -535,15 +685,21 @@
 		gap: 0.35rem;
 		padding: 0.75rem 1rem;
 	}
-	.choice[disabled] {
-		opacity: 0.55;
-	}
-	.tiers {
-		margin-top: 0.5rem;
+	.stems-mount {
+		margin-top: 0.75rem;
 	}
 	.checkbox {
 		display: block;
 		margin-top: 0.75rem;
+	}
+	.folder-form {
+		display: flex;
+		gap: 0.5rem;
+		margin-top: 0.75rem;
+	}
+	.folder-form input {
+		flex: 1 1 auto;
+		min-width: 18rem;
 	}
 	.footnote {
 		font-size: 0.8rem;
