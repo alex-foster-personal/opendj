@@ -22,6 +22,30 @@ pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
 # Phase 7 -- process-alive checks for the live-write abort rail.
 psutil>=5.9
 
+# --- Core runtime deps this file was resolving only by luck --------------------
+# All three are declared in pyproject.toml's [project].dependencies because
+# apps/* imports them DIRECTLY, but they were missing here. CI installs this
+# file and nothing else, so "declared in pyproject" bought CI nothing. Specs
+# match pyproject exactly; the two manifests are now checked against each other
+# by tests/test_dependency_contract.py.
+#
+# pydantic and sqlalchemy did resolve, transitively: fastapi requires
+# pydantic>=2.9.0 and pyrekordbox requires sqlalchemy>=2.0.0. That is the
+# DEP003 hazard [tool.deptry] already warns about in this repo -- it works
+# until the day fastapi vendors pydantic or pyrekordbox drops sqlalchemy, and
+# then it breaks somewhere with no obvious connection to either.
+pydantic>=2.0,<3
+sqlalchemy>=2.0,<3
+# Pillow was not transitive at all: NOTHING pulled it in, so `import PIL`
+# simply failed in a requirements.txt-only environment. Verified on darwin:
+# `import apps.sync.usb.pioneer.agent_actuator` raised ModuleNotFoundError, and
+# `from PIL import Image` there is a hard module-scope import (unlike the
+# Quartz one above it, which is try-guarded). Linux CI never noticed because
+# that module's tests skip wholesale before importing it. Same shape as the
+# pyobjc gap pyproject records: undeclared, and broken ON macOS, the platform
+# the tool exists for.
+Pillow>=10.0
+
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
 # numpy<2 for madmom compat.  librosa (ISC) + madmom (MIT) + scipy for the
 # default backend; PyYAML drives ``apps/analysis/config.yaml``.
