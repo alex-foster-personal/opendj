@@ -144,6 +144,23 @@ so it would time out on every command the moment `setup.js` navigates. Using it
 would mean granting the http origin permission to invoke Tauri commands, which
 is the thin-shell rule above inverted.
 
+**What the driver can drive.** A click reaches the app (the row it clicks
+becomes the selection, asserted in the smoke). A synthesized double-click does
+not reach `ondblclick`, and `moveTo()` does not produce a CSS `:hover` state,
+so the hover-revealed per-row load buttons never display. Both work in
+Playwright's webkit against the same build, so they are driver limits rather
+than product defects. Gesture coverage therefore stays in tier 1, and the deck
+load here goes through the agent-native IPC. Do not "fix" that back into a
+double-click without re-measuring.
+
+**The fixture engine runs with a sandboxed HOME.** `platform_paths.py` derives
+both `~/Library/Pioneer/rekordbox` and `~/Music` from HOME. Without the
+sandbox, a `setup.import-rekordbox` job reached the live rekordbox database,
+decrypted a copy into the fixture dir and wrote 32 real tracks into a two-track
+generated library (Wed 19 Aug 2026, read-only toward rekordbox). Both e2e tiers
+now point HOME at an empty dir inside their own fixture, so a real library is
+unreachable by construction.
+
 **It cannot reach a dmg.** `tauri-plugin-wdio-webdriver` is declared under
 `[target.'cfg(debug_assertions)'.dependencies]`, so a release build cannot
 compile it in. Verified on the artifacts rather than assumed: a release binary

@@ -32,7 +32,7 @@
  * - [if] a test fails [then ⛔️] Playwright retries it and hides the flake.
  */
 import { defineConfig, devices } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,6 +67,23 @@ export const FIXTURE_DATA_DIR = join(
 	'fixtures',
 	'deckload-data'
 );
+
+/**
+ * HOME for the engine under test, and the reason it exists.
+ *
+ * apps/shared/platform_paths.py derives BOTH the rekordbox app dir
+ * (~/Library/Pioneer/rekordbox) and the default music root (~/Music) from
+ * HOME. A fixture engine that keeps the real HOME can therefore be pointed at
+ * the real library by any code path that resolves those defaults, and one was:
+ * a `setup.import-rekordbox` job ran inside the SIBLING tier-2 fixture dir,
+ * snapshotted and decrypted the live master.db and wrote 32 real tracks into
+ * what is supposed to be a two-track generated library (Wed 19 Aug 2026).
+ * Read-only toward rekordbox, and the builder's count check caught it on the
+ * next run, but the fixture's whole claim is that no real audio is reachable.
+ * It is now unreachable by construction rather than by intent.
+ */
+const SANDBOX_HOME = join(FIXTURE_DATA_DIR, 'sandbox-home');
+mkdirSync(SANDBOX_HOME, { recursive: true });
 
 const BUILD_INDEX = join(FRONTEND_ROOT, 'build', 'index.html');
 if (!existsSync(BUILD_INDEX)) {
@@ -120,7 +137,8 @@ export default defineConfig({
 		env: {
 			...process.env,
 			MDT_DATA_DIR: FIXTURE_DATA_DIR,
-			WEB_CONCURRENCY: ''
+			WEB_CONCURRENCY: '',
+			HOME: SANDBOX_HOME
 		}
 	},
 	use: {

@@ -33,7 +33,7 @@
  * - [if] the shell never leaves tauri://localhost [then ⛔️] the smoke passes.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,11 +58,42 @@ if (RESERVED_PORTS.includes(ENGINE_PORT)) {
 
 export const ENGINE_ORIGIN = `http://127.0.0.1:${ENGINE_PORT}`;
 
+/**
+ * The seam main.rs documents: point the shell at this engine without
+ * rebuilding it.
+ *
+ * Set HERE, at module scope, and deliberately not in `onPrepare`. The app is
+ * spawned by the service inside the WDIO WORKER process, while `onPrepare`
+ * runs in the launcher, so an assignment there only reaches the app if the
+ * launcher's environment happens to be inherited intact through the fork. It
+ * was, for six consecutive runs, and then it was not: the shell fell back to
+ * its baked default (:8685) and attached to whatever engine was already
+ * listening there. WDIO loads this config in every process, so assigning at
+ * module scope reaches the process that actually spawns the app. Test 1
+ * asserts the injected value for exactly this reason.
+ */
+process.env.OPENDJ_ENGINE_ORIGIN = ENGINE_ORIGIN;
+
 /** The embedded WebDriver server the debug binary hosts, kept off 4445 so a
  * stray default-port instance cannot be driven by accident. */
 const EMBEDDED_WEBDRIVER_PORT = 4455;
 
 const FIXTURE_DATA_DIR = join(DESKTOP_ROOT, 'tests', 'fixtures', 'real-shell-data');
+
+/**
+ * HOME for the fixture engine, and the incident that put it here.
+ *
+ * apps/shared/platform_paths.py derives the rekordbox app dir
+ * (~/Library/Pioneer/rekordbox) and the default music root (~/Music) from
+ * HOME. On Wed 19 Aug 2026 a `setup.import-rekordbox` job ran against THIS
+ * fixture dir, snapshotted and decrypted the live master.db into it, and wrote
+ * 32 real tracks plus a playlist into a library that is supposed to hold two
+ * generated tones. Nothing was written toward rekordbox, and the builder's
+ * count check failed the next run loudly, but a fixture whose isolation
+ * depends on nobody triggering the wizard is not isolated. With HOME here,
+ * that import can only ever find an empty directory.
+ */
+const SANDBOX_HOME = join(FIXTURE_DATA_DIR, 'sandbox-home');
 const FIXTURE_BUILDER = join(
 	REPOSITORY_ROOT,
 	'apps/webui/frontend/tests/e2e/support/deckload_fixture.py'
@@ -125,6 +156,7 @@ export const config: WebdriverIO.Config = {
 					`build it with: cd apps/desktop/src-tauri && cargo build`
 			);
 		}
+		mkdirSync(SANDBOX_HOME, { recursive: true });
 		const built = spawn(
 			'uv',
 			['run', '--no-sync', 'python', FIXTURE_BUILDER, '--data-dir', FIXTURE_DATA_DIR],
@@ -152,15 +184,34 @@ export const config: WebdriverIO.Config = {
 			{
 				cwd: REPOSITORY_ROOT,
 				stdio: 'inherit',
-				env: { ...process.env, MDT_DATA_DIR: FIXTURE_DATA_DIR, WEB_CONCURRENCY: '' }
+				env: {
+					...process.env,
+					MDT_DATA_DIR: FIXTURE_DATA_DIR,
+					WEB_CONCURRENCY: '',
+					HOME: SANDBOX_HOME
+				}
 			}
 		);
 		await _waitForEngine(120_000);
+	},
 
-		// The seam main.rs already documents: point the packaged shell at this
-		// engine without rebuilding it. The service spawns the app as a child of
-		// this process, so it inherits the variable.
-		process.env.OPENDJ_ENGINE_ORIGIN = ENGINE_ORIGIN;
+	/**
+	 * Re-check the engine INSIDE the worker, because a failed `onPrepare` does
+	 * not stop the run. WDIO logs the hook error and launches the specs anyway,
+	 * which is how a fixture builder that exited 1 turned into three unrelated
+	 * assertion failures against a shell that had quietly fallen back to its
+	 * baked default port. One honest error beats three misleading ones.
+	 */
+	before: async (): Promise<void> => {
+		const response = await fetch(`${ENGINE_ORIGIN}/api/v1/health`).catch(
+			(error: unknown) => error
+		);
+		if (!(response instanceof Response) || !response.ok) {
+			throw new Error(
+				`no fixture engine on ${ENGINE_ORIGIN}: ${String(response)}. onPrepare ` +
+					'failed (its error is above this line) and WDIO started the specs anyway.'
+			);
+		}
 	},
 
 	onComplete: async (): Promise<void> => {
