@@ -2,19 +2,22 @@
 
 Moved verbatim from ``apps/webui/server/rb_vendor.py`` C7 (lines 1341-1414 on
 ``af--t4-design``), per ``.planning/t3b-decomposition-map.md`` target #13
-(``store/caches/anlz_cache.py``, budget 100 lines). rb_vendor.py re-exports
-these five names so ``build_anlz_payload`` (C9, still in rb_vendor.py --
-S1's slice) and the pinning test suite (``tests/webui/test_rb_vendor_units.py``
-interrupted-write / concurrent-writer / concurrent-reader cases,
-``tests/webui/test_rb_vendor_cache.py``) see no behavior change.
+(``store/caches/anlz_cache.py``, budget 100 lines). ``rb_vendor.py``
+re-exports these five names, so the pinning test suite
+(``tests/webui/test_rb_vendor_units.py`` interrupted-write /
+concurrent-writer / concurrent-reader cases,
+``tests/webui/test_rb_vendor_cache.py``) sees no behavior change.
 
-Config constants (``ANLZ_CACHE_DIR``, ``ANLZ_CACHE_SCHEMA``) and
-``not_found`` (C1) are looked up as ``rb_vendor.<name>`` inside function
-bodies rather than imported by value, because ``ANLZ_CACHE_DIR`` is a
-module-level rebindable attribute both ``.planning/e2e-gating/run_daemon.py``
-and ``test_rb_vendor_units.py`` monkeypatch directly on the ``rb_vendor``
-module object; see ``rb_vendor_pkg/db.py``'s module docstring for the full
-rationale (same pattern, same reason).
+``ANLZ_CACHE_DIR`` and ``ANLZ_CACHE_SCHEMA`` are read off the ``config``
+module at call time, never imported by value: they are rebindable overrides
+that ``.planning/e2e-gating/run_daemon.py`` and ``test_rb_vendor_units.py``
+assign to. Wave 4 moved them (and ``not_found``) out of ``rb_vendor`` into
+``apps/adapters/rekordbox/``, so those assignments now target ``config``;
+a by-value import here would freeze whichever value was current at import.
+
+This module cannot follow them out of ``apps.webui`` yet -- not because of
+anything it imports, but because its only caller that still lives here,
+``anlz.py``, reaches ``beatgrid_diagnostics``. See ``rb_vendor.py``.
 
 The per-path write lock (``_ANLZ_CACHE_LOCKS_GUARD`` / ``_ANLZ_CACHE_LOCKS``)
 is duplicated here rather than shared with ``beatgrid_issue_cache.py``,
@@ -37,7 +40,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from apps.webui.server import rb_vendor
+from apps.adapters.rekordbox import config
+from apps.adapters.rekordbox.errors import not_found
 
 log = logging.getLogger(__name__)
 
@@ -51,14 +55,14 @@ _ANLZ_CACHE_LOCKS: dict[Path, threading.Lock] = {}
 def _anlz_mtime(directory: Path) -> float:
     files = sorted(directory.glob("ANLZ*"))
     if not files:
-        raise rb_vendor.not_found(
+        raise not_found(
             "ANALYSIS_NOT_FOUND", f"no ANLZ files in directory {directory}"
         )
     return max(f.stat().st_mtime for f in files)
 
 
 def _cache_path(stable_id: str) -> Path:
-    return rb_vendor.ANLZ_CACHE_DIR / f"{stable_id}.json"
+    return config.ANLZ_CACHE_DIR / f"{stable_id}.json"
 
 
 def _cache_lock(path: Path) -> threading.Lock:
@@ -83,7 +87,7 @@ def _load_cached_payload(
             log.warning("anlz cache unreadable, recomputing: %s (%s)", path, exc)
             return None
     if (
-        cached.get("schema") == rb_vendor.ANLZ_CACHE_SCHEMA
+        cached.get("schema") == config.ANLZ_CACHE_SCHEMA
         and cached.get("anlz_mtime") == anlz_mtime
         and cached.get("points") == points
     ):
@@ -100,7 +104,7 @@ def _store_cached_payload(
     the entry lands in a unique sibling tempfile first and only ``os.replace``
     publishes it, so concurrent readers and writers see a complete entry.
     """
-    rb_vendor.ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    config.ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _cache_path(stable_id)
     fd, tmp_name = tempfile.mkstemp(
         dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
@@ -111,7 +115,7 @@ def _store_cached_payload(
         tmp.write_text(
             json.dumps(
                 {
-                    "schema": rb_vendor.ANLZ_CACHE_SCHEMA,
+                    "schema": config.ANLZ_CACHE_SCHEMA,
                     "anlz_mtime": anlz_mtime,
                     "points": points,
                     "payload": payload,

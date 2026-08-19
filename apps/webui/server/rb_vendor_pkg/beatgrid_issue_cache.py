@@ -17,11 +17,16 @@ has actually been fetched once. That is an honest "not yet evaluated" state,
 not a wrong answer, and it self-heals the first time anything reads that
 track's /anlz.
 
-Config constants (``BEATGRID_ISSUE_CACHE_DIR``, ``BEATGRID_ISSUE_CACHE_SCHEMA``)
-and ``resolve_asset_path`` (C1) are looked up as ``rb_vendor.<name>`` inside
-function bodies rather than imported by value -- see ``rb_vendor_pkg/db.py``'s
-module docstring for the full rationale (module-level rebindable attributes,
-monkeypatch safety, circular-import safety).
+``BEATGRID_ISSUE_CACHE_DIR`` and ``BEATGRID_ISSUE_CACHE_SCHEMA`` are read off
+the ``config`` module at call time, never imported by value: they are
+rebindable overrides. ``resolve_asset_path`` (C1) is now an ordinary import
+from ``apps/adapters/rekordbox/paths.py``, which wave 4 gave it as a home.
+
+``beatgrid_diagnostics`` is the reason this module is still under
+``apps.webui``: it is the one dependency here that has not moved down into a
+domain package, and importing it from ``apps.adapters`` would break the
+``webui-is-the-top-layer`` contract. It is pure (stdlib + typing only), so
+the move is cheap -- it is just not T3b's move to make.
 
 The per-path write lock is a private duplicate of the pattern in
 ``anlz_cache.py`` (which served both C7 and C8 through one shared dict
@@ -42,7 +47,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from apps.webui.server import beatgrid_diagnostics, rb_vendor
+from apps.adapters.rekordbox import config
+from apps.adapters.rekordbox.models import RbContent
+from apps.adapters.rekordbox.paths import resolve_asset_path
+from apps.webui.server import beatgrid_diagnostics
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +68,7 @@ def _cache_lock(path: Path) -> threading.Lock:
 
 
 def _beatgrid_issue_cache_path(stable_id: str) -> Path:
-    return rb_vendor.BEATGRID_ISSUE_CACHE_DIR / f"{stable_id}.json"
+    return config.BEATGRID_ISSUE_CACHE_DIR / f"{stable_id}.json"
 
 
 def _read_beatgrid_issue_cache_entry(stable_id: str) -> dict[str, Any] | None:
@@ -78,7 +86,7 @@ def _store_beatgrid_issue_cache(
     stable_id: str, dat_mtime: float, issue: dict[str, Any] | None
 ) -> None:
     """Atomic write, same tempfile-then-replace pattern as _store_cached_payload."""
-    rb_vendor.BEATGRID_ISSUE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    config.BEATGRID_ISSUE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _beatgrid_issue_cache_path(stable_id)
     fd, tmp_name = tempfile.mkstemp(
         dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
@@ -89,7 +97,7 @@ def _store_beatgrid_issue_cache(
         tmp.write_text(
             json.dumps(
                 {
-                    "schema": rb_vendor.BEATGRID_ISSUE_CACHE_SCHEMA,
+                    "schema": config.BEATGRID_ISSUE_CACHE_SCHEMA,
                     "dat_mtime": dat_mtime,
                     "issue": issue,
                 }
@@ -112,7 +120,7 @@ def _ensure_beatgrid_issue_cached(
     entry = _read_beatgrid_issue_cache_entry(stable_id)
     if (
         entry is not None
-        and entry.get("schema") == rb_vendor.BEATGRID_ISSUE_CACHE_SCHEMA
+        and entry.get("schema") == config.BEATGRID_ISSUE_CACHE_SCHEMA
         and entry.get("dat_mtime") == dat_mtime
     ):
         return
@@ -120,13 +128,13 @@ def _ensure_beatgrid_issue_cached(
     _store_beatgrid_issue_cache(stable_id, dat_mtime, issue)
 
 
-def cached_beatgrid_issue(content: rb_vendor.RbContent) -> dict[str, Any] | None:
+def cached_beatgrid_issue(content: RbContent) -> dict[str, Any] | None:
     """Cheap read-only lookup for GET /rb-meta - see the module comment above
     for the full perf rationale. None means either "no issue" or "never
     evaluated yet"; both are honest and this never fabricates a verdict."""
     if content.analysis_data_path is None:
         return None
-    mapped = rb_vendor.resolve_asset_path(content.analysis_data_path)
+    mapped = resolve_asset_path(content.analysis_data_path)
     if mapped.resolved is None:
         return None
     try:
@@ -136,7 +144,7 @@ def cached_beatgrid_issue(content: rb_vendor.RbContent) -> dict[str, Any] | None
     entry = _read_beatgrid_issue_cache_entry(content.stable_id)
     if (
         entry is None
-        or entry.get("schema") != rb_vendor.BEATGRID_ISSUE_CACHE_SCHEMA
+        or entry.get("schema") != config.BEATGRID_ISSUE_CACHE_SCHEMA
         or entry.get("dat_mtime") != dat_mtime
     ):
         return None

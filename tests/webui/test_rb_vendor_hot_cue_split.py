@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from apps.adapters import rekordbox as rb_adapter
+from apps.adapters.rekordbox import config as rb_config
 from apps.adapters.rekordbox import reversal as rb_reversal
 from apps.adapters.rekordbox import writer as rb_writer
 from apps.engine_core.store import schema as store_schema
@@ -81,7 +82,7 @@ def _tables(path: Path) -> set[str]:
 def master_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "master.plain.db"
     _make_master_plain_db(path)
-    monkeypatch.setattr(rb_vendor, "MASTER_PLAIN_DB", path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", path)
     return path
 
 

@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import pytest
 
+from apps.adapters.rekordbox import config as rb_config
+from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths, rekordbox_db
 from apps.webui import crate_sync
-from apps.webui.server import rb_vendor
 
 # The union prefix set. Before T3b, rb_vendor/crate_sync knew "soundcloud:"
 # but not "http(s)://", and rekordbox_db knew "http(s)://" but not
@@ -71,7 +72,7 @@ def test_empty_is_unplayable_but_not_streaming(empty: str | None) -> None:
 @pytest.mark.requirement("RECON-01")
 def test_one_prefix_set_shared_by_every_call_site() -> None:
     """No module keeps a private copy of the prefix tuple."""
-    assert rb_vendor.STREAMING_PREFIXES is platform_paths.STREAMING_PREFIXES
+    assert rb_config.STREAMING_PREFIXES is platform_paths.STREAMING_PREFIXES
     assert crate_sync.STREAMING_PREFIXES is platform_paths.STREAMING_PREFIXES
     assert set(platform_paths.STREAMING_PREFIXES) == {
         "tidal:",
@@ -95,7 +96,7 @@ def test_rb_vendor_reports_pathless_tracks_as_not_streaming(empty: str | None) -
     streaming styling, and ``routes/reconcile.py``'s documented contract
     ("``is_streaming`` always false" for broken rows) breaks.
     """
-    assert rb_vendor.is_streaming_path(empty) is False
+    assert rb_paths.is_streaming_path(empty) is False
     assert crate_sync._is_streaming(empty) is False
 
 
@@ -121,4 +122,4 @@ def test_reconcile_relocate_union_is_now_a_single_answer(uri: str) -> None:
     that the union -- not either original tuple -- was always the right set.
     """
     assert rekordbox_db.is_streaming_path(uri) is True
-    assert rb_vendor.is_streaming_path(uri) is True
+    assert rb_paths.is_streaming_path(uri) is True

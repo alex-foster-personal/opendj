@@ -17,8 +17,9 @@ registration would fail ``--strict-markers``) -- plain
 check is actually needed (none of these tests need one).
 
 Regression one-liners:
-  - if rb_vendor still carries its own hardcoded SHARE_ROOT then broken
-  - if reimporting rb_vendor under a simulated win32 sys.platform touches a
+  - if the rekordbox adapter still carries its own hardcoded SHARE_ROOT then
+    broken
+  - if reimporting the adapter under a simulated win32 sys.platform touches a
     literal ~/Library/Pioneer path then broken
   - if MDT_DATA_DIR doesn't rederive DATA_DIR/MASTER_PLAIN_DB/
     ANLZ_CACHE_DIR/VOCAL_CACHE_DIR/STATE_DB then broken
@@ -43,6 +44,8 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
+from apps.adapters.rekordbox import config as rb_config
+from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths as pp
 from apps.webui.server import rb_vendor
 
@@ -95,6 +98,8 @@ def test_module_has_no_hardcoded_share_root() -> None:
     constant is gone; every resolution routes through the shared platform
     resolver instead."""
     assert not hasattr(rb_vendor, "SHARE_ROOT")
+    assert not hasattr(rb_config, "SHARE_ROOT")
+    assert not hasattr(rb_paths, "SHARE_ROOT")
 
 
 def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
@@ -116,10 +121,14 @@ def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
     sys.platform = "win32"
     try:
         reloaded_pp = importlib.reload(pp)
+        reloaded_config = importlib.reload(rb_config)
+        importlib.reload(rb_paths)
         reloaded_rb = importlib.reload(rb_vendor)
         assert reloaded_pp.IS_WINDOWS is True
         assert "Library" not in str(reloaded_pp.SHARE_ROOT)
         assert not hasattr(reloaded_rb, "SHARE_ROOT")
+        assert not hasattr(reloaded_config, "SHARE_ROOT")
+        assert "Library" not in str(reloaded_config.ANLZ_CACHE_DIR)
         mapped = reloaded_rb.resolve_library_path("/PIONEER/USB/track.mp3")
         assert mapped.resolved is not None
         assert mapped.mapped is True
@@ -132,6 +141,8 @@ def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
         else:
             os.environ["APPDATA"] = real_appdata
         importlib.reload(pp)
+        importlib.reload(rb_config)
+        importlib.reload(rb_paths)
         importlib.reload(rb_vendor)
 
 
@@ -142,16 +153,16 @@ def test_mdt_data_dir_unset_keeps_default_layout() -> None:
     from apps.shared.paths import STATE_DB as default_state_db
 
     assert os.environ.get("MDT_DATA_DIR") is None
-    assert rb_vendor.DATA_DIR == default_data_dir
-    assert rb_vendor.STATE_DB == default_state_db
-    assert rb_vendor.MASTER_PLAIN_DB == default_data_dir / "master.plain.db"
+    assert rb_config.DATA_DIR == default_data_dir
+    assert rb_config.STATE_DB == default_state_db
+    assert rb_config.MASTER_PLAIN_DB == default_data_dir / "master.plain.db"
 
 
 def test_mdt_data_dir_override_rederives_all_constants(tmp_path: Path) -> None:
     original = os.environ.get("MDT_DATA_DIR")
     os.environ["MDT_DATA_DIR"] = str(tmp_path)
     try:
-        reloaded = importlib.reload(rb_vendor)
+        reloaded = importlib.reload(rb_config)
         assert reloaded.DATA_DIR == tmp_path
         assert reloaded.MASTER_PLAIN_DB == tmp_path / "master.plain.db"
         assert reloaded.ANLZ_CACHE_DIR == tmp_path / "state" / "anlz-cache"
@@ -162,7 +173,7 @@ def test_mdt_data_dir_override_rederives_all_constants(tmp_path: Path) -> None:
             os.environ.pop("MDT_DATA_DIR", None)
         else:
             os.environ["MDT_DATA_DIR"] = original
-        importlib.reload(rb_vendor)
+        importlib.reload(rb_config)
 
 
 # ----- audio_file() explicit states -------------------------------------------
