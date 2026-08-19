@@ -27,44 +27,60 @@ class SetupPayloadError(ValueError):
 
 def build_argv(payload: dict[str, Any]) -> list[str]:
     """``payload -> argv``. Validated here so a bad enqueue 400s, not hangs."""
-    data_dir = payload.get("data_dir")
-    if not isinstance(data_dir, str) or not data_dir.strip():
-        raise SetupPayloadError(
-            f"{SETUP_IMPORT_KIND} payload needs a 'data_dir' string, got "
-            f"{data_dir!r}"
-        )
-    if not Path(data_dir).is_absolute():
-        raise SetupPayloadError(
-            f"{SETUP_IMPORT_KIND} payload 'data_dir' must be absolute, got "
-            f"{data_dir!r}"
-        )
     argv = [
         sys.executable,
         "-m",
         "apps.engine_core.setup.worker",
         "--data-dir",
-        data_dir,
+        _data_dir(payload),
     ]
-
-    source = payload.get("source")
-    if source is not None:
-        if not isinstance(source, str) or not source.strip():
-            raise SetupPayloadError(
-                f"{SETUP_IMPORT_KIND} payload 'source' must be a non-empty "
-                f"string or absent, got {source!r}"
-            )
-        argv += ["--source", source]
-
-    limit = payload.get("limit")
-    if limit is not None:
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-            raise SetupPayloadError(
-                f"{SETUP_IMPORT_KIND} payload 'limit' must be a positive "
-                f"integer or absent, got {limit!r}"
-            )
-        argv += ["--limit", str(limit)]
-
+    argv += _source_args(payload)
+    argv += _limit_args(payload)
+    argv += _refresh_args(payload)
     return argv
+
+
+def _reject(field: str, value: Any, requirement: str) -> SetupPayloadError:
+    return SetupPayloadError(
+        f"{SETUP_IMPORT_KIND} payload {field!r} {requirement}, got {value!r}"
+    )
+
+
+def _data_dir(payload: dict[str, Any]) -> str:
+    """Absolute, or the worker imports into wherever the engine was started."""
+    value = payload.get("data_dir")
+    if not isinstance(value, str) or not value.strip():
+        raise _reject("data_dir", value, "must be a non-empty string")
+    if not Path(value).is_absolute():
+        raise _reject("data_dir", value, "must be an absolute path")
+    return value
+
+
+def _source_args(payload: dict[str, Any]) -> list[str]:
+    value = payload.get("source")
+    if value is None:
+        return []
+    if not isinstance(value, str) or not value.strip():
+        raise _reject("source", value, "must be a non-empty string or absent")
+    return ["--source", value]
+
+
+def _limit_args(payload: dict[str, Any]) -> list[str]:
+    value = payload.get("limit")
+    if value is None:
+        return []
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise _reject(
+            "limit", value, "must be a positive integer or absent"
+        )
+    return ["--limit", str(value)]
+
+
+def _refresh_args(payload: dict[str, Any]) -> list[str]:
+    value = payload.get("refresh_decrypt", False)
+    if not isinstance(value, bool):
+        raise _reject("refresh_decrypt", value, "must be a bool")
+    return ["--refresh-decrypt"] if value else []
 
 
 register_worker(SETUP_IMPORT_KIND, build_argv)

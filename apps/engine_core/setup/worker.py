@@ -48,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ingest at most N tracks (smoke-test aid)",
     )
+    parser.add_argument(
+        "--refresh-decrypt",
+        action="store_true",
+        help="re-decrypt the snapshot instead of reusing the plain copy",
+    )
     return parser
 
 
@@ -87,6 +92,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 emit=emit,
                 source=Path(args.source) if args.source else None,
                 limit=args.limit,
+                refresh_decrypt=args.refresh_decrypt,
             )
         except SetupImportError as exc:
             # The code goes to stderr, which the runner keeps as the job's

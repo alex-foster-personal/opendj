@@ -4754,6 +4754,12 @@
             "description": "ingest at most N tracks (smoke-test aid)",
             "title": "Limit"
           },
+          "refresh_decrypt": {
+            "default": false,
+            "description": "re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt",
+            "title": "Refresh Decrypt",
+            "type": "boolean"
+          },
           "source": {
             "anyOf": [
               {

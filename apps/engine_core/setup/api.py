@@ -104,6 +104,14 @@ class SetupImportIn(BaseModel):
         ge=1,
         description="ingest at most N tracks (smoke-test aid)",
     )
+    refresh_decrypt: bool = Field(
+        default=False,
+        description=(
+            "re-decrypt the encrypted snapshot instead of reusing an "
+            "existing master.plain.db; the wizard's half of the ingest-rb "
+            "CLI's --refresh-decrypt"
+        ),
+    )
 
 
 class SetupDismissIn(BaseModel):
@@ -248,6 +256,8 @@ def start_import(request: Request, body: SetupImportIn) -> dict[str, Any]:
         payload["source"] = body.source
     if body.limit is not None:
         payload["limit"] = body.limit
+    if body.refresh_decrypt:
+        payload["refresh_decrypt"] = True
 
     try:
         build_argv(payload)

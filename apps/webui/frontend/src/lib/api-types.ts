@@ -3332,6 +3332,12 @@ export interface components {
              */
             limit?: number | null;
             /**
+             * Refresh Decrypt
+             * @description re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt
+             * @default false
+             */
+            refresh_decrypt: boolean;
+            /**
              * Source
              * @description explicit rekordbox database to read; omit to auto-detect
              */

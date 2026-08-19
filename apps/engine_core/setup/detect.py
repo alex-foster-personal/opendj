@@ -19,13 +19,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.shared import platform_paths
-from apps.shared.paths import REKORDBOX_WORKING_DB
+from apps.shared.paths import REKORDBOX_PLAIN_DB, REKORDBOX_WORKING_DB
 
 # ----- refusal codes ------------------------------------------------------
 CODE_REKORDBOX_NOT_FOUND: str = "rekordbox_not_found"
 CODE_KEY_UNAVAILABLE: str = "rekordbox_key_unavailable"
 CODE_SHARE_MISSING: str = "rekordbox_share_missing"
-CODE_DECRYPT_UNAVAILABLE: str = "rekordbox_decrypt_unavailable"
 CODE_DECRYPT_FAILED: str = "rekordbox_decrypt_failed"
 CODE_INGEST_FAILED: str = "rekordbox_ingest_failed"
 CODE_IMPORT_ALREADY_RUNNING: str = "setup_import_already_running"
@@ -34,7 +33,6 @@ CODES: tuple[str, ...] = (
     CODE_REKORDBOX_NOT_FOUND,
     CODE_KEY_UNAVAILABLE,
     CODE_SHARE_MISSING,
-    CODE_DECRYPT_UNAVAILABLE,
     CODE_DECRYPT_FAILED,
     CODE_INGEST_FAILED,
     CODE_IMPORT_ALREADY_RUNNING,
@@ -43,11 +41,7 @@ CODES: tuple[str, ...] = (
 # Names, not paths: the constants they come from are bound to the PROCESS
 # data dir at import time, and detection is asked about an arbitrary one.
 WORKING_COPY_NAME: str = REKORDBOX_WORKING_DB.name  # master.db.copy
-#: Spelled literally rather than imported from
-#: ``apps.adapters.rekordbox.config.MASTER_PLAIN_DB``: engine_core importing
-#: apps.adapters closes a package cycle the architecture gate refuses. The
-#: name is asserted against that constant in the tests instead.
-PLAIN_COPY_NAME: str = "master.plain.db"
+PLAIN_COPY_NAME: str = REKORDBOX_PLAIN_DB.name  # master.plain.db
 STATE_DB_NAME: str = "state.db"
 
 #: A plain SQLite file starts with this. An encrypted (SQLCipher) one does
@@ -299,7 +293,6 @@ def data_dir_from_env(default: Path) -> Path:
 __all__ = [
     "CODES",
     "CODE_DECRYPT_FAILED",
-    "CODE_DECRYPT_UNAVAILABLE",
     "CODE_IMPORT_ALREADY_RUNNING",
     "CODE_INGEST_FAILED",
     "CODE_KEY_UNAVAILABLE",

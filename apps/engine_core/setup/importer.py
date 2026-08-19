@@ -5,12 +5,14 @@ function so a test can drive it without a subprocess; :mod:`worker` is the
 thin shell that turns its ``emit`` callback into the runner's JSON-lines
 protocol.
 
-What it does NOT do is decrypt. The encrypted-working-copy defect is owned
-by the ``af--ingest-rb-decrypt`` lane, whose shared helper the CLI will call
-before ingest. This module names that seam (:data:`SHARED_DECRYPT_ATTR`),
-uses it the moment it exists, and until then refuses an encrypted source
-with :data:`detect.CODE_DECRYPT_UNAVAILABLE` -- which says what is missing
-and where it is coming from, rather than half-importing a library.
+The decrypt is NOT reimplemented here. ``apps.shared.rekordbox_db`` owns the
+single ATTACH + ``sqlcipher_export`` routine and its reuse-when-present
+policy; this module calls ``ensure_plain_db`` and reports the two states it
+distinguishes -- "decrypted X -> Y" and "reusing decrypted copy at Y" -- in
+the same words the ``ingest-rb`` CLI prints them. It runs as its own stage
+rather than being left implicit inside the CLI for one reason: the wizard
+has to be able to SHOW it. The plain path is then handed to ``ingest-rb``
+explicitly, so the work is never done twice.
 
 A stage that fails raises :class:`SetupImportError` carrying its code. There
 is no partial success: a run that could not ingest does not report a track
@@ -20,7 +22,6 @@ count it happened to find lying around from a previous attempt.
 from __future__ import annotations
 
 import dataclasses
-import importlib
 import shutil
 import sqlite3
 from collections.abc import Callable
@@ -31,13 +32,6 @@ from typing import Any
 from apps.engine_core.setup import detect, record
 
 Emit = Callable[[float, str], None]
-
-#: The integration point with ``af--ingest-rb-decrypt``. When that lane
-#: lands its shared helper under this name, the decrypt stage starts using
-#: it with no other change here. If it names the helper something else, this
-#: constant is the ONE line to edit.
-SHARED_DECRYPT_MODULE: str = "apps.shared.state.ingest.rekordbox"
-SHARED_DECRYPT_ATTR: str = "decrypt_working_copy"
 
 #: Progress the run has reached when each stage COMPLETES. The ingest owns
 #: half the bar because it owns nearly all the wall clock.
@@ -86,19 +80,28 @@ def run_import(
     emit: Emit,
     source: Path | None = None,
     limit: int | None = None,
+    refresh_decrypt: bool = False,
 ) -> ImportOutcome:
     """Import rekordbox into ``data_dir``, reporting every stage.
 
     ``source`` overrides detection (the fixture path tests take). ``limit``
-    caps the ingest for smoke runs. Both are surfaced on the HTTP endpoint,
+    caps the ingest for smoke runs. ``refresh_decrypt`` is the wizard's half
+    of the CLI's ``--refresh-decrypt``. All three are on the HTTP endpoint,
     so an agent drives the identical flow the wizard drives.
     """
     started_at = _now()
     was_running = detect.rekordbox_is_running()
 
+    if refresh_decrypt and source is None:
+        # Re-decrypting means going back to the ENCRYPTED snapshot. Left to
+        # detection, an existing plain copy would win the source race and the
+        # refresh would quietly do nothing.
+        snapshot = data_dir / detect.WORKING_COPY_NAME
+        source = snapshot if snapshot.is_file() else None
+
     chosen, encrypted = _stage_detect(data_dir, emit, source)
     working = _stage_snapshot(data_dir, emit, chosen)
-    plain = _stage_decrypt(data_dir, emit, working)
+    plain = _stage_decrypt(data_dir, emit, working, refresh=refresh_decrypt)
     _stage_ingest(data_dir, emit, plain, limit=limit)
     counts, analyses = _stage_analysis(data_dir, emit, plain)
 
@@ -183,13 +186,22 @@ def _stage_snapshot(data_dir: Path, emit: Emit, chosen: Path) -> Path:
     return destination
 
 
-def _stage_decrypt(data_dir: Path, emit: Emit, working: Path) -> Path:
-    """Hand back a plaintext database, or refuse and say who owns the fix.
+def _stage_decrypt(
+    data_dir: Path, emit: Emit, working: Path, *, refresh: bool
+) -> Path:
+    """Hand back a plaintext database, reporting which of the two ways it got one.
+
+    Delegates to ``apps.shared.rekordbox_db.ensure_plain_db``, which owns
+    the SQLCipher routine and the reuse policy, and echoes its two outcomes
+    in the same words ``ingest-rb`` prints. A decrypt is never silent here
+    either: the operator sees whether a copy was rebuilt or reused.
 
     The detect stage's encryption verdict is deliberately NOT reused: the
     snapshot may have replaced the very file that verdict described, so the
     header is re-read against what is on disk now.
     """
+    from apps.shared.rekordbox_db import RekordboxDecryptError, ensure_plain_db
+
     if detect.is_plain_sqlite(working):
         emit(
             STAGE_PROGRESS["decrypt"],
@@ -205,28 +217,25 @@ def _stage_decrypt(data_dir: Path, emit: Emit, working: Path) -> Path:
             f"{key_detail}",
         )
 
-    helper = _shared_decrypt_helper()
-    if helper is None:
-        raise SetupImportError(
-            detect.CODE_DECRYPT_UNAVAILABLE,
-            f"{working} is encrypted and this engine has no decrypt step: "
-            f"{SHARED_DECRYPT_MODULE}.{SHARED_DECRYPT_ATTR} does not exist "
-            "yet. It is owned by the af--ingest-rb-decrypt lane; until that "
-            "lands, point the import at an already-decrypted "
-            f"{detect.PLAIN_COPY_NAME}.",
-        )
-
     plain = data_dir / detect.PLAIN_COPY_NAME
     try:
-        produced = helper(working, plain)
-    except Exception as exc:
+        result, decrypted = ensure_plain_db(
+            encrypted=working, plain=plain, refresh=refresh
+        )
+    except FileNotFoundError as exc:
+        raise SetupImportError(
+            detect.CODE_REKORDBOX_NOT_FOUND, str(exc)
+        ) from exc
+    except RekordboxDecryptError as exc:
         raise SetupImportError(
             detect.CODE_DECRYPT_FAILED,
-            f"decrypting {working} to {plain} failed: {type(exc).__name__}: "
-            f"{exc}",
+            f"decrypting {working} to {plain} failed: {exc}",
         ) from exc
 
-    result = Path(produced) if produced is not None else plain
+    # ensure_plain_db writes through a sibling temp file and renames, so a
+    # file at the destination is a COMPLETE one. Re-reading the header still
+    # earns its keep: a reused copy was written by some earlier run this
+    # process cannot vouch for.
     if not detect.is_plain_sqlite(result):
         raise SetupImportError(
             detect.CODE_DECRYPT_FAILED,
@@ -235,7 +244,11 @@ def _stage_decrypt(data_dir: Path, emit: Emit, working: Path) -> Path:
         )
     emit(
         STAGE_PROGRESS["decrypt"],
-        f"decrypt: wrote {result.name}",
+        (
+            f"decrypt: decrypted {working.name} -> {result.name}"
+            if decrypted
+            else f"decrypt: reusing decrypted copy at {result}"
+        ),
     )
     return result
 
@@ -363,28 +376,11 @@ def _count_resolvable_analyses(data_dir: Path, plain: Path) -> dict[str, int]:
     }
 
 
-# ----- seams --------------------------------------------------------------
-def _shared_decrypt_helper() -> Callable[[Path, Path], Path | None] | None:
-    """Resolve the shared decrypt helper, or ``None`` while it is unwritten.
-
-    Expected contract: ``helper(encrypted_src, plain_dst)`` writes a plain
-    SQLite copy and returns its path (or ``None``, meaning ``plain_dst``).
-    """
-    try:
-        module = importlib.import_module(SHARED_DECRYPT_MODULE)
-    except ImportError:
-        return None
-    helper = getattr(module, SHARED_DECRYPT_ATTR, None)
-    return helper if callable(helper) else None
-
-
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 __all__ = [
-    "SHARED_DECRYPT_ATTR",
-    "SHARED_DECRYPT_MODULE",
     "STAGES",
     "STAGE_PROGRESS",
     "Emit",
