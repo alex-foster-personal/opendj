@@ -68,6 +68,27 @@ def validate_label(raw: str | None) -> str | None:
     return stripped
 
 
+def require_label(raw: str | None) -> str:
+    """Like :func:`validate_label`, but an absent label is itself an error.
+
+    The dmg used to be a pure shell: an unlabelled build was simply the
+    product build. Now that the artifact carries its own engine payload, the
+    label also names the ``Application Support`` directory the installed app
+    writes a library into, so an unset label would silently point a bake-off
+    build at the unlabelled app's data. There is no defensible default for
+    that, so packaging refuses rather than choosing one.
+    """
+    label = validate_label(raw)
+    if label is None:
+        raise LaneLabelError(
+            "MDT_LANE_LABEL is unset; the bundled build has no default lane. "
+            "Set it (for example MDT_LANE_LABEL=B) so the app, its bundle "
+            "identifier and its Application Support directory are named for "
+            "exactly one lane."
+        )
+    return label
+
+
 def lane_identifier(base_identifier: str, label: str | None) -> str:
     """Suffix the bundle identifier, which is the macOS clash key."""
     if label is None:
@@ -148,16 +169,58 @@ def _load_conf(config_path: Path) -> tuple[str, str, str]:
     return conf["productName"], conf["identifier"], conf["version"]
 
 
+def manifest_stamp(manifest_path: Path, field: str) -> str:
+    """Read ONE identity field out of a built payload's manifest.
+
+    The dmg recipe stamps the Tauri binary from the manifest the payload
+    builder just wrote, rather than running its own ``git`` call. That is the
+    whole point: two independent reads can disagree, and a shell that claims a
+    different commit from the engine it ships with is the confusion this
+    train exists to remove. Booleans are emitted as 1/0 because the value is
+    read back by ``option_env!`` in Rust, where "False" is a true-ish string.
+    """
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    identity = manifest.get("identity")
+    if not isinstance(identity, dict):
+        raise LaneLabelError(f"{manifest_path} has no identity block")
+    if field not in identity:
+        raise LaneLabelError(
+            f"{manifest_path} identity has no {field!r}; it has "
+            f"{', '.join(sorted(identity))}"
+        )
+    value = identity[field]
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if value is None:
+        raise LaneLabelError(
+            f"{manifest_path} identity.{field} is null; the payload builder "
+            "must fail rather than stamp an unknown value"
+        )
+    return str(value)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("emit", choices=["overlay", "dmg-name"])
-    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("emit", choices=["overlay", "dmg-name", "stamp"])
+    parser.add_argument("--config", default=None, type=Path)
     parser.add_argument("--label", default=None)
     parser.add_argument(
         "--built", default=None, help="the dmg Tauri produced; required for dmg-name"
     )
+    parser.add_argument(
+        "--manifest", default=None, type=Path, help="payload manifest; required for stamp"
+    )
+    parser.add_argument("--field", default=None, help="identity field; required for stamp")
     args = parser.parse_args(argv)
 
+    if args.emit == "stamp":
+        if args.manifest is None or args.field is None:
+            raise LaneLabelError("stamp needs --manifest and --field")
+        print(manifest_stamp(args.manifest, args.field))
+        return 0
+
+    if args.config is None:
+        raise LaneLabelError(f"{args.emit} needs --config")
     product_name, identifier, version = _load_conf(args.config)
     label = validate_label(args.label)
 
