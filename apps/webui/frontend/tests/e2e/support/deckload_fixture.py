@@ -5,9 +5,10 @@ it needs a library the engine can actually serve. It cannot use the lane data
 dir (one engine holds a singleton lock on it) and it must never touch the
 primary checkout's ``data/``. This module builds a throwaway one instead:
 
-1. Real audio is GENERATED here (stdlib ``wave`` only): a stereo click train
-   at a known BPM over a quiet sustained tone, so decode, playback and
-   position measurement all have real signal to work on.
+1. Real audio is GENERATED here (stdlib ``wave`` only): a stereo pulse train
+   at a known BPM under a strong sustained tone, so decode, playback,
+   position measurement AND spectral measurement all have real signal to
+   work on. See "spectral landmark" below for why the tone is where it is.
 2. The library rows are written by the REAL folder ingest
    (``python -m apps.shared.state.cli ingest-folder``), not by hand. That
    adapter reads tags and writes NO bpm, NO key and NO beatgrid, and says so.
@@ -20,8 +21,18 @@ there is no beatgrid. The only in-repo beatgrid producer for arbitrary audio
 is ``apps.analysis`` (librosa+madmom), which is deliberately absent from the
 repo venv, so nothing here invents one.
 
+SPECTRAL LANDMARK. The tempo, key and master-tempo tests assert the effect on
+the AUDIO, read back through the app's own post-processor AnalyserNode. That
+analyser is 4096-point at 44.1 kHz, so its bins are ~10.8 Hz wide. The tone
+therefore sits at 2 kHz: a +-16% tempo move shifts it ~30 bins and a
+one-semitone key nudge ~11 bins, which is an unambiguous read. The original
+220 Hz bed moved only ~1.6 bins under the same change, which is too fragile to
+assert on honestly, so it was raised rather than asserted loosely.
+
 Idempotent: re-running with an existing, verified fixture is a no-op, because
-Playwright evaluates its config (and this builder) once per process.
+Playwright evaluates its config (and this builder) once per process. The
+generated audio is versioned by ``FIXTURE_REVISION``: bumping it wipes and
+regenerates a stale fixture dir instead of silently measuring old audio.
 
 Usage::
 
@@ -33,15 +44,18 @@ Acceptance tests:
 - [if] the ingest writes zero tracks [then] the builder exits non-zero.
 - [if] a generated wav is header-only (no PCM frames) [then] it exits non-zero.
 - [if] --data-dir is relative [then] it exits non-zero before writing anything.
+- [if] the dir was built by an older FIXTURE_REVISION [then] the audio and the
+  state db are wiped and rebuilt, never reused.
 """
 
 from __future__ import annotations
 
 import argparse
+import array
 import math
 import os
+import shutil
 import sqlite3
-import struct
 import subprocess
 import sys
 import wave
@@ -50,20 +64,31 @@ from pathlib import Path
 
 REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
+#: Bump to invalidate every generated fixture dir. Anything that changes what
+#: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
+FIXTURE_REVISION: int = 2
+REVISION_MARKER: str = "fixture-revision.txt"
+
 SAMPLE_RATE_HZ: int = 44_100
 CHANNELS: int = 2
 SAMPLE_WIDTH_BYTES: int = 2
 
-#: Click transient: a short 1 kHz burst on every beat. Loud enough to be an
-#: obvious onset, short enough not to smear into the next beat.
-CLICK_HZ: float = 1_000.0
-CLICK_MS: float = 12.0
-CLICK_PEAK: float = 0.60
+#: The spectral landmark the tempo/key/master-tempo assertions measure. Loud
+#: and continuous so it is the dominant bin of the analyser's spectrum, and
+#: high enough that a percentage shift moves it many bins (see module docstring).
+TONE_HZ: float = 2_000.0
+TONE_PEAK: float = 0.50
 
-#: Sustained bed under the clicks so the decoded buffer is never near-silent
-#: and a stretch processor has continuous material to work on.
-BED_HZ: float = 220.0
-BED_PEAK: float = 0.12
+#: Beat transient. Deliberately far BELOW the measurement band so a broadband
+#: onset can never be mistaken for the shifted tone.
+PULSE_HZ: float = 100.0
+PULSE_MS: float = 40.0
+PULSE_PEAK: float = 0.35
+
+#: The band the suite searches for the dominant bin. Wide enough to hold the
+#: tone under any range this suite drives (-1 semitone to +16% is 1888..2320 Hz),
+#: narrow enough to exclude the pulse fundamental and its low harmonics.
+MEASUREMENT_BAND_HZ: tuple[float, float] = (800.0, 8_000.0)
 
 
 @dataclass(frozen=True)
@@ -87,38 +112,44 @@ AUDIO_SUBDIR: str = "fixture-audio"
 
 
 # ----- audio generation ------------------------------------------------------
-def _click_envelope(sample_index: int, beat_period_samples: float) -> float:
-    """Linear-decay envelope for the click that starts at each beat."""
-    click_len = SAMPLE_RATE_HZ * CLICK_MS / 1000.0
+def _pulse_envelope(sample_index: int, beat_period_samples: float) -> float:
+    """Linear-decay envelope for the transient that starts on each beat."""
+    pulse_len = SAMPLE_RATE_HZ * PULSE_MS / 1000.0
     since_beat = sample_index % beat_period_samples
-    if since_beat >= click_len:
+    if since_beat >= pulse_len:
         return 0.0
-    return 1.0 - (since_beat / click_len)
+    return 1.0 - (since_beat / pulse_len)
 
 
-def write_click_train_wav(path: Path, track: FixtureTrack) -> int:
-    """Write one stereo 16-bit click train. Returns the PCM frame count."""
+def write_tone_and_pulse_wav(path: Path, track: FixtureTrack) -> int:
+    """Write one stereo 16-bit fixture file. Returns the PCM frame count.
+
+    A continuous TONE_HZ sine (the thing the spectral assertions measure) plus
+    a PULSE_HZ transient on every beat (so the file behaves like a track with
+    onsets rather than a test tone).
+    """
     frame_count = int(round(track.seconds * SAMPLE_RATE_HZ))
     beat_period_samples = SAMPLE_RATE_HZ * 60.0 / track.bpm
     peak = float(2**15 - 1)
-    frames = bytearray()
+    tone_step = 2.0 * math.pi * TONE_HZ / SAMPLE_RATE_HZ
+    pulse_step = 2.0 * math.pi * PULSE_HZ / SAMPLE_RATE_HZ
+    samples = array.array("h")
     for n in range(frame_count):
-        bed = BED_PEAK * math.sin(2.0 * math.pi * BED_HZ * n / SAMPLE_RATE_HZ)
-        env = _click_envelope(n, beat_period_samples)
-        click = (
-            CLICK_PEAK * env * math.sin(2.0 * math.pi * CLICK_HZ * n / SAMPLE_RATE_HZ)
-            if env > 0.0
-            else 0.0
-        )
-        value = max(-1.0, min(1.0, bed + click))
-        sample = int(value * peak)
-        frames += struct.pack("<hh", sample, sample)
+        value = TONE_PEAK * math.sin(tone_step * n)
+        env = _pulse_envelope(n, beat_period_samples)
+        if env > 0.0:
+            value += PULSE_PEAK * env * math.sin(pulse_step * n)
+        sample = int(max(-1.0, min(1.0, value)) * peak)
+        samples.append(sample)
+        samples.append(sample)
+    if sys.byteorder != "little":
+        samples.byteswap()
     path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(path), "wb") as handle:
         handle.setnchannels(CHANNELS)
         handle.setsampwidth(SAMPLE_WIDTH_BYTES)
         handle.setframerate(SAMPLE_RATE_HZ)
-        handle.writeframes(bytes(frames))
+        handle.writeframes(samples.tobytes())
     return frame_count
 
 
@@ -136,7 +167,7 @@ def ensure_audio(audio_dir: Path) -> list[Path]:
         if path.is_file() and _wav_frame_count(path) == expected:
             written.append(path)
             continue
-        actual = write_click_train_wav(path, track)
+        actual = write_tone_and_pulse_wav(path, track)
         if actual != expected:
             raise SystemExit(
                 f"[ERROR] {path} wrote {actual} frames, expected {expected}"
@@ -190,8 +221,27 @@ def _track_rows(state_db: Path) -> list[tuple[str, str | None, str | None]]:
         conn.close()
 
 
+def _discard_stale_revision(data_dir: Path) -> None:
+    """Wipe a fixture dir built by an older revision.
+
+    Reusing it would measure audio that no longer matches what the spec
+    asserts, and the failure would look like a product bug rather than a
+    stale fixture, so this is a wipe and not a warning.
+    """
+    marker = data_dir / REVISION_MARKER
+    current = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+    if current == str(FIXTURE_REVISION):
+        return
+    for stale in (data_dir / AUDIO_SUBDIR, data_dir / "state"):
+        if stale.exists():
+            shutil.rmtree(stale)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"{FIXTURE_REVISION}\n", encoding="utf-8")
+
+
 def build(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
     """Generate the audio, run the real ingest, verify the result."""
+    _discard_stale_revision(data_dir)
     audio_dir = data_dir / AUDIO_SUBDIR
     files = ensure_audio(audio_dir)
     state_db = data_dir / "state" / "state.db"

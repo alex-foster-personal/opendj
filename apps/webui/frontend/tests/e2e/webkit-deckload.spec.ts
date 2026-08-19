@@ -17,9 +17,42 @@
  * readouts the DJ actually looks at.
  *
  * Library: a throwaway fixture built by the REAL folder ingest over generated
- * click-train audio (support/deckload_fixture.py). Those tracks carry no
+ * audio (support/deckload_fixture.py) - a 2 kHz sustained tone with a 100 Hz
+ * beat pulse. The tone is the SPECTRAL LANDMARK the tempo/key/master-tempo
+ * tests measure through the app's own analyser. Those tracks carry no
  * rekordbox vendor mapping, so `/anlz` serves its documented empty-but-valid
  * payload: no waveform bands and no beatgrid. Nothing here fabricates either.
+ *
+ * WHAT THE MISSING BEATGRID COSTS, stated rather than worked around: BEAT SYNC
+ * and QUANTIZE are switched off through their real buttons, because the engine
+ * refuses "play Beat Sync", "pause cue" and "cueJump quantize" without a grid.
+ * The UI's loop control is a BEAT loop (`engageBeatLoop` requires a grid
+ * unconditionally), so the loop-wrap assertion drives the millisecond loop
+ * through the agent-native IPC endpoint the house rules require every UI
+ * control to have, and a separate test pins the UI button's honest-inert
+ * contract. No beat-loop, key-sync or quantized-seek behaviour is asserted.
+ *
+ * SELECTOR DISCIPLINE, all of it learned by something breaking:
+ *
+ * - Controls are addressed by `data-performance-control`, never by `title`.
+ *   Titles are REWRITTEN per state ("no track loaded" -> "Play from current
+ *   playhead" -> "Pause - also stores the memory cue here"), so a title-bound
+ *   selector silently stops matching the moment a deck starts playing and reads
+ *   as a missing control. `aria-label` is the stable fallback where no data
+ *   attribute exists. The one `title` assertion below is on CONTENT, not a
+ *   selector, and pins a state this fixture can never leave.
+ * - Deck panels are `section.rb-deck[data-deck="N"]`: a bare `[data-deck]`
+ *   matches EIGHT elements (four waverow lanes plus four deck panels), and DOM
+ *   order is 1, 3, 2, 4, so nothing may be addressed by position.
+ * - Per-row controls (e.g. `button[title="Load onto deck N"]`) exist in EVERY
+ *   row and are visible only on the hovered one, so they must be scoped to a
+ *   row locator and never reached with a global `.first()`.
+ *
+ * HONEST DENOMINATORS: the library here is GENERATED, so every row has real,
+ * readable audio and `file_exists` is true for all of them. That is deliberate.
+ * Sampling the top of a real snapshot playlist would test the fixture's
+ * brokenness rather than the app - one such playlist is 18 of 28 available with
+ * rows 0-3 all missing.
  *
  * Requirements:
  *
@@ -28,6 +61,8 @@
  *   localStorage persistence, never by stubbing a module.
  * - ✔︎ Deck-load timing comes from the app's own `[perf]` console line AND the
  *   IPC snapshot, so a passing run proves a real worklet was created.
+ * - ✔︎ Every rate and every frequency is read from ONE named deck, never from a
+ *   flat scrape of the page, so a reading can always be attributed.
  *
  * Acceptance tests:
  *
@@ -35,6 +70,12 @@
  * - [if] the deck reports a load but no stretchCreate stage [then ⛔️] it passes.
  * - [if] the playhead does not advance while playing [then ⛔️] transport passes.
  * - [if] the playhead advances while paused [then ⛔️] transport passes.
+ * - [if] a tempo change does not change the playhead RATE [then ⛔️] tempo passes.
+ * - [if] MASTER TEMPO fails to hold pitch under a tempo change [then ⛔️] it passes.
+ * - [if] MASTER TEMPO off does not shift pitch with tempo [then ⛔️] it passes.
+ * - [if] a key nudge does not move the tone by a semitone [then ⛔️] key passes.
+ * - [if] CUE does not return the playhead to the cue point [then ⛔️] cue passes.
+ * - [if] the playhead leaves the loop window [then ⛔️] the loop test passes.
  */
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
@@ -57,6 +98,41 @@ const E2E_MASTER_VOLUME = 0.1;
 
 /** Fixture files are 60s; a transport sample well inside that. */
 const TRANSPORT_SAMPLE_MS = 1_500;
+
+/** Rate window. Long enough that scheduler jitter is a small fraction of it. */
+const RATE_WINDOW_MS = 2_000;
+
+/**
+ * Band the dominant-bin search runs over, matching MEASUREMENT_BAND_HZ in
+ * support/deckload_fixture.py. It holds the 2 kHz tone across everything this
+ * suite drives (1888 Hz at -1 semitone to 2320 Hz at +16%) and excludes the
+ * 100 Hz beat pulse and its low harmonics.
+ */
+const MEASUREMENT_BAND_HZ: readonly [number, number] = [800, 8_000];
+
+/** Captures per measurement. The analyser has smoothing 0, so each is
+ * independent; the spread between them is asserted rather than averaged away. */
+const SPECTRUM_SAMPLES = 5;
+
+/** Max spread across those captures before the measurement is called unstable.
+ * One analyser bin is ~10.8 Hz, so this is a little over two bins. */
+const SPECTRUM_SPREAD_TOLERANCE_HZ = 25;
+
+/** Fractional tolerance on a frequency ratio assertion (~1.4 bins at 2 kHz). */
+const FREQUENCY_RATIO_TOLERANCE = 0.0075;
+
+/** The pitch range this suite selects, and the ratio its top of travel means. */
+const PITCH_RANGE_PCT = 16;
+const PITCH_MAX_RATIO = 1 + PITCH_RANGE_PCT / 100;
+
+const SEMITONE_RATIO = Math.pow(2, 1 / 12);
+
+/** Loop window under test, and how long the playhead is watched inside it.
+ * 5s over a 1.2s loop is four wraps, so a single missed wrap still fails. */
+const LOOP_LENGTH_MS = 1_200;
+const LOOP_OBSERVE_MS = 5_000;
+/** Slack on the loop edges: one scheduler quantum, not a free pass. */
+const LOOP_EDGE_TOLERANCE_MS = 150;
 
 const PREFS_STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 const PERF_LOG_STORAGE_KEY = 'mdt.perfEventLog';
@@ -124,41 +200,28 @@ async function _bodyText(page: Page): Promise<string> {
 }
 
 /**
- * Turn BEAT SYNC off on one deck through its real button.
+ * BEAT SYNC, QUANTIZE and SLIP off on one deck, through their real buttons.
  *
- * Not a convenience: the fixture tracks carry no rekordbox beatgrid, and the
- * engine REFUSES to Beat-Sync-play a gridless deck ("beat grid must contain at
- * least 2 beats"). Turning it off is the same thing a DJ does with an
- * unanalysed track, and it is what makes every downstream transport assertion
- * in this file measure transport rather than that refusal.
- */
-async function _turnOff(page: Page, deck: DeckId, control: string): Promise<void> {
-	const button = page.locator(
-		`section.rb-deck[data-deck="${deck}"] [data-performance-control="${control}"]`
-	);
-	if ((await button.getAttribute('data-state')) === 'off') return;
-	await button.click();
-	await expect(button).toHaveAttribute('data-state', 'off');
-}
-
-/**
- * BEAT SYNC and QUANTIZE both hard-require a real PQTZ grid: the engine
- * refuses "play Beat Sync", "pause cue" and "cueJump quantize" on a gridless
- * deck ("beat grid must contain at least 2 beats"). The fixture library has no
- * rekordbox analysis, so both go off before anything loads - exactly what a DJ
- * does with an unanalysed track, and what makes the transport assertions below
- * measure transport instead of that refusal.
+ * Not a convenience. BEAT SYNC and QUANTIZE hard-require a real PQTZ grid: the
+ * engine refuses "play Beat Sync", "pause cue" and "cueJump quantize" on a
+ * gridless deck ("beat grid must contain at least 2 beats"). The fixture
+ * library has no rekordbox analysis, so both go off before anything loads -
+ * exactly what a DJ does with an unanalysed track, and what makes the
+ * transport assertions below measure transport instead of that refusal. SLIP
+ * goes off so the loop test measures the loop rather than slip's shadow
+ * playhead.
  */
 async function _prepareGridlessDeck(page: Page, deck: DeckId): Promise<void> {
-	await _turnOff(page, deck, 'beat-sync');
-	await _turnOff(page, deck, 'quantize');
+	await _setToggle(page, deck, 'beat-sync', 'off');
+	await _setToggle(page, deck, 'quantize', 'off');
+	await _setToggle(page, deck, 'slip', 'off');
 }
+
+const TRACK_ROW = '[data-testid="track-row"]';
 
 async function _openAllTracks(page: Page): Promise<void> {
 	await page.getByText('All Tracks', { exact: true }).first().click();
-	await expect(page.locator('tbody tr[data-stable-id]').first()).toBeVisible({
-		timeout: 30_000
-	});
+	await expect(page.locator(TRACK_ROW).first()).toBeVisible({ timeout: 30_000 });
 }
 
 /**
@@ -166,7 +229,7 @@ async function _openAllTracks(page: Page): Promise<void> {
  * the deck (least-recently-loaded of CH1/CH2), which is the flow a DJ uses.
  */
 async function _dblClickLoad(page: Page, index: number): Promise<string> {
-	const row = page.locator('tbody tr[data-stable-id]').nth(index);
+	const row = page.locator(TRACK_ROW).nth(index);
 	const stableId = await row.getAttribute('data-stable-id');
 	if (stableId === null) throw new Error(`row ${index} has no data-stable-id`);
 	await row.locator('td.c-title').dblclick();
@@ -205,6 +268,218 @@ function _clockText(positionMs: number): string {
 	const s = Math.floor(totalS % 60);
 	const tenths = Math.floor((totalS * 10) % 10);
 	return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${tenths}`;
+}
+
+// ----- deck-scoped locators --------------------------------------------------
+/**
+ * A control inside ONE deck panel.
+ *
+ * `section.rb-deck` is not decoration: `[data-deck]` matches EIGHT elements
+ * (four `.rb-waverow` overview lanes and four `.rb-deck` panels), so a bare
+ * `[data-deck="1"]` is ambiguous. `:visible` is not decoration either: JogDial
+ * renders TWO buttons carrying `data-performance-control="master-tempo"` (a
+ * full-size MT and a `.small` MT for the narrow layout) and only one of them is
+ * on screen, so a strict locator would fail on the ambiguity.
+ */
+function _control(page: Page, deck: DeckId, control: string) {
+	return page.locator(
+		`section.rb-deck[data-deck="${deck}"] [data-performance-control="${control}"]:visible`
+	);
+}
+
+/**
+ * Controls that legitimately resolve to more than one VISIBLE element, and how
+ * many. JogDial renders two buttons carrying
+ * `data-performance-control="master-tempo"` - a full-size `MT` and a `.small`
+ * `MT` - in the same `.side-buttons` cluster, both wired to the same
+ * `onMasterTempo` handler, with no media query hiding either. Pinning the count
+ * here rather than reaching for `.first()` means a NEW duplicate still fails
+ * loudly instead of being silently absorbed.
+ */
+const EXPECTED_VISIBLE_CONTROLS: Readonly<Record<string, number>> = {
+	'master-tempo': 2
+};
+
+/** Click a control after asserting it resolved to the count we expect. */
+async function _pressControl(page: Page, deck: DeckId, control: string): Promise<void> {
+	const button = _control(page, deck, control);
+	await expect(
+		button,
+		`deck ${deck} ${control} did not resolve to its expected visible count`
+	).toHaveCount(EXPECTED_VISIBLE_CONTROLS[control] ?? 1);
+	await button.first().click();
+}
+
+/** Set a two-state control to `on`/`off` through its real button. */
+async function _setToggle(
+	page: Page,
+	deck: DeckId,
+	control: string,
+	state: 'on' | 'off'
+): Promise<void> {
+	const button = _control(page, deck, control).first();
+	if ((await button.getAttribute('data-state')) === state) return;
+	await _pressControl(page, deck, control);
+	await expect(button).toHaveAttribute('data-state', state);
+}
+
+// ----- deck-scoped measurement -----------------------------------------------
+/**
+ * Playhead advance per wall-clock millisecond on ONE deck.
+ *
+ * Both readings are taken inside the page against the same clock, so the
+ * measurement cannot pick up Playwright round-trip latency, and both are read
+ * from `decks[deck]`, so the number is always attributable to that deck.
+ */
+async function _measureRate(page: Page, deck: DeckId, windowMs: number): Promise<number> {
+	return page.evaluate(
+		async ({ deckId, ms }) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) throw new Error('performance IPC is not installed');
+			const read = (): { pos: number; t: number } => ({
+				pos: ipc.query().decks[deckId].position_ms,
+				t: performance.now()
+			});
+			const first = read();
+			await new Promise((resolve) => setTimeout(resolve, ms));
+			const second = read();
+			const wallMs = second.t - first.t;
+			if (wallMs <= 0) throw new Error(`non-positive wall interval ${wallMs}ms`);
+			return (second.pos - first.pos) / wallMs;
+		},
+		{ deckId: deck, ms: windowMs }
+	);
+}
+
+/** One dominant-frequency reading from the deck's own analyser, in Hz. */
+async function _captureDominantHz(page: Page, deck: DeckId): Promise<number> {
+	return page.evaluate(
+		({ deckId, band }) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) throw new Error('performance IPC is not installed');
+			const snapshot = ipc.capture(deckId);
+			const db = Array.from(snapshot.frequency_db as ArrayLike<number>);
+			const hzPerBin = snapshot.sample_rate_hz / snapshot.fft_size;
+			const lo = Math.ceil(band[0] / hzPerBin);
+			const hi = Math.min(Math.floor(band[1] / hzPerBin), db.length - 2);
+			let peakBin = -1;
+			let peakDb = Number.NEGATIVE_INFINITY;
+			for (let bin = Math.max(lo, 1); bin <= hi; bin++) {
+				if (db[bin] > peakDb) {
+					peakDb = db[bin];
+					peakBin = bin;
+				}
+			}
+			if (peakBin < 0) throw new Error('no analyser bin inside the measurement band');
+			// Parabolic interpolation across the log-magnitude peak. Without it a
+			// reading is quantised to the ~10.8 Hz bin width, which is coarse
+			// enough to swamp a one-semitone assertion.
+			const left = db[peakBin - 1];
+			const centre = db[peakBin];
+			const right = db[peakBin + 1];
+			const denominator = left - 2 * centre + right;
+			let offset = denominator === 0 ? 0 : (0.5 * (left - right)) / denominator;
+			if (!Number.isFinite(offset) || Math.abs(offset) > 1) offset = 0;
+			return (peakBin + offset) * hzPerBin;
+		},
+		{ deckId: deck, band: MEASUREMENT_BAND_HZ }
+	);
+}
+
+/**
+ * Dominant frequency of ONE deck, as the median of SPECTRUM_SAMPLES captures.
+ *
+ * Every sample is kept and the SPREAD is asserted: a disagreeing capture fails
+ * the measurement loudly instead of being quietly dropped, which is the failure
+ * mode that made an earlier harness report a pass it had not earned.
+ */
+async function _dominantHz(page: Page, deck: DeckId): Promise<number> {
+	const samples: number[] = [];
+	for (let i = 0; i < SPECTRUM_SAMPLES; i++) {
+		samples.push(await _captureDominantHz(page, deck));
+		await page.waitForTimeout(60);
+	}
+	const spread = Math.max(...samples) - Math.min(...samples);
+	expect(
+		spread,
+		`deck ${deck} analyser readings disagree by ${spread.toFixed(1)}Hz: ${samples
+			.map((hz) => hz.toFixed(1))
+			.join(', ')}`
+	).toBeLessThan(SPECTRUM_SPREAD_TOLERANCE_HZ);
+	return [...samples].sort((a, b) => a - b)[Math.floor(samples.length / 2)];
+}
+
+/** Assert `actual` is `expected` within FREQUENCY_RATIO_TOLERANCE, relatively. */
+function _expectHzNear(actual: number, expected: number, what: string): void {
+	const drift = Math.abs(actual - expected) / expected;
+	expect(
+		drift,
+		`${what}: expected ~${expected.toFixed(1)}Hz, measured ${actual.toFixed(1)}Hz`
+	).toBeLessThan(FREQUENCY_RATIO_TOLERANCE);
+}
+
+// ----- transport helpers -----------------------------------------------------
+async function _ensurePlaying(page: Page, deck: DeckId, playing: boolean): Promise<void> {
+	const state = await _query(page);
+	if (state.decks[deck].playing !== playing) {
+		await _control(page, deck, 'play').click();
+	}
+	await _waitForAudible(page, deck, playing);
+}
+
+/**
+ * Put the pitch fader of one deck back to exactly 0% with a real pointer click.
+ *
+ * The keyboard has no "centre" key (Home is -range, End is +range). The
+ * component maps a click to `1 - (clientY - rect.top - THUMB_H / 2) / (TRACK_H
+ * - THUMB_H)` with THUMB_H 12 and TRACK_H 96, so value 0.5 - ratio 1.0 exactly
+ * - is the point 48px below the element's top. Clicking that offset rather
+ * than "the middle" keeps the reset exact even if the rendered height ever
+ * stops matching the component's constant.
+ */
+const PITCH_CENTRE_OFFSET_Y = 48;
+
+async function _centrePitch(page: Page, deck: DeckId): Promise<void> {
+	await _control(page, deck, 'pitch').click({ position: { x: 3, y: PITCH_CENTRE_OFFSET_Y } });
+	await page.waitForFunction(
+		(deckId) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) return false;
+			const state = ipc.query().decks[deckId];
+			return Math.abs(state.pitch - 1) < 1e-6 && !state.transport_pending;
+		},
+		deck,
+		{ timeout: 15_000 }
+	);
+}
+
+/** Select a pitch range through its real button. The engine REFUSES a ratio
+ * outside the selected range, so this is part of the tempo control flow. */
+async function _selectPitchRange(page: Page, deck: DeckId, pct: number): Promise<void> {
+	const button = page.locator(
+		`section.rb-deck[data-deck="${deck}"] ` +
+			`[data-performance-control="pitch-range"][data-range="${pct}"]:visible`
+	);
+	await expect(button).toHaveCount(1);
+	await button.click();
+	await expect(button).toHaveAttribute('data-state', 'on');
+}
+
+/** Drive the pitch fader with a real key press and wait for the engine. */
+async function _pitchKey(page: Page, deck: DeckId, key: string, ratio: number): Promise<void> {
+	const fader = _control(page, deck, 'pitch');
+	await fader.focus();
+	await fader.press(key);
+	await page.waitForFunction(
+		({ deckId, expected }) => {
+			const ipc = window.musicDjToolsPerformance;
+			if (ipc === undefined) return false;
+			const state = ipc.query().decks[deckId];
+			return Math.abs(state.pitch - expected) < 1e-6 && !state.transport_pending;
+		},
+		{ deckId: deck, expected: ratio },
+		{ timeout: 15_000 }
+	);
 }
 
 async function _waitForDeckLoaded(page: Page, deck: DeckId): Promise<void> {
@@ -326,9 +601,7 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		expect(advancedFromLoad).toBeGreaterThan(TRANSPORT_SAMPLE_MS * 0.5);
 		expect(advancedFromLoad).toBeLessThan(TRANSPORT_SAMPLE_MS * 1.5);
 
-		const playButton = page.locator(
-			'section.rb-deck[data-deck="1"] [data-performance-control="play"]'
-		);
+		const playButton = _control(page, 1, 'play');
 		await playButton.click();
 		await _waitForAudible(page, 1, false);
 
@@ -354,6 +627,227 @@ test.describe('webkit performance controls on the engine-served build', () => {
 
 		await playButton.click();
 		await _waitForAudible(page, 1, false);
+	});
+
+	test('a tempo change drives the playhead rate, not just the fader', async () => {
+		await _ensurePlaying(page, 1, true);
+		await _centrePitch(page, 1);
+
+		const baseRate = await _measureRate(page, 1, RATE_WINDOW_MS);
+		expect(baseRate, `deck 1 plays at ${baseRate.toFixed(4)}x at 0% pitch`).toBeGreaterThan(0.96);
+		expect(baseRate).toBeLessThan(1.04);
+
+		await _selectPitchRange(page, 1, PITCH_RANGE_PCT);
+		await _pitchKey(page, 1, 'End', PITCH_MAX_RATIO);
+		await _waitForAudible(page, 1, true);
+
+		const fastRate = await _measureRate(page, 1, RATE_WINDOW_MS);
+		const applied = fastRate / baseRate;
+		expect(
+			applied,
+			`playhead rate went ${baseRate.toFixed(4)}x -> ${fastRate.toFixed(4)}x, ` +
+				`a factor of ${applied.toFixed(4)} for a +${PITCH_RANGE_PCT}% fader move`
+		).toBeGreaterThan(PITCH_MAX_RATIO - 0.03);
+		expect(applied).toBeLessThan(PITCH_MAX_RATIO + 0.03);
+
+		// The rendered readout must agree with the audio path it produced.
+		await expect(_control(page, 1, 'pitch')).toHaveAttribute(
+			'aria-valuenow',
+			String(PITCH_RANGE_PCT)
+		);
+
+		await _centrePitch(page, 1);
+	});
+
+	test('MASTER TEMPO holds the key under a tempo change, and bypass shifts it', async () => {
+		await _ensurePlaying(page, 1, true);
+		await _centrePitch(page, 1);
+		await _setToggle(page, 1, 'master-tempo', 'on');
+		await _waitForAudible(page, 1, true);
+
+		// The fixture's landmark tone, decoded and played at 1.0.
+		const baseHz = await _dominantHz(page, 1);
+		expect(baseHz, `deck 1 landmark tone measured ${baseHz.toFixed(1)}Hz`).toBeGreaterThan(1_950);
+		expect(baseHz).toBeLessThan(2_050);
+
+		await _selectPitchRange(page, 1, PITCH_RANGE_PCT);
+		await _pitchKey(page, 1, 'End', PITCH_MAX_RATIO);
+		await _waitForAudible(page, 1, true);
+
+		// Prove the tempo really applied FIRST. Without this, "the key held"
+		// would pass just as happily on a tempo control that did nothing at all.
+		const fastRate = await _measureRate(page, 1, RATE_WINDOW_MS);
+		expect(
+			fastRate,
+			`tempo did not reach the audio path: rate is ${fastRate.toFixed(4)}x`
+		).toBeGreaterThan(PITCH_MAX_RATIO - 0.04);
+
+		const heldHz = await _dominantHz(page, 1);
+		_expectHzNear(heldHz, baseHz, `MASTER TEMPO on must hold the key at +${PITCH_RANGE_PCT}%`);
+
+		// Bypass it: composeStretchSemitones now contributes 12*log2(ratio)
+		// semitones, so the same tempo has to drag the tone up with it.
+		await _setToggle(page, 1, 'master-tempo', 'off');
+		await _waitForAudible(page, 1, true);
+		const shiftedHz = await _dominantHz(page, 1);
+		_expectHzNear(
+			shiftedHz,
+			baseHz * PITCH_MAX_RATIO,
+			`MASTER TEMPO off must shift the key with tempo`
+		);
+
+		await _setToggle(page, 1, 'master-tempo', 'on');
+		await _centrePitch(page, 1);
+		await _waitForAudible(page, 1, true);
+	});
+
+	test('a key nudge shifts the audio one semitone without touching tempo', async () => {
+		await _ensurePlaying(page, 1, true);
+		await _centrePitch(page, 1);
+		await _setToggle(page, 1, 'master-tempo', 'on');
+		await _waitForAudible(page, 1, true);
+
+		const baseHz = await _dominantHz(page, 1);
+
+		await _pressControl(page, 1, 'key-nudge-up');
+		await _waitForAudible(page, 1, true);
+		const upHz = await _dominantHz(page, 1);
+		_expectHzNear(upHz, baseHz * SEMITONE_RATIO, 'one semitone up');
+
+		await _pressControl(page, 1, 'key-nudge-down');
+		await _pressControl(page, 1, 'key-nudge-down');
+		await _waitForAudible(page, 1, true);
+		const downHz = await _dominantHz(page, 1);
+		_expectHzNear(downHz, baseHz / SEMITONE_RATIO, 'one semitone down');
+
+		// Key shift composes into the stretcher's semitone field and must NEVER
+		// reach transport rate. A whole semitone moved; the playhead must not.
+		const rate = await _measureRate(page, 1, RATE_WINDOW_MS);
+		expect(
+			rate,
+			`key shift leaked into transport: playhead runs at ${rate.toFixed(4)}x`
+		).toBeGreaterThan(0.96);
+		expect(rate).toBeLessThan(1.04);
+
+		await _pressControl(page, 1, 'key-nudge-up');
+		await _waitForAudible(page, 1, true);
+		expect((await _query(page)).decks[1].key_shift_semitones).toBe(0);
+	});
+
+	test('CUE stamps a cue point and returns the playhead to it', async () => {
+		await _ensurePlaying(page, 1, true);
+		await _centrePitch(page, 1);
+
+		// Paused with no cue set, the engine stamps one at the current position.
+		await _ensurePlaying(page, 1, false);
+		const pausedAt = (await _query(page)).decks[1].position_ms;
+		expect(pausedAt, 'the cue point must be non-zero to prove a real return').toBeGreaterThan(
+			1_000
+		);
+
+		await _pressControl(page, 1, 'cue');
+		await page.waitForFunction(
+			(deckId: DeckId) => window.musicDjToolsPerformance?.query().decks[deckId].cue_ms !== null,
+			1 as DeckId,
+			{ timeout: 15_000 }
+		);
+		const cueMs = (await _query(page)).decks[1].cue_ms;
+		expect(cueMs).not.toBeNull();
+		expect(Math.abs((cueMs ?? 0) - pausedAt)).toBeLessThan(50);
+
+		// Play well past it, then press CUE: the contract is return AND pause.
+		await _ensurePlaying(page, 1, true);
+		await page.waitForFunction(
+			({ deckId, past }) => {
+				const ipc = window.musicDjToolsPerformance;
+				return ipc !== undefined && ipc.query().decks[deckId].position_ms > past;
+			},
+			{ deckId: 1 as DeckId, past: (cueMs ?? 0) + 2_000 },
+			{ timeout: 30_000 }
+		);
+
+		await _pressControl(page, 1, 'cue');
+		await _waitForAudible(page, 1, false);
+		const after = await _query(page);
+		expect(after.decks[1].playing).toBe(false);
+		expect(
+			Math.abs(after.decks[1].position_ms - (cueMs ?? 0)),
+			`CUE left the playhead at ${after.decks[1].position_ms.toFixed(0)}ms, ` +
+				`cue point is ${(cueMs ?? 0).toFixed(0)}ms`
+		).toBeLessThan(150);
+
+		// The readout a DJ looks at must agree with where the audio actually is.
+		await expect(page.locator('section.rb-deck[data-deck="1"] .elapsed')).toHaveText(
+			_clockText(after.decks[1].position_ms)
+		);
+	});
+
+	test('an engaged loop keeps the playhead inside its window', async () => {
+		// The UI's loop control is a BEAT loop and the fixture has no beatgrid
+		// (see the file header), so the millisecond loop is driven through the
+		// agent-native IPC endpoint every UI control is required to have. The
+		// button's own inert contract is asserted by the next test.
+		await _ensurePlaying(page, 1, true);
+		await _centrePitch(page, 1);
+
+		const startMs = (await _query(page)).decks[1].position_ms;
+		const inMs = startMs + 400;
+		const outMs = inMs + LOOP_LENGTH_MS;
+		await _dispatch(page, { type: 'loop', deck: 1, loop: { in_ms: inMs, out_ms: outMs } });
+		await _waitForAudible(page, 1, true);
+
+		const samples = await page.evaluate(
+			async ({ deckId, forMs, everyMs }) => {
+				const ipc = window.musicDjToolsPerformance;
+				if (ipc === undefined) throw new Error('performance IPC is not installed');
+				const readings: number[] = [];
+				const until = performance.now() + forMs;
+				while (performance.now() < until) {
+					readings.push(ipc.query().decks[deckId].position_ms);
+					await new Promise((resolve) => setTimeout(resolve, everyMs));
+				}
+				return readings;
+			},
+			{ deckId: 1 as DeckId, forMs: LOOP_OBSERVE_MS, everyMs: 100 }
+		);
+
+		expect(samples.length).toBeGreaterThan(20);
+		// EVERY sample must sit inside the window. Not "most": one escape is the
+		// whole defect, and averaging would hide exactly the bug worth catching.
+		for (const positionMs of samples) {
+			expect(
+				positionMs,
+				`playhead escaped the loop: ${positionMs.toFixed(0)}ms is outside ` +
+					`${inMs.toFixed(0)}..${outMs.toFixed(0)}ms (all samples: ${samples
+						.map((s) => s.toFixed(0))
+						.join(', ')})`
+			).toBeGreaterThan(inMs - LOOP_EDGE_TOLERANCE_MS);
+			expect(positionMs).toBeLessThan(outMs + LOOP_EDGE_TOLERANCE_MS);
+		}
+
+		// A backward step is the wrap, and it is the ONLY thing separating a
+		// loop from ordinary playback across the same span.
+		const wraps = samples.filter(
+			(positionMs, index) => index > 0 && positionMs < samples[index - 1]
+		).length;
+		expect(
+			wraps,
+			`observed ${wraps} wrap(s) in ${LOOP_OBSERVE_MS}ms over a ${LOOP_LENGTH_MS}ms loop`
+		).toBeGreaterThanOrEqual(2);
+
+		await _dispatch(page, { type: 'loop', deck: 1, loop: null });
+		await _waitForAudible(page, 1, true);
+		expect((await _query(page)).decks[1].loop).toBeNull();
+	});
+
+	test('the beat-loop button is honestly inert without a beatgrid', async () => {
+		// House rule: a control with no real data source renders inert and says
+		// why. The fixture has no rekordbox analysis, so this is the contract the
+		// button actually has here, and asserting it is what keeps the suite from
+		// pretending a beat loop was tested.
+		const loop = _control(page, 1, 'loop');
+		await expect(loop).toBeDisabled();
+		await expect(loop).toHaveAttribute('title', 'track has no beatgrid - beat loop unavailable');
 	});
 
 	test('no uncaught page errors were raised during the run', () => {
