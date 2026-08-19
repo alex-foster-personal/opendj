@@ -119,11 +119,18 @@
 			{@render children()}
 		</div>
 	</main>
+	<!-- The app shell's bottom tray. It exists so the build identity has a
+	     place of its own instead of floating over the sidebar, and it spans
+	     both columns so the chip sits in the window's bottom RIGHT corner.
+	     /performance has its own tray (the browser panel's bottom bar) and
+	     mounts the chip there, so exactly one is ever on screen. -->
+	<footer class="app-tray" aria-label="status tray">
+		<BuildIdentity />
+	</footer>
 </div>
 {/if}
 
 <SettingsOverlay />
-<BuildIdentity />
 
 <div class="toast-stack">
 	{#each toasts as toast (toast.id)}
@@ -132,6 +139,25 @@
 </div>
 
 <style>
+	/* One extra row for the tray. Declared here rather than in app.css so the
+	   blast radius of the tray is this component; Svelte's scoping class wins
+	   over the base rule on specificity. */
+	.app-shell {
+		grid-template-rows: minmax(0, 1fr) auto;
+	}
+	.app-shell > .sidebar,
+	.app-shell > main {
+		grid-row: 1;
+	}
+	.app-tray {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		min-height: 20px;
+		padding: 0 0.35rem;
+		background: var(--surface);
+		border-top: 1px solid var(--border);
+	}
 	.nav-settings {
 		display: block;
 		width: 100%;

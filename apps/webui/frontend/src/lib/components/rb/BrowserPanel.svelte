@@ -73,6 +73,7 @@
 	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import { setAutoPlayTrackFeed } from '$lib/rb/auto-play';
@@ -1735,6 +1736,12 @@
 				<span class="job-ribbon-label">{ribbon.label}</span>
 			</span>
 		{/if}
+		<!-- The build identity lives at the RIGHT end of this tray on
+		     /performance. It used to be position:fixed bottom-left, sitting on
+		     top of the connectivity dots. The root layout mounts it in the app
+		     shell's own tray instead, and that branch never renders for this
+		     route, so exactly one is ever on screen. -->
+		<BuildIdentity />
 		<span class="grip" aria-hidden="true">
 			<svg viewBox="0 0 12 12" width="10" height="10">
 				<path d="M11 1L1 11M11 5L5 11M11 9L9 11" stroke="currentColor" stroke-width="1" />
@@ -1947,7 +1954,10 @@
 		letter-spacing: 0.5px;
 	}
 	.grip {
-		margin-left: auto;
+		/* No auto margin: the build identity that now precedes it already
+		   carries one, and TWO auto margins split the free space between them
+		   instead of pushing the pair to the right. The chip absorbs the gap;
+		   the grip stays welded to its right, in the corner. */
 		color: var(--rb-text-dim);
 	}
 </style>

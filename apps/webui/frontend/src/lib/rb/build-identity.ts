@@ -43,6 +43,11 @@
  *   ✔︎ 🎯 describeDrift: same sha on both sides is aligned, different shas is
  *     drifted, and an unknown side is neither.
  *     [if] an unknown engine sha reports "aligned" [then ⛔️] broken
+ *   ✔︎ 🎯 engineBaseUrl: an engine-served page reports its own origin, a
+ *     configured VITE_API_BASE reports that instead, and neither available is
+ *     a fault rather than a guessed port.
+ *     [if] a page with no origin and no configured base prints a plausible
+ *     127.0.0.1 address [then ⛔️] broken
  */
 
 import { API_BASE } from '$lib/api/client';
@@ -223,6 +228,104 @@ export function formatStamp(iso: string | null, timeZone?: string): Stamp | null
 		...(timeZone === undefined ? {} : { timeZone })
 	}).format(when);
 	return { local, utc: `${when.toISOString().slice(0, 16).replace('T', ' ')}Z` };
+}
+
+// ----- where this app is --------------------------------------------------
+/** The subset of `Location` this module reads. Keeps the function callable
+ * from node:test, where there is no DOM. */
+export interface LocationLike {
+	origin?: string;
+	href?: string;
+}
+
+/** How the base URL was arrived at. Different fact, different sentence. */
+export type EngineUrlSource = 'served' | 'configured';
+
+export type EngineUrl =
+	| { kind: 'ok'; url: string; source: EngineUrlSource }
+	| { kind: 'fault'; reason: string };
+
+function _trimTrailingSlash(url: string): string {
+	return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/**
+ * The engine's base URL, in the form a person can paste into a browser.
+ *
+ * ORIGIN OF THIS FUNCTION. The packaged app starts its engine on an
+ * OS-ASSIGNED free loopback port, so the address is different every launch and
+ * is baked into nothing. A tester who wanted to open the app in a real browser
+ * had no way to find it, guessed the dev port, and got nothing. The window
+ * knows the answer; it just never said it out loud. Now it does.
+ *
+ * TWO SOURCES, NAMED. `served` means this page came FROM the engine, so the
+ * page's own origin IS the engine: that is the packaged app, and the port in
+ * it is the ephemeral one. `configured` means `VITE_API_BASE` pointed the dev
+ * server at a daemon somewhere else, in which case the page's origin is the
+ * Vite server and would be the wrong answer.
+ *
+ * NO FALLBACK. A relative `VITE_API_BASE` with no document to resolve it
+ * against, or a page with no origin, is a fault sentence. Printing a plausible
+ * `http://127.0.0.1:8585` would send the reader to a port nothing is on, which
+ * is the exact failure this exists to end.
+ */
+export function engineBaseUrl(
+	location: LocationLike | null = (globalThis as { location?: LocationLike }).location ?? null,
+	apiBase: string = API_BASE
+): EngineUrl {
+	const configured = apiBase.trim();
+	if (configured !== '') {
+		try {
+			const parsed = new URL(configured);
+			return {
+				kind: 'ok',
+				url: _trimTrailingSlash(`${parsed.origin}${parsed.pathname}`),
+				source: 'configured'
+			};
+		} catch {
+			// Not absolute. It can only be resolved against this document.
+			if (location?.href === undefined || location.href === '') {
+				return {
+					kind: 'fault',
+					reason: `VITE_API_BASE is "${configured}", which is relative, and there is no document to resolve it against`
+				};
+			}
+			try {
+				const parsed = new URL(configured, location.href);
+				return {
+					kind: 'ok',
+					url: _trimTrailingSlash(`${parsed.origin}${parsed.pathname}`),
+					source: 'configured'
+				};
+			} catch (err) {
+				const detail = err instanceof Error ? err.message : String(err);
+				return {
+					kind: 'fault',
+					reason: `VITE_API_BASE is "${configured}", which is not a usable URL (${detail})`
+				};
+			}
+		}
+	}
+	if (location?.origin === undefined || location.origin === '' || location.origin === 'null') {
+		return {
+			kind: 'fault',
+			reason:
+				'this page has no origin, so the engine that served it cannot be named; VITE_API_BASE is unset'
+		};
+	}
+	return { kind: 'ok', url: _trimTrailingSlash(location.origin), source: 'served' };
+}
+
+/** The hover explanation for the base URL readout. */
+export function explainEngineUrl(state: EngineUrl): string {
+	if (state.kind === 'fault') {
+		return `The engine's address cannot be determined: ${state.reason}`;
+	}
+	const provenance =
+		state.source === 'served'
+			? "This page was served BY the engine, so the engine is this window's own origin. The packaged app picks a free loopback port at every launch, which is why this number changes between runs."
+			: 'VITE_API_BASE points this dev build at a daemon that did not serve this page, so the address is the configured one and not this page\'s origin.';
+	return `${provenance}\n\nOpen ${state.url} in a browser to reach the same app.`;
 }
 
 export type Drift = 'aligned' | 'drifted' | 'unknown';
