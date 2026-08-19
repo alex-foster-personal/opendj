@@ -78,6 +78,15 @@ honest bit: the connection was accepted, or it was not.
 has navigated to the engine, an engine that dies mid-session leaves the
 webview on a dead page; recovering that is the SPA's job, not the shell's.
 
+**Not built here, and deliberately so:** pick-a-free-port with a port
+handshake to the webview, a single-instance lock, and "sidecar dies with
+the app". All three describe a shell that SPAWNS the engine. This shell
+does not: it attaches to an engine the user started. They become
+implementable, and necessary, the moment the self-contained daemon sidecar
+lands, and the shutdown path should then use the zombie-aware group check
+in `apps/engine_core/jobs/reap.py` rather than a raw `killpg(pid, 0)`
+existence loop.
+
 ### Why the engine is not bundled (yet)
 
 The chosen strategy is deliberate: **the .app expects a repo checkout**, and
@@ -133,19 +142,42 @@ checkout:
 The window title is `productName`, so the overlay labels the window with no
 second place to edit.
 
-### Not signed, not notarized
+### Signing: parameterized now, unsigned today
 
-`codesign` reports `adhoc, linker-signed` with `Sealed Resources=none`, and
-`spctl -a` already rejects the bundle on the machine that built it. A
-tester who downloads the dmg also gets `com.apple.quarantine`, so Finder
-refuses to open the app at all. Until a Developer ID identity exists, a
-tester must run:
+Signing is wired but switched off, because this Mac has zero codesigning
+identities (`security find-identity -v -p codesigning` -> 0 valid) while
+Developer ID enrollment is in motion. When the cert lands, only `.env`
+changes -- no code edit:
+
+- `MDT_MACOS_SIGNING_IDENTITY` -> exported as `APPLE_SIGNING_IDENTITY`,
+  which tauri-cli reads as the override for `bundle.macOS.signingIdentity`
+  (verified in tauri-cli 2.11.4 `interface/rust.rs`).
+- `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` -> an `xcrun notarytool
+  store-credentials` profile name. Tauri's bundler **cannot** consume one:
+  it accepts only `APPLE_API_*` or `APPLE_ID`/`APPLE_PASSWORD`/
+  `APPLE_TEAM_ID` (verified in tauri-bundler 2.9.4), so `just dmg` runs
+  `notarytool submit --wait` then `stapler staple` itself.
+
+Neither value is ever committed. Setting the notary profile without an
+identity is refused before the build starts, because notarizing an unsigned
+app is impossible. A signing identity that does not resolve fails the
+build; it never silently degrades to unsigned. The recipe reports the
+`Authority=` actually found on the artifact, not the one requested.
+
+Until then: `codesign` reports `adhoc, linker-signed` with `Sealed
+Resources=none`, and `spctl -a` already rejects the bundle on the machine
+that built it. A tester who downloads the dmg also gets
+`com.apple.quarantine`, so Finder refuses to open the app at all. A tester
+must run:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Open DJ.app"
 ```
 
-The build is also `aarch64` only: an Intel Mac cannot run this artifact.
+### arm64 only
+
+v1 is Apple Silicon only, by decision. An Intel Mac cannot run this
+artifact at all. `just dmg` prints the architecture it produced.
 
 productName: `Open DJ`
 identifier: `com.opendj.desktop`
