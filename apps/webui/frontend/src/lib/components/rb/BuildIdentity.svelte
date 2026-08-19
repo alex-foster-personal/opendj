@@ -79,15 +79,17 @@
 		<span class="lane" title="The bake-off lane this artifact was built as, from the payload manifest.">
 			{lane}
 		</span>
-		<span class="sha" title={explainSide('engine', engine)}>{shortLabel(engine)}</span>
-		{#if engine.kind === 'ok' && engine.value.git_dirty}
-			<span
-				class="dirty"
-				title="DIRTY: uncommitted changes were present in the working tree when this engine was built, so the commit above does not fully describe what is running."
-			>
-				DIRTY
-			</span>
-		{/if}
+		<!-- shortLabel composes the sha and the DIRTY marker, so there is one
+		     place that decides what the compact label says. The span goes
+		     amber as a whole when it carries DIRTY: a dirty build must not be
+		     able to pass for a clean one at a glance. -->
+		<span
+			class="sha"
+			class:dirty={engine.kind === 'ok' && engine.value.git_dirty}
+			title={explainSide('engine', engine)}
+		>
+			{shortLabel(engine)}
+		</span>
 		{#if drift === 'drifted'}
 			<span class="drift" title={driftTitle}>SHELL DRIFT</span>
 		{/if}
