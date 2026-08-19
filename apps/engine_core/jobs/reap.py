@@ -5,6 +5,13 @@ The SIGTERM -> grace -> SIGKILL -> confirm-gone ladder is adapted from
 proved the pattern for the vocal worker tree). What is added here is
 IDENTITY VERIFICATION.
 
+The group primitives underneath it -- liveness, the zombie-discounting member
+walk, the signal that tolerates an all-zombie group, and the two-cadence wait
+-- now live in ``apps.shared.process_groups`` and are re-exported below. They
+were written here first and the vocal worker kept its own pre-zombie copy, so
+the same EPERM-on-a-corpse bug this module fixed went on burning a full grace
+over there. One home means one fix.
+
 A pgid recorded in the jobs db outlives the engine that wrote it. After a
 crash the OS is free to hand that number to an unrelated process, so a blind
 ``killpg`` on a stored id can kill a stranger. Every kill in this module is
@@ -34,6 +41,16 @@ from dataclasses import dataclass
 
 import psutil
 
+from apps.shared.process_groups import (
+    WorkerCleanupError,
+    group_has_live_member,
+    group_members,
+    live_group_members,
+    process_group_exists,
+    signal_group,
+    wait_group_gone,
+)
+
 WORKER_TERMINATE_GRACE_S: float = 10.0
 
 # The share of the grace held back for the SIGKILL rung. A kill is not
@@ -48,16 +65,6 @@ WORKER_KILL_CONFIRM_S: float = 2.0
 # taken within milliseconds of the fork, so 2s is a generous identity window
 # that still fails a pid recycled minutes later.
 CREATE_TIME_TOLERANCE_S: float = 2.0
-
-_POLL_S: float = 0.02
-
-# The live-member walk enumerates every process on the box, so it runs on a
-# far slower beat than the one-syscall group check it backs up.
-_LIVE_CHECK_EVERY_S: float = 0.25
-
-
-class WorkerCleanupError(RuntimeError):
-    """The process group could not be confirmed dead."""
 
 
 @dataclass(frozen=True)
@@ -92,67 +99,6 @@ def _require_posix() -> None:
             "from apps/vocals/cli.py::_terminate_worker_tree before running "
             "the engine on Windows"
         )
-
-
-def process_group_exists(pgid: int) -> bool:
-    """Adapted from apps/vocals/cli.py::_posix_process_group_exists.
-
-    Note what this does NOT mean: a group whose every member is a zombie still
-    answers yes, because the pgid stays allocated until the parent waits. Use
-    ``group_has_live_member`` for "is anything still running in there".
-    """
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def group_members(pgid: int) -> tuple[psutil.Process, ...]:
-    """Every live process whose process group is ``pgid``, leader included.
-
-    psutil has no portable pgid attribute, so the group is resolved with
-    ``os.getpgid`` per pid. Processes that exit mid-walk are skipped rather
-    than raising: the walk is a snapshot of a moving target by definition.
-    """
-    found: list[psutil.Process] = []
-    for proc in psutil.process_iter():
-        try:
-            if os.getpgid(proc.pid) == pgid:
-                found.append(proc)
-        except (ProcessLookupError, PermissionError, OSError, psutil.Error):
-            continue
-    return tuple(found)
-
-
-def live_group_members(pgid: int) -> tuple[psutil.Process, ...]:
-    """Group members that are not zombies.
-
-    A zombie is a dead process whose parent has not waited on it yet. It keeps
-    the pgid allocated and, on macOS, makes ``killpg`` answer EPERM -- which is
-    how an uncaught PermissionError used to escape a reap. Nothing of it is
-    still executing, so for cleanup purposes it does not count. A member whose
-    status cannot be read IS counted: failing to inspect something is not
-    evidence that it is dead.
-    """
-    live: list[psutil.Process] = []
-    for proc in group_members(pgid):
-        try:
-            if proc.status() == psutil.STATUS_ZOMBIE:
-                continue
-        except psutil.NoSuchProcess:
-            continue
-        except psutil.AccessDenied:
-            pass
-        live.append(proc)
-    return tuple(live)
-
-
-def group_has_live_member(pgid: int) -> bool:
-    """Is anything in the group still RUNNING (as opposed to merely present)?"""
-    return bool(live_group_members(pgid))
 
 
 @dataclass(frozen=True)
@@ -310,15 +256,15 @@ def terminate_group(
     _require_posix()
     deadline = time.monotonic() + grace_s
     kill_at = deadline - min(WORKER_KILL_CONFIRM_S, grace_s / 2)
-    already = _signal_group(pgid, signal.SIGTERM)
+    already = signal_group(pgid, signal.SIGTERM)
     if already is not None:
         return already
-    if _wait_gone(pgid, max(kill_at - time.monotonic(), 0.0)):
+    if wait_group_gone(pgid, max(kill_at - time.monotonic(), 0.0)):
         return f"process group {pgid} exited on SIGTERM"
-    already = _signal_group(pgid, signal.SIGKILL)
+    already = signal_group(pgid, signal.SIGKILL)
     if already is not None:
         return already
-    if not _wait_gone(pgid, max(deadline - time.monotonic(), 0.0)):
+    if not wait_group_gone(pgid, max(deadline - time.monotonic(), 0.0)):
         raise WorkerCleanupError(
             f"process group {pgid} survived SIGKILL; it was still live "
             f"{grace_s:.0f}s after the SIGTERM that opened the ladder"
@@ -326,32 +272,6 @@ def terminate_group(
     return (
         f"process group {pgid} killed within the {grace_s:.0f}s SIGTERM grace"
     )
-
-
-def _signal_group(pgid: int, sig: int) -> str | None:
-    """Send ``sig``, or return the sentence explaining why there was no need.
-
-    PermissionError is not an error path when the group holds only zombies:
-    macOS refuses signals to a group with no live member, which is the very
-    condition that means the work is already done. A group that DOES have live
-    members and still refuses the signal is somebody else's, and that is a
-    loud failure rather than a silent skip.
-    """
-    try:
-        os.killpg(pgid, sig)
-    except ProcessLookupError:
-        return f"process group {pgid} was already gone"
-    except PermissionError as exc:
-        if not group_has_live_member(pgid):
-            return (
-                f"process group {pgid} holds only dead (zombie) members; "
-                "there was nothing left to kill"
-            )
-        raise WorkerCleanupError(
-            f"not permitted to signal process group {pgid} ({exc}); it has "
-            "live members this engine does not own"
-        ) from exc
-    return None
 
 
 @dataclass(frozen=True)
@@ -439,28 +359,6 @@ def _apply_ladder(pgid: int, why: str) -> ReapResult:
 def reap(identity: WorkerIdentity) -> str:
     """Verify then kill. Returns a sentence for the jobs row's error column."""
     return reap_group(identity).outcome
-
-
-def _wait_gone(pgid: int, timeout_s: float) -> bool:
-    """True once no LIVE process remains in the group.
-
-    Two cadences on purpose: ``process_group_exists`` is one syscall and runs
-    every poll, while the live-member walk enumerates every process on the box
-    and runs on a much slower beat. Without the walk a zombie group never looks
-    gone, so the ladder burned the full grace and then took EPERM on SIGKILL.
-    """
-    deadline = time.monotonic() + timeout_s
-    next_live_check = 0.0
-    while process_group_exists(pgid):
-        now = time.monotonic()
-        if now >= next_live_check:
-            if not group_has_live_member(pgid):
-                return True
-            next_live_check = now + _LIVE_CHECK_EVERY_S
-        if now >= deadline:
-            return not group_has_live_member(pgid)
-        time.sleep(_POLL_S)
-    return True
 
 
 __all__ = [
