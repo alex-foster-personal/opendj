@@ -262,6 +262,8 @@ def test_the_worker_refuses_an_unknown_stable_id(tmp_path: Path) -> None:
         text=True,
         cwd=str(REPO_ROOT),
         env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        # The refusal IS the assertion, so a non-zero exit is expected.
+        check=False,
     )
     assert result.returncode != 0
     assert "are not in" in result.stderr
@@ -283,6 +285,8 @@ def test_the_worker_refuses_both_ids_and_a_scope(tmp_path: Path) -> None:
         text=True,
         cwd=str(REPO_ROOT),
         env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        # The refusal IS the assertion, so a non-zero exit is expected.
+        check=False,
     )
     assert result.returncode != 0
     assert "exactly one of" in result.stderr
