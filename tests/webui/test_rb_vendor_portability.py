@@ -47,6 +47,7 @@ from fastapi import HTTPException
 from apps.adapters.rekordbox import config as rb_config
 from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths as pp
+from apps.webui import crate_sync
 from apps.webui.server import rb_vendor
 
 
@@ -144,6 +145,17 @@ def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
         importlib.reload(rb_config)
         importlib.reload(rb_paths)
         importlib.reload(rb_vendor)
+        # crate_sync is reloaded for a different reason from the three above:
+        # it is not asserted on here, but it binds pp.STREAMING_PREFIXES at
+        # import time. Reloading pp rebinds that name to a NEW tuple, so any
+        # module not reloaded after pp keeps a reference to the old object.
+        # The values stay equal, only the identity diverges, which is exactly
+        # what tests/shared/test_streaming_path_predicates.py asserts on
+        # ("no module keeps a private copy"). Restoring reality therefore
+        # means reloading every module that binds a pp name, not only the ones
+        # this test looks at. Keep this list in step with the identity
+        # assertions in that file.
+        importlib.reload(crate_sync)
 
 
 # ----- MDT_DATA_DIR override --------------------------------------------------
