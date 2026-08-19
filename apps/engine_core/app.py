@@ -34,6 +34,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request
 from fastapi.routing import APIRoute
 
+from apps.engine_core.assistant.api import router as assistant_router
 from apps.engine_core.build_info import add_build_info_route
 from apps.engine_core.config import (
     ENGINE_VERSION,
@@ -124,6 +125,10 @@ def create_app(
     # order matters: the jobs surface must be able to build a worker for
     # setup.import-rekordbox before anything can enqueue one.
     app.include_router(setup_router, prefix=API_PREFIX)
+    # The sidebar assistant that keeps the user company while that import
+    # runs. Stateless and dependency-free -- it reads its key and model off
+    # the environment, so it needs nothing from app.state.
+    app.include_router(assistant_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
     # Identity before the SPA mount, like every other route: a Mount at "/"
     # swallows anything registered after it. platform_paths.PROJECT_ROOT is
