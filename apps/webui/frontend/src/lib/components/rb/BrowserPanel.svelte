@@ -38,6 +38,7 @@
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
 	import { resolveRowVocals } from '$lib/rb/row-vocals';
+	import { coalesce } from '$lib/rb/coalesce';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress
@@ -725,8 +726,11 @@
 	 * 60s timer), so a toast per failure during a daemon restart would bury
 	 * the UI in noise. The stale rows stay on screen and the next event or
 	 * tick retries.
+	 *
+	 * Never call this directly: go through `_refreshLibraryRows`, which
+	 * coalesces overlapping triggers. See the comment on that binding.
 	 */
-	async function _refreshLibraryRows(): Promise<void> {
+	async function _refreshLibraryRowsOnce(): Promise<void> {
 		try {
 			const healthRes = await getHealth();
 			allTracksCount = healthRes.health.state_db.tracks;
@@ -737,11 +741,19 @@
 			// A blank pane has nothing to refresh, and a pane mid-load already
 			// has a newer load token that owns its rows.
 			if (p.playlist_id === null || p.loading) continue;
+			// Snapshotted BEFORE the await, then rechecked after it: the user
+			// can switch this pane to another playlist while the fetch is in
+			// flight, and writing the response then would paint pane B with
+			// pane A's rows. The ETag design means the next WRITE 412s rather
+			// than corrupting anything, so this is a display-level fix, but a
+			// pane showing another playlist's tracks is still wrong on screen.
+			const requestedPlaylistId = p.playlist_id;
 			try {
 				const result =
-					p.playlist_id === 'all'
+					requestedPlaylistId === 'all'
 						? await _fetchAllRows()
-						: await _fetchPlaylistRows(p.playlist_id);
+						: await _fetchPlaylistRows(requestedPlaylistId);
+				if (p.playlist_id !== requestedPlaylistId) continue;
 				p.rows = result.rows;
 				p.truncated = result.truncated;
 				p.etag = result.etag;
@@ -751,10 +763,23 @@
 				p.selected_ids = p.selected_ids.filter((id) => present.has(id));
 				if (p.selected_id !== null && !present.has(p.selected_id)) p.selected_id = null;
 			} catch (exc) {
-				console.error(`[library-refresh] pane ${p.playlist_id} refresh failed: ${String(exc)}`);
+				console.error(
+					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
+				);
 			}
 		}
 	}
+
+	/**
+	 * The only entry point for a background library refresh.
+	 *
+	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
+	 * the 60s fallback poll) and a single gap-revealing `library.changed` frame
+	 * fires the first two for ONE event. Unguarded that is two concurrent full
+	 * library reads racing to write the same panes; coalesced it is one run
+	 * plus one trailing run. See `$lib/rb/coalesce`.
+	 */
+	const _refreshLibraryRows = coalesce(_refreshLibraryRowsOnce);
 
 	/** Auto-delete blank untitled empties (never renamed / non-empty). */
 	async function _sweepBlankPlaylists(
