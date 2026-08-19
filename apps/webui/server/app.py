@@ -83,15 +83,32 @@ FRONTEND_BUILD_DIR: Path = (
 
 
 class _SpaStaticFiles(StaticFiles):
-    """Serve the SPA shell for extensionless client-side routes."""
+    """Serve the SPA shell for extensionless client-side routes.
+
+    Chrome (and WKWebView in the installed desktop app) heuristically caches
+    index.html and even hashed chunks with no Cache-Control header, so a
+    rebuilt app can keep serving a stale bundle. Vite content-hashes
+    everything under _app/immutable/, so that path is safe to cache forever;
+    the HTML entry point is never hashed, so it must always be revalidated.
+    """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code != 404 or not self._is_client_route(path):
                 raise
-            return await super().get_response("index.html", scope)
+            response = await super().get_response("index.html", scope)
+        return self._with_cache_control(path, response)
+
+    @staticmethod
+    def _with_cache_control(path: str, response: Response) -> Response:
+        normalized_path = path.replace("\\", "/").lstrip("/")
+        if normalized_path.startswith("_app/immutable/"):
+            response.headers["cache-control"] = "public, max-age=31536000, immutable"
+        elif getattr(response, "media_type", None) == "text/html":
+            response.headers["cache-control"] = "no-cache"
+        return response
 
     @staticmethod
     def _is_client_route(path: str) -> bool:
