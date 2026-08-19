@@ -38,9 +38,13 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
-@dataclass
+@dataclass(eq=False)
 class Subscriber:
-    """One connected socket's outbox."""
+    """One connected socket's outbox.
+
+    ``eq=False`` keeps identity hashing: subscribers live in a set, and two
+    connections with equal-looking queues are still two different sockets.
+    """
 
     queue: asyncio.Queue[str]
     overflow: asyncio.Event
@@ -156,39 +160,36 @@ async def events_endpoint(websocket: WebSocket) -> None:
         return
     await websocket.accept()
     subscriber, hello = hub.attach()
+    await websocket.send_text(hello)
+    # Only the send side runs as a task. The disconnect is awaited in this
+    # coroutine directly, so noticing a closed socket costs one scheduler hop
+    # rather than several -- an ASGI server that cancels the connection task
+    # right after delivering the disconnect must still find us finished.
+    pump = asyncio.create_task(_pump(websocket, subscriber))
     try:
-        await websocket.send_text(hello)
-        pump = asyncio.create_task(_pump(websocket, subscriber))
-        reader = asyncio.create_task(_read_until_disconnect(websocket))
-        done, pending = await asyncio.wait(
-            {pump, reader}, return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        for task in done:
-            error = task.exception()
-            if error is not None and not isinstance(error, WebSocketDisconnect):
-                raise error
+        while True:
+            # The bus is one-way; reading exists only to notice the client
+            # left, so whatever it sends is deliberately discarded.
+            await websocket.receive_text()
     except WebSocketDisconnect:
         return
     finally:
+        pump.cancel()
         hub.detach(subscriber)
 
 
 async def _pump(websocket: WebSocket, subscriber: Subscriber) -> None:
-    while not subscriber.overflow.is_set():
-        frame = await subscriber.queue.get()
-        await websocket.send_text(frame)
-    await websocket.close(
-        code=SLOW_CONSUMER_CODE, reason=SLOW_CONSUMER_REASON
-    )
-
-
-async def _read_until_disconnect(websocket: WebSocket) -> None:
-    """The bus is one-way; reading exists only to notice the client left."""
-    while True:
-        await websocket.receive_text()
+    try:
+        while not subscriber.overflow.is_set():
+            frame = await subscriber.queue.get()
+            await websocket.send_text(frame)
+        await websocket.close(
+            code=SLOW_CONSUMER_CODE, reason=SLOW_CONSUMER_REASON
+        )
+    except WebSocketDisconnect:
+        # The client vanished mid-send; the endpoint body is already on its
+        # way to the same conclusion.
+        return
 
 
 __all__ = [
