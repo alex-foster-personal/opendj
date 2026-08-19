@@ -16,7 +16,6 @@ definition is the specification.
 """
 from __future__ import annotations
 
-import re
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -41,24 +40,11 @@ from apps.webui.server.rb_vendor import _ensure_reversal_tables
 
 # --- sqlite_master normalisation ------------------------------------------
 
-_WS = re.compile(r"\s+")
-_IF_NOT_EXISTS = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
-
-
-def _normalise(sql: str) -> str:
-    """Strip the noise that carries no schema meaning.
-
-    * ``IF NOT EXISTS`` -- a creation-time flag, not part of the shape.
-    * identifier double-quotes -- SQLite re-emits a renamed table's DDL with
-      the name quoted (``track_fields`` arrives via ``ALTER TABLE
-      track_fields_v3 RENAME TO ...``), which is an artifact of HOW the
-      legacy ladder got there, not of what it built.
-    * whitespace runs -- indentation differs between the legacy files.
-    """
-    out = _IF_NOT_EXISTS.sub("", sql)
-    out = out.replace('"', "")
-    out = _WS.sub(" ", out)
-    return out.strip().rstrip(";").strip()
+# The normaliser lives in the schema module, not here: the runner's
+# pre-adoption shape audit compares live objects against the ladder's own
+# output and has to mean exactly what this gate means by "same shape". One
+# definition, two callers.
+_normalise = consolidated.normalize_object_sql
 
 
 def _shadow_prefixes(conn: sqlite3.Connection) -> tuple[str, ...]:
@@ -495,6 +481,78 @@ def test_adoption_refuses_a_db_below_the_adoptable_floor(tmp_path: Path) -> None
 
     with pytest.raises(consolidated.SchemaAdoptionError, match="v1"):
         consolidated.apply_migrations(conn)
+    conn.close()
+
+
+def test_existing_objects_includes_views(tmp_path: Path) -> None:
+    """F2: the object census must see views, not just tables.
+
+    It filtered ``type = 'table'``, which is precisely the blind spot that
+    lets a colliding view through.
+    """
+    conn = _connect(tmp_path / "with_view.db")
+    conn.execute("CREATE VIEW pairings AS SELECT 1 AS from_stable_id")
+    conn.commit()
+    assert "pairings" in consolidated.existing_objects(conn)
+    conn.close()
+
+
+def test_adoption_refuses_a_view_colliding_with_a_ladder_table(tmp_path: Path) -> None:
+    """F2 (R3 #6): a view named like a ladder table must be refused, not skipped.
+
+    ``CREATE TABLE IF NOT EXISTS pairings`` is a silent no-op when a VIEW
+    called ``pairings`` already exists -- SQLite's namespace is shared. The
+    runner would report success and leave the file with a view where the
+    engine expects a writable table. Real DBs already carry views
+    (``tracks_available`` and friends), so this is a live collision class.
+    """
+    conn = _connect(tmp_path / "view_collision.db")
+    conn.execute("CREATE VIEW pairings AS SELECT 1 AS from_stable_id")
+    conn.commit()
+
+    with pytest.raises(consolidated.SchemaAdoptionError, match="pairings"):
+        consolidated.apply_migrations(conn)
+    conn.close()
+
+
+def test_adoption_refuses_a_drifted_table_shape(tmp_path: Path) -> None:
+    """F2 (R3 #3): name-presence is not shape-presence.
+
+    The pre-adoption audit only checked that expected names existed. A
+    pre-existing table with the right name and the wrong columns passed, and
+    every ``IF NOT EXISTS`` statement then no-opped over it.
+    """
+    conn = _connect(tmp_path / "drifted.db")
+    # settings, but ``value`` lost its NOT NULL.
+    conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+    conn.commit()
+
+    with pytest.raises(consolidated.SchemaAdoptionError) as caught:
+        consolidated.apply_migrations(conn)
+    message = str(caught.value)
+    assert "settings" in message, "the refusal must name the object"
+    assert "expected" in message and "found" in message, (
+        "the refusal must show expected vs found shape"
+    )
+    assert "value TEXT NOT NULL" in message, "expected shape must be quoted back"
+    conn.close()
+
+
+def test_shape_audit_accepts_a_real_legacy_state_db(tmp_path: Path) -> None:
+    """F2 guard-rail: the audit must not reject the DBs it exists to protect.
+
+    A legacy-built state.db is the adoption target. If the normalised shapes
+    disagreed the audit would refuse every real file, so this pins the
+    consolidated DDL to what the legacy ladder actually stores.
+    """
+    conn = _connect(tmp_path / "legacy_real.db")
+    legacy_state_migrations(conn)
+    _ensure_analysis_tables(conn)
+    ensure_phase08_tables(conn)
+    conn.commit()
+
+    consolidated.apply_migrations(conn)
+    assert consolidated.was_adopted(conn)
     conn.close()
 
 

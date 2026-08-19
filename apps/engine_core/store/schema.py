@@ -43,9 +43,14 @@ deliberately NOT part of the state-DB ladder. See ``REPORT.md``.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import cache
+
+_WHITESPACE_RE = re.compile(r"\s+")
+_IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
@@ -743,11 +748,114 @@ def consolidated_version(conn: sqlite3.Connection) -> int:
 
 
 def existing_objects(conn: sqlite3.Connection) -> set[str]:
-    """Names of every table (incl. virtual) already in ``conn``."""
+    """Names of every table (incl. virtual) AND view already in ``conn``.
+
+    Views are counted because SQLite shares one namespace between them and
+    tables: with a view called ``pairings`` in the file, ``CREATE TABLE IF NOT
+    EXISTS pairings`` is a silent no-op. Filtering to ``type = 'table'`` made
+    that collision invisible to both the missing-object census and the
+    adopt-or-create decision. Real state DBs do carry views (``tracks_available``
+    and friends, see REPORT.md), so this is a live collision class.
+    """
     rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
+        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
     ).fetchall()
     return {str(r[0]) for r in rows}
+
+
+def normalize_object_sql(sql: str) -> str:
+    """Strip the ``sqlite_master`` noise that carries no schema meaning.
+
+    * ``IF NOT EXISTS`` -- a creation-time flag, not part of the shape.
+    * identifier double-quotes -- SQLite re-emits a renamed table's DDL with
+      the name quoted (``track_fields`` reaches its v3 shape via ``ALTER TABLE
+      track_fields_v3 RENAME TO ...``), an artifact of HOW a DB got there
+      rather than of what it holds.
+    * whitespace runs and the trailing semicolon -- indentation differs
+      between the legacy files this module consolidates.
+
+    Shared by the pre-adoption shape audit and the legacy-equivalence test, so
+    "same shape" means one thing in this codebase rather than two.
+    """
+    out = _IF_NOT_EXISTS_RE.sub("", sql)
+    out = out.replace('"', "")
+    out = _WHITESPACE_RE.sub(" ", out)
+    return out.strip().rstrip(";").strip()
+
+
+@cache
+def _reference_objects() -> dict[str, tuple[str, str]]:
+    """``name -> (type, normalised sql)`` for everything the ladder creates.
+
+    Built by running the ladder into an in-memory DB and reading back what
+    SQLite actually stored, so the expectation is the real shape rather than a
+    hand-kept transcription that can drift from the DDL beside it.
+
+    FTS5 shadow tables (``tracks_fts_data`` and friends) are excluded: they
+    are implementation detail of the one ``CREATE VIRTUAL TABLE`` that spawns
+    them and carry no independent contract.
+    """
+    reference = sqlite3.connect(":memory:")
+    try:
+        for statement in _V1:
+            reference.execute(statement)
+        shadow_prefixes = tuple(
+            f"{row[0]}_"
+            for row in reference.execute(
+                "SELECT name FROM sqlite_master WHERE sql LIKE '%USING fts5%'"
+            ).fetchall()
+        )
+        objects: dict[str, tuple[str, str]] = {}
+        for name, obj_type, sql in reference.execute(
+            "SELECT name, type, sql FROM sqlite_master WHERE sql IS NOT NULL"
+        ).fetchall():
+            text = str(name)
+            if text.startswith("sqlite_") or text.startswith(shadow_prefixes):
+                continue
+            objects[text] = (str(obj_type), normalize_object_sql(str(sql)))
+        return objects
+    finally:
+        reference.close()
+
+
+def _audit_existing_shapes(conn: sqlite3.Connection) -> None:
+    """Refuse when a pre-existing object does not MATCH what the ladder builds.
+
+    Every ladder statement is ``IF NOT EXISTS``, which makes name-presence and
+    shape-presence two different things: a pre-existing object with the right
+    name and the wrong shape (or the wrong TYPE -- a view where a table is
+    expected) silently absorbs the create and the runner reports success.
+    Checking names only, as the pre-adoption audit did, cannot see any of that.
+
+    Compares normalised SQL for every object the ladder would create that the
+    file already has. Objects the ladder does not own are none of its business
+    and are left alone.
+    """
+    reference = _reference_objects()
+    live = {
+        str(name): (str(obj_type), normalize_object_sql(str(sql)))
+        for name, obj_type, sql in conn.execute(
+            "SELECT name, type, sql FROM sqlite_master WHERE sql IS NOT NULL"
+        ).fetchall()
+    }
+    for name in sorted(reference):
+        if name not in live:
+            continue
+        expected_type, expected_sql = reference[name]
+        found_type, found_sql = live[name]
+        if (found_type, found_sql) == (expected_type, expected_sql):
+            continue
+        raise SchemaAdoptionError(
+            f"pre-existing {found_type} {name!r} does not match the shape this "
+            f"ladder creates. Every ladder statement is IF NOT EXISTS, so "
+            f"adoption would silently leave the wrong shape in place and "
+            f"report success.\n"
+            f"  expected ({expected_type}): {expected_sql}\n"
+            f"  found    ({found_type}): {found_sql}\n"
+            f"Reconcile {name!r} by hand, or run the legacy bootstrap that "
+            "owns it, before adopting. This runner never overwrites an object "
+            "it did not create."
+        )
 
 
 def missing_tables(conn: sqlite3.Connection) -> tuple[str, ...]:
@@ -894,8 +1002,10 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     the file was actually short of), replays the data-bearing backfills, and
     leaves the ADOPTION marker to the caller. Returns the tables that were
     missing before the call.
+
+    Assumes the caller has already run the pre-flight gate
+    (:func:`_assert_adoptable` + :func:`_audit_existing_shapes`).
     """
-    _assert_adoptable(conn)
     was_missing = missing_tables(conn)
     _create_all(conn, _V1)
     for stmt in _ADOPTION_BACKFILL:
@@ -925,6 +1035,16 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     adopting = bool(_legacy_version(conn)) or bool(
         existing_objects(conn) & set(ALL_TABLES)
     )
+
+    # Pre-flight gate, outside the transaction: nothing is written until every
+    # pre-existing object has been shown to be one this ladder can live with.
+    # Rebuild probes run first because they carry the actionable remediation
+    # ("run the legacy ladder"); the shape audit is the general net behind them
+    # and covers the fresh path too, where a stray index or view could still
+    # absorb a create.
+    if adopting:
+        _assert_adoptable(conn)
+    _audit_existing_shapes(conn)
 
     conn.execute("BEGIN")
     try:
@@ -970,5 +1090,6 @@ __all__ = [
     "ensure_vendor_sidecar_tables",
     "existing_objects",
     "missing_tables",
+    "normalize_object_sql",
     "was_adopted",
 ]
