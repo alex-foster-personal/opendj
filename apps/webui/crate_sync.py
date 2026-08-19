@@ -724,6 +724,10 @@ def owner_manifest(
     if not isinstance(payload, dict):
         raise TypeError("owner plan JSON must be an object")
     _manifest_files(payload)
+    if "library" in payload:
+        from apps.agentbox.crate_state import normalise_manifest
+
+        normalise_manifest(payload)
     return payload
 
 
