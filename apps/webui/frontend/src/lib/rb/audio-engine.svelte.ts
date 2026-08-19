@@ -147,6 +147,19 @@ import {
 } from '$lib/player/constants';
 import type { PitchRange } from '$lib/player/constants';
 import {
+	_defaultChannel,
+	_defaultHeadphones,
+	_emptyDeckState,
+	_hotCueRevisionsFrom,
+	deckEffectiveBpm,
+	deckLoadErrors,
+	deckRemainingMs,
+	deckStates,
+	getDeckState,
+	mixerState,
+	pitchRanges
+} from '$lib/player/state.svelte';
+import {
 	_assertKeyShift,
 	camelotKeysAreCompatible,
 	composeStretchSemitones,
@@ -240,150 +253,24 @@ export type {
 };
 
 // ------------------------------------------------------------ rune stores
+//
+// T4 S4: PerformanceState now lives in player/state.svelte.ts. Re-exported
+// below at the same names so every UI consumer keeps importing it from here.
+// _hotCuesFromSlots stays until S11: it maps through _hotCuesFrom, which is
+// deck-load's ANLZ cue mapper, and state must not import deck/load.
 
-function _emptyDeckState(deck_id: DeckId): DeckState {
-	return {
-		deck_id,
-		stable_id: null,
-		title: null,
-		artist: null,
-		bpm: null,
-		key: null,
-		key_shift_semitones: 0,
-		duration_ms: null,
-		position_ms: 0,
-		playing: false,
-		audible: false,
-		transport_pending: false,
-		cue_ms: null,
-		pitch: 1,
-		quantize_enabled: true,
-		beat_sync_enabled: true,
-		key_sync_enabled: false,
-		master_tempo_enabled: true,
-		slip_enabled: false,
-		slip_active: false,
-		slip_position_ms: null,
-		sync_mode: 'bar',
-		sync_error: null,
-		processor_error: null,
-		stems: unavailableStemDeckState(),
-		loop: null,
-		safety_loop: null,
-		hot_cues: [],
-		hot_cue_revisions: _emptyHotCueRevisions(),
-		anlz: null,
-		anlz_error: null,
-		last_load_latency_ms: null,
-		last_load_stages: null,
-		is_master: false
-	};
-}
-
-function _emptyHotCueRevisions(): Record<HotCueSlot, string> {
-	return {
-		A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: ''
-	};
-}
-
-function _hotCueRevisionsFrom(slots: HotCueSlotState[]): Record<HotCueSlot, string> {
-	const revisions = _emptyHotCueRevisions();
-	for (const slot of slots) revisions[slot.slot] = slot.revision;
-	return revisions;
-}
+export {
+	deckEffectiveBpm,
+	deckLoadErrors,
+	deckRemainingMs,
+	deckStates,
+	getDeckState,
+	mixerState,
+	pitchRanges
+};
 
 function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
 	return _hotCuesFrom(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
-}
-
-function _defaultChannel(deck_id: DeckId): MixerChannelState {
-	return {
-		deck_id,
-		trim: 0.5,
-		eq_high: 0.5,
-		eq_mid: 0.5,
-		eq_low: 0.5,
-		fader: 1,
-		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
-		assign: deck_id % 2 === 1 ? 'A' : 'B',
-		cue_enabled: false
-	};
-}
-
-function _defaultHeadphones(): HeadphoneState {
-	return {
-		mix: 0.5,
-		level: 0.5,
-		selected_output_device_id: null,
-		outputs: [],
-		supported: false,
-		active: false,
-		error: null
-	};
-}
-
-/** Per-deck reactive UI state, keyed 1-4. Deep-reactive $state proxy. */
-export const deckStates: Record<DeckId, DeckState> = $state({
-	1: _emptyDeckState(1),
-	2: _emptyDeckState(2),
-	3: _emptyDeckState(3),
-	4: _emptyDeckState(4)
-});
-
-/** Explicit audio-load error per deck (backend code or decode message);
- * null = no failed load. DeckState has no audio-error field by contract,
- * so the failure state lives here, never swallowed. */
-export const deckLoadErrors: Record<DeckId, string | null> = $state({
-	1: null,
-	2: null,
-	3: null,
-	4: null
-});
-
-/** Selected pitch range per deck (jog dial readout: +-8 / +-16 / WIDE). */
-export const pitchRanges: Record<DeckId, PitchRange> = $state({
-	1: 16,
-	2: 16,
-	3: 16,
-	4: 16
-});
-
-/** Whole mixer surface (channel order on screen: 3 1 2 4). */
-export const mixerState: MixerState = $state({
-	channels: {
-		1: _defaultChannel(1),
-		2: _defaultChannel(2),
-		3: _defaultChannel(3),
-		4: _defaultChannel(4)
-	},
-	crossfader: 0.5,
-	master: 1,
-	headphones: _defaultHeadphones()
-});
-
-/** Per-deck store accessor (contract: singleton engine + accessor). */
-export function getDeckState(deck: DeckId): DeckState {
-	return deckStates[deck];
-}
-
-/** Pitch-adjusted playback BPM for jog / IPC; null until a tempo base exists.
- * Uses local PQTZ BPM (Beat Sync truth), not rekordbox tag BPM. Reactive
- * when read inside $derived. */
-export function deckEffectiveBpm(deck: DeckId): number | null {
-	const st = deckStates[deck];
-	return playbackBpm({
-		beats: st.anlz?.beatgrid.beats,
-		positionSec: Math.max(0, st.position_ms / 1000),
-		tempoRatio: st.pitch,
-		tagBpm: st.bpm
-	});
-}
-
-/** Remaining track time in ms (for the -MM:SS.d readout); null until a
- * track is loaded. */
-export function deckRemainingMs(deck: DeckId): number | null {
-	const st = deckStates[deck];
-	return st.duration_ms === null ? null : Math.max(0, st.duration_ms - st.position_ms);
 }
 
 // -------------------------------------------- non-reactive audio runtime
