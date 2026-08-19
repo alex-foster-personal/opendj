@@ -16,10 +16,14 @@
 # problem, tracked separately in the `dmg` recipe's notes.
 #
 # USAGE
-#   scripts/no_repo_boot_test.sh [PAYLOAD_DIR] [PORT]
+#   scripts/no_repo_boot_test.sh [DMG_OR_PAYLOAD_DIR] [PORT]
 #
-# PAYLOAD_DIR defaults to the payload staged inside the built .app, so the
-# thing under test is the artifact rather than a build directory.
+# The default, and the strongest form, is the dmg itself: it is mounted
+# read-only and the engine is launched from inside the mounted image, so what
+# boots is the artifact a tester would be handed, not a staging directory
+# that happens to sit next to it. `cargo tauri build` deletes the staged .app
+# once the image exists, which makes the dmg the only surviving copy anyway.
+# A payload directory is still accepted, for iterating without a full bundle.
 #
 # Acceptance (each line is a hard assertion; any failure exits non-zero):
 #   [if] /api/v1/health does not answer 200 [then] broken
@@ -33,20 +37,35 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_PAYLOAD="$REPO_ROOT/apps/desktop/src-tauri/target/release/bundle/macos"
+DMG_DIR="$REPO_ROOT/apps/desktop/src-tauri/target/release/bundle/dmg"
 
-payload_dir="${1:-}"
+target="${1:-}"
 port="${2:-8691}"
+mount=""
 
-if [ -z "$payload_dir" ]; then
-    app=$(ls -d "$DEFAULT_PAYLOAD"/*.app 2>/dev/null | head -1 || true)
-    if [ -z "$app" ]; then
-        echo "[ERROR] no built .app under $DEFAULT_PAYLOAD and no payload dir given"
-        echo "[ERROR] usage: $0 [PAYLOAD_DIR] [PORT]"
+if [ -z "$target" ]; then
+    target=$(ls -t "$DMG_DIR"/*.dmg 2>/dev/null | head -1 || true)
+    if [ -z "$target" ]; then
+        echo "[ERROR] no dmg under $DMG_DIR and no path given; run 'just dmg' first"
+        echo "[ERROR] usage: $0 [DMG_OR_PAYLOAD_DIR] [PORT]"
         exit 1
     fi
-    payload_dir="$app/Contents/Resources/payload"
 fi
+
+case "$target" in
+*.dmg)
+    [ -f "$target" ] || { echo "[ERROR] no dmg at $target"; exit 1; }
+    mount=$(mktemp -d /tmp/opendj-boot-mount.XXXXXX)
+    hdiutil attach "$target" -nobrowse -readonly -mountpoint "$mount" >/dev/null
+    app=$(ls -d "$mount"/*.app 2>/dev/null | head -1 || true)
+    [ -n "$app" ] || { echo "[ERROR] $target holds no .app"; exit 1; }
+    payload_dir="$app/Contents/Resources/payload"
+    echo "[INFO] dmg:      $target (mounted read-only at $mount)"
+    ;;
+*)
+    payload_dir="$target"
+    ;;
+esac
 
 launcher="$payload_dir/bin/opendj-engine"
 manifest="$payload_dir/manifest.json"
@@ -70,6 +89,12 @@ cleanup() {
             sleep 0.3
         done
         kill -KILL "-$engine_pid" 2>/dev/null || true
+    fi
+    # Detach AFTER the engine is gone: a busy volume refuses to unmount, and
+    # a leaked mount would make the next run read a stale image.
+    if [ -n "$mount" ]; then
+        hdiutil detach "$mount" >/dev/null 2>&1 || true
+        rmdir "$mount" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -99,6 +124,11 @@ env -i \
     >"$log" 2>&1 &
 engine_pid=$!
 set +m
+# Drop it from the job table. The pid is still ours to signal and to poll
+# with kill -0; what disown removes is bash's asynchronous "Terminated: 15"
+# notice, which would otherwise print AFTER the PASSED banner and make a
+# green run read as a failure.
+disown "$engine_pid" 2>/dev/null || true
 
 deadline=$((SECONDS + 45))
 # -fs without -S: a refused connection is the EXPECTED state while the engine
