@@ -391,6 +391,97 @@ def test_adoption_refuses_a_pre_webui_track_fields(tmp_path: Path) -> None:
     conn.close()
 
 
+def _v1_track_field_history(conn: sqlite3.Connection) -> None:
+    """The legacy v1 ``track_field_history``: natural PK, no surrogate ``id``.
+
+    Verbatim from ``apps/shared/state/schema.py`` _V1. The v1->v2 step REBUILDS
+    this table to add the surrogate key, so a DB still carrying this shape is
+    one adoption cannot repair.
+    """
+    conn.execute(
+        "CREATE TABLE track_field_history ("
+        "stable_id TEXT NOT NULL, field_name TEXT NOT NULL, "
+        "value_json TEXT NOT NULL, source TEXT NOT NULL, confidence REAL, "
+        "modified_at TEXT NOT NULL, superseded_at TEXT NOT NULL, "
+        "PRIMARY KEY (stable_id, field_name, superseded_at))"
+    )
+
+
+def _v5_track_fields(conn: sqlite3.Connection) -> None:
+    """The post-v3 ``track_fields`` -- widened CHECK, so its own probe passes."""
+    conn.execute(
+        "CREATE TABLE track_fields ("
+        "stable_id TEXT NOT NULL, field_name TEXT NOT NULL, "
+        "value_json TEXT NOT NULL, "
+        "source TEXT NOT NULL CHECK (source IN ('mik','rekordbox','djay',"
+        "'serato','traktor','open-dj-tool','manual','inferred','webui')), "
+        "confidence REAL, modified_at TEXT NOT NULL, "
+        "PRIMARY KEY (stable_id, field_name))"
+    )
+
+
+def test_adoption_refuses_a_pre_rebuild_track_field_history(tmp_path: Path) -> None:
+    """F1: track_field_history needs a shape probe of its own.
+
+    Only ``track_fields`` was probed, so a DB carrying the v1 natural-PK
+    ``track_field_history`` adopted silently and could never be repaired: the
+    runner stamps the legacy counter to 5, after which the legacy ladder --
+    the only code that can REBUILD the table -- short-circuits forever.
+    """
+    conn = _connect(tmp_path / "v1_history.db")
+    _v5_track_fields(conn)
+    _v1_track_field_history(conn)
+    conn.commit()
+
+    with pytest.raises(consolidated.SchemaAdoptionError, match="track_field_history"):
+        consolidated.apply_migrations(conn)
+    conn.close()
+
+
+def test_adoption_probes_run_when_the_legacy_counter_reads_zero(tmp_path: Path) -> None:
+    """F1: an empty schema_meta must not buy a bypass of the shape probes.
+
+    ``_legacy_version`` returns 0 for both "brand new file" and "v1-era file
+    whose counter was never written" (or was truncated). The floor guard is
+    written ``0 < legacy < MIN``, so the second case slipped past it. The
+    probes, not the counter, are what decide adoptability.
+    """
+    conn = _connect(tmp_path / "counterless_v1.db")
+    conn.execute(
+        "CREATE TABLE schema_meta (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    _v5_track_fields(conn)
+    _v1_track_field_history(conn)
+    conn.commit()
+    assert consolidated._legacy_version(conn) == 0, "fixture: counter must read 0"
+
+    with pytest.raises(consolidated.SchemaAdoptionError) as caught:
+        consolidated.apply_migrations(conn)
+    message = str(caught.value)
+    assert "track_field_history" in message, "the refusal must name the object"
+    assert "apply_migrations" in message, "the refusal must carry remediation text"
+    conn.close()
+
+
+def test_refused_adoption_leaves_the_legacy_counter_unstamped(tmp_path: Path) -> None:
+    """F1: the damage being prevented is one-way -- stamping 1..5 on a bad shape.
+
+    Once ``schema_meta`` reads 5 the legacy runner short-circuits, so the
+    rebuild can never run. A refused adoption must leave the counter alone.
+    """
+    conn = _connect(tmp_path / "unstamped.db")
+    _v5_track_fields(conn)
+    _v1_track_field_history(conn)
+    conn.commit()
+
+    with pytest.raises(consolidated.SchemaAdoptionError):
+        consolidated.apply_migrations(conn)
+
+    rows = conn.execute("SELECT version FROM schema_meta").fetchall()
+    assert rows == [], f"refused adoption stamped versions {rows}"
+    conn.close()
+
+
 def test_adoption_refuses_a_db_below_the_adoptable_floor(tmp_path: Path) -> None:
     """schema_meta stamped at v1 means table rebuilds are still owed."""
     conn = _connect(tmp_path / "stamped_v1.db")

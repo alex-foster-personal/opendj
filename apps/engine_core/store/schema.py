@@ -44,6 +44,7 @@ deliberately NOT part of the state-DB ladder. See ``REPORT.md``.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 # --- version counters -----------------------------------------------------
@@ -755,6 +756,16 @@ def missing_tables(conn: sqlite3.Connection) -> tuple[str, ...]:
     return tuple(name for name in ALL_TABLES if name not in present)
 
 
+def _table_sql(conn: sqlite3.Connection, name: str) -> str | None:
+    """The live ``CREATE TABLE`` text for ``name``, or None if absent."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return str(row[0])
+
+
 def _track_fields_accepts_webui(conn: sqlite3.Connection) -> bool:
     """True iff the live ``track_fields`` CHECK already lists ``'webui'``.
 
@@ -762,16 +773,59 @@ def _track_fields_accepts_webui(conn: sqlite3.Connection) -> bool:
     only creates missing objects, so a DB stuck on the narrow enum must go
     through the legacy runner first -- this is the probe that catches it.
     """
-    row = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'track_fields'"
-    ).fetchone()
-    if row is None or row[0] is None:
+    sql = _table_sql(conn, "track_fields")
+    if sql is None:
         return False
-    return "'webui'" in str(row[0])
+    return "'webui'" in sql
+
+
+def _track_field_history_has_surrogate_id(conn: sqlite3.Connection) -> bool:
+    """True iff the live ``track_field_history`` carries the v2 surrogate key.
+
+    The legacy v1->v2 step REBUILT this table, swapping the natural PK
+    ``(stable_id, field_name, superseded_at)`` for an ``id INTEGER PRIMARY KEY
+    AUTOINCREMENT`` so history stays append-only when two rewrites land in the
+    same clock tick. Same repair class as the ``track_fields`` CHECK widening,
+    so it gets the same probe treatment.
+    """
+    if _table_sql(conn, "track_field_history") is None:
+        return False
+    columns = conn.execute("PRAGMA table_info(track_field_history)").fetchall()
+    return any(str(col[1]) == "id" and int(col[5]) == 1 for col in columns)
+
+
+_REBUILD_PROBES: tuple[tuple[str, Callable[[sqlite3.Connection], bool], str], ...] = (
+    (
+        "track_fields",
+        _track_fields_accepts_webui,
+        "existing track_fields table predates the widened source CHECK "
+        "(no 'webui' in the source enum)",
+    ),
+    (
+        "track_field_history",
+        _track_field_history_has_surrogate_id,
+        "existing track_field_history table predates the v2 rebuild "
+        "(no surrogate id INTEGER PRIMARY KEY)",
+    ),
+)
+"""Tables the legacy ladder repairs by REBUILDING, paired with a probe that
+reads the LIVE shape. Adoption only creates missing objects, so it cannot fix
+any of these; the probes are what make it refuse instead of stamping over the
+damage."""
 
 
 def _assert_adoptable(conn: sqlite3.Connection) -> None:
-    """Fail loudly if this DB carries a legacy shape adoption cannot repair."""
+    """Fail loudly if this DB carries a legacy shape adoption cannot repair.
+
+    The ``schema_meta`` counter is ADVISORY here, not authoritative. It reads 0
+    for a brand-new file and equally for a v1-era file whose counter was never
+    written (or was truncated), so a floor test alone lets the second case
+    through -- and once through, the runner stamps 1..5, the legacy runner
+    short-circuits forever, and the rebuild can never happen. The shape probes
+    therefore run against every table that is present, whatever the counter
+    says; the floor check is kept only as the earlier, better-worded refusal
+    for DBs that do carry an honest sub-floor stamp.
+    """
     legacy = _legacy_version(conn)
     if 0 < legacy < MIN_ADOPTABLE_LEGACY_VERSION:
         raise SchemaAdoptionError(
@@ -781,12 +835,21 @@ def _assert_adoptable(conn: sqlite3.Connection) -> None:
             "runner only creates missing objects. Run "
             "apps.shared.state.schema.apply_migrations(conn) first."
         )
-    if "track_fields" in existing_objects(conn) and not _track_fields_accepts_webui(conn):
-        raise SchemaAdoptionError(
-            "existing track_fields table predates the widened source CHECK "
-            "(no 'webui'); run apps.shared.state.schema.apply_migrations(conn) "
-            "first so the table is rebuilt, then re-run adoption."
-        )
+
+    present = existing_objects(conn)
+    for table, probe, complaint in _REBUILD_PROBES:
+        if table in present and not probe(conn):
+            raise SchemaAdoptionError(
+                f"{complaint}. The legacy ladder repairs this by REBUILDING "
+                f"{table}, and this runner only creates missing objects, so "
+                "adoption would stamp the legacy counter to "
+                f"v{LEGACY_SHARED_STATE_VERSION} over a shape it cannot fix -- "
+                "after which the legacy runner short-circuits and the rebuild "
+                "can never run. Run apps.shared.state.schema.apply_migrations"
+                "(conn) first, then re-run adoption. (The schema_meta legacy "
+                f"counter reads v{legacy}; it is not trusted here because a "
+                "missing or truncated counter reads the same as a fresh file.)"
+            )
 
 
 def _stamp_legacy_counters(conn: sqlite3.Connection) -> None:
