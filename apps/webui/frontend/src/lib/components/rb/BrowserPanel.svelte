@@ -1491,9 +1491,9 @@
 	}
 </script>
 
-<section class="rb-browser">
+<section class="rb-browser" data-testid="browser-panel">
 	<IconRail {source} onspotify={selectSpotifySource} />
-	<div class="tree-panel">
+	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel
 				playlists={spotifyPlaylists}

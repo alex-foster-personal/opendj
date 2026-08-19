@@ -712,7 +712,7 @@
 			onscrollcursor(top);
 		}}
 	>
-		<table>
+		<table data-testid="track-table">
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
 				<col style={`width:${colWidths.err}px`} />
@@ -976,6 +976,7 @@
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<tr
 						use:observeRow={row}
+						data-testid="track-row"
 						data-stable-id={row.stable_id}
 						draggable="true"
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
