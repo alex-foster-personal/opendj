@@ -302,8 +302,11 @@ class JobRunner:
         backoff = 0.0
         while True:
             try:
-                free = self.max_concurrent - len(self._running)
+                free = self.max_concurrent - self._in_flight()
                 if free > 0:
+                    # No await between sizing the drain, claiming against it
+                    # and _spawn recording the slots: on one event loop that
+                    # makes the reservation atomic with the claim it pays for.
                     for job in self.store.claim_queued(limit=free):
                         self._spawn(job)
             except _ERRORS as exc:
@@ -321,7 +324,25 @@ class JobRunner:
             backoff = 0.0
             await asyncio.sleep(self.poll_s)
 
+    def _in_flight(self) -> int:
+        """How many slots the supervisor has already spent.
+
+        NOT ``len(self._running)``. A job appears there only once ``_run`` has
+        got past ``create_subprocess_exec`` -- milliseconds of fork and exec,
+        and several polls, after the row was claimed. Every poll inside that
+        window saw a slot that was already spoken for, claimed another row and
+        spawned another worker, so max_concurrent bounded nothing (C11).
+
+        ``_tasks`` is written by ``_spawn`` in the same uninterrupted step as
+        the claim, and cleared by the task's done callback, so it covers the
+        WHOLE life of a job including the spawn window. The callback lands one
+        loop iteration after the task ends, which errs toward reporting a slot
+        as busy slightly too long -- the safe direction for a limit.
+        """
+        return len(self._tasks)
+
     def _spawn(self, job: dict[str, Any]) -> None:
+        """Reserve the slot and start the run. Synchronous, on purpose."""
         job_id = job["id"]
         task = asyncio.create_task(self._guarded_run(job))
         self._tasks[job_id] = task
