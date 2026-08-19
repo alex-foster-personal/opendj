@@ -12,7 +12,7 @@
 	 * the same typed command path used by browser IPC and presets.
 	 */
 	import { onMount } from 'svelte';
-	import { engine, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { engine, isMasterMuted, mixerState, setMasterMuted } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/types';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -454,6 +454,21 @@
 		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 	</div>
 
+	<!-- master mute: REAL -> gain 0 on the last node before the destination.
+	     Opt-in at startup with ?muted=1 for headless UI-test agents. -->
+	<button
+		class="tb-icon mute-btn"
+		class:muted={isMasterMuted()}
+		aria-label="master mute"
+		aria-pressed={isMasterMuted()}
+		title={isMasterMuted()
+			? 'Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).'
+			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
+		onclick={() => setMasterMuted(!isMasterMuted())}
+	>
+		{isMasterMuted() ? 'MUTE' : 'VOL'}
+	</button>
+
 	<!-- clock: REAL, local time HH:MM -->
 	<span class="clock">{clock}</span>
 </header>
@@ -609,6 +624,20 @@
 	.tb-icon.fx {
 		border: 1px solid var(--rb-border);
 		padding: 2px 4px;
+	}
+	.tb-icon.mute-btn {
+		border: 1px solid var(--rb-border);
+		cursor: pointer;
+		letter-spacing: 0.06em;
+		padding: 2px 4px;
+	}
+	.tb-icon.mute-btn:hover {
+		color: var(--rb-text);
+	}
+	/* Muted is a loud state on purpose: a silent app must never look normal. */
+	.tb-icon.mute-btn.muted {
+		border-color: var(--rb-danger, #d24b4b);
+		color: var(--rb-danger, #d24b4b);
 	}
 
 	.link-btn {
