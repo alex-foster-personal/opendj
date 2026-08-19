@@ -25,7 +25,7 @@ from typing import Any
 
 from apps.engine_core.jobs.reap import (
     WorkerIdentity,
-    process_group_exists,
+    group_has_live_member,
     reap,
 )
 from apps.engine_core.jobs.store import JobConflict, JobNotFound, JobStore
@@ -266,15 +266,26 @@ class JobRunner:
             )
         worker.cancelled = True
         outcome = await asyncio.to_thread(reap, worker.identity)
+        # Reaps OUR zombie: the pgid a dead leader still holds is released
+        # only once somebody waits on it, and this is that somebody.
         await worker.proc.wait()
-        still_alive = await asyncio.to_thread(
-            process_group_exists, worker.identity.pgid
+        # group_has_live_member, NOT process_group_exists. The latter answers
+        # yes for a group whose every member is a zombie, because the pgid
+        # stays allocated until each corpse is waited on -- and a corpse this
+        # engine did not fork is not one it can wait on. Reading that as
+        # "still alive" ended an ordinary cancel of a just-finished worker as
+        # 'unknown', which then refused its own re-enqueue.
+        still_running = await asyncio.to_thread(
+            group_has_live_member, worker.identity.pgid
         )
-        if still_alive:
+        if still_running:
             return self.store.finish(
                 job_id,
                 "unknown",
-                error=f"cancel could not confirm the group is dead. {outcome}",
+                error=(
+                    "cancel could not confirm the group is dead; it still has "
+                    f"a RUNNING member. {outcome}"
+                ),
             )
         return self.store.finish(job_id, "cancelled", error=outcome)
 
