@@ -389,3 +389,88 @@ def test_pcm_sidecar_metadata_is_machine_readable(tmp_path) -> None:
     assert payload["sample_rate_hz"] == SAMPLE_RATE
     assert payload["channels"] == 2
     assert payload["frames"] == samples.shape[1]
+
+
+# ----- amendment 8: master tempo and key-shift accuracy ---------------------
+
+
+def _tone(hz: float, seconds: float = 3.0, harmonics: int = 5) -> np.ndarray:
+    """A harmonic-rich pitched tone -- a bare sine is not what f0 trackers meet."""
+    time = np.arange(int(seconds * SAMPLE_RATE)) / SAMPLE_RATE
+    signal = sum(np.sin(2 * math.pi * hz * n * time) / n for n in range(1, harmonics + 1))
+    return signal / np.max(np.abs(signal))
+
+
+def _cents_to_ratio(cents: float) -> float:
+    return 2.0 ** (cents / 1200.0)
+
+
+def test_f0_tracker_reads_a_known_tone() -> None:
+    """If a 220 Hz tone is not tracked to within 1 cent then the tracker is broken."""
+    f0, confidence = metrics.track_f0(_tone(220.0))
+    voiced = np.isfinite(f0)
+    assert voiced.mean() > 0.9, f"only {voiced.mean():.1%} of frames voiced"
+    measured = float(np.median(f0[voiced]))
+    error_cents = 1200.0 * math.log2(measured / 220.0)
+    assert abs(error_cents) < 1.0, f"tracked {measured:.3f} Hz, {error_cents:+.2f} cents off"
+    assert float(np.median(confidence[voiced])) > metrics.PITCH_CONFIDENCE_FLOOR
+
+
+def test_master_tempo_promise_holds_when_pitch_is_unchanged() -> None:
+    """If an unshifted render at rate 1.08 does not read ~0 cents then broken."""
+    reference = _tone(220.0, 4.0)
+    # A faithful master-tempo render: same pitch, time-scaled by 1/rate.
+    rate = 1.08
+    rendered = _tone(220.0, 4.0 / rate)
+    error = metrics.pitch_error_cents(reference, rendered, rate=rate, semitones=0)
+    assert abs(error.p50_cents) < 2.0, f"read {error.p50_cents:+.2f} cents"
+    assert error.expected_cents == 0.0
+
+
+def test_thirty_cent_drift_at_rate_1_15_is_surfaced() -> None:
+    """If a 30-cent drift at rate 1.15 is not measured as ~30 cents then broken.
+
+    This is the exact failure amendment 8 names: a stretcher drifting 30 cents
+    at rate 1.15 otherwise shows up only as unattributed spectral divergence.
+    """
+    rate = 1.15
+    reference = _tone(220.0, 4.0)
+    drifted = _tone(220.0 * _cents_to_ratio(30.0), 4.0 / rate)
+    error = metrics.pitch_error_cents(reference, drifted, rate=rate, semitones=0)
+    assert error.p50_cents == pytest.approx(30.0, abs=3.0), f"read {error.p50_cents:+.2f} cents"
+
+
+def test_expected_shift_is_rate_independent() -> None:
+    """If the expectation moves with rate then the master-tempo promise is not being tested."""
+    reference = _tone(220.0, 4.0)
+    for rate in (0.92, 1.0, 1.16):
+        rendered = _tone(220.0, 4.0 / rate)
+        error = metrics.pitch_error_cents(reference, rendered, rate=rate, semitones=0)
+        assert error.expected_cents == 0.0
+        assert abs(error.p50_cents) < 3.0, f"rate {rate} read {error.p50_cents:+.2f} cents"
+
+
+def test_commanded_key_shift_expects_exactly_a_hundred_cents_per_semitone() -> None:
+    """If a correct +2 semitone shift does not read ~0 error then the expectation is wrong."""
+    reference = _tone(220.0, 4.0)
+    shifted = _tone(220.0 * _cents_to_ratio(200.0), 4.0)
+    error = metrics.pitch_error_cents(reference, shifted, rate=1.0, semitones=2)
+    assert error.expected_cents == 200.0
+    assert abs(error.p50_cents) < 2.0, f"read {error.p50_cents:+.2f} cents"
+
+
+def test_key_shift_that_lands_flat_is_reported_signed() -> None:
+    """If a shift 40 cents flat of +2 semitones is not reported as ~-40 then broken."""
+    reference = _tone(220.0, 4.0)
+    shifted = _tone(220.0 * _cents_to_ratio(160.0), 4.0)
+    error = metrics.pitch_error_cents(reference, shifted, rate=1.0, semitones=2)
+    assert error.p50_cents == pytest.approx(-40.0, abs=3.0), f"read {error.p50_cents:+.2f}"
+
+
+def test_unpitched_material_is_refused_not_scored() -> None:
+    """If noise yields a cents figure then the voiced-fraction guard is missing."""
+    rng = _rng()
+    noise = rng.standard_normal(3 * SAMPLE_RATE)
+    other = np.random.default_rng(7).standard_normal(3 * SAMPLE_RATE)
+    with pytest.raises(metrics.UnpitchedMaterialError):
+        metrics.pitch_error_cents(noise, other, rate=1.0, semitones=0)
