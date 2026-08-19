@@ -26,6 +26,7 @@ Single-line intent:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
 import subprocess
@@ -74,15 +75,23 @@ def _leader(source: str) -> subprocess.Popen[str]:
     return proc
 
 
+def _reap_group(proc: subprocess.Popen[str]) -> None:
+    if proc.poll() is None:
+        # The group can dissolve between poll() and killpg(); on macOS a
+        # zombie leader surfaces that as EPERM rather than ESRCH. Both
+        # mean the group is already dead, which is what we wanted.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    proc.wait(timeout=10)
+
+
 @pytest.fixture
 def stubborn() -> Iterator[subprocess.Popen[str]]:
     proc = _leader(_STUBBORN)
     try:
         yield proc
     finally:
-        if proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=10)
+        _reap_group(proc)
 
 
 @pytest.fixture
@@ -91,9 +100,7 @@ def polite() -> Iterator[subprocess.Popen[str]]:
     try:
         yield proc
     finally:
-        if proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=10)
+        _reap_group(proc)
 
 
 def test_the_whole_ladder_fits_inside_one_grace(
