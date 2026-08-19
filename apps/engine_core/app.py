@@ -51,6 +51,7 @@ from apps.engine_core.jobs.runner import (
 )
 from apps.engine_core.jobs.store import JobStore
 from apps.engine_core.lock import EngineLock
+from apps.engine_core.setup.api import router as setup_router
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
@@ -118,6 +119,10 @@ def create_app(
     app.include_router(jobs_router, prefix=API_PREFIX)
     # Engine-only: the plan describes a run only an engine can start.
     app.include_router(stems_plan_router, prefix=API_PREFIX)
+    # Importing the setup router is also what REGISTERS its job kind, so the
+    # order matters: the jobs surface must be able to build a worker for
+    # setup.import-rekordbox before anything can enqueue one.
+    app.include_router(setup_router, prefix=API_PREFIX)
     app.add_api_websocket_route(EVENTS_PATH, events_endpoint, name="events")
 
     _drop_root_placeholder(app)

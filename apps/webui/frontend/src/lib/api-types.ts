@@ -917,6 +917,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup/detect/rekordbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detect Rekordbox Endpoint
+         * @description Report the rekordbox install WITHOUT opening or copying anything.
+         */
+        get: operations["detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss
+         * @description Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.
+         */
+        post: operations["dismiss_api_v1_setup_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Import
+         * @description Queue the import as a job, so progress streams over the events bus.
+         *
+         *     Refuses BEFORE enqueueing on anything detection can already see: a job
+         *     that is certain to fail is worse than a 409, because it turns a clear
+         *     refusal into a failed row somebody has to go and read.
+         */
+        post: operations["start_import_api_v1_setup_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Status
+         * @description Is this a first run? Counts come from state.db, not from memory.
+         */
+        get: operations["setup_status_api_v1_setup_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/stems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stems Availability
+         * @description Can a library-wide stems pass be started from setup? Honestly, no.
+         *
+         *     The per-track separation endpoints are real and are named here. What
+         *     does not exist is anything that runs them across a whole library, so
+         *     the wizard's stems step renders its real choices and then says so.
+         */
+        get: operations["stems_availability_api_v1_setup_stems_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/share/session": {
         parameters: {
             query?: never;
@@ -2027,6 +2135,20 @@ export interface components {
             /** Beats */
             beats: components["schemas"]["FallbackBeatOut"][];
         };
+        /**
+         * FileProbeOut
+         * @description One real path and whether it is actually there.
+         */
+        FileProbeOut: {
+            /** Exists */
+            exists: boolean;
+            /** Modified At */
+            modified_at?: string | null;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes?: number | null;
+        };
         /** FindReplaceApplyIn */
         FindReplaceApplyIn: {
             /**
@@ -3010,6 +3132,30 @@ export interface components {
             /** Session Id */
             session_id: string | null;
         };
+        /**
+         * RekordboxDetectionOut
+         * @description The 'detect rekordbox' step, reported without touching the install.
+         */
+        RekordboxDetectionOut: {
+            /** Blockers */
+            blockers?: string[];
+            /** Import Source */
+            import_source?: string | null;
+            /** Import Source Encrypted */
+            import_source_encrypted?: boolean | null;
+            /** Installed */
+            installed: boolean;
+            /** Key Available */
+            key_available: boolean;
+            /** Key Detail */
+            key_detail: string;
+            live_db: components["schemas"]["FileProbeOut"];
+            plain_copy: components["schemas"]["FileProbeOut"];
+            /** Rekordbox Running */
+            rekordbox_running: boolean;
+            share_dir: components["schemas"]["FileProbeOut"];
+            working_copy: components["schemas"]["FileProbeOut"];
+        };
         /** RelocateApplyIn */
         RelocateApplyIn: {
             /**
@@ -3167,6 +3313,56 @@ export interface components {
             /** Groups */
             groups: components["schemas"]["SettingsGroup"][];
         };
+        /** SetupDismissIn */
+        SetupDismissIn: {
+            /**
+             * Dismissed
+             * @default true
+             */
+            dismissed: boolean;
+        };
+        /**
+         * SetupImportIn
+         * @description Import options. Both are the same knobs the CLI exposes.
+         */
+        SetupImportIn: {
+            /**
+             * Limit
+             * @description ingest at most N tracks (smoke-test aid)
+             */
+            limit?: number | null;
+            /**
+             * Source
+             * @description explicit rekordbox database to read; omit to auto-detect
+             */
+            source?: string | null;
+        };
+        /**
+         * SetupStatusOut
+         * @description Everything the wizard needs to decide whether to show itself.
+         */
+        SetupStatusOut: {
+            /** Data Dir */
+            data_dir: string;
+            /** Dismissed */
+            dismissed: boolean;
+            /** Last Import */
+            last_import?: {
+                [key: string]: unknown;
+            } | null;
+            /** Library Empty */
+            library_empty: boolean;
+            /** Playlists */
+            playlists: number;
+            rekordbox: components["schemas"]["RekordboxDetectionOut"];
+            /** Should Show Wizard */
+            should_show_wizard: boolean;
+            /** Stages */
+            stages: string[];
+            state_db: components["schemas"]["FileProbeOut"];
+            /** Tracks */
+            tracks: number;
+        };
         /**
          * SmartlistConflictBody
          * @description Structured stale-write response with current state and fresh ETag.
@@ -3307,6 +3503,22 @@ export interface components {
             media_type: string;
         };
         /**
+         * StemTierOut
+         * @description One real separation rung, straight out of apps.stems.tiers.
+         */
+        StemTierOut: {
+            /** Availability */
+            availability: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Unavailable Because */
+            unavailable_because: string;
+            /** Where */
+            where: string;
+        };
+        /**
          * StemsPlanOut
          * @description What separating this library at this tier would take.
          */
@@ -3345,6 +3557,26 @@ export interface components {
              * @description library row exists, its file does not
              */
             unavailable: number;
+        };
+        /**
+         * StemsSetupOut
+         * @description Whether the wizard's stems step can actually start anything.
+         *
+         *     ``available`` false is the honest answer while nothing can run a
+         *     library-wide separation pass; ``reason`` is what the UI shows. The
+         *     ``tiers`` list is real data either way, never a placeholder.
+         */
+        StemsSetupOut: {
+            /** Available */
+            available: boolean;
+            /** Library Scan Endpoint */
+            library_scan_endpoint?: string | null;
+            /** Per Track Endpoint */
+            per_track_endpoint: string;
+            /** Reason */
+            reason: string;
+            /** Tiers */
+            tiers: components["schemas"]["StemTierOut"][];
         };
         /** SuggestNextIn */
         SuggestNextIn: {
@@ -5941,6 +6173,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RekordboxDetectionOut"];
+                };
+            };
+        };
+    };
+    dismiss_api_v1_setup_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupDismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_import_api_v1_setup_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupImportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_status_api_v1_setup_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatusOut"];
+                };
+            };
+        };
+    };
+    stems_availability_api_v1_setup_stems_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemsSetupOut"];
                 };
             };
         };

@@ -1365,6 +1365,47 @@
         "title": "FallbackBeatgridOut",
         "type": "object"
       },
+      "FileProbeOut": {
+        "description": "One real path and whether it is actually there.",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "required": [
+          "path",
+          "exists"
+        ],
+        "title": "FileProbeOut",
+        "type": "object"
+      },
       "FindReplaceApplyIn": {
         "properties": {
           "case_sensitive": {
@@ -4146,6 +4187,80 @@
         "title": "RecorderStatus",
         "type": "object"
       },
+      "RekordboxDetectionOut": {
+        "description": "The 'detect rekordbox' step, reported without touching the install.",
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "import_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source"
+          },
+          "import_source_encrypted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source Encrypted"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "key_available": {
+            "title": "Key Available",
+            "type": "boolean"
+          },
+          "key_detail": {
+            "title": "Key Detail",
+            "type": "string"
+          },
+          "live_db": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "plain_copy": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "rekordbox_running": {
+            "title": "Rekordbox Running",
+            "type": "boolean"
+          },
+          "share_dir": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "working_copy": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          }
+        },
+        "required": [
+          "installed",
+          "live_db",
+          "share_dir",
+          "working_copy",
+          "plain_copy",
+          "key_available",
+          "key_detail",
+          "rekordbox_running"
+        ],
+        "title": "RekordboxDetectionOut",
+        "type": "object"
+      },
       "RelocateApplyIn": {
         "properties": {
           "confirm": {
@@ -4612,6 +4727,116 @@
         "title": "SettingsOut",
         "type": "object"
       },
+      "SetupDismissIn": {
+        "properties": {
+          "dismissed": {
+            "default": true,
+            "title": "Dismissed",
+            "type": "boolean"
+          }
+        },
+        "title": "SetupDismissIn",
+        "type": "object"
+      },
+      "SetupImportIn": {
+        "description": "Import options. Both are the same knobs the CLI exposes.",
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ingest at most N tracks (smoke-test aid)",
+            "title": "Limit"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "explicit rekordbox database to read; omit to auto-detect",
+            "title": "Source"
+          }
+        },
+        "title": "SetupImportIn",
+        "type": "object"
+      },
+      "SetupStatusOut": {
+        "description": "Everything the wizard needs to decide whether to show itself.",
+        "properties": {
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "last_import": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import"
+          },
+          "library_empty": {
+            "title": "Library Empty",
+            "type": "boolean"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "rekordbox": {
+            "$ref": "#/components/schemas/RekordboxDetectionOut"
+          },
+          "should_show_wizard": {
+            "title": "Should Show Wizard",
+            "type": "boolean"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "library_empty",
+          "tracks",
+          "playlists",
+          "state_db",
+          "data_dir",
+          "dismissed",
+          "should_show_wizard",
+          "stages",
+          "rekordbox"
+        ],
+        "title": "SetupStatusOut",
+        "type": "object"
+      },
       "SmartlistConflictBody": {
         "description": "Structured stale-write response with current state and fresh ETag.",
         "properties": {
@@ -4877,6 +5102,40 @@
         "title": "StemPartOut",
         "type": "object"
       },
+      "StemTierOut": {
+        "description": "One real separation rung, straight out of apps.stems.tiers.",
+        "properties": {
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unavailable_because": {
+            "title": "Unavailable Because",
+            "type": "string"
+          },
+          "where": {
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "where",
+          "availability",
+          "unavailable_because"
+        ],
+        "title": "StemTierOut",
+        "type": "object"
+      },
       "StemsPlanOut": {
         "description": "What separating this library at this tier would take.",
         "properties": {
@@ -4930,6 +5189,49 @@
           "estimate_usd"
         ],
         "title": "StemsPlanOut",
+        "type": "object"
+      },
+      "StemsSetupOut": {
+        "description": "Whether the wizard's stems step can actually start anything.\n\n``available`` false is the honest answer while nothing can run a\nlibrary-wide separation pass; ``reason`` is what the UI shows. The\n``tiers`` list is real data either way, never a placeholder.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "library_scan_endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Scan Endpoint"
+          },
+          "per_track_endpoint": {
+            "title": "Per Track Endpoint",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/StemTierOut"
+            },
+            "title": "Tiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "reason",
+          "per_track_endpoint",
+          "tiers"
+        ],
+        "title": "StemsSetupOut",
         "type": "object"
       },
       "SuggestNextIn": {
@@ -9584,6 +9886,156 @@
         "summary": "Ai Search",
         "tags": [
           "settings-ai"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/rekordbox": {
+      "get": {
+        "description": "Report the rekordbox install WITHOUT opening or copying anything.",
+        "operationId": "detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RekordboxDetectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Detect Rekordbox Endpoint",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/dismiss": {
+      "post": {
+        "description": "Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.",
+        "operationId": "dismiss_api_v1_setup_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupDismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/import": {
+      "post": {
+        "description": "Queue the import as a job, so progress streams over the events bus.\n\nRefuses BEFORE enqueueing on anything detection can already see: a job\nthat is certain to fail is worse than a 409, because it turns a clear\nrefusal into a failed row somebody has to go and read.",
+        "operationId": "start_import_api_v1_setup_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/status": {
+      "get": {
+        "description": "Is this a first run? Counts come from state.db, not from memory.",
+        "operationId": "setup_status_api_v1_setup_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Setup Status",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/stems": {
+      "get": {
+        "description": "Can a library-wide stems pass be started from setup? Honestly, no.\n\nThe per-track separation endpoints are real and are named here. What\ndoes not exist is anything that runs them across a whole library, so\nthe wizard's stems step renders its real choices and then says so.",
+        "operationId": "stems_availability_api_v1_setup_stems_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stems Availability",
+        "tags": [
+          "setup"
         ]
       }
     },
