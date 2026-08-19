@@ -228,12 +228,26 @@ convert:
 | `src/lib/rb/audio-prefetch-cache.svelte.ts` | 1 | ArrayBuffer audio body |
 | `src/lib/rb/local-agent.ts` | 2 | separate local-agent process, not in the schema (and deleted as dead code later on the lane branch) |
 
-That leaves **20 files / 29 call sites** as the fleet worklist. Inline `fetch`
-inside a `.svelte` component (`BrowserPanel.svelte`, `CreatePairingSheet.svelte`,
+That left **20 files / 29 call sites** as the fleet worklist when this was
+recorded. Inline `fetch` inside a `.svelte` component (`BrowserPanel.svelte`,
 `SuggestNextStrip.svelte`) is converted the same way, in place, without moving
-the call into a new module. Two known snags in that group: `BrowserPanel.svelte`
+the call into a new module. One known snag in that group: `BrowserPanel.svelte`
 probes `window.location.origin` as a liveness check, which is not an API call
-and stays; and both `CreatePairingSheet.svelte` calls target
-`/api/v1/pairings/sync-snapshots`, which the server does not publish in its
-OpenAPI document, so that one is blocked on step 1 until the route is
-documented.
+and stays.
+
+**Worklist delta - the pairings phantoms are retired, not pending.** Step 1 says
+to report a missing route and leave the module alone. For these two the report
+came back as "no server implementation on any mainline branch", so they were
+retired rather than parked:
+
+- `CreatePairingSheet.svelte` (-2 sites): both targeted
+  `/api/v1/pairings/sync-snapshots`. Capture, Align hotcues and Reload sync are
+  now inert controls carrying `not implemented - see PARITY-TODO` and fire no
+  request. The deck picker reads real engine state and stays live.
+- `pairing-alignments.svelte.ts` (-1 file, -2 sites): GET + POST against
+  `/api/v1/pairings/alignments`. Deleted outright - `CreatePairingSheet` was its
+  only importer.
+
+A capture router and its repo do exist on two archive branches (`718cc812`,
+`6f39ab99`) but were never registered in `app.py`, so nothing ever served these
+paths. The restore item is in PARITY-TODO.
