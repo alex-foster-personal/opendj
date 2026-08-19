@@ -8,9 +8,9 @@ not in a state that permits the transition.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from apps.engine_core.jobs.runner import (
@@ -23,6 +23,12 @@ from apps.engine_core.jobs.runner import (
 from apps.engine_core.jobs.store import JobConflict, JobNotFound, JobStore
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+DEFAULT_LIST_LIMIT: int = 200
+# An unbounded limit is a request to serialise the whole table into one
+# response. Bounded at the edge so the refusal is a 422 naming the range,
+# rather than a slow 200 nobody asked for.
+MAX_LIST_LIMIT: int = 1000
 
 
 class JobIn(BaseModel):
@@ -75,7 +81,12 @@ def _runner(request: Request) -> JobRunner:
 
 
 @router.get("", response_model=list[JobOut])
-def list_jobs(request: Request, limit: int = 200) -> list[dict[str, Any]]:
+def list_jobs(
+    request: Request,
+    limit: Annotated[
+        int, Query(ge=1, le=MAX_LIST_LIMIT)
+    ] = DEFAULT_LIST_LIMIT,
+) -> list[dict[str, Any]]:
     return _store(request).list(limit=limit)
 
 
@@ -136,4 +147,11 @@ def reenqueue_job(request: Request, job_id: str) -> dict[str, Any]:
         ) from exc
 
 
-__all__ = ["JobIn", "JobKindsOut", "JobOut", "router"]
+__all__ = [
+    "DEFAULT_LIST_LIMIT",
+    "MAX_LIST_LIMIT",
+    "JobIn",
+    "JobKindsOut",
+    "JobOut",
+    "router",
+]
