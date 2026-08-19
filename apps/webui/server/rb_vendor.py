@@ -40,21 +40,18 @@ Fail-fast: every unresolved step raises an explicit HTTPException with a
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import logging
 import os
 import secrets
 import sqlite3
-import struct
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional, Sequence
 
-import numpy as np
 from fastapi import HTTPException
 
 from apps.shared import fs_residency, platform_paths
@@ -545,300 +542,40 @@ def anlz_dir(content: RbContent) -> Path:
     return dat.parent
 
 
-# ----- raw PMAI section walk (preview strips + vocals) ------------------------
-# Ported from the spike PoCs (credit where the byte-exact logic was proven):
-#   * PWV6 walker:  .tmp/.tmp_spike_a1_bench_dump.py::extract_pwv6_raw (SPIKE-A1)
-#   * PVDI walker + regions: .tmp/.tmp_spike_b1_pvdi_regions.py (SPIKE-B1)
-# pyrekordbox 0.4.4 cannot serve either tag (PWV6 tag.get() raises KeyError: 0,
-# PVDI is dropped with a "not supported" warning), and its .DAT parse costs up
-# to 51 ms/track (A1 gotcha 2) -- the raw walk is 0.011-0.055 ms.
-
-
-def _iter_pmai_sections(buf: bytes) -> Iterator[tuple[bytes, int, int, int]]:
-    """Yield ``(fourcc, offset, head_len, total_len)`` over a PMAI container."""
-    if buf[:4] != b"PMAI":
-        raise ValueError("not an ANLZ PMAI container")
-    off = struct.unpack(">I", buf[4:8])[0]
-    while off + 12 <= len(buf):
-        fourcc = buf[off : off + 4]
-        head_len, total_len = struct.unpack(">II", buf[off + 4 : off + 12])
-        if total_len <= 0:
-            raise ValueError(f"corrupt ANLZ section length at offset {off}")
-        yield fourcc, off, head_len, total_len
-        off += total_len
-
-
-def _read_pwv6_tri(path: Path) -> Optional[np.ndarray]:
-    """.2EX PWV6 -> ``(n, 3)`` uint8 columns [low, mid, hi], or None if absent."""
-    buf = path.read_bytes()
-    for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
-        if fourcc != b"PWV6":
-            continue
-        entry_bytes, entries = struct.unpack(">II", buf[off + 12 : off + 20])
-        if entry_bytes != 3:
-            raise ValueError(f"PWV6 entry size {entry_bytes} != 3 in {path}")
-        return np.frombuffer(buf, np.uint8, entries * 3, off + head_len).reshape(
-            entries, 3
-        )
-    return None
-
-
-def _read_pwv4_mono(path: Path) -> Optional[np.ndarray]:
-    """.EXT PWV4 luminance byte (0..127) duplicated to 3 bands, or None.
-
-    PWV4 is an RGB *colour* preview (6 bytes/col); its r/g/b bytes are display
-    colours, not frequency bands, so mapping them onto low/mid/hi would invent
-    data. Byte 0 is a real mono luminance/height envelope (verified: Pearson
-    0.60 vs the PWV6 per-column height on this library) -- serve that,
-    duplicated, exactly like the PWAV mono fallback.
-    """
-    buf = path.read_bytes()
-    for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
-        if fourcc != b"PWV4":
-            continue
-        entry_bytes, entries = struct.unpack(">II", buf[off + 12 : off + 20])
-        if entry_bytes != 6:
-            raise ValueError(f"PWV4 entry size {entry_bytes} != 6 in {path}")
-        cols = np.frombuffer(buf, np.uint8, entries * 6, off + head_len).reshape(
-            entries, 6
-        )
-        lum = cols[:, _PWV4_LUMINANCE_BYTE] & 0x7F
-        return np.repeat(lum[:, np.newaxis], 3, axis=1)
-    return None
-
-
-def _read_pwav_mono(path: Path) -> Optional[np.ndarray]:
-    """.DAT PWAV heights (low 5 bits, 0..31) duplicated to 3 bands, or None."""
-    buf = path.read_bytes()
-    for fourcc, off, head_len, total_len in _iter_pmai_sections(buf):
-        if fourcc != b"PWAV":
-            continue
-        entries = struct.unpack(">I", buf[off + 12 : off + 16])[0]
-        if entries != total_len - head_len:
-            raise ValueError(
-                f"PWAV length mismatch in {path}: "
-                f"{entries} entries vs {total_len - head_len} payload bytes"
-            )
-        heights = (
-            np.frombuffer(buf, np.uint8, entries, off + head_len) & _PWAV_HEIGHT_MASK
-        )
-        return np.repeat(heights[:, np.newaxis], 3, axis=1)
-    return None
-
-
-def _peak_downsample_cols(cols: np.ndarray, width: int) -> np.ndarray:
-    """Peak-max downsample ``(n, 3)`` columns to ``(width, 3)`` (A1: max per
-    bucket, not mean, so transients survive)."""
-    n = cols.shape[0]
-    if n < width:
-        raise ValueError(
-            f"cannot downsample {n} ANLZ columns to {width}: all known preview "
-            f"tags carry >= 400 columns, so this is corrupt data"
-        )
-    edges = (np.arange(width) * n) // width
-    return np.maximum.reduceat(cols, edges, axis=0)
-
-
-# Fallback chain per SPIKE-A1 section 4 / SPIKE-SUMMARY: PWV6 (.2EX tri-band)
-# -> PWV4 (.EXT, mono luminance) -> PWAV (.DAT, mono blue) -> (None, None).
-_PREVIEW_SOURCES: tuple[tuple[str, Any], ...] = (
-    (".2EX", _read_pwv6_tri),
-    (".EXT", _read_pwv4_mono),
-    (".DAT", _read_pwav_mono),
+# ----- ANLZ: PMAI waveform decode + PVDI vocals -------------------------------
+# Moved to rb_vendor_pkg/anlz.py (T3b slice S1, .planning/t3b-decomposition-map.md
+# clusters C2 + C3). Re-imported here so every existing caller
+# (``rb_vendor.preview_strip(...)``, ``rb_vendor.vocals_payload(...)``, test
+# monkeypatches, etc.) keeps working unchanged -- see anlz.py's module
+# docstring for why the cross-references back into this file are local
+# imports rather than a module-level circular import.
+from apps.webui.server.rb_vendor_pkg.anlz import (
+    PREVIEW_COLUMNS,
+    VOCAL_INTENSITY_MIN,
+    VOCAL_MERGE_GAP_S,
+    VOCAL_MIN_REGION_S,
+    _PREVIEW_CACHE,
+    _PREVIEW_LOCK,
+    _PREVIEW_SOURCES,
+    _PVDI_FIXED_HEADER,
+    _PVDI_HOP,
+    _PVDI_RATE,
+    _PWAV_HEIGHT_MASK,
+    _PWV4_LUMINANCE_BYTE,
+    _iter_pmai_sections,
+    _peak_downsample_cols,
+    _read_pwav_mono,
+    _read_pwv4_mono,
+    _read_pwv6_tri,
+    _vocal_regions,
+    demucs_vocals_payload,
+    merge_demucs_vocals,
+    preview_strip,
+    read_pvdi,
+    vocals_for_content,
+    vocals_payload,
 )
 
-
-def preview_strip(
-    analysis_data_path: Optional[str],
-) -> tuple[Optional[str], Optional[int]]:
-    """Return ``(preview_b64, preview_max)`` for one track, or ``(None, None)``.
-
-    ``preview_b64`` encodes ``uint8[120][3]`` interleaved [low, mid, hi] per
-    column, peak-downsampled from the ANLZ preview tag (contract item 1).
-    ``preview_max`` is the per-track max band value -- clients normalise by it,
-    never by 127 (A1 gotcha 3: observed values top out ~87).
-
-    ``(None, None)`` is the real "no ANLZ analysis" state (no path, files
-    missing, or no preview tag anywhere in the chain) -- never zeros.
-    Results are cached per AnalysisDataPath and revalidated by source mtime.
-    """
-    if not analysis_data_path:
-        return None, None
-    mapped = resolve_asset_path(analysis_data_path)
-    if mapped.resolved is None:
-        return None, None  # unmapped on this platform: a real "no analysis" state
-    dat = mapped.resolved
-    for suffix, reader in _PREVIEW_SOURCES:
-        derived = _asset_sibling(mapped, dat.with_suffix(suffix))
-        if derived.resolved is None:
-            return None, None
-        source = derived.resolved
-        if not source.is_file():
-            continue
-        mtime = source.stat().st_mtime
-        with _PREVIEW_LOCK:
-            hit = _PREVIEW_CACHE.get(analysis_data_path)
-        if hit is not None and hit[0] == str(source) and hit[1] == mtime:
-            return hit[2], hit[3]
-        cols = reader(source)
-        if cols is None:
-            continue
-        strip = _peak_downsample_cols(cols, PREVIEW_COLUMNS)
-        b64 = base64.b64encode(strip.tobytes()).decode("ascii")
-        strip_max = int(strip.max())
-        with _PREVIEW_LOCK:
-            _PREVIEW_CACHE[analysis_data_path] = (str(source), mtime, b64, strip_max)
-        return b64, strip_max
-    return None, None
-
-
-# ----- vocals (PVDI -- SPIKE-B1 decode, SPIKE-B2 calibrated params) -----------
-
-
-def read_pvdi(path_2ex: Path) -> Optional[tuple[float, bytes]]:
-    """Return ``(fps, envelope)`` from a .2EX, or None when PVDI is absent.
-
-    Absence is a REAL state (track analyzed pre-rekordbox-7; 61% of the
-    library today) -- callers must surface it as "not analyzed", never as an
-    empty bar. Malformed PVDI raises: the fixed header bytes were uniform
-    across all 3985 carriers (B1 section 3), so any deviation means the
-    format changed and must fail loudly, not decode garbage.
-    """
-    buf = path_2ex.read_bytes()
-    for fourcc, off, head_len, _total_len in _iter_pmai_sections(buf):
-        if fourcc != b"PVDI":
-            continue
-        fixed = buf[off + 12 : off + 20]
-        if fixed != _PVDI_FIXED_HEADER:
-            raise ValueError(
-                f"PVDI fixed header changed in {path_2ex}: "
-                f"{fixed.hex()} != {_PVDI_FIXED_HEADER.hex()} -- format bump?"
-            )
-        count = struct.unpack(">I", buf[off + 20 : off + 24])[0]
-        envelope = buf[off + head_len : off + head_len + count]
-        if len(envelope) != count:
-            raise ValueError(
-                f"PVDI payload truncated in {path_2ex}: {len(envelope)} < {count} bytes"
-            )
-        if envelope and max(envelope) > 4:
-            raise ValueError(f"PVDI intensity > 4 in {path_2ex}: format changed")
-        return _PVDI_RATE / _PVDI_HOP, envelope
-    return None
-
-
-def _vocal_regions(envelope: bytes, fps: float) -> list[dict[str, Any]]:
-    """Runs of intensity >= VOCAL_INTENSITY_MIN, merged (< VOCAL_MERGE_GAP_S
-    gaps), dropped when shorter than VOCAL_MIN_REGION_S; intensity = max in
-    the merged run (SPIKE-B1 recipe + SPIKE-B2 calibrated params)."""
-    runs: list[list[int]] = []
-    start: Optional[int] = None
-    for i, value in enumerate(envelope):
-        if value >= VOCAL_INTENSITY_MIN and start is None:
-            start = i
-        elif value < VOCAL_INTENSITY_MIN and start is not None:
-            runs.append([start, i])
-            start = None
-    if start is not None:
-        runs.append([start, len(envelope)])
-
-    merged: list[list[int]] = []
-    for run_start, run_end in runs:
-        if merged and (run_start - merged[-1][1]) / fps < VOCAL_MERGE_GAP_S:
-            merged[-1][1] = run_end
-        else:
-            merged.append([run_start, run_end])
-
-    regions: list[dict[str, Any]] = []
-    for run_start, run_end in merged:
-        if (run_end - run_start) / fps < VOCAL_MIN_REGION_S:
-            continue
-        regions.append(
-            {
-                "start_s": round(run_start / fps, 2),
-                "end_s": round(run_end / fps, 2),
-                "intensity": int(max(envelope[run_start:run_end])),
-            }
-        )
-    return regions
-
-
-def vocals_payload(path_2ex: Path) -> dict[str, Any]:
-    """The PVDI-derived ``vocals`` field for /anlz -- exactly one of the
-    three PVDI states (SPIKE-SUMMARY section 3): rekordbox / no_vocals /
-    not_analyzed. The demucs fallback (fourth status) is merged at serve
-    time by :func:`merge_demucs_vocals`, never cached here."""
-    if not path_2ex.is_file():
-        return {"status": "not_analyzed"}
-    pvdi = read_pvdi(path_2ex)
-    if pvdi is None:
-        return {"status": "not_analyzed"}
-    fps, envelope = pvdi
-    regions = _vocal_regions(envelope, fps)
-    if not regions:
-        return {"status": "no_vocals", "fps": round(fps, 2), "regions": []}
-    return {"status": "rekordbox", "fps": round(fps, 2), "regions": regions}
-
-
-def demucs_vocals_payload(content: RbContent) -> Optional[dict[str, Any]]:
-    """``{"status": "demucs", ...}`` from the vocal-cache, or None.
-
-    None covers every real absence: no cache entry, schema-bumped entry,
-    streaming/pathless track, audio gone from disk, or audio_mtime changed
-    since analysis (regions computed for a different file must never be
-    served - SPIKE-SUMMARY section 3 cache contract). Corrupt entries
-    raise inside apps.vocals.cache - fail fast, no invented regions.
-    """
-    if content.folder_path is None or is_streaming_path(content.folder_path):
-        return None
-    mapped = resolve_asset_path(content.folder_path)
-    if mapped.resolved is None:
-        return None  # unmapped on this platform: audio is not locatable
-    entry = vocal_cache.load_valid_entry(
-        VOCAL_CACHE_DIR / f"{content.stable_id}.json",
-        mapped.resolved,
-    )
-    if entry is None:
-        return None
-    return vocal_cache.anlz_vocals_of(entry)
-
-
-def merge_demucs_vocals(payload: dict[str, Any], content: RbContent) -> dict[str, Any]:
-    """Serve-time merge: when PVDI said not_analyzed, consult the demucs
-    vocal-cache. Applied AFTER the anlz file cache on purpose -- the cached
-    payload stays PVDI-only, so a vocal-cache entry landing (or being
-    invalidated) later is reflected without an anlz-cache schema bump.
-    After this merge, ``not_analyzed`` means NEITHER source exists."""
-    if payload["vocals"]["status"] != "not_analyzed":
-        return payload
-    demucs = demucs_vocals_payload(content)
-    if demucs is None:
-        return payload
-    return {**payload, "vocals": demucs}
-
-
-def vocals_for_content(content: RbContent) -> dict[str, Any]:
-    """Listing hot path: PVDI from .2EX, else demucs vocal-cache.
-
-    Same four statuses as ``/anlz`` vocals. Used by :func:`build_track_rows`
-    so library PreviewStrip blue bars do not need a per-row /anlz fetch.
-    """
-    path_2ex: Optional[Path] = None
-    if content.analysis_data_path:
-        mapped = resolve_asset_path(content.analysis_data_path)
-        if mapped.resolved is not None:
-            mapped_twoex = _asset_sibling(mapped, mapped.resolved.with_suffix(".2EX"))
-            if mapped_twoex.resolved is not None:
-                path_2ex = mapped_twoex.resolved
-    vocals = (
-        vocals_payload(path_2ex) if path_2ex is not None else {"status": "not_analyzed"}
-    )
-    if vocals["status"] != "not_analyzed":
-        return vocals
-    demucs = demucs_vocals_payload(content)
-    return demucs if demucs is not None else vocals
-
-
-# ----- playlist ordering (djmdPlaylist Seq) + cues (djmdCue, NOT ANLZ) ------
 # T3b S2: moved to rb_vendor_pkg/db.py (.planning/t3b-decomposition-map.md
 # target #9, adapters/rekordbox/db.py). Re-exported here so the 10 route
 # importers and the test suite (tests/webui/test_rb_vendor_cache.py,
@@ -863,126 +600,18 @@ from .rb_vendor_pkg.track_rows import bulk_quality as bulk_quality
 from .rb_vendor_pkg.track_rows import bulk_rb_meta as bulk_rb_meta
 
 # ----- ANLZ payload (waveform + beatgrid + phrases) ---------------------------
-
-
-def _downsample_max(arr: np.ndarray, points: int) -> np.ndarray:
-    """Per-bucket max downsample along axis 0 to <= ``points`` entries."""
-    n = arr.shape[0]
-    if n <= points:
-        return arr
-    edges = (np.arange(points) * n) // points
-    return np.maximum.reduceat(arr, edges, axis=0)
-
-
-def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    length = 0
-    for name, arr in bands.items():
-        down = _downsample_max(arr, points)
-        length = int(down.shape[0])
-        out[name] = [round(float(v), 4) for v in down]
-    out["length"] = length
-    return out
-
-
-def _first_tags(directory: Path) -> tuple[dict[str, Any], list[str]]:
-    """First occurrence of each tag type, plus the files that would not parse.
-
-    Parses each ANLZ file SEPARATELY. ``read_anlz_files`` parses the set in one
-    call, so a single unparseable sibling took the whole track's analysis down
-    with a 500 -- and rekordbox does write files pyrekordbox cannot read: the
-    100 acapellas imported Sat 8 Aug 2026 have an ANLZ0000.EXT whose colour
-    waveform tag fails a construct const check, while their .DAT (PQTZ
-    beatgrid, PWAV, PCOB cues) and .2EX (PWV6/PWV7 tri-band) parse perfectly.
-
-    Losing one file is NOT the same as losing the analysis, so the parseable
-    files are kept -- but the failure is RETURNED, never swallowed. The caller
-    puts it in the payload so a client can say which lanes are missing instead
-    of showing an empty waveform lane that looks like real silence.
-    """
-    from pyrekordbox.anlz import AnlzFile
-
-    tags: dict[str, Any] = {}
-    unreadable: list[str] = []
-    for path in sorted(directory.iterdir()):
-        if not path.is_file() or path.suffix.upper() not in {".DAT", ".EXT", ".2EX"}:
-            continue
-        try:
-            anlz_file = AnlzFile.parse_file(str(path))
-        except Exception as exc:
-            log.warning("ANLZ file %s is unparseable (%s)", path.name, exc)
-            unreadable.append(path.name)
-            continue
-        for tag in anlz_file.tags:  # tags is a LIST in pyrekordbox 0.4.4
-            tags.setdefault(tag.type, tag)
-    if not tags:
-        raise not_found(
-            "ANALYSIS_NOT_FOUND",
-            f"no ANLZ file in {directory} could be parsed: {unreadable}",
-        )
-    return tags, unreadable
-
-
-def _tri_bands(tag: Any) -> dict[str, np.ndarray]:
-    """Decode raw PWV6/PWV7 3-byte entries -> low/mid/high floats 0..1."""
-    raw = np.frombuffer(tag.content.entries, dtype=np.uint8).reshape(-1, 3)
-    scaled = np.clip(raw.astype(np.float64) / _TRI_SCALE, 0.0, 1.0)
-    return {name: scaled[:, col] for name, col in _BAND_COLUMNS}
-
-
-def _mono_bands(tag: Any) -> dict[str, np.ndarray]:
-    """PWAV/PWV3 heights (0..31) duplicated across all 3 band keys.
-
-    kind="mono" declares to the client that these are single-band heights,
-    not synthesised tri-band data; the values themselves are real.
-    """
-    heights = np.asarray(tag.get()[0], dtype=np.float64)
-    scaled = np.clip(heights / _MONO_SCALE, 0.0, 1.0)
-    return {name: scaled for name, _ in _BAND_COLUMNS}
-
-
-def _beatgrid_payload(tags: dict[str, Any]) -> tuple[dict[str, Any], list[float]]:
-    pqtz = tags.get("PQTZ")
-    if pqtz is None:
-        return {"beat_count": 0, "beats": []}, []
-    beats = pqtz.get_beats()
-    bpms = pqtz.get_bpms()
-    times = [float(t) for t in pqtz.get_times()]
-    grid = {
-        "beat_count": len(beats),
-        "beats": [
-            {"n": int(n), "bpm": round(float(bpm), 2), "t": round(t, 3)}
-            for n, bpm, t in zip(beats, bpms, times)
-        ],
-    }
-    return grid, times
-
-
-def _phrases_payload(tags: dict[str, Any], times: list[float]) -> list[dict[str, Any]]:
-    pssi = tags.get("PSSI")
-    if pssi is None or not times:
-        return []
-
-    def time_of_beat(beat: int) -> float:
-        idx = min(max(beat - 1, 0), len(times) - 1)
-        return round(times[idx], 3)
-
-    mood = int(pssi.content.mood)
-    end_beat = int(pssi.content.end_beat)
-    entries = list(pssi.content.entries)
-    phrases: list[dict[str, Any]] = []
-    for i, entry in enumerate(entries):
-        start_beat = int(entry.beat)
-        stop_beat = int(entries[i + 1].beat) if i + 1 < len(entries) else end_beat
-        phrases.append(
-            {
-                "start_s": time_of_beat(start_beat),
-                "end_s": time_of_beat(stop_beat),
-                "kind": int(entry.kind),
-                "mood": mood,
-            }
-        )
-    return phrases
+# Tag decode (_downsample_max.._phrases_payload) moved to rb_vendor_pkg/anlz.py
+# (T3b slice S1, cluster C6); re-imported below. The file/beatgrid-issue caches
+# right below (_anlz_mtime onward, cluster C7/C8) have NOT moved.
+from apps.webui.server.rb_vendor_pkg.anlz import (
+    _bands_payload,
+    _beatgrid_payload,
+    _downsample_max,
+    _first_tags,
+    _mono_bands,
+    _phrases_payload,
+    _tri_bands,
+)
 
 
 # ----- ANLZ JSON file cache + beatgrid-issue sidecar cache ------------------
@@ -1035,85 +664,10 @@ from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
 from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import cached_beatgrid_issue
 
 
-def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:
-    """Parse ANLZ + djmdCue into the COMPONENT-MAP 2.3 JSON, with file cache.
-
-    Cache: data/state/anlz-cache/{stable_id}.json keyed on (schema version,
-    anlz file mtime, points); any mismatch recomputes and rewrites, so old
-    unversioned or stale-schema entries self-heal. Cues are always overlaid from
-    the live ``djmdCue`` rows because they can change without touching ANLZ files.
-    """
-    directory = anlz_dir(content)
-    # anlz_dir() already resolved + verified AnalysisDataPath (mapped and
-    # on disk); the .2EX sibling (PVDI carrier) shares its stem.
-    assert content.analysis_data_path is not None
-    mapped_adp = resolve_asset_path(content.analysis_data_path)
-    assert mapped_adp.resolved is not None  # anlz_dir() would have 404'd
-    mapped_twoex = _asset_sibling(mapped_adp, mapped_adp.resolved.with_suffix(".2EX"))
-    if mapped_twoex.resolved is None:
-        raise not_found(
-            "ANALYSIS_NOT_FOUND",
-            f".2EX file for track {content.stable_id} is unsafe "
-            f"({mapped_twoex.reason}): {content.analysis_data_path}",
-        )
-    twoex_path = mapped_twoex.resolved
-    try:
-        dat_mtime: Optional[float] = mapped_adp.resolved.stat().st_mtime
-    except OSError:
-        # anlz_dir() already verified the real directory exists; only a
-        # mocked/synthetic path (unit tests) lands here. Skip the sidecar
-        # cache write rather than fail the whole payload over it.
-        dat_mtime = None
-    anlz_mtime = _anlz_mtime(directory)
-    cached = _load_cached_payload(content.stable_id, anlz_mtime, points)
-    if cached is not None:
-        if dat_mtime is not None:
-            _ensure_beatgrid_issue_cached(
-                content.stable_id, dat_mtime, cached["beatgrid"]["beats"]
-            )
-        payload = dict(cached)
-        payload["cues"] = fetch_cues(content.vendor_id)
-        return merge_demucs_vocals(payload, content)
-
-    tags, unreadable_anlz = _first_tags(directory)
-    if "PWV6" in tags and "PWV7" in tags:
-        kind = "tri"
-        preview_bands = _tri_bands(tags["PWV6"])
-        detail_bands = _tri_bands(tags["PWV7"])
-    else:
-        kind = "mono"
-        preview_bands = _mono_bands(tags["PWAV"]) if "PWAV" in tags else {}
-        detail_bands = _mono_bands(tags["PWV3"]) if "PWV3" in tags else {}
-    empty_bands = {"length": 0, "low": [], "mid": [], "high": []}
-    beatgrid, times = _beatgrid_payload(tags)
-    if dat_mtime is not None:
-        _ensure_beatgrid_issue_cached(content.stable_id, dat_mtime, beatgrid["beats"])
-    payload: dict[str, Any] = {
-        "stable_id": content.stable_id,
-        "points": points,
-        "waveform": {
-            "kind": kind,
-            "preview": _bands_payload(preview_bands, points)
-            if preview_bands
-            else dict(empty_bands),
-            "detail": _bands_payload(detail_bands, points)
-            if detail_bands
-            else dict(empty_bands),
-        },
-        "beatgrid": beatgrid,
-        "phrases": _phrases_payload(tags, times),
-        # contract item 5: PVDI-derived vocal regions, three explicit states.
-        "vocals": vocals_payload(twoex_path),
-        # ANLZ files rekordbox wrote but pyrekordbox cannot parse. Empty for
-        # a healthy track. Non-empty means some lanes below are absent because
-        # their tags were unreadable -- NOT because the track has no such data.
-        "unreadable_anlz": unreadable_anlz,
-    }
-
-    _store_cached_payload(content.stable_id, anlz_mtime, points, payload)
-    payload["cues"] = fetch_cues(content.vendor_id)
-    return merge_demucs_vocals(payload, content)
-
+# ----- ANLZ payload orchestrator -----------------------------------------------
+# build_anlz_payload moved to rb_vendor_pkg/anlz.py (T3b slice S1, cluster C9);
+# re-imported below.
+from apps.webui.server.rb_vendor_pkg.anlz import build_anlz_payload
 
 # ----- hot-cue SAVE (djmdCue Kind 1-8 write surface, edit-write-path lane) --
 #
