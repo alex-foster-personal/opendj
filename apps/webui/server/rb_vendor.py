@@ -48,7 +48,6 @@ import os
 import secrets
 import sqlite3
 import struct
-import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -68,7 +67,6 @@ from apps.shared.platform_paths import (
 )
 from apps.shared.state import locations as track_locations
 from apps.vocals import cache as vocal_cache
-from apps.webui.server import beatgrid_diagnostics
 
 log = logging.getLogger(__name__)
 
@@ -160,11 +158,11 @@ _FILE_EXISTS_CACHE: dict[str, tuple[float, Optional[int]]] = {}
 _PREVIEW_LOCK = threading.Lock()
 _PREVIEW_CACHE: dict[str, tuple[str, float, str, int]] = {}
 
-# Windows does not allow os.replace() while another thread has the destination
-# open. Stage writes concurrently, then serialize reads and atomic publication
-# per cache entry so unrelated tracks remain independent.
-_ANLZ_CACHE_LOCKS_GUARD = threading.Lock()
-_ANLZ_CACHE_LOCKS: dict[Path, threading.Lock] = {}
+# T3b S2: the anlz-cache write lock (formerly here as _ANLZ_CACHE_LOCKS_GUARD
+# / _ANLZ_CACHE_LOCKS) moved with _cache_lock into rb_vendor_pkg/anlz_cache.py
+# and rb_vendor_pkg/beatgrid_issue_cache.py (each now owns its own private
+# lock dict; see anlz_cache.py's module docstring for why splitting one
+# shared dict into two is behavior-preserving).
 
 
 @dataclass(frozen=True)
@@ -840,110 +838,16 @@ def vocals_for_content(content: RbContent) -> dict[str, Any]:
     return demucs if demucs is not None else vocals
 
 
-# ----- playlist ordering (djmdPlaylist Seq) -----------------------------------
-
-
-def playlist_order_index() -> dict[str, int]:
-    """djmdPlaylist ID -> flattened rekordbox tree position (0-based).
-
-    Rekordbox orders the playlist tree by (ParentID, Seq) - a user-managed
-    custom order, NOT alphabetical (SCREENSHOT-SPEC 5b). The flat /performance
-    tree needs one comparable number per playlist, so the tree is walked
-    depth-first from 'root' with siblings ordered by Seq; the visit order is
-    the index. Folders are included (they carry Seq too and may map to
-    playlists elsewhere); unknown parents simply never get visited and their
-    subtrees stay absent from the map - a real data state the caller must
-    treat as 'no rekordbox order known'.
-    """
-    master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
-    try:
-        rows = master.execute(
-            "SELECT ID, ParentID, Seq FROM djmdPlaylist WHERE rb_local_deleted = 0"
-        ).fetchall()
-    finally:
-        master.close()
-
-    children: dict[str, list[tuple[int, str]]] = {}
-    for pl_id, parent_id, seq in rows:
-        children.setdefault(str(parent_id), []).append(
-            (int(seq) if seq is not None else 0, str(pl_id))
-        )
-    order: dict[str, int] = {}
-    stack: list[str] = [
-        pl_id for _, pl_id in sorted(children.get("root", []), reverse=True)
-    ]
-    while stack:
-        pl_id = stack.pop()
-        order[pl_id] = len(order)
-        stack.extend(c for _, c in sorted(children.get(pl_id, []), reverse=True))
-    return order
-
-
-# ----- cues (djmdCue, NOT ANLZ) ----------------------------------------------
-
-
-def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
-    """Live djmdCue rows mapped to the COMPONENT-MAP 2.3 cue shape."""
-    master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
-    try:
-        rows = master.execute(
-            "SELECT ID, Kind, InMsec, InFrame, InMpegFrame, InMpegAbs, "
-            "       OutMsec, OutFrame, ActiveLoop, BeatLoopSize, "
-            "       ColorTableIndex, Comment, updated_at "
-            "FROM djmdCue WHERE ContentID = ? AND rb_local_deleted = 0",
-            (vendor_id,),
-        ).fetchall()
-    finally:
-        master.close()
-
-    cues: list[dict[str, Any]] = []
-    for row in rows:
-        snapshot = _cue_snapshot_from_row(row)
-        kind_i = snapshot["kind"]
-        if kind_i is None or not 0 <= int(kind_i) <= 8:
-            continue  # Kind 9-11 excluded v1: slot mapping unverified (PARITY-TODO)
-        in_ms = snapshot["in_ms"]
-        out_ms = snapshot["out_ms"]
-        active_loop = snapshot["active_loop"]
-        loop_size = snapshot["beat_loop_size"]
-        color_idx = snapshot["color_table_index"]
-        comment = snapshot["comment"]
-        is_loop = bool(out_ms and int(out_ms) > 0)
-        if int(kind_i) == 0:
-            kind = "loop" if is_loop else "memory"
-            slot: Optional[str] = None
-        else:
-            kind = "hot_cue"
-            slot = HOT_CUE_SLOTS[int(kind_i) - 1]
-        cues.append(
-            {
-                "kind": kind,
-                "slot": slot,
-                "in_ms": int(in_ms) if in_ms is not None else None,
-                "out_ms": int(out_ms) if is_loop else None,
-                "is_loop": is_loop,
-                "active_loop": bool(active_loop),
-                "beat_loop_size": int(loop_size) if loop_size is not None else None,
-                "color_table_index": int(color_idx) if color_idx is not None else None,
-                "comment": comment or None,
-            }
-        )
-    cues.sort(key=lambda c: c["in_ms"] if c["in_ms"] is not None else -1)
-    return cues
-
-
-def count_cues(vendor_id: str) -> int:
-    """All live djmdCue rows for the track (incl. Kind 9-11, for rb-meta)."""
-    master = _open_ro(MASTER_PLAIN_DB, "MASTER_DB")
-    try:
-        row = master.execute(
-            "SELECT COUNT(*) FROM djmdCue WHERE ContentID = ? AND rb_local_deleted = 0",
-            (vendor_id,),
-        ).fetchone()
-        return int(row[0])
-    finally:
-        master.close()
-
+# ----- playlist ordering (djmdPlaylist Seq) + cues (djmdCue, NOT ANLZ) ------
+# T3b S2: moved to rb_vendor_pkg/db.py (.planning/t3b-decomposition-map.md
+# target #9, adapters/rekordbox/db.py). Re-exported here so the 10 route
+# importers and the test suite (tests/webui/test_rb_vendor_cache.py,
+# conftest.py's _stub_rb_vendor monkeypatch of playlist_order_index) see no
+# behavior change.
+from apps.webui.server.rb_vendor_pkg.db import count_cues, fetch_cues
+from apps.webui.server.rb_vendor_pkg.db import (
+    playlist_order_index as playlist_order_index,
+)
 
 # ----- bulk row hydration (contract items 1-4) --------------------------------
 # Moved to rb_vendor_pkg/track_rows.py (T3b S3, .planning/t3b-decomposition-map.md
@@ -1081,81 +985,30 @@ def _phrases_payload(tags: dict[str, Any], times: list[float]) -> list[dict[str,
     return phrases
 
 
-def _anlz_mtime(directory: Path) -> float:
-    files = sorted(directory.glob("ANLZ*"))
-    if not files:
-        raise not_found("ANALYSIS_NOT_FOUND", f"no ANLZ files in directory {directory}")
-    return max(f.stat().st_mtime for f in files)
-
-
-def _cache_path(stable_id: str) -> Path:
-    return ANLZ_CACHE_DIR / f"{stable_id}.json"
-
-
-def _cache_lock(path: Path) -> threading.Lock:
-    with _ANLZ_CACHE_LOCKS_GUARD:
-        lock = _ANLZ_CACHE_LOCKS.get(path)
-        if lock is None:
-            lock = threading.Lock()
-            _ANLZ_CACHE_LOCKS[path] = lock
-        return lock
-
-
-def _load_cached_payload(
-    stable_id: str, anlz_mtime: float, points: int
-) -> Optional[dict[str, Any]]:
-    path = _cache_path(stable_id)
-    with _cache_lock(path):
-        if not path.is_file():
-            return None
-        try:
-            cached = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            log.warning("anlz cache unreadable, recomputing: %s (%s)", path, exc)
-            return None
-    if (
-        cached.get("schema") == ANLZ_CACHE_SCHEMA
-        and cached.get("anlz_mtime") == anlz_mtime
-        and cached.get("points") == points
-    ):
-        return cached["payload"]
-    return None
-
-
-def _store_cached_payload(
-    stable_id: str, anlz_mtime: float, points: int, payload: dict[str, Any]
-) -> None:
-    """Persist a cache entry atomically through a unique sibling tempfile.
-
-    A crash mid-write must never leave a truncated {stable_id}.json behind:
-    the entry lands in a unique sibling tempfile first and only ``os.replace``
-    publishes it, so concurrent readers and writers see a complete entry.
-    """
-    ANLZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _cache_path(stable_id)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-    )
-    os.close(fd)
-    tmp = Path(tmp_name)
-    try:
-        tmp.write_text(
-            json.dumps(
-                {
-                    "schema": ANLZ_CACHE_SCHEMA,
-                    "anlz_mtime": anlz_mtime,
-                    "points": points,
-                    "payload": payload,
-                }
-            ),
-            encoding="utf-8",
-        )
-        with _cache_lock(path):
-            os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-
+# ----- ANLZ JSON file cache + beatgrid-issue sidecar cache ------------------
+# T3b S2: moved to rb_vendor_pkg/anlz_cache.py and
+# rb_vendor_pkg/beatgrid_issue_cache.py (.planning/t3b-decomposition-map.md
+# targets #13 and #14, store/caches/anlz_cache.py and
+# store/caches/beatgrid_issue_cache.py). Re-exported here so
+# build_anlz_payload below (still C9, S1's slice) and the pinning test suite
+# (tests/webui/test_rb_vendor_units.py interrupted-write / concurrent-writer
+# / concurrent-reader cases, tests/webui/test_rb_vendor_cache.py) see no
+# behavior change.
+from apps.webui.server.rb_vendor_pkg.anlz_cache import (
+    _anlz_mtime as _anlz_mtime,
+)
+from apps.webui.server.rb_vendor_pkg.anlz_cache import (
+    _cache_lock as _cache_lock,
+)
+from apps.webui.server.rb_vendor_pkg.anlz_cache import (
+    _cache_path as _cache_path,
+)
+from apps.webui.server.rb_vendor_pkg.anlz_cache import (
+    _load_cached_payload as _load_cached_payload,
+)
+from apps.webui.server.rb_vendor_pkg.anlz_cache import (
+    _store_cached_payload as _store_cached_payload,
+)
 
 # ----- beatgrid data-quality diagnostic (browser Err column) ----------------
 # Perf tradeoff (see BEATGRID_ISSUE_CACHE_DIR above): the diagnostic is only
@@ -1167,90 +1020,19 @@ def _store_cached_payload(
 # ANLZ has actually been fetched once. That is an honest "not yet evaluated"
 # state, not a wrong answer, and it self-heals the first time anything reads
 # that track's /anlz.
-
-
-def _beatgrid_issue_cache_path(stable_id: str) -> Path:
-    return BEATGRID_ISSUE_CACHE_DIR / f"{stable_id}.json"
-
-
-def _read_beatgrid_issue_cache_entry(stable_id: str) -> Optional[dict[str, Any]]:
-    path = _beatgrid_issue_cache_path(stable_id)
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("beatgrid-issue cache unreadable, ignoring: %s (%s)", path, exc)
-        return None
-
-
-def _store_beatgrid_issue_cache(
-    stable_id: str, dat_mtime: float, issue: Optional[dict[str, Any]]
-) -> None:
-    """Atomic write, same tempfile-then-replace pattern as _store_cached_payload."""
-    BEATGRID_ISSUE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _beatgrid_issue_cache_path(stable_id)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-    )
-    os.close(fd)
-    tmp = Path(tmp_name)
-    try:
-        tmp.write_text(
-            json.dumps(
-                {
-                    "schema": BEATGRID_ISSUE_CACHE_SCHEMA,
-                    "dat_mtime": dat_mtime,
-                    "issue": issue,
-                }
-            ),
-            encoding="utf-8",
-        )
-        with _cache_lock(path):
-            os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-
-
-def _ensure_beatgrid_issue_cached(
-    stable_id: str, dat_mtime: float, beats: Sequence[Mapping[str, Any]]
-) -> None:
-    """Compute + persist the diagnostic only if the sidecar is missing or
-    stale for this exact AnalysisDataPath mtime; a fresh match is a no-op so
-    a warm anlz-cache hit stays cheap on every subsequent /anlz call."""
-    entry = _read_beatgrid_issue_cache_entry(stable_id)
-    if (
-        entry is not None
-        and entry.get("schema") == BEATGRID_ISSUE_CACHE_SCHEMA
-        and entry.get("dat_mtime") == dat_mtime
-    ):
-        return
-    issue = beatgrid_diagnostics.detect_beatgrid_issue(beats)
-    _store_beatgrid_issue_cache(stable_id, dat_mtime, issue)
-
-
-def cached_beatgrid_issue(content: RbContent) -> Optional[dict[str, Any]]:
-    """Cheap read-only lookup for GET /rb-meta - see the module comment above
-    for the full perf rationale. None means either "no issue" or "never
-    evaluated yet"; both are honest and this never fabricates a verdict."""
-    if content.analysis_data_path is None:
-        return None
-    mapped = resolve_asset_path(content.analysis_data_path)
-    if mapped.resolved is None:
-        return None
-    try:
-        dat_mtime = mapped.resolved.stat().st_mtime
-    except OSError:
-        return None
-    entry = _read_beatgrid_issue_cache_entry(content.stable_id)
-    if (
-        entry is None
-        or entry.get("schema") != BEATGRID_ISSUE_CACHE_SCHEMA
-        or entry.get("dat_mtime") != dat_mtime
-    ):
-        return None
-    return entry.get("issue")
+from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
+    _beatgrid_issue_cache_path as _beatgrid_issue_cache_path,
+)
+from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
+    _ensure_beatgrid_issue_cached as _ensure_beatgrid_issue_cached,
+)
+from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
+    _read_beatgrid_issue_cache_entry as _read_beatgrid_issue_cache_entry,
+)
+from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import (
+    _store_beatgrid_issue_cache as _store_beatgrid_issue_cache,
+)
+from apps.webui.server.rb_vendor_pkg.beatgrid_issue_cache import cached_beatgrid_issue
 
 
 def build_anlz_payload(content: RbContent, points: int) -> dict[str, Any]:

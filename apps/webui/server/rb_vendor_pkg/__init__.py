@@ -9,5 +9,14 @@ route importers and test modules never change until the facade is retired
 Modules:
   track_rows -- bulk row hydration for the browser listing read model
                 (``build_track_rows`` and its ``bulk_*`` helpers).
+  db -- read-only master.plain.db access (C4: playlist order + cue reads).
+  anlz_cache -- C7 anlz JSON cache.
+  beatgrid_issue_cache -- C8 beatgrid-issue sidecar cache.
+  anlz -- PMAI waveform decode, PVDI vocals, ANLZ tag decode, payload
+          assembly (C2/C3/C6/C9).
+
+This package is a staging location: the map's final homes (S8 relocates)
+are ``store/caches/`` for the caches and ``adapters/rekordbox/`` for db
+and anlz.
 """
 from __future__ import annotations
