@@ -1,4 +1,5 @@
-const ERROR_ENDPOINT = '/api/v1/client-errors';
+import { api } from './api/client';
+
 const QUEUE_KEY = 'music-dj-tools:client-errors:v1';
 const MAX_QUEUE = 20;
 const DEDUPE_MS = 10_000;
@@ -70,13 +71,13 @@ async function flushQueue(): Promise<void> {
 	try {
 		const queue = readQueue();
 		while (queue.length > 0) {
-			const response = await fetch(ERROR_ENDPOINT, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(queue[0]),
+			// Non-2xx becomes ApiError; network failures throw too. Either path
+			// stops the loop without removing the head item so the durable
+			// browser queue can retry on the next report or page load.
+			await api.POST('/api/v1/client-errors', {
+				body: queue[0],
 				keepalive: true
 			});
-			if (!response.ok) break;
 			queue.shift();
 			writeQueue(queue);
 		}
