@@ -16,6 +16,8 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
   the exclusion was cosmetic -> broken.
 - if the manifest's identity keys drift from what /api/v1/build-info
   requires, a shipped payload serves 503 for its own identity -> broken.
+- if the app copy descends into the payload's own output directory, the
+  build recurses until the filesystem refuses the path -> broken.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from scripts.build_engine_payload import (
     parse_otool,
     prune_excluded,
     sha256_tree,
+    skip_output_tree,
     sole_stretch_asset,
 )
 from scripts.desktop_lane_config import LaneLabelError, require_label
@@ -431,3 +434,50 @@ def test_the_launcher_never_writes_bytecode_into_a_read_only_bundle() -> None:
 def test_locked_requirement_is_hashable_for_set_arithmetic() -> None:
     entry = LockedRequirement(name="a", spec="a==1", via=frozenset({"b"}))
     assert {entry, entry} == {entry}
+
+
+# ----- the copy must not eat its own output ------------------------------
+@pytest.mark.requirement("INSTALL-12")
+def test_the_app_copy_skips_the_payload_it_is_writing(tmp_path: Path) -> None:
+    """The staging dir lives under apps/, which is what the build copies.
+
+    Found the expensive way: the first dmg run walked
+    apps/desktop/src-tauri/payload/app/apps/desktop/src-tauri/payload/... until
+    macOS refused the path length.
+    """
+    output_root = tmp_path / "src-tauri" / "payload"
+    output_root.mkdir(parents=True)
+    ignore = skip_output_tree(output_root)
+    skipped = ignore(str(output_root.parent), ["payload", "src", "Cargo.toml"])
+    assert "payload" in skipped
+    assert "src" not in skipped and "Cargo.toml" not in skipped
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_the_copy_filter_matches_the_path_not_the_name(tmp_path: Path) -> None:
+    """An unrelated directory called payload must still be copied."""
+    output_root = tmp_path / "src-tauri" / "payload"
+    output_root.mkdir(parents=True)
+    unrelated = tmp_path / "apps" / "engine_core"
+    unrelated.mkdir(parents=True)
+    (unrelated / "payload").mkdir()
+    ignore = skip_output_tree(output_root)
+    assert "payload" not in ignore(str(unrelated), ["payload"])
+
+
+@pytest.mark.requirement("INSTALL-12")
+def test_the_copy_filter_still_drops_the_heavy_derived_trees(tmp_path: Path) -> None:
+    output_root = tmp_path / "payload"
+    output_root.mkdir()
+    ignore = skip_output_tree(output_root)
+    skipped = ignore(
+        str(tmp_path),
+        ["node_modules", "target", ".svelte-kit", "__pycache__", "test-results", "src"],
+    )
+    assert skipped == {
+        "node_modules",
+        "target",
+        ".svelte-kit",
+        "__pycache__",
+        "test-results",
+    }
