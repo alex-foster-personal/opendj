@@ -10,6 +10,10 @@ Regression one-liners:
     schema then broken (D2)
   - if a hot-cue write does not provision its sidecar through the schema
     module's one home then broken (D2)
+  - if either rekordbox writer stops using the one shared frame conversion
+    then broken (D3)
+  - if the 44.1 kHz frame heuristic changes value then every InFrame this
+    repo has ever written is inconsistent and broken (D3)
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from apps.engine_core.store import schema as store_schema
+from apps.shared import rb_frames
 from apps.webui.server import rb_vendor
 from apps.webui.server.rb_vendor_pkg import reversal as rb_reversal
 
@@ -117,3 +122,43 @@ def test_hot_cue_save_provisions_the_sidecar_through_the_schema_module(
     )
     assert set(SIDECAR_TABLES).issubset(_tables(master_db))
     assert set(store_schema.VENDOR_SIDECAR_TABLES) == set(SIDECAR_TABLES)
+
+
+# ----- D3: one _msec_to_frame ----------------------------------------------
+
+
+def test_both_rekordbox_writers_share_one_frame_conversion() -> None:
+    """Identity, not equality: two functions that agree today can diverge.
+
+    rb_vendor's copy documented itself as "same 44.1 kHz heuristic as
+    apps/sync/rb_writer.py" and the two stayed byte-identical by luck, for as
+    long as nobody edited one of them.
+    """
+    from apps.sync import rb_writer as sync_rb_writer
+    from apps.webui.server.rb_vendor_pkg import writer as hot_cue_writer
+
+    assert sync_rb_writer._msec_to_frame is rb_frames.msec_to_frame
+    assert hot_cue_writer.msec_to_frame is rb_frames.msec_to_frame
+
+
+def test_the_one_home_is_importable_without_the_web_layer() -> None:
+    """apps.sync may not import apps.webui (.importlinter, hard-fail).
+
+    This is why the shared core holds the definition rather than the
+    decomposition map's adapters/rekordbox/cues.py, which is staged under
+    apps/webui/server for the duration of T3b.
+    """
+    assert rb_frames.__name__.startswith("apps.shared.")
+
+
+@pytest.mark.parametrize(
+    ("msec", "frame"),
+    [(0, 0), (1_000, 441), (12_345, 5_444)],
+)
+def test_msec_to_frame_keeps_the_44_1khz_heuristic(msec: int, frame: int) -> None:
+    """The surviving definition still answers what both copies answered.
+
+    Same cases tests/test_rb_writer.py pins on the apps/sync side, asserted
+    here against the module that now owns the conversion.
+    """
+    assert rb_frames.msec_to_frame(msec) == frame

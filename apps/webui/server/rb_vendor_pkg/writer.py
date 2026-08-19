@@ -37,13 +37,13 @@ from typing import Any
 from fastapi import HTTPException
 
 from apps.engine_core.store.schema import ensure_vendor_sidecar_tables
+from apps.shared.rb_frames import msec_to_frame
 
 from .cues import (
     HOT_CUE_SLOTS,
     _cue_revision,
     _cue_view,
     _live_slot_snapshot,
-    _msec_to_frame,
     _new_cue_id,
     _rb_timestamp,
     _require_current_revision,
@@ -186,7 +186,7 @@ def save_hot_cue(
                 "updated_at = ? WHERE ID = ? AND ContentID = ? AND Kind = ?",
                 (
                     in_ms,
-                    _msec_to_frame(in_ms),
+                    msec_to_frame(in_ms),
                     color_table_index,
                     comment,
                     now,
@@ -210,7 +210,7 @@ def save_hot_cue(
                     cue_id,
                     vendor_id,
                     in_ms,
-                    _msec_to_frame(in_ms),
+                    msec_to_frame(in_ms),
                     kind,
                     color_table_index,
                     comment,

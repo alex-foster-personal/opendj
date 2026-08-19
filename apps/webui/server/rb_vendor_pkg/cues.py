@@ -5,9 +5,10 @@ Moved verbatim from ``apps/webui/server/rb_vendor.py`` C10 (source lines
 row 10. Everything here either transforms a row/dict or reads through a
 caller-supplied connection; nothing opens, commits, or closes one.
 
-D3 (map section 3): :func:`_msec_to_frame` had a byte-identical twin in
-``apps/sync/rb_writer.py``. This module is now its single home and that module
-imports it from here.
+D3 (map section 3): the 44.1 kHz frame heuristic that used to live here as
+``_msec_to_frame`` now has one definition, :func:`apps.shared.rb_frames.msec_to_frame`,
+which :mod:`.writer` imports directly. That module's docstring records why the
+shared core rather than the map's nominated home.
 
 Seam for S0: :func:`_new_cue_id`, :func:`_live_slot_snapshot`,
 :func:`_require_current_revision`, :func:`_duration_ms` and
@@ -48,16 +49,6 @@ def _slot_to_kind(slot: str) -> int:
             "PARITY-TODO.md 'Hot-cue SAVE')"
         )
     return HOT_CUE_SLOTS.index(slot) + 1
-
-
-def _msec_to_frame(msec: int) -> int:
-    """Approximate audio-frame offset for non-MPEG containers at 44.1 kHz.
-
-    Single home for the 44.1 kHz heuristic (D3): ``apps/sync/rb_writer.py``
-    imports this rather than redeclaring it. InFrame is not read back by
-    ``fetch_cues``; it is kept for on-disk-row authenticity only.
-    """
-    return round(msec * 0.441)
 
 
 def _rb_timestamp() -> str:
