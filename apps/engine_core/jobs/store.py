@@ -153,11 +153,14 @@ class JobStore:
         """Flip foreign live rows to 'unknown', then reap their workers.
 
         The status flip runs inside BEGIN IMMEDIATE so a concurrent engine
-        cannot interleave. The reaping runs AFTER the transaction commits:
-        each kill can take up to a 10s grace, and holding sqlite's write
-        lock for that long would stall every reader for no benefit.
+        cannot interleave. The reaping runs AFTER the transaction commits, and
+        it is not cheap: each row's kill ladder can spend a full
+        WORKER_TERMINATE_GRACE_S (10s), and the rows are reaped SERIALLY on
+        this synchronous boot path, so N unreaped rows can cost N x 10s before
+        the engine finishes starting. Holding sqlite's write lock across that
+        would stall every reader for no benefit.
 
-        That commit-then-kill split is exactly why this method is RE-ENTERABLE.
+        That commit-then-kill split is also why this method is RE-ENTERABLE.
         Between the commit and the last kill the engine can die, or one row's
         reap can raise (a macOS zombie group answers killpg with
         PermissionError; psutil raises ValueError on a non-positive pid), and

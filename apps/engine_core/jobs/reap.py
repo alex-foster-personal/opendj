@@ -36,6 +36,14 @@ import psutil
 
 WORKER_TERMINATE_GRACE_S: float = 10.0
 
+# The share of the grace held back for the SIGKILL rung. A kill is not
+# instantaneous either -- the kernel still has to schedule the exit and
+# somebody still has to reap it -- so spending the whole budget on SIGTERM
+# would leave the confirm no time and turn every stubborn group into a raise
+# instead of a kill. Capped at half the grace so a caller passing a small one
+# still gets a ladder rather than an immediate SIGKILL.
+WORKER_KILL_CONFIRM_S: float = 2.0
+
 # psutil create_time and the wall clock we fall back to at spawn are both
 # taken within milliseconds of the fork, so 2s is a generous identity window
 # that still fails a pid recycled minutes later.
@@ -283,26 +291,41 @@ def _inspect_survivors(identity: WorkerIdentity) -> _GroupVerdict:
 def terminate_group(
     pgid: int, *, grace_s: float = WORKER_TERMINATE_GRACE_S
 ) -> str:
-    """SIGTERM -> grace -> SIGKILL -> confirm gone. Returns the outcome.
+    """SIGTERM -> SIGKILL -> confirm gone, all inside ONE ``grace_s``.
+
+    WORST CASE IS grace_s IN TOTAL, per call. Both rungs draw on the same
+    deadline: SIGTERM gets what is left after reserving WORKER_KILL_CONFIRM_S
+    (capped at half the grace) for the confirm, and the confirm gets whatever
+    remains, including anything SIGTERM did not spend.
+
+    That total is the number callers budget against. Boot recovery reaps its
+    rows in a SERIAL loop on the synchronous boot path, so N orphaned rows cost
+    up to N x grace_s before the engine finishes starting -- it used to be
+    N x 2 x grace_s, because each rung waited a full grace of its own (C17).
 
     Adapted from apps/vocals/cli.py::_terminate_worker_tree. Raises
     WorkerCleanupError when the group survives SIGKILL, because an
     unverifiable kill is worse than a loud one.
     """
     _require_posix()
+    deadline = time.monotonic() + grace_s
+    kill_at = deadline - min(WORKER_KILL_CONFIRM_S, grace_s / 2)
     already = _signal_group(pgid, signal.SIGTERM)
     if already is not None:
         return already
-    if _wait_gone(pgid, grace_s):
+    if _wait_gone(pgid, max(kill_at - time.monotonic(), 0.0)):
         return f"process group {pgid} exited on SIGTERM"
     already = _signal_group(pgid, signal.SIGKILL)
     if already is not None:
         return already
-    if not _wait_gone(pgid, grace_s):
+    if not _wait_gone(pgid, max(deadline - time.monotonic(), 0.0)):
         raise WorkerCleanupError(
-            f"process group {pgid} survived SIGKILL after {grace_s:.0f}s"
+            f"process group {pgid} survived SIGKILL; it was still live "
+            f"{grace_s:.0f}s after the SIGTERM that opened the ladder"
         )
-    return f"process group {pgid} killed after a {grace_s:.0f}s SIGTERM grace"
+    return (
+        f"process group {pgid} killed within the {grace_s:.0f}s SIGTERM grace"
+    )
 
 
 def _signal_group(pgid: int, sig: int) -> str | None:
@@ -442,6 +465,7 @@ def _wait_gone(pgid: int, timeout_s: float) -> bool:
 
 __all__ = [
     "CREATE_TIME_TOLERANCE_S",
+    "WORKER_KILL_CONFIRM_S",
     "WORKER_TERMINATE_GRACE_S",
     "ReapResult",
     "WorkerCleanupError",
