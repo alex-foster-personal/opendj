@@ -31,6 +31,7 @@ from apps.engine_core.build_info import (
     MANIFEST_ENV,
     BuildInfoUnavailable,
     add_build_info_route,
+    head_time_as_utc,
     resolve_build_info,
 )
 
@@ -189,3 +190,39 @@ def test_engine_registers_build_info_ahead_of_the_spa_mount() -> None:
     """A Mount at "/" matches everything, so ordering is the whole contract."""
     source = (REPO_ROOT / "apps/engine_core/app.py").read_text(encoding="utf-8")
     assert source.index("add_build_info_route(") < source.index("_mount_spa(app)")
+
+
+# ----- the repo timestamp is really UTC ----------------------------------
+@pytest.mark.requirement("INSTALL-07")
+def test_head_time_is_converted_to_utc() -> None:
+    """git's %cI carries the COMMITTER's offset, not UTC.
+
+    Shipping "2026-08-19T14:17:23+01:00" under a field called built_at_utc is
+    the nearly-right readout this endpoint exists to replace: it looks like an
+    answer and disagrees by an hour with the payload path, which stamps real
+    UTC.
+    """
+    assert head_time_as_utc("2026-08-19T14:17:23+01:00") == "2026-08-19T13:17:23Z"
+    assert head_time_as_utc("2026-08-19T13:17:23Z") == "2026-08-19T13:17:23Z"
+    assert head_time_as_utc("2026-08-19T00:30:00-05:00") == "2026-08-19T05:30:00Z"
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_a_timestamp_without_a_zone_is_refused_not_assumed() -> None:
+    with pytest.raises(BuildInfoUnavailable, match="no timezone"):
+        head_time_as_utc("2026-08-19T14:17:23")
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_an_unparseable_timestamp_is_refused_not_guessed() -> None:
+    with pytest.raises(BuildInfoUnavailable, match="not.*ISO-8601"):
+        head_time_as_utc("last tuesday")
+
+
+@pytest.mark.requirement("INSTALL-07")
+def test_the_repo_path_serves_a_z_suffixed_timestamp() -> None:
+    """End to end against this very checkout, not a fixture."""
+    info = resolve_build_info({}, REPO_ROOT)
+    assert info.source == "repo"
+    assert info.built_at_utc.endswith("Z")
+    assert "+" not in info.built_at_utc

@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -69,7 +70,12 @@ REQUIRED_IDENTITY_KEYS: tuple[str, ...] = (
     "lane_label",
 )
 
-# git log's ISO-8601 strict format, so the timestamp needs no parsing here.
+# git log's ISO-8601 strict format. It carries the COMMITTER's offset, not
+# UTC ("2026-08-19T14:17:23+01:00"), so it is converted before it goes out
+# under a field called built_at_utc. Serving a local-offset timestamp there
+# would be exactly the kind of nearly-right readout this endpoint exists to
+# replace: it looks like an answer and quietly disagrees with the payload
+# path, which stamps real UTC.
 HEAD_TIME_FORMAT: str = "%cI"
 
 
@@ -155,6 +161,23 @@ def _git(repo_root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def head_time_as_utc(raw: str) -> str:
+    """Normalise git's committer timestamp to the Z form the field promises."""
+    try:
+        committed = datetime.fromisoformat(raw)
+    except ValueError as err:
+        raise BuildInfoUnavailable(
+            f"git reported HEAD's commit time as {raw!r}, which is not "
+            "ISO-8601; the engine will not guess at its own build time"
+        ) from err
+    if committed.tzinfo is None:
+        raise BuildInfoUnavailable(
+            f"git reported HEAD's commit time as {raw!r} with no timezone, "
+            "so it cannot be converted to UTC"
+        )
+    return committed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _from_repo(repo_root: Path) -> BuildInfoOut:
     if shutil.which("git") is None:
         raise BuildInfoUnavailable(
@@ -169,7 +192,9 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
         git_sha_full=sha_full,
         git_branch=_git(repo_root, "rev-parse", "--abbrev-ref", "HEAD"),
         git_dirty=_git(repo_root, "status", "--porcelain") != "",
-        built_at_utc=_git(repo_root, "log", "-1", f"--format={HEAD_TIME_FORMAT}"),
+        built_at_utc=head_time_as_utc(
+            _git(repo_root, "log", "-1", f"--format={HEAD_TIME_FORMAT}")
+        ),
         built_at_kind="head-commit",
     )
 
