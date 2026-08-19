@@ -2,28 +2,27 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { getSettings, type SettingsOut } from '$lib/api';
-	import { capabilities } from '$lib/api/capabilities.svelte';
-	import { setupRefusal } from '$lib/setup/setup-api';
+	import {
+		RUN_SETUP_LABEL,
+		RUN_SETUP_TITLE,
+		runSetup,
+		runSetupBlocked
+	} from '$lib/setup/run-setup';
 	import { openSettings } from '$lib/settings/hotkeys';
-	import { setupWizard } from '$lib/setup/wizard.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
 	let settings = $state<SettingsOut | null>(null);
 
 	/** Why the setup wizard is unreachable from here, or null when it is not.
-	 * Reads the capability store, so it re-evaluates once the health probe
-	 * lands rather than being decided before the daemon has answered. */
-	const setupBlocked = $derived(capabilities.flavor === 'engine' ? null : setupRefusal());
+	 * Only a FINAL refusal disables; an unfinished health probe is resolved by
+	 * the click itself rather than by greying the control out. */
+	const setupBlocked = $derived(runSetupBlocked());
 
-	/** Re-arm the wizard engine-side, then open it. Dismissal is persisted in
-	 * the data dir, so clearing it has to be a request, not a local flag. */
+	/** One shared entry point with the Cmd+, overlay and the /admin Setup tab
+	 * ($lib/setup/run-setup), so three doors into the wizard cannot drift. */
 	async function reopenSetup(): Promise<void> {
-		await setupWizard.reopen();
-		if (setupWizard.error !== null) {
-			pushToast(`Could not reopen setup: ${setupWizard.error}`, 'error');
-			return;
-		}
-		await goto('/setup');
+		const failure = await runSetup(goto);
+		if (failure !== null) pushToast(`Could not reopen setup: ${failure}`, 'error');
 	}
 
 	async function load(): Promise<void> {
@@ -67,9 +66,9 @@
 		type="button"
 		onclick={reopenSetup}
 		disabled={setupBlocked !== null}
-		title={setupBlocked ?? 'Re-arm and open the first-run setup wizard'}
+		title={setupBlocked ?? RUN_SETUP_TITLE}
 	>
-		Run first-run setup
+		{RUN_SETUP_LABEL}
 	</button>
 </section>
 
