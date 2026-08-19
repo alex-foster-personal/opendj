@@ -100,6 +100,18 @@ batch kind needs to say WHICH item finished.
 # it into an ephemeral env for this process only.
 UV_BIN: str = os.environ.get("MDT_UV_BIN", "uv")
 
+TRANSPORT_ENV: str = "MDT_STEMS_TRANSPORT"
+DEFAULT_TRANSPORT: str = "relay"
+TRANSPORTS: tuple[str, str] = ("relay", "direct")
+"""How the worker reaches a GPU. A BUILD-TIME property, not a per-job one.
+
+Read from the engine's environment rather than the job payload on purpose: a
+shipped build separates through the relay because it has no Modal credential,
+and letting a request name ``direct`` would let any caller ask the app to look
+for a credential the tester was never given. the maintainer's own machine sets the env
+var once; a tester's build cannot be talked into it by a payload.
+"""
+
 
 class StemsJobPayloadError(ValueError):
     """The enqueue payload cannot describe a run, so no run is started."""
@@ -198,6 +210,23 @@ def _parse_data_dir(payload: dict[str, Any]) -> Path | None:
 # ----- registration ----------------------------------------------------------
 
 
+def resolve_transport() -> str:
+    """The build's GPU transport, from the engine environment.
+
+    An unset value means the relay, because that is what a shipped build is.
+    An unrecognised value is refused rather than falling back: a typo silently
+    resolving to 'relay' would look like it worked right up until someone
+    needed 'direct' and could not tell why they were not getting it.
+    """
+    raw = os.environ.get(TRANSPORT_ENV, "").strip() or DEFAULT_TRANSPORT
+    if raw not in TRANSPORTS:
+        raise StemsJobPayloadError(
+            f"{TRANSPORT_ENV}={raw!r} is not a known transport; "
+            f"known: {', '.join(TRANSPORTS)}"
+        )
+    return raw
+
+
 def build_argv(payload: dict[str, Any]) -> list[str]:
     stable_ids, tier, data_dir = parse_payload(payload)
     if shutil.which(UV_BIN) is None:
@@ -215,6 +244,8 @@ def build_argv(payload: dict[str, Any]) -> list[str]:
         WORKER_SCRIPT,
         "--tier",
         tier,
+        "--transport",
+        resolve_transport(),
     ]
     if data_dir is not None:
         argv += ["--data-dir", str(data_dir)]

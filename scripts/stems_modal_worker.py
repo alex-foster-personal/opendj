@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Engine job worker: separate N tracks on Modal, one bundle at a time.
+"""Engine job worker: separate N tracks, one bundle at a time.
 
 This is the process behind the ``stems.separate`` job kind
 (``apps/stems/job.py``). The engine spawns it, reads its stdout, and turns
@@ -8,12 +8,23 @@ SUBPROCESS rather than engine code for one reason: ``modal`` is not a repo
 dependency and must never become one, so every call site is a
 ``uv run --with modal`` overlay.
 
+TWO TRANSPORTS, ONE RESULT SHAPE (see :func:`load_separator`):
+
+  relay   THE DEFAULT, and what ships. Audio goes to a server-side relay that
+          holds the Modal credential, verifies the tester's Google identity,
+          checks an allowlist and meters them. No Modal token is ever on a
+          tester's machine (the maintainer, Wed 19 Aug 2026). See ``apps/stems/relay/``.
+  direct  the maintainer's own machine, using its own Modal token. Opt-in per run.
+
+Everything downstream of that choice is identical, which is the design: the
+credential edge moved, and the job kind, the progress protocol, the bundle
+writer and the UI did not.
+
 Reuse, not reinvention. The Modal app, the baked-weights image, the GPU
 function and the bundle writer all come from ``scripts/modal_vocal_farm.py``.
-Importing them means a run here is a cache HIT on the same image layers the
+Importing them means a direct run is a cache HIT on the same image layers the
 farm built, and a bundle written here is byte-for-byte the same contract as a
-bundle written by the farm. A second Modal app defined next door would cost a
-fresh multi-minute image build and a second manifest writer to keep in sync.
+bundle written by the farm, whichever transport produced it.
 
 The farm's own CLI is not used because it selects tracks by the VOCAL-cache
 gap: ``--only-stable-id`` refuses an id that is not in that gap, which is the
@@ -38,11 +49,17 @@ Requirements (mini-PRD):
     schema-2 layout, and is never fabricated.
     [if] Modal returns no stems for a track [then ⛔️] that track fails
   ✔︎ ✅ credentials are checked before the batch, not per track.
-    [if] no Modal token is configured [then ⛔️] exit 2 with the fix
+    [if] --transport direct and no Modal token [then ⛔️] exit 2 with the fix
+    [if] --transport relay and no relay URL or identity token [then ⛔️] the
+      run fails naming what is missing, and NEVER falls back to a local
+      credential a tester was not supposed to have
 
 Run (modal is not a repo dependency -- overlay it):
   uv run --with modal python scripts/stems_modal_worker.py \
       --tier M --stable-id <id> [--stable-id <id> ...] [--data-dir DIR]
+  # the maintainer's own machine, with his own Modal token:
+  uv run --with modal python scripts/stems_modal_worker.py \
+      --transport direct --tier M --scope pending
 
 -Claude
 """
@@ -226,33 +243,62 @@ def resolve_tracks(stable_ids: Sequence[str], data_dir: Path) -> list[TrackJob]:
     return jobs
 
 
-# ----- the Modal boundary ----------------------------------------------------
+# ----- the credential boundary -----------------------------------------------
 
 # (tracks, tier_key) -> yields one result dict per track, in input order.
-# The dict is exactly what farm.separate_track returns with a local
-# destination: {stable_id, stems: {part: bytes}, audio: {...},
-# source_sha256, ...} or {stable_id, error}.
+# The dict is {stable_id, stems: {part: bytes}, audio: {...}, source_sha256}
+# or {stable_id, error}. BOTH transports return exactly this, so nothing
+# downstream -- the bundle writer, the manifest, the progress line -- can tell
+# which one produced a track.
 Separator = Callable[[Sequence[TrackJob], str], Iterator[dict[str, Any]]]
 
+TRANSPORT_RELAY: str = "relay"
+TRANSPORT_DIRECT: str = "direct"
 
-def load_separator() -> tuple[Separator, str]:
-    """The real Modal separator, unless a test has named a replacement."""
+
+def load_separator(transport: str) -> tuple[Separator, str]:
+    """Resolve how this run reaches a GPU.
+
+    ``relay`` (the DEFAULT, and what ships) sends audio to a server-side relay
+    that holds the Modal credential, verifies the tester's Google identity,
+    checks them against the allowlist and meters them. NO MODAL TOKEN EXISTS
+    ON A TESTER'S MACHINE, which is the whole point: a token inside a .dmg is
+    a token every tester has forever, uncapped and unrevokable short of
+    rotating it for everyone (the maintainer, Wed 19 Aug 2026).
+
+    ``direct`` is the maintainer's own path, on a machine that legitimately holds a
+    Modal token. It is opt-in per run and never the default, so a build that
+    forgets to configure a relay fails loudly instead of quietly looking for a
+    credential the tester was never supposed to have.
+
+    The test seam overrides both. It is checked FIRST so a test can never
+    reach either real backend by accident.
+    """
     override = os.environ.get(SEPARATOR_ENV, "").strip()
-    if not override:
-        return modal_separator, "modal"
-    if ":" not in override:
-        raise SystemExit(
-            f"error: {SEPARATOR_ENV}={override!r} must be 'module:attr'"
-        )
-    module_name, _, attr = override.partition(":")
-    try:
-        module = importlib.import_module(module_name)
-        separator = getattr(module, attr)
-    except (ImportError, AttributeError) as exc:
-        raise SystemExit(
-            f"error: {SEPARATOR_ENV}={override!r} is not importable: {exc}"
-        ) from exc
-    return separator, override
+    if override:
+        if ":" not in override:
+            raise SystemExit(
+                f"error: {SEPARATOR_ENV}={override!r} must be 'module:attr'"
+            )
+        module_name, _, attr = override.partition(":")
+        try:
+            module = importlib.import_module(module_name)
+            separator = getattr(module, attr)
+        except (ImportError, AttributeError) as exc:
+            raise SystemExit(
+                f"error: {SEPARATOR_ENV}={override!r} is not importable: {exc}"
+            ) from exc
+        return separator, override
+    if transport == TRANSPORT_RELAY:
+        from apps.stems.relay.client import relay_separator
+
+        return relay_separator, TRANSPORT_RELAY
+    if transport == TRANSPORT_DIRECT:
+        return modal_separator, TRANSPORT_DIRECT
+    raise SystemExit(
+        f"error: unknown --transport {transport!r}; "
+        f"known: {TRANSPORT_RELAY}, {TRANSPORT_DIRECT}"
+    )
 
 
 def assert_modal_credentials() -> None:
@@ -347,13 +393,14 @@ def run(
     tier_key: str,
     data_dir: Path,
     protocol: _Protocol,
+    transport: str = TRANSPORT_RELAY,
 ) -> int:
     """Separate every track, writing and announcing each as it lands."""
     import scripts.modal_vocal_farm as farm
 
-    separator, separator_name = load_separator()
+    separator, separator_name = load_separator(transport)
     preset = preset_for_tier(tier_key)
-    if separator_name != "modal":
+    if separator_name not in {TRANSPORT_RELAY, TRANSPORT_DIRECT}:
         # Loud in the error tail, AND stamped into every manifest this run
         # writes. The log line warns whoever is watching; the stamp is what
         # protects everyone who is not. A bundle carries its own provenance
@@ -363,7 +410,7 @@ def run(
         # separation, at play time and in the Stems column alike.
         print(
             f"[stems-worker] SEPARATOR OVERRIDE ACTIVE: {separator_name}. "
-            "This run does NOT touch Modal, and every manifest it writes is "
+            "This run reaches no GPU at all, and every manifest it writes is "
             "stamped as a test double.",
             file=sys.stderr,
             flush=True,
@@ -451,6 +498,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="override the data dir (default: MDT_DATA_DIR)",
     )
+    parser.add_argument(
+        "--transport",
+        default=TRANSPORT_RELAY,
+        choices=(TRANSPORT_RELAY, TRANSPORT_DIRECT),
+        help="how this run reaches a GPU. 'relay' (default, and what ships) "
+        "calls a server-side relay that holds the Modal credential and "
+        "meters the signed-in tester; no Modal token exists on a tester's "
+        "machine. 'direct' uses THIS machine's own Modal token and is for "
+        "the maintainer's own runs only.",
+    )
     return parser
 
 
@@ -471,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
             # flow enqueues one of those every time it re-runs.
             protocol.emit(PROGRESS_CEILING, "0 tracks need stems")
             return 0
-        return run(tracks, args.tier, data_dir, protocol)
+        return run(tracks, args.tier, data_dir, protocol, args.transport)
     finally:
         protocol.close()
 
