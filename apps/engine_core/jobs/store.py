@@ -13,6 +13,7 @@ fallback that hides a completed side effect.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import uuid
@@ -21,8 +22,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from apps.engine_core.jobs.reap import WorkerIdentity, reap
+from apps.engine_core.jobs.reap import ReapResult, WorkerIdentity, reap_group
 from apps.shared import events
+
+log = logging.getLogger(__name__)
 
 STATUSES: tuple[str, ...] = (
     "queued",
@@ -48,6 +51,13 @@ LIVE_STATUSES: tuple[str, ...] = ("running", "cancelling")
 FINISH_SOURCES: frozenset[str] = frozenset({"running", "cancelling", "unknown"})
 
 RESTART_ERROR: str = "engine restarted; outcome unknown"
+
+# A row that reached 'unknown' but whose worker group was never verified dead
+# is picked up again by the next boot's recovery. Its error says so, rather
+# than re-claiming this was a fresh restart.
+REAP_RETRY_ERROR: str = (
+    "engine restarted again; the worker group was still unreaped"
+)
 
 JOBS_TOPIC: str = "jobs.updated"
 
@@ -128,11 +138,26 @@ class JobStore:
         cannot interleave. The reaping runs AFTER the transaction commits:
         each kill can take up to a 10s grace, and holding sqlite's write
         lock for that long would stall every reader for no benefit.
+
+        That commit-then-kill split is exactly why this method is RE-ENTERABLE.
+        Between the commit and the last kill the engine can die, or one row's
+        reap can raise (a macOS zombie group answers killpg with
+        PermissionError; psutil raises ValueError on a non-positive pid), and
+        the rows behind it must not lose their only chance at cleanup. So:
+
+          * each row's reap is isolated -- a failure lands in THAT row's error
+            column and the loop moves on;
+          * ``worker_pgid`` is cleared only once a reap has verified nothing of
+            ours is still in the group, which makes the column the record of
+            what is still owed;
+          * the recovery SELECT therefore also picks up 'unknown' rows that
+            still carry a pgid, so an unfinished reap is retried on the next
+            boot instead of being abandoned.
         """
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
-                rows = [
+                foreign = [
                     dict(row)
                     for row in self._conn.execute(
                         "SELECT * FROM jobs WHERE status IN (?, ?) "
@@ -140,12 +165,21 @@ class JobStore:
                         (*LIVE_STATUSES, self.boot_id),
                     )
                 ]
-                if rows:
+                if foreign:
                     self._conn.executemany(
                         "UPDATE jobs SET status='unknown', error=?, "
                         "finished_at=? WHERE id=?",
-                        [(RESTART_ERROR, _now(), row["id"]) for row in rows],
+                        [(RESTART_ERROR, _now(), row["id"]) for row in foreign],
                     )
+                # Read AFTER the flip, so it covers this boot's fresh orphans
+                # and any row a previous boot never finished reaping.
+                owed = {
+                    str(row["id"]): dict(row)
+                    for row in self._conn.execute(
+                        "SELECT * FROM jobs WHERE status='unknown' "
+                        "AND worker_pgid IS NOT NULL"
+                    )
+                }
                 self._conn.execute("DELETE FROM engine_instance")
                 self._conn.execute(
                     "INSERT INTO engine_instance (id, boot_id, pid, started_at)"
@@ -157,11 +191,21 @@ class JobStore:
                 self._conn.execute("ROLLBACK")
                 raise
 
+        fresh_ids = {str(row["id"]) for row in foreign}
+        targets = [owed.get(str(row["id"]), row) for row in foreign]
+        targets += [row for job_id, row in owed.items() if job_id not in fresh_ids]
+
         recovered: list[dict[str, Any]] = []
-        for row in rows:
-            outcome = self._reap_row(row)
+        for row in targets:
+            job_id = str(row["id"])
+            prefix = RESTART_ERROR if job_id in fresh_ids else REAP_RETRY_ERROR
+            result = self._reap_row_safely(row)
             recovered.append(
-                self._append_error(row["id"], f"{RESTART_ERROR}. {outcome}")
+                self._record_reap(
+                    job_id,
+                    f"{prefix}. {result.outcome}",
+                    clear_pgid=result.group_cleared,
+                )
             )
         return recovered
 
@@ -450,28 +494,68 @@ class JobStore:
             (self.owner_pid, self.boot_id, job_id),
         )
 
-    def _reap_row(self, row: dict[str, Any]) -> str:
+    def _reap_row_safely(self, row: dict[str, Any]) -> ReapResult:
+        """One row's reap, isolated so it cannot strand the rows behind it.
+
+        Boot recovery is the ONLY chance these rows get. An exception escaping
+        here used to abort the loop, leaving every later row's worker alive
+        with its status already committed as 'unknown' -- unreaped, and never
+        looked at again. The catch is deliberately broad because the failure
+        modes are open-ended (killpg answering PermissionError for a macOS
+        zombie group, psutil raising ValueError for a non-positive pid, and
+        whatever the next OS quirk turns out to be). Nothing is swallowed: the
+        error is logged AND written to the row, and group_cleared=False keeps
+        the row queued for another attempt on the next boot.
+        """
+        try:
+            return self._reap_row(row)
+        except Exception as exc:
+            log.exception("reap failed for job %s", row.get("id"))
+            return ReapResult(
+                f"reap raised {type(exc).__name__}: {exc}. The worker group is "
+                "still unaccounted for and will be retried on the next boot",
+                group_cleared=False,
+            )
+
+    def _reap_row(self, row: dict[str, Any]) -> ReapResult:
         if row.get("worker_pgid") is None:
-            return "no worker pgid recorded; nothing to reap"
+            return ReapResult(
+                "no worker pgid recorded; nothing to reap", group_cleared=True
+            )
         argv_raw = row.get("worker_argv")
         started_at = row.get("worker_started_at")
         if not argv_raw or started_at is None:
-            return (
+            return ReapResult(
                 "worker identity incomplete (argv or start time missing); "
-                "refused to kill an unverifiable pgid"
+                "refused to kill an unverifiable pgid",
+                group_cleared=False,
             )
         identity = WorkerIdentity(
             pgid=int(row["worker_pgid"]),
             argv=tuple(json.loads(argv_raw)),
             started_at=float(started_at),
         )
-        return reap(identity)
+        return reap_group(identity)
 
-    def _append_error(self, job_id: str, error: str) -> dict[str, Any]:
+    def _record_reap(
+        self, job_id: str, error: str, *, clear_pgid: bool
+    ) -> dict[str, Any]:
+        """Write the reap outcome, and retire the pgid only if it is settled.
+
+        worker_pgid doubles as the "this group still owes a reap" flag, so it
+        survives anything short of a verified clear. The pgid itself is not
+        lost -- the outcome sentence in ``error`` names it.
+        """
         with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET error=? WHERE id=?", (error, job_id)
-            )
+            if clear_pgid:
+                self._conn.execute(
+                    "UPDATE jobs SET error=?, worker_pgid=NULL WHERE id=?",
+                    (error, job_id),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE jobs SET error=? WHERE id=?", (error, job_id)
+                )
         return self._emit(job_id)
 
     def _read(self, job_id: str) -> dict[str, Any]:
@@ -516,6 +600,7 @@ __all__ = [
     "FINISH_SOURCES",
     "JOBS_TOPIC",
     "LIVE_STATUSES",
+    "REAP_RETRY_ERROR",
     "RESTART_ERROR",
     "STATUSES",
     "TERMINAL_STATUSES",

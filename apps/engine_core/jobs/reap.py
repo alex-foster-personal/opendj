@@ -34,6 +34,10 @@ CREATE_TIME_TOLERANCE_S: float = 2.0
 
 _POLL_S: float = 0.02
 
+# The live-member walk enumerates every process on the box, so it runs on a
+# far slower beat than the one-syscall group check it backs up.
+_LIVE_CHECK_EVERY_S: float = 0.25
+
 
 class WorkerCleanupError(RuntimeError):
     """The process group could not be confirmed dead."""
@@ -74,7 +78,12 @@ def _require_posix() -> None:
 
 
 def process_group_exists(pgid: int) -> bool:
-    """Adapted from apps/vocals/cli.py::_posix_process_group_exists."""
+    """Adapted from apps/vocals/cli.py::_posix_process_group_exists.
+
+    Note what this does NOT mean: a group whose every member is a zombie still
+    answers yes, because the pgid stays allocated until the parent waits. Use
+    ``group_has_live_member`` for "is anything still running in there".
+    """
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
@@ -82,6 +91,42 @@ def process_group_exists(pgid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def group_members(pgid: int) -> tuple[psutil.Process, ...]:
+    """Every live process whose process group is ``pgid``, leader included.
+
+    psutil has no portable pgid attribute, so the group is resolved with
+    ``os.getpgid`` per pid. Processes that exit mid-walk are skipped rather
+    than raising: the walk is a snapshot of a moving target by definition.
+    """
+    found: list[psutil.Process] = []
+    for proc in psutil.process_iter():
+        try:
+            if os.getpgid(proc.pid) == pgid:
+                found.append(proc)
+        except (ProcessLookupError, PermissionError, OSError, psutil.Error):
+            continue
+    return tuple(found)
+
+
+def group_has_live_member(pgid: int) -> bool:
+    """Is anything in the group still RUNNING (as opposed to merely present)?
+
+    A zombie is a dead process whose parent has not waited on it yet. It keeps
+    the pgid allocated and, on macOS, makes ``killpg`` answer EPERM -- which is
+    how an uncaught PermissionError used to escape a reap. Nothing of it is
+    still executing, so for cleanup purposes the group is dead.
+    """
+    for proc in group_members(pgid):
+        try:
+            if proc.status() != psutil.STATUS_ZOMBIE:
+                return True
+        except psutil.NoSuchProcess:
+            continue
+        except psutil.AccessDenied:
+            return True  # not inspectable, so it must be assumed alive
+    return False
 
 
 def identity_mismatch(identity: WorkerIdentity) -> str | None:
@@ -126,16 +171,14 @@ def terminate_group(
     unverifiable kill is worse than a loud one.
     """
     _require_posix()
-    try:
-        os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError:
-        return f"process group {pgid} was already gone"
+    already = _signal_group(pgid, signal.SIGTERM)
+    if already is not None:
+        return already
     if _wait_gone(pgid, grace_s):
         return f"process group {pgid} exited on SIGTERM"
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except ProcessLookupError:
-        return f"process group {pgid} exited during the SIGTERM grace"
+    already = _signal_group(pgid, signal.SIGKILL)
+    if already is not None:
+        return already
     if not _wait_gone(pgid, grace_s):
         raise WorkerCleanupError(
             f"process group {pgid} survived SIGKILL after {grace_s:.0f}s"
@@ -143,22 +186,88 @@ def terminate_group(
     return f"process group {pgid} killed after a {grace_s:.0f}s SIGTERM grace"
 
 
-def reap(identity: WorkerIdentity) -> str:
-    """Verify then kill. Returns a sentence for the jobs row's error column."""
+def _signal_group(pgid: int, sig: int) -> str | None:
+    """Send ``sig``, or return the sentence explaining why there was no need.
+
+    PermissionError is not an error path when the group holds only zombies:
+    macOS refuses signals to a group with no live member, which is the very
+    condition that means the work is already done. A group that DOES have live
+    members and still refuses the signal is somebody else's, and that is a
+    loud failure rather than a silent skip.
+    """
+    try:
+        os.killpg(pgid, sig)
+    except ProcessLookupError:
+        return f"process group {pgid} was already gone"
+    except PermissionError as exc:
+        if not group_has_live_member(pgid):
+            return (
+                f"process group {pgid} holds only dead (zombie) members; "
+                "there was nothing left to kill"
+            )
+        raise WorkerCleanupError(
+            f"not permitted to signal process group {pgid} ({exc}); it has "
+            "live members this engine does not own"
+        ) from exc
+    return None
+
+
+@dataclass(frozen=True)
+class ReapResult:
+    """What a reap attempt achieved, in a form a caller can BRANCH on.
+
+    ``outcome`` is the sentence for the jobs row's error column.
+    ``group_cleared`` says whether anything of OURS can still be running in
+    that group. Boot recovery uses it to decide whether the row is done with
+    or has to be tried again on the next boot, which is a decision that must
+    never rest on substring-matching a human-readable sentence.
+    """
+
+    outcome: str
+    group_cleared: bool
+
+
+def reap_group(identity: WorkerIdentity) -> ReapResult:
+    """Verify then kill, reporting whether the group is provably clear."""
     mismatch = identity_mismatch(identity)
     if mismatch is not None:
-        return f"reap skipped: {mismatch}"
+        # Verification PROVED the pgid is not our worker, so there is nothing
+        # of ours left to kill and retrying on every future boot would just
+        # re-refuse forever.
+        return ReapResult(f"reap skipped: {mismatch}", group_cleared=True)
     try:
-        return f"reap: {terminate_group(identity.pgid)}"
+        outcome = terminate_group(identity.pgid)
     except WorkerCleanupError as exc:
-        return f"reap FAILED: {exc}"
+        return ReapResult(f"reap FAILED: {exc}", group_cleared=False)
+    return ReapResult(
+        f"reap: {outcome}",
+        group_cleared=not group_has_live_member(identity.pgid),
+    )
+
+
+def reap(identity: WorkerIdentity) -> str:
+    """Verify then kill. Returns a sentence for the jobs row's error column."""
+    return reap_group(identity).outcome
 
 
 def _wait_gone(pgid: int, timeout_s: float) -> bool:
+    """True once no LIVE process remains in the group.
+
+    Two cadences on purpose: ``process_group_exists`` is one syscall and runs
+    every poll, while the live-member walk enumerates every process on the box
+    and runs on a much slower beat. Without the walk a zombie group never looks
+    gone, so the ladder burned the full grace and then took EPERM on SIGKILL.
+    """
     deadline = time.monotonic() + timeout_s
+    next_live_check = 0.0
     while process_group_exists(pgid):
-        if time.monotonic() >= deadline:
-            return False
+        now = time.monotonic()
+        if now >= next_live_check:
+            if not group_has_live_member(pgid):
+                return True
+            next_live_check = now + _LIVE_CHECK_EVERY_S
+        if now >= deadline:
+            return not group_has_live_member(pgid)
         time.sleep(_POLL_S)
     return True
 
@@ -166,10 +275,14 @@ def _wait_gone(pgid: int, timeout_s: float) -> bool:
 __all__ = [
     "CREATE_TIME_TOLERANCE_S",
     "WORKER_TERMINATE_GRACE_S",
+    "ReapResult",
     "WorkerCleanupError",
     "WorkerIdentity",
+    "group_has_live_member",
+    "group_members",
     "identity_mismatch",
     "process_group_exists",
     "reap",
+    "reap_group",
     "terminate_group",
 ]
