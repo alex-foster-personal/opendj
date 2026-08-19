@@ -118,6 +118,40 @@ tracked separately and is not this shell's work.
 
 Non-loopback or malformed values are refused, never silently replaced.
 
+## Real-shell e2e (tier 2)
+
+`just real-shell-e2e` drives THIS window's actual WKWebView:
+`apps/desktop/wdio.conf.ts` plus `tests/real-shell-smoke.e2e.ts`. It boots its
+own engine on `:8691` over a generated fixture library, so it never touches a
+real data dir (the engine lock is singleton, so sharing one is not an option
+anyway).
+
+It is deliberately small, because the sibling tier already covers the fault
+class. `just webkit-deckload-e2e` runs Playwright's webkit -- the same
+WKWebView core -- against the production build served by the engine, which is
+what caught the worklet defect that shipped broken. This tier covers only what
+that structurally cannot see: the Rust `initialization_script` injecting
+`OPENDJ_ENGINE_ORIGIN`, the bootstrap page, and the navigation off
+`tauri://localhost`.
+
+**Driver.** macOS has no WKWebView WebDriver, so `tauri-driver` is Windows and
+Linux only. `@wdio/tauri-service` with `driverProvider: 'embedded'` compiles a
+W3C WebDriver server into the binary and drives the webview through a
+`WKScriptMessageHandler`. `tauri-plugin-playwright` was evaluated and rejected:
+it returns every command result through `__TAURI_INTERNALS__.invoke`, and Tauri
+v2 classifies this shell's engine origin as `Origin::Remote` and denies it IPC,
+so it would time out on every command the moment `setup.js` navigates. Using it
+would mean granting the http origin permission to invoke Tauri commands, which
+is the thin-shell rule above inverted.
+
+**It cannot reach a dmg.** `tauri-plugin-wdio-webdriver` is declared under
+`[target.'cfg(debug_assertions)'.dependencies]`, so a release build cannot
+compile it in. Verified on the artifacts rather than assumed: a release binary
+contains 0 occurrences of `wdioEvalResult` (debug: 3), 0 of
+`tauri-plugin-wdio-webdriver` (debug: 27), 0 of `TAURI_WEBDRIVER_PORT`
+(debug: 1) and 0 of `/session` (debug: 4). The one surviving `wdio` string is
+the plugin name inside Tauri's ACL blob, with no backing code.
+
 ## Build
 
 ```sh
