@@ -58,20 +58,32 @@ export function resolveAllowedHosts(shellEnv: Environment, rootEnv: Environment)
 	return parseAllowedHosts(shellEnv.MUSIC_DJ_ALLOWED_HOSTS ?? rootEnv.MUSIC_DJ_ALLOWED_HOSTS);
 }
 
+function runPortConfig(repositoryRoot: string, commandArgs: string[]): string {
+	const moduleArgs = ['run', '--no-sync', 'python', '-m', 'apps.webui.port_config'];
+	return execFileSync('uv', [...moduleArgs, ...commandArgs, '--json'], {
+		cwd: repositoryRoot,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'inherit']
+	});
+}
+
 export function claimAndCheckWebuiDevConfig(
 	repositoryRoot: string,
 	service: Service
 ): WebuiDevConfig {
-	const moduleArgs = ['run', '--no-sync', 'python', '-m', 'apps.webui.port_config'];
-	const runCommand = (commandArgs: string[]): string =>
-		execFileSync('uv', [...moduleArgs, ...commandArgs, '--json'], {
-			cwd: repositoryRoot,
-			encoding: 'utf8',
-			stdio: ['ignore', 'pipe', 'inherit']
-		});
+	parseWebuiDevConfigPayload(runPortConfig(repositoryRoot, ['claim']));
+	return parseWebuiDevConfigPayload(runPortConfig(repositoryRoot, ['check', '--service', service]));
+}
 
-	parseWebuiDevConfigPayload(runCommand(['claim']));
-	return parseWebuiDevConfigPayload(runCommand(['check', '--service', service]));
+/**
+ * Reserve this worktree's ports and read them back, WITHOUT the in-use check.
+ *
+ * For the one caller that must not assert the port is free: a Playwright
+ * worker process, which re-loads the test config after the runner's own
+ * webServer has already bound it. Reserving is idempotent; asserting is not.
+ */
+export function claimWebuiDevConfig(repositoryRoot: string): WebuiDevConfig {
+	return parseWebuiDevConfigPayload(runPortConfig(repositoryRoot, ['claim']));
 }
 
 function requirePortValue(value: unknown, name: string): number {
