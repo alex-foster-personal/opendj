@@ -17,6 +17,8 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -207,6 +209,33 @@ def test_cli_names_the_labelled_artifact() -> None:
         "Open DJ (B)_0.1.0_aarch64.dmg",
     )
     assert name == "OpenDJ-B-0.1.0-aarch64.dmg"
+
+
+def test_notary_profile_without_a_signing_identity_is_refused() -> None:
+    """Notarizing an unsigned app is impossible, so refuse before building.
+
+    The guard runs ahead of the cargo build, so this costs about a second.
+    """
+    just = shutil.which("just")
+    if just is None:
+        pytest.skip("just is not installed")
+    result = subprocess.run(
+        [just, "dmg"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            **os.environ,
+            "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE": "some-profile",
+            "MDT_MACOS_SIGNING_IDENTITY": "",
+        },
+    )
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE is set" in combined
+    # It must have refused BEFORE spending a build.
+    assert "Compiling" not in combined
 
 
 def test_cli_rejects_a_bad_label_loudly() -> None:
