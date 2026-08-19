@@ -8,11 +8,13 @@
  * They are the cheap half of the split precisely because they can be checked
  * without an AudioContext.
  *
- * NOT YET HERE (see the T4 report): `projectedLoopAwareTransportPosition` and
- * `naturalEndNeedsRevisionedStop`, both R23. The first calls
- * `_positionForSegment`, which lives in transport/clock and does not move until
- * S6; the second needs the `PresentedTransportObservation` type, which does not
- * move until S4. They join this module then.
+ * This module is the player's pure leaf, so anything that several modules need
+ * and that has no runtime access lands here rather than in the module the T4
+ * table names. `_positionForSegment` (4 callers in 3 modules) and
+ * `pausedSeekClock` (presentation plus commands) arrived that way; see the T4
+ * report. Still outstanding: `naturalEndNeedsRevisionedStop`, which needs the
+ * `PresentedTransportObservation` type and joins once presentation is imported
+ * without a cycle.
  */
 
 import { SYNC_SCHEDULE_SAFETY_S } from '$lib/player/constants';
@@ -254,4 +256,17 @@ export function projectedLoopAwareTransportPosition(input: {
 		input.projectAt,
 		input.durationSec
 	);
+}
+
+export function pausedSeekClock(
+	positionMs: number,
+	durationMs: number
+): { position_ms: number; start_offset_sec: number } {
+	if (!Number.isFinite(durationMs) || durationMs <= 0) {
+		throw new RangeError(`duration must be finite and positive, got ${durationMs}`);
+	}
+	if (!Number.isFinite(positionMs) || positionMs < 0 || positionMs > durationMs) {
+		throw new RangeError(`position must be within track duration 0..${durationMs}, got ${positionMs}`);
+	}
+	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
 }
