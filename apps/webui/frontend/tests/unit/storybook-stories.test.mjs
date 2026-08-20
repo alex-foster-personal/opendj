@@ -16,9 +16,11 @@ import { test } from 'node:test';
 // test is what stops the next person redoing that work, or skipping it.
 //
 // Regression lines:
-// - if a storied component imports a live binding from a runes module, either
-//   an accessor function or a directly exported $state store, then Storybook
-//   is rendering global state and the scope rule has gone
+// - if a storied component imports a live binding from a runes module, be it
+//   an accessor function, a directly exported $state store, or a facade whose
+//   getters read one, then Storybook renders global state and the rule is gone
+// - if a prop-only wrapper renders a stateful child then the same is true one
+//   layer down, so the checks run over the whole render subtree
 // - if a storied component grows a setInterval or a fetch then the story is
 //   showing something the args do not control
 // - if a component's instance script is skipped because a <script module>
@@ -97,19 +99,82 @@ function libImports(script) {
 }
 
 /**
+ * The whole initializer of a top-level declaration, brace-matched from the
+ * `=` to its closing bracket. Reading only the declaration LINE is what makes
+ * a facade look inert: `export const jobProgress = {` says nothing, and the
+ * getters three lines down are the entire point.
+ */
+function initializerOf(moduleSource, binding) {
+	const start = new RegExp(`^export const ${binding}\\b[^=\\n]*=`, 'm').exec(moduleSource);
+	if (start === null) return null;
+	let depth = 0;
+	let i = start.index + start[0].length;
+	for (; i < moduleSource.length; i++) {
+		const ch = moduleSource[i];
+		if (ch === '{' || ch === '[' || ch === '(') depth++;
+		else if (ch === '}' || ch === ']' || ch === ')') {
+			depth--;
+			if (depth === 0) return moduleSource.slice(start.index, i + 1);
+		} else if (ch === ';' && depth === 0) break;
+		else if (ch === '\n' && depth === 0 && i > start.index + start[0].length) break;
+	}
+	return moduleSource.slice(start.index, i);
+}
+
+/**
  * A `*.svelte.ts` module is a runes module: it may hold module-level $state,
- * and that state reaches a component either through an exported FUNCTION
- * acting as a read accessor (audioHealthHz) or, in a dozen places here,
- * through a directly exported store (`export const toasts = $state([])`).
- * A story may import this module's frozen tables and its types, and nothing
- * else. So `export const` is necessary but NOT sufficient: the initializer
- * has to be inert too. That pair is exactly the line between AnalysisDots
- * (pulls the ANALYSIS_* tables, still pure props) and PerfMeters.
+ * and that state reaches a component three ways. As an exported ACCESSOR
+ * FUNCTION (audioHealthHz). As a directly exported STORE, of which this
+ * frontend has ten or more (`export const toasts = $state([])`). Or as a
+ * FACADE OBJECT whose getters hand back module state, which is what
+ * `jobProgress` does. A story may import this module's frozen tables and its
+ * types and nothing else, so `export const` is necessary but nowhere near
+ * sufficient: the whole initializer has to be inert. That is the line between
+ * AnalysisDots (pulls the flat ANALYSIS_* tables, still pure props) and both
+ * PerfMeters and anything reaching for jobProgress.
  */
 function isInertConstExport(moduleSource, binding) {
-	const declaration = new RegExp(`^export const ${binding}\\b[^\\n]*`, 'm').exec(moduleSource);
-	if (declaration === null) return false;
-	return !/\$(?:state|derived)\b/.test(declaration[0]);
+	const initializer = initializerOf(moduleSource, binding);
+	if (initializer === null) return false;
+	if (/\$(?:state|derived)\b/.test(initializer)) return false;
+	// A getter on a module-scope object is the facade shape: it exists to read
+	// something the object does not itself own.
+	return !/\bget\s+\w+\s*\(\s*\)/.test(initializer);
+}
+
+/**
+ * Child components a Svelte file renders, resolved to real paths. A story of
+ * a prop-only wrapper is still a story of everything the wrapper draws, so
+ * the presentational rule has to hold over the whole subtree or it is
+ * bypassed by adding one wrapper layer.
+ */
+function childComponents(script, componentPath) {
+	const dir = componentPath.slice(0, componentPath.lastIndexOf('/') + 1);
+	const out = [];
+	for (const match of script.matchAll(/from\s+'([^']+\.svelte)'/g)) {
+		const spec = match[1];
+		const resolved = spec.startsWith('$lib/')
+			? join(SRC, 'lib', spec.slice('$lib/'.length))
+			: join(dir, spec);
+		if (existsSync(resolved)) out.push(resolved);
+	}
+	return out;
+}
+
+/** The storied component plus everything it transitively renders, cycle-safe. */
+function renderClosure(root) {
+	const seen = new Set();
+	const queue = [root];
+	const out = [];
+	while (queue.length > 0) {
+		const path = queue.shift();
+		if (seen.has(path)) continue;
+		seen.add(path);
+		const script = scriptsOf(read(path));
+		out.push({ path, script });
+		queue.push(...childComponents(script, path));
+	}
+	return out;
 }
 
 const STORY_FILES = filesUnder(SRC, '.stories.ts');
@@ -138,27 +203,30 @@ test('there are stories, and each one sits beside the component it documents', (
 
 test('every storied component is presentational: no timer, no fetch, no global store', () => {
 	for (const story of STORY_FILES) {
-		const component = story.replace(/\.stories\.ts$/, '.svelte');
-		const script = scriptsOf(read(component));
+		const root = story.replace(/\.stories\.ts$/, '.svelte');
+		for (const { path, script } of renderClosure(root)) {
+			// Named so a failure deep in the tree still says which story owns it.
+			const via = path === root ? rel(path) : `${rel(root)} -> ${rel(path)}`;
 
-		assert.ok(
-			!script.includes('setInterval('),
-			`${rel(component)} runs a setInterval, so its story would animate on its own rather than from args (this is the PerfMeters shape)`
-		);
-		assert.ok(
-			!/\bfetch\(/.test(script),
-			`${rel(component)} fetches, and the house rule forbids mocking it - extract the presentational part and story that instead`
-		);
+			assert.ok(
+				!script.includes('setInterval('),
+				`${via} runs a setInterval, so the story would animate on its own rather than from args (this is the PerfMeters shape)`
+			);
+			assert.ok(
+				!/\bfetch\(/.test(script),
+				`${via} fetches, and the house rule forbids mocking it - extract the presentational part and story that instead`
+			);
 
-		for (const { module, bindings } of libImports(script)) {
-			const runes = join(SRC, 'lib', `${module}.ts`);
-			if (!module.endsWith('.svelte') || !existsSync(runes)) continue;
-			const moduleSource = read(runes);
-			for (const binding of bindings) {
-				assert.ok(
-					isInertConstExport(moduleSource, binding),
-					`${rel(component)} imports ${binding} from the runes module $lib/${module}, and ${binding} is not an inert 'export const'. A runes module surfaces its state either as an exported accessor function or as a directly exported $state store, so a story of this component would render global state rather than its args.`
-				);
+			for (const { module, bindings } of libImports(script)) {
+				const runes = join(SRC, 'lib', `${module}.ts`);
+				if (!module.endsWith('.svelte') || !existsSync(runes)) continue;
+				const moduleSource = read(runes);
+				for (const binding of bindings) {
+					assert.ok(
+						isInertConstExport(moduleSource, binding),
+						`${via} imports ${binding} from the runes module $lib/${module}, and ${binding} is not an inert 'export const'. A runes module surfaces its state as an accessor function, a directly exported $state store, or a facade object with getters, so the story would render global state rather than its args.`
+					);
+				}
 			}
 		}
 	}
