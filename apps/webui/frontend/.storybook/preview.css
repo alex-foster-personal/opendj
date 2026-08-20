@@ -1,0 +1,8 @@
+/* Story canvas chrome. The palette vars themselves come from theme.css and
+ * are NOT redeclared here - a second copy would drift from the real app. */
+body.perf-root {
+	background: var(--rb-bg);
+	color: var(--rb-text);
+	font-family: var(--rb-font);
+	padding: 12px;
+}
