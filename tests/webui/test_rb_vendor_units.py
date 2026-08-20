@@ -287,15 +287,20 @@ def test_bulk_file_exists_treats_dataless_stub_as_missing(
     import os
     import sys
 
+    from apps.shared import fs_residency
     from apps.shared import platform_paths as pp
+
+    # Darwin first: st_blocks is a POSIX-only stat field that Windows does
+    # not carry at all, so reading it to decide whether to skip crashed the
+    # very platforms the skip existed for.
+    if sys.platform != "darwin":
+        pytest.skip("dataless gate is Darwin-scoped")
 
     stub = tmp_path / "stub.mp3"
     with open(stub, "wb") as handle:
         handle.truncate(2_000_000)
-    if os.stat(stub).st_blocks != 0:
+    if not fs_residency.is_dataless_stub(os.stat(stub)):
         pytest.skip("filesystem does not support sparse files; cannot mimic a placeholder")
-    if sys.platform != "darwin":
-        pytest.skip("dataless gate is Darwin-scoped")
 
     # Bypass path-map resolution: treat the absolute path as already local.
     monkeypatch.setattr(
