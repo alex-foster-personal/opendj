@@ -146,7 +146,7 @@ def parse_map_entry(raw: str) -> tuple[str, str]:
     return from_prefix, to_prefix
 
 
-def _relative_to_prefix(source: Path, prefix: str) -> Optional[Path]:
+def _relative_to_prefix(source: Path, prefix: str) -> Path | None:
     """``source`` under ``prefix``, or ``None`` when it is not under it.
 
     Compared as paths rather than strings: a Windows prefix carries

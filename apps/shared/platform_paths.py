@@ -268,12 +268,11 @@ def resolve_local(path: Path) -> Path:
     ``/`` never sees it. Rooted-but-drive-less IS the condition -- that is
     exactly the path whose location depends on the current drive.
     """
-    if IS_WINDOWS and path.root and not path.drive:
-        return path
-    elif not IS_WINDOWS and _is_foreign_absolute(str(path)):
-        return path
+    if IS_WINDOWS:
+        addressable = not (path.root and not path.drive)
     else:
-        return path.resolve(strict=False)
+        addressable = not _is_foreign_absolute(str(path))
+    return path.resolve(strict=False) if addressable else path
 
 
 def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]:
