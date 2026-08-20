@@ -4066,6 +4066,16 @@ export interface components {
              */
             total: number;
             /**
+             * Transport
+             * @description how this build reaches a GPU: relay or direct
+             */
+            transport: string;
+            /**
+             * Transport Refusal
+             * @description why a run cannot start on this build; null when it can
+             */
+            transport_refusal?: string | null;
+            /**
              * Unavailable
              * @description library row exists, its file does not
              */

@@ -5831,6 +5831,23 @@
             "title": "Total",
             "type": "integer"
           },
+          "transport": {
+            "description": "how this build reaches a GPU: relay or direct",
+            "title": "Transport",
+            "type": "string"
+          },
+          "transport_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why a run cannot start on this build; null when it can",
+            "title": "Transport Refusal"
+          },
           "unavailable": {
             "description": "library row exists, its file does not",
             "title": "Unavailable",
@@ -5845,7 +5862,8 @@
           "ready",
           "unavailable",
           "estimate_seconds",
-          "estimate_usd"
+          "estimate_usd",
+          "transport"
         ],
         "title": "StemsPlanOut",
         "type": "object"

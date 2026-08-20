@@ -77,6 +77,55 @@ class StemsPlanOut(BaseModel):
         description="wall-clock floor for the pending batch, GPU side only"
     )
     estimate_usd: float = Field(description="GPU cost of the pending batch")
+    # CAN THIS BUILD ACTUALLY RUN IT. The counts above describe work that
+    # exists; they say nothing about whether this machine can reach a GPU.
+    # Without this the prompt offers a button, the job is accepted, and the
+    # worker dies on a missing credential AFTER the wizard has shown "Done".
+    transport: str = Field(description="how this build reaches a GPU: relay or direct")
+    transport_refusal: str | None = Field(
+        default=None,
+        description="why a run cannot start on this build; null when it can",
+    )
+
+
+def stems_transport_state() -> tuple[str, str | None]:
+    """The build's GPU transport, and why it cannot be used (or None).
+
+    Asks the transport's OWN preflight rather than re-deriving the rules here,
+    so the answer the prompt shows and the answer the worker hits are the same
+    code. A build with no relay base and no identity token cannot separate
+    anything, and saying so up front is the difference between an honest inert
+    step and a job that is accepted, queued, and then dies on a credential the
+    tester was never given.
+
+    Imported locally: the relay client pulls httpx, and the plan endpoint is on
+    the engine boot path.
+    """
+    from apps.stems.job import (
+        DEFAULT_TRANSPORT,
+        StemsJobPayloadError,
+        resolve_transport,
+    )
+
+    try:
+        transport = resolve_transport()
+    except StemsJobPayloadError as exc:
+        # A misconfigured transport env is itself a refusal, and naming it is
+        # more useful than pretending the default applies.
+        return DEFAULT_TRANSPORT, str(exc)
+    if transport != "relay":
+        # 'direct' is opt-in through MDT_STEMS_TRANSPORT and means the operator
+        # deliberately supplied a Modal credential on this machine. The worker
+        # verifies it for real; there is nothing to preflight from here.
+        return transport, None
+    from apps.stems.relay.client import RelayUnavailable, identity_token, relay_base_url
+
+    try:
+        relay_base_url()
+        identity_token()
+    except RelayUnavailable as exc:
+        return transport, str(exc)
+    return transport, None
 
 
 def _data_dir(request: Request) -> Path:
@@ -117,6 +166,11 @@ def get_stems_plan(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
 
+    # The counts are reported even when the transport is refused: "217 tracks
+    # would need stems, and this build cannot run them" is a more useful truth
+    # than hiding the work behind the refusal.
+    transport, transport_refusal = stems_transport_state()
+
     return {
         "tier": tier,
         "tier_name": get_tier(tier).name,
@@ -126,7 +180,15 @@ def get_stems_plan(
         "unavailable": len(buckets.unavailable),
         "estimate_seconds": round(seconds, 1),
         "estimate_usd": round(usd, 4),
+        "transport": transport,
+        "transport_refusal": transport_refusal,
     }
 
 
-__all__ = ["MODAL_TIER_KEYS", "StemsPlanOut", "get_stems_plan", "router"]
+__all__ = [
+    "MODAL_TIER_KEYS",
+    "StemsPlanOut",
+    "get_stems_plan",
+    "router",
+    "stems_transport_state",
+]

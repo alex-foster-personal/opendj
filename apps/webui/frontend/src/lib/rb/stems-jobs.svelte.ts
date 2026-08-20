@@ -39,6 +39,13 @@ export interface StemsPlan {
 	unavailable: number;
 	estimate_seconds: number;
 	estimate_usd: number;
+	/** How this build reaches a GPU: 'relay' or 'direct'. */
+	transport: string;
+	/** Why a run cannot start on this build, or null when it can. The counts
+	 * above describe work that exists; this says whether the machine can do it.
+	 * Without it the prompt offers a button, POST /api/v1/jobs accepts the job,
+	 * and the worker dies on a missing credential after the wizard said Done. */
+	transport_refusal: string | null;
 }
 
 /** Aggregate state of every stems job the store knows about. */

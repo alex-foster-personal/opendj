@@ -37,6 +37,11 @@
 
 	const { tier = DEFAULT_STEMS_TIER, onenqueued, onskip }: Props = $props();
 
+	/** A plan fetch that never settles must become a stated failure, not a
+	 * sentence that sits on screen forever. The setup shell states the same
+	 * rule for its probe screen: no blank window, no endless spinner. */
+	const PLAN_TIMEOUT_MS = 20_000;
+
 	let plan = $state<StemsPlan | null>(null);
 	let loadError = $state<string | null>(null);
 	let enqueueError = $state<string | null>(null);
@@ -44,10 +49,25 @@
 	let enqueuedJobId = $state<string | null>(null);
 
 	const refusal = $derived(jobsRefusal());
+	/**
+	 * Why separation cannot be started, or null when it can.
+	 *
+	 * Two independent reasons, and the daemon one comes first because a legacy
+	 * boot has no jobs API to enqueue into at all. The second is the build's
+	 * GPU transport, reported by the plan endpoint from the relay's own
+	 * preflight - on a build with no relay base and no identity token, this is
+	 * the honest "stems are not available in this build".
+	 */
+	const blocked = $derived(refusal ?? plan?.transport_refusal ?? null);
 
 	$effect(() => {
 		if (refusal !== null) return;
 		let cancelled = false;
+		const timer = setTimeout(() => {
+			if (!cancelled && plan === null && loadError === null) {
+				loadError = `GET /api/v1/stems/plan did not answer within ${PLAN_TIMEOUT_MS / 1000}s`;
+			}
+		}, PLAN_TIMEOUT_MS);
 		void (async () => {
 			try {
 				const next = await fetchStemsPlan(tier);
@@ -61,10 +81,19 @@
 		})();
 		return () => {
 			cancelled = true;
+			clearTimeout(timer);
 		};
 	});
 
 	async function accept(): Promise<void> {
+		// The button that reaches here is disabled whenever `blocked` is set;
+		// this refuses rather than trusting that, because the cost of being
+		// wrong is a queued job that dies on a credential the tester has not
+		// got, reported as success.
+		if (blocked !== null) {
+			enqueueError = `refusing to start separation: ${blocked}`;
+			return;
+		}
 		busy = true;
 		enqueueError = null;
 		try {
@@ -83,13 +112,36 @@
 	<h3>Separate stems?</h3>
 
 	{#if refusal !== null}
-		<p class="stems-note" title={refusal}>{refusal}</p>
+		<p class="stems-error" role="alert" title={refusal}>{refusal}</p>
 	{:else if loadError !== null}
-		<p class="stems-error" title={loadError}>
+		<p class="stems-error" role="alert" title={loadError}>
 			Could not work out what this would cost, so nothing is being offered yet: {loadError}
 		</p>
 	{:else if plan === null}
-		<p class="stems-note">Working out how many tracks need stems...</p>
+		<p class="stems-note" role="status">Working out how many tracks need stems...</p>
+	{:else if plan.transport_refusal !== null}
+		<!--
+			STEMS ARE NOT AVAILABLE IN THIS BUILD. The counts are still shown,
+			because "217 tracks would need stems, and this build cannot run
+			them" is more use than hiding the work behind the refusal. The
+			button is rendered inert rather than removed so the step reads as a
+			real capability that is switched off, not as a missing feature -
+			and it is disabled, so nothing can enqueue a job the worker would
+			fail on after the wizard already said Done.
+		-->
+		<p class="stems-error" role="alert" title={plan.transport_refusal}>
+			Stems are not available in this build: {plan.transport_refusal}
+		</p>
+		<p class="stems-note" title={stemsPlanSummary(plan)}>
+			{plan.pending} of {plan.total} tracks would need separating. Nothing is queued and
+			nothing is charged.
+		</p>
+		<div class="stems-actions">
+			<button class="stems-go rb-inert" disabled title={plan.transport_refusal}>
+				Separate {plan.pending} tracks
+			</button>
+			<button class="stems-skip" onclick={() => onskip?.()}>Continue without stems</button>
+		</div>
 	{:else if enqueuedJobId !== null}
 		<p class="stems-note" title={`Engine job ${enqueuedJobId}`}>
 			Started. Tracks gain their stems as each one finishes; the bar at the top of the
@@ -149,7 +201,12 @@
 	.stems-error {
 		margin: 0;
 		font-size: 11px;
-		color: var(--rb-danger, #d9534f);
+		/* --rb-danger was never defined anywhere, so every message in this
+		   class silently rendered in the hardcoded fallback rather than the
+		   palette. --rb-red is the palette's real danger colour (theme.css),
+		   and this component mounts inside .perf-root where it resolves. */
+		color: var(--rb-red);
+		font-weight: 560;
 	}
 	.stems-actions {
 		display: flex;
