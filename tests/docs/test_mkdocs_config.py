@@ -118,11 +118,10 @@ def test_docs_workflow_present():
 def test_ci_and_docs_workflows_accept_all_normal_pull_request_bases():
     """Normal CI gates must accept every active integration PR base."""
     expected_pr_bases = [
-        "master",
-        "af--rekordbox-parity-ui",
+        "main",
         "codex--v2-integration",
     ]
-    expected_push_bases = ["master", "af--rekordbox-parity-ui"]
+    expected_push_bases = ["main"]
     for workflow_name in ("ci.yml", "docs.yml"):
         triggers = _load_workflow(workflow_name)["on"]
         assert triggers["pull_request"]["branches"] == expected_pr_bases
@@ -141,7 +140,7 @@ def test_docs_publish_guards_target_release_branch_only():
     workflow = REPO_ROOT / ".github" / "workflows" / "docs.yml"
     text = workflow.read_text(encoding="utf-8")
 
-    assert text.count("github.ref == 'refs/heads/master'") == 2
+    assert text.count("github.ref == 'refs/heads/main'") == 2
     assert "github.ref == 'refs/heads/af--rekordbox-parity-ui'" not in text
 
 
