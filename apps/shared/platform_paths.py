@@ -147,11 +147,11 @@ class MappedPath:
 _EMPTY_PATH_MAP: PathMap = PathMap(entries=())
 
 
-def _normalise_map_prefix(path: str) -> str:
+def normalise_path_prefix(path: str) -> str:
     """Trim a non-root map separator without turning a drive root relative."""
-    if path == "/" or (len(path) == 3 and path[1] == ":" and path[2] in "/\\\\"):
+    if path == "/" or (len(path) == 3 and path[1] == ":" and path[2] in "/\\"):
         return path
-    return path.rstrip("/\\\\")
+    return path.rstrip("/\\")
 
 
 def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
@@ -201,13 +201,13 @@ def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
             raise ValueError(f"path map {map_path} entries must contain string paths")
         if not from_prefix or not to_prefix:
             raise ValueError(f"path map {map_path} entries must not contain empty paths")
-        if not _is_any_absolute(from_prefix) or not _is_any_absolute(to_prefix):
+        if not is_any_absolute(from_prefix) or not is_any_absolute(to_prefix):
             raise ValueError(f"path map {map_path} entries must use absolute paths")
         if _has_parent_reference(from_prefix) or _has_parent_reference(to_prefix):
             raise ValueError(f"path map {map_path} entries must not contain '..' segments")
-        normalised_from = _normalise_map_prefix(from_prefix)
-        normalised_to = _normalise_map_prefix(to_prefix)
-        if not _is_any_absolute(normalised_from) or not _is_any_absolute(normalised_to):
+        normalised_from = normalise_path_prefix(from_prefix)
+        normalised_to = normalise_path_prefix(to_prefix)
+        if not is_any_absolute(normalised_from) or not is_any_absolute(normalised_to):
             raise ValueError(f"path map {map_path} entries must use absolute paths")
         entries.append((normalised_from, normalised_to))
 
@@ -235,7 +235,7 @@ def _is_foreign_absolute(path: str) -> bool:
         return False
 
 
-def _is_any_absolute(path: str) -> bool:
+def is_any_absolute(path: str) -> bool:
     """Return whether ``path`` is absolute in either supported syntax."""
     return (
         path.startswith("/")
@@ -245,8 +245,27 @@ def _is_any_absolute(path: str) -> bool:
 
 
 def _has_parent_reference(path: str) -> bool:
-    """Reject lexical traversal before it reaches a filesystem operation."""
-    return ".." in path.replace("\\\\", "/").split("/")
+    """Reject lexical traversal before it reaches a filesystem operation.
+
+    Both separators are folded first: on Windows the traversal arrives as
+    ``D:\\lib\\..\\etc``, and a POSIX-only split would wave it through.
+    """
+    return ".." in path.replace("\\", "/").split("/")
+
+
+def resolve_local(path: Path) -> Path:
+    """``Path.resolve`` for paths THIS OS can actually address.
+
+    A foreign-absolute path has no location on this machine, and
+    ``Path.resolve`` does not say so -- on Windows it silently anchors a
+    drive-less ``/Users/dev`` to the current drive (``D:/Users/dev``), which
+    is a fabricated path that then compares unequal to the one the caller
+    passed in. Foreign-absolute paths come back untouched; native ones
+    resolve as before so symlinked roots still normalise.
+    """
+    if _is_foreign_absolute(str(path)):
+        return path
+    return path.resolve(strict=False)
 
 
 def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]:
@@ -269,7 +288,9 @@ def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
     if not folder_path.startswith(from_prefix):
         return None
     suffix = folder_path[len(from_prefix):]
-    if not suffix.startswith(("/", "\\\\")) or _has_parent_reference(suffix):
+    # One separator, not two: a Windows suffix opens with a single ``\``,
+    # and ``\\`` only ever appears at the head of a UNC root.
+    if not suffix.startswith(("/", "\\")) or _has_parent_reference(suffix):
         return None
     return suffix
 

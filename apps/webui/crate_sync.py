@@ -125,16 +125,38 @@ def default_user_maps(crate_root: Path) -> tuple[tuple[str, str], ...]:
 
 
 def parse_map_entry(raw: str) -> tuple[str, str]:
+    """Parse one ``FROM=TO`` map entry, in either OS's absolute syntax.
+
+    ``startswith("/")`` is not what "absolute" means on Windows, where the
+    owner tree arrives as ``D:\\music`` or ``\\\\nas\\music``. The shared
+    two-syntax test lives in :mod:`apps.shared.platform_paths` so the CLI
+    and the on-disk path map agree on what they will accept.
+    """
     if "=" not in raw:
         raise argparse.ArgumentTypeError(f"--map must be FROM=TO, got {raw!r}")
     from_prefix, to_prefix = raw.split("=", 1)
-    from_prefix = from_prefix.strip().rstrip("/")
-    to_prefix = to_prefix.strip().rstrip("/")
+    from_prefix = platform_paths.normalise_path_prefix(from_prefix.strip())
+    to_prefix = platform_paths.normalise_path_prefix(to_prefix.strip())
     if not from_prefix or not to_prefix:
         raise argparse.ArgumentTypeError(f"--map must be FROM=TO, got {raw!r}")
-    if not from_prefix.startswith("/") or not to_prefix.startswith("/"):
+    if not platform_paths.is_any_absolute(
+        from_prefix
+    ) or not platform_paths.is_any_absolute(to_prefix):
         raise argparse.ArgumentTypeError(f"--map paths must be absolute, got {raw!r}")
     return from_prefix, to_prefix
+
+
+def _relative_to_prefix(source: Path, prefix: str) -> Optional[Path]:
+    """``source`` under ``prefix``, or ``None`` when it is not under it.
+
+    Compared as paths rather than strings: a Windows prefix carries
+    backslashes and a drive letter, which no ``str.startswith`` test against
+    ``Path.as_posix()`` will ever match.
+    """
+    try:
+        return source.relative_to(Path(prefix))
+    except ValueError:
+        return None
 
 
 def crate_dest(
@@ -144,19 +166,17 @@ def crate_dest(
     posix = source.as_posix()
     if posix.startswith("/PIONEER/"):
         return crate_root / "pioneer-share" / posix.lstrip("/")
-    share = platform_paths.SHARE_ROOT
-    try:
-        rel = source.resolve(strict=False).relative_to(share)
-    except ValueError:
-        rel = None
+    # Normalised on both sides, and by the same rule ``_source_group`` uses:
+    # a share root that only matches after symlink resolution would map here
+    # and then trip the mapping-drift check there.
+    share = platform_paths.resolve_local(platform_paths.SHARE_ROOT)
+    rel = _relative_to_prefix(platform_paths.resolve_local(source), str(share))
     if rel is not None:
         return crate_root / "pioneer-share" / rel
     for from_prefix, to_prefix in user_maps:
-        if posix == from_prefix:
-            return Path(to_prefix)
-        prefix = from_prefix.rstrip("/")
-        if posix.startswith(prefix + "/"):
-            return Path(to_prefix) / posix[len(prefix) + 1 :]
+        relative = _relative_to_prefix(source, from_prefix)
+        if relative is not None:
+            return Path(to_prefix) / relative
     raise RuntimeError(f"no crate mapping for {source}")
 
 
@@ -460,11 +480,17 @@ def _source_group(
     user_maps: Sequence[tuple[str, str]],
     share_root: Optional[Path] = None,
 ) -> tuple[Path, Path, Path]:
-    """Return source root, destination root, and relative file path."""
-    source = item.source.resolve(strict=False)
-    pioneer_source_root = (
+    """Return source root, destination root, and relative file path.
+
+    Roots are normalised with :func:`platform_paths.resolve_local` rather
+    than ``Path.resolve``: the owner prefixes are Mac paths, and resolving
+    one on Windows would anchor it to the current drive and hand the caller
+    back a root (``D:/Users/dev``) that names nothing.
+    """
+    source = platform_paths.resolve_local(item.source)
+    pioneer_source_root = platform_paths.resolve_local(
         share_root if share_root is not None else platform_paths.SHARE_ROOT
-    ).resolve(strict=False)
+    )
     try:
         relative = source.relative_to(pioneer_source_root)
     except ValueError:
@@ -481,7 +507,7 @@ def _source_group(
     for source_raw, dest_raw in sorted(
         user_maps, key=lambda pair: len(pair[0]), reverse=True
     ):
-        source_root = Path(source_raw).resolve(strict=False)
+        source_root = platform_paths.resolve_local(Path(source_raw))
         try:
             relative = source.relative_to(source_root)
         except ValueError:
