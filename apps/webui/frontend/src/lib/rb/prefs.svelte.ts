@@ -88,6 +88,23 @@ export interface RbUiPrefs {
 		/** false = skip double-click Load+play confirm (do this every time). */
 		dblclick_load_play?: boolean;
 	};
+	/**
+	 * Identity of the playlist the first browser pane last held, restored on
+	 * the next boot of /performance so the track table does not open blank.
+	 * null = nothing remembered yet (first run), which resolves to All Tracks
+	 * when the library is non-empty. Identity only - counts are re-fetched,
+	 * never restored, so a stale number can never reach the screen.
+	 */
+	last_playlist: LastPlaylistPref | null;
+}
+
+/** Persisted pane identity. Mirrors BootPlaylistChoice in the pane contract,
+ * declared here so prefs owns its own storage shape rather than importing a
+ * component module into the prefs layer. */
+export interface LastPlaylistPref {
+	playlist_id: string;
+	name: string;
+	kind: 'all_tracks' | 'playlist';
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -104,7 +121,8 @@ const DEFAULTS: RbUiPrefs = {
 	usb_toast_enabled: true,
 	usb_toast_ms: 5000,
 	usb_auto_open_panel: false,
-	confirm: {}
+	confirm: {},
+	last_playlist: null
 };
 
 // ----------------------------------------------------------- _helpers
@@ -213,6 +231,7 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	const lastPlaylist = _parseLastPlaylist(parsed.last_playlist);
 	const autoSync = _parseAutoSync(parsed.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
 	if (confirm !== null && typeof confirm !== 'object') {
@@ -244,7 +263,8 @@ function _load(): RbUiPrefs {
 		usb_toast_enabled: parsed.usb_toast_enabled ?? DEFAULTS.usb_toast_enabled,
 		usb_toast_ms: parsed.usb_toast_ms ?? DEFAULTS.usb_toast_ms,
 		usb_auto_open_panel: parsed.usb_auto_open_panel ?? DEFAULTS.usb_auto_open_panel,
-		confirm: { ...(confirm as RbUiPrefs['confirm']) }
+		confirm: { ...(confirm as RbUiPrefs['confirm']) },
+		last_playlist: lastPlaylist
 	};
 }
 
@@ -270,6 +290,40 @@ function _parseAutoSync(raw: unknown): AutoSyncPrefs {
 		djay: obj.djay ?? DEFAULTS.auto_sync.djay,
 		open_dj: obj.open_dj ?? DEFAULTS.auto_sync.open_dj
 	};
+}
+
+/** Absent (old blob written before this field existed) is the real first-run
+ * state and yields null; present but the wrong shape throws, same as every
+ * other field here - a half-valid pane identity would restore into a load
+ * against an id that is not a string. */
+function _parseLastPlaylist(raw: unknown): LastPlaylistPref | null {
+	if (raw === undefined || raw === null) return null;
+	if (typeof raw !== 'object') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (last_playlist must be an object or null) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const obj = raw as Partial<LastPlaylistPref>;
+	if (typeof obj.playlist_id !== 'string' || obj.playlist_id === '') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (last_playlist.playlist_id must be a non-empty string) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (typeof obj.name !== 'string') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (last_playlist.name must be a string) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	if (obj.kind !== 'all_tracks' && obj.kind !== 'playlist') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (last_playlist.kind must be 'all_tracks'|'playlist') - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	return { playlist_id: obj.playlist_id, name: obj.name, kind: obj.kind };
 }
 
 function _persist(): void {
@@ -301,6 +355,29 @@ _applyThemeDom(uiPrefs.theme);
 
 export function setHideBrokenLinks(next: boolean): void {
 	uiPrefs.hide_broken_links = next;
+	_persist();
+}
+
+/** Remember which playlist the first browser pane holds, so the next boot of
+ * /performance restores it instead of opening on a blank track table. Writes
+ * only when the identity actually changed - every pane load calls this. */
+export function setLastPlaylist(next: LastPlaylistPref | null): void {
+	const current = uiPrefs.last_playlist;
+	if (next === null) {
+		if (current === null) return;
+		uiPrefs.last_playlist = null;
+		_persist();
+		return;
+	}
+	if (
+		current !== null &&
+		current.playlist_id === next.playlist_id &&
+		current.name === next.name &&
+		current.kind === next.kind
+	) {
+		return;
+	}
+	uiPrefs.last_playlist = { ...next };
 	_persist();
 }
 

@@ -228,6 +228,7 @@
 		<div
 			class="row"
 			class:selected={selectedId === 'all'}
+			data-testid="playlist-all-tracks"
 			role="button"
 			tabindex="0"
 			onclick={() => onselect(allNode)}

@@ -34,6 +34,38 @@ function textOf(result: unknown): string {
 		.join('\n');
 }
 
+/**
+ * Observe with ui_tree, find one line by predicate, click its @ref.
+ *
+ * Throws when the element is absent. The demo used to fall back to "clicking
+ * first button ref instead" when no track row was found, which is exactly how
+ * the blank-pane bug stayed invisible in traces for so long: the driver never
+ * selected a playlist, the table was therefore always empty, and the fallback
+ * clicked something unrelated and reported success. A trace that cannot prove
+ * the flow it claims to exercise must fail, not improvise.
+ */
+async function observeAndClick(
+	client: Client,
+	label: string,
+	selector: string,
+	match: (line: string) => boolean
+): Promise<string> {
+	const tree = textOf(await client.callTool({ name: 'ui_tree', arguments: { selector } }));
+	const version = tree.match(/\[v(\d+)\]/);
+	if (!version) throw new Error(`${label}: ui_tree returned no version stamp`);
+	const line = tree.split('\n').find(match);
+	if (!line) throw new Error(`${label}: no matching element in ui_tree (selector ${selector})`);
+	const ref = line.match(/@(e\d+)/);
+	if (!ref) throw new Error(`${label}: matched line carries no @ref: ${line.trim()}`);
+	console.log(`target: ${line.trim()}`);
+	return textOf(
+		await client.callTool({
+			name: 'act',
+			arguments: { kind: 'click', ref: ref[1], tree_version: Number(version[1]) }
+		})
+	);
+}
+
 async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
@@ -113,24 +145,23 @@ async function main(): Promise<void> {
 	console.log(textOf(await client.callTool({ name: 'act', arguments: { kind: 'chord', text: 'Escape' } })));
 	await pause(2500);
 
-	say('tool: ui_tree scoped to the track browser, then act click on a real row by @ref');
-	const scoped = textOf(
-		await client.callTool({ name: 'ui_tree', arguments: { selector: '[data-testid="track-table"], main, body' } })
+	say('tool: select All Tracks in the playlist tree -- WATCH: the track table fills');
+	// Explicit even though the pane now boots on All Tracks by default: the
+	// trace should exercise the selection flow itself, so a regression in the
+	// boot default cannot quietly empty the rest of this demo.
+	console.log(
+		await observeAndClick(client, 'select All Tracks', '[data-testid="playlist-all-tracks"], aside, nav, body', (l) =>
+			l.includes('#playlist-all-tracks')
+		)
 	);
-	const versionMatch = scoped.match(/\[v(\d+)\]/);
-	const rowMatch = scoped.split('\n').find((l) => l.includes('track-row') && l.includes('@'));
-	console.log(rowMatch ? `target row line: ${rowMatch.trim()}` : '(no track-row ref found; clicking first button ref instead)');
-	const anyRef = (rowMatch ?? scoped.split('\n').find((l) => / button .*@e\d+/.test(l)) ?? '').match(/@(e\d+)/);
-	if (anyRef && versionMatch) {
-		console.log(
-			textOf(
-				await client.callTool({
-					name: 'act',
-					arguments: { kind: 'click', ref: anyRef[1], tree_version: Number(versionMatch[1]) }
-				})
-			)
-		);
-	}
+	await pause(3000);
+
+	say('tool: ui_tree scoped to the track browser, then act click on a real row by @ref');
+	console.log(
+		await observeAndClick(client, 'click a track row', '[data-testid="track-table"], main, body', (l) =>
+			l.includes('track-row') && l.includes('@')
+		)
+	);
 	await pause(2500);
 
 	say('tool: screenshot (final state) -> demo-final.png');
