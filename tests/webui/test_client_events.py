@@ -41,6 +41,7 @@ def test_page_view_writes_private_visitor_record(tmp_path: Path) -> None:
             headers={
                 "Tailscale-User-Login": "dj@example.test",
                 "Tailscale-User-Name": "Test DJ",
+                "Cf-Access-Authenticated-User-Email": "friend@example.test",
             },
         )
 
@@ -52,6 +53,7 @@ def test_page_view_writes_private_visitor_record(tmp_path: Path) -> None:
     record = json.loads(paths[0].read_text(encoding="utf-8"))
     assert record["path"] == "/performance"
     assert record["tailscale_user_login"] == "dj@example.test"
+    assert record["cloudflare_access_email"] == "friend@example.test"
     assert record["secure_context"] is True
     assert "?" not in record["url"]
 

@@ -66,7 +66,7 @@ from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import voice_probe as voice_probe_routes
-from .share_gate import share_gate_middleware, share_host
+from .share_gate import ShareConfig, share_gate_middleware
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +109,7 @@ def create_app(
     client_error_log_dir: Optional[Path] = None,
     client_event_log_dir: Optional[Path] = None,
     stem_roots: Optional[Sequence[Path]] = None,
+    share_config: Optional[ShareConfig] = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -147,6 +148,7 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.client_error_log_dir = (
         client_error_log_dir
         if client_error_log_dir is not None
@@ -182,8 +184,8 @@ def create_app(
             else []
         )
         share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
-        if not share_origin and share_host():
-            share_origin = f"https://{share_host()}"
+        if not share_origin and app.state.share_config.host:
+            share_origin = f"https://{app.state.share_config.host}"
         share_origins = [share_origin] if share_origin else []
         app.add_middleware(
             CORSMiddleware,
