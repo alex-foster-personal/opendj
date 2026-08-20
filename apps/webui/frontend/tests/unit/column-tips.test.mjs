@@ -29,7 +29,9 @@ let source;
 
 before(async () => {
 	tips = await loadTypeScriptModule('src/lib/rb/column-tips.ts');
-	source = readFileSync(TRACK_TABLE, 'utf8');
+	// Line endings are a checkout detail, not source content: a Windows
+	// checkout carries CRLF, and the '>\n' tag scan below would find none.
+	source = readFileSync(TRACK_TABLE, 'utf8').replaceAll('\r\n', '\n');
 });
 
 /** Every `title={...}` expression in the file, brace-aware. */

@@ -33,13 +33,21 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   teaching chrome silently disappears
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
-const ENGINE_SRC = readFileSync(`${SRC}/lib/rb/audio-engine.svelte.ts`, 'utf8');
-const DECK_HEADER_SRC = readFileSync(`${SRC}/lib/components/rb/deck/DeckHeader.svelte`, 'utf8');
-const JOG_DIAL_SRC = readFileSync(`${SRC}/lib/components/rb/deck/JogDial.svelte`, 'utf8');
-const TRANSPORT_SRC = readFileSync(
-	`${SRC}/lib/components/rb/deck/TransportCluster.svelte`,
-	'utf8'
-);
+
+/**
+ * Read source with LF endings whatever the checkout used. The drift guards
+ * below match multi-line shapes with `\n`, and a Windows checkout carries
+ * CRLF -- the guard would then fail on the line endings rather than on the
+ * arithmetic it exists to watch.
+ */
+function readSource(relative) {
+	return readFileSync(`${SRC}/${relative}`, 'utf8').replaceAll('\r\n', '\n');
+}
+
+const ENGINE_SRC = readSource('lib/rb/audio-engine.svelte.ts');
+const DECK_HEADER_SRC = readSource('lib/components/rb/deck/DeckHeader.svelte');
+const JOG_DIAL_SRC = readSource('lib/components/rb/deck/JogDial.svelte');
+const TRANSPORT_SRC = readSource('lib/components/rb/deck/TransportCluster.svelte');
 
 let autoPlay;
 let audio;
