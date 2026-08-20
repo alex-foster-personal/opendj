@@ -836,6 +836,7 @@ version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jsonschema", extra = ["format"] },
     { name = "kaitaistruct" },
     { name = "pillow" },
@@ -905,6 +906,7 @@ voice = [
 requires-dist = [
     { name = "boto3", marker = "extra == 'cloud'", specifier = ">=1.34" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.7,<3" },
     { name = "jsonschema", extras = ["format"], specifier = ">=4.21,<5" },
