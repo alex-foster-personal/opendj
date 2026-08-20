@@ -16,10 +16,15 @@ import { test } from 'node:test';
 // test is what stops the next person redoing that work, or skipping it.
 //
 // Regression lines:
-// - if a storied component imports a non-const binding from a runes module
-//   then Storybook is rendering global state and the scope rule has gone
+// - if a storied component imports a live binding from a runes module, either
+//   an accessor function or a directly exported $state store, then Storybook
+//   is rendering global state and the scope rule has gone
 // - if a storied component grows a setInterval or a fetch then the story is
 //   showing something the args do not control
+// - if a component's instance script is skipped because a <script module>
+//   block precedes it then the two checks above scan the wrong half
+// - if a story is written as .stories.js then Storybook ships it and every
+//   check here skips it
 // - if PerfMeters.svelte gets a story then the named trap was walked into
 // - if a stories file loses `satisfies Meta<typeof X>` then the Svelte 5 CSF
 //   typing gotcha is back (a .svelte default export is a value, not a type)
@@ -55,13 +60,23 @@ function rel(path) {
 	return path.slice(SRC.length + 1).replaceAll('\\', '/');
 }
 
-/** The <script> block of a Svelte component, which is where the imports and timers live. */
-function scriptOf(source) {
-	const start = source.indexOf('<script');
-	const open = source.indexOf('>', start);
-	const end = source.indexOf('</script>', open);
-	assert.ok(start !== -1 && end !== -1, 'component has no <script> block');
-	return source.slice(open + 1, end);
+/**
+ * EVERY <script> block of a Svelte component, concatenated. A Svelte 5
+ * component may open with `<script module>` and put its instance script
+ * second (PaneTabs and three others here already do), so reading only the
+ * first block would hand a component's real body back unscanned and every
+ * check below would pass on the module block alone.
+ */
+function scriptsOf(source) {
+	const blocks = [];
+	for (let at = source.indexOf('<script'); at !== -1; at = source.indexOf('<script', at + 1)) {
+		const open = source.indexOf('>', at);
+		const end = source.indexOf('</script>', open);
+		if (open === -1 || end === -1) break;
+		blocks.push(source.slice(open + 1, end));
+	}
+	assert.ok(blocks.length > 0, 'component has no <script> block');
+	return blocks.join('\n');
 }
 
 /**
@@ -83,20 +98,29 @@ function libImports(script) {
 
 /**
  * A `*.svelte.ts` module is a runes module: it may hold module-level $state,
- * and the way that state reaches a component is an exported FUNCTION acting as
- * a read accessor. A story may therefore import the module's `export const`
- * tables and its types, and nothing else. That is exactly the line between
- * AnalysisDots (pulls the ANALYSIS_* tables, still pure props) and PerfMeters
- * (pulls audioHealthHz() and friends, which read live state).
+ * and that state reaches a component either through an exported FUNCTION
+ * acting as a read accessor (audioHealthHz) or, in a dozen places here,
+ * through a directly exported store (`export const toasts = $state([])`).
+ * A story may import this module's frozen tables and its types, and nothing
+ * else. So `export const` is necessary but NOT sufficient: the initializer
+ * has to be inert too. That pair is exactly the line between AnalysisDots
+ * (pulls the ANALYSIS_* tables, still pure props) and PerfMeters.
  */
-function isConstantExport(moduleSource, binding) {
-	return new RegExp(`^export const ${binding}\\b`, 'm').test(moduleSource);
+function isInertConstExport(moduleSource, binding) {
+	const declaration = new RegExp(`^export const ${binding}\\b[^\\n]*`, 'm').exec(moduleSource);
+	if (declaration === null) return false;
+	return !/\$(?:state|derived)\b/.test(declaration[0]);
 }
 
 const STORY_FILES = filesUnder(SRC, '.stories.ts');
 
 test('there are stories, and each one sits beside the component it documents', () => {
 	assert.ok(STORY_FILES.length > 0, 'no *.stories.ts found under src/');
+	assert.deepEqual(
+		filesUnder(SRC, '.stories.js').map(rel),
+		[],
+		'main.ts globs .stories.@(js|ts) but every check here reads TypeScript CSF, so a .js story would ship unguarded. Write stories in TypeScript.'
+	);
 	for (const story of STORY_FILES) {
 		const component = story.replace(/\.stories\.ts$/, '.svelte');
 		assert.ok(
@@ -115,7 +139,7 @@ test('there are stories, and each one sits beside the component it documents', (
 test('every storied component is presentational: no timer, no fetch, no global store', () => {
 	for (const story of STORY_FILES) {
 		const component = story.replace(/\.stories\.ts$/, '.svelte');
-		const script = scriptOf(read(component));
+		const script = scriptsOf(read(component));
 
 		assert.ok(
 			!script.includes('setInterval('),
@@ -132,8 +156,8 @@ test('every storied component is presentational: no timer, no fetch, no global s
 			const moduleSource = read(runes);
 			for (const binding of bindings) {
 				assert.ok(
-					isConstantExport(moduleSource, binding),
-					`${rel(component)} imports ${binding} from the runes module $lib/${module}, and it is not an 'export const'. A non-const export of a runes module is a read accessor for module-level state, so a story of this component would render global state rather than its args.`
+					isInertConstExport(moduleSource, binding),
+					`${rel(component)} imports ${binding} from the runes module $lib/${module}, and ${binding} is not an inert 'export const'. A runes module surfaces its state either as an exported accessor function or as a directly exported $state store, so a story of this component would render global state rather than its args.`
 				);
 			}
 		}
