@@ -51,8 +51,10 @@ FRONTEND_DIR = REPO_ROOT / "apps" / "webui" / "frontend"
 #   -n 6              67.38 /  45.40 /  45.72   median  45.7s
 #   -n auto (10)      43.39 /  41.55 /  47.90 /  43.38   median  43.4s
 # `auto` won, so the machine-specific number was dropped rather than kept and
-# justified after the fact. CI passes `auto` too -- those runners have fewer
-# cores, and that is exactly what `auto` is for.
+# justified after the fact. CI is the exception and runs SERIAL: `-n auto` was
+# measured on the ubuntu runner and came out SLOWER (295s against 273-289s
+# serial), because 4 vCPUs plus per-worker cold imports plus pytest-cov's
+# combine step eat the gain. See ops/test-latency/README.md.
 PYTEST_WORKERS = "auto"
 
 # `--dist loadgroup` rather than the default `load`, so a suite that genuinely
