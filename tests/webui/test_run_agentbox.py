@@ -150,6 +150,13 @@ def test_listener_pids_sees_a_real_loopback_socket() -> None:
     flake. Waiting on the child's own readiness signal makes the assertion
     a contract check ("once it IS listening, we see it") rather than a
     race, and it fails fast with a real message when the child dies.
+
+    It announces its own PID with that signal rather than the parent reading
+    ``Popen.pid``, because the socket belongs to whichever interpreter
+    actually called bind: a Windows venv launcher can hand off to the base
+    interpreter, and then Popen's PID is the launcher, not the listener. The
+    child then holds the port until stdin closes, so releasing it does not
+    depend on killing the exact process that owns it either.
     """
     port = _free_port()
     proc = subprocess.Popen(
@@ -157,26 +164,35 @@ def test_listener_pids_sees_a_real_loopback_socket() -> None:
             sys.executable,
             "-c",
             (
-                "import socket, sys, time\n"
+                "import os, socket, sys\n"
                 f"s = socket.socket(); s.bind(('127.0.0.1', {port})); "
                 "s.listen(1)\n"
-                "sys.stdout.write('bound\\n'); sys.stdout.flush()\n"
-                "time.sleep(30)\n"
+                "sys.stdout.write(f'bound {os.getpid()}\\n'); sys.stdout.flush()\n"
+                "sys.stdin.readline()\n"
             ),
         ],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
     )
     try:
         assert proc.stdout is not None
-        assert proc.stdout.readline().strip() == "bound", (
+        announcement = proc.stdout.readline().split()
+        assert announcement[:1] == ["bound"], (
             f"child never bound port {port} (rc={proc.poll()})"
         )
-        assert proc.pid in listener_pids(port)
+        listener = int(announcement[1])
+        seen = listener_pids(port)
+        assert listener in seen, (
+            f"port {port} is held by {listener} (Popen saw {proc.pid}) "
+            f"but listener_pids reported {seen}"
+        )
         assert can_bind(port) is False
     finally:
+        if proc.stdin is not None:
+            proc.stdin.close()
         proc.kill()
-        proc.wait(timeout=2)
+        proc.wait(timeout=5)
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline and not can_bind(port):
         time.sleep(0.05)

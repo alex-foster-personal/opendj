@@ -262,10 +262,18 @@ def resolve_local(path: Path) -> Path:
     is a fabricated path that then compares unequal to the one the caller
     passed in. Foreign-absolute paths come back untouched; native ones
     resolve as before so symlinked roots still normalise.
+
+    The Windows arm asks the Path, not its text: ``WindowsPath`` renders a
+    Mac ``/Users/dev`` as ``\\Users\\dev``, so the string test for a leading
+    ``/`` never sees it. Rooted-but-drive-less IS the condition -- that is
+    exactly the path whose location depends on the current drive.
     """
-    if _is_foreign_absolute(str(path)):
+    if IS_WINDOWS and path.root and not path.drive:
         return path
-    return path.resolve(strict=False)
+    elif not IS_WINDOWS and _is_foreign_absolute(str(path)):
+        return path
+    else:
+        return path.resolve(strict=False)
 
 
 def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]:
