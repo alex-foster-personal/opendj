@@ -1,10 +1,13 @@
 #!/bin/bash
 # Conventional-commit + fleet-trailer lint for the agentB rebuild lane.
 # Checks every commit on this branch beyond the parity base.
+# Merge commits are exempt (--no-merges): GitHub-generated merge subjects
+# ("Merge pull request #N ...") can never be conventional, matching how
+# commitlint and friends treat merges.
 set -euo pipefail
 BASE=6287d7c1
 fail=0
-for sha in $(git rev-list "$BASE"..HEAD); do
+for sha in $(git rev-list --no-merges "$BASE"..HEAD); do
   subj=$(git log -1 --format=%s "$sha")
   body=$(git log -1 --format=%B "$sha")
   echo "$subj" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|ci|build|style)(\(|:|!)' || { echo "[ERROR] non-conventional subject: $sha $subj"; fail=1; }
