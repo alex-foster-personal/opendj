@@ -11,6 +11,9 @@ Requirements (docstring mini-PRD):
     gate never offers an order without sync
 - ✔︎ ✅ --fast skips the two slow steps (full pytest, e2e smoke) for inner-loop use.
     [if] --fast passes [then] it proves units + types only, and the summary SAYS so
+- ✔︎ ✅ The pytest step runs in parallel and still cannot shrink unnoticed.
+    [if] fewer than PYTEST_COLLECT_FLOOR tests collect [then ⛔️] pytest exits
+    non-zero naming the count, and the gate fails at pytest-full
 
 Steps and measured baselines (Mon 17 Aug 2026, trunk 7d1f4ca2):
   1. svelte-kit sync          ~5s
@@ -20,6 +23,14 @@ Steps and measured baselines (Mon 17 Aug 2026, trunk 7d1f4ca2):
   5. savepoint e2e smoke      6 tests     ~20-30s  (skipped by --fast)
 
 Total ~4-5 minutes full, ~35s with --fast.
+
+Round 2 (Thu 20 Aug 2026, this Mac, 10 logical cores) put pytest-xdist under
+step 4. Measured on a pinned tree with identical fixtures, full suite, warm,
+serial and parallel runs interleaved so they shared load conditions: single
+process median 117.3s -> `-n auto --dist loadgroup` median 43.4s, a 2.7x
+speedup worth ~74s per gate run. Nothing about WHAT runs changed: 3782 pass
+and 80 skip either way, and --collect-floor is what PROVES that rather than
+asserting it in a comment.
 """
 
 from __future__ import annotations
@@ -32,6 +43,31 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = REPO_ROOT / "apps" / "webui" / "frontend"
+
+# xdist workers for the full pytest step. `auto` = one per logical core.
+# Measured Thu 20 Aug 2026 on a 10-core Mac (6 performance + 4 efficiency),
+# full suite, warm, same fixtures, wall time from pytest's own summary:
+#   single process   130.00 / 117.27 / 112.69   median 117.3s
+#   -n 6              67.38 /  45.40 /  45.72   median  45.7s
+#   -n auto (10)      43.39 /  41.55 /  47.90 /  43.38   median  43.4s
+# `auto` won, so the machine-specific number was dropped rather than kept and
+# justified after the fact. CI passes `auto` too -- those runners have fewer
+# cores, and that is exactly what `auto` is for.
+PYTEST_WORKERS = "auto"
+
+# `--dist loadgroup` rather than the default `load`, so a suite that genuinely
+# must share a worker can say so with @pytest.mark.xdist_group instead of the
+# whole run being serialised for it. Nothing carries the marker today; the mode
+# is set now so the escape hatch exists when something needs it.
+PYTEST_DIST = "loadgroup"
+
+# Minimum tests the full suite must COLLECT. Measured Thu 20 Aug 2026: 3861
+# locally with the analysis + tags extras present. The floor sits below that
+# with room for the three modules that skip at import time off macOS, and it
+# only ever ratchets UP. Its job is to make `-n` safe: parallel execution
+# changes distribution, not membership, so a run that collects less has lost
+# tests and must fail rather than report a smaller green.
+PYTEST_COLLECT_FLOOR = "3700"
 
 
 @dataclass
@@ -62,7 +98,12 @@ def _steps() -> list[Step]:
         ),
         Step(
             "pytest-full",
-            ["uv", "run", "--with", "modal", "pytest", "-q"],
+            [
+                "uv", "run", "--with", "modal", "pytest", "-q",
+                "-n", PYTEST_WORKERS,
+                "--dist", PYTEST_DIST,
+                "--collect-floor", PYTEST_COLLECT_FLOOR,
+            ],
             REPO_ROOT,
             slow=True,
         ),

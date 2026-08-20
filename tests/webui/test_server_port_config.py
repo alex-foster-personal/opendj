@@ -9,8 +9,23 @@ from typing import Any
 
 import pytest
 
-from apps.webui.port_config import PortConfigError, WebuiPorts
+from apps.webui.port_config import BACKEND_ENV, FRONTEND_ENV, PortConfigError, WebuiPorts
 from apps.webui.server import __main__ as server_cli
+
+
+@pytest.fixture(autouse=True)
+def _own_the_port_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hand both port env keys to monkeypatch before any test calls main().
+
+    ``server_cli.main`` deliberately writes ``os.environ[BACKEND_ENV]`` (and
+    ``FRONTEND_ENV`` on the claim path) so the app can read its own port back.
+    Without this fixture those writes outlive the test and leak into every
+    later test in the same process: ``test_writeback_cli`` used to pass only
+    because this module happened to run first and left 8697 behind. Declaring
+    the keys here makes monkeypatch restore the pre-test state on teardown.
+    """
+    monkeypatch.delenv(BACKEND_ENV, raising=False)
+    monkeypatch.delenv(FRONTEND_ENV, raising=False)
 
 
 def _capture_uvicorn(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:

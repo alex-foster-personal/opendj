@@ -28,6 +28,13 @@ def test_cli_apply_dry_run_uses_the_http_preview_contract(monkeypatch) -> None:
     )]
 
 
-def test_cli_apply_refuses_a_live_write_without_confirmation(capsys) -> None:
+def test_cli_apply_refuses_a_live_write_without_confirmation(capsys, monkeypatch) -> None:
+    # The subject here is the confirmation guard, not port resolution, so the
+    # port is declared rather than inherited: this test used to pass only when
+    # tests/webui/test_server_port_config.py had already leaked
+    # MUSIC_DJ_BACKEND_PORT into the process, which is an ordering assumption
+    # that parallel execution does not honour.
+    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "18697")
+
     assert writeback_cli.main(_apply_arguments()) == 2
     assert "--confirm or --dry-run" in capsys.readouterr().err
