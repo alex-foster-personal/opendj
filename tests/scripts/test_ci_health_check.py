@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from scripts import ci_health_check as mod
+from scripts.ci_health_core import EXIT_ITERATION_SPEED
 
 NOW = datetime(2026, 8, 19, 20, 0, 0, tzinfo=UTC)
 
@@ -258,3 +259,13 @@ def test_malformed_timestamps_fail_loudly(field, value):
     with pytest.raises(mod.PreconditionError) as excinfo:
         mod._parse_github_timestamp(value, field, 123)
     assert field in str(excinfo.value)
+
+
+def test_iteration_speed_is_the_least_severe_failure():
+    """If iteration speed outranked billing then a slow build would mask an outage, or broken."""
+    results = [
+        mod.CheckResult("billing", False, "billing", "d", 8, mod.EXIT_BILLING),
+        mod.CheckResult("iteration-speed", False, "iteration-speed", "d", 20, EXIT_ITERATION_SPEED),
+    ]
+    assert mod._resolve_exit_code(results) == mod.EXIT_BILLING
+    assert EXIT_ITERATION_SPEED > mod.EXIT_STALENESS
