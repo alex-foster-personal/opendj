@@ -12,8 +12,19 @@ RB_PARITY_PYTEST_PATHS := \
 	tests/test_rb_assets.py \
 	tests/webui
 
+# PYTEST_JOBS feeds `-n`: `auto` lets xdist size itself to the box. Override for
+# a serial run (`make test PYTEST_JOBS=0`), which is what you want when reading
+# a traceback rather than a pass/fail, and what ci.yml's own pytest step does
+# because `-n` measured SLOWER on a 4-vCPU runner (ops/test-latency/README.md).
+# PYTEST_COLLECT_FLOOR is the guard that
+# keeps `-n` honest: parallelism redistributes tests, it never removes them, so
+# collecting fewer than the floor means the suite lost tests. It only ratchets
+# up. Keep both in sync with scripts/savepoint_gate.py and .github/workflows/ci.yml.
+PYTEST_JOBS ?= auto
+PYTEST_COLLECT_FLOOR ?= 3700
+
 test:
-	$(PYTEST) -q
+	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR)
 
 # Fast iteration gates for the Rekordbox parity stack. These deliberately omit
 # untouched analysis backends and Pioneer actuator suites, which require

@@ -2,15 +2,40 @@
 
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from apps.webui.port_config import PortConfigError, WebuiPorts
+from apps.webui.port_config import BACKEND_ENV, FRONTEND_ENV, PortConfigError, WebuiPorts
 from apps.webui.server import __main__ as server_cli
+
+
+@pytest.fixture(autouse=True)
+def _restore_port_env() -> Iterator[None]:
+    """Put the two port env keys back exactly as this module found them.
+
+    ``server_cli.main`` deliberately writes ``os.environ[BACKEND_ENV]`` (and
+    ``FRONTEND_ENV`` on the claim path) so the app can read its own port back.
+    That is real production behavior and is not stubbed here -- what is fixed
+    is that the write used to outlive the test and leak into the rest of the
+    process. ``tests/webui/test_writeback_cli.py`` passed only because this
+    module happened to run first and left 8697 behind, which serial ordering
+    hid and parallel execution exposed.
+    """
+    before = {name: os.environ.get(name) for name in (BACKEND_ENV, FRONTEND_ENV)}
+    try:
+        yield
+    finally:
+        for name, value in before.items():
+            if value is None:
+                os.environ.pop(name, None)
+            elif os.environ.get(name) != value:
+                os.environ[name] = value
 
 
 def _capture_uvicorn(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
