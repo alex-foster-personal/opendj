@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
-
-import type { TrackQuality } from '$lib/rb/types';
+import type { ComponentProps } from 'svelte';
 
 import QualityBadge from './QualityBadge.svelte';
 
@@ -12,7 +11,14 @@ import QualityBadge from './QualityBadge.svelte';
  * Shapes mirror apps/shared/audio_quality.py, the backend that actually
  * measures these. Nothing here is a mock of a network call: QualityBadge is
  * pure props, so the args ARE the contract.
+ *
+ * The rung shape is read back off the component's own props rather than
+ * imported from $lib/rb/types. A story should be pinned to the contract of
+ * the thing it documents, and types.ts is already the highest-fan-in module
+ * in the frontend, so stories are not the place to widen it further.
  */
+type TrackQuality = NonNullable<ComponentProps<typeof QualityBadge>['quality']>;
+
 const rung = (over: Partial<TrackQuality>): TrackQuality => ({
 	venue: 'club',
 	label: 'Club',
