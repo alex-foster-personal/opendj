@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from apps.shared import private_files
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
 
@@ -48,7 +49,9 @@ def test_page_view_writes_private_visitor_record(tmp_path: Path) -> None:
     assert response.json()["stored"] is True
     paths = list(tmp_path.glob("webui-visitors-*.log"))
     assert len(paths) == 1
-    assert paths[0].stat().st_mode & 0o777 == 0o600
+    # Owner-only, asked in whichever terms this OS actually enforces: mode
+    # bits on POSIX, the file's ACL on Windows (where 0o600 means nothing).
+    assert private_files.is_owner_only(paths[0])
     record = json.loads(paths[0].read_text(encoding="utf-8"))
     assert record["path"] == "/performance"
     assert record["tailscale_user_login"] == "dj@example.test"
