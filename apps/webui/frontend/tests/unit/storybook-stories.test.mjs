@@ -21,8 +21,8 @@ import { test } from 'node:test';
 //   getters read one, then Storybook renders global state and the rule is gone
 // - if a prop-only wrapper renders a stateful child then the same is true one
 //   layer down, so the checks run over the whole render subtree
-// - if a storied component grows a setInterval or a fetch then the story is
-//   showing something the args do not control
+// - if a storied component grows a setInterval, calls fetch, or imports a
+//   helper that does, then the story shows something the args do not control
 // - if a component's instance script is skipped because a <script module>
 //   block precedes it then the two checks above scan the wrong half
 // - if a story is written as .stories.js then Storybook ships it and every
@@ -82,18 +82,33 @@ function scriptsOf(source) {
 }
 
 /**
- * Every `$lib/...` import in a script, as { module, bindings }. Bindings keep
- * the `type ` prefix off; a type import cannot carry state at runtime.
+ * Every named import in a script, resolved to the module file it actually
+ * reads, as { spec, path, bindings }. Both `$lib/...` and RELATIVE specifiers
+ * are resolved: a runes module is just as reachable as './tooltip.svelte'
+ * (routes/admin/TipLayer.svelte does exactly that) as it is through $lib, and
+ * a guard that only knew the $lib spelling would wave the other one through.
+ *
+ * Bindings drop the `type ` prefix; a type import carries nothing at runtime.
  */
-function libImports(script) {
+function namedImports(script, fromPath) {
+	const dir = fromPath.slice(0, fromPath.lastIndexOf('/') + 1);
 	const out = [];
-	for (const match of script.matchAll(/import\s+\{([^}]*)\}\s+from\s+'\$lib\/([^']+)'/g)) {
+	for (const match of script.matchAll(/import\s+\{([^}]*)\}\s+from\s+'([^']+)'/g)) {
+		const spec = match[2];
+		const base = spec.startsWith('$lib/')
+			? join(SRC, 'lib', spec.slice('$lib/'.length))
+			: spec.startsWith('.')
+				? join(dir, spec)
+				: null;
+		if (base === null) continue;
+		const path = [base, `${base}.ts`].find((candidate) => existsSync(candidate));
+		if (path === undefined || !path.endsWith('.ts')) continue;
 		const bindings = match[1]
 			.split(',')
 			.map((entry) => entry.trim())
 			.filter((entry) => entry.length > 0 && !entry.startsWith('type '))
 			.map((entry) => entry.split(/\s+as\s+/)[0].trim());
-		out.push({ module: match[2], bindings });
+		if (bindings.length > 0) out.push({ spec, path, bindings });
 	}
 	return out;
 }
@@ -217,14 +232,22 @@ test('every storied component is presentational: no timer, no fetch, no global s
 				`${via} fetches, and the house rule forbids mocking it - extract the presentational part and story that instead`
 			);
 
-			for (const { module, bindings } of libImports(script)) {
-				const runes = join(SRC, 'lib', `${module}.ts`);
-				if (!module.endsWith('.svelte') || !existsSync(runes)) continue;
-				const moduleSource = read(runes);
+			for (const { spec, path: modulePath, bindings } of namedImports(script, path)) {
+				const moduleSource = read(modulePath);
+
+				// A component need not call fetch itself to hit the network. It can
+				// import a helper that does, which is how most of this frontend
+				// talks to the backend (api-rb and friends).
+				assert.ok(
+					!/\bfetch\(/.test(moduleSource),
+					`${via} imports { ${bindings.join(', ')} } from '${spec}', and that module calls fetch. The story would issue a real backend request on render, and the house rule forbids mocking one - extract the presentational part and story that instead.`
+				);
+
+				if (!spec.endsWith('.svelte')) continue;
 				for (const binding of bindings) {
 					assert.ok(
 						isInertConstExport(moduleSource, binding),
-						`${via} imports ${binding} from the runes module $lib/${module}, and ${binding} is not an inert 'export const'. A runes module surfaces its state as an accessor function, a directly exported $state store, or a facade object with getters, so the story would render global state rather than its args.`
+						`${via} imports ${binding} from the runes module '${spec}', and ${binding} is not an inert 'export const'. A runes module surfaces its state as an accessor function, a directly exported $state store, or a facade object with getters, so the story would render global state rather than its args.`
 					);
 				}
 			}
