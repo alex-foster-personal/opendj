@@ -42,6 +42,8 @@ BACKEND_WAIT_SECONDS = 30.0
 FRONTEND_WAIT_SECONDS = 45.0
 STOP_WAIT_SECONDS = 5.0
 PID_RE = re.compile(r"pid=(\d+)")
+# netstat's foreign-address column for a socket with no peer: a listener.
+WINDOWS_IDLE_PEERS = frozenset({"0.0.0.0:0", "[::]:0", "*:*"})
 LOG_DIR = Path.home() / ".local/share/music-dj-tools/webui"
 SCRATCH_DIR = PROJECT_ROOT / ".tmp"
 EPHEMERAL_LOG_DIR = Path(tempfile.gettempdir()) / "music-dj-tools"
@@ -84,15 +86,50 @@ def public_host(hosts: Sequence[str]) -> str:
     return hosts[0]
 
 
+def _windows_listener_pids(port: int) -> list[int]:
+    """PIDs listening on ``port``, read from ``netstat -ano``.
+
+    Windows ships neither ``ss`` nor ``lsof``; ``netstat`` is in System32 on
+    every install. Rows read ``TCP <local> <foreign> LISTENING <pid>``, and a
+    listener is identified by its empty foreign address rather than by the
+    state word, which netstat translates on a localised Windows. A row for a
+    CONNECTION to this port carries a real peer there, so the same test also
+    keeps established sockets out of the answer.
+    """
+    result = subprocess.run(
+        ["netstat", "-ano"], check=False, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"exit {result.returncode}"
+        raise PortConfigError(f"netstat failed for port {port}: {detail}")
+    pids: list[int] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 5 or not fields[0].upper().startswith("TCP"):
+            continue
+        _protocol, local, foreign, _state, raw_pid = fields
+        if not local.endswith(f":{port}") or foreign not in WINDOWS_IDLE_PEERS:
+            continue
+        if not raw_pid.isdigit():
+            continue
+        pid = int(raw_pid)
+        if pid not in pids:
+            pids.append(pid)
+    return pids
+
+
 def listener_pids(port: int) -> list[int]:
-    """PIDs listening on port, from ``ss`` or ``lsof`` (no guessed occupants).
+    """PIDs listening on port, from ``ss``, ``lsof`` or ``netstat``.
 
     The agentbox itself is Linux, where ``ss`` is the right tool. The same
     launcher is driven from macOS during development, which has no ``ss``
-    at all -- an undecorated ``FileNotFoundError`` from the subprocess is a
-    worse diagnostic than "the port is busy", so dispatch on whichever
-    probe the host actually has and fail loudly when it has neither.
+    at all, and from Windows, which has neither -- an undecorated
+    ``FileNotFoundError`` from the subprocess is a worse diagnostic than
+    "the port is busy", so dispatch on whichever probe the host actually has
+    and fail loudly when it has none.
     """
+    if os.name == "nt":
+        return _windows_listener_pids(port)
     if shutil.which("ss"):
         argv = ["ss", "-ltnpH", f"sport = :{port}"]
     elif shutil.which("lsof"):
