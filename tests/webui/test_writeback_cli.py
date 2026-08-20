@@ -28,13 +28,15 @@ def test_cli_apply_dry_run_uses_the_http_preview_contract(monkeypatch) -> None:
     )]
 
 
-def test_cli_apply_refuses_a_live_write_without_confirmation(capsys, monkeypatch) -> None:
-    # The subject here is the confirmation guard, not port resolution, so the
-    # port is declared rather than inherited: this test used to pass only when
-    # tests/webui/test_server_port_config.py had already leaked
-    # MUSIC_DJ_BACKEND_PORT into the process, which is an ordering assumption
-    # that parallel execution does not honour.
-    monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", "18697")
+def test_cli_apply_refuses_a_live_write_without_confirmation(capsys) -> None:
+    # --base-url is the CLI's own documented way to name the daemon, and it is
+    # what this test uses so the subject stays the confirmation guard rather
+    # than port resolution. Previously it passed no base URL and no port, so it
+    # fell through to MUSIC_DJ_BACKEND_PORT and only passed when
+    # tests/webui/test_server_port_config.py had already leaked that variable
+    # into the process -- an ordering assumption that parallel execution does
+    # not honour, and that failed serially too when the file ran on its own.
+    arguments = ["--base-url", "http://127.0.0.1:18697/api/v1", *_apply_arguments()]
 
-    assert writeback_cli.main(_apply_arguments()) == 2
+    assert writeback_cli.main(arguments) == 2
     assert "--confirm or --dry-run" in capsys.readouterr().err

@@ -10,6 +10,8 @@ must fail loudly instead of reporting a smaller green suite.
   worker's exception is swallowed into a bare INTERNALERROR traceback, so the
   message has to reach stderr on its own)
 - if the floor is absent or zero then a scoped run must be unaffected
+- if -k or -m is accepted alongside a floor then broken: a deselected run that
+  satisfied the floor would be the exact false green the floor exists to catch
 """
 
 from __future__ import annotations
@@ -50,6 +52,18 @@ def test_a_run_under_the_floor_fails_and_says_why() -> None:
     combined = result.stdout + result.stderr
     assert "collect floor" in combined, combined[-2000:]
     assert "99999" in combined, "the failure must name the floor it missed"
+
+
+def test_a_selection_filter_cannot_ride_along_with_a_floor() -> None:
+    """-k / -m plus a floor is the false green the floor exists to prevent."""
+    for flag, value in (("-k", "apply"), ("-m", "not slow")):
+        result = _collect("--collect-floor", "1", flag, value)
+        combined = result.stdout + result.stderr
+        assert result.returncode != 0, (
+            f"{flag} was accepted alongside --collect-floor; a deselected run "
+            "can now satisfy the floor"
+        )
+        assert flag in combined and "collect floor" in combined, combined[-2000:]
 
 
 def test_no_floor_leaves_a_scoped_run_alone() -> None:

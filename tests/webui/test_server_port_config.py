@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -14,18 +16,26 @@ from apps.webui.server import __main__ as server_cli
 
 
 @pytest.fixture(autouse=True)
-def _own_the_port_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Hand both port env keys to monkeypatch before any test calls main().
+def _restore_port_env() -> Iterator[None]:
+    """Put the two port env keys back exactly as this module found them.
 
     ``server_cli.main`` deliberately writes ``os.environ[BACKEND_ENV]`` (and
     ``FRONTEND_ENV`` on the claim path) so the app can read its own port back.
-    Without this fixture those writes outlive the test and leak into every
-    later test in the same process: ``test_writeback_cli`` used to pass only
-    because this module happened to run first and left 8697 behind. Declaring
-    the keys here makes monkeypatch restore the pre-test state on teardown.
+    That is real production behavior and is not stubbed here -- what is fixed
+    is that the write used to outlive the test and leak into the rest of the
+    process. ``tests/webui/test_writeback_cli.py`` passed only because this
+    module happened to run first and left 8697 behind, which serial ordering
+    hid and parallel execution exposed.
     """
-    monkeypatch.delenv(BACKEND_ENV, raising=False)
-    monkeypatch.delenv(FRONTEND_ENV, raising=False)
+    before = {name: os.environ.get(name) for name in (BACKEND_ENV, FRONTEND_ENV)}
+    try:
+        yield
+    finally:
+        for name, value in before.items():
+            if value is None:
+                os.environ.pop(name, None)
+            elif os.environ.get(name) != value:
+                os.environ[name] = value
 
 
 def _capture_uvicorn(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:

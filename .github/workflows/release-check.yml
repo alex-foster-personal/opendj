@@ -53,6 +53,12 @@ jobs:
           # Provide GH_TOKEN so the optional `gh release view` step can query
           # the repo; the step is non-fatal regardless.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Serial, for the same measured reason ci.yml's pytest step is:
+          # `-n auto` came out SLOWER on a 4-vCPU ubuntu runner (295s against
+          # 273-289s serial). The Makefile defaults to `auto` because it is
+          # normally driven from a dev machine, where parallel wins 2.7x.
+          # See ops/test-latency/README.md.
+          PYTEST_JOBS: "0"
         run: make release-check
 
       - name: Upload built dists
