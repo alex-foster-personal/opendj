@@ -8830,6 +8830,29 @@
         ]
       }
     },
+    "/api/v1/admin/quality-ratchet": {
+      "get": {
+        "operationId": "get_quality_ratchet_api_v1_admin_quality_ratchet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Quality Ratchet Api V1 Admin Quality Ratchet Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Quality Ratchet",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/assistant/chat": {
       "post": {
         "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",

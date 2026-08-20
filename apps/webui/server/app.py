@@ -56,6 +56,7 @@ from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
+from .routes import quality as quality_routes
 from .routes import queues as queues_routes
 from .routes import rb_assets as rb_assets_routes
 from .routes import rb_hot_cues as rb_hot_cues_routes
@@ -295,6 +296,7 @@ def create_app(
     app.include_router(search_routes.router, prefix=api_prefix)
     app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
     app.include_router(progress_routes.router, prefix=api_prefix)
+    app.include_router(quality_routes.router, prefix=api_prefix)
     app.include_router(smartlists_routes.router, prefix=api_prefix)
     app.include_router(stems_routes.router, prefix=api_prefix)
     app.include_router(stem_tiers_routes.router, prefix=api_prefix)
