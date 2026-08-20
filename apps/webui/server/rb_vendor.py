@@ -412,7 +412,7 @@ def resolve_playable_audio(
             raise
         if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
             raise
-    from apps.webui.crate_index import resolve_crate_audio
+    from apps.shared.crate_index import resolve_crate_audio
 
     crate_audio = resolve_crate_audio(stable_id)
     extra_paths: tuple[tuple[str, str, track_locations.Kind], ...] = (

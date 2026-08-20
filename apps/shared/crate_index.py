@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -82,6 +82,40 @@ def ledger_digest(
     return digest.hexdigest()
 
 
+def _checked_entry(raw: Any) -> Mapping[str, Any]:
+    """Reject a manifest entry the replica cannot audit, or return it as read."""
+
+    if not isinstance(raw, dict):
+        raise CrateIndexError("crate manifest file entry must be an object")
+    for key in ("kind", "source", "dest", "bytes"):
+        if key not in raw:
+            raise CrateIndexError(f"crate manifest file entry lacks {key}")
+    return raw
+
+
+@dataclass
+class _Discrepancies:
+    """Where replica storage disagrees with the owner book, by kind."""
+
+    missing: list[str] = field(default_factory=list)
+    size: list[str] = field(default_factory=list)
+    mtime: list[str] = field(default_factory=list)
+
+
+def _stat_against_entry(
+    entry: Mapping[str, Any], destination: Path, found: _Discrepancies
+) -> int:
+    """Compare one materialised destination to its declared size and mtime."""
+
+    stat = destination.stat()
+    if stat.st_size != int(entry["bytes"]):
+        found.size.append(str(destination))
+    expected_mtime = int(entry.get("mtime_s", 0))
+    if expected_mtime and int(stat.st_mtime) != expected_mtime:
+        found.mtime.append(str(destination))
+    return stat.st_size
+
+
 def audit_manifest(manifest: Mapping[str, Any], *, crate_root: Path) -> CrateAudit:
     """Rebuild the replica book from real files and compare it to the owner book."""
 
@@ -90,31 +124,21 @@ def audit_manifest(manifest: Mapping[str, Any], *, crate_root: Path) -> CrateAud
         raise CrateIndexError("crate manifest files must be a list")
     entries: list[Mapping[str, Any]] = []
     actual: dict[str, Path] = {}
-    missing: list[str] = []
-    size_mismatches: list[str] = []
-    mtime_mismatches: list[str] = []
+    found = _Discrepancies()
     actual_bytes = 0
     for raw in raw_entries:
-        if not isinstance(raw, dict):
-            raise CrateIndexError("crate manifest file entry must be an object")
-        for key in ("kind", "source", "dest", "bytes"):
-            if key not in raw:
-                raise CrateIndexError(f"crate manifest file entry lacks {key}")
-        entry: Mapping[str, Any] = raw
+        entry = _checked_entry(raw)
         entries.append(entry)
         destination = _contained(crate_root, str(entry["dest"]))
         if not fs_residency.is_materialised(destination):
-            missing.append(str(destination))
+            found.missing.append(str(destination))
             continue
-        stat = destination.stat()
         actual[str(entry["dest"])] = destination
-        actual_bytes += stat.st_size
-        if stat.st_size != int(entry["bytes"]):
-            size_mismatches.append(str(destination))
-        expected_mtime = int(entry.get("mtime_s", 0))
-        if expected_mtime and int(stat.st_mtime) != expected_mtime:
-            mtime_mismatches.append(str(destination))
+        actual_bytes += _stat_against_entry(entry, destination, found)
 
+    missing = found.missing
+    size_mismatches = found.size
+    mtime_mismatches = found.mtime
     expected_digest = str(manifest.get("ledger_digest") or ledger_digest(entries))
     actual_digest = ledger_digest(entries, actual=actual) if not missing else ""
     expected_bytes = sum(int(entry["bytes"]) for entry in entries)
