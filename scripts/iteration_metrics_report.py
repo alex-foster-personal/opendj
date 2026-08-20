@@ -1,7 +1,7 @@
 """Per-step summary of the iteration-metrics store - the human view of what check 5 judges.
 
 Reads ~/.local/share/mdt-iteration-metrics/metrics.jsonl through the SAME parser the
-watchdog uses (scripts.ci_health_check._read_metrics), so a line this report can read is a
+watchdog uses (scripts.ci_health_metrics._read_metrics), so a line this report can read is a
 line check 5 can read, and a malformed store fails here exactly as loudly as it does there.
 
 HONEST DENOMINATORS
@@ -31,12 +31,12 @@ from __future__ import annotations
 import statistics
 import sys
 
-from scripts.ci_health_check import (
+from scripts.ci_health_core import PreconditionError
+from scripts.ci_health_metrics import (
     ITERATION_METRICS_PATH,
     ITERATION_SPEED_MEDIAN_WINDOW,
     ITERATION_SPEED_MIN_SAMPLE,
     ITERATION_SPEED_REGRESSION_FACTOR,
-    PreconditionError,
     _read_metrics,
 )
 
