@@ -79,7 +79,7 @@ let playing = false, clock = 0, lastTick = 0;
 function draw(time) {
   const im = baseFrameAt(time);
   if (im && im.complete && im.naturalWidth) {
-    if (cv.width !== im.naturalWidth) { cv.width = im.naturalWidth; cv.height = im.naturalHeight; }
+    if (cv.width !== im.naturalWidth || cv.height !== im.naturalHeight) { cv.width = im.naturalWidth; cv.height = im.naturalHeight; }
     ctx.drawImage(im, 0, 0);
   } else { ctx.fillStyle = '#181a1e'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
