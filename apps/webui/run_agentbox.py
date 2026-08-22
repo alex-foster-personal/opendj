@@ -31,6 +31,7 @@ from apps.webui.port_config import (
     _read_dotenv,
     _resolved_raw_value,
     claim_ports,
+    resolve_ports,
 )
 
 ALLOWED_HOSTS_ENV = "MUSIC_DJ_ALLOWED_HOSTS"
@@ -476,8 +477,96 @@ def _tailscale_ipv4() -> str:
     return ip
 
 
-def ensure_serve(frontend_port: int, redirect_port: int = HTTP_REDIRECT_PORT) -> str:
+def _serve_status() -> Mapping[str, object]:
+    status = subprocess.run(
+        ["tailscale", "serve", "status", "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if status.returncode != 0:
+        raise PortConfigError(
+            f"tailscale serve status failed: {status.stderr.strip()}"
+        )
+    try:
+        payload = json.loads(status.stdout)
+    except json.JSONDecodeError as exc:
+        raise PortConfigError("tailscale serve status returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise PortConfigError("tailscale serve status returned a non-object")
+    return payload
+
+
+def validate_serve_status(
+    status: Mapping[str, object],
+    *,
+    host: str,
+    frontend_port: int,
+    redirect_port: int = HTTP_REDIRECT_PORT,
+) -> None:
+    """Fail closed when 80/443 drift from the private agentbox contract."""
+    https_key = f"{host}:{SERVE_HTTPS_PORT}"
+    http_key = f"{host}:{SERVE_HTTP_PORT}"
+    problems: list[str] = []
+    allow_funnel = status.get("AllowFunnel", {})
+    if isinstance(allow_funnel, dict) and allow_funnel.get(https_key) is True:
+        problems.append(
+            f"public Tailscale Funnel is enabled on {https_key}; "
+            "expected tailnet-only Serve"
+        )
+
+    web = status.get("Web", {})
+    if not isinstance(web, dict):
+        raise PortConfigError("tailscale serve status has no Web routes")
+
+    def proxy_for(key: str) -> object:
+        route = web.get(key, {})
+        handlers = route.get("Handlers", {}) if isinstance(route, dict) else {}
+        root = handlers.get("/", {}) if isinstance(handlers, dict) else {}
+        return root.get("Proxy") if isinstance(root, dict) else None
+
+    expected_https = f"http://127.0.0.1:{frontend_port}"
+    actual_https = proxy_for(https_key)
+    if actual_https != expected_https:
+        problems.append(
+            f"tailscale HTTPS route {https_key} targets {actual_https!r}; "
+            f"expected {expected_https!r}"
+        )
+    expected_http = f"http://127.0.0.1:{redirect_port}"
+    actual_http = proxy_for(http_key)
+    if actual_http != expected_http:
+        problems.append(
+            f"tailscale HTTP route {http_key} targets {actual_http!r}; "
+            f"expected {expected_http!r}"
+        )
+    if problems:
+        raise PortConfigError("; ".join(problems))
+
+
+def ensure_serve(
+    frontend_port: int,
+    *,
+    host: str,
+    redirect_port: int = HTTP_REDIRECT_PORT,
+) -> str:
     """Serve secure Vite plus a tailnet-only HTTP-to-HTTPS redirect."""
+    funnel = subprocess.run(
+        [
+            "tailscale",
+            "funnel",
+            "--yes",
+            f"--https={SERVE_HTTPS_PORT}",
+            "off",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if funnel.returncode != 0:
+        raise PortConfigError(
+            "failed to disable public Funnel on the web port: "
+            f"{funnel.stderr.strip() or funnel.stdout.strip()}"
+        )
     target = f"http://127.0.0.1:{frontend_port}"
     result = subprocess.run(
         ["tailscale", "serve", "--bg", f"--https={SERVE_HTTPS_PORT}", target],
@@ -507,20 +596,10 @@ def ensure_serve(frontend_port: int, redirect_port: int = HTTP_REDIRECT_PORT) ->
             "tailscale HTTP redirect serve failed: "
             f"{redirect.stderr.strip() or redirect.stdout.strip()}"
         )
-    status = subprocess.run(
-        ["tailscale", "serve", "status", "--json"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if status.returncode != 0:
-        raise PortConfigError(
-            f"tailscale serve status failed: {status.stderr.strip()}"
-        )
-    try:
-        active_ports = json.loads(status.stdout).get("TCP", {})
-    except (json.JSONDecodeError, AttributeError) as exc:
-        raise PortConfigError("tailscale serve status returned invalid JSON") from exc
+    status = _serve_status()
+    active_ports = status.get("TCP", {})
+    if not isinstance(active_ports, dict):
+        raise PortConfigError("tailscale serve status has no TCP routes")
     if str(LEGACY_SERVE_HTTP_PORT) in active_ports:
         legacy = subprocess.run(
             [
@@ -539,6 +618,13 @@ def ensure_serve(frontend_port: int, redirect_port: int = HTTP_REDIRECT_PORT) ->
                 "failed to disable insecure legacy Serve endpoint: "
                 f"{legacy.stderr.strip() or legacy.stdout.strip()}"
             )
+        status = _serve_status()
+    validate_serve_status(
+        status,
+        host=host,
+        frontend_port=frontend_port,
+        redirect_port=redirect_port,
+    )
     return target
 
 
@@ -627,6 +713,11 @@ def check_agentbox(stem_track: str | None = None) -> int:
     hosts = resolve_allowed_hosts()
     host = public_host(hosts)
     serve_ip = _tailscale_ipv4()
+    validate_serve_status(
+        _serve_status(),
+        host=host,
+        frontend_port=resolve_ports().frontend,
+    )
     command = [
             "pnpm",
             "exec",
@@ -738,7 +829,7 @@ def run_agentbox() -> int:
     )
     print(f"[OK] HTTP redirect pid {redirect_pid} -> {secure_origin}")
 
-    serve_target = ensure_serve(ports.frontend)
+    serve_target = ensure_serve(ports.frontend, host=host)
     serve_ip = _tailscale_ipv4()
     serve_url = f"https://{host}/"
     _wait_https(
