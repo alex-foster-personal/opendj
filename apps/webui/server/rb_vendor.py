@@ -69,6 +69,30 @@ from apps.shared.platform_paths import (
 from apps.vocals import cache as vocal_cache
 from apps.webui.server import beatgrid_diagnostics
 
+_WAVEFORM_BACKEND_REQUEST = os.environ.get("MDT_WAVEFORM_BACKEND", "auto").strip().lower()
+if _WAVEFORM_BACKEND_REQUEST not in {"auto", "python", "native"}:
+    raise RuntimeError(
+        "MDT_WAVEFORM_BACKEND must be one of auto, python, or native; "
+        f"got {_WAVEFORM_BACKEND_REQUEST!r}"
+    )
+
+_WAVEFORM_NATIVE_IMPORT_ERROR: Optional[ImportError] = None
+if _WAVEFORM_BACKEND_REQUEST == "python":
+    _WAVEFORM_NATIVE = None
+else:
+    try:
+        import _waveform_native as _WAVEFORM_NATIVE
+    except ImportError as exc:
+        _WAVEFORM_NATIVE_IMPORT_ERROR = exc
+        if _WAVEFORM_BACKEND_REQUEST == "native":
+            raise RuntimeError(
+                "MDT_WAVEFORM_BACKEND=native requested, but the release "
+                "waveform extension could not be imported"
+            ) from exc
+        # auto is the compatibility default: source checkouts, unsupported
+        # platforms, and baseline wheels keep the exact NumPy path.
+        _WAVEFORM_NATIVE = None
+
 log = logging.getLogger(__name__)
 
 # MDT_DATA_DIR: explicit override so a backend run against an unpacked
@@ -1226,7 +1250,10 @@ def _downsample_max(arr: np.ndarray, points: int) -> np.ndarray:
     return np.maximum.reduceat(arr, edges, axis=0)
 
 
-def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
+def _bands_payload_python(
+    bands: dict[str, np.ndarray], points: int
+) -> dict[str, Any]:
+    """Original NumPy/Python implementation retained as the exact fallback."""
     out: dict[str, Any] = {}
     length = 0
     for name, arr in bands.items():
@@ -1235,6 +1262,22 @@ def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
         out[name] = [round(float(v), 4) for v in down]
     out["length"] = length
     return out
+
+
+def waveform_materialization_backend() -> str:
+    """Return the inspectable backend selected once when this module loaded."""
+    return "rust-pyo3" if _WAVEFORM_NATIVE is not None else "python-numpy"
+
+
+def waveform_materialization_backend_request() -> str:
+    """Return the validated MDT_WAVEFORM_BACKEND policy value."""
+    return _WAVEFORM_BACKEND_REQUEST
+
+
+def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
+    if _WAVEFORM_NATIVE is not None:
+        return _WAVEFORM_NATIVE.bands_payload(bands, points)
+    return _bands_payload_python(bands, points)
 
 
 def _first_tags(directory: Path) -> tuple[dict[str, Any], list[str]]:

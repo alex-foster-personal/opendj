@@ -1,0 +1,20 @@
+[package]
+name = "music-dj-tools-waveform-native"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "PyO3 peak-downsampling kernel for Open DJ ANLZ waveforms"
+
+[lib]
+name = "_waveform_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+numpy = "0.25"
+pyo3 = { version = "0.25", features = ["extension-module"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
