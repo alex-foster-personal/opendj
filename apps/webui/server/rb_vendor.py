@@ -58,18 +58,43 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared import audio_quality, fs_residency
+from apps.shared import audio_quality, fs_residency, platform_paths
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
-from apps.shared import platform_paths
+from apps.shared.platform_paths import MappedPath
+from apps.shared.platform_paths import resolve_library_path as resolve_library_path
 from apps.shared.state import locations as track_locations
-from apps.shared.platform_paths import (
-    MappedPath,
-    resolve_library_path as resolve_library_path,
-)
 from apps.vocals import cache as vocal_cache
 from apps.webui.server import beatgrid_diagnostics
 
 log = logging.getLogger(__name__)
+
+_WAVEFORM_BACKEND_REQUEST = os.environ.get("MDT_WAVEFORM_BACKEND", "auto").strip().lower()
+if _WAVEFORM_BACKEND_REQUEST not in {"auto", "python", "native"}:
+    raise RuntimeError(
+        "MDT_WAVEFORM_BACKEND must be one of auto, python, or native; "
+        f"got {_WAVEFORM_BACKEND_REQUEST!r}"
+    )
+
+_WAVEFORM_NATIVE_IMPORT_ERROR: Optional[ImportError] = None
+if _WAVEFORM_BACKEND_REQUEST == "python":
+    _WAVEFORM_NATIVE = None
+else:
+    try:
+        import _rb_waveform_native as _WAVEFORM_NATIVE
+    except ImportError as exc:
+        _WAVEFORM_NATIVE_IMPORT_ERROR = exc
+        if _WAVEFORM_BACKEND_REQUEST == "native":
+            raise RuntimeError(
+                "MDT_WAVEFORM_BACKEND=native requested, but the release "
+                "waveform extension could not be imported"
+            ) from exc
+        # auto is the compatibility default: source checkouts, unsupported
+        # platforms, and baseline wheels keep the exact NumPy path.
+        _WAVEFORM_NATIVE = None
+        log.warning(
+            "native waveform extension unavailable; using Python/NumPy fallback: %s",
+            exc,
+        )
 
 # MDT_DATA_DIR: explicit override so a backend run against an unpacked
 # scripts/data_snapshot.py pack (e.g. on a Windows box, or any Mac dev dir
@@ -1226,7 +1251,10 @@ def _downsample_max(arr: np.ndarray, points: int) -> np.ndarray:
     return np.maximum.reduceat(arr, edges, axis=0)
 
 
-def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
+def _bands_payload_python(
+    bands: dict[str, np.ndarray], points: int
+) -> dict[str, Any]:
+    """Original NumPy/Python implementation retained as the exact fallback."""
     out: dict[str, Any] = {}
     length = 0
     for name, arr in bands.items():
@@ -1235,6 +1263,38 @@ def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
         out[name] = [round(float(v), 4) for v in down]
     out["length"] = length
     return out
+
+
+def waveform_materialization_backend() -> str:
+    """Return the inspectable backend selected once when this module loaded."""
+    return "rust-pyo3" if _WAVEFORM_NATIVE is not None else "python-numpy"
+
+
+def waveform_materialization_backend_request() -> str:
+    """Return the validated MDT_WAVEFORM_BACKEND policy value."""
+    return _WAVEFORM_BACKEND_REQUEST
+
+
+def waveform_materialization_status() -> dict[str, Any]:
+    """Return the selected backend and any native activation failure."""
+    error = _WAVEFORM_NATIVE_IMPORT_ERROR
+    return {
+        "requested": _WAVEFORM_BACKEND_REQUEST,
+        "selected": waveform_materialization_backend(),
+        "native_available": _WAVEFORM_NATIVE is not None,
+        "native_import_error": (
+            f"{type(error).__name__}: {error}" if error is not None else None
+        ),
+    }
+
+
+def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
+    lengths = {int(arr.shape[0]) for arr in bands.values()}
+    if len(lengths) > 1:
+        raise ValueError("waveform bands must have equal lengths")
+    if _WAVEFORM_NATIVE is not None:
+        return _WAVEFORM_NATIVE.bands_payload(bands, points)
+    return _bands_payload_python(bands, points)
 
 
 def _first_tags(directory: Path) -> tuple[dict[str, Any], list[str]]:

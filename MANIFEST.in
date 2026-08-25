@@ -1,0 +1,3 @@
+include apps/webui/server/native/waveform/Cargo.toml
+include apps/webui/server/native/waveform/Cargo.lock
+recursive-include apps/webui/server/native/waveform/src *.rs

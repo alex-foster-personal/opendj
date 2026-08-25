@@ -1,8 +1,10 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
+WAVEFORM_CONSUMER_VENV := dist/waveform-consumer
+WAVEFORM_CONSUMER_PY := $(WAVEFORM_CONSUMER_VENV)/bin/python
 FRONTEND_NODE ?= node
 RB_PARITY_PYTEST_PATHS := \
 	tests/reconcile/test_prefix_dead_playlists.py \
@@ -120,7 +122,34 @@ build-dist:
 	rm -rf dist build
 	$(PY) -m build
 
-release-check: test lint build-dist reqs-check
+# The native extension is part of the normal server distribution. Keep this
+# target wheel-based so the gate tests what consumers install, not a source-tree
+# maturin development shim.
+waveform-native-wheel:
+	rm -f dist/music_dj_tools-*.whl
+	mkdir -p dist
+	uv build --wheel --python $(PY) --out-dir dist
+
+waveform-native-verify:
+	$(PY) scripts/check_waveform_native_wheel.py dist/music_dj_tools-*.whl
+	rm -rf $(WAVEFORM_CONSUMER_VENV)
+	uv venv --python $(PY) $(WAVEFORM_CONSUMER_VENV)
+	uv pip install --python $(WAVEFORM_CONSUMER_PY) dist/music_dj_tools-*.whl
+	cd $(WAVEFORM_CONSUMER_VENV) && \
+		MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
+		$(CURDIR)/$(WAVEFORM_CONSUMER_PY) \
+			$(CURDIR)/scripts/check_waveform_installed_consumer.py \
+			--source-root $(CURDIR) \
+			--fixture $(CURDIR)/tests/fixtures/rb-usb-export/PIONEER/USBANLZ/P000/00029138 \
+			--manifest $(CURDIR)/tests/fixtures/rb-usb-export/waveform-native-manifest-v1.json
+	uv pip install --python $(PY) --reinstall --no-deps dist/music_dj_tools-*.whl
+	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
+		$(PYTEST) -q tests/webui/test_waveform_native.py \
+			-k 'native_request_selects or collision_resistant or canonical_fixture or release_acceptance or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
+
+waveform-native-release-check: waveform-native-wheel waveform-native-verify
+
+release-check: test lint build-dist waveform-native-verify reqs-check
 	@echo "[release-check] verifying prior release tag (non-fatal)..."
 	@gh release view v1.0.1 >/dev/null 2>&1 \
 		&& echo "[release-check] prior release v1.0.1 found." \
