@@ -138,7 +138,7 @@ waveform-native-verify:
 	uv pip install --python $(PY) --reinstall --no-deps dist/native/*.whl
 	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
 		$(PYTEST) -q tests/webui/test_waveform_native.py \
-			-k 'native_request_selects or collision_resistant or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
+			-k 'native_request_selects or collision_resistant or canonical_fixture or release_acceptance or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
 
 waveform-native-release-check: waveform-native-wheel waveform-native-verify
 
