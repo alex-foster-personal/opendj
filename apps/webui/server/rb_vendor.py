@@ -81,7 +81,7 @@ if _WAVEFORM_BACKEND_REQUEST == "python":
     _WAVEFORM_NATIVE = None
 else:
     try:
-        import _waveform_native as _WAVEFORM_NATIVE
+        import _rb_waveform_native as _WAVEFORM_NATIVE
     except ImportError as exc:
         _WAVEFORM_NATIVE_IMPORT_ERROR = exc
         if _WAVEFORM_BACKEND_REQUEST == "native":
@@ -1275,6 +1275,9 @@ def waveform_materialization_backend_request() -> str:
 
 
 def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:
+    lengths = {int(arr.shape[0]) for arr in bands.values()}
+    if len(lengths) > 1:
+        raise ValueError("waveform bands must have equal lengths")
     if _WAVEFORM_NATIVE is not None:
         return _WAVEFORM_NATIVE.bands_payload(bands, points)
     return _bands_payload_python(bands, points)

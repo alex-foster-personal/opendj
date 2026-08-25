@@ -1,8 +1,9 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
+MATURIN := uv run --no-project --with 'maturin>=1.8,<2' maturin
 FRONTEND_NODE ?= node
 RB_PARITY_PYTEST_PATHS := \
 	tests/reconcile/test_prefix_dead_playlists.py \
@@ -119,8 +120,29 @@ quality-baseline:
 build-dist:
 	rm -rf dist build
 	$(PY) -m build
+	$(MAKE) waveform-native-wheel
 
-release-check: test lint build-dist reqs-check
+# The production distribution is a Python wheel plus this companion wheel.
+# There is no Python-server-in-Tauri bundle path in this repository; see the
+# crate README. Keep the gate wheel-based so it tests what release consumers
+# install rather than a maturin source-tree development shim.
+waveform-native-wheel:
+	rm -rf dist/native
+	mkdir -p dist/native
+	$(MATURIN) build --release --interpreter $(PY) \
+		--manifest-path apps/webui/server/native/waveform/Cargo.toml \
+		--out dist/native
+
+waveform-native-verify:
+	$(PY) scripts/check_waveform_native_wheel.py dist/native/*.whl
+	uv pip install --python $(PY) --reinstall --no-deps dist/native/*.whl
+	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
+		$(PYTEST) -q tests/webui/test_waveform_native.py \
+			-k 'native_request_selects or collision_resistant or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
+
+waveform-native-release-check: waveform-native-wheel waveform-native-verify
+
+release-check: test lint build-dist waveform-native-verify reqs-check
 	@echo "[release-check] verifying prior release tag (non-fatal)..."
 	@gh release view v1.0.1 >/dev/null 2>&1 \
 		&& echo "[release-check] prior release v1.0.1 found." \

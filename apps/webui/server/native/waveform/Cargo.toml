@@ -6,12 +6,12 @@ license = "Apache-2.0"
 description = "PyO3 peak-downsampling kernel for Open DJ ANLZ waveforms"
 
 [lib]
-name = "_waveform_native"
+name = "_rb_waveform_native"
 crate-type = ["cdylib"]
 
 [dependencies]
 numpy = "0.25"
-pyo3 = { version = "0.25", features = ["extension-module"] }
+pyo3 = { version = "0.25", features = ["extension-module", "abi3-py311"] }
 
 [profile.release]
 opt-level = 3

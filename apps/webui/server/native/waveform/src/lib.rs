@@ -1,5 +1,5 @@
 use numpy::PyReadonlyArray1;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
@@ -64,8 +64,11 @@ fn bands_payload<'py>(
     points: isize,
 ) -> PyResult<Bound<'py, PyDict>> {
     let output = PyDict::new(py);
+    // The HTTP boundary requires >=100. Keep the legacy helper's internal
+    // zero/negative behaviour exact: NumPy returns an empty payload there.
     let points = usize::try_from(points).unwrap_or(0);
     let mut length = 0usize;
+    let mut expected_band_length = None;
 
     for (name, value) in bands.iter() {
         let name_text = name
@@ -77,8 +80,21 @@ fn bands_payload<'py>(
             ))
         })?;
         let view = array.as_array();
+        let band_length = view.len();
+        if let Some(expected) = expected_band_length {
+            if band_length != expected {
+                return Err(PyValueError::new_err(format!(
+                    "waveform bands must have equal lengths; band '{name_text}' has {band_length}, expected {expected}"
+                )));
+            }
+        } else {
+            expected_band_length = Some(band_length);
+        }
         let values: Vec<f64> = view.iter().copied().collect();
-        let materialized = downsample_max_rounded(&values, points);
+        // Array extraction and Python-list construction require the GIL. The
+        // pure numeric kernel does not, and sync FastAPI routes can overlap in
+        // the server's worker pool, so let other requests run during it.
+        let materialized = py.allow_threads(move || downsample_max_rounded(&values, points));
         length = materialized.len();
         output.set_item(name, PyList::new(py, materialized)?)?;
     }
@@ -87,8 +103,43 @@ fn bands_payload<'py>(
 }
 
 #[pymodule]
-fn _waveform_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _rb_waveform_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(bands_payload, module)?)?;
     module.add("BACKEND", "rust-pyo3")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::downsample_max_rounded;
+
+    #[test]
+    fn uneven_buckets_follow_numpy_reduceat_edges() {
+        // floor([0, 7/3, 14/3]) => starts [0, 2, 4], hence 2/2/3 items.
+        assert_eq!(
+            downsample_max_rounded(&[1.0, 7.0, 3.0, 4.0, 2.0, 9.0, 5.0], 3),
+            vec![7.0, 4.0, 9.0]
+        );
+    }
+
+    #[test]
+    fn no_downsample_still_rounds_to_payload_precision() {
+        assert_eq!(
+            downsample_max_rounded(&[0.123_456, 0.000_05, 1.0], 8),
+            vec![0.1235, 0.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn nan_propagates_within_a_bucket_like_numpy_maximum() {
+        let output = downsample_max_rounded(&[1.0, f64::NAN, 3.0, 2.0], 2);
+        assert!(output[0].is_nan());
+        assert_eq!(output[1], 3.0);
+    }
+
+    #[test]
+    fn zero_points_and_empty_input_are_empty() {
+        assert!(downsample_max_rounded(&[1.0, 2.0], 0).is_empty());
+        assert!(downsample_max_rounded(&[], 100).is_empty());
+    }
 }
