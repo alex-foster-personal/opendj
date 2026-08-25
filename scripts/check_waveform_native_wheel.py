@@ -32,12 +32,18 @@ def main() -> int:
 
     with zipfile.ZipFile(wheel) as archive:
         members = archive.namelist()
+        metadata_names = [name for name in members if name.endswith(".dist-info/METADATA")]
+        if len(metadata_names) != 1:
+            raise SystemExit(f"wheel must contain exactly one METADATA file: {wheel.name}")
+        metadata = archive.read(metadata_names[0]).decode()
     suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
     if not any(
         Path(member).name.startswith("_rb_waveform_native.") and member.endswith(suffixes)
         for member in members
     ):
         raise SystemExit(f"wheel lacks _rb_waveform_native extension: {wheel.name}")
+    if "Requires-Dist: numpy<2" not in metadata:
+        raise SystemExit(f"wheel does not declare its NumPy runtime dependency: {wheel.name}")
     print(f"waveform native wheel payload: _rb_waveform_native ({wheel.name})")
     return 0
 

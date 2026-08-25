@@ -8,7 +8,7 @@ NumPy oracle/fallback remain in `apps.webui.server.rb_vendor`.
 From the repository root (Python 3.11+ and Rust required):
 
 ```sh
-uv run --no-project --with maturin maturin develop --release \
+uv run --no-project --with 'maturin>=1.8,<2' maturin develop --release \
   --manifest-path apps/webui/server/native/waveform/Cargo.toml
 cargo test --manifest-path apps/webui/server/native/waveform/Cargo.toml
 MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
