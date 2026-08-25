@@ -34,6 +34,9 @@ and newer. The release gate rejects any wheel not tagged `cp311-abi3`, imports
 it under the build interpreter, and CI separately imports that same wheel under
 Python 3.14. This was chosen from built-wheel evidence rather than metadata
 alone; the extension was smoke-tested with real NumPy arrays on both versions.
+The core/native runtime accepts NumPy 1.26 and newer, so fresh Python 3.14
+installs resolve a published NumPy 2 wheel. The `analysis` extra and development
+requirements retain `numpy<2` separately for madmom compatibility.
 
 The pure numeric bucket/rounding work releases the GIL. NumPy extraction and
 Python-list construction retain it, as required by the C API. The benchmark

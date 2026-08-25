@@ -42,7 +42,7 @@ def main() -> int:
         for member in members
     ):
         raise SystemExit(f"wheel lacks _rb_waveform_native extension: {wheel.name}")
-    if "Requires-Dist: numpy<2" not in metadata:
+    if "Requires-Dist: numpy>=1.26" not in metadata:
         raise SystemExit(f"wheel does not declare its NumPy runtime dependency: {wheel.name}")
     print(f"waveform native wheel payload: _rb_waveform_native ({wheel.name})")
     return 0

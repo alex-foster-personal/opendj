@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "music-dj-tools-waveform-native"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["numpy<2"]
+dependencies = ["numpy>=1.26"]
 
 [tool.maturin]
 bindings = "pyo3"
