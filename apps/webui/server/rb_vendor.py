@@ -58,16 +58,15 @@ from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence
 import numpy as np
 from fastapi import HTTPException
 
-from apps.shared import audio_quality, fs_residency
+from apps.shared import audio_quality, fs_residency, platform_paths
 from apps.shared.paths import DATA_DIR as _PATHS_DATA_DIR
-from apps.shared import platform_paths
+from apps.shared.platform_paths import MappedPath
+from apps.shared.platform_paths import resolve_library_path as resolve_library_path
 from apps.shared.state import locations as track_locations
-from apps.shared.platform_paths import (
-    MappedPath,
-    resolve_library_path as resolve_library_path,
-)
 from apps.vocals import cache as vocal_cache
 from apps.webui.server import beatgrid_diagnostics
+
+log = logging.getLogger(__name__)
 
 _WAVEFORM_BACKEND_REQUEST = os.environ.get("MDT_WAVEFORM_BACKEND", "auto").strip().lower()
 if _WAVEFORM_BACKEND_REQUEST not in {"auto", "python", "native"}:
@@ -92,8 +91,10 @@ else:
         # auto is the compatibility default: source checkouts, unsupported
         # platforms, and baseline wheels keep the exact NumPy path.
         _WAVEFORM_NATIVE = None
-
-log = logging.getLogger(__name__)
+        log.warning(
+            "native waveform extension unavailable; using Python/NumPy fallback: %s",
+            exc,
+        )
 
 # MDT_DATA_DIR: explicit override so a backend run against an unpacked
 # scripts/data_snapshot.py pack (e.g. on a Windows box, or any Mac dev dir
@@ -1272,6 +1273,19 @@ def waveform_materialization_backend() -> str:
 def waveform_materialization_backend_request() -> str:
     """Return the validated MDT_WAVEFORM_BACKEND policy value."""
     return _WAVEFORM_BACKEND_REQUEST
+
+
+def waveform_materialization_status() -> dict[str, Any]:
+    """Return the selected backend and any native activation failure."""
+    error = _WAVEFORM_NATIVE_IMPORT_ERROR
+    return {
+        "requested": _WAVEFORM_BACKEND_REQUEST,
+        "selected": waveform_materialization_backend(),
+        "native_available": _WAVEFORM_NATIVE is not None,
+        "native_import_error": (
+            f"{type(error).__name__}: {error}" if error is not None else None
+        ),
+    }
 
 
 def _bands_payload(bands: dict[str, np.ndarray], points: int) -> dict[str, Any]:

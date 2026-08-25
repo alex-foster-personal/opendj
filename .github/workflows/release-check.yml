@@ -94,7 +94,7 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r requirements.txt
-          .venv/bin/pip install maturin pytest
+          .venv/bin/pip install pytest
 
       - name: Build, inspect, install, and prove real ANLZ parity
         run: make waveform-native-release-check
@@ -102,13 +102,13 @@ jobs:
       - name: Prove the macOS ABI3 wheel imports on Python 3.14
         run: |
           uv run --isolated --no-project --python 3.14 --with numpy \
-            --with dist/native/*.whl python -c \
+            --with dist/music_dj_tools-*.whl python -c \
             'import _rb_waveform_native as n, numpy as np; assert n.bands_payload({"low": np.array([0.0, 1.0])}, 100)["length"] == 2'
 
-      - name: Upload macOS native companion wheel
+      - name: Upload macOS production wheel
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: waveform-native-macos-arm64
-          path: dist/native/*.whl
+          name: music-dj-tools-macos-arm64
+          path: dist/music_dj_tools-*.whl
           if-no-files-found: error
           retention-days: 7

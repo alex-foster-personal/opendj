@@ -1,7 +1,7 @@
 # Rekordbox waveform native extension
 
-`_rb_waveform_native` is the optional PyO3 acceleration companion for the
-repository's Rekordbox ANLZ waveform path. Its entire Python API is the one
+`_rb_waveform_native` is the optional-at-runtime PyO3 acceleration embedded in
+the normal `music-dj-tools` server wheel. Its entire Python API is the one
 fused business operation `bands_payload`; decoding and the unchanged explicit
 NumPy oracle/fallback remain in `apps.webui.server.rb_vendor`.
 
@@ -22,11 +22,12 @@ while `python` always selects that oracle.
 
 ## Packaging contract
 
-The repository currently distributes a Python wheel/sdist and has a separate
-Tauri launcher, but no build path bundles the Python web server into the macOS
-`.app`. The release build therefore emits this crate as a **companion wheel**
-and the native release gate installs it before checking real-fixture parity.
-It does not claim inclusion in a desktop bundle.
+The root setuptools build compiles this crate into the normal platform wheel;
+an ordinary `pip install music-dj-tools-*.whl` activates it automatically.
+The release gate installs that root wheel in an isolated environment outside
+the source tree, then checks the selected backend and real-fixture parity. The
+separate Tauri launcher does not bundle the Python web server, so this makes no
+claim about a desktop-app Python runtime that does not exist in the repository.
 
 The crate enables PyO3 `abi3-py311`: one platform wheel supports CPython 3.11
 and newer. The release gate rejects any wheel not tagged `cp311-abi3`, imports

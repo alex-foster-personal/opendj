@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed unless the native companion wheel carries the promised ABI."""
+"""Fail closed unless the production wheel carries the promised native ABI."""
 
 from __future__ import annotations
 

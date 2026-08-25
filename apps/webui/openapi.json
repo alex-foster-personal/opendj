@@ -1755,11 +1755,15 @@
           "version": {
             "title": "Version",
             "type": "string"
+          },
+          "waveform_materialization": {
+            "$ref": "#/components/schemas/HealthWaveformMaterialization"
           }
         },
         "required": [
           "state_db",
           "cloud",
+          "waveform_materialization",
           "bind_host",
           "version"
         ],
@@ -1841,6 +1845,40 @@
           }
         },
         "title": "HealthSyncthing",
+        "type": "object"
+      },
+      "HealthWaveformMaterialization": {
+        "properties": {
+          "native_available": {
+            "title": "Native Available",
+            "type": "boolean"
+          },
+          "native_import_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Import Error"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "string"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "selected",
+          "native_available"
+        ],
+        "title": "HealthWaveformMaterialization",
         "type": "object"
       },
       "HotCueMutationOut": {

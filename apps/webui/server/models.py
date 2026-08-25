@@ -218,11 +218,19 @@ class HealthSyncthing(BaseModel):
     last_scan_at: str | None = None
 
 
+class HealthWaveformMaterialization(BaseModel):
+    requested: str
+    selected: str
+    native_available: bool
+    native_import_error: str | None = None
+
+
 class HealthOut(BaseModel):
     status: str = "ok"
     state_db: HealthStateDb
     cloud: HealthCloud
     syncthing: HealthSyncthing | None = None
+    waveform_materialization: HealthWaveformMaterialization
     bind_host: str
     version: str
 
@@ -232,6 +240,7 @@ __all__ = [
     "HealthOut",
     "HealthStateDb",
     "HealthSyncthing",
+    "HealthWaveformMaterialization",
     "PairingCreate",
     "PairingOut",
     "PlaylistDetail",

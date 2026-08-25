@@ -3,7 +3,8 @@
 VENV ?= .venv
 PY := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
-MATURIN := uv run --no-project --with 'maturin>=1.8,<2' maturin
+WAVEFORM_CONSUMER_VENV := dist/waveform-consumer
+WAVEFORM_CONSUMER_PY := $(WAVEFORM_CONSUMER_VENV)/bin/python
 FRONTEND_NODE ?= node
 RB_PARITY_PYTEST_PATHS := \
 	tests/reconcile/test_prefix_dead_playlists.py \
@@ -120,22 +121,28 @@ quality-baseline:
 build-dist:
 	rm -rf dist build
 	$(PY) -m build
-	$(MAKE) waveform-native-wheel
 
-# The production distribution is a Python wheel plus this companion wheel.
-# There is no Python-server-in-Tauri bundle path in this repository; see the
-# crate README. Keep the gate wheel-based so it tests what release consumers
-# install rather than a maturin source-tree development shim.
+# The native extension is part of the normal server distribution. Keep this
+# target wheel-based so the gate tests what consumers install, not a source-tree
+# maturin development shim.
 waveform-native-wheel:
-	rm -rf dist/native
-	mkdir -p dist/native
-	$(MATURIN) build --release --interpreter $(PY) \
-		--manifest-path apps/webui/server/native/waveform/Cargo.toml \
-		--out dist/native
+	rm -f dist/music_dj_tools-*.whl
+	mkdir -p dist
+	uv build --wheel --python $(PY) --out-dir dist
 
 waveform-native-verify:
-	$(PY) scripts/check_waveform_native_wheel.py dist/native/*.whl
-	uv pip install --python $(PY) --reinstall --no-deps dist/native/*.whl
+	$(PY) scripts/check_waveform_native_wheel.py dist/music_dj_tools-*.whl
+	rm -rf $(WAVEFORM_CONSUMER_VENV)
+	uv venv --python $(PY) $(WAVEFORM_CONSUMER_VENV)
+	uv pip install --python $(WAVEFORM_CONSUMER_PY) dist/music_dj_tools-*.whl
+	cd $(WAVEFORM_CONSUMER_VENV) && \
+		MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
+		$(CURDIR)/$(WAVEFORM_CONSUMER_PY) \
+			$(CURDIR)/scripts/check_waveform_installed_consumer.py \
+			--source-root $(CURDIR) \
+			--fixture $(CURDIR)/tests/fixtures/rb-usb-export/PIONEER/USBANLZ/P000/00029138 \
+			--manifest $(CURDIR)/tests/fixtures/rb-usb-export/waveform-native-manifest-v1.json
+	uv pip install --python $(PY) --reinstall --no-deps dist/music_dj_tools-*.whl
 	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
 		$(PYTEST) -q tests/webui/test_waveform_native.py \
 			-k 'native_request_selects or collision_resistant or canonical_fixture or release_acceptance or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
