@@ -328,6 +328,40 @@ def _run_cli(job: _RefreshJob, argv: list[str]) -> None:
         raise RuntimeError(f"{argv[2] if len(argv) > 2 else argv[0]} exited {rc}")
 
 
+def _run_analysis_chunk(job: _RefreshJob, chunk: list[tuple[str, str]]) -> None:
+    """Invoke apps.analysis.run for one chunk of (stable_id, path) targets.
+
+    Library scope hands the runner the CANONICAL state-layer stable_ids via
+    --pairs-json: with --files it derives pathid_* keys, so the row lands
+    under a key coverage never matches and the track re-analyzes on every
+    refresh. Batch scope (empty sids: freshly staged files with no tracks
+    rows yet) keeps --files, where the pathid_* placeholder is the intended
+    pre-ingest identity.
+    """
+    if all(sid for sid, _ in chunk):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".pairs.json", delete=False
+        ) as fh:
+            json.dump([[sid, f] for sid, f in chunk], fh)
+            pairs_path = fh.name
+        try:
+            _run_cli(
+                job,
+                [sys.executable, "-m", "apps.analysis.run",
+                 "--workers", str(min(2, len(chunk))),
+                 "--pairs-json", pairs_path],
+            )
+        finally:
+            Path(pairs_path).unlink(missing_ok=True)
+    else:
+        _run_cli(
+            job,
+            [sys.executable, "-m", "apps.analysis.run",
+             "--workers", str(min(2, len(chunk))),
+             "--files", *[f for _, f in chunk]],
+        )
+
+
 def _refresh_worker(job: _RefreshJob) -> None:
     global _job
     try:
@@ -365,34 +399,7 @@ def _refresh_worker(job: _RefreshJob) -> None:
                 _log(job, f"analysis: {len(targets)} tracks missing")
                 for i in range(0, len(targets), ANALYSIS_CHUNK):
                     chunk = targets[i : i + ANALYSIS_CHUNK]
-                    if all(sid for sid, _ in chunk):
-                        # Library scope: hand the runner the CANONICAL
-                        # state-layer stable_ids. With --files it derives
-                        # pathid_* keys, so the row lands under a key
-                        # coverage never matches and the track re-analyzes
-                        # on every refresh.
-                        with tempfile.NamedTemporaryFile(
-                            "w", suffix=".pairs.json", delete=False
-                        ) as fh:
-                            json.dump([[sid, f] for sid, f in chunk], fh)
-                            pairs_path = fh.name
-                        try:
-                            _run_cli(
-                                job,
-                                [sys.executable, "-m", "apps.analysis.run",
-                                 "--workers", "2", "--pairs-json", pairs_path],
-                            )
-                        finally:
-                            Path(pairs_path).unlink(missing_ok=True)
-                    else:
-                        # Batch scope: freshly staged files have no tracks
-                        # rows yet, so the runner's pathid_* placeholder is
-                        # the intended pre-ingest identity.
-                        _run_cli(
-                            job,
-                            [sys.executable, "-m", "apps.analysis.run",
-                             "--workers", "2", "--files", *[f for _, f in chunk]],
-                        )
+                    _run_analysis_chunk(job, chunk)
                     job.step_done += len(chunk)
                     for sid, _ in chunk:
                         job.recently_done_ids.append(sid)
