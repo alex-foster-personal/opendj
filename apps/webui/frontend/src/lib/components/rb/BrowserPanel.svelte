@@ -942,6 +942,8 @@
 			genre: wire.genre,
 			file_exists: wire.file_exists,
 			is_streaming: wire.is_streaming,
+			spotify_pending:
+				wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
 			quality: wire.quality ?? null,
 			play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
 			strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
@@ -978,6 +980,7 @@
 			genre: null,
 			file_exists: track.file_exists,
 			is_streaming: null,
+			spotify_pending: track.stable_id.startsWith('spotify-pending:'),
 			quality: track.quality ?? null,
 			play_count: typeof track.play_count === 'number' ? track.play_count : 0,
 			strip: decodePreviewStrip(track.preview_b64, track.preview_max),

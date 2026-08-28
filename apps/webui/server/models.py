@@ -148,6 +148,9 @@ class TrackRowOut(BaseModel):
     preview_max: int | None
     file_exists: bool
     is_streaming: bool
+    # Unmatched Spotify placeholder (synthetic spotify-pending:* stable_id).
+    # Distinct from generic streaming so the browser can light-green tint.
+    spotify_pending: bool = False
     quality: QualityOut
     play_count: int = 0
     vocals: dict[str, Any]
