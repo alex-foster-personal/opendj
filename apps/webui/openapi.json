@@ -425,6 +425,33 @@
         "title": "BeatgridIssueOut",
         "type": "object"
       },
+      "Body_upload_api_v1_ingest_upload_post": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "files",
+          "batch"
+        ],
+        "title": "Body_upload_api_v1_ingest_upload_post",
+        "type": "object"
+      },
       "BrokenTrackList": {
         "properties": {
           "total": {
@@ -1028,6 +1055,44 @@
         "title": "ClustersOut",
         "type": "object"
       },
+      "ConfigIn": {
+        "properties": {
+          "enabled": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Enabled",
+            "type": "object"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ConfigIn",
+        "type": "object"
+      },
+      "ConfigOut": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps",
+          "path"
+        ],
+        "title": "ConfigOut",
+        "type": "object"
+      },
       "CopilotTrackOut": {
         "properties": {
           "artist": {
@@ -1099,6 +1164,42 @@
           "energy"
         ],
         "title": "CopilotTrackOut",
+        "type": "object"
+      },
+      "CoverageOut": {
+        "properties": {
+          "generated_at": {
+            "title": "Generated At",
+            "type": "number"
+          },
+          "missing": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Missing",
+            "type": "object"
+          },
+          "on_disk": {
+            "title": "On Disk",
+            "type": "integer"
+          },
+          "total_tracks": {
+            "title": "Total Tracks",
+            "type": "integer"
+          },
+          "unreachable": {
+            "title": "Unreachable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tracks",
+          "on_disk",
+          "unreachable",
+          "missing",
+          "generated_at"
+        ],
+        "title": "CoverageOut",
         "type": "object"
       },
       "DecisionIn": {
@@ -4184,6 +4285,131 @@
         "title": "RecorderStatus",
         "type": "object"
       },
+      "RefreshIn": {
+        "properties": {
+          "batch_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Dir"
+          }
+        },
+        "title": "RefreshIn",
+        "type": "object"
+      },
+      "RefreshStatusOut": {
+        "properties": {
+          "current_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "log_tail": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Log Tail",
+            "type": "array"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "recently_done_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recently Done Ids",
+            "type": "array"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "step_done": {
+            "title": "Step Done",
+            "type": "integer"
+          },
+          "step_total": {
+            "title": "Step Total",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "steps_completed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps Completed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "running",
+          "phase",
+          "steps",
+          "current_step",
+          "step_done",
+          "step_total",
+          "steps_completed",
+          "started_at",
+          "finished_at",
+          "error",
+          "log_tail",
+          "recently_done_ids"
+        ],
+        "title": "RefreshStatusOut",
+        "type": "object"
+      },
       "RelocateApplyIn": {
         "properties": {
           "confirm": {
@@ -4494,6 +4720,11 @@
               }
             ],
             "title": "Rating"
+          },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
           },
           "stable_id": {
             "title": "Stable Id",
@@ -5846,6 +6077,11 @@
             ],
             "title": "Rating"
           },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
+          },
           "stable_id": {
             "title": "Stable Id",
             "type": "string"
@@ -6069,6 +6305,92 @@
           }
         },
         "title": "UiPrefsPatch",
+        "type": "object"
+      },
+      "UploadFileResult": {
+        "properties": {
+          "duplicate_of": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "fingerprint_method": {
+            "title": "Fingerprint Method",
+            "type": "string"
+          },
+          "skipped_duplicate": {
+            "title": "Skipped Duplicate",
+            "type": "boolean"
+          },
+          "staged_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staged Path"
+          }
+        },
+        "required": [
+          "filename",
+          "staged_path",
+          "skipped_duplicate",
+          "duplicate_of",
+          "duration_s",
+          "fingerprint_method"
+        ],
+        "title": "UploadFileResult",
+        "type": "object"
+      },
+      "UploadOut": {
+        "properties": {
+          "batch": {
+            "title": "Batch",
+            "type": "string"
+          },
+          "dest_dir": {
+            "title": "Dest Dir",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/UploadFileResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch",
+          "dest_dir",
+          "results"
+        ],
+        "title": "UploadOut",
         "type": "object"
       },
       "UsbVolumeOut": {
@@ -7837,6 +8159,197 @@
         "summary": "Engine Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/ingest/config": {
+      "get": {
+        "operationId": "get_config_api_v1_ingest_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "ingest"
+        ]
+      },
+      "put": {
+        "operationId": "put_config_api_v1_ingest_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Config",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/coverage": {
+      "get": {
+        "operationId": "get_coverage_api_v1_ingest_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coverage",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/refresh": {
+      "post": {
+        "operationId": "start_refresh_api_v1_ingest_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Refresh",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/refresh/status": {
+      "get": {
+        "operationId": "refresh_status_api_v1_ingest_refresh_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Status",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/upload": {
+      "post": {
+        "operationId": "upload_api_v1_ingest_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_api_v1_ingest_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload",
+        "tags": [
+          "ingest"
         ]
       }
     },
