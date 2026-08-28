@@ -105,7 +105,8 @@ def _pick_bin_candidates(
         return []
     bin_width = duration_s / bin_count
     best_per_bin: dict[int, tuple[float, float]] = {}
-    for t, r in zip(onsets_s, rms_at_onsets):
+    # strict: rms_at_onsets is computed per onset; drift is a bug upstream.
+    for t, r in zip(onsets_s, rms_at_onsets, strict=True):
         b = min(bin_count - 1, int(t / bin_width))
         prev = best_per_bin.get(b)
         if prev is None or r > prev[1]:

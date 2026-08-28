@@ -78,6 +78,36 @@ class BrokenRow:
         ]
 
 
+def _broken_row_from(raw, rb) -> BrokenRow:
+    """Marry the lean RBTrack view with the raw ORM row's extra fields."""
+    key = getattr(raw, "KeyName", None) or ""
+    length = getattr(raw, "Length", None)
+    duration_s: int | None
+    try:
+        duration_s = int(length) if length is not None else None
+    except (TypeError, ValueError):
+        duration_s = None
+
+    original = rb.folder_path or ""
+    basename = Path(original).name if original else ""
+    parent = str(Path(original).parent) if original else ""
+
+    return BrokenRow(
+        id=rb.id,
+        title=rb.title,
+        artist=rb.artist,
+        album=rb.album,
+        genre=rb.genre,
+        bpm=rb.bpm,
+        key=key,
+        duration_s=duration_s,
+        file_size=rb.file_size,
+        original_path=original,
+        basename=basename,
+        parent_dir=parent,
+    )
+
+
 def _collect_broken(db) -> list[BrokenRow]:
     """Iterate RB content and keep rows whose on-disk file is gone.
 
@@ -97,35 +127,7 @@ def _collect_broken(db) -> list[BrokenRow]:
         # Materialised local bytes only -- iCloud dataless stubs are broken.
         if fs_residency.is_materialised(rb.file_path):
             continue
-
-        key = getattr(raw, "KeyName", None) or ""
-        length = getattr(raw, "Length", None)
-        duration_s: int | None
-        try:
-            duration_s = int(length) if length is not None else None
-        except (TypeError, ValueError):
-            duration_s = None
-
-        original = rb.folder_path or ""
-        basename = Path(original).name if original else ""
-        parent = str(Path(original).parent) if original else ""
-
-        rows.append(
-            BrokenRow(
-                id=rb.id,
-                title=rb.title,
-                artist=rb.artist,
-                album=rb.album,
-                genre=rb.genre,
-                bpm=rb.bpm,
-                key=key,
-                duration_s=duration_s,
-                file_size=rb.file_size,
-                original_path=original,
-                basename=basename,
-                parent_dir=parent,
-            )
-        )
+        rows.append(_broken_row_from(raw, rb))
     return rows
 
 
