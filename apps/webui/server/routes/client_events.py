@@ -70,6 +70,9 @@ def capture_client_event(payload: ClientEventIn, request: Request) -> ClientEven
         "forwarded_for": request.headers.get("x-forwarded-for"),
         "tailscale_user_login": request.headers.get("tailscale-user-login"),
         "tailscale_user_name": request.headers.get("tailscale-user-name"),
+        "cloudflare_access_email": request.headers.get(
+            "cf-access-authenticated-user-email"
+        ),
         "request_host": request.headers.get("host"),
         **payload.model_dump(),
     }

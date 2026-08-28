@@ -34,7 +34,34 @@ from apps.webui.run_agentbox import (
     remote_run_command,
     resolve_allowed_hosts,
     ssh_agentbox_argv,
+    validate_serve_status,
 )
+
+
+BROKEN_FUNNEL_STATUS_2026_08_22 = {
+    "TCP": {"443": {"HTTPS": True}, "80": {"HTTP": True}},
+    "Web": {
+        "agentbox.example-tailnet.ts.net:443": {
+            "Handlers": {"/": {"Proxy": "http://127.0.0.1:8084"}}
+        },
+        "agentbox.example-tailnet.ts.net:80": {
+            "Handlers": {"/": {"Proxy": "http://127.0.0.1:9080"}}
+        },
+    },
+    "AllowFunnel": {"agentbox.example-tailnet.ts.net:443": True},
+}
+
+FIXED_SERVE_STATUS_2026_08_22 = {
+    "TCP": {"443": {"HTTPS": True}, "80": {"HTTP": True}},
+    "Web": {
+        "agentbox.example-tailnet.ts.net:443": {
+            "Handlers": {"/": {"Proxy": "http://127.0.0.1:9400"}}
+        },
+        "agentbox.example-tailnet.ts.net:80": {
+            "Handlers": {"/": {"Proxy": "http://127.0.0.1:9080"}}
+        },
+    },
+}
 
 
 def _free_port() -> int:
@@ -139,6 +166,28 @@ def test_public_host_prefers_magicdns() -> None:
         "agentbox.example-tailnet.ts.net"
     )
     assert public_host(["agentbox"]) == "agentbox"
+
+
+def test_serve_contract_rejects_captured_public_funnel_drift() -> None:
+    """The real 22 Aug status must not pass as the private DJ route."""
+    with pytest.raises(PortConfigError) as caught:
+        validate_serve_status(
+            BROKEN_FUNNEL_STATUS_2026_08_22,
+            host="agentbox.example-tailnet.ts.net",
+            frontend_port=9400,
+        )
+    message = str(caught.value)
+    assert "public Tailscale Funnel is enabled" in message
+    assert "targets 'http://127.0.0.1:8084'" in message
+
+
+def test_serve_contract_accepts_captured_repaired_route() -> None:
+    """The real status captured immediately after repair is the contract."""
+    validate_serve_status(
+        FIXED_SERVE_STATUS_2026_08_22,
+        host="agentbox.example-tailnet.ts.net",
+        frontend_port=9400,
+    )
 
 
 def test_listener_pids_sees_a_real_loopback_socket() -> None:
