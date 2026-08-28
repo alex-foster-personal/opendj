@@ -152,9 +152,18 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 
 test.describe('setup entry points', () => {
 	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
+		// GET /tracks/{sid}/rb-meta answers 404 BY CONTRACT for a track with no
+		// rekordbox vendor mapping (this suite's whole library: locally imported
+		// fixtures), and BrowserPanel handles that status explicitly. WebKit
+		// still logs every 404 response as a console error the page cannot
+		// suppress, so that one handled resource log is filtered here the same
+		// way favicon noise is. Anything else stays a failure.
 		const errors: string[] = [];
 		page.on('console', (msg) => {
-			if (msg.type() === 'error') errors.push(msg.text());
+			if (msg.type() !== 'error') return;
+			const url = msg.location()?.url ?? '';
+			if (msg.text().includes('404') && url.includes('/rb-meta')) return;
+			errors.push(`${msg.text()} [${url}]`);
 		});
 
 		await gotoShellReady(page, '/');
