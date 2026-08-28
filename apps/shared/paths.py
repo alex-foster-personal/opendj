@@ -55,7 +55,7 @@ __all__ = [
 ]
 
 # ``DATA_DIR`` is re-exported from :mod:`apps.shared.platform_paths`, which is
-# the single place ``MDT_DATA_DIR`` is honoured. Recomputing it here as
+# the single place ``MDT_DATA_DIR`` is honored. Recomputing it here as
 # ``PROJECT_ROOT / "data"`` made this module the one path family that ignored
 # that override, so a worktree backend pointed at the primary checkout's data
 # still resolved STATE_DB to its own empty ``data/``. Unset MDT_DATA_DIR keeps

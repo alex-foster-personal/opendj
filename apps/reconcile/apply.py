@@ -59,6 +59,11 @@ console = Console(width=120)
 
 DEFAULT_INPUT: Path = _locate.OUT_CSV
 DEFAULT_PATCH: Path = paths.DATA_DIR / "reconcile" / "patch.json"
+# Manifest of the rows a SUCCESSFUL live/bulk apply actually wrote.
+# patch.json is a dry-run preview and can describe an older run; the
+# gated audit suite (tests/audit/test_ingest_pipeline.py) reads this
+# file so it always audits the exact updates last applied for real.
+DEFAULT_APPLIED: Path = paths.DATA_DIR / "reconcile" / "applied.json"
 DEFAULT_BACKUP_DIR: Path = paths.DATA_DIR / "reconcile" / "backups"
 DEFAULT_BROKEN_CSV: Path = paths.DATA_DIR / "rb_missing_files.csv"
 
@@ -542,6 +547,8 @@ def _run_bulk(
         )
         return 6
 
+    _write_patch(updates, DEFAULT_APPLIED)
+    console.print(f"[green]Applied manifest → {DEFAULT_APPLIED}[/green]")
     return 0
 
 
@@ -619,6 +626,8 @@ def _run_live(updates: list[Update], backup_dir: Path) -> int:
     for u in updates:
         ok.add_row(u.id, u.title, f"[dim]{u.old_path}[/dim] → {u.new_path}")
     console.print(ok)
+    _write_patch(updates, DEFAULT_APPLIED)
+    console.print(f"[green]Applied manifest → {DEFAULT_APPLIED}[/green]")
     return 0
 
 
