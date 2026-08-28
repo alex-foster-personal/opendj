@@ -81,7 +81,8 @@ def _partition_matches(
     """Split pending rows into (resolved triples, still-pending rows)."""
     resolved_pairs: list[_ResolvedTriple] = []
     still: list[PendingRow] = []
-    for pending, pair in zip(pendings, result.pairs):
+    # strict: match_spotify_tracks returns one pair per synthetic source.
+    for pending, pair in zip(pendings, result.pairs, strict=True):
         if pair.status == "matched" and pair.target is not None:
             resolved_pairs.append((pending, pair, pair.target))
         else:
