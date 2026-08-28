@@ -26,6 +26,7 @@
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
@@ -433,6 +434,11 @@
 
 	<!-- clock: REAL, local time HH:MM -->
 	<span class="clock">{clock}</span>
+
+	<!-- Account bauble. Not a rekordbox element, but sign-in has to be
+	     reachable from performance mode too - the shell topbar is not
+	     rendered on this route. Sized down to fit --rb-topbar-h. -->
+	<UserBauble size={20} />
 </header>
 
 <CreatePairingSheet bind:open={pairingOpen} />
