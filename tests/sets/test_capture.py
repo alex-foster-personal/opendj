@@ -10,7 +10,6 @@ import pytest
 
 from apps.sets import capture
 
-
 SAMPLE_STDERR = """\
 [AVFoundation indev @ 0x600000000000] AVFoundation video devices:
 [AVFoundation indev @ 0x600000000000] [0] FaceTime HD Camera

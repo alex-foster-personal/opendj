@@ -296,7 +296,7 @@ class SpotifyClient:
         """One-retry on 401; spotipy refreshes tokens automatically."""
         try:
             return thunk()
-        except Exception as exc:  # noqa: BLE001 -- spotipy surface is broad
+        except Exception as exc:
             if _is_http_status(exc, 401):
                 return thunk()
             raise

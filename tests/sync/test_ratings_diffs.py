@@ -5,9 +5,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from apps.sync.matcher import MatchResult, MatchedPair
+from apps.sync.matcher import MatchedPair, MatchResult
 from apps.sync.ratings import RatingDiff, compute_rating_diffs, summarise_diffs
-
 
 pytestmark = pytest.mark.requirement("SYNC-06")
 

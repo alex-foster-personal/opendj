@@ -5,6 +5,11 @@ Consumes ``data/sync/playlist-plan.json`` produced by
 ``MediaLibrary.db`` under the six-rail safety pattern established in
 Phase 1 (``apps/reconcile/remove_track.py``, ``apps/reconcile/apply.py``):
 
+0. Library-integrity gate: refuse the write when more than
+   ``--integrity-threshold`` of Rekordbox tracks do not resolve to files on
+   disk, unless ``--allow-broken`` is passed (and then record the override in
+   the reversal script). Without this the sync happily ships a second
+   generation of broken track locations.
 1. Typed confirmation (``APPLY PLAYLIST SYNC``).
 2. ``pgrep`` gate: abort if djay OR Rekordbox is running.
 3. Timestamped DB backup.
@@ -34,13 +39,13 @@ import uuid as _uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from apps.shared import paths
+from apps.shared import library_integrity, paths
 from apps.sync import playlist_tsaf as ptsaf
-
 
 CONFIRMATION_PHRASE = "APPLY PLAYLIST SYNC"
 DEFAULT_PLAN: Path = paths.DATA_DIR / "sync" / "playlist-plan.json"
 DEFAULT_BACKUP_DIR: Path = paths.DATA_DIR / "sync" / "backups"
+DEFAULT_INTEGRITY_THRESHOLD: float = library_integrity.DEFAULT_THRESHOLD
 CLOUDKIT_WARNING = (
     "CloudKit overwrite risk: djay will re-upload the modified playlist "
     "blob(s) on next launch. If iCloud has a newer copy it may win. See "
@@ -127,6 +132,43 @@ def _typed_confirm(expected: str = CONFIRMATION_PHRASE) -> bool:
     return answer == expected
 
 
+def _live_integrity_report() -> library_integrity.IntegrityReport:
+    """Classify every Rekordbox track against the filesystem. Read-only."""
+    return library_integrity.live_report()
+
+
+def _integrity_gate(
+    report: library_integrity.IntegrityReport,
+    *,
+    allow_broken: bool,
+    threshold: float = DEFAULT_INTEGRITY_THRESHOLD,
+) -> str | None:
+    """Rail 0. Refuse to write when the source library is mostly broken.
+
+    Runs BEFORE the backup so a broken library costs nothing but the read.
+    Returns None on a healthy library (a silent no-op: no prompt, no output),
+    or the override note when ``allow_broken`` let a failing library through.
+    The note is written into the reversal script so the next operator can see
+    that this generation of paths was applied over a known-broken source.
+    """
+    try:
+        library_integrity.assert_healthy(report, threshold=threshold)
+    except library_integrity.LibraryIntegrityError as exc:
+        if not allow_broken:
+            raise PlaylistApplyError(
+                f"library integrity gate refused the write: {exc} "
+                "Fix the locations (python -m apps.reconcile.relink) or pass "
+                "--allow-broken to write anyway."
+            ) from exc
+        return (
+            "--allow-broken override: applied over a library where "
+            f"{report.broken}/{report.with_path} tracks "
+            f"({report.broken_ratio:.1%}) do not resolve on disk "
+            f"(threshold {threshold:.1%})."
+        )
+    return None
+
+
 def _backup_djay_db(db_path: Path, backup_dir: Path) -> tuple[Path, str]:
     backup_dir.mkdir(parents=True, exist_ok=True)
     ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -143,6 +185,8 @@ _REVERSAL_TEMPLATE = '''\
 Run this script while djay is quit to restore the pre-apply state.
 
 CloudKit warning: __WARNING__
+
+Library integrity: __OVERRIDE__
 """
 from __future__ import annotations
 
@@ -173,6 +217,7 @@ def _write_reversal_script(
     target_path: Path,
     backup_dir: Path,
     ts: str,
+    integrity_override: str | None = None,
 ) -> Path:
     backup_dir.mkdir(parents=True, exist_ok=True)
     out = backup_dir / f"restore-playlist-sync-{ts}.py"
@@ -181,6 +226,10 @@ def _write_reversal_script(
         .replace("__BACKUP__", str(backup_path))
         .replace("__TARGET__", str(target_path))
         .replace("__WARNING__", CLOUDKIT_WARNING)
+        .replace(
+            "__OVERRIDE__",
+            integrity_override or "gate passed; no override was used.",
+        )
     )
     out.write_text(body, encoding="utf-8")
     return out
@@ -517,6 +566,26 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mode.add_argument("--live", action="store_true", default=False)
     parser.add_argument("--i-understand-the-risks", action="store_true", default=False)
     parser.add_argument(
+        "--allow-broken",
+        action="store_true",
+        default=False,
+        help=(
+            "proceed even when the library-integrity gate fails, i.e. when "
+            "more than --integrity-threshold of Rekordbox tracks do not "
+            "resolve to files on disk. The override is recorded in the "
+            "reversal script."
+        ),
+    )
+    parser.add_argument(
+        "--integrity-threshold",
+        type=float,
+        default=DEFAULT_INTEGRITY_THRESHOLD,
+        help=(
+            "max share of non-resolving Rekordbox tracks tolerated before a "
+            f"live write is refused (default {DEFAULT_INTEGRITY_THRESHOLD})."
+        ),
+    )
+    parser.add_argument(
         "--force-no-pgrep",
         action="store_true",
         default=False,
@@ -612,6 +681,21 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"abort: {exc}\n")
             return 3
 
+    # Rail 0: refuse to ship a second generation of broken track locations.
+    # Deliberately ahead of the typed confirmation and the backup, so a
+    # refusal costs the operator nothing but a read.
+    try:
+        integrity_override = _integrity_gate(
+            _live_integrity_report(),
+            allow_broken=args.allow_broken,
+            threshold=args.integrity_threshold,
+        )
+    except PlaylistApplyError as exc:
+        sys.stderr.write(f"abort: {exc}\n")
+        return 7
+    if integrity_override is not None:
+        sys.stderr.write(f"[warn] {integrity_override}\n")
+
     if not _typed_confirm():
         sys.stderr.write("typed confirmation failed; aborting\n")
         return 3
@@ -627,7 +711,9 @@ def main(argv: list[str] | None = None) -> int:
     # P03-03: write the reversal script BEFORE the first destructive write so
     # operators always have a documented restore path even if apply_plan raises
     # mid-way through the sequence.
-    rev = _write_reversal_script(backup_path, db_path, args.backup_dir, ts)
+    rev = _write_reversal_script(
+        backup_path, db_path, args.backup_dir, ts, integrity_override
+    )
     sys.stderr.write(f"[ok] reversal -> {rev}\n")
 
     effective_filter = None if args.bulk else filter_

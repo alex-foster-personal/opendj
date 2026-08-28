@@ -3,6 +3,7 @@
 	 * Headphone MIX + LEVEL knobs with headphone icon (SCREENSHOT-SPEC 4).
 	 * Real CUE/MASTER monitor mix, level, and browser-selected output device.
 	 */
+	import { knobId } from '$lib/rb/knob-control.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneState } from '$lib/rb/types';
 
@@ -30,8 +31,8 @@
 		<rect x="1" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 		<rect x="8.6" y="7" width="2.4" height="3.4" rx="0.8" fill="currentColor" />
 	</svg>
-	<Knob label="MIX" value={state.mix} onchange={onmix} />
-	<Knob label="LEVEL" value={state.level} onchange={onlevel} />
+	<Knob knobId={knobId('hp', 'hp-mix')} label="MIX" value={state.mix} onchange={onmix} />
+	<Knob knobId={knobId('hp', 'hp-level')} label="LEVEL" value={state.level} onchange={onlevel} />
 	<button
 		type="button"
 		class="hp-btn"

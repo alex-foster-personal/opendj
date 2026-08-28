@@ -15,8 +15,8 @@ from typing import Sequence
 
 from apps.shared.harmonic import TrackFeature
 from apps.shared.paths import STATE_DB
-from apps.shared.state import db as state_db
 from apps.shared.play_orders.schema import apply_play_order_migrations
+from apps.shared.state import db as state_db
 
 from .play_it import InsufficientDataError, play_it
 from .session_context import PlayedTrack, SessionContext, load_session_context

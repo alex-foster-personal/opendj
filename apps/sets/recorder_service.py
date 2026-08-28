@@ -5,9 +5,9 @@ that object can settle its poll threads and ffmpeg process safely.
 """
 from __future__ import annotations
 
+import ctypes
 import os
 import threading
-import ctypes
 from pathlib import Path
 from typing import Any
 

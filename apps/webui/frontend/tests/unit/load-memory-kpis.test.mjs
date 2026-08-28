@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
+import { engineBlockAfter } from './engine-source.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 // c256bca1 - "expose load and memory KPIs" landed with no test at all.
@@ -27,9 +26,10 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 // - if decoded-memory accounting stops counting stems then a stems-ready deck
 //   under-reports its PCM footprint by 4x
 
-const SRC = fileURLToPath(new URL('../../src', import.meta.url));
-const ENGINE_SRC = readFileSync(`${SRC}/lib/rb/audio-engine.svelte.ts`, 'utf8');
-
+// The decoded-memory guard below reads the engine as source text, through
+// engine-source.mjs, which tracks a LIST of engine source files. T4 splits
+// audio-engine.svelte.ts into player/* behind a barrel; a guard hardcoding the
+// old path would then slice an empty body out of a -1 index and assert nothing.
 let perfLog;
 // One bundle so `deckStates` is the exact object queryPerformanceState reads.
 // Loading the two modules separately gives two unrelated copies of the state,
@@ -162,10 +162,9 @@ test('the IPC deck snapshot reports null stages before any load', () => {
 });
 
 test('decoded-memory accounting charges a stems-ready deck for its four stem buffers', () => {
-	const body = ENGINE_SRC.slice(
-		ENGINE_SRC.indexOf('export function deckPcmEstimatedBytes'),
-		ENGINE_SRC.indexOf('interface AudioDisconnectable')
-	);
+	// Brace-matched off the declaration, so the body cannot silently widen to the
+	// rest of the file (or narrow to '') when a neighbouring symbol moves.
+	const body = engineBlockAfter('export function deckPcmEstimatedBytes(): number {');
 	// deckPcmEstimatedBytes reads _rt[deck].audioBuffer, which only exists behind
 	// a real decoded AudioBuffer, so the arithmetic is asserted here rather than
 	// faked with a stub buffer. Recorded as an audit finding for an e2e KPI check.

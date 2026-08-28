@@ -1,0 +1,63 @@
+name: CI Cost Guard
+
+on:
+  workflow_run:
+    workflows: [CI, Build docs, Release Check, Windows Parity (on-demand)]
+    types: [completed]
+
+# workflow_run executes this file from the default branch. Never check out or
+# execute the triggering run's head SHA: a pull request may contain untrusted
+# code while this workflow has permission to open an alert issue.
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: ci-cost-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  assess:
+    name: Price completed workflow run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Calculate gross runner cost
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          python scripts/ci_cost_guard.py \
+            --repository "$REPOSITORY" \
+            --run-id "$RUN_ID" \
+            --attempt "$RUN_ATTEMPT" \
+            --run-url "$RUN_URL" \
+            --workflow-name "$WORKFLOW_NAME" \
+            --threshold 1.00
+
+      - name: Open cost alert issue and fail visibly
+        if: steps.guard.outputs.over_threshold == 'true' || steps.guard.outputs.unpriced_jobs == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COST: ${{ steps.guard.outputs.estimated_cost_usd }}
+          REPORT_FILE: ${{ steps.guard.outputs.report_file }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          UNPRICED: ${{ steps.guard.outputs.unpriced_jobs }}
+        run: |
+          if [[ "$UNPRICED" == "true" ]]; then
+            title="CI cost telemetry alert: unpriced runner in run $RUN_ID"
+          else
+            title="CI cost alert: run $RUN_ID estimated at \$$COST"
+          fi
+          gh issue create --title "$title" --body-file "$REPORT_FILE"
+          echo "::error title=$title::See the generated issue and job summary for the cost breakdown."
+          exit 1

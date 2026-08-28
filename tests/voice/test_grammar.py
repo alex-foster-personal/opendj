@@ -5,7 +5,6 @@ import pytest
 
 from apps.voice import grammar
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 

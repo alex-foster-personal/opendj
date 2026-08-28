@@ -21,7 +21,7 @@ def _request(base_url: str, method: str, path: str, body: dict[str, Any] | None 
     request = Request(f"{base_url.rstrip('/')}{path}", data=payload, method=method,
         headers={"Accept": "application/json", "Content-Type": "application/json"})
     try:
-        with urlopen(request) as response:  # noqa: S310 - explicit local daemon URL from caller
+        with urlopen(request) as response:
             return json.loads(response.read())
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")

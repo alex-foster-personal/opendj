@@ -7,7 +7,6 @@ import pytest
 
 from apps.voice import vad
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 

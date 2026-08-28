@@ -15,7 +15,6 @@ from apps.pairings import add as cli_add
 from apps.pairings import list as cli_list
 from apps.pairings import remove as cli_remove
 
-
 pytestmark = pytest.mark.requirement("CAT-03")
 
 

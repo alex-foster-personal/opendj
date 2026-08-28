@@ -1,0 +1,183 @@
+# apps/desktop -- Open DJ desktop shell
+
+Tauri 2 native window wrapping the local engine's web UI. Compiles via
+`cargo check` and launches via `cargo tauri build --debug --no-bundle`;
+see `.planning/evidence/shell-smoke-2026-08-19.png` for a launch smoke test.
+
+## Thin-shell rule (non-negotiable)
+
+This app is a **window, not an application**. All product logic lives in the
+engine (FastAPI daemon + SvelteKit webui) served over HTTP at
+`http://127.0.0.1:8683`. The Tauri window just points at that URL and gets
+out of the way.
+
+Concretely:
+
+- **No `@tauri-apps/api` in the webapp.** The SvelteKit frontend served by the
+  engine must not import from `@tauri-apps/api/*`. It should render and
+  behave identically whether it's opened in a Tauri window or a plain browser
+  tab. If a feature needs desktop-only behavior, it does not belong in the
+  webapp -- it belongs behind a capability check the engine already exposes
+  over HTTP, or it is out of scope for this shell.
+- **No Tauri IPC commands for app logic.** `src-tauri/src/main.rs` does not
+  define `#[tauri::command]` handlers that implement business logic. If the
+  shell ever needs a native-only capability (e.g. a system file picker), that
+  capability must stay a thin pass-through -- it forwards to the engine or
+  returns raw OS data, never makes product decisions.
+- **Rust owns the window, nothing else.** No state, no business rules, no
+  data access in `src-tauri/`. If you find yourself reaching for `rusqlite`,
+  `reqwest`, or anything that talks to the engine's data layer from Rust,
+  that logic belongs in the engine instead.
+
+Rationale: the engine is the single source of truth and is already
+browser-addressable. Duplicating logic into the shell would fork behavior
+between "desktop app" and "open the URL in a browser" -- exactly the
+maintenance trap this thin-shell rule exists to avoid.
+
+## Current state
+
+- The window no longer points straight at the engine. It loads the bundled
+  bootstrap page in `setup/`, which probes the engine and either navigates
+  to it or renders the setup screen (see "The engine gap" below).
+- `bundle.active` is `true` with a `dmg` target. `just dmg` builds and then
+  proves the artifact by mounting it, and is the only supported way to
+  produce one.
+- Icons under `src-tauri/icons/` are generated from the existing open-dj
+  brand mark (`apps/webui/frontend/static/icon-512.png`), converted to RGBA
+  (Tauri's `generate_context!` requires RGBA source icons; the brand PNG is
+  opaque RGB).
+
+## The engine gap
+
+A packaged app on a tester's Mac has no engine: no Python, no checkout, no
+daemon on `:8685`. The SPA cannot cover this, because the SPA is served BY
+the engine -- when the engine is down there is nothing to load. So the
+bootstrap page lives in the shell bundle instead, where it is always
+available.
+
+`setup/index.html` + `setup/setup.js` do exactly two things:
+
+- engine reachable -> navigate the window to the engine origin and get out
+  of the way. Verified against a real packaged build: the loopback server's
+  access log shows `GET /api/v1/health` followed by `GET /`, which proves
+  WKWebView permits navigating from the `tauri://localhost` app origin to a
+  loopback HTTP origin.
+- engine unreachable -> render a setup screen naming the exact address
+  tried, the failure, the attempt count and the command that fixes it. See
+  `.planning/evidence/dmg-setup-screen-2026-08-19.png`.
+
+There is no third state: no blank window, no endless spinner, no fake data.
+
+The probe is a `no-cors` fetch, and the screen says so under "What exactly
+was tested". The engine's CORS allowlist covers the dev-server origins
+only, so a normal cross-origin read from `tauri://localhost` would be
+blocked before it could tell "refused" from "absent". `no-cors` yields one
+honest bit: the connection was accepted, or it was not.
+
+**Known limitation:** the setup screen guards STARTUP only. Once the window
+has navigated to the engine, an engine that dies mid-session leaves the
+webview on a dead page; recovering that is the SPA's job, not the shell's.
+
+**Not built here, and deliberately so:** pick-a-free-port with a port
+handshake to the webview, a single-instance lock, and "sidecar dies with
+the app". All three describe a shell that SPAWNS the engine. This shell
+does not: it attaches to an engine the user started. They become
+implementable, and necessary, the moment the self-contained daemon sidecar
+lands, and the shutdown path should then use the zombie-aware group check
+in `apps/engine_core/jobs/reap.py` rather than a raw `killpg(pid, 0)`
+existence loop.
+
+### Why the engine is not bundled (yet)
+
+The chosen strategy is deliberate: **the .app expects a repo checkout**, and
+says so on screen. The obvious alternative -- pip-install the wheel into
+the bundle and drive it from a Tauri sidecar -- does not work today. The
+wheel ships `apps/*` only (`[tool.setuptools.packages.find]`,
+`pyproject.toml`) and excludes `data*`, `scripts*`, `open-dj*`, yet at least
+eight production call sites derive a repo root via `parents[N]` and reach
+into exactly those excluded directories: `apps/open_dj/schema_loader.py`
+wants `open-dj/schema/`, `apps/stems/cli.py` and `apps/vocals/` want
+`scripts/*_worker.py`, `apps/webui/server/routes/progress.py` wants
+`data/progress-tree.yaml` and shells out to git at the root. Only
+`platform_paths.py` has an env escape hatch. An installed-wheel engine
+therefore boots and then breaks silently on the first path touch, which is
+the worst possible failure for a first external tester.
+
+A sidecar becomes viable once the engine is bundled as a repo-shaped tree
+(or those directories are explicitly carried as package data). That is
+tracked separately and is not this shell's work.
+
+### Engine origin
+
+| Source | When | Wins over |
+| --- | --- | --- |
+| `?engine=` query param | tests | everything |
+| `OPENDJ_ENGINE_ORIGIN` env var | runtime, road-tests | the baked default |
+| `OPENDJ_DEFAULT_ENGINE_ORIGIN` | compile time, via `just dmg` | the constant |
+| `http://127.0.0.1:8685` | shipped default | -- |
+
+Non-loopback or malformed values are refused, never silently replaced.
+
+## Build
+
+```sh
+just dmg                                # release + dmg + mount verification
+cd apps/desktop/src-tauri && cargo check
+```
+
+`just dmg` reads two optional `.env` values, both unset in a plain
+checkout:
+
+- `MDT_LANE_LABEL` -- suffixes the bundle identifier and productName so two
+  bake-off lanes coexist on one Mac. `B` yields productName `Open DJ (B)`,
+  identifier `com.opendj.desktop.lane-b`, artifact
+  `OpenDJ-B-0.1.0-aarch64.dmg`. The identifier is the real clash key:
+  macOS derives Application Support, Caches and WebKit storage from it.
+  Derived by `scripts/desktop_lane_config.py`, which refuses a label it
+  cannot turn into a safe identifier rather than sanitising it.
+- `MDT_DESKTOP_ENGINE_ORIGIN` -- bakes the engine address the build looks
+  for, so two lanes do not both default to `:8685` and answer for each
+  other.
+
+The window title is `productName`, so the overlay labels the window with no
+second place to edit.
+
+### Signing: parameterized now, unsigned today
+
+Signing is wired but switched off, because this Mac has zero codesigning
+identities (`security find-identity -v -p codesigning` -> 0 valid) while
+Developer ID enrollment is in motion. When the cert lands, only `.env`
+changes -- no code edit:
+
+- `MDT_MACOS_SIGNING_IDENTITY` -> exported as `APPLE_SIGNING_IDENTITY`,
+  which tauri-cli reads as the override for `bundle.macOS.signingIdentity`
+  (verified in tauri-cli 2.11.4 `interface/rust.rs`).
+- `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` -> an `xcrun notarytool
+  store-credentials` profile name. Tauri's bundler **cannot** consume one:
+  it accepts only `APPLE_API_*` or `APPLE_ID`/`APPLE_PASSWORD`/
+  `APPLE_TEAM_ID` (verified in tauri-bundler 2.9.4), so `just dmg` runs
+  `notarytool submit --wait` then `stapler staple` itself.
+
+Neither value is ever committed. Setting the notary profile without an
+identity is refused before the build starts, because notarizing an unsigned
+app is impossible. A signing identity that does not resolve fails the
+build; it never silently degrades to unsigned. The recipe reports the
+`Authority=` actually found on the artifact, not the one requested.
+
+Until then: `codesign` reports `adhoc, linker-signed` with `Sealed
+Resources=none`, and `spctl -a` already rejects the bundle on the machine
+that built it. A tester who downloads the dmg also gets
+`com.apple.quarantine`, so Finder refuses to open the app at all. A tester
+must run:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Open DJ.app"
+```
+
+### arm64 only
+
+v1 is Apple Silicon only, by decision. An Intel Mac cannot run this
+artifact at all. `just dmg` prints the architecture it produced.
+
+productName: `Open DJ`
+identifier: `com.opendj.desktop`

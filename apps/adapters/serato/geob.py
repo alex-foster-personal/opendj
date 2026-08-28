@@ -30,7 +30,6 @@ import struct
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 # ============================================================= Markers2 ===
 
 
@@ -386,7 +385,7 @@ def write_geob_frames(
     from apps.shared._mutagen import require as _require_mutagen
 
     _require_mutagen()
-    from mutagen.id3 import ID3, GEOB, ID3NoHeaderError  # local import -- optional dep
+    from mutagen.id3 import GEOB, ID3, ID3NoHeaderError  # local import -- optional dep
 
     path = _Path(audio_path)
     if not _is_mp3(path):

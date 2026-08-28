@@ -14,6 +14,16 @@ from typing import TYPE_CHECKING
 from apps.shared.normalised import NormalisedCue
 from apps.shared.rb_color_palette import rgb_to_color_index
 
+# D3 (.planning/t3b-decomposition-map.md section 3): this module and
+# rb_vendor's hot-cue writer carried byte-identical copies of the 44.1 kHz
+# frame heuristic, and rb_vendor's docstring named this file as its twin
+# without either ever being consolidated. apps.shared.rb_frames is now the one
+# home; see its module docstring for why apps.shared rather than the map's
+# adapters/rekordbox/cues.py. Aliased so this module's call sites and
+# tests/test_rb_writer.py, which imports the private name from here, are
+# untouched.
+from apps.shared.rb_frames import msec_to_frame as _msec_to_frame
+
 if TYPE_CHECKING:
     from pyrekordbox import Rekordbox6Database
 
@@ -25,11 +35,6 @@ class WriteReport:
     updated: int = 0
     deleted: int = 0
     errors: list[str] = field(default_factory=list)
-
-
-def _msec_to_frame(msec: int) -> int:
-    """Approximate audio-frame offset for non-MPEG containers at 44.1 kHz."""
-    return int(round(msec * 0.441))
 
 
 def _kind_to_rb(kind: str, index: int | None, active_loop: bool) -> tuple[int, bool]:

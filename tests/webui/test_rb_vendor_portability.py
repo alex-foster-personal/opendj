@@ -17,8 +17,9 @@ registration would fail ``--strict-markers``) -- plain
 check is actually needed (none of these tests need one).
 
 Regression one-liners:
-  - if rb_vendor still carries its own hardcoded SHARE_ROOT then broken
-  - if reimporting rb_vendor under a simulated win32 sys.platform touches a
+  - if the rekordbox adapter still carries its own hardcoded SHARE_ROOT then
+    broken
+  - if reimporting the adapter under a simulated win32 sys.platform touches a
     literal ~/Library/Pioneer path then broken
   - if MDT_DATA_DIR doesn't rederive DATA_DIR/MASTER_PLAIN_DB/
     ANLZ_CACHE_DIR/VOCAL_CACHE_DIR/STATE_DB then broken
@@ -43,7 +44,10 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
+from apps.adapters.rekordbox import config as rb_config
+from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths as pp
+from apps.webui import crate_sync
 from apps.webui.server import rb_vendor
 
 
@@ -68,8 +72,24 @@ def _content(
 def _foreign_prefix() -> str:
     """A path prefix that is FOREIGN on THIS interpreter's real platform, so
     the path-map / unmapped tests exercise the real branch without needing
-    to simulate a different OS."""
-    return "D:/music-library" if pp.IS_DARWIN else "/Users/dev/Music"
+    to simulate a different OS.
+
+    Branches on IS_WINDOWS, matching ``pp._is_foreign_absolute``: everything
+    non-win32 (macOS AND Linux) treats a drive-letter/UNC path as foreign, and
+    only win32 treats a POSIX-rooted path as foreign. Branching on IS_DARWIN
+    instead read "not macOS" as "Windows", so on the Linux CI runner this handed
+    back ``/Users/dev/Music`` -- an ordinary native POSIX path there, not a
+    foreign one -- and both callers silently exercised the local-file-missing
+    branch instead of the unmapped branch they assert on.
+    """
+    prefix = "/Users/dev/Music" if pp.IS_WINDOWS else "D:/music-library"
+    # Fail loudly rather than let a future platform silently re-run these tests
+    # against the wrong branch, which is precisely how the IS_DARWIN bug hid.
+    assert pp._is_foreign_absolute(f"{prefix}/x.mp3"), (
+        f"{prefix!r} is not foreign on {pp.PLATFORM}; the unmapped/path-map "
+        "tests would exercise the wrong branch"
+    )
+    return prefix
 
 
 # ----- no hardcoded SHARE_ROOT left in this module ---------------------------
@@ -79,6 +99,8 @@ def test_module_has_no_hardcoded_share_root() -> None:
     constant is gone; every resolution routes through the shared platform
     resolver instead."""
     assert not hasattr(rb_vendor, "SHARE_ROOT")
+    assert not hasattr(rb_config, "SHARE_ROOT")
+    assert not hasattr(rb_paths, "SHARE_ROOT")
 
 
 def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
@@ -100,10 +122,14 @@ def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
     sys.platform = "win32"
     try:
         reloaded_pp = importlib.reload(pp)
+        reloaded_config = importlib.reload(rb_config)
+        importlib.reload(rb_paths)
         reloaded_rb = importlib.reload(rb_vendor)
         assert reloaded_pp.IS_WINDOWS is True
         assert "Library" not in str(reloaded_pp.SHARE_ROOT)
         assert not hasattr(reloaded_rb, "SHARE_ROOT")
+        assert not hasattr(reloaded_config, "SHARE_ROOT")
+        assert "Library" not in str(reloaded_config.ANLZ_CACHE_DIR)
         mapped = reloaded_rb.resolve_library_path("/PIONEER/USB/track.mp3")
         assert mapped.resolved is not None
         assert mapped.mapped is True
@@ -116,7 +142,15 @@ def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
         else:
             os.environ["APPDATA"] = real_appdata
         importlib.reload(pp)
+        importlib.reload(rb_config)
+        importlib.reload(rb_paths)
         importlib.reload(rb_vendor)
+        # Reloading pp creates a NEW STREAMING_PREFIXES tuple. crate_sync
+        # binds that tuple BY VALUE at import, so it must be reloaded too or
+        # tests/shared/test_streaming_path_predicates.py's identity contract
+        # ("no module keeps a private copy") fails for every later test in
+        # this process.
+        importlib.reload(crate_sync)
 
 
 # ----- MDT_DATA_DIR override --------------------------------------------------
@@ -126,16 +160,16 @@ def test_mdt_data_dir_unset_keeps_default_layout() -> None:
     from apps.shared.paths import STATE_DB as default_state_db
 
     assert os.environ.get("MDT_DATA_DIR") is None
-    assert rb_vendor.DATA_DIR == default_data_dir
-    assert rb_vendor.STATE_DB == default_state_db
-    assert rb_vendor.MASTER_PLAIN_DB == default_data_dir / "master.plain.db"
+    assert rb_config.DATA_DIR == default_data_dir
+    assert rb_config.STATE_DB == default_state_db
+    assert rb_config.MASTER_PLAIN_DB == default_data_dir / "master.plain.db"
 
 
 def test_mdt_data_dir_override_rederives_all_constants(tmp_path: Path) -> None:
     original = os.environ.get("MDT_DATA_DIR")
     os.environ["MDT_DATA_DIR"] = str(tmp_path)
     try:
-        reloaded = importlib.reload(rb_vendor)
+        reloaded = importlib.reload(rb_config)
         assert reloaded.DATA_DIR == tmp_path
         assert reloaded.MASTER_PLAIN_DB == tmp_path / "master.plain.db"
         assert reloaded.ANLZ_CACHE_DIR == tmp_path / "state" / "anlz-cache"
@@ -146,7 +180,7 @@ def test_mdt_data_dir_override_rederives_all_constants(tmp_path: Path) -> None:
             os.environ.pop("MDT_DATA_DIR", None)
         else:
             os.environ["MDT_DATA_DIR"] = original
-        importlib.reload(rb_vendor)
+        importlib.reload(rb_config)
 
 
 # ----- audio_file() explicit states -------------------------------------------

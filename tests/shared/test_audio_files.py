@@ -6,13 +6,11 @@ mutagen can parse it without hitting a real audio library.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
 from apps.shared import audio_files
-
 
 # Minimal, valid MP3 frame generated on the fly. Tiny (~100 bytes) — good
 # enough for mutagen to identify the file as audio.

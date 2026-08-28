@@ -47,6 +47,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
+from apps.shared.events import publish
+
 from ..backend import StateBackend
 from ..deps import get_write_state
 from ..errors import precondition_required
@@ -125,7 +127,7 @@ def get_playlist_store(request: Request) -> PlaylistStore:
         return store
 
 
-def close_store(app) -> None:  # noqa: ANN001 - FastAPI app, avoids hotspot import
+def close_store(app) -> None:
     """Integrator shutdown hook: close the lazily-built store, if any."""
     store: PlaylistStore | None = getattr(app.state, "playlist_store", None)
     if store is not None:
@@ -154,6 +156,7 @@ def create_playlist(
     store: PlaylistStore = Depends(get_playlist_store),
 ) -> PlaylistWriteOut:
     row = store.create_playlist(body.name)
+    publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
     return _out(row, response)
 
 
@@ -175,6 +178,7 @@ def rename_playlist(
         row = store.verify_etag(playlist_id, if_match)
         return _out(row, response)
     row = store.rename_playlist(playlist_id, body.name, expected_etag=if_match)
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)
 
 
@@ -190,6 +194,7 @@ def delete_playlist(
             "DELETE /playlists/{playlist_id} requires If-Match header"
         )
     store.delete_playlist(playlist_id, expected_etag=if_match)
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -208,6 +213,7 @@ def duplicate_playlist(
         name=body.name if body is not None else None,
         expected_etag=if_match,
     )
+    publish("library.changed", {"kind": "playlists", "ids": [row.playlist_id]})
     return _out(row, response)
 
 
@@ -227,4 +233,5 @@ def replace_playlist_tracks(
     row = store.replace_memberships(
         playlist_id, body.stable_ids, expected_etag=if_match,
     )
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return _out(row, response)

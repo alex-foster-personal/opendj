@@ -107,7 +107,7 @@ def main() -> int:
                 ok += 1
             # A worker future can surface any dependency or subprocess failure.
             # Finish collecting the batch, then return a non-zero aggregate status.
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 print(f"FAIL {audio.stem}: {exc}", file=sys.stderr, flush=True)
     print(f"done ok={ok}/{len(pending)}", flush=True)
     return 0 if ok == len(pending) else 1

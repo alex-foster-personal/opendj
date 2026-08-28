@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from apps.shared.normalised import NormalisedCue
-from apps.sync.conflict import CueArrayResolution, resolve_cue_array
+from apps.sync.conflict import resolve_cue_array
 
 pytestmark = pytest.mark.requirement("SYNC-04")
 

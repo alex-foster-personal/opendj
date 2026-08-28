@@ -26,8 +26,8 @@ from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import ConflictError
-from apps.webui.server.routes import playlist_write
 from apps.webui.server.playlist_store import PlaylistStore
+from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
 
 TRACK_IDS: list[str] = ["t-001", "t-002", "t-003", "t-004"]

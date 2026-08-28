@@ -16,12 +16,16 @@ import shutil
 from pathlib import Path
 
 from apps.shared.platform_paths import (
+    DATA_DIR,
     DJAY_LIVE_DB,
     HOME,
     MUSIC_ROOTS,
     PROJECT_ROOT,
     REKORDBOX_LIVE_DB,
-    _parse_music_roots,
+    # Private, so it is absent from __all__ and reads as unused to F401, but
+    # tests/shared/test_paths.py reaches it through this module. Deleting the
+    # re-export breaks that suite.
+    _parse_music_roots,  # noqa: F401
 )
 
 __all__ = [
@@ -50,7 +54,12 @@ __all__ = [
     "copy_live_dbs",
 ]
 
-DATA_DIR: Path = PROJECT_ROOT / "data"
+# ``DATA_DIR`` is re-exported from :mod:`apps.shared.platform_paths`, which is
+# the single place ``MDT_DATA_DIR`` is honoured. Recomputing it here as
+# ``PROJECT_ROOT / "data"`` made this module the one path family that ignored
+# that override, so a worktree backend pointed at the primary checkout's data
+# still resolved STATE_DB to its own empty ``data/``. Unset MDT_DATA_DIR keeps
+# the identical default.
 
 # ----- Rekordbox ---------------------------------------------------------
 REKORDBOX_WORKING_DB: Path = DATA_DIR / "master.db.copy"

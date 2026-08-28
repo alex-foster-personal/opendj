@@ -5,7 +5,6 @@ import pytest
 
 from apps.shared.tag_writer import TagRead
 from apps.tags.unify import (
-    DEFAULT_POLICY,
     SOURCE_CONFIDENCE,
     TagSources,
     unify,

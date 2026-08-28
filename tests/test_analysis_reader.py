@@ -15,6 +15,8 @@ from apps.shared.djay_db import (
     _DJAY_KEY_IDX_TO_STD,
     _djay_key_idx_to_camelot,
     _extract_bool_marker,
+)
+from apps.shared.djay_db import (
     iter_analysis as djay_iter_analysis,
 )
 from apps.shared.normalised import NormalisedAnalysis

@@ -25,7 +25,6 @@ import struct
 from dataclasses import dataclass
 from typing import Iterable, Sequence, Union
 
-
 # Known container tag types. An ``otrk`` tag (one per track inside ``database
 # V2``) holds a tag stream of per-track fields; ``osrt`` holds sort order;
 # ``ovct`` holds a column descriptor inside an ``ovct`` parent. We model the

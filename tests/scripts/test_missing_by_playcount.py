@@ -33,8 +33,8 @@ import sqlite3
 import pytest
 
 from apps.spotify.acquisition import SOURCE_TEMPLATES
-from scripts import gap_sheet, missing_by_playcount as mbp
-
+from scripts import gap_sheet
+from scripts import missing_by_playcount as mbp
 
 # ----- fixtures -------------------------------------------------------------
 

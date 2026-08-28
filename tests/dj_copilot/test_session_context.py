@@ -7,7 +7,6 @@ import pytest
 
 from apps.dj_copilot.session_context import (
     PlayedTrack,
-    SessionContext,
     load_session_context,
 )
 from tests.dj_copilot.conftest import FIXED_NOW

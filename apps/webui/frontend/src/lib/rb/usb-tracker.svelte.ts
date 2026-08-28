@@ -5,7 +5,7 @@
  * Local metadata (yours / music / name / forgotten) persists in localStorage.
  * Never writes to a USB mount from this pass.
  */
-import { RB_API_BASE } from '$lib/rb/api-rb';
+import { ApiError, api, unwrap } from '../api/client';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
 
@@ -242,18 +242,15 @@ export function stopUsbWatch(): void {
 
 export async function refreshUsbVolumes(): Promise<void> {
 	try {
-		const r = await fetch(`${RB_API_BASE}/api/v1/usb/volumes`, {
-			headers: { Accept: 'application/json' }
-		});
-		if (!r.ok) {
-			usbTracker.lastError = `usb volumes HTTP ${r.status}`;
-			return;
-		}
-		const body = (await r.json()) as ApiList;
+		const body = await unwrap(api.GET('/api/v1/usb/volumes'));
 		_ingest(body.volumes ?? []);
 		usbTracker.lastError = null;
 	} catch (exc) {
-		usbTracker.lastError = exc instanceof Error ? exc.message : String(exc);
+		if (exc instanceof ApiError) {
+			usbTracker.lastError = `usb volumes HTTP ${exc.status}`;
+		} else {
+			usbTracker.lastError = exc instanceof Error ? exc.message : String(exc);
+		}
 	}
 }
 
@@ -262,20 +259,24 @@ export async function simulateUsbVolume(opts?: {
 	name?: string;
 	kind?: UsbKind;
 }): Promise<void> {
-	const r = await fetch(`${RB_API_BASE}/api/v1/usb/volumes`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify({
-			name: opts?.name ?? 'FAKE USB',
-			kind: opts?.kind ?? 'music',
-			mount_path: '/Volumes/FAKE-USB',
-			role: 'usb_stick',
-			protocol: 'USB'
-		})
-	});
-	if (!r.ok) throw new Error(`simulate USB HTTP ${r.status}`);
-	const body = (await r.json()) as ApiList;
-	_ingest(body.volumes ?? []);
+	try {
+		const body = await unwrap(
+			api.POST('/api/v1/usb/volumes', {
+				body: {
+					name: opts?.name ?? 'FAKE USB',
+					kind: opts?.kind ?? 'music',
+					mount_path: '/Volumes/FAKE-USB',
+					role: 'usb_stick',
+					protocol: 'USB',
+					present: true
+				}
+			})
+		);
+		_ingest(body.volumes ?? []);
+	} catch (error) {
+		if (error instanceof ApiError) throw new Error(`simulate USB HTTP ${error.status}`);
+		throw error;
+	}
 }
 
 function _ingest(remote: ApiVolume[]): void {

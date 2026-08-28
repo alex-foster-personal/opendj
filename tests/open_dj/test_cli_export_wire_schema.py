@@ -27,7 +27,6 @@ from apps.open_dj.cli import main
 from apps.open_dj.validate import validate_document
 from apps.open_dj.wire import library_to_wire_document
 
-
 # A valid SHA-1-style 40-hex track id and SHA-256 content hash, matching
 # the schema's regexes (``^[0-9a-f]{40}$`` and ``^sha256:[0-9a-f]{64}$``).
 _TRACK_ID = "a" * 40

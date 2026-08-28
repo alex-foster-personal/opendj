@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from apps.shared.djay_db import extract_rating_from_tsaf
 
-
 TAIL_SCAN_BYTES: int = 30
 
 

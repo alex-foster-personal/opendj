@@ -30,16 +30,14 @@ Exit codes
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
-import json
 import sys
 from pathlib import Path
 
 from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     TextColumn,
-    BarColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
 )

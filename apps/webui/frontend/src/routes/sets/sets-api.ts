@@ -1,16 +1,12 @@
 /** Typed HTTP contract for the Session/REC surface. */
 
-const ENV_BASE = import.meta.env.VITE_API_BASE as string | undefined;
-export const SETS_API_BASE = ENV_BASE ?? '';
+import type { components } from '$lib/api-types';
+import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
+
+export const SETS_API_BASE = API_BASE;
 const SETS_PATH = '/api/sets';
 
-export interface RecorderStatus {
-	active: boolean;
-	session_id: string | null;
-	pid: number | null;
-	owned: boolean;
-	recoverable: boolean;
-}
+export type RecorderStatus = components['schemas']['RecorderStatus'];
 
 export interface RecorderStartInput {
 	session_id: string | null;
@@ -67,85 +63,116 @@ export interface TimelineEvent {
 	value: Record<string, unknown>;
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`${SETS_API_BASE}${SETS_PATH}${path}`, {
-		...init,
-		headers: {
-			Accept: 'application/json',
-			...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-			...init?.headers
-		}
-	});
-	if (!response.ok) {
-		let detail = `${response.status} ${response.statusText}`;
-		try {
-			const payload = (await response.json()) as { detail?: string };
-			if (payload.detail) detail = payload.detail;
-		} catch {
-			// The HTTP status remains the explicit terminal error.
-		}
-		throw new Error(detail);
+/** Preserve the pre-client Error(detail) contract for non-2xx responses. */
+function rethrowSetsError(error: unknown): never {
+	if (error instanceof ApiError) {
+		const d = (error.body as { detail?: unknown } | null)?.detail;
+		throw new Error(typeof d === 'string' ? d : `${error.status} ${error.response.statusText}`);
 	}
-	return (await response.json()) as T;
+	throw error;
 }
 
-export function getRecorderStatus(): Promise<RecorderStatus> {
-	return requestJson<RecorderStatus>('/recorder');
+export async function getRecorderStatus(): Promise<RecorderStatus> {
+	try {
+		return await unwrap(api.GET('/api/sets/recorder', {}));
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function startRecorder(input: RecorderStartInput): Promise<RecorderStatus> {
-	return requestJson<RecorderStatus>('/recorder/start', {
-		method: 'POST',
-		body: JSON.stringify(input)
-	});
+export async function startRecorder(input: RecorderStartInput): Promise<RecorderStatus> {
+	try {
+		return await unwrap(
+			api.POST('/api/sets/recorder/start', {
+				body: input
+			})
+		);
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function stopRecorder(sessionId: string): Promise<RecorderStatus> {
-	return requestJson<RecorderStatus>(`/recorder/${encodeURIComponent(sessionId)}/stop`, {
-		method: 'POST'
-	});
+export async function stopRecorder(sessionId: string): Promise<RecorderStatus> {
+	try {
+		return await unwrap(
+			api.POST('/api/sets/recorder/{session_id}/stop', {
+				params: { path: { session_id: sessionId } }
+			})
+		);
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function recoverRecorder(sessionId: string, expectedPid: number): Promise<RecorderStatus> {
-	return requestJson<RecorderStatus>(`/recorder/${encodeURIComponent(sessionId)}/recover`, {
-		method: 'POST',
-		body: JSON.stringify({ expected_pid: expectedPid })
-	});
+export async function recoverRecorder(
+	sessionId: string,
+	expectedPid: number
+): Promise<RecorderStatus> {
+	try {
+		return await unwrap(
+			api.POST('/api/sets/recorder/{session_id}/recover', {
+				params: { path: { session_id: sessionId } },
+				body: { expected_pid: expectedPid }
+			})
+		);
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function listSessions(): Promise<SessionSummary[]> {
-	return requestJson<SessionSummary[]>('');
+export async function listSessions(): Promise<SessionSummary[]> {
+	try {
+		return (await unwrap(api.GET('/api/sets', {}))) as SessionSummary[];
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function getSession(sessionId: string): Promise<SessionDetail> {
-	return requestJson<SessionDetail>(`/${encodeURIComponent(sessionId)}`);
+export async function getSession(sessionId: string): Promise<SessionDetail> {
+	try {
+		return (await unwrap(
+			api.GET('/api/sets/{session_id}', {
+				params: { path: { session_id: sessionId } }
+			})
+		)) as SessionDetail;
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function getTimeline(sessionId: string): Promise<TimelineEvent[]> {
-	return requestTimeline(`/${encodeURIComponent(sessionId)}/timeline`);
+export async function getTimeline(sessionId: string): Promise<TimelineEvent[]> {
+	try {
+		const { data } = await api.GET('/api/sets/{session_id}/timeline', {
+			params: { path: { session_id: sessionId } },
+			parseAs: 'text'
+		});
+		return String(data ?? '')
+			.split('\n')
+			.filter((line) => line.trim() !== '')
+			.map((line, index) => {
+				try {
+					return JSON.parse(line) as TimelineEvent;
+				} catch (error) {
+					throw new Error(`Malformed timeline event at line ${index + 1}: ${error}`);
+				}
+			});
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
-export function getTransitions(sessionId: string): Promise<Transition[]> {
-	return requestJson<Transition[]>(`/${encodeURIComponent(sessionId)}/transitions`);
+export async function getTransitions(sessionId: string): Promise<Transition[]> {
+	try {
+		return (await unwrap(
+			api.GET('/api/sets/{session_id}/transitions', {
+				params: { path: { session_id: sessionId } }
+			})
+		)) as Transition[];
+	} catch (error) {
+		rethrowSetsError(error);
+	}
 }
 
 export function sessionAudioUrl(sessionId: string, segmentName: string): string {
 	return `${SETS_API_BASE}${SETS_PATH}/${encodeURIComponent(sessionId)}/audio/${encodeURIComponent(segmentName)}`;
-}
-
-async function requestTimeline(path: string): Promise<TimelineEvent[]> {
-	const response = await fetch(`${SETS_API_BASE}${SETS_PATH}${path}`, {
-		headers: { Accept: 'application/x-ndjson' }
-	});
-	if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-	return (await response.text())
-		.split('\n')
-		.filter((line) => line.trim() !== '')
-		.map((line, index) => {
-			try {
-				return JSON.parse(line) as TimelineEvent;
-			} catch (error) {
-				throw new Error(`Malformed timeline event at line ${index + 1}: ${error}`);
-			}
-		});
 }

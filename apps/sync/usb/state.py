@@ -14,7 +14,7 @@ diff engine is blind to which backend sourced the data.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 

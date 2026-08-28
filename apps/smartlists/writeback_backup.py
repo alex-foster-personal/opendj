@@ -6,10 +6,10 @@ writeback target.
 """
 from __future__ import annotations
 
-import sqlite3
-import uuid
 import json
 import os
+import sqlite3
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 

@@ -22,7 +22,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.shared.hashing import HASH_PREFIX, sha256_file
+from apps.shared.hashing import sha256_file
 from apps.sync.usb.diff import Op
 from apps.sync.usb.profile import Profile
 

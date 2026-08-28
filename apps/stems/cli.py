@@ -22,16 +22,16 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from apps.shared.paths import DATA_DIR, STATE_DIR
+from apps.shared.paths import DATA_DIR
 from apps.vocals.cli import (
     CATEGORY_MISSING,
     CATEGORY_TODO,
     Ctx,
     VocalTrack,
     _fmt_dur,
+    best_playlist_rank,
     load_tracks,
     order_todo,
-    best_playlist_rank,
 )
 from apps.webui.server.stem_artifacts import (
     DEFAULT_STEMS_DIR,
@@ -304,10 +304,20 @@ def resolve_audio_path(data_dir: Path, stable_id: str) -> Path:
         raise FileNotFoundError(f"no track {stable_id!r} in {db}")
     if not row[0]:
         raise FileNotFoundError(f"track {stable_id!r} has no file_path in {db}")
-    path = Path(row[0])
-    if not path.exists():
+    from apps.shared.platform_paths import load_path_map, resolve_asset_path
+
+    mapped = resolve_asset_path(
+        str(row[0]), path_map=load_path_map(Path(data_dir))
+    )
+    path = mapped.resolved
+    if path is None or not path.is_file():
+        from apps.shared.crate_index import resolve_crate_audio
+
+        path = resolve_crate_audio(stable_id)
+    if path is None or not path.is_file():
         raise FileNotFoundError(
-            f"track {stable_id!r} points at {path}, which does not exist. "
+            f"track {stable_id!r} points at {row[0]}, which resolves as "
+            f"{path} ({mapped.reason}) and is not a materialised file. "
             "Relocate it before asking for stems."
         )
     return path

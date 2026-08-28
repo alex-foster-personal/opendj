@@ -12,10 +12,8 @@ its worktree is discarded, preventing sunk-cost thrashing.
 
 import os
 import subprocess
-import time
 import sys
-import shutil
-import signal
+import time
 
 MODEL = os.environ.get("FIREWORKS_MODEL", "openai/accounts/fireworks/models/kimi-2.7-code")
 
