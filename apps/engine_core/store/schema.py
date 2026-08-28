@@ -697,7 +697,11 @@ TABLES: dict[str, tuple[str, ...]] = {
     "analysis": ("analysis", "analysis_events"),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
-    "spotify": ("spotify_playlist_meta", "pending_tracks", "spotify_playlist_links"),
+    "spotify": (
+        "spotify_playlist_meta",
+        "pending_tracks",
+        "spotify_playlist_links",
+    ),
     "sets": ("sets", "set_events"),
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),
