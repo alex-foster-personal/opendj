@@ -5,7 +5,6 @@ import pytest
 
 from apps.smartlists.diff import diff_sets
 
-
 pytestmark = pytest.mark.requirement("SMART-02")
 
 

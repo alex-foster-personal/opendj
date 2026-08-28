@@ -19,6 +19,7 @@ The public API is intentionally narrow; everything is built on a raw
 from __future__ import annotations
 
 from .schema import SCHEMA_VERSION, apply_play_order_migrations
+from .serde import play_order_from_opendj, play_order_to_opendj
 from .store import (
     DEFAULT_ORDER_NAME,
     PlayOrder,
@@ -29,7 +30,6 @@ from .store import (
     list_play_orders,
     load_play_order,
 )
-from .serde import play_order_from_opendj, play_order_to_opendj
 from .validation import (
     validate_key_sync,
     validate_target_key,

@@ -4,14 +4,18 @@
  * the analysis-router lane). ANLZ is always preferred: callers only reach
  * for this endpoint after GET /anlz has reported ANALYSIS_NOT_FOUND.
  *
+ * CONVERTED onto the generated OpenAPI client (`src/lib/api/client.ts`).
  * Deliberately NOT routed through api-rb.ts: that file is a single-owner-
- * per-wave hotspot (CLAUDE.md), so this lane's frontend duplicates the few
- * lines of fetch/error plumbing rather than editing it.
+ * per-wave hotspot (CLAUDE.md), so this lane's frontend keeps its own
+ * thin wrapper rather than editing it.
  */
-import { RB_API_BASE, RbApiError } from './api-rb';
+import { ApiError, api, unwrap } from '../api/client';
+import { RbApiError } from './api-rb';
 import type { AnlzBeatgrid } from './types';
 
-/** GET /tracks/{sid}/beatgrid-fallback response (analysis.py::BeatgridFallbackOut). */
+/** GET /tracks/{sid}/beatgrid-fallback response (analysis.py::BeatgridFallbackOut).
+ * Kept hand-written: generated BeatgridFallbackOut.beatgrid is FallbackBeatgridOut,
+ * while callers consume AnlzBeatgrid from './types'. */
 export interface BeatgridFallbackOut {
 	stable_id: string;
 	source: string;
@@ -28,18 +32,16 @@ export interface BeatgridFallbackOut {
 }
 
 export async function fetchBeatgridFallback(stable_id: string): Promise<BeatgridFallbackOut> {
-	const r = await fetch(
-		`${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/beatgrid-fallback`,
-		{ headers: { Accept: 'application/json' } }
-	);
-	if (!r.ok) {
-		const body = (await r.json()) as { detail?: { code?: string; message?: string } | string };
-		const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
-		throw new RbApiError(
-			r.status,
-			detail?.code ?? `HTTP_${r.status}`,
-			detail?.message ?? r.statusText
-		);
+	try {
+		return (await unwrap(
+			api.GET('/api/v1/tracks/{stable_id}/beatgrid-fallback', {
+				params: { path: { stable_id } }
+			})
+		)) as BeatgridFallbackOut;
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new RbApiError(error.status, error.code, error.message);
+		}
+		throw error;
 	}
-	return (await r.json()) as BeatgridFallbackOut;
 }

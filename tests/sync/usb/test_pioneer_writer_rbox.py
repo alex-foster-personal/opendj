@@ -31,7 +31,6 @@ from apps.sync.usb.pioneer.writer_rbox import (
     write_onelibrary,
 )
 
-
 # -----------------------------------------------------------------------
 # Skip marker: applied to every test in this module when rbox is missing.
 # -----------------------------------------------------------------------

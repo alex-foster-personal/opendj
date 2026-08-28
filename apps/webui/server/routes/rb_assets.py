@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -65,25 +65,26 @@ class RbMetaOut(BaseModel):
 @router.get("/{stable_id}/audio", response_class=FileResponse)
 def get_track_audio(
     stable_id: str,
+    request: Request,
     _backend: StateBackend = Depends(get_read_state),
 ) -> FileResponse:
-    """Stream the local audio file. FileResponse handles Range/206 natively.
+    """Stream the single best working file. FileResponse handles Range/206.
 
-    Rekordbox tracks resolve via the vendor mapping; locally imported tracks
-    (no djmdContent row, e.g. vocal stems) fall back to ``tracks.file_path``.
+    The backend picks among ``track_locations`` plus the legacy
+    ``file_path`` / FolderPath. The frontend never sees the alternatives.
+    Share-host requests use the share venue cap (lossy ceiling by default).
     """
-    try:
-        content = rb_vendor.resolve_content(stable_id)
-        path, media_type = rb_vendor.audio_file(content)
-    except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
-            raise
-        path, media_type = rb_vendor.local_audio_file(stable_id)
+    share = getattr(request.state, "share_audience", "local") == "share"
+    picked = rb_vendor.resolve_playable_audio(stable_id, share=share)
     return FileResponse(
-        path,
-        media_type=media_type,
-        headers={"Cache-Control": _CACHE_AUDIO},
+        picked.path,
+        media_type=picked.media_type,
+        headers={
+            "Cache-Control": _CACHE_AUDIO,
+            "X-Audio-Kind": picked.kind,
+            "X-Audio-Venue": picked.venue_key or "",
+            "X-Audio-Source": picked.source,
+        },
     )
 
 

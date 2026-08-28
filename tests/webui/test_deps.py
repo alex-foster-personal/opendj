@@ -31,6 +31,7 @@ def test_lock_probe_failures_deny_writes(seed_backend):
     every write endpoint open during a cloud-lock outage.
     """
     from fastapi.testclient import TestClient
+
     from apps.webui.server.app import create_app
 
     def boom():

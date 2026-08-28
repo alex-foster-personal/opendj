@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
@@ -28,22 +29,23 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
-from .backend import (BackendError, ConflictError, InMemoryBackend,
-                      NotFoundError, StateBackend)
+from .backend import BackendError, ConflictError, InMemoryBackend, NotFoundError, StateBackend
 from .cloud_sync import probe_syncthing_status
-from .errors import (handle_backend_error, handle_conflict, handle_not_found)
+from .errors import handle_backend_error, handle_conflict, handle_not_found
 from .routes import analysis as analysis_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
+from .routes import client_errors as client_errors_routes
+from .routes import client_events as client_events_routes
 from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
-from .routes import find_replace as find_replace_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
-from .routes import playlist_write as playlist_write_routes
 from .routes import play_it as play_it_routes
+from .routes import playlist_write as playlist_write_routes
 from .routes import playlist_writeback as playlist_writeback_routes
 from .routes import playlists as playlists_routes
 from .routes import progress as progress_routes
@@ -55,6 +57,7 @@ from .routes import relocate as relocate_routes
 from .routes import search as search_routes
 from .routes import settings as settings_routes
 from .routes import settings_ai as settings_ai_routes
+from .routes import share as share_routes
 from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import stem_tiers as stem_tiers_routes
@@ -62,7 +65,9 @@ from .routes import stems as stems_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
+from .routes import usb_volumes as usb_volumes_routes
 from .routes import voice_probe as voice_probe_routes
+from .share_gate import share_gate_middleware, share_host
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +107,9 @@ def create_app(
     frontend_port: Optional[int] = None,
     enable_cors: bool = True,
     mount_frontend: bool = True,
+    client_error_log_dir: Optional[Path] = None,
+    client_event_log_dir: Optional[Path] = None,
+    stem_roots: Optional[Sequence[Path]] = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -140,6 +148,18 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.client_error_log_dir = (
+        client_error_log_dir
+        if client_error_log_dir is not None
+        else client_errors_routes.DEFAULT_LOG_DIR
+    )
+    app.state.client_event_log_dir = (
+        client_event_log_dir
+        if client_event_log_dir is not None
+        else client_events_routes.DEFAULT_LOG_DIR
+    )
+    if stem_roots is not None:
+        app.state.stem_roots = tuple(Path(root) for root in stem_roots)
 
     app.add_exception_handler(NotFoundError, handle_not_found)
     app.add_exception_handler(ConflictError, handle_conflict)
@@ -162,10 +182,15 @@ def create_app(
             if frontend_port is not None
             else []
         )
+        share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
+        if not share_origin and share_host():
+            share_origin = f"https://{share_host()}"
+        share_origins = [share_origin] if share_origin else []
         app.add_middleware(
             CORSMiddleware,
             allow_origins=[
                 *worktree_origins,
+                *share_origins,
                 # Isolated e2e verify stacks (loopback-only, see
                 # .planning/rekordbox-parity/e2e*): frontend :5273/:5275
                 # talks to daemons :8686/:8688 via VITE_API_BASE.
@@ -180,8 +205,16 @@ def create_app(
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
-            expose_headers=["ETag", "X-Bind-Warning"],
+            expose_headers=[
+                "ETag",
+                "X-Bind-Warning",
+                "X-Audio-Kind",
+                "X-Audio-Venue",
+                "X-Audio-Source",
+            ],
         )
+
+    app.middleware("http")(share_gate_middleware)
 
     @app.middleware("http")
     async def add_bind_warning(request: Request, call_next):
@@ -195,6 +228,8 @@ def create_app(
 
     api_prefix = "/api/v1"
     app.include_router(tracks_routes.router, prefix=api_prefix)
+    app.include_router(client_errors_routes.router, prefix=api_prefix)
+    app.include_router(client_events_routes.router, prefix=api_prefix)
     app.include_router(bench_routes.router, prefix=api_prefix)
     app.include_router(bulk_edit_routes.router, prefix=api_prefix)
     app.include_router(find_replace_routes.router, prefix=api_prefix)
@@ -206,6 +241,7 @@ def create_app(
     app.include_router(pairings_routes.router, prefix=api_prefix)
     app.include_router(queues_routes.router, prefix=api_prefix)
     app.include_router(dedup_review_routes.router, prefix=api_prefix)
+    app.include_router(share_routes.router, prefix=api_prefix)
     app.include_router(rb_assets_routes.router, prefix=api_prefix)
     app.include_router(search_routes.router, prefix=api_prefix)
     app.include_router(rb_hot_cues_routes.router, prefix=api_prefix)
@@ -224,6 +260,7 @@ def create_app(
     app.include_router(ui_prefs_routes.router, prefix=api_prefix)
     app.include_router(spotify_routes.router, prefix=api_prefix)
     app.include_router(usb_export_routes.router, prefix=api_prefix)
+    app.include_router(usb_volumes_routes.router, prefix=api_prefix)
     app.include_router(voice_probe_routes.router, prefix=api_prefix)
     app.include_router(sets_router)
     app.include_router(play_analytics_router)
@@ -249,6 +286,15 @@ def create_app(
 
 
 def _build_default_app() -> FastAPI:
+    from apps.shared import platform_paths
+    from apps.shared.library_mode import apply_library_env, assert_ready
+    from apps.webui.library_assets import ensure_stem_storage, stem_storage
+
+    apply_library_env()
+    platform_paths.refresh_share_root()
+    assert_ready()
+    stems = stem_storage()
+    ensure_stem_storage(stems)
     bind_host = os.environ.get("MUSIC_DJ_BIND_HOST", "127.0.0.1")
     hostname = os.environ.get("MUSIC_DJ_HOSTNAME")
     # Phase 5 wiring: prefer SqliteBackend when ``data/state/state.db`` exists,
@@ -265,6 +311,7 @@ def _build_default_app() -> FastAPI:
     return create_app(
         backend=backend, bind_host=bind_host, hostname=hostname,
         syncthing_status_fn=probe_syncthing_status,
+        stem_roots=stems.roots,
     )
 
 

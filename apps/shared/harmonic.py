@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 # ---------------------------------------------------------------------------
 # Module-level constants (Phase 13)
 # ---------------------------------------------------------------------------

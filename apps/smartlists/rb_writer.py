@@ -35,18 +35,18 @@ single copy.
 """
 from __future__ import annotations
 
-import datetime as _dt
 import datetime
+import datetime as _dt
 import hashlib
 import json
 import shutil
 import sqlite3
 import subprocess
 import sys
-from uuid import uuid4
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, ContextManager
+from uuid import uuid4
 
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
@@ -363,6 +363,7 @@ class RBPlaylistWriter:
         """CAS, WAL-safe backup, and mutation in one Rekordbox transaction."""
         from pyrekordbox.db6 import tables
         from sqlalchemy import text
+
         from apps.smartlists.writeback_backup import exclusive_target_lock, write_reversal
         from apps.webui.server.playlist_writeback import WritebackBackup, WritebackConflict
 
@@ -430,11 +431,11 @@ class RBPlaylistWriter:
 
     def restore_backup(self, backup_id: str, target_id: str, expected_target_revision: str) -> str:
         """Atomically restore a writeback backup when the target still matches CAS."""
-        from apps.webui.server.playlist_writeback import WritebackConflict
-
         from pyrekordbox.db6 import tables
         from sqlalchemy import text
+
         from apps.smartlists.writeback_backup import exclusive_target_lock, read_reversal
+        from apps.webui.server.playlist_writeback import WritebackConflict
         self._assert_safe_to_write(take_backup=False)
         with exclusive_target_lock(self.live_db_path):
             session = getattr(self.db, "session", None)

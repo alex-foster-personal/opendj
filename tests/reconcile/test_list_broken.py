@@ -8,7 +8,6 @@ import pytest
 
 from apps.reconcile import list_broken
 
-
 # ------------------------------------------------------------------ CSV shape
 
 
@@ -153,6 +152,7 @@ def test_main_end_to_end_writes_csv(
     is monkeypatched to use the plain fixture with ``unlock=False``.
     """
     import shutil
+
     import apps.shared.paths as shared_paths
 
     # Copy fixture into the fake working DB path.

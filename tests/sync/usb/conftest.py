@@ -12,15 +12,13 @@ No real USB is ever required. We fabricate:
 from __future__ import annotations
 
 import hashlib
-from dataclasses import replace
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 import pytest
 
 from apps.sync.usb.profile import Profile, load_from_string
 from apps.sync.usb.state import CanonicalTrack
-
 
 PROFILE_YAML = """\
 name: fixtureA

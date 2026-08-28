@@ -14,7 +14,6 @@ from apps.sync.matcher import (
     _normalise_for_match,
 )
 
-
 pytestmark = pytest.mark.requirement("SYNC-02")
 
 

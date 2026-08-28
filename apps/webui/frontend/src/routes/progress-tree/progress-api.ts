@@ -9,7 +9,10 @@
  * surfacing corruption loudly is the point.
  */
 
-import { API_BASE } from '$lib/api';
+import type { Client } from 'openapi-fetch';
+
+import { progressRefusal } from '$lib/api/capabilities.svelte';
+import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
 import {
 	BUILD_STATES,
 	EFFORTS,
@@ -233,19 +236,53 @@ export function validateProgressResponse(raw: unknown): ProgressResponse {
 	return { meta, areas, file_git: fileGit };
 }
 
+/**
+ * The fan-out ledger is a LEGACY-DAEMON surface, not an engine one.
+ *
+ * `apps/engine_core/app.py` drops the progress router outright (the rebuild's
+ * "no decoy ledger" rule: ledger writes go to the shared daemon only), so
+ * `/api/v1/progress` is absent from the engine's OpenAPI document, and
+ * therefore from the generated `paths` in `api-types.ts`, which has described
+ * the engine since T5. This route still has to type its one GET, so it
+ * declares that single path itself and views the shared client through it:
+ * same instance, same base URL, same throwing middleware, only the path table
+ * differs. The body stays `unknown` because `validateProgressResponse` below
+ * is the real contract check, field by field.
+ *
+ * Consequence worth stating plainly: this GET 404s when the SPA is served by
+ * the engine. That is true today and was true before the contract switch --
+ * the switch only stopped the types from hiding it. It is now also GATED: the
+ * capability probe knows which daemon is serving, so `fetchProgress` refuses
+ * before the request rather than discovering it again every 30 seconds. If the
+ * ledger UI is retired from the rebuilt app, delete this declaration with the
+ * route.
+ */
+type LedgerPaths = {
+	'/api/v1/progress': {
+		get: { responses: { 200: { content: { 'application/json': unknown } } } };
+	};
+};
+
+const ledgerApi = api as unknown as Client<LedgerPaths>;
+
 export async function fetchProgress(): Promise<ProgressResponse> {
+	const refusal = progressRefusal();
+	// Thrown, not swallowed: the page renders its own inert panel from the same
+	// refusal, so reaching this line means a caller asked for the ledger from a
+	// daemon that has none, and that is a bug worth a loud message.
+	if (refusal !== null) throw new Error(`GET /api/v1/progress not attempted: ${refusal}`);
 	const endpoint = `${API_BASE}/api/v1/progress`;
-	let r: Response;
+	let data: unknown;
 	try {
-		r = await fetch(endpoint, { headers: { Accept: 'application/json' } });
-	} catch (e) {
+		data = await unwrap(ledgerApi.GET('/api/v1/progress', {}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			const bodyText = await error.response.text();
+			throw new Error(`GET /api/v1/progress failed: ${error.status} ${bodyText.slice(0, 300)}`);
+		}
 		throw new Error(
-			`daemon unreachable at ${endpoint} (${e instanceof Error ? e.message : String(e)})`
+			`daemon unreachable at ${endpoint} (${error instanceof Error ? error.message : String(error)})`
 		);
 	}
-	if (!r.ok) {
-		const body = await r.text();
-		throw new Error(`GET /api/v1/progress failed: ${r.status} ${body.slice(0, 300)}`);
-	}
-	return validateProgressResponse(await r.json());
+	return validateProgressResponse(data);
 }

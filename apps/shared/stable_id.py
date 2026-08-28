@@ -16,7 +16,7 @@ Also offers two tiny convenience wrappers:
 """
 from __future__ import annotations
 
-from apps.shared.state.ids import (  # noqa: F401  (re-export)
+from apps.shared.state.ids import (
     ISRC_PATTERN,
     Tier,
     normalise_isrc,

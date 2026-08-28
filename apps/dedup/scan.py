@@ -24,7 +24,6 @@ from apps.shared.fingerprints import (
     ChromaprintMissing,
     FingerprintCache,
     compute,
-    load_or_compute,
 )
 from apps.shared.stable_id import stable_id
 

@@ -28,6 +28,7 @@ from apps.smartlists.rb_writer import (
     _resolve_rb_id,
     build_rb_writer,
 )
+
 try:
     from apps.smartlists.writers import (
         DEFAULT_CONFIRM_PHRASE,

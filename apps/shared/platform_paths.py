@@ -21,6 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from apps.shared import fs_residency
+from apps.shared.library_mode import crate_root, is_mac_users_path
+
 # ----- Platform identity --------------------------------------------------
 PLATFORM: str = sys.platform
 IS_DARWIN: bool = PLATFORM == "darwin"
@@ -61,7 +64,30 @@ def rekordbox_app_dir() -> Path:
 
 REKORDBOX_APP_DIR: Path = rekordbox_app_dir()
 REKORDBOX_LIVE_DB: Path = REKORDBOX_APP_DIR / "master.db"
-SHARE_ROOT: Path = REKORDBOX_APP_DIR / "share"
+
+
+def compute_share_root() -> Path:
+    """Pioneer share root for this process.
+
+    Remote mode serves ANLZ from ``$MDT_CRATE_ROOT/pioneer-share`` so
+    ``/PIONEER/...`` AnalysisDataPath rows land in the crate, not
+    ``~/.Pioneer/rekordbox/share``. Local mode keeps the platform app dir.
+    Explicit ``MDT_LIBRARY_MODE=remote`` only -- never inferred from hostname.
+    """
+    raw_mode = os.environ.get("MDT_LIBRARY_MODE", "").strip().lower()
+    if raw_mode == "remote":
+        return crate_root() / "pioneer-share"
+    return rekordbox_app_dir() / "share"
+
+
+def refresh_share_root() -> Path:
+    """Recompute :data:`SHARE_ROOT` after library-mode env is applied."""
+    global SHARE_ROOT
+    SHARE_ROOT = compute_share_root()
+    return SHARE_ROOT
+
+
+SHARE_ROOT: Path = compute_share_root()
 
 # ----- djay Pro -------------------------------------------------------------
 # djay Pro is macOS-only; off-darwin this Path is still composed (consumers
@@ -89,7 +115,47 @@ MUSIC_ROOTS: list[Path] = (
     else [HOME / "Music"]
 )
 
-STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
+# ----- Streaming / non-local path classification --------------------------
+#
+# ONE prefix set and ONE URI test for the whole repo (T3b map D1). Before
+# this, four copies disagreed: rb_vendor and crate_sync knew "soundcloud:"
+# but not "http(s)://", rekordbox_db knew "http(s)://" but not
+# "soundcloud:". Neither omission was deliberate -- both sets were just
+# incomplete -- so the union is strictly more correct for every caller.
+#
+# Two predicates, because callers genuinely ask two different questions and
+# collapsing them corrupts data in both directions (see the T3b commit body):
+#   is_streaming_uri  -- "is this a streaming-service URI?"   ""/None -> False
+#   is_unplayable_path -- "is there no local file here?"      ""/None -> True
+STREAMING_PREFIXES: tuple[str, ...] = (
+    "tidal:",
+    "soundcloud:",
+    "spotify:",
+    "http://",
+    "https://",
+)
+
+
+def is_streaming_uri(path: str | None) -> bool:
+    """True iff ``path`` is a non-empty streaming-service URI.
+
+    An empty/None path is NOT a streaming URI -- it is an absent path. Wire
+    fields that report "this track streams" (the browser read model's
+    ``is_streaming``) must use this, or a track with no FolderPath at all
+    gets rendered as a Spotify row.
+    """
+    return bool(path) and str(path).startswith(STREAMING_PREFIXES)
+
+
+def is_unplayable_path(path: str | None) -> bool:
+    """True iff ``path`` names no local file: empty/None, or a streaming URI.
+
+    This is the "skip it, there is nothing on disk" predicate. An empty path
+    must answer True here, or callers build ``Path("")`` -- which is
+    ``Path(".")``, an existing directory -- and classify a pathless track as
+    a present local file.
+    """
+    return not path or is_streaming_uri(path)
 
 
 # ----- Path map (explicit Mac -> Windows library relocation) ---------------
@@ -121,11 +187,11 @@ class MappedPath:
 _EMPTY_PATH_MAP: PathMap = PathMap(entries=())
 
 
-def _normalise_map_prefix(path: str) -> str:
+def normalise_path_prefix(path: str) -> str:
     """Trim a non-root map separator without turning a drive root relative."""
-    if path == "/" or (len(path) == 3 and path[1] == ":" and path[2] in "/\\\\"):
+    if path == "/" or (len(path) == 3 and path[1] == ":" and path[2] in "/\\"):
         return path
-    return path.rstrip("/\\\\")
+    return path.rstrip("/\\")
 
 
 def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
@@ -175,13 +241,13 @@ def load_path_map(data_dir: Optional[Path] = None) -> PathMap:
             raise ValueError(f"path map {map_path} entries must contain string paths")
         if not from_prefix or not to_prefix:
             raise ValueError(f"path map {map_path} entries must not contain empty paths")
-        if not _is_any_absolute(from_prefix) or not _is_any_absolute(to_prefix):
+        if not is_any_absolute(from_prefix) or not is_any_absolute(to_prefix):
             raise ValueError(f"path map {map_path} entries must use absolute paths")
         if _has_parent_reference(from_prefix) or _has_parent_reference(to_prefix):
             raise ValueError(f"path map {map_path} entries must not contain '..' segments")
-        normalised_from = _normalise_map_prefix(from_prefix)
-        normalised_to = _normalise_map_prefix(to_prefix)
-        if not _is_any_absolute(normalised_from) or not _is_any_absolute(normalised_to):
+        normalised_from = normalise_path_prefix(from_prefix)
+        normalised_to = normalise_path_prefix(to_prefix)
+        if not is_any_absolute(normalised_from) or not is_any_absolute(normalised_to):
             raise ValueError(f"path map {map_path} entries must use absolute paths")
         entries.append((normalised_from, normalised_to))
 
@@ -209,7 +275,7 @@ def _is_foreign_absolute(path: str) -> bool:
         return False
 
 
-def _is_any_absolute(path: str) -> bool:
+def is_any_absolute(path: str) -> bool:
     """Return whether ``path`` is absolute in either supported syntax."""
     return (
         path.startswith("/")
@@ -219,8 +285,43 @@ def _is_any_absolute(path: str) -> bool:
 
 
 def _has_parent_reference(path: str) -> bool:
-    """Reject lexical traversal before it reaches a filesystem operation."""
-    return ".." in path.replace("\\\\", "/").split("/")
+    """Reject lexical traversal before it reaches a filesystem operation.
+
+    Both separators are folded first: on Windows the traversal arrives as
+    ``D:\\lib\\..\\etc``, and a POSIX-only split would wave it through.
+    """
+    return ".." in path.replace("\\", "/").split("/")
+
+
+def resolve_local(path: Path) -> Path:
+    """``Path.resolve`` for paths THIS OS can actually address.
+
+    A foreign-absolute path has no location on this machine, and
+    ``Path.resolve`` does not say so -- on Windows it silently anchors a
+    drive-less ``/Users/dev`` to the current drive (``D:/Users/dev``), which
+    is a fabricated path that then compares unequal to the one the caller
+    passed in. Foreign-absolute paths come back untouched; native ones
+    resolve as before so symlinked roots still normalise.
+
+    The Windows arm asks the Path, not its text: ``WindowsPath`` renders a
+    Mac ``/Users/dev`` as ``\\Users\\dev``, so the string test for a leading
+    ``/`` never sees it. Rooted-but-drive-less IS the condition -- that is
+    exactly the path whose location depends on the current drive.
+    """
+    if IS_WINDOWS:
+        addressable = not (path.root and not path.drive)
+    else:
+        addressable = not _is_foreign_absolute(str(path))
+    return path.resolve(strict=False) if addressable else path
+
+
+def _rewrite_with_path_map(folder_path: str, path_map: PathMap) -> Optional[str]:
+    """Rewrite ``folder_path`` through the first matching prefix, or None."""
+    for from_prefix, to_prefix in path_map.entries:
+        suffix = _path_map_suffix(folder_path, from_prefix)
+        if suffix is not None:
+            return to_prefix + suffix
+    return None
 
 
 def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
@@ -234,7 +335,9 @@ def _path_map_suffix(folder_path: str, from_prefix: str) -> Optional[str]:
     if not folder_path.startswith(from_prefix):
         return None
     suffix = folder_path[len(from_prefix):]
-    if not suffix.startswith(("/", "\\\\")) or _has_parent_reference(suffix):
+    # One separator, not two: a Windows suffix opens with a single ``\``,
+    # and ``\\`` only ever appears at the head of a UNC root.
+    if not suffix.startswith(("/", "\\")) or _has_parent_reference(suffix):
         return None
     return suffix
 
@@ -263,18 +366,22 @@ def resolve_library_path(
        but this stays defensive).
     2. ``/PIONEER/...`` share-relative -> ``SHARE_ROOT / path.lstrip("/")``,
        reason "share".
-    3. Absolute path native to THIS OS -> ``Path(folder_path)`` verbatim,
-       reason "native".
-    4. Foreign-absolute (e.g. a Mac path read on Windows) -> try each
-       :class:`PathMap` entry longest-prefix-first; a hit rewrites the
-       prefix (reason "path-map"); no hit -> ``resolved=None, mapped=False,
-       reason="unmapped:<platform>"``. This is the load-bearing fail-fast:
-       never fabricate a path that might not exist.
+    3. Remote mode + Mac ``/Users/...`` prefix: skip native (a leftover
+       ``/Users/dev`` tree on Linux must not win). Path-map only, or
+       ``resolved=None, reason="unmapped:remote"``.
+    4. Absolute path native to THIS OS: if the file is materialised here,
+       use it (reason "native"). If it is missing, apply :class:`PathMap`
+       even when the stored path looks native -- a Mac ``/Users/...`` path
+       is POSIX-native on Linux, so the old "foreign only" rule never
+       remapped the crate onto agentbox.
+    5. Foreign-absolute (e.g. a Mac path read on Windows) -> path-map or
+       ``resolved=None, reason="unmapped:<platform>"``. Never fabricate a
+       path that might not exist.
     """
     if path_map is None:
         path_map = load_path_map()
 
-    if not folder_path or folder_path.startswith(STREAMING_PREFIXES):
+    if is_unplayable_path(folder_path):
         return MappedPath(original=folder_path, resolved=None, mapped=False, reason="streaming")
 
     if folder_path.startswith("/PIONEER/"):
@@ -288,22 +395,46 @@ def resolve_library_path(
         resolved = SHARE_ROOT / folder_path.lstrip("/")
         return MappedPath(original=folder_path, resolved=resolved, mapped=True, reason="share")
 
-    if _is_native_absolute(folder_path):
+    rewritten = _rewrite_with_path_map(folder_path, path_map)
+    remote_mode = os.environ.get("MDT_LIBRARY_MODE", "").strip().lower() == "remote"
+
+    if remote_mode and is_mac_users_path(folder_path):
+        if rewritten is not None:
+            return MappedPath(
+                original=folder_path,
+                resolved=Path(rewritten),
+                mapped=True,
+                reason="path-map",
+            )
         return MappedPath(
-            original=folder_path, resolved=Path(folder_path), mapped=True, reason="native"
+            original=folder_path, resolved=None, mapped=False, reason="unmapped:remote"
+        )
+
+    if _is_native_absolute(folder_path):
+        native_path = Path(folder_path)
+        if fs_residency.is_materialised(native_path):
+            return MappedPath(
+                original=folder_path, resolved=native_path, mapped=True, reason="native"
+            )
+        if rewritten is not None:
+            return MappedPath(
+                original=folder_path,
+                resolved=Path(rewritten),
+                mapped=True,
+                reason="path-map",
+            )
+        return MappedPath(
+            original=folder_path, resolved=native_path, mapped=True, reason="native"
         )
 
     if _is_foreign_absolute(folder_path):
-        for from_prefix, to_prefix in path_map.entries:
-            suffix = _path_map_suffix(folder_path, from_prefix)
-            if suffix is not None:
-                rewritten = to_prefix + suffix
-                return MappedPath(
-                    original=folder_path,
-                    resolved=Path(rewritten),
-                    mapped=True,
-                    reason="path-map",
-                )
+        if rewritten is not None:
+            return MappedPath(
+                original=folder_path,
+                resolved=Path(rewritten),
+                mapped=True,
+                reason="path-map",
+            )
         return MappedPath(
             original=folder_path, resolved=None, mapped=False, reason=f"unmapped:{PLATFORM}"
         )

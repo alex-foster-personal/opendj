@@ -27,7 +27,6 @@ from typing import Any, Callable, Iterable
 
 from apps.shared.djay_db import DjayTrack
 
-
 # NOTE: Weight sums to 1.30, not 1.00. This is deliberate and NOT a
 # probability distribution. Each signal independently contributes evidence;
 # overlapping high-value signals (ISRC + chromaprint) are rewarded. The

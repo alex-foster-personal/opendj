@@ -16,7 +16,6 @@ import pytest
 from apps.shared.djay_db import DjayTrack
 from apps.sync.matcher import match_tracks
 
-
 pytestmark = pytest.mark.requirement("SYNC-02")
 
 

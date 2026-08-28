@@ -17,7 +17,6 @@ from apps.shared.stable_id import (
     stable_id_str,
 )
 
-
 # --------------------------------------------------------------- ISRC tier
 
 

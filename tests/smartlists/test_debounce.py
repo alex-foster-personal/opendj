@@ -5,7 +5,6 @@ import pytest
 
 from apps.smartlists.debounce import Debouncer
 
-
 pytestmark = pytest.mark.requirement("SMART-03")
 
 

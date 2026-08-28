@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Iterator
 
+from . import locations as _locations
 from . import provenance as _prov
 from .events import EventBus, FakeEventBus
 from .types import Event, Source
@@ -181,7 +182,7 @@ class StateWriter:
     def __enter__(self) -> "StateWriter":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+    def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
     def __del__(self) -> None:
@@ -302,7 +303,42 @@ class StateWriter:
                 ts=now,
             )
             self.bus.publish(ev)
+            _locations.sync_primary_local(
+                conn, stable_id=stable_id, file_path=file_path, now=now,
+            )
         return True
+
+    def upsert_track_location(
+        self,
+        *,
+        stable_id: str,
+        kind: _locations.Kind,
+        file_path: str | None = None,
+        remote_url: str | None = None,
+        role: _locations.Role = "alternate",
+        content_hash: str | None = None,
+    ) -> int:
+        """Record an extra playable copy. Does not change ``tracks.file_path``."""
+        now = self._now_iso()
+        with self._tx() as conn:
+            loc_id = _locations.upsert_location(
+                conn,
+                stable_id=stable_id,
+                kind=kind,
+                file_path=file_path,
+                remote_url=remote_url,
+                role=role,
+                content_hash=content_hash,
+                now=now,
+            )
+            ev = self._append_event(
+                kind="track.location.upsert",
+                stable_id=stable_id,
+                payload={"id": loc_id, "kind": kind, "role": role},
+                ts=now,
+            )
+            self.bus.publish(ev)
+        return loc_id
 
     # --- vendor ids -------------------------------------------------
 

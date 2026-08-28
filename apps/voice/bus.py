@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 log = logging.getLogger(__name__)
 
@@ -172,7 +171,7 @@ class StateBackedBus:
                         actor="voice",
                     )
                 )
-            except Exception:  # noqa: BLE001 - isolate producer from fanout
+            except Exception:
                 log.exception(
                     "StateBackedBus fanout failed for kind=%s id=%s; "
                     "events row committed but in-process subscribers "

@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -44,7 +42,6 @@ from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     scaled_to_points,
     window_scaled_to_global_points,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Pure helpers — _point_arg, _build_scroll_applescript
@@ -155,8 +152,9 @@ def test_scaled_to_points_retina_divides_by_backing_scale() -> None:
 
 def _tiny_png() -> bytes:
     """A real 2×2 PNG, used to exercise the downsample path."""
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     img = Image.new("RGB", (8, 4), color=(255, 0, 0))
     buf = io.BytesIO()

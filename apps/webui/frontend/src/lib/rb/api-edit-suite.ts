@@ -5,59 +5,35 @@
  * fan-out wave (see .planning/FANOUT-CONVENTIONS.md); this file is net-new
  * so it carries no lane-ownership risk.
  *
- * Fail-fast, same as api-rb.ts: every helper checks r.ok and throws with
- * the backend's explicit detail payload. No silent fallbacks.
+ * CONVERTED onto the generated OpenAPI client (`src/lib/api/client.ts`); the
+ * exported function signatures are unchanged, so call sites did not move.
+ * Fail-fast, same as before: every helper throws with the backend's explicit
+ * detail payload. No silent fallbacks.
  */
 
-import { RB_API_BASE, RbApiError } from './api-rb';
+import type { components } from '../api-types';
+import { ApiError, api, unwrap } from '../api/client';
+import { RbApiError } from './api-rb';
 
-async function _throwEditSuiteError(r: Response): Promise<never> {
-	const body = (await r.json().catch(() => ({}))) as {
-		detail?: { error?: string; message?: string; conflicts?: unknown } | string;
-	};
-	const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
-	throw new RbApiError(
-		r.status,
-		(detail?.error as string | undefined) ?? `HTTP_${r.status}`,
-		detail?.message ?? r.statusText
-	);
-}
-
-async function _postJson<T>(path: string, body: unknown): Promise<T> {
-	const r = await fetch(`${RB_API_BASE}${path}`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify(body)
-	});
-	if (!r.ok) await _throwEditSuiteError(r);
-	return (await r.json()) as T;
-}
-
-async function _patchJson<T>(path: string, body: unknown): Promise<T> {
-	const r = await fetch(`${RB_API_BASE}${path}`, {
-		method: 'PATCH',
-		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify(body)
-	});
-	if (!r.ok) await _throwEditSuiteError(r);
-	return (await r.json()) as T;
+/** Edit-suite routes put the machine code in `detail.error` (not
+ * `detail.code`). Map from the parsed body so that contract stays intact. */
+function _toEditSuiteError(error: unknown): never {
+	if (error instanceof ApiError) {
+		const detail = (error.body as { detail?: { error?: string; message?: string } } | null)?.detail;
+		throw new RbApiError(error.status, detail?.error ?? `HTTP_${error.status}`, error.message);
+	}
+	throw error;
 }
 
 // ----------------------------------------------------------- find-replace
 
-export interface FindReplaceRow {
-	stable_id: string;
-	current_value: string | null;
-	new_value: string | null;
-	would_change: boolean;
-	etag: string;
-}
+export type FindReplaceRow = components['schemas']['FindReplaceRowOut'];
 
-export interface FindReplacePreviewResult {
-	results: FindReplaceRow[];
-	match_count: number;
-}
+export type FindReplacePreviewResult = components['schemas']['FindReplacePreviewOut'];
 
+/** Request scope kept hand-written: generated FindReplacePreviewIn marks
+ * field/replace/mode/case_sensitive required (OpenAPI defaults), while the
+ * exported client still accepts the optional form call sites already use. */
 export interface FindReplaceScope {
 	field?: 'notes';
 	stable_ids: string[];
@@ -68,23 +44,37 @@ export interface FindReplaceScope {
 }
 
 export async function previewFindReplace(scope: FindReplaceScope): Promise<FindReplacePreviewResult> {
-	return _postJson('/api/v1/find-replace/preview', scope);
+	try {
+		return await unwrap(
+			api.POST('/api/v1/find-replace/preview', {
+				body: scope as components['schemas']['FindReplacePreviewIn']
+			})
+		);
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }
 
-export interface FindReplaceApplyResult {
-	applied_count: number;
-	skipped_noop: string[];
-	results: { stable_id: string; new_value: string | null; etag: string }[];
-}
+export type FindReplaceApplyResult = components['schemas']['FindReplaceApplyOut'];
 
 export async function applyFindReplace(
 	scope: FindReplaceScope & { expected_etags: Record<string, string> }
 ): Promise<FindReplaceApplyResult> {
-	return _postJson('/api/v1/find-replace/apply', scope);
+	try {
+		return await unwrap(
+			api.POST('/api/v1/find-replace/apply', {
+				body: scope as components['schemas']['FindReplaceApplyIn']
+			})
+		);
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }
 
 // --------------------------------------------------------------- bulk-edit
 
+/** Request patch kept hand-written: generated BulkEditIn widens optional
+ * fields with `| null`, which is not an exact match for this exported shape. */
 export interface BulkEditPatch {
 	stable_ids: string[];
 	expected_etags: Record<string, string>;
@@ -94,37 +84,35 @@ export interface BulkEditPatch {
 	tags_remove?: string[];
 }
 
-export interface BulkEditResult {
-	applied_count: number;
-	results: { stable_id: string; etag: string }[];
-}
+export type BulkEditResult = components['schemas']['BulkEditOut'];
 
 export async function bulkEditTracks(patch: BulkEditPatch): Promise<BulkEditResult> {
-	return _patchJson('/api/v1/bulk-edit', patch);
+	try {
+		return await unwrap(
+			api.PATCH('/api/v1/bulk-edit', {
+				body: patch as components['schemas']['BulkEditIn']
+			})
+		);
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }
 
 // ---------------------------------------------------------------- mytags
 
-export interface MyTagSummary {
-	name: string;
-	track_count: number;
-}
+export type MyTagSummary = components['schemas']['MyTagSummary'];
 
-export interface MyTagCatalog {
-	tags: MyTagSummary[];
-	catalog_revision: string;
-}
+export type MyTagCatalog = components['schemas']['MyTagListOut'];
 
 export async function listMyTags(): Promise<MyTagCatalog> {
-	const r = await fetch(`${RB_API_BASE}/api/v1/mytags`, { headers: { Accept: 'application/json' } });
-	if (!r.ok) await _throwEditSuiteError(r);
-	return (await r.json()) as MyTagCatalog;
+	try {
+		return await unwrap(api.GET('/api/v1/mytags', {}));
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }
 
-export interface MyTagAssignResult {
-	applied_count: number;
-	results: { stable_id: string; tags: string[]; etag: string }[];
-}
+export type MyTagAssignResult = components['schemas']['MyTagAssignOut'];
 
 export async function assignMyTags(body: {
 	stable_ids: string[];
@@ -132,7 +120,15 @@ export async function assignMyTags(body: {
 	add?: string[];
 	remove?: string[];
 }): Promise<MyTagAssignResult> {
-	return _postJson('/api/v1/mytags/assign', body);
+	try {
+		return await unwrap(
+			api.POST('/api/v1/mytags/assign', {
+				body: body as components['schemas']['MyTagAssignIn']
+			})
+		);
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }
 
 export interface MyTagSweepPrecondition {
@@ -146,12 +142,20 @@ export async function renameMyTag(
 		new_name: string;
 		confirm_merge: boolean;
 	}
-): Promise<{ tracks_updated: number }> {
-	return _postJson('/api/v1/mytags/rename', body);
+): Promise<components['schemas']['MyTagSweepOut']> {
+	try {
+		return await unwrap(api.POST('/api/v1/mytags/rename', { body }));
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }
 
 export async function deleteMyTag(
 	body: MyTagSweepPrecondition & { name: string }
-): Promise<{ tracks_updated: number }> {
-	return _postJson('/api/v1/mytags/delete', body);
+): Promise<components['schemas']['MyTagSweepOut']> {
+	try {
+		return await unwrap(api.POST('/api/v1/mytags/delete', { body }));
+	} catch (error) {
+		_toEditSuiteError(error);
+	}
 }

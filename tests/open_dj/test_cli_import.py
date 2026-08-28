@@ -20,7 +20,6 @@ import pytest
 
 from apps.open_dj.cli import main
 
-
 # ---------------------------------------------------------- fixtures
 
 

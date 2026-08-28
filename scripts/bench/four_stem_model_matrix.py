@@ -67,11 +67,15 @@ from demucs.apply import apply_model
 from demucs.pretrained import get_model
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from four_stem_common import (  # noqa: E402
-    AUDIBILITY_DB, DEFAULT_MODEL, MODELS, OVERLAP, SHIFTS, STEMS,
-    gate_flags, paired_deltas,
+from four_stem_common import (
+    DEFAULT_MODEL,
+    MODELS,
+    OVERLAP,
+    SHIFTS,
+    STEMS,
+    gate_flags,
+    paired_deltas,
 )
-
 
 # ----- io ---------------------------------------------------------------------
 

@@ -17,7 +17,6 @@ import pytest
 from apps.shared.state.types import Event
 from apps.shared.state.writer import StateWriter
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 
@@ -31,11 +30,11 @@ class _ExplodingBus:
     def __init__(self) -> None:
         self.publish_attempts = 0
 
-    def publish(self, event: Event) -> None:  # noqa: ARG002
+    def publish(self, event: Event) -> None:
         self.publish_attempts += 1
         raise RuntimeError("bus down")
 
-    def close(self, timeout: float | None = None) -> None:  # noqa: ARG002
+    def close(self, timeout: float | None = None) -> None:
         return None
 
 

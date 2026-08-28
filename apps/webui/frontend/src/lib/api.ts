@@ -1,14 +1,34 @@
 /**
- * Minimal typed fetch wrappers over the music-dj-tools FastAPI daemon.
+ * Typed calls over the music-dj-tools FastAPI daemon: tracks, playlists,
+ * PLAY IT, pairings, queues, settings, smartlists and health.
  *
- * Paths are string-literal so we do not need the generated
- * api-types.ts during hot-path development; `pnpm api:gen` regenerates
- * `src/lib/api-types.ts` for strict usage.
+ * CONVERTED onto the generated OpenAPI client (`src/lib/api/client.ts`). The
+ * local `request()` helper is gone, every path is now the schema's own literal,
+ * and `API_BASE` is a re-export of the client's copy -- this module was the
+ * last holder of a second, independent base-URL resolution, so there is now
+ * exactly one. Exported signatures, error classes and thrown messages are
+ * unchanged; no call site moved.
+ *
+ * The response interfaces below stay hand-written on purpose. Most have already
+ * drifted from the generated schemas -- `TracksPage.items` is `TrackListItemOut`
+ * there, `PlaylistDetail` carries `tracks` and no `updated_at`,
+ * `PlaylistSummary` gained `available_count`, `HealthOut.status` is an open
+ * string, and `SmartlistOut.rule` is a typed `RuleAst` here against an open
+ * record there. Aliasing them to `components['schemas'][...]` would therefore
+ * change what every call site sees, which step 4 of CONVERSION-PATTERN.md
+ * explicitly forbids. Each `as unknown as` at the client boundary marks one
+ * such drift to close later; it is not a shortcut around a type error.
  */
+import type { paths } from './api-types';
+import { ApiError, api, unwrap } from './api/client';
 import type { RuleAst } from './smartlists/rule-form';
 
-const ENV_BASE = import.meta.env.VITE_API_BASE as string | undefined;
-export const API_BASE = ENV_BASE ?? '';
+export { API_BASE } from './api/client';
+
+/** The documented `/api/v1/tracks` filter set. `listTracks` keeps its open
+ * `Record` signature (call sites pass filter bags straight through), so the
+ * bag is asserted onto this at the one point it reaches the client. */
+type TrackListQuery = NonNullable<paths['/api/v1/tracks']['get']['parameters']['query']>;
 
 export interface Track {
 	stable_id: string;
@@ -171,29 +191,21 @@ export class PlaylistConflictError extends Error {
 	}
 }
 
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
-	return fetch(`${API_BASE}${path}`, {
-		...init,
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(init.headers || {})
-		}
-	});
-}
-
 export async function listTracks(params: Record<string, string | number | undefined | null> = {}): Promise<TracksPage> {
-	const qs = Object.entries(params)
-		.filter(([, v]) => v !== undefined && v !== null && v !== '')
-		.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-		.join('&');
-	const r = await request(`/api/v1/tracks${qs ? '?' + qs : ''}`);
-	return r.json();
+	// The client drops undefined and null query keys for us; the empty string is
+	// ours to drop, and dropping it here keeps `?q=` off the wire as before.
+	const query = Object.fromEntries(
+		Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+	) as TrackListQuery;
+	const page = await unwrap(api.GET('/api/v1/tracks', { params: { query } }));
+	return page as unknown as TracksPage;
 }
 
 export async function getTrack(stable_id: string): Promise<{ track: Track; etag: string }> {
-	const r = await request(`/api/v1/tracks/${encodeURIComponent(stable_id)}`);
-	return { track: await r.json(), etag: r.headers.get('etag') ?? '' };
+	const { data, response } = await api.GET('/api/v1/tracks/{stable_id}', {
+		params: { path: { stable_id } }
+	});
+	return { track: data as unknown as Track, etag: response.headers.get('etag') ?? '' };
 }
 
 export async function patchTrack(
@@ -201,27 +213,35 @@ export async function patchTrack(
 	etag: string,
 	patch: { rating?: number; tags_add?: string[]; tags_remove?: string[]; notes?: string }
 ): Promise<{ track: Track; etag: string }> {
-	const r = await request(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, {
-		method: 'PATCH',
-		headers: { 'If-Match': etag },
-		body: JSON.stringify(patch)
-	});
-	if (r.status === 409) {
-		const body = await r.json();
-		throw new ConflictError(body.current as Track, body.etag as string);
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.PATCH('/api/v1/tracks/{stable_id}', {
+			params: { path: { stable_id }, header: { 'If-Match': etag } },
+			body: patch
+		}));
+	} catch (error) {
+		// The 409 body is the CAS envelope {current, etag}, not the {"detail":
+		// {...}} one ApiError decodes, so read the parsed body off the error.
+		if (error instanceof ApiError && error.status === 409) {
+			const body = error.body as { current: Track; etag: string };
+			throw new ConflictError(body.current, body.etag);
+		}
+		if (error instanceof ApiError) throw new Error(`PATCH failed: ${error.status}`);
+		throw error;
 	}
-	if (!r.ok) throw new Error(`PATCH failed: ${r.status}`);
-	return { track: await r.json(), etag: r.headers.get('etag') ?? '' };
+	return { track: data as unknown as Track, etag: response.headers.get('etag') ?? '' };
 }
 
 export async function listPlaylists(): Promise<PlaylistSummary[]> {
-	const r = await request('/api/v1/playlists');
-	return r.json();
+	return (await unwrap(api.GET('/api/v1/playlists'))) as unknown as PlaylistSummary[];
 }
 
 export async function getPlaylist(id: string): Promise<PlaylistDetail> {
-	const r = await request(`/api/v1/playlists/${encodeURIComponent(id)}`);
-	return r.json();
+	const detail = await unwrap(
+		api.GET('/api/v1/playlists/{playlist_id}', { params: { path: { playlist_id: id } } })
+	);
+	return detail as unknown as PlaylistDetail;
 }
 
 /**
@@ -230,15 +250,30 @@ export async function getPlaylist(id: string): Promise<PlaylistDetail> {
  * pass straight to `replacePlaylistTracks` -- no extra fetch needed.
  */
 export async function solvePlayIt(playlistId: string, goal: PlayItGoal): Promise<PlayItSolveOut> {
-	const r = await request(`/api/v1/play-it/${encodeURIComponent(playlistId)}/solve`, {
-		method: 'POST',
-		body: JSON.stringify(goal)
-	});
-	if (!r.ok) {
-		const body = await r.json().catch(() => ({}));
-		throw new PlayItError(body.error ?? 'unknown', body.message ?? `solve failed: ${r.status}`, body.details);
+	try {
+		const solved = await unwrap(
+			api.POST('/api/v1/play-it/{playlist_id}/solve', {
+				params: { path: { playlist_id: playlistId } },
+				// The goal's optional fields carry server-side defaults, which the
+				// generated request type spells as required.
+				body: goal as paths['/api/v1/play-it/{playlist_id}/solve']['post']['requestBody']['content']['application/json']
+			})
+		);
+		return solved as unknown as PlayItSolveOut;
+	} catch (error) {
+		if (error instanceof ApiError) {
+			// The solve route answers with a TOP-LEVEL {error, message, details}
+			// (ErrorBody), so the operator-facing code and message come off the
+			// parsed body rather than ApiError's {"detail": {...}} decoding.
+			const body = (error.body ?? {}) as { error?: string; message?: string; details?: unknown };
+			throw new PlayItError(
+				body.error ?? 'unknown',
+				body.message ?? `solve failed: ${error.status}`,
+				body.details
+			);
+		}
+		throw error;
 	}
-	return r.json();
 }
 
 /**
@@ -252,22 +287,34 @@ export async function replacePlaylistTracks(
 	stableIds: string[],
 	etag: string
 ): Promise<{ playlist: PlaylistWriteOut; etag: string }> {
-	const r = await request(`/api/v1/playlists/${encodeURIComponent(playlistId)}/tracks`, {
-		method: 'PUT',
-		headers: { 'If-Match': etag },
-		body: JSON.stringify({ stable_ids: stableIds })
-	});
-	if (r.status === 409) {
-		const body = await r.json();
-		throw new PlaylistConflictError(body.current as PlaylistWriteOut, body.etag as string);
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.PUT('/api/v1/playlists/{playlist_id}/tracks', {
+			params: { path: { playlist_id: playlistId }, header: { 'If-Match': etag } },
+			body: { stable_ids: stableIds }
+		}));
+	} catch (error) {
+		if (error instanceof ApiError && error.status === 409) {
+			const body = error.body as { current: PlaylistWriteOut; etag: string };
+			throw new PlaylistConflictError(body.current, body.etag);
+		}
+		if (error instanceof ApiError) throw new Error(`apply reorder failed: ${error.status}`);
+		throw error;
 	}
-	if (!r.ok) throw new Error(`apply reorder failed: ${r.status}`);
-	return { playlist: await r.json(), etag: r.headers.get('etag') ?? '' };
+	return {
+		playlist: data as unknown as PlaylistWriteOut,
+		etag: response.headers.get('etag') ?? ''
+	};
 }
 
 export async function listPairings(source?: string): Promise<Pairing[]> {
-	const r = await request(`/api/v1/pairings${source ? `?source=${encodeURIComponent(source)}` : ''}`);
-	return r.json();
+	// `source || undefined` keeps the empty string off the wire, matching the
+	// old `source ? '?source=...' : ''`.
+	const pairings = await unwrap(
+		api.GET('/api/v1/pairings', { params: { query: { source: source || undefined } } })
+	);
+	return pairings as unknown as Pairing[];
 }
 
 export async function createPairing(body: {
@@ -277,27 +324,44 @@ export async function createPairing(body: {
 	source?: 'manual' | 'learned' | 'ai';
 	notes?: string;
 }): Promise<Pairing> {
-	const r = await request('/api/v1/pairings', { method: 'POST', body: JSON.stringify(body) });
-	if (!r.ok) throw new Error(`create pairing failed: ${r.status}`);
-	return r.json();
+	try {
+		// `direction` and `source` carry server-side defaults, which the generated
+		// request type spells as required.
+		const created = await unwrap(
+			api.POST('/api/v1/pairings', {
+				body: body as paths['/api/v1/pairings']['post']['requestBody']['content']['application/json']
+			})
+		);
+		return created as unknown as Pairing;
+	} catch (error) {
+		if (error instanceof ApiError) throw new Error(`create pairing failed: ${error.status}`);
+		throw error;
+	}
 }
 
 export async function deletePairing(pairing_id: string, etag: string): Promise<void> {
-	const r = await request(`/api/v1/pairings/${encodeURIComponent(pairing_id)}`, {
-		method: 'DELETE',
-		headers: { 'If-Match': etag }
-	});
-	if (r.status !== 204) throw new Error(`delete failed: ${r.status}`);
+	// 204, so no unwrap. The status is still asserted: the old code accepted
+	// exactly 204, and a 2xx that is not 204 never reaches the client's
+	// always-throw middleware.
+	try {
+		const { response } = await api.DELETE('/api/v1/pairings/{pairing_id}', {
+			params: { path: { pairing_id }, header: { 'If-Match': etag } }
+		});
+		if (response.status !== 204) throw new Error(`delete failed: ${response.status}`);
+	} catch (error) {
+		if (error instanceof ApiError) throw new Error(`delete failed: ${error.status}`);
+		throw error;
+	}
 }
 
 export async function getQueue(kind: string): Promise<QueueOut> {
-	const r = await request(`/api/v1/queues/${encodeURIComponent(kind)}`);
-	return r.json();
+	const queue = await unwrap(api.GET('/api/v1/queues/{kind}', { params: { path: { kind } } }));
+	return queue as unknown as QueueOut;
 }
 
 export async function getSettings(): Promise<SettingsOut> {
-	const r = await request('/api/v1/settings');
-	return r.json();
+	const settings = await unwrap(api.GET('/api/v1/settings'));
+	return settings as unknown as SettingsOut;
 }
 
 export interface SmartlistOut {
@@ -339,9 +403,13 @@ export interface SmartlistTrackOut {
  * (GET /api/v1/smartlists + /{id}/tracks). No single-smartlist GET is
  * documented yet, so the edit route filters the list client-side. */
 export async function listSmartlists(): Promise<SmartlistOut[]> {
-	const r = await request('/api/v1/smartlists');
-	if (!r.ok) throw new Error(`GET smartlists failed: ${r.status}`);
-	return r.json();
+	try {
+		const rows = await unwrap(api.GET('/api/v1/smartlists'));
+		return rows as unknown as SmartlistOut[];
+	} catch (error) {
+		if (error instanceof ApiError) throw new Error(`GET smartlists failed: ${error.status}`);
+		throw error;
+	}
 }
 
 function requiredSmartlistEtag(response: Response): string {
@@ -355,17 +423,34 @@ function requiredSmartlistEtag(response: Response): string {
 export async function getSmartlist(
 	id: string
 ): Promise<{ smartlist: SmartlistOut; etag: string }> {
-	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}`);
-	if (!r.ok) throw new SmartlistApiError(r.status, `GET smartlist failed: ${r.status}`);
-	const etag = requiredSmartlistEtag(r);
-	return { smartlist: await r.json(), etag };
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.GET('/api/v1/smartlists/{smartlist_id}', {
+			params: { path: { smartlist_id: id } }
+		}));
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new SmartlistApiError(error.status, `GET smartlist failed: ${error.status}`);
+		}
+		throw error;
+	}
+	const etag = requiredSmartlistEtag(response);
+	return { smartlist: data as unknown as SmartlistOut, etag };
 }
 
 export async function getSmartlistTracks(id: string): Promise<SmartlistTrackOut[]> {
-	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}/tracks`);
-	if (!r.ok) throw new Error(`GET smartlist tracks failed: ${r.status}`);
-	const body = (await r.json()) as { tracks: SmartlistTrackOut[] };
-	return body.tracks;
+	try {
+		const body = await unwrap(
+			api.GET('/api/v1/smartlists/{smartlist_id}/tracks', {
+				params: { path: { smartlist_id: id } }
+			})
+		);
+		return body.tracks;
+	} catch (error) {
+		if (error instanceof ApiError) throw new Error(`GET smartlist tracks failed: ${error.status}`);
+		throw error;
+	}
 }
 
 /** Replace a smartlist rule through the same HTTP apply path as the editor.
@@ -375,32 +460,42 @@ export async function updateSmartlist(
 	body: { rule: RuleAst; order_by?: string },
 	etag: string
 ): Promise<{ smartlist: SmartlistOut; etag: string }> {
-	const r = await request(`/api/v1/smartlists/${encodeURIComponent(id)}`, {
-		method: 'PUT',
-		headers: { 'If-Match': etag },
-		body: JSON.stringify(body)
-	});
-	if (r.status === 409) {
-		const responseEtag = requiredSmartlistEtag(r);
-		const payload = (await r.json()) as { current: SmartlistOut; etag: string };
-		if (payload.etag !== responseEtag) {
-			throw new Error('smartlist conflict response ETag does not match its body');
+	let data: unknown;
+	let response: Response;
+	try {
+		({ data, response } = await api.PUT('/api/v1/smartlists/{smartlist_id}', {
+			params: { path: { smartlist_id: id }, header: { 'If-Match': etag } },
+			// `RuleAst` is a discriminated union here and an open record in the
+			// schema, so the two have no structural overlap to assert across.
+			body: body as unknown as paths['/api/v1/smartlists/{smartlist_id}']['put']['requestBody']['content']['application/json']
+		}));
+	} catch (error) {
+		if (error instanceof ApiError && error.status === 409) {
+			// The conflict envelope is top-level {current, etag}; the header and
+			// the body must agree before the caller is handed a revision to retry
+			// against, so a half-updated response can never drive a silent clobber.
+			const responseEtag = requiredSmartlistEtag(error.response);
+			const payload = error.body as { current: SmartlistOut; etag: string };
+			if (payload.etag !== responseEtag) {
+				throw new Error('smartlist conflict response ETag does not match its body');
+			}
+			throw new SmartlistConflictError(payload.current, responseEtag);
 		}
-		throw new SmartlistConflictError(payload.current, responseEtag);
+		if (error instanceof ApiError) {
+			const payload = (error.body ?? {}) as { detail?: { message?: string } | string };
+			const detail = typeof payload.detail === 'object' ? payload.detail?.message : payload.detail;
+			throw new SmartlistApiError(error.status, detail ?? `PUT smartlist failed: ${error.status}`);
+		}
+		throw error;
 	}
-	if (!r.ok) {
-		const payload = (await r.json()) as { detail?: { message?: string } | string };
-		const detail = typeof payload.detail === 'object' ? payload.detail?.message : payload.detail;
-		throw new SmartlistApiError(r.status, detail ?? `PUT smartlist failed: ${r.status}`);
-	}
-	const nextEtag = requiredSmartlistEtag(r);
-	return { smartlist: await r.json(), etag: nextEtag };
+	const nextEtag = requiredSmartlistEtag(response);
+	return { smartlist: data as unknown as SmartlistOut, etag: nextEtag };
 }
 
 export async function getHealth(): Promise<{ health: HealthOut; bindWarning: string | null }> {
-	const r = await request('/api/v1/health');
+	const { data, response } = await api.GET('/api/v1/health');
 	return {
-		health: await r.json(),
-		bindWarning: r.headers.get('x-bind-warning')
+		health: data as unknown as HealthOut,
+		bindWarning: response.headers.get('x-bind-warning')
 	};
 }

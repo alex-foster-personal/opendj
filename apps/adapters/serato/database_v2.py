@@ -37,7 +37,6 @@ from apps.adapters.serato.tagstream import (
     TagStreamError,
 )
 
-
 # ---------------------------------------------------------------- encoding
 
 

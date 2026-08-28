@@ -9,20 +9,20 @@ import pytest
 
 from apps.sync.playlist_diff import (
     _path_under_repo,
-    main as playlist_diff_main,
     write_diff_md,
     write_patch_csv,
     write_plan_json,
 )
+from apps.sync.playlist_diff import (
+    main as playlist_diff_main,
+)
 from apps.sync.playlist_plan import (
-    DjayOnlyPlaylist,
     DjayPlaylistRead,
     FlatPlaylist,
     MatchSet,
-    PlaylistOp,
     PlannedMember,
+    PlaylistOp,
     PlaylistPlan,
-    UnmatchedTrack,
     build_plan,
 )
 
@@ -251,10 +251,10 @@ def test_missing_matches_returns_exit_2(tmp_path: Path, monkeypatch: pytest.Monk
     class _Stub:
         pass
 
-    def _fake_rb_inputs(_):  # noqa: ANN001
+    def _fake_rb_inputs(_):
         return [], {}, {}
 
-    def _fake_djay_iter(_):  # noqa: ANN001
+    def _fake_djay_iter(_):
         return iter([])
 
     monkeypatch.setattr(pd, "_load_rb_inputs", _fake_rb_inputs)

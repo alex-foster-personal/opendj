@@ -17,7 +17,6 @@ import struct
 from dataclasses import dataclass, field
 from typing import Iterable, Protocol, runtime_checkable
 
-
 FRAME_MS: int = 30
 # Default silence tail: 300 ms (configurable via $VOICE_VAD_TAIL_MS).
 DEFAULT_TAIL_MS: int = 300

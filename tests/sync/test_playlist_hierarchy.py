@@ -6,7 +6,6 @@ import pytest
 from apps.shared.rekordbox_db import RBPlaylist
 from apps.sync.playlist_plan import (
     FOLDER_SEP,
-    FlatPlaylist,
     flatten_rb_playlists,
 )
 

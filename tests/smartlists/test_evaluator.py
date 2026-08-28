@@ -6,7 +6,6 @@ import pytest
 from apps.shared.smartlists import SmartlistRuleError
 from apps.smartlists.evaluator import EvaluatorError, compile_rule, evaluate
 
-
 pytestmark = pytest.mark.requirement("SMART-02")
 
 

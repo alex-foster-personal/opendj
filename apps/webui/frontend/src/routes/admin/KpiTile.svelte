@@ -8,17 +8,10 @@
 	 * per-run readout while pointed at, then it comes back.
 	 */
 	import Sparkline from './Sparkline.svelte';
-	import {
-		ARROW,
-		formatDeltaWithUnit,
-		formatValue,
-		formatWithUnit,
-		isDuration,
-		judge,
-		type Verdict
-	} from './format';
-	import { KPI_WHY } from './kpi-why';
-	import { tip, type TipContent } from './tooltip.svelte';
+	import { ARROW, formatDeltaWithUnit, formatValue, isDuration } from './format';
+	import { buildKpiCard } from './kpi-card';
+	import { originText } from './kpi-provenance';
+	import { tip } from './tooltip.svelte';
 	import type { KpiDef, KpiSnapshot } from './kpi-api';
 
 	interface Props {
@@ -29,79 +22,24 @@
 
 	const { metric, kpi, snapshots }: Props = $props();
 
-	const directionText = $derived(
-		kpi.direction === 'higher_better' ? 'Higher is better.' : 'Lower is better.'
-	);
-	const why = $derived(KPI_WHY[metric] ?? '');
-
-	/** How the latest reading got here, so measured and typed never look alike. */
-	const ORIGIN_TEXT: Record<string, string> = {
-		derived: 'Origin: DERIVED from per-track cache telemetry by scripts/bench/kpi_derive.py.',
-		hand: 'Origin: HAND-ENTERED. Not reconstructable from telemetry, so nothing checks it.',
-		'hand-unverifiable':
-			'Origin: HAND-ENTERED and unverifiable. No telemetry survives for this run.',
-		'configured-not-measured':
-			'Origin: CONFIG CONSTANT, not a measurement. It is the ceiling the run was allowed, ' +
-			'not what it reached.'
-	};
-	const BADGE_TEXT: Record<string, string> = {
-		hand: 'typed',
-		'hand-unverifiable': 'typed',
-		'configured-not-measured': 'config'
-	};
-
-	const points = $derived(
-		snapshots
-			.map((snapshot, index) => ({ index, value: snapshot.values[metric] ?? null }))
-			.filter((point): point is { index: number; value: number } => typeof point.value === 'number')
-	);
-
-	const latest = $derived(points.length > 0 ? points[points.length - 1] : null);
-	const previous = $derived(points.length >= 2 ? points[points.length - 2] : null);
-	const delta = $derived(latest && previous ? latest.value - previous.value : 0);
-	const verdict = $derived<Verdict>(previous ? judge(delta, kpi.direction) : 'flat');
-	const originBadge = $derived(
-		latest ? (BADGE_TEXT[snapshots[latest.index].provenance[metric] ?? ''] ?? '') : ''
-	);
-
-	/** One consolidated explainer for the whole card. */
-	const cardTip = $derived.by((): TipContent => {
-		const body = [kpi.title];
-		if (why) body.push(why);
-		if (!latest) {
-			body.push(`Not measured in any of the ${snapshots.length} snapshots yet.`);
-			return {
-				title: kpi.label,
-				subtitle: `${kpi.unit} - ${directionText}`,
-				body
-			};
-		}
-		body.push(`Latest reading from ${snapshots[latest.index].label} (${snapshots[latest.index].ts}).`);
-		const origin = ORIGIN_TEXT[snapshots[latest.index].provenance[metric] ?? ''];
-		if (origin) body.push(origin);
-		const lines = previous
-			? [
-					{
-						text: `${ARROW[verdict]} ${formatDeltaWithUnit(delta, kpi.unit)} since ${snapshots[previous.index].label}`,
-						tone: verdict
-					}
-				]
-			: [{ text: 'First reading; nothing to compare against yet.', tone: 'flat' as const }];
-		return {
-			title: kpi.label,
-			subtitle: `${formatWithUnit(latest.value, kpi.unit)} - ${directionText}`,
-			lines,
-			body
-		};
-	});
+	const card = $derived(buildKpiCard(metric, kpi, snapshots));
+	const points = $derived(card.points);
+	const latest = $derived(card.latest);
+	const previous = $derived(card.previous);
+	const delta = $derived(card.delta);
+	const verdict = $derived(card.verdict);
+	const badge = $derived(card.badge);
+	const cardTip = $derived(card.tip);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="tile" tabindex="0" use:tip={cardTip}>
 	<div class="tile-label">
 		{kpi.label}
-		{#if latest && originBadge}
-			<span class="origin">{originBadge}</span>
+		{#if latest && badge}
+			<span class="origin" title={originText(snapshots[latest.index].provenance[metric]) ?? ''}
+				>{badge}</span
+			>
 		{/if}
 	</div>
 

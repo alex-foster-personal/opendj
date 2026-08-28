@@ -1,8 +1,10 @@
-.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint build-dist release-check rb-parity-check rb-parity-final
+.PHONY: test cov reqs reqs-check fixture ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
+WAVEFORM_CONSUMER_VENV := dist/waveform-consumer
+WAVEFORM_CONSUMER_PY := $(WAVEFORM_CONSUMER_VENV)/bin/python
 FRONTEND_NODE ?= node
 RB_PARITY_PYTEST_PATHS := \
 	tests/reconcile/test_prefix_dead_playlists.py \
@@ -12,8 +14,19 @@ RB_PARITY_PYTEST_PATHS := \
 	tests/test_rb_assets.py \
 	tests/webui
 
+# PYTEST_JOBS feeds `-n`: `auto` lets xdist size itself to the box. Override for
+# a serial run (`make test PYTEST_JOBS=0`), which is what you want when reading
+# a traceback rather than a pass/fail, and what ci.yml's own pytest step does
+# because `-n` measured SLOWER on a 4-vCPU runner (ops/test-latency/README.md).
+# PYTEST_COLLECT_FLOOR is the guard that
+# keeps `-n` honest: parallelism redistributes tests, it never removes them, so
+# collecting fewer than the floor means the suite lost tests. It only ratchets
+# up. Keep both in sync with scripts/savepoint_gate.py and .github/workflows/ci.yml.
+PYTEST_JOBS ?= auto
+PYTEST_COLLECT_FLOOR ?= 3700
+
 test:
-	$(PYTEST) -q
+	$(PYTEST) -q -n $(PYTEST_JOBS) --dist loadgroup --collect-floor $(PYTEST_COLLECT_FLOOR)
 
 # Fast iteration gates for the Rekordbox parity stack. These deliberately omit
 # untouched analysis backends and Pioneer actuator suites, which require
@@ -71,26 +84,72 @@ clean:
 # Keep this target serial; failures should halt the pipeline immediately.
 
 lint:
-	@# Prefer the venv-local ruff (CI installs it there); fall back to a
-	@# system-wide `ruff` on PATH for local dev machines that manage linters
-	@# outside the project venv.
+	@# Runs the ruff pinned in ops/quality/requirements.txt against the rule
+	@# set pinned in pyproject.toml's [tool.ruff]. Both pins matter: before
+	@# they existed this target ran whatever ruff happened to be on PATH with
+	@# whatever that version's built-in defaults were, so "the tree is clean"
+	@# meant something different on every machine.
+	@#
+	@# This target reports the ABSOLUTE violation count, which is currently
+	@# large. The enforced gate is `make quality`, which fails only when a
+	@# count grows. Use this one to see what to fix next.
 	@#
 	@# LINT_PATHS defaults to the top-level source trees. To replicate the
 	@# pre-commit experience (lint only files changed vs master) set
 	@# LINT_PATHS to the output of `git diff --name-only master... -- '*.py'`
 	@# when calling `make lint` / `make release-check`.
-	@ruff_bin="ruff"; \
-	if [ -x "$(VENV)/bin/ruff" ]; then ruff_bin="$(VENV)/bin/ruff"; fi; \
-	paths="$(LINT_PATHS)"; \
+	@paths="$(LINT_PATHS)"; \
 	if [ -z "$$paths" ]; then paths="apps tests scripts"; fi; \
-	echo "$$ruff_bin check $$paths"; \
-	$$ruff_bin check $$paths
+	uv run --no-project --quiet --with-requirements ops/quality/requirements.txt \
+		ruff check $$paths
+
+# ----- Code quality ratchet ----------------------------------------------
+# `quality` scores lint debt, complexity, architecture contracts, frontend
+# coupling, dead code, dependency defects, file bloat and duplication, then
+# fails if any of them got worse than ops/quality/baseline.json allows.
+# See ops/quality/README.md.
+
+quality:
+	uv run --no-project --quiet python -m scripts.quality_gate --report ops/quality/report.md
+
+# Re-record the baseline after a cleanup. Allowances only ever shrink; this
+# refuses to run on a partial (--only) measurement.
+quality-baseline:
+	uv run --no-project --quiet python -m scripts.quality_gate \
+		--update-baseline --report ops/quality/report.md
 
 build-dist:
 	rm -rf dist build
 	$(PY) -m build
 
-release-check: test lint build-dist reqs-check
+# The native extension is part of the normal server distribution. Keep this
+# target wheel-based so the gate tests what consumers install, not a source-tree
+# maturin development shim.
+waveform-native-wheel:
+	rm -f dist/music_dj_tools-*.whl
+	mkdir -p dist
+	uv build --wheel --python $(PY) --out-dir dist
+
+waveform-native-verify:
+	$(PY) scripts/check_waveform_native_wheel.py dist/music_dj_tools-*.whl
+	rm -rf $(WAVEFORM_CONSUMER_VENV)
+	uv venv --python $(PY) $(WAVEFORM_CONSUMER_VENV)
+	uv pip install --python $(WAVEFORM_CONSUMER_PY) dist/music_dj_tools-*.whl
+	cd $(WAVEFORM_CONSUMER_VENV) && \
+		MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
+		$(CURDIR)/$(WAVEFORM_CONSUMER_PY) \
+			$(CURDIR)/scripts/check_waveform_installed_consumer.py \
+			--source-root $(CURDIR) \
+			--fixture $(CURDIR)/tests/fixtures/rb-usb-export/PIONEER/USBANLZ/P000/00029138 \
+			--manifest $(CURDIR)/tests/fixtures/rb-usb-export/waveform-native-manifest-v1.json
+	uv pip install --python $(PY) --reinstall --no-deps dist/music_dj_tools-*.whl
+	MDT_WAVEFORM_BACKEND=native MDT_REQUIRE_WAVEFORM_NATIVE=1 \
+		$(PYTEST) -q tests/webui/test_waveform_native.py \
+			-k 'native_request_selects or collision_resistant or canonical_fixture or release_acceptance or native_exactly or native_matches_empty or production_dispatch or dispatch_reports or native_rejects'
+
+waveform-native-release-check: waveform-native-wheel waveform-native-verify
+
+release-check: test lint build-dist waveform-native-verify reqs-check
 	@echo "[release-check] verifying prior release tag (non-fatal)..."
 	@gh release view v1.0.1 >/dev/null 2>&1 \
 		&& echo "[release-check] prior release v1.0.1 found." \
@@ -108,8 +167,19 @@ spotify-rematch:
 	doppler run -p construct -c dev_af -- $(PY) -m apps.spotify rematch \
 		--playlist-id $(PLAYLIST_ID)
 
+spotify-watched:
+	$(PY) -m apps.spotify watched --ensure
+
+# Local spotDL bulk download for watched playlists. Runner lives in odj-private
+# (gitignored shim: scripts/spotdl_watched.py; pointer: scripts/spotdl_watched.md).
+spotdl-watched:
+	@if [ ! -f scripts/spotdl_watched.py ]; then \
+		echo "missing scripts/spotdl_watched.py — see scripts/spotdl_watched.md"; exit 2; \
+	fi
+	$(PY) scripts/spotdl_watched.py $(SPOTDL_WATCHED_ARGS)
+
 # ----- Phase 11: cloud sync + web UI (CAT-04, CAT-05) --------------------
-.PHONY: webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
+.PHONY: spotify-import spotify-rematch spotify-watched spotdl-watched webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
 
 webui.dev:
 	just webui-backend

@@ -271,7 +271,7 @@ def write_onelibrary(
 
     try:
         db = OneLibrary(str(output))  # type: ignore[misc]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise OneLibraryWriteError(
             f"Failed to open template copy at {output}: {exc}"
         ) from exc
@@ -286,7 +286,7 @@ def write_onelibrary(
             continue
         try:
             content = db.get_content_by_id(update.id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise OneLibraryWriteError(
                 f"Unable to read content id={update.id} from template: {exc}"
             ) from exc
@@ -299,7 +299,7 @@ def write_onelibrary(
             content[key] = value
         try:
             db.update_content(content)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise OneLibraryWriteError(
                 f"rbox update_content(id={update.id}) failed: {exc}"
             ) from exc
@@ -318,7 +318,7 @@ def write_onelibrary(
                 playlist = db.create_playlist(
                     spec.name, spec.parent_id, next_seq
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 raise OneLibraryWriteError(
                     f"rbox create_playlist(name={spec.name!r}, "
                     f"seq={next_seq}) failed: {exc}"
@@ -329,7 +329,7 @@ def write_onelibrary(
                     db.create_playlist_content(
                         int(playlist["id"]), int(track_id), idx
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     raise OneLibraryWriteError(
                         f"rbox create_playlist_content(pl={playlist['id']}, "
                         f"content={track_id}, seq={idx}) failed: {exc}"

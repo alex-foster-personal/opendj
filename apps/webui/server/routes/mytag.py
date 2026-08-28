@@ -6,9 +6,15 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
+from apps.shared.events import publish
+
 from ..backend import (
-    BatchConflictError, MyTagMergeConfirmationRequiredError,
-    MyTagScopeConflictError, StateBackend, TrackFilter, TrackUpdate,
+    BatchConflictError,
+    MyTagMergeConfirmationRequiredError,
+    MyTagScopeConflictError,
+    StateBackend,
+    TrackFilter,
+    TrackUpdate,
     compute_mytag_catalog_revision,
 )
 from ..deps import get_read_state, get_write_state
@@ -144,6 +150,7 @@ def assign_mytags(body: MyTagAssignIn, backend: StateBackend = Depends(get_write
         )
     except BatchConflictError as exc:
         _raise_conflict(exc)
+    publish("library.changed", {"kind": "mytags", "ids": sorted({*body.add, *body.remove})})
     return MyTagAssignOut(
         applied_count=len(tracks),
         results=[MyTagAssignRowOut(stable_id=track.stable_id, tags=track.tags, etag=compute_etag(track.stable_id, track.updated_at)) for track in tracks],
@@ -195,12 +202,14 @@ def _sweep_tag(
     },
 )
 def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
-    return MyTagSweepOut(tracks_updated=_sweep_tag(
+    tracks_updated = _sweep_tag(
         backend, body.old_name, body.new_name,
         expected_catalog_revision=body.expected_catalog_revision,
         expected_track_count=body.expected_track_count,
         confirm_merge=body.confirm_merge,
-    ))
+    )
+    publish("library.changed", {"kind": "mytags", "ids": [body.old_name, body.new_name]})
+    return MyTagSweepOut(tracks_updated=tracks_updated)
 
 
 @router.post(
@@ -214,11 +223,13 @@ def rename_mytag(body: MyTagRenameIn, backend: StateBackend = Depends(get_write_
     },
 )
 def delete_mytag(body: MyTagDeleteIn, backend: StateBackend = Depends(get_write_state)) -> MyTagSweepOut:
-    return MyTagSweepOut(tracks_updated=_sweep_tag(
+    tracks_updated = _sweep_tag(
         backend, body.name, None,
         expected_catalog_revision=body.expected_catalog_revision,
         expected_track_count=body.expected_track_count,
-    ))
+    )
+    publish("library.changed", {"kind": "mytags", "ids": [body.name]})
+    return MyTagSweepOut(tracks_updated=tracks_updated)
 
 
 __all__ = ["router"]

@@ -12,8 +12,17 @@ const REAL_PQTZ_BEATS = [
 let audio;
 let computeFollowerSyncPlan;
 
+// The engine reaches the daemon through the generated OpenAPI client, which
+// builds a `new Request(url)` before any stub sees it. Node has no document to
+// resolve a root-relative URL against (the browser, where `ssr = false` means
+// this code only ever runs, does), so the module is loaded with an explicit
+// base. Every URL check below is a suffix match and is unaffected by it.
+const API_BASE = 'https://audio-engine.example.test';
+
 before(async () => {
-	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts');
+	audio = await loadTypeScriptModule('src/lib/rb/audio-engine.svelte.ts', {
+		viteApiBase: API_BASE
+	});
 	({ computeFollowerSyncPlan } = await loadTypeScriptModule('src/lib/rb/beat-sync-math.ts'));
 });
 
@@ -1293,7 +1302,9 @@ test('analysis retrieval failure rejects before an unusable deck candidate can p
 		return 0;
 	};
 	globalThis.fetch = async (input) => {
-		const url = String(input);
+		// Generated-client calls arrive as a Request; api-rb's own raw fetches
+		// still arrive as a URL string.
+		const url = input instanceof Request ? input.url : String(input);
 		if (url.endsWith('/hot-cues')) {
 			return new Response(
 				JSON.stringify(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((slot) => ({

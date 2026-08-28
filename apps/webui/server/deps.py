@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 
-from .backend import InMemoryBackend, StateBackend
+from .backend import StateBackend
 
 
 def get_backend(request: Request) -> StateBackend:

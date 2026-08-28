@@ -28,7 +28,7 @@ after(() => {
 test('requests the exact playlist buy-list URL and preserves persisted source links', async () => {
 	let requestedUrl = '';
 	globalThis.fetch = async (input) => {
-		requestedUrl = String(input);
+		requestedUrl = input.url;
 		return Response.json([
 			{
 				pending_id: 17,

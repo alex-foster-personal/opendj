@@ -8,6 +8,7 @@
 	 * the good/bad colour so direction survives without relying on colour alone.
 	 */
 	import { formatDeltaWithUnit, formatWithUnit, judge, type Verdict } from './format';
+	import { SPARK_H, SPARK_W, sparkGeometry, sparkX, sparkY } from './spark-geometry';
 	import { tip } from './tooltip.svelte';
 	import type { KpiDef, KpiSnapshot } from './kpi-api';
 
@@ -20,56 +21,24 @@
 
 	const { metric, kpi, snapshots, verdict }: Props = $props();
 
-	const W = 180;
-	const H = 44;
-	const PAD = 6;
+	const W = SPARK_W;
+	const H = SPARK_H;
 
-	const raw = $derived(snapshots.map((s) => s.values[metric] ?? null));
-	const present = $derived(
-		raw
-			.map((value, index) => ({ index, value }))
-			.filter((point): point is { index: number; value: number } => typeof point.value === 'number')
-	);
-	const missing = $derived(
-		raw.map((value, index) => ({ index, value })).filter((point) => point.value === null)
-	);
-
-	const bounds = $derived.by(() => {
-		const values = present.map((p) => p.value);
-		let lo = Math.min(...values);
-		let hi = Math.max(...values);
-		if (lo === hi) {
-			lo -= 1;
-			hi += 1;
-		}
-		return { lo, hi };
-	});
+	const geometry = $derived(sparkGeometry(metric, snapshots));
+	const present = $derived(geometry.present);
+	const missing = $derived(geometry.missing);
+	const segments = $derived(geometry.segments);
 
 	function xAt(index: number): number {
-		if (snapshots.length <= 1) return W / 2;
-		return PAD + ((W - 2 * PAD) * index) / (snapshots.length - 1);
+		return sparkX(index, snapshots.length);
 	}
 
 	function yAt(value: number): number {
-		return H - PAD - (H - 2 * PAD) * ((value - bounds.lo) / (bounds.hi - bounds.lo));
+		return sparkY(value, geometry.bounds);
 	}
 
 	const statusColor = $derived(
 		verdict === 'good' ? 'var(--kpi-ok)' : verdict === 'bad' ? 'var(--danger)' : 'var(--muted)'
-	);
-
-	const segments = $derived(
-		present.slice(0, -1).map((from, i) => {
-			const to = present[i + 1];
-			return {
-				x1: xAt(from.index),
-				y1: yAt(from.value),
-				x2: xAt(to.index),
-				y2: yAt(to.value),
-				last: i === present.length - 2,
-				gapped: to.index - from.index > 1
-			};
-		})
 	);
 
 	function dotTip(point: { index: number; value: number }, order: number) {
@@ -112,21 +81,21 @@
 		/>
 	{/each}
 
-	{#each missing as gap}
+	{#each missing as gapIndex}
 		<circle
-			cx={xAt(gap.index)}
-			cy={H / 2}
+			cx={xAt(gapIndex)}
+			cy={geometry.midlineY}
 			r="2.5"
 			fill="none"
 			stroke="var(--muted)"
 			stroke-width="1.25"
 			stroke-dasharray="1.5,1.5"
 			use:tip={{
-				title: snapshots[gap.index].label,
+				title: snapshots[gapIndex].label,
 				body: ['Not measured in this run - different from a real 0.']
 			}}
 		>
-			<title>{snapshots[gap.index].label}: not measured in this run.</title>
+			<title>{snapshots[gapIndex].label}: not measured in this run.</title>
 		</circle>
 	{/each}
 
