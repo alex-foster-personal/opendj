@@ -13,6 +13,11 @@
 	import { auth, logout, refreshUser, startLogin } from '$lib/auth.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
+	// The performance route's topbar is ~28px tall, so the shell's 32px bauble
+	// does not fit there. Size is a prop rather than a CSS override so the
+	// glyph and initial scale with the circle.
+	let { size = 32 }: { size?: number } = $props();
+
 	let menuOpen = $state(false);
 	let busy = $state(false);
 	/** Set when the avatar URL 404s or Google returns no picture. */
@@ -80,7 +85,7 @@
 	}}
 />
 
-<div class="bauble-root">
+<div class="bauble-root" style={`--bauble-size: ${size}px`}>
 	<button
 		type="button"
 		class="bauble"
@@ -134,18 +139,21 @@
 		margin-left: auto;
 	}
 	.bauble {
-		width: 28px;
-		height: 28px;
+		width: var(--bauble-size, 32px);
+		height: var(--bauble-size, 32px);
 		padding: 0;
-		border: 1px solid var(--border);
+		/* --border on --surface is near-black on near-black: the circle reads as
+		   invisible in the topbar and only the glyph shows. --muted is the
+		   dimmest token that still resolves as a ring against the topbar. */
+		border: 1px solid var(--muted);
 		border-radius: 50%;
-		background: var(--surface);
+		background: var(--bg);
 		color: var(--muted);
 		display: grid;
 		place-items: center;
 		overflow: hidden;
 		cursor: pointer;
-		transition: border-color 120ms ease, color 120ms ease;
+		transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 	}
 	.bauble:hover:not(:disabled) {
 		border-color: var(--accent);
@@ -165,15 +173,15 @@
 		display: block;
 	}
 	.bauble svg {
-		width: 17px;
-		height: 17px;
+		width: calc(var(--bauble-size, 32px) * 0.55);
+		height: calc(var(--bauble-size, 32px) * 0.55);
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.6;
 		stroke-linecap: round;
 	}
 	.initial {
-		font-size: 0.75rem;
+		font-size: calc(var(--bauble-size, 32px) * 0.42);
 		font-weight: 600;
 		color: var(--accent);
 	}
