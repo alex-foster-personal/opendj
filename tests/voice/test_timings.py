@@ -8,7 +8,6 @@ import pytest
 
 from apps.voice import timings
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 

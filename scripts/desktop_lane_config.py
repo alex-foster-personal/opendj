@@ -1,0 +1,175 @@
+"""Derive the per-lane Tauri bundle overlay for the Open DJ desktop shell.
+
+Both bake-off lanes install their desktop build on the SAME Mac, so every
+macOS-visible name has to differ. The bundle identifier is the clash key:
+macOS derives the per-app Application Support, Caches and WebKit storage
+paths from it, so suffixing the identifier separates all of that for free.
+productName is the second key, because it names the .app on disk, the
+window, and the dmg volume.
+
+The label is NOT hardcoded anywhere in the tree. It comes from
+``MDT_LANE_LABEL`` in the worktree's .env, the same pattern as
+``MUSIC_DJ_BACKEND_PORT`` and ``MDT_DATA_DIR``. Unset means "Open DJ",
+which is the product's real name rather than a hidden default.
+
+Requirements:
+
+- ✔︎ ✅ Unset or blank label yields the unmodified product name and
+  identifier. -> :func:`overlay`
+- ✔︎ ✅ A label yields "Open DJ (B)", "com.opendj.desktop.lane-b" and a
+  shell-safe dmg filename. -> :func:`overlay`, :func:`dmg_filename`
+- ✔︎ ✅ A label that would produce an invalid identifier segment or an
+  unsafe filename is refused, never sanitised. -> :func:`validate_label`
+
+Acceptance tests:
+
+- [if] the label is unset [then] the identifier stays ``com.opendj.desktop``
+  and the overlay is empty, [else ⛔️].
+- [if] the label is ``B`` [then] the identifier ends ``.lane-b`` and the
+  product name ends ``(B)``, [else ⛔️].
+- [if] the label is ``b b``, ``../x`` or ``-b`` [then] the call raises
+  :class:`LaneLabelError`, [else ⛔️].
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+# A CFBundleIdentifier segment is alphanumeric plus hyphen, and Apple
+# treats it case-insensitively. Anything else is refused rather than
+# rewritten, so a typo in .env cannot silently ship under a name nobody
+# expected.
+LABEL_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9]+$")
+
+LANE_SEGMENT_PREFIX: str = "lane-"
+
+
+class LaneLabelError(ValueError):
+    """The lane label cannot be turned into a safe bundle name."""
+
+
+def validate_label(raw: str | None) -> str | None:
+    """Return a normalised label, or ``None`` when no label is set."""
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    if stripped == "":
+        return None
+    if not LABEL_PATTERN.match(stripped):
+        raise LaneLabelError(
+            f"MDT_LANE_LABEL={raw!r} is not usable: it must be letters and "
+            "digits only (it becomes a bundle identifier segment, a window "
+            "title and a filename)"
+        )
+    return stripped
+
+
+def lane_identifier(base_identifier: str, label: str | None) -> str:
+    """Suffix the bundle identifier, which is the macOS clash key."""
+    if label is None:
+        return base_identifier
+    return f"{base_identifier}.{LANE_SEGMENT_PREFIX}{label.lower()}"
+
+
+def lane_product_name(base_product_name: str, label: str | None) -> str:
+    """Label the on-disk .app name, the window title and the dmg volume."""
+    if label is None:
+        return base_product_name
+    return f"{base_product_name} ({label})"
+
+
+def product_slug(base_product_name: str) -> str:
+    """A shell-safe stem for the artifact, so testers never quote a path."""
+    slug = re.sub(r"[^A-Za-z0-9]", "", base_product_name)
+    if slug == "":
+        raise LaneLabelError(
+            f"productName {base_product_name!r} has no alphanumeric characters"
+        )
+    return slug
+
+
+def overlay(
+    base_product_name: str, base_identifier: str, label: str | None
+) -> dict[str, str]:
+    """The ``tauri build --config`` overlay for this lane.
+
+    Empty when there is no label: an empty overlay is a no-op merge, so the
+    unlabelled build is byte-for-byte the same command as before.
+    """
+    if label is None:
+        return {}
+    return {
+        "productName": lane_product_name(base_product_name, label),
+        "identifier": lane_identifier(base_identifier, label),
+    }
+
+
+def dmg_filename(
+    base_product_name: str, label: str | None, version: str, arch: str
+) -> str:
+    """Name the artifact ``OpenDJ-B-0.1.0-aarch64.dmg``.
+
+    Tauri names its own output from productName, which yields spaces and
+    parentheses once a label is applied. Renaming to this form keeps every
+    downstream command (scp, curl, shell loops) free of quoting traps.
+    """
+    stem = product_slug(base_product_name)
+    parts = [stem] if label is None else [stem, label]
+    parts.extend([version, arch])
+    return f"{'-'.join(parts)}.dmg"
+
+
+def arch_from_built_name(built: str) -> str:
+    """Take the architecture from what Tauri actually produced.
+
+    Reading ``uname -m`` would be a guess: it reports ``arm64`` where Tauri
+    writes ``aarch64``, and it says nothing about a cross build.
+    """
+    stem = Path(built).stem
+    arch = stem.rsplit("_", 1)[-1]
+    if arch in ("", stem):
+        raise LaneLabelError(
+            f"cannot read an architecture out of {built!r}; expected Tauri's "
+            "{productName}_{version}_{arch}.dmg shape"
+        )
+    return arch
+
+
+# ----- CLI ---------------------------------------------------------------
+def _load_conf(config_path: Path) -> tuple[str, str, str]:
+    conf = json.loads(config_path.read_text(encoding="utf-8"))
+    missing = [key for key in ("productName", "identifier", "version") if key not in conf]
+    if missing:
+        raise LaneLabelError(f"{config_path} is missing {', '.join(missing)}")
+    return conf["productName"], conf["identifier"], conf["version"]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("emit", choices=["overlay", "dmg-name"])
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--label", default=None)
+    parser.add_argument(
+        "--built", default=None, help="the dmg Tauri produced; required for dmg-name"
+    )
+    args = parser.parse_args(argv)
+
+    product_name, identifier, version = _load_conf(args.config)
+    label = validate_label(args.label)
+
+    if args.emit == "overlay":
+        print(json.dumps(overlay(product_name, identifier, label), sort_keys=True))
+    elif args.emit == "dmg-name":
+        if args.built is None:
+            raise LaneLabelError("dmg-name needs --built to read the architecture")
+        arch = arch_from_built_name(args.built)
+        print(dmg_filename(product_name, label, version, arch))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

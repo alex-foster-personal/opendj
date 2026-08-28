@@ -22,7 +22,6 @@ from apps.sync.usb.diff import Plan
 from apps.sync.usb.preflight import preflight
 from apps.sync.usb.profile import load_from_string
 
-
 # Requirement IDs come from reqs.json. There is no SPOTIFY/USB category --
 # the Spotify importer is CAT-01, USB sync + verify is CAT-02, and the web UI
 # the toast store belongs to is CAT-05.

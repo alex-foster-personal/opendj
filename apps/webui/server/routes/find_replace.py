@@ -25,9 +25,11 @@ from __future__ import annotations
 import time
 from typing import Literal
 
+import regex
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-import regex
+
+from apps.shared.events import publish
 
 from ..backend import BatchConflictError, NotFoundError, StateBackend, TrackUpdate
 from ..deps import get_read_state, get_write_state
@@ -258,6 +260,7 @@ def apply(
         for track in tracks
         if track.stable_id in replacement_by_id
     ]
+    publish("library.changed", {"kind": "tracks", "ids": [r.stable_id for r in results]})
 
     return FindReplaceApplyOut(
         applied_count=len(results), skipped_noop=skipped_noop, results=results

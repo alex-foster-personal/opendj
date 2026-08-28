@@ -15,8 +15,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths as pp
 from apps.webui.server import rb_vendor
+from apps.webui.server.rb_vendor_pkg import anlz as rb_anlz
+from apps.webui.server.rb_vendor_pkg import anlz_cache as rb_anlz_cache
+from apps.webui.server.rb_vendor_pkg import db as rb_db
 
 
 def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> None:
@@ -38,9 +42,13 @@ def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> N
         genre=None,
     )
 
-    monkeypatch.setattr(rb_vendor, "anlz_dir", lambda _content: tmp_path)
+    # Patched on the modules that own these names, not on the rb_vendor
+    # facade. Before T3b wave 4 the facade owned them and build_anlz_payload
+    # imported them back from it at call time; now each one has a single home
+    # and patching the facade would rebind a re-export nothing reads.
+    monkeypatch.setattr(rb_paths, "anlz_dir", lambda _content: tmp_path)
     monkeypatch.setattr(
-        rb_vendor,
+        rb_paths,
         "resolve_asset_path",
         lambda analysis_path: pp.MappedPath(
             original=analysis_path,
@@ -49,15 +57,19 @@ def test_anlz_cache_hit_overlays_live_cues(monkeypatch: Any, tmp_path: Any) -> N
             reason="native",
         ),
     )
-    monkeypatch.setattr(rb_vendor, "_anlz_mtime", lambda _directory: 1.0)
+    monkeypatch.setattr(rb_anlz_cache, "_anlz_mtime", lambda _directory: 1.0)
     monkeypatch.setattr(
-        rb_vendor,
+        rb_anlz_cache,
         "_load_cached_payload",
         lambda _stable_id, _anlz_mtime, _points: cached_payload,
     )
-    monkeypatch.setattr(rb_vendor, "fetch_cues", lambda _vendor_id: live_cues)
+    monkeypatch.setattr(rb_db, "fetch_cues", lambda _vendor_id: live_cues)
+    # This tripwire only bites now that it names the module build_anlz_payload
+    # actually resolves _first_tags from. On the facade it was patching a
+    # re-export the decoder never consulted, so a cache MISS would have gone
+    # unnoticed here.
     monkeypatch.setattr(
-        rb_vendor,
+        rb_anlz,
         "_first_tags",
         lambda _directory: (_ for _ in ()).throw(AssertionError("cache miss")),
     )

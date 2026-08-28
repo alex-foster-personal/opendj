@@ -1,0 +1,116 @@
+; Architecture contracts for the Python side, enforced by import-linter.
+;
+; These are the only quality checks in this repo that fail hard at zero rather
+; than ratcheting down from a recorded baseline, because an architecture rule
+; with a growing allowance is not a rule. Every current violation is listed
+; below as a named, dated exception, so the debt is a shrinking list you can
+; read rather than a number you cannot act on.
+;
+; Run:  python -m scripts.quality_gate --only arch
+; or:   uv run --no-project --with-requirements ops/quality/requirements.txt \
+;           lint-imports --config .importlinter
+
+[importlinter]
+root_packages =
+    apps
+include_external_packages = True
+
+; ---------------------------------------------------------------------------
+[importlinter:contract:shared-is-the-stable-core]
+name = apps.shared imports nothing else from apps
+type = forbidden
+source_modules =
+    apps.shared
+forbidden_modules =
+    apps.adapters
+    apps.analysis
+    apps.audit
+    apps.cloud
+    apps.dedup
+    apps.dj_copilot
+    apps.open_dj
+    apps.pairings
+    apps.play_analytics
+    apps.reconcile
+    apps.sets
+    apps.smartlists
+    apps.spotify
+    apps.stems
+    apps.sync
+    apps.tags
+    apps.vocals
+    apps.voice
+    apps.webui
+; Measured Sun 17 Aug 2026: apps.shared has 17 dependents and 0 dependencies
+; on sibling packages (afferent coupling 17, efferent 0, instability 0.00).
+; That is exactly the shape a shared core should have. This contract exists to
+; keep it that way; a single import here would start a cycle with whichever
+; package it reached into.
+
+; ---------------------------------------------------------------------------
+[importlinter:contract:webui-is-the-top-layer]
+name = No domain package imports the web UI
+type = forbidden
+source_modules =
+    apps.adapters
+    apps.analysis
+    apps.audit
+    apps.cloud
+    apps.dedup
+    apps.dj_copilot
+    apps.open_dj
+    apps.pairings
+    apps.play_analytics
+    apps.reconcile
+    apps.sets
+    apps.shared
+    apps.smartlists
+    apps.spotify
+    apps.stems
+    apps.sync
+    apps.tags
+    apps.vocals
+    apps.voice
+forbidden_modules =
+    apps.webui
+; apps.webui is the delivery layer: it composes domain packages behind HTTP.
+; When a domain package imports back into it you get a cycle, and the domain
+; package can no longer be exercised, tested, or shipped without the server.
+;
+; DEBT (measured Sun 17 Aug 2026, three package-level cycles from five
+; imports, all reaching into just two webui modules):
+;   apps.smartlists <-> apps.webui   via webui.server.playlist_writeback
+;   apps.stems      <-> apps.webui   via webui.server.stem_artifacts
+;   apps.vocals     <-> apps.webui   via webui.server.stem_artifacts
+; The fix is to move those two modules down into a domain package (they hold
+; no HTTP concerns) and let webui import them, which deletes all five lines at
+; once. Never add a line here: add the inversion instead.
+ignore_imports =
+    apps.smartlists.djay_writer -> apps.webui.server.playlist_writeback
+    apps.smartlists.rb_writer -> apps.webui.server.playlist_writeback
+    apps.stems.cli -> apps.webui.server.stem_artifacts
+    apps.vocals.cli -> apps.webui.server.stem_artifacts
+    apps.vocals.from_stems -> apps.webui.server.stem_artifacts
+
+; ---------------------------------------------------------------------------
+[importlinter:contract:production-code-never-imports-tests]
+name = apps never imports the test suite
+type = forbidden
+source_modules =
+    apps
+forbidden_modules =
+    tests
+; apps/sync/usb/pioneer/differ.py reaches into `tests` for fixture helpers at
+; two call sites. That makes a shipped wheel depend on files the wheel does
+; not contain (tests/* is excluded in [tool.setuptools.packages.find]), so it
+; is an ImportError waiting for the first user who is not running from a
+; source checkout.
+;
+; DEBT (measured Sun 17 Aug 2026): 2 imports, both function-local in
+; differ.py, both of tests.fixtures._resolver (lines 743 and 854). Fix by
+; moving the resolver into apps/sync/usb/pioneer/ or a shipped fixtures
+; package, then delete the line below.
+; (External imports are squashed to their top-level package by grimp, so the
+; edge below reads `-> tests` rather than the full dotted path.)
+ignore_imports =
+    apps.sync.usb.pioneer.differ -> tests

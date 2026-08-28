@@ -6,10 +6,9 @@ import pytest
 from apps.shared.djay_db import extract_rating_from_tsaf
 from apps.sync.tsaf_writer import (
     TAIL_SCAN_BYTES,
-    write_rating_to_tsaf,
     verify_rating_round_trip,
+    write_rating_to_tsaf,
 )
-
 
 pytestmark = pytest.mark.requirement("SYNC-06")
 

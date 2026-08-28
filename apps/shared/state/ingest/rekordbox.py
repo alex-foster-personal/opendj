@@ -49,7 +49,7 @@ class _DryRunSilentBus:
     def __init__(self) -> None:
         self.suppressed: int = 0
 
-    def publish(self, event: Any) -> None:  # noqa: ANN401 - mirrors Event type
+    def publish(self, event: Any) -> None:
         self.suppressed += 1
 
     def subscribe(self, kind: str, callback: Any) -> None:  # pragma: no cover

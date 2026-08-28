@@ -19,9 +19,8 @@ from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.shared.paths import DATA_DIR, STATE_DIR
-
-from .. import rb_vendor
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -117,14 +116,24 @@ def get_settings(request: Request) -> SettingsOut:
                     note="apps.shared.paths.DATA_DIR"),
         SettingItem(key="state_dir", value=str(STATE_DIR),
                     note="apps.shared.paths.STATE_DIR"),
-        SettingItem(key="anlz_cache_dir", value=str(rb_vendor.ANLZ_CACHE_DIR),
-                    note="apps.webui.server.rb_vendor.ANLZ_CACHE_DIR"),
+        SettingItem(key="anlz_cache_dir", value=str(rb_config.ANLZ_CACHE_DIR),
+                    note="apps.adapters.rekordbox.config.ANLZ_CACHE_DIR"),
     ]
 
     frontend_items = [
         SettingItem(key="frontend_mounted", value=_frontend_mounted(request),
                     note="Whether apps/webui/frontend/build is mounted as the SPA at /."),
         SettingItem(key="frontend_build_dir", value=str(_FRONTEND_BUILD_DIR)),
+        SettingItem(
+            key="vibe_sensitivity",
+            value=0.07,
+            note="Pointer-travel charge multiplier used by the Vibe meter.",
+        ),
+        SettingItem(
+            key="vibe_decay_per_sec",
+            value=0.05,
+            note="Linear Vibe charge decay per second while idle.",
+        ),
     ]
 
     toggle_items = [

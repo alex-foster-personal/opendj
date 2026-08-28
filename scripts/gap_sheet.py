@@ -30,7 +30,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from apps.spotify.acquisition import SOURCE_TEMPLATES  # noqa: E402
+from apps.spotify.acquisition import SOURCE_TEMPLATES
 
 # ----- config -------------------------------------------------------------
 

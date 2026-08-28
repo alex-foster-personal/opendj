@@ -18,7 +18,6 @@ from apps.shared.state.events import FakeEventBus
 from apps.shared.state.ingest import rekordbox as rb_ingest
 from apps.shared.state.writer import StateWriter
 
-
 pytestmark = [
     pytest.mark.requirement("INFRA-01"),
     pytest.mark.requirement("OPEN-01b"),

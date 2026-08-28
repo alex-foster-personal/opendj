@@ -9,7 +9,6 @@ import pytest
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 
@@ -103,6 +102,46 @@ def test_track_fields_source_check_constraint(state_conn: sqlite3.Connection) ->
             "modified_at) VALUES (?, ?, ?, ?, ?)",
             ("a" * 40, "bpm", "128", "NOPE", "2026-01-01T00:00:00Z"),
         )
+
+
+def test_schema_version_matches_migration_count() -> None:
+    assert len(state_schema.MIGRATIONS) == state_schema.SCHEMA_VERSION
+
+
+def test_v4_backfills_primary_from_tracks_file_path(tmp_path: Path) -> None:
+    db_path = tmp_path / "pre-v4.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("BEGIN")
+        for stmt in (
+            state_schema.MIGRATIONS[0]
+            + state_schema.MIGRATIONS[1]
+            + state_schema.MIGRATIONS[2]
+        ):
+            conn.execute(stmt)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_meta ("
+            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO schema_meta(version, applied_at) VALUES (3, ?)",
+            ("2026-01-01T00:00:00+00:00",),
+        )
+        conn.execute(
+            "INSERT INTO tracks(stable_id, stable_id_tier, file_path, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            ("c" * 40, "isrc", "/tmp/demo.flac",
+             "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+        conn.execute("COMMIT")
+        assert state_schema.apply_migrations(conn) == state_schema.SCHEMA_VERSION
+        row = conn.execute(
+            "SELECT kind, role, file_path FROM track_locations WHERE stable_id=?",
+            ("c" * 40,),
+        ).fetchone()
+        assert row == ("local", "primary", "/tmp/demo.flac")
+    finally:
+        conn.close()
 
 
 def test_track_fields_confidence_bounds(state_conn: sqlite3.Connection) -> None:

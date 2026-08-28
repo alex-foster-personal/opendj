@@ -30,7 +30,6 @@ import pytest
 from apps.shared.state.schema import apply_migrations
 from scripts import spotify_playlist_sweep as sweep
 
-
 # ----- fixtures -------------------------------------------------------------
 
 

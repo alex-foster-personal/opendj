@@ -32,7 +32,6 @@ from apps.sync.usb.pioneer.writer_rbox import (
     RBOX_IMPORT_ERROR,
 )
 
-
 pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.requires_darwin]
 
 

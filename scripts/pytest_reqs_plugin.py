@@ -27,6 +27,7 @@ coverage. Line coverage runs separately via ``pytest --cov``.
 from __future__ import annotations
 
 import json
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -59,15 +60,97 @@ def pytest_addoption(parser) -> None:  # type: ignore[no-untyped-def]
         default=False,
         help="Run tests marked integration (Phase 4 smoke; off by default).",
     )
+    parser.addoption(
+        "--collect-floor",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Fail the session unless at least N tests were COLLECTED. "
+            "Opt-in, so scoped runs are unaffected; the full-suite gate and "
+            "CI pass it so a run can never silently shrink. Refuses to run "
+            "alongside -k or -m, which would make a deselected run look full."
+        ),
+    )
+
+
+def _fail(message: str) -> None:
+    """Abort the session with a reason that survives xdist.
+
+    An xdist WORKER raising during collection has its exception swallowed into
+    a controller-side ``INTERNALERROR`` traceback with the reason stripped out,
+    so the message goes to stderr on its own first. A gate that fails without
+    saying why is worse than no gate.
+    """
+    import pytest
+
+    print(f"ERROR: {message}", file=sys.stderr, flush=True)
+    pytest.exit(message, returncode=4)
+
+
+def _assert_collect_floor(config, items) -> None:  # type: ignore[no-untyped-def]
+    """Fail fast if fewer tests were collected than the caller demanded.
+
+    This is the control that keeps parallel execution honest. ``-n`` changes
+    how tests are distributed, never which ones exist, so the collected count
+    is the invariant that proves it: an environment that imported less of the
+    tree (a missing optional dep aborting a module, a deleted directory)
+    collects fewer items and is caught here rather than reported as a smaller
+    green run. Counted BEFORE any skip marker is applied, so a test that is
+    skipped still counts as collected -- this floor answers "did the suite
+    shrink", which is a different question from "did it run".
+
+    ``-k`` and ``-m`` are REJECTED while a floor is active rather than counted
+    around. Both deselect inside pytest's own
+    ``pytest_collection_modifyitems``, so whether this hook sees the items
+    before or after them is a hook-ordering detail nobody should have to
+    reason about -- and a filtered run must never be able to present itself as
+    the protected full suite. Want a filter? Drop the floor, and own the fact
+    that you ran a subset.
+
+    Under ``-n`` the controller does not collect at all: every worker collects
+    the full tree and runs a slice of it, so this runs once per worker on the
+    same total. xdist separately aborts when workers DISAGREE about what they
+    collected, so that case is already covered; the floor catches the case
+    where every worker consistently collected too little.
+    """
+    floor = int(config.getoption("--collect-floor") or 0)
+    if floor <= 0:
+        return
+
+    selectors = {
+        "-k": str(getattr(config.option, "keyword", "") or ""),
+        "-m": str(getattr(config.option, "markexpr", "") or ""),
+    }
+    active = [flag for flag, value in selectors.items() if value]
+    if active:
+        _fail(
+            f"collect floor: {' and '.join(active)} cannot be combined with "
+            "--collect-floor. The floor exists to prove the FULL suite ran; a "
+            "deselected run that satisfies it would be exactly the false green "
+            "it is meant to catch. Run the subset without the floor."
+        )
+        return
+
+    if len(items) < floor:
+        _fail(
+            f"collect floor: {len(items)} tests collected, at least {floor} "
+            "required. The suite shrank, or this environment failed to import "
+            "part of it. Fix the cause or lower the floor deliberately -- "
+            "never quietly."
+        )
 
 
 def pytest_collection_modifyitems(config, items) -> None:  # type: ignore[no-untyped-def]
-    """Skip ``live_db`` tests unless ``--live-db`` was passed.
+    """Assert the collect floor, then apply the opt-in skip gates.
 
-    Also skip ``integration`` tests unless ``--run-integration`` or
-    ``pytest -m integration`` was explicitly passed.
+    Skips ``live_db`` tests unless ``--live-db`` was passed, and ``integration``
+    tests unless ``--run-integration`` or ``pytest -m integration`` was
+    explicitly passed.
     """
     import pytest
+
+    _assert_collect_floor(config, items)
 
     if not config.getoption("--live-db"):
         skip_live = pytest.mark.skip(

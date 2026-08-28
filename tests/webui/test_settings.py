@@ -65,6 +65,15 @@ def test_settings_storage_paths_are_strings(client):
 
 
 @pytest.mark.requirement("CAT-05")
+def test_settings_publish_vibe_runtime_defaults(client):
+    response = client.get("/api/v1/settings")
+    assert response.status_code == 200
+    items = _flatten(response.json())
+    assert items["vibe_sensitivity"]["value"] == 0.07
+    assert items["vibe_decay_per_sec"]["value"] == 0.05
+
+
+@pytest.mark.requirement("CAT-05")
 def test_settings_feature_toggles_group_is_honest_tbd(client):
     """No env-driven feature toggles exist yet; must not fabricate one."""
     r = client.get("/api/v1/settings")
@@ -90,9 +99,10 @@ def test_settings_backend_type_reflects_sqlite_when_state_db_present(tmp_path):
     """
     if not Path(STATE_DB).is_file():
         pytest.skip(f"state.db not present at {STATE_DB}; skipping live-backend check")
+    from fastapi.testclient import TestClient
+
     from apps.webui.server.app import create_app
     from apps.webui.server.sqlite_backend import make_backend
-    from fastapi.testclient import TestClient
 
     app = create_app(backend=make_backend(STATE_DB), bind_host="127.0.0.1")
     with TestClient(app) as c:

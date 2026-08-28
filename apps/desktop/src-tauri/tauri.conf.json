@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Open DJ",
+  "version": "0.1.0",
+  "identifier": "com.opendj.desktop",
+  "build": {
+    "frontendDist": "../setup"
+  },
+  "app": {
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
+    "publisher": "open-dj",
+    "shortDescription": "Open DJ desktop shell",
+    "longDescription": "Native window for Open DJ. The Open DJ engine must be running locally; the app shows setup instructions naming the address it tried when the engine is not reachable.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

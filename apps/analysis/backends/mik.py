@@ -37,7 +37,7 @@ class MikBackend:
                 f"{_BIN!r} not found on PATH; install Mixed In Key or use "
                 "--backend librosa+madmom."
             )
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             [binary, "--json", str(path)],
             capture_output=True,
             text=True,

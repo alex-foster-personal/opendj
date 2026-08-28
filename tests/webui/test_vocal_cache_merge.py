@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.shared import platform_paths
 from apps.vocals import cache as vcache
 from apps.webui.server import rb_vendor
@@ -47,7 +48,7 @@ def _payload(vocals: dict[str, Any]) -> dict[str, Any]:
 @pytest.fixture
 def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     d = tmp_path / "vocal-cache"
-    monkeypatch.setattr(rb_vendor, "VOCAL_CACHE_DIR", d)
+    monkeypatch.setattr(rb_config, "VOCAL_CACHE_DIR", d)
     return d
 
 

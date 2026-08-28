@@ -12,11 +12,11 @@ __all__: list[str] = []
 # then we keep the import tolerant so Phase 3+ modules can still import.
 try:  # pragma: no cover - import-time guard
     from apps.sync.matcher import (  # type: ignore[attr-defined]
-        MatchResult,
+        WEIGHTS,
         MatchedPair,
+        MatchResult,
         Signal,
         UnifiedTrack,
-        WEIGHTS,
         _normalise_for_match,
         match_tracks,
         score_pair,

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import signal
 import sys
 from typing import Sequence
@@ -69,7 +68,7 @@ def _capture_transcripts(args: argparse.Namespace):
     finite iterable so `_cmd_run` exits after a deterministic number of
     iterations without touching real hardware.
     """
-    from apps.voice import audio, wake, stt
+    from apps.voice import audio, stt, wake
 
     try:
         sd = audio._sounddevice()
@@ -82,7 +81,21 @@ def _capture_transcripts(args: argparse.Namespace):
             flush=True,
         )
         return
-    backend = wake.make_backend()
+    try:
+        backend = wake.make_backend()
+    except (ImportError, RuntimeError) as exc:
+        # VOICE-01, same degrade contract as the sounddevice branch above.
+        # openWakeWord's default tflite runtime has no wheel on every host
+        # (macOS arm64 among them), so a host can have a working mic and
+        # still have no loadable wake model. Name the reason on stderr and
+        # stay in text-only mode rather than crashing the daemon; flip
+        # WAKE_BACKEND=stub or install the runtime to re-enable it.
+        print(
+            f"[voice] wake word disabled: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
     client = stt.make_client()
     sample_rate = 16_000
     frame_ms = 30
@@ -104,7 +117,8 @@ def _capture_transcripts(args: argparse.Namespace):
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Start the voice daemon: wake-word -> STT -> grammar -> dispatch."""
-    from apps.voice import grammar, bus, actions, context as ctx_mod
+    from apps.voice import actions, bus, grammar
+    from apps.voice import context as ctx_mod
 
     # P14-F03 (retained from master #102): honour --dry-bus and
     # --enable-destructive on the `run` subcommand. Previously both flags
@@ -183,7 +197,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_probe(args: argparse.Namespace) -> int:
     """Read one or more transcripts from --text / stdin; print events."""
-    from apps.voice import grammar, bus, actions, context as ctx_mod
+    from apps.voice import actions, bus, grammar
+    from apps.voice import context as ctx_mod
 
     transcripts: list[str] = []
     if args.text:
@@ -229,7 +244,9 @@ def _cmd_probe(args: argparse.Namespace) -> int:
 def _cmd_bench(args: argparse.Namespace) -> int:
     """Run the grammar + dispatch loop N times; print percentile timings."""
     import statistics
-    from apps.voice import grammar, bus, actions, context as ctx_mod
+
+    from apps.voice import actions, bus, grammar
+    from apps.voice import context as ctx_mod
 
     sample = args.text or "find daft punk"
     event_bus = bus.make_bus(force_stub=True)

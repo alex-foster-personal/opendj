@@ -26,7 +26,6 @@ from apps.tags.collect import (
     default_fetch_rb,
 )
 
-
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
 

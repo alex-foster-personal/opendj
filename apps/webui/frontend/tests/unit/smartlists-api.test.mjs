@@ -19,8 +19,8 @@ after(() => {
 
 test('smartlist tracks unwrap the live API response envelope', async () => {
 	let requestedUrl = '';
-	globalThis.fetch = async (input) => {
-		requestedUrl = String(input);
+	globalThis.fetch = async (request) => {
+		requestedUrl = request.url;
 		return Response.json({
 			smartlist_id: 'smart / one',
 			name: 'Late night',
@@ -44,11 +44,11 @@ test('smartlist list failures surface explicitly', async () => {
 });
 
 test('smartlist update sends the complete replacement and returns server readback', async () => {
-	let requestedUrl = '';
-	let requestedInit;
-	globalThis.fetch = async (input, init) => {
-		requestedUrl = String(input);
-		requestedInit = init;
+	let seen;
+	let sentBody;
+	globalThis.fetch = async (request) => {
+		seen = request;
+		sentBody = await request.clone().json();
 		return Response.json({
 			id: 'smart / one',
 			name: 'Late night',
@@ -66,10 +66,10 @@ test('smartlist update sends the complete replacement and returns server readbac
 		order_by: 'rating desc'
 	}, '"revision-a"');
 
-	assert.equal(requestedUrl, `${API_BASE}/api/v1/smartlists/smart%20%2F%20one`);
-	assert.equal(requestedInit.method, 'PUT');
-	assert.equal(requestedInit.headers['If-Match'], '"revision-a"');
-	assert.deepEqual(JSON.parse(requestedInit.body), {
+	assert.equal(seen.url, `${API_BASE}/api/v1/smartlists/smart%20%2F%20one`);
+	assert.equal(seen.method, 'PUT');
+	assert.equal(seen.headers.get('if-match'), '"revision-a"');
+	assert.deepEqual(sentBody, {
 		rule: { field: 'genre', op: 'in', value: ['drum, bass'] },
 		order_by: 'rating desc'
 	});

@@ -9,7 +9,12 @@ from fastapi.testclient import TestClient
 
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import (
-    InMemoryBackend, Pairing, Playlist, Provenance, QueueItem, Track,
+    InMemoryBackend,
+    Pairing,
+    Playlist,
+    Provenance,
+    QueueItem,
+    Track,
 )
 from apps.webui.server.etag import compute_etag
 

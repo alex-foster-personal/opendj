@@ -128,178 +128,159 @@ import type {
 	StemDeckState,
 	SyncMode
 } from '$lib/rb/types';
+import {
+	ANALYSER_FFT_SIZE,
+	CONTEXT_WAIT_POLL_MS,
+	CONTEXT_WAIT_STALL_TIMEOUT_MS,
+	DECK_IDS,
+	EQ_FREQ_HIGH_HZ,
+	EQ_FREQ_LOW_HZ,
+	EQ_FREQ_MID_HZ,
+	EQ_MAX_DB,
+	EQ_MID_Q,
+	EQ_MIN_DB,
+	HEADPHONE_OPERATION_TIMEOUT_MS,
+	PARAM_SMOOTH_S,
+	PITCH_RANGES,
+	SYNC_SCHEDULE_SAFETY_S,
+	TRIM_MAX_GAIN
+} from '$lib/player/constants';
+import type { PitchRange } from '$lib/player/constants';
+import {
+	_defaultChannel,
+	_defaultHeadphones,
+	_emptyDeckState,
+	_hotCueRevisionsFrom,
+	deckEffectiveBpm,
+	deckLoadErrors,
+	deckRemainingMs,
+	deckStates,
+	getDeckState,
+	mixerState,
+	pitchRanges
+} from '$lib/player/state.svelte';
+import {
+	attachMasterMuteNode,
+	isMasterMuted,
+	setMasterMuted
+} from '$lib/player/master-mute.svelte';
+import {
+	_assertKeyShift,
+	camelotKeysAreCompatible,
+	composeStretchSemitones,
+	deriveKeySyncNudge,
+	deriveKeySyncSemitones,
+	deriveKeySyncTargetManualShift,
+	effectiveCamelotKey,
+	masterTempoSemitones,
+	parseCamelotKey
+} from '$lib/player/key/camelot';
+import type { CamelotKey } from '$lib/player/key/camelot';
+import {
+	exactBeatLoopRangeMs,
+	loopEndpointsWithinDurationMs,
+	quantizedLoopEndpointsMs
+} from '$lib/player/transport/loops';
+import {
+	_positionForSegment,
+	pausedSeekClock,
+	commonSyncScheduleTimes,
+	deckReachedEnd,
+	normalizeEngagedLoopPositionSec,
+	normalizeScheduledTransportEntrySec,
+	pendingSyncWaitTarget,
+	playResumePositionSec,
+	projectedLoopAwareTransportPosition,
+	projectedTransportPosition,
+	safeSyncScheduleTime,
+	safeTransportScheduleTime,
+	supersedingScheduleTime
+} from '$lib/player/transport/schedule-math';
+import type { _ClockSegment } from '$lib/player/transport/schedule-math';
+import {
+	_effectivePresentedScheduleAt,
+	acknowledgePresentedTransportSchedule,
+	createPresentedTransportTimeline,
+	observePresentedTransportTimeline,
+	setPausedTransportTimelineCursor
+} from '$lib/player/transport/presentation';
+import type {
+	PresentedTransportObservation,
+	PresentedTransportSchedule,
+	PresentedTransportTimeline
+} from '$lib/player/transport/presentation';
 
-// -------------------------------------------------------------- constants
+// ---------------------------------------------------- extracted re-exports
+//
+// T4 S1. The DSP constants moved to player/constants.ts and the Camelot
+// algebra to player/key/camelot.ts. Everything they used to export from here
+// is re-exported below, so every existing importer of
+// $lib/rb/audio-engine.svelte keeps working unchanged.
 
-export const DECK_IDS: readonly DeckId[] = [1, 2, 3, 4] as const;
-
-/** Pitch fader range in percent; 100 renders as WIDE in the jog readout. */
-export type PitchRange = 8 | 16 | 100;
-export const PITCH_RANGES: readonly PitchRange[] = [8, 16, 100] as const;
-
-const EQ_FREQ_LOW_HZ = 250;
-const EQ_FREQ_MID_HZ = 1200;
-const EQ_FREQ_HIGH_HZ = 5000;
-const EQ_MID_Q = 1.0;
-/** Knob 0 -> full cut (DJ-mixer style deep cut), knob 1 -> gentle boost. */
-const EQ_MIN_DB = -26;
-const EQ_MAX_DB = 6;
-/** TRIM knob 0..1 maps linearly to 0..2x amplitude (0.5 = unity). */
-const TRIM_MAX_GAIN = 2;
-/** Smoothing time-constant for AudioParam changes (anti-zipper). */
-const PARAM_SMOOTH_S = 0.01;
-/** Future schedule margin after the slower deck processor's reported latency. */
-const SYNC_SCHEDULE_SAFETY_S = 0.1;
-const ANALYSER_FFT_SIZE = 4096;
-const CONTEXT_WAIT_POLL_MS = 25;
-const CONTEXT_WAIT_STALL_TIMEOUT_MS = 500;
-const HEADPHONE_OPERATION_TIMEOUT_MS = 5_000;
+export { DECK_IDS, PITCH_RANGES };
+export type { PitchRange };
+export {
+	camelotKeysAreCompatible,
+	composeStretchSemitones,
+	deriveKeySyncNudge,
+	deriveKeySyncSemitones,
+	deriveKeySyncTargetManualShift,
+	effectiveCamelotKey,
+	masterTempoSemitones,
+	parseCamelotKey
+};
+export type { CamelotKey };
+export { exactBeatLoopRangeMs, loopEndpointsWithinDurationMs, quantizedLoopEndpointsMs };
+export {
+	commonSyncScheduleTimes,
+	deckReachedEnd,
+	normalizeEngagedLoopPositionSec,
+	normalizeScheduledTransportEntrySec,
+	pendingSyncWaitTarget,
+	playResumePositionSec,
+	projectedLoopAwareTransportPosition,
+	projectedTransportPosition,
+	safeSyncScheduleTime,
+	safeTransportScheduleTime,
+	supersedingScheduleTime
+};
+export { pausedSeekClock };
+export {
+	acknowledgePresentedTransportSchedule,
+	createPresentedTransportTimeline,
+	observePresentedTransportTimeline,
+	setPausedTransportTimelineCursor
+};
+export type {
+	PresentedTransportObservation,
+	PresentedTransportSchedule,
+	PresentedTransportTimeline
+};
 
 // ------------------------------------------------------------ rune stores
+//
+// T4 S4: PerformanceState now lives in player/state.svelte.ts. Re-exported
+// below at the same names so every UI consumer keeps importing it from here.
+// _hotCuesFromSlots stays until S11: it maps through _hotCuesFrom, which is
+// deck-load's ANLZ cue mapper, and state must not import deck/load.
 
-function _emptyDeckState(deck_id: DeckId): DeckState {
-	return {
-		deck_id,
-		stable_id: null,
-		title: null,
-		artist: null,
-		bpm: null,
-		key: null,
-		key_shift_semitones: 0,
-		duration_ms: null,
-		position_ms: 0,
-		playing: false,
-		audible: false,
-		transport_pending: false,
-		cue_ms: null,
-		pitch: 1,
-		quantize_enabled: true,
-		beat_sync_enabled: true,
-		key_sync_enabled: false,
-		master_tempo_enabled: true,
-		slip_enabled: false,
-		slip_active: false,
-		slip_position_ms: null,
-		sync_mode: 'bar',
-		sync_error: null,
-		processor_error: null,
-		stems: unavailableStemDeckState(),
-		loop: null,
-		safety_loop: null,
-		hot_cues: [],
-		hot_cue_revisions: _emptyHotCueRevisions(),
-		anlz: null,
-		anlz_error: null,
-		last_load_latency_ms: null,
-		last_load_stages: null,
-		is_master: false
-	};
-}
+export {
+	deckEffectiveBpm,
+	deckLoadErrors,
+	deckRemainingMs,
+	deckStates,
+	getDeckState,
+	mixerState,
+	pitchRanges
+};
 
-function _emptyHotCueRevisions(): Record<HotCueSlot, string> {
-	return {
-		A: '', B: '', C: '', D: '', E: '', F: '', G: '', H: ''
-	};
-}
-
-function _hotCueRevisionsFrom(slots: HotCueSlotState[]): Record<HotCueSlot, string> {
-	const revisions = _emptyHotCueRevisions();
-	for (const slot of slots) revisions[slot.slot] = slot.revision;
-	return revisions;
-}
+// Opt-in startup master mute (`?muted=1`), re-exported at the engine barrel so
+// the topbar toggle and any test agent reach it on the same import as the rest
+// of the player surface. See player/master-mute.svelte.ts.
+export { isMasterMuted, setMasterMuted };
 
 function _hotCuesFromSlots(slots: HotCueSlotState[]): HotCue[] {
 	return _hotCuesFrom(slots.flatMap((slot) => slot.cue === null ? [] : [slot.cue]));
-}
-
-function _defaultChannel(deck_id: DeckId): MixerChannelState {
-	return {
-		deck_id,
-		trim: 0.5,
-		eq_high: 0.5,
-		eq_mid: 0.5,
-		eq_low: 0.5,
-		fader: 1,
-		// Screenshot assign-matrix default: odd decks -> bus A, even -> bus B.
-		assign: deck_id % 2 === 1 ? 'A' : 'B',
-		cue_enabled: false
-	};
-}
-
-function _defaultHeadphones(): HeadphoneState {
-	return {
-		mix: 0.5,
-		level: 0.5,
-		selected_output_device_id: null,
-		outputs: [],
-		supported: false,
-		active: false,
-		error: null
-	};
-}
-
-/** Per-deck reactive UI state, keyed 1-4. Deep-reactive $state proxy. */
-export const deckStates: Record<DeckId, DeckState> = $state({
-	1: _emptyDeckState(1),
-	2: _emptyDeckState(2),
-	3: _emptyDeckState(3),
-	4: _emptyDeckState(4)
-});
-
-/** Explicit audio-load error per deck (backend code or decode message);
- * null = no failed load. DeckState has no audio-error field by contract,
- * so the failure state lives here, never swallowed. */
-export const deckLoadErrors: Record<DeckId, string | null> = $state({
-	1: null,
-	2: null,
-	3: null,
-	4: null
-});
-
-/** Selected pitch range per deck (jog dial readout: +-8 / +-16 / WIDE). */
-export const pitchRanges: Record<DeckId, PitchRange> = $state({
-	1: 16,
-	2: 16,
-	3: 16,
-	4: 16
-});
-
-/** Whole mixer surface (channel order on screen: 3 1 2 4). */
-export const mixerState: MixerState = $state({
-	channels: {
-		1: _defaultChannel(1),
-		2: _defaultChannel(2),
-		3: _defaultChannel(3),
-		4: _defaultChannel(4)
-	},
-	crossfader: 0.5,
-	master: 1,
-	headphones: _defaultHeadphones()
-});
-
-/** Per-deck store accessor (contract: singleton engine + accessor). */
-export function getDeckState(deck: DeckId): DeckState {
-	return deckStates[deck];
-}
-
-/** Pitch-adjusted playback BPM for jog / IPC; null until a tempo base exists.
- * Uses local PQTZ BPM (Beat Sync truth), not rekordbox tag BPM. Reactive
- * when read inside $derived. */
-export function deckEffectiveBpm(deck: DeckId): number | null {
-	const st = deckStates[deck];
-	return playbackBpm({
-		beats: st.anlz?.beatgrid.beats,
-		positionSec: Math.max(0, st.position_ms / 1000),
-		tempoRatio: st.pitch,
-		tagBpm: st.bpm
-	});
-}
-
-/** Remaining track time in ms (for the -MM:SS.d readout); null until a
- * track is loaded. */
-export function deckRemainingMs(deck: DeckId): number | null {
-	const st = deckStates[deck];
-	return st.duration_ms === null ? null : Math.max(0, st.duration_ms - st.position_ms);
 }
 
 // -------------------------------------------- non-reactive audio runtime
@@ -316,43 +297,6 @@ interface _ChannelNodes {
 	fader: GainNode;
 	xf: GainNode;
 	extsplit: ChannelSplitterNode | null;
-}
-
-interface _ClockSegment {
-	active: boolean;
-	loop: LoopState | null;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	masterTempoEnabled?: boolean;
-	keyShiftSemitones?: number;
-}
-
-export interface PresentedTransportSchedule extends _ClockSegment {
-	revision: number;
-	supersededByRevision: number | null;
-}
-
-export interface PresentedTransportTimeline {
-	paused_position_sec: number;
-	presented_position_sec: number;
-	presented_active: boolean;
-	desired_revision: number;
-	presented_revision: number;
-	last_presentation_context_time_s: number | null;
-	last_presentation_performance_time_ms: number | null;
-	schedules: PresentedTransportSchedule[];
-}
-
-export interface PresentedTransportObservation {
-	accepted: boolean;
-	output_started: boolean;
-	presentation_context_time_s: number | null;
-	position_sec: number;
-	audible: boolean;
-	transport_pending: boolean;
-	desired_revision: number;
-	presented_revision: number;
 }
 
 export interface DeckTransportClock {
@@ -461,6 +405,8 @@ function _emptyRuntime(): _DeckRuntime {
 
 let _ctx: AudioContext | null = null;
 let _masterGain: GainNode | null = null;
+/** Opt-in startup mute, last node before the destination. Never bypassed. */
+let _masterMuteGain: GainNode | null = null;
 let _externalMerger: ChannelMergerNode | null = null;
 interface _HeadphoneNodes {
 	cueSum: GainNode;
@@ -868,9 +814,16 @@ function _ensureGraph(): AudioContext {
 	_ctx = new AudioContext();
 	_masterGain = _ctx.createGain();
 	_masterGain.gain.value = mixerState.master;
+	// Silence belt for headless test agents (`?muted=1`): the LAST node before
+	// the destination, so a mute is one gain value and every node upstream --
+	// decks, EQ, crossfader, analysers, headphone monitor -- keeps running
+	// identically. See player/master-mute.svelte.ts.
+	_masterMuteGain = _ctx.createGain();
+	attachMasterMuteNode(_masterMuteGain);
 	const routing = _parseExternalRouting();
 	if (routing === null) {
-		_masterGain.connect(_ctx.destination);
+		_masterMuteGain.connect(_ctx.destination);
+		_masterGain.connect(_masterMuteGain);
 	} else {
 		const highestUsbChannel = Math.max(...[...routing.values()].map((left) => left + 1));
 		const dest = _ctx.destination;
@@ -882,9 +835,16 @@ function _ensureGraph(): AudioContext {
 		}
 		dest.channelCount = dest.maxChannelCount;
 		dest.channelInterpretation = 'discrete';
+		// The mute node inherits the discrete multichannel contract, otherwise
+		// the default speakers interpretation would downmix the per-deck USB
+		// pairs on their way through it.
+		_masterMuteGain.channelCount = dest.channelCount;
+		_masterMuteGain.channelCountMode = 'explicit';
+		_masterMuteGain.channelInterpretation = 'discrete';
+		_masterMuteGain.connect(dest);
 		_externalMerger = _ctx.createChannelMerger(dest.channelCount);
 		_externalMerger.channelInterpretation = 'discrete';
-		_externalMerger.connect(dest);
+		_externalMerger.connect(_masterMuteGain);
 	}
 	const headphones = _ensureHeadphoneGraph(_ctx, _masterGain);
 	for (const deck of DECK_IDS) {
@@ -954,193 +914,6 @@ function _applyCrossfader(): void {
 	}
 }
 
-export function masterTempoSemitones(tempoRatio: number, enabled: boolean): number {
-	if (!Number.isFinite(tempoRatio) || tempoRatio <= 0) {
-		throw new RangeError(`tempo ratio must be a finite positive number, got ${tempoRatio}`);
-	}
-	return enabled ? 0 : 12 * Math.log2(tempoRatio);
-}
-
-/** Parsed, canonical Camelot key. `root` is a chromatic pitch class where C
- * is 0. Only numbered Camelot notation is accepted, never a guessed musical
- * key label. */
-export interface CamelotKey {
-	number: number;
-	mode: 'A' | 'B';
-	root: number;
-}
-
-const CAMELOT_ROOTS: Record<CamelotKey['mode'], readonly number[]> = {
-	// 1A = Ab minor through 12A = C# minor.
-	A: [8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1],
-	// 1B = B major through 12B = E major.
-	B: [11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4]
-};
-
-function _pitchClass(semitones: number): number {
-	return ((semitones % 12) + 12) % 12;
-}
-
-/** Return null for non-Camelot metadata so callers can fail explicitly at
- * their operation boundary rather than inventing a harmonic relationship. */
-export function parseCamelotKey(value: string | null): CamelotKey | null {
-	if (typeof value !== 'string') return null;
-	const match = /^(1[0-2]|[1-9])([ab])$/i.exec(value.trim());
-	if (match === null) return null;
-	const number = Number(match[1]);
-	const mode = match[2].toUpperCase() as CamelotKey['mode'];
-	return { number, mode, root: CAMELOT_ROOTS[mode][number - 1] };
-}
-
-function _assertKeyShift(semitones: number): asserts semitones is number {
-	if (!Number.isInteger(semitones)) {
-		throw new TypeError(`key shift must be an integer number of semitones, got ${semitones}`);
-	}
-	if (semitones < -12 || semitones > 12) {
-		throw new RangeError(`key shift must be within -12..12 semitones, got ${semitones}`);
-	}
-}
-
-function _shiftCamelotKey(key: CamelotKey, semitones: number): CamelotKey {
-	_assertKeyShift(semitones);
-	const root = _pitchClass(key.root + semitones);
-	const number = CAMELOT_ROOTS[key.mode].indexOf(root) + 1;
-	if (number === 0) throw new Error(`Camelot ${key.mode} root ${root} cannot be represented`);
-	return { number, mode: key.mode, root };
-}
-
-/** Audible Camelot label after an integer manual key shift (mode preserved). */
-export function effectiveCamelotKey(key: string | null, semitones: number): string | null {
-	const parsed = parseCamelotKey(key);
-	if (parsed === null) return key;
-	if (semitones === 0) return `${parsed.number}${parsed.mode}`;
-	_assertKeyShift(semitones);
-	const shifted = _shiftCamelotKey(parsed, semitones);
-	return `${shifted.number}${shifted.mode}`;
-}
-
-function _camelotCircularDistance(left: number, right: number): number {
-	const raw = Math.abs(left - right);
-	return Math.min(raw, 12 - raw);
-}
-
-/** AlphaTheta/Pioneer least-change families: same-wheel and cross-wheel keys
- * are compatible at the same Camelot number and one step either direction.
- * That makes the six named relationships (A/A and A/B, each same/+1/-1)
- * symmetric and preserves 1 <-> 12 wraparound. */
-export function camelotKeysAreCompatible(
-	deckKey: string | null,
-	masterKey: string | null
-): boolean {
-	const deck = parseCamelotKey(deckKey);
-	const master = parseCamelotKey(masterKey);
-	if (deck === null || master === null) return false;
-	return _camelotCircularDistance(deck.number, master.number) <= 1;
-}
-
-function _assertEffectiveAudibleSemitones(name: string, value: number): void {
-	if (!Number.isFinite(value)) {
-		throw new RangeError(`${name} effective audible semitones must be finite, got ${value}`);
-	}
-}
-
-function _circularPitchDistance(left: number, right: number): number {
-	const distance = Math.abs(_pitchClass(left - right));
-	return Math.min(distance, 12 - distance);
-}
-
-function _keySyncNudgeCandidates(): number[] {
-	const candidates: number[] = [];
-	for (let magnitude = 0; magnitude <= 12; magnitude += 1) {
-		if (magnitude === 0) candidates.push(0);
-		else candidates.push(-magnitude, magnitude);
-	}
-	return candidates;
-}
-
-/** Pick the smallest integer manual nudge whose audible pitch is closest to
- * one of the six Pioneer-compatible Camelot family roots. The source deck
- * mode is retained, while each deck and master may already have a fractional
- * Signalsmith offset from Master Tempo-off tempo compensation. */
-export function deriveKeySyncNudge(
-	deckKey: string | null,
-	masterKey: string | null,
-	deckEffectiveAudibleSemitones: number,
-	masterEffectiveAudibleSemitones: number,
-	deckManualShiftSemitones: number
-): number {
-	const deck = parseCamelotKey(deckKey);
-	const master = parseCamelotKey(masterKey);
-	if (deck === null) throw new Error('KEY SYNC requires a parseable Camelot key on the deck');
-	if (master === null) throw new Error('KEY SYNC requires a parseable Camelot key on the master');
-	_assertEffectiveAudibleSemitones('deck', deckEffectiveAudibleSemitones);
-	_assertEffectiveAudibleSemitones('master', masterEffectiveAudibleSemitones);
-	_assertKeyShift(deckManualShiftSemitones);
-
-	let bestNudge: number | null = null;
-	let bestDistance = Number.POSITIVE_INFINITY;
-	for (const nudge of _keySyncNudgeCandidates()) {
-		const nextManualShift = deckManualShiftSemitones + nudge;
-		if (nextManualShift < -12 || nextManualShift > 12) continue;
-		const deckAudibleRoot = deck.root + deckEffectiveAudibleSemitones + nudge;
-		for (let number = 1; number <= 12; number += 1) {
-			if (_camelotCircularDistance(number, master.number) > 1) continue;
-			const familyRoot = CAMELOT_ROOTS[deck.mode][number - 1] + masterEffectiveAudibleSemitones;
-			const distance = _circularPitchDistance(deckAudibleRoot, familyRoot);
-			if (distance < bestDistance - 1e-12) {
-				bestDistance = distance;
-				bestNudge = nudge;
-			}
-		}
-	}
-	if (bestNudge === null) {
-		throw new RangeError('KEY SYNC cannot apply a compatible nudge within -12..12 manual semitones');
-	}
-	return bestNudge;
-}
-
-/** Convert a listener-facing KEY SYNC nudge to the absolute manual schedule value. */
-export function deriveKeySyncTargetManualShift(
-	deckKey: string | null,
-	masterKey: string | null,
-	deckEffectiveAudibleSemitones: number,
-	masterEffectiveAudibleSemitones: number,
-	presentedManualShiftSemitones: number
-): number {
-	_assertKeyShift(presentedManualShiftSemitones);
-	const nudge = deriveKeySyncNudge(
-		deckKey,
-		masterKey,
-		deckEffectiveAudibleSemitones,
-		masterEffectiveAudibleSemitones,
-		presentedManualShiftSemitones
-	);
-	const target = presentedManualShiftSemitones + nudge;
-	_assertKeyShift(target);
-	return target;
-}
-
-/** Legacy zero-offset convenience wrapper, returning the final manual shift. */
-export function deriveKeySyncSemitones(
-	deckKey: string | null,
-	masterKey: string | null,
-	masterKeyShiftSemitones = 0
-): number {
-	_assertKeyShift(masterKeyShiftSemitones);
-	return deriveKeySyncNudge(deckKey, masterKey, 0, masterKeyShiftSemitones, 0);
-}
-
-/** Signalsmith receives one native semitone field. Key shift composes additively
- * with the existing Master Tempo compensation, never by changing transport rate. */
-export function composeStretchSemitones(
-	tempoRatio: number,
-	masterTempoEnabled: boolean,
-	keyShiftSemitones: number
-): number {
-	_assertKeyShift(keyShiftSemitones);
-	return masterTempoSemitones(tempoRatio, masterTempoEnabled) + keyShiftSemitones;
-}
-
 export interface DeckControlSettings {
 	tempoRatio: number;
 	masterTempoEnabled: boolean;
@@ -1198,19 +971,6 @@ export function quantizedPositionMs(
 	return quantizeToNearestBeat(beats, positionMs / 1000) * 1000;
 }
 
-export function pausedSeekClock(
-	positionMs: number,
-	durationMs: number
-): { position_ms: number; start_offset_sec: number } {
-	if (!Number.isFinite(durationMs) || durationMs <= 0) {
-		throw new RangeError(`duration must be finite and positive, got ${durationMs}`);
-	}
-	if (!Number.isFinite(positionMs) || positionMs < 0 || positionMs > durationMs) {
-		throw new RangeError(`position must be within track duration 0..${durationMs}, got ${positionMs}`);
-	}
-	return { position_ms: positionMs, start_offset_sec: positionMs / 1000 };
-}
-
 export function decodedTransportDurationMs(decodedDurationSec: number): number {
 	if (!Number.isFinite(decodedDurationSec) || decodedDurationSec <= 0) {
 		throw new RangeError(
@@ -1218,212 +978,6 @@ export function decodedTransportDurationMs(decodedDurationSec: number): number {
 		);
 	}
 	return decodedDurationSec * 1000;
-}
-
-export function createPresentedTransportTimeline(
-	pausedPositionSec: number
-): PresentedTransportTimeline {
-	if (!Number.isFinite(pausedPositionSec) || pausedPositionSec < 0) {
-		throw new RangeError(
-			`pausedPositionSec must be finite and non-negative, got ${pausedPositionSec}`
-		);
-	}
-	return {
-		paused_position_sec: pausedPositionSec,
-		presented_position_sec: pausedPositionSec,
-		presented_active: false,
-		desired_revision: 0,
-		presented_revision: 0,
-		last_presentation_context_time_s: null,
-		last_presentation_performance_time_ms: null,
-		schedules: []
-	};
-}
-
-export function setPausedTransportTimelineCursor(
-	timeline: PresentedTransportTimeline,
-	positionSec: number,
-	durationSec: number
-): void {
-	const clock = pausedSeekClock(positionSec * 1000, durationSec * 1000);
-	if (timeline.presented_active || timeline.desired_revision !== timeline.presented_revision) {
-		throw new Error('paused transport cursor cannot move while audio is active or pending');
-	}
-	timeline.paused_position_sec = clock.start_offset_sec;
-	timeline.presented_position_sec = clock.start_offset_sec;
-}
-
-export function acknowledgePresentedTransportSchedule(
-	timeline: PresentedTransportTimeline,
-	schedule: Omit<PresentedTransportSchedule, 'supersededByRevision'>
-): void {
-	if (!Number.isInteger(schedule.revision) || schedule.revision <= 0) {
-		throw new RangeError(`schedule revision must be a positive integer, got ${schedule.revision}`);
-	}
-	if (!Number.isFinite(schedule.startContextTime) || schedule.startContextTime < 0) {
-		throw new RangeError(
-			`schedule startContextTime must be finite and non-negative, got ${schedule.startContextTime}`
-		);
-	}
-	if (!Number.isFinite(schedule.startPositionSec) || schedule.startPositionSec < 0) {
-		throw new RangeError(
-			`schedule startPositionSec must be finite and non-negative, got ${schedule.startPositionSec}`
-		);
-	}
-	if (!Number.isFinite(schedule.tempoRatio) || schedule.tempoRatio <= 0) {
-		throw new RangeError(
-			`schedule tempoRatio must be finite and positive, got ${schedule.tempoRatio}`
-		);
-	}
-
-	let supersededByRevision: number | null = null;
-	if (schedule.revision <= timeline.desired_revision) {
-		supersededByRevision = timeline.desired_revision;
-	} else {
-		for (const existing of timeline.schedules) {
-			if (
-				existing.supersededByRevision === null &&
-				existing.revision > timeline.presented_revision &&
-				existing.startContextTime >= schedule.startContextTime
-			) {
-				existing.supersededByRevision = schedule.revision;
-			}
-		}
-		timeline.desired_revision = schedule.revision;
-	}
-	const masterTempoEnabled = schedule.masterTempoEnabled ?? true;
-	const keyShiftSemitones = schedule.keyShiftSemitones ?? 0;
-	_assertKeyShift(keyShiftSemitones);
-	timeline.schedules.push({
-		...schedule,
-		loop: schedule.loop === null ? null : { ...schedule.loop },
-		masterTempoEnabled,
-		keyShiftSemitones,
-		supersededByRevision
-	});
-	_prunePresentedTransportSchedules(timeline);
-}
-
-function _laterPresentedSchedule(
-	candidate: PresentedTransportSchedule,
-	selected: PresentedTransportSchedule | null
-): boolean {
-	return (
-		selected === null ||
-		candidate.startContextTime > selected.startContextTime ||
-		(candidate.startContextTime === selected.startContextTime &&
-			candidate.revision > selected.revision)
-	);
-}
-
-function _effectivePresentedScheduleAt(
-	timeline: PresentedTransportTimeline,
-	contextTime: number
-): PresentedTransportSchedule | null {
-	let selected: PresentedTransportSchedule | null = null;
-	for (const candidate of timeline.schedules) {
-		if (
-			candidate.supersededByRevision === null &&
-			candidate.startContextTime <= contextTime &&
-			_laterPresentedSchedule(candidate, selected)
-		) {
-			selected = candidate;
-		}
-	}
-	return selected;
-}
-
-function _prunePresentedTransportSchedules(timeline: PresentedTransportTimeline): void {
-	const presentedAt = timeline.last_presentation_context_time_s;
-	const effective =
-		presentedAt === null ? null : _effectivePresentedScheduleAt(timeline, presentedAt);
-	timeline.schedules = timeline.schedules.filter(
-		(schedule) =>
-			schedule.supersededByRevision === null &&
-			(presentedAt === null || schedule === effective || schedule.startContextTime > presentedAt)
-	);
-}
-
-function _presentedObservation(
-	timeline: PresentedTransportTimeline,
-	accepted: boolean,
-	outputStarted: boolean
-): PresentedTransportObservation {
-	return {
-		accepted,
-		output_started: outputStarted,
-		presentation_context_time_s: timeline.last_presentation_context_time_s,
-		position_sec: timeline.presented_position_sec,
-		audible: timeline.presented_active,
-		transport_pending: timeline.presented_revision !== timeline.desired_revision,
-		desired_revision: timeline.desired_revision,
-		presented_revision: timeline.presented_revision
-	};
-}
-
-export function observePresentedTransportTimeline(
-	timeline: PresentedTransportTimeline,
-	outputTimestamp: { contextTime: number; performanceTime: number },
-	durationSec: number
-): PresentedTransportObservation {
-	if (!Number.isFinite(durationSec) || durationSec <= 0) {
-		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
-	}
-	const { contextTime, performanceTime } = outputTimestamp;
-	if (
-		!Number.isFinite(contextTime) ||
-		!Number.isFinite(performanceTime) ||
-		contextTime < 0 ||
-		performanceTime < 0
-	) {
-		throw new RangeError(
-			`output timestamp must contain finite non-negative values, got ` +
-				`contextTime=${contextTime}, performanceTime=${performanceTime}`
-		);
-	}
-	// Chromium may expose the current performance clock while the output frame
-	// remains at zero during device warmup. Context time is presentation truth.
-	if (contextTime === 0) {
-		return _presentedObservation(
-			timeline,
-			false,
-			timeline.last_presentation_context_time_s !== null
-		);
-	}
-	const previousContextTime = timeline.last_presentation_context_time_s;
-	if (previousContextTime !== null && contextTime < previousContextTime) {
-		return _presentedObservation(timeline, false, true);
-	}
-
-	const selected = _effectivePresentedScheduleAt(timeline, contextTime);
-	if (selected !== null && selected.revision < timeline.presented_revision) {
-		throw new Error(
-			`presented schedule revision regressed from ${timeline.presented_revision} to ` +
-				`${selected.revision} at contextTime=${contextTime}`
-		);
-	}
-
-	if (selected === null) {
-		timeline.presented_position_sec = timeline.paused_position_sec;
-		timeline.presented_active = false;
-	} else {
-		const crossesNewRevision = selected.revision > timeline.presented_revision;
-		const positionSec = selected.active
-			? _positionForSegment(selected, contextTime, durationSec)
-			: crossesNewRevision
-				? selected.startPositionSec
-				: timeline.paused_position_sec;
-		const audible = selected.active && !deckReachedEnd(positionSec, durationSec, selected.loop);
-		timeline.presented_position_sec = positionSec;
-		timeline.presented_active = audible;
-		timeline.presented_revision = Math.max(timeline.presented_revision, selected.revision);
-		if (!audible) timeline.paused_position_sec = positionSec;
-	}
-	timeline.last_presentation_context_time_s = contextTime;
-	// Performance time is correlation/diagnostic data, never transport authority.
-	timeline.last_presentation_performance_time_ms = performanceTime;
-	_prunePresentedTransportSchedules(timeline);
-	return _presentedObservation(timeline, true, true);
 }
 
 export function seekSyncMaster(
@@ -1494,201 +1048,6 @@ export function syncChangeRequiresReschedule(
 		throw new RangeError(`sync deck ids must be within 1..4, got deck=${deck}, master=${master}`);
 	}
 	return desiredActive && beatSyncEnabled && master !== null && master !== deck;
-}
-
-export function quantizedLoopEndpointsMs(
-	beats: readonly AnlzBeat[],
-	loop: { in_ms: number; out_ms: number },
-	quantizeEnabled: boolean
-): { in_ms: number; out_ms: number } {
-	if (
-		!Number.isFinite(loop.in_ms) ||
-		!Number.isFinite(loop.out_ms) ||
-		loop.in_ms < 0 ||
-		loop.out_ms <= loop.in_ms
-	) {
-		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
-	}
-	if (!quantizeEnabled) return { ...loop };
-	const snapped = {
-		in_ms: quantizeToNearestBeat(beats, loop.in_ms / 1000) * 1000,
-		out_ms: quantizeToNearestBeat(beats, loop.out_ms / 1000) * 1000
-	};
-	if (snapped.out_ms <= snapped.in_ms) {
-		throw new RangeError(
-			`quantized loop collapsed at ${snapped.in_ms}ms; choose endpoints spanning distinct PQTZ beats`
-		);
-	}
-	return snapped;
-}
-
-/** Bound a valid loop to the decoded audio duration. Overshoot is expected
- * for a final PQTZ interval that extends past the decoded buffer boundary;
- * an empty loop remains an explicit error. */
-export function loopEndpointsWithinDurationMs(
-	loop: { in_ms: number; out_ms: number },
-	durationMs: number
-): { in_ms: number; out_ms: number } {
-	if (!Number.isFinite(durationMs) || durationMs <= 0) {
-		throw new RangeError(`decoded duration must be finite and positive, got ${durationMs}`);
-	}
-	if (
-		!Number.isFinite(loop.in_ms) ||
-		!Number.isFinite(loop.out_ms) ||
-		loop.in_ms < 0 ||
-		loop.out_ms <= loop.in_ms
-	) {
-		throw new RangeError(`loop requires finite 0 <= in_ms < out_ms, got ${loop.in_ms}..${loop.out_ms}`);
-	}
-	const out_ms = Math.min(loop.out_ms, durationMs);
-	if (out_ms <= loop.in_ms) {
-		throw new RangeError(
-			`loop would be empty at decoded duration ${durationMs}ms, got ${loop.in_ms}..${loop.out_ms}`
-		);
-	}
-	return { in_ms: loop.in_ms, out_ms };
-}
-
-export function exactBeatLoopRangeMs(
-	beats: readonly AnlzBeat[],
-	positionMs: number,
-	beatCount: number,
-	startMs?: number
-): { in_ms: number; out_ms: number } {
-	if (!Number.isInteger(beatCount) || beatCount <= 0) {
-		throw new RangeError(`beatCount must be a positive integer, got ${beatCount}`);
-	}
-	const anchorMs = startMs ?? positionMs;
-	if (!Number.isFinite(anchorMs) || anchorMs < 0) {
-		throw new RangeError(`loop anchor must be a finite non-negative number, got ${anchorMs}`);
-	}
-	const startSec = quantizeToNearestBeat(beats, anchorMs / 1000);
-	const startIndex = beats.findIndex((beat) => beat.t === startSec);
-	const endIndex = startIndex + beatCount;
-	if (startIndex < 0 || endIndex >= beats.length) {
-		throw new RangeError(
-			`${beatCount} PQTZ beats do not fit from loop anchor ${anchorMs}ms`
-		);
-	}
-	return { in_ms: startSec * 1000, out_ms: beats[endIndex].t * 1000 };
-}
-
-export function supersedingScheduleTime(
-	requestedContextTime: number,
-	pendingContextTime: number | null,
-	minimumContextTime = 0
-): number {
-	if (!Number.isFinite(requestedContextTime) || requestedContextTime < 0) {
-		throw new RangeError(
-			`requestedContextTime must be finite and non-negative, got ${requestedContextTime}`
-		);
-	}
-	if (!Number.isFinite(minimumContextTime) || minimumContextTime < 0) {
-		throw new RangeError(
-			`minimumContextTime must be finite and non-negative, got ${minimumContextTime}`
-		);
-	}
-	if (requestedContextTime < minimumContextTime) {
-		throw new RangeError(
-			`requestedContextTime ${requestedContextTime} precedes minimumContextTime ` +
-				`${minimumContextTime}`
-		);
-	}
-	if (pendingContextTime === null) return requestedContextTime;
-	if (!Number.isFinite(pendingContextTime) || pendingContextTime < 0) {
-		throw new RangeError(
-			`pendingContextTime must be finite and non-negative, got ${pendingContextTime}`
-		);
-	}
-	if (pendingContextTime < minimumContextTime) return requestedContextTime;
-	return Math.min(requestedContextTime, pendingContextTime);
-}
-
-export function commonSyncScheduleTimes(
-	syncAtContextTime: number,
-	participantCount: number
-): number[] {
-	if (!Number.isFinite(syncAtContextTime) || syncAtContextTime < 0) {
-		throw new RangeError(
-			`syncAtContextTime must be finite and non-negative, got ${syncAtContextTime}`
-		);
-	}
-	if (!Number.isInteger(participantCount) || participantCount <= 0) {
-		throw new RangeError(`participant count must be a positive integer, got ${participantCount}`);
-	}
-	return Array.from({ length: participantCount }, () => syncAtContextTime);
-}
-
-export function pendingSyncWaitTarget(
-	requestedSafeContextTime: number,
-	pendingContextTimes: readonly number[]
-): number | null {
-	if (!Number.isFinite(requestedSafeContextTime) || requestedSafeContextTime < 0) {
-		throw new RangeError(
-			`requestedSafeContextTime must be finite and non-negative, got ${requestedSafeContextTime}`
-		);
-	}
-	const unsafePendingTimes = pendingContextTimes.filter((contextTime) => {
-		if (!Number.isFinite(contextTime) || contextTime < 0) {
-			throw new RangeError(
-				`pending sync context time must be finite and non-negative, got ${contextTime}`
-			);
-		}
-		return contextTime < requestedSafeContextTime;
-	});
-	return unsafePendingTimes.length === 0 ? null : Math.max(...unsafePendingTimes);
-}
-
-export function safeSyncScheduleTime(
-	nowContextTime: number,
-	maxLatencySec: number,
-	masterReadyContextTime: number,
-	safetySec = SYNC_SCHEDULE_SAFETY_S
-): number {
-	for (const [name, value] of Object.entries({
-		nowContextTime,
-		maxLatencySec,
-		masterReadyContextTime,
-		safetySec
-	})) {
-		if (!Number.isFinite(value) || value < 0) {
-			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
-		}
-	}
-	return Math.max(
-		nowContextTime + maxLatencySec + safetySec,
-		masterReadyContextTime + safetySec
-	);
-}
-
-export function safeTransportScheduleTime(
-	nowContextTime: number,
-	latencySec: number,
-	safetySec = SYNC_SCHEDULE_SAFETY_S
-): number {
-	for (const [name, value] of Object.entries({ nowContextTime, latencySec, safetySec })) {
-		if (!Number.isFinite(value) || value < 0) {
-			throw new RangeError(`${name} must be finite and non-negative, got ${value}`);
-		}
-	}
-	if (safetySec === 0) throw new RangeError('safetySec must be greater than zero');
-	return nowContextTime + latencySec + safetySec;
-}
-
-export function projectedTransportPosition(input: {
-	now: number;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	projectAt: number;
-}): number {
-	for (const [name, value] of Object.entries(input)) {
-		if (!Number.isFinite(value)) throw new RangeError(`${name} must be finite, got ${value}`);
-	}
-	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
-	if (input.projectAt < input.now) throw new RangeError('projectAt must not precede now');
-	const projectionEpoch = Math.max(input.now, input.startContextTime);
-	return input.startPositionSec + Math.max(0, input.projectAt - projectionEpoch) * input.tempoRatio;
 }
 
 /** The key UI must not lead the listener. This accessor resolves only the
@@ -1910,99 +1269,6 @@ export function presentedSlipAnchor(
 		tempoRatio: schedule.tempoRatio,
 		durationSec
 	});
-}
-
-export function projectedLoopAwareTransportPosition(input: {
-	active: boolean;
-	loop: LoopState | null;
-	startContextTime: number;
-	startPositionSec: number;
-	tempoRatio: number;
-	projectAt: number;
-	durationSec: number;
-}): number {
-	for (const [name, value] of Object.entries(input)) {
-		if (name !== 'loop' && name !== 'active' && !Number.isFinite(value)) {
-			throw new RangeError(`${name} must be finite, got ${String(value)}`);
-		}
-	}
-	if (input.tempoRatio <= 0) throw new RangeError('tempoRatio must be positive');
-	if (input.durationSec <= 0) throw new RangeError('durationSec must be positive');
-	return _positionForSegment(
-		{
-			active: input.active,
-			loop: input.loop,
-			startContextTime: input.startContextTime,
-			startPositionSec: input.startPositionSec,
-			tempoRatio: input.tempoRatio
-		},
-		input.projectAt,
-		input.durationSec
-	);
-}
-
-export function normalizeEngagedLoopPositionSec(
-	positionSec: number,
-	loop: LoopState | null
-): number {
-	if (!Number.isFinite(positionSec) || positionSec < 0) {
-		throw new RangeError(`positionSec must be finite and non-negative, got ${positionSec}`);
-	}
-	if (loop === null || !loop.engaged) return positionSec;
-	const loopStartSec = loop.in_ms / 1000;
-	const loopEndSec = loop.out_ms / 1000;
-	const loopSpanSec = loopEndSec - loopStartSec;
-	if (!Number.isFinite(loopSpanSec) || loopStartSec < 0 || loopSpanSec <= 0) {
-		throw new RangeError(`engaged loop must satisfy 0 <= in_ms < out_ms`);
-	}
-	if (positionSec >= loopStartSec && positionSec < loopEndSec) return positionSec;
-	const wrappedOffsetSec =
-		((positionSec - loopStartSec) % loopSpanSec + loopSpanSec) % loopSpanSec;
-	return loopStartSec + wrappedOffsetSec;
-}
-
-export function normalizeScheduledTransportEntrySec(
-	positionSec: number,
-	durationSec: number,
-	loop: LoopState | null,
-	active: boolean
-): number {
-	if (!Number.isFinite(durationSec) || durationSec <= 0) {
-		throw new RangeError(`durationSec must be finite and positive, got ${durationSec}`);
-	}
-	if (!Number.isFinite(positionSec) || positionSec < 0 || positionSec > durationSec) {
-		throw new RangeError(
-			`positionSec must be within 0..${durationSec}, got ${positionSec}`
-		);
-	}
-	if (typeof active !== 'boolean') {
-		throw new TypeError(`active must be boolean, got ${String(active)}`);
-	}
-	if (!active) return positionSec;
-	const normalizedPositionSec = normalizeEngagedLoopPositionSec(positionSec, loop);
-	if (normalizedPositionSec > durationSec) {
-		throw new RangeError(
-			`normalized loop position ${normalizedPositionSec} exceeds duration ${durationSec}`
-		);
-	}
-	return normalizedPositionSec;
-}
-
-export function deckReachedEnd(
-	positionSec: number,
-	durationSec: number,
-	loop: LoopState | null
-): boolean {
-	return !loop?.engaged && positionSec >= durationSec;
-}
-
-/** Play on a finished (end-of-track) deck restarts from 0; otherwise resume. */
-export function playResumePositionSec(
-	positionSec: number,
-	durationSec: number,
-	loop: LoopState | null
-): number {
-	return deckReachedEnd(positionSec, durationSec, loop) ? 0 : positionSec;
 }
 
 export function naturalEndNeedsRevisionedStop(
@@ -2650,20 +1916,6 @@ async function _resumeSlip(deck: DeckId): Promise<void> {
 	);
 	_clearSlip(deck);
 }
-
-function _positionForSegment(segment: _ClockSegment, at: number, durationSec: number): number {
-	if (!segment.active) return segment.startPositionSec;
-	const elapsed = Math.max(0, at - segment.startContextTime);
-	const linear = segment.startPositionSec + elapsed * segment.tempoRatio;
-	const loop = segment.loop;
-	if (loop !== null && loop.engaged) {
-		const loopStart = loop.in_ms / 1000;
-		const loopEnd = loop.out_ms / 1000;
-		if (linear >= loopEnd) return loopStart + ((linear - loopStart) % (loopEnd - loopStart));
-	}
-	return Math.min(linear, durationSec);
-}
-
 function _pendingClockSegment(pending: _PendingSegment): _ClockSegment {
 	return {
 		active: pending.active,
@@ -3458,6 +2710,7 @@ class RbAudioEngine implements AudioEngine {
 		}
 		_headphoneGeneration += 1;
 		_disposeHeadphoneGraph();
+		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
@@ -3468,6 +2721,10 @@ class RbAudioEngine implements AudioEngine {
 
 		_rafId = null;
 		_masterGain = null;
+		// The mute VALUE survives teardown on purpose: a route remount must not
+		// hand a headless agent its audio back. Only the node is released.
+		attachMasterMuteNode(null);
+		_masterMuteGain = null;
 		_externalMerger = null;
 		_ctx = null;
 		_masterDeck = null;
@@ -3616,7 +2873,7 @@ class RbAudioEngine implements AudioEngine {
 			const msg =
 				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
 			deckLoadErrors[deck] = msg;
-			pushToast(`Deck ${deck} load failed - ${msg}`, 'error');
+			pushToast(`Deck ${deck} load failed - ${msg}`, 'error', undefined, exc);
 			recordPerfEvent('deck-load-fail', msg, deck);
 			throw exc;
 		}

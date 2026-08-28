@@ -8,6 +8,7 @@
 	import { getDeckState } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
 	import type { DeckId, EqBand } from '$lib/rb/types';
+	import { knobId } from '$lib/rb/knob-control.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';
 
@@ -54,15 +55,15 @@
 >
 	<span class="ch-num">{deckId}</span>
 	<div class="trim-slot">
-		<Knob label="TRIM" value={trim} tone="white" onchange={ontrim} />
+		<Knob knobId={knobId(deckId, 'trim')} label="TRIM" value={trim} tone="white" onchange={ontrim} />
 	</div>
 	<div class="eq-stack">
-		<Knob label="HI" value={eqHigh} onchange={(v) => oneq('high', v)} />
-		<Knob label="MID" value={eqMid} onchange={(v) => oneq('mid', v)} />
-		<Knob label="LOW" value={eqLow} onchange={(v) => oneq('low', v)} />
+		<Knob knobId={knobId(deckId, 'high')} label="HI" value={eqHigh} onchange={(v) => oneq('high', v)} />
+		<Knob knobId={knobId(deckId, 'mid')} label="MID" value={eqMid} onchange={(v) => oneq('mid', v)} />
+		<Knob knobId={knobId(deckId, 'low')} label="LOW" value={eqLow} onchange={(v) => oneq('low', v)} />
 	</div>
 	<div class="filter-slot">
-		<Knob label="FILTER" value={0.5} tone="rainbow" inert />
+		<Knob knobId={knobId(deckId, 'filter')} label="FILTER" value={0.5} tone="rainbow" inert />
 	</div>
 	<button
 		class:enabled={cueEnabled}

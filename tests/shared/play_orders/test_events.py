@@ -9,7 +9,6 @@ from apps.shared.play_orders import events as po_events
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 
-
 pytestmark = pytest.mark.requirement("PLAY-01")
 
 
