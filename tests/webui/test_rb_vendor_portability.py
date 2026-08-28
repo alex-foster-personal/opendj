@@ -47,6 +47,7 @@ from fastapi import HTTPException
 from apps.adapters.rekordbox import config as rb_config
 from apps.adapters.rekordbox import paths as rb_paths
 from apps.shared import platform_paths as pp
+from apps.webui import crate_sync
 from apps.webui.server import rb_vendor
 
 
@@ -144,6 +145,12 @@ def test_rb_vendor_reimports_cleanly_on_simulated_win32() -> None:
         importlib.reload(rb_config)
         importlib.reload(rb_paths)
         importlib.reload(rb_vendor)
+        # Reloading pp creates a NEW STREAMING_PREFIXES tuple. crate_sync
+        # binds that tuple BY VALUE at import, so it must be reloaded too or
+        # tests/shared/test_streaming_path_predicates.py's identity contract
+        # ("no module keeps a private copy") fails for every later test in
+        # this process.
+        importlib.reload(crate_sync)
 
 
 # ----- MDT_DATA_DIR override --------------------------------------------------
