@@ -5,6 +5,7 @@
 	import { health, refreshHealth, toasts } from '$lib/stores.svelte';
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
+	import UserBauble from '$lib/components/UserBauble.svelte';
 	import { isPerformanceRoutePath } from '$lib/rb/performance-preset';
 	import { hydrateConfirmPrefsFromDisk, uiPrefs } from '$lib/rb/prefs.svelte';
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
@@ -81,6 +82,7 @@
 			{:else}
 				<span>Connecting to configured worktree daemon...</span>
 			{/if}
+			<UserBauble />
 		</div>
 		<div class="content">
 			{@render children()}
