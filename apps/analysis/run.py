@@ -161,26 +161,24 @@ class RunSummary:
 
 
 def run(
-    files: list[Path],
+    queue: list[TrackRef],
     *,
     backend_name: str = "librosa+madmom",
     dry_run: bool = False,
     limit: int | None = None,
     workers: int = 1,
     only_missing: bool = True,
-    stable_id_strategy: str = "file-path",
     verbose: bool = False,
     db_path: Path | None = None,
-    pairs: list[tuple[str, str]] | None = None,
 ) -> RunSummary:
-    """Run the analysis pipeline."""
+    """Run the analysis pipeline over a prebuilt queue.
+
+    Callers own identity: build the queue with :func:`build_queue` (derived
+    pathid_*/bytesid_* placeholders) or :func:`build_queue_from_pairs`
+    (canonical state-layer stable_ids).
+    """
     if verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-
-    if pairs is not None:
-        queue = build_queue_from_pairs(pairs)
-    else:
-        queue = build_queue(files, strategy=stable_id_strategy)
 
     if only_missing and not dry_run:
         queue = filter_missing(queue, backend_name=backend_name, db_path=db_path)
@@ -320,8 +318,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    pairs: list[tuple[str, str]] | None = None
-    files: list[Path] = []
     if args.pairs_json is not None:
         raw = json.loads(args.pairs_json.read_text())
         if not isinstance(raw, list) or not all(
@@ -330,19 +326,19 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(
                 f"--pairs-json {args.pairs_json}: expected [[stable_id, path], ...]"
             )
-        pairs = [(sid, path) for sid, path in raw]
+        queue = build_queue_from_pairs([(sid, path) for sid, path in raw])
     else:
-        files = [Path(p) for p in args.files]
+        queue = build_queue(
+            [Path(p) for p in args.files], strategy=args.stable_id_strategy
+        )
     summary = run(
-        files,
+        queue,
         backend_name=args.backend,
         dry_run=args.dry_run,
         limit=args.limit,
         workers=args.workers,
         only_missing=args.only_missing,
-        stable_id_strategy=args.stable_id_strategy,
         verbose=args.verbose,
-        pairs=pairs,
     )
     return 0 if summary.failed == 0 else 1
 
