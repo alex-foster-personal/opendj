@@ -16,13 +16,11 @@ import pytest
 from apps.shared import fingerprints as fp_mod
 from apps.shared.fingerprints import (
     ChromaprintMissing,
-    Fingerprint,
     FingerprintCache,
     compare,
     compute,
     load_or_compute,
 )
-
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 

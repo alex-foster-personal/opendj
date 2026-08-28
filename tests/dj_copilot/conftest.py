@@ -10,7 +10,6 @@ import pytest
 
 from apps.shared.harmonic import TrackFeature
 
-
 # Frozen "now" for deterministic dj_copilot tests. Using a fixed UTC instant
 # avoids wall-clock drift when tests stamp ``captured_at`` / ``played_at``
 # fields that later get compared or serialised. Prefer this over

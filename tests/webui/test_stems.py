@@ -72,6 +72,14 @@ def _client(stems_dir: Path) -> TestClient:
     return TestClient(app)
 
 
+def _client_with_roots(stems_dir: Path, roots: tuple[Path, ...]) -> TestClient:
+    app = FastAPI()
+    app.state.stems_dir = stems_dir
+    app.state.stem_roots = roots
+    app.include_router(router, prefix="/api/v1")
+    return TestClient(app)
+
+
 def test_get_manifest_and_real_stem_file(tmp_path: Path) -> None:
     """A complete v1 bundle is exposed as manifest JSON and a WAV stream."""
     _bundle(tmp_path)
@@ -102,6 +110,31 @@ def test_get_manifest_and_real_stem_file(tmp_path: Path) -> None:
     assert stem.status_code == 200
     assert stem.headers["content-type"] == "audio/wav"
     assert stem.content.startswith(b"RIFF")
+
+
+def test_explicit_remote_roots_never_fall_back_to_a_local_bundle(
+    tmp_path: Path,
+) -> None:
+    """A remote server cannot accidentally serve a Mac/local stem directory."""
+
+    local = tmp_path / "local"
+    remote = tmp_path / "remote"
+    local.mkdir()
+    remote.mkdir()
+    _bundle(local)
+
+    with _client_with_roots(local, (remote,)) as client:
+        missing = client.get("/api/v1/tracks/track-001/stems")
+
+    assert missing.status_code == 404
+    assert str(remote) in missing.json()["detail"]["message"]
+    assert str(local) not in missing.json()["detail"]["message"]
+
+    _bundle(remote)
+    with _client_with_roots(local, (remote,)) as client:
+        available = client.get("/api/v1/tracks/track-001/stems")
+
+    assert available.status_code == 200
 
 
 def test_production_app_registers_stem_artifact_contract() -> None:

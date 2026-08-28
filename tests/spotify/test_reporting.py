@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.spotify.acquisition import build_acquisition_entries
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import LocalTrack, MatchedPair, MatchResult
 from apps.spotify.reporting import (
@@ -14,7 +15,6 @@ from apps.spotify.reporting import (
     write_matches_csv,
     write_to_acquire_csv,
 )
-from apps.spotify.acquisition import build_acquisition_entries
 
 
 def _playlist() -> SpotifyPlaylist:

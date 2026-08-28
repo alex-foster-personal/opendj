@@ -8,12 +8,10 @@ from apps.sync.usb.profile import (
     FORMATS,
     LAYOUTS,
     PLAYLIST_FILES,
-    Profile,
     ProfileError,
     load,
     load_from_string,
 )
-
 
 HAPPY = """\
 name: gigA

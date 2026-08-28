@@ -5,7 +5,7 @@ Backs two UI features and their agent-native parity:
   * "Refresh analysis" TopBar button  -> GET /ingest/coverage,
     POST /ingest/refresh, GET /ingest/refresh/status
   * Drag-in ingest modal              -> GET/PUT /ingest/config,
-    POST /ingest/upload
+    POST /ingest/upload (moved to routes/ingest_upload.py; shared CFG here)
 
 Design constraints honoured here:
   * Rekordbox remains the only writer of its own DB; upload stages files
@@ -35,34 +35,34 @@ Requirements (mini-PRD):
     [if] a refresh is already running [then ⛔️] 409
     [if] a step subprocess exits non-zero [then] job phase "error" with the
     tail of its output, later steps not run
-  ✔︎ ✅ POST upload: stage real bytes + duration & fingerprint dup check.
-    [if] staged bytes differ in size from the upload [then ⛔️] 500, temp
-    file removed
-    [if] fingerprint >= threshold match exists and force is not set
-    [then] file skipped with duplicate_of reported
+  ✔︎ ✅ POST upload: moved to routes/ingest_upload.py with its own mini-PRD.
 """
 from __future__ import annotations
 
 import json
 import re
-import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, NoReturn
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from apps.shared import fs_residency
-from apps.shared.fingerprints import ChromaprintMissing, compare, compute
 from apps.shared.paths import AUDIO_EXTENSIONS, HOME, PROJECT_ROOT, STATE_DB
 from apps.shared.state.db import open_ro
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR
+from apps.webui.server.stem_artifacts import (
+    DEFAULT_STEMS_DIR,
+    StemArtifactError,
+    StemBundleNotFoundError,
+    load_stem_bundle,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -191,6 +191,28 @@ def _tracks_on_disk() -> tuple[list[tuple[str, str]], int]:
     return ok, unreachable
 
 
+def _valid_stem_bundle_ids() -> set[str]:
+    """stable_ids with a COMPLETE stems bundle under DEFAULT_STEMS_DIR.
+
+    A directory alone is not done: an interrupted worker can leave it without
+    a manifest or with missing/corrupt stem files, and counting it as covered
+    would exclude the track from refresh targets forever. Invalid bundles
+    count as missing so refresh can repair them.
+    """
+    if not DEFAULT_STEMS_DIR.is_dir():
+        return set()
+    done: set[str] = set()
+    for p in DEFAULT_STEMS_DIR.iterdir():
+        if not p.is_dir():
+            continue
+        try:
+            load_stem_bundle(p.name, stems_dir=DEFAULT_STEMS_DIR)
+        except (StemArtifactError, StemBundleNotFoundError):
+            continue
+        done.add(p.name)
+    return done
+
+
 def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str, str]]]:
     conn = open_ro()
     try:
@@ -207,11 +229,7 @@ def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str
         )
     finally:
         conn.close()
-    stems_done = (
-        {p.name for p in DEFAULT_STEMS_DIR.iterdir() if p.is_dir()}
-        if DEFAULT_STEMS_DIR.is_dir()
-        else set()
-    )
+    stems_done = _valid_stem_bundle_ids()
     vocals_done = (
         {p.stem for p in VOCAL_CACHE_DIR.glob("*.json")}
         if VOCAL_CACHE_DIR.is_dir()
@@ -247,33 +265,38 @@ def get_coverage() -> CoverageOut:
 class _RefreshJob:
     started_at: float
     steps: list[str]
-    batch_dir: Optional[Path] = None
+    batch_dir: Path | None = None
     phase: str = "queued"            # queued | running | done | error
-    current_step: Optional[str] = None
+    current_step: str | None = None
     step_done: int = 0
     step_total: int = 0
     steps_completed: list[str] = field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
     log: deque = field(default_factory=lambda: deque(maxlen=LOG_RING))
     recently_done_ids: deque = field(default_factory=lambda: deque(maxlen=200))
-    finished_at: Optional[float] = None
+    finished_at: float | None = None
 
 
 _job_lock = threading.Lock()
-_job: Optional[_RefreshJob] = None
+
+
+class _JOBS:
+    """One-slot registry for the running refresh job (no global statements)."""
+
+    current: _RefreshJob | None = None
 
 
 class RefreshStatusOut(BaseModel):
     running: bool
     phase: str
     steps: list[str]
-    current_step: Optional[str]
+    current_step: str | None
     step_done: int
     step_total: int
     steps_completed: list[str]
-    started_at: Optional[float]
-    finished_at: Optional[float]
-    error: Optional[str]
+    started_at: float | None
+    finished_at: float | None
+    error: str | None
     log_tail: list[str]
     recently_done_ids: list[str]
 
@@ -302,8 +325,88 @@ def _run_cli(job: _RefreshJob, argv: list[str]) -> None:
         raise RuntimeError(f"{argv[2] if len(argv) > 2 else argv[0]} exited {rc}")
 
 
+def _run_analysis_chunk(job: _RefreshJob, chunk: list[tuple[str, str]]) -> None:
+    """Invoke apps.analysis.run for one chunk of (stable_id, path) targets.
+
+    Library scope hands the runner the CANONICAL state-layer stable_ids via
+    --pairs-json: with --files it derives pathid_* keys, so the row lands
+    under a key coverage never matches and the track re-analyzes on every
+    refresh. Batch scope (empty sids: freshly staged files with no tracks
+    rows yet) keeps --files, where the pathid_* placeholder is the intended
+    pre-ingest identity.
+    """
+    if all(sid for sid, _ in chunk):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".pairs.json", delete=False
+        ) as fh:
+            json.dump([[sid, f] for sid, f in chunk], fh)
+            pairs_path = fh.name
+        try:
+            _run_cli(
+                job,
+                [sys.executable, "-m", "apps.analysis.run",
+                 "--workers", str(min(2, len(chunk))),
+                 "--pairs-json", pairs_path],
+            )
+        finally:
+            Path(pairs_path).unlink(missing_ok=True)
+    else:
+        _run_cli(
+            job,
+            [sys.executable, "-m", "apps.analysis.run",
+             "--workers", str(min(2, len(chunk))),
+             "--files", *[f for _, f in chunk]],
+        )
+
+
+def _step_analysis(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    job.step_total = len(targets)
+    job.step_done = 0
+    _log(job, f"analysis: {len(targets)} tracks missing")
+    for i in range(0, len(targets), ANALYSIS_CHUNK):
+        chunk = targets[i : i + ANALYSIS_CHUNK]
+        _run_analysis_chunk(job, chunk)
+        job.step_done += len(chunk)
+        for sid, _ in chunk:
+            job.recently_done_ids.append(sid)
+
+
+def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    job.step_total = min(len(targets), STEMS_TRICKLE_LIMIT)
+    job.step_done = 0
+    _log(job, f"stems: {len(targets)} missing; trickling {job.step_total}")
+    if job.step_total:
+        _run_cli(
+            job,
+            [sys.executable, "-m", "apps.stems", "trickle", "--live",
+             "--limit", str(STEMS_TRICKLE_LIMIT)],
+        )
+        job.step_done = job.step_total
+
+
+def _step_vocals(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
+    job.step_total = len(targets)
+    job.step_done = 0
+    _log(job, f"vocals: {len(targets)} missing cache; from-stems backfill")
+    _run_cli(job, [sys.executable, "-m", "apps.vocals", "from-stems", "--live"])
+    job.step_done = job.step_total
+
+
+def _fail_unhandled_step_runner(
+    job: _RefreshJob, _targets: list[tuple[str, str]]
+) -> NoReturn:  # pragma: no cover - registry and worker must agree
+    raise RuntimeError(f"unhandled step {job.current_step}")
+
+
+# Exhaustiveness guard lives in the dispatch: every STEPS id needs a runner.
+_STEP_RUNNERS = {
+    "analysis": _step_analysis,
+    "stems": _step_stems,
+    "vocals": _step_vocals,
+}
+
+
 def _refresh_worker(job: _RefreshJob) -> None:
-    global _job
     try:
         job.phase = "running"
         if job.batch_dir is not None:
@@ -332,42 +435,7 @@ def _refresh_worker(job: _RefreshJob) -> None:
 
         for step in job.steps:
             job.current_step = step
-            targets = missing[step]
-            if step == "analysis":
-                job.step_total = len(targets)
-                job.step_done = 0
-                _log(job, f"analysis: {len(targets)} tracks missing")
-                for i in range(0, len(targets), ANALYSIS_CHUNK):
-                    chunk = targets[i : i + ANALYSIS_CHUNK]
-                    _run_cli(
-                        job,
-                        [sys.executable, "-m", "apps.analysis.run", "--workers", "2",
-                         "--files", *[f for _, f in chunk]],
-                    )
-                    job.step_done += len(chunk)
-                    for sid, _ in chunk:
-                        job.recently_done_ids.append(sid)
-            elif step == "stems":
-                job.step_total = min(len(targets), STEMS_TRICKLE_LIMIT)
-                job.step_done = 0
-                _log(job, f"stems: {len(targets)} missing; trickling {job.step_total}")
-                if job.step_total:
-                    _run_cli(
-                        job,
-                        [sys.executable, "-m", "apps.stems", "trickle", "--live",
-                         "--limit", str(STEMS_TRICKLE_LIMIT)],
-                    )
-                    job.step_done = job.step_total
-            elif step == "vocals":
-                job.step_total = len(targets)
-                job.step_done = 0
-                _log(job, f"vocals: {len(targets)} missing cache; from-stems backfill")
-                _run_cli(
-                    job, [sys.executable, "-m", "apps.vocals", "from-stems", "--live"]
-                )
-                job.step_done = job.step_total
-            else:  # pragma: no cover - registry and worker must agree
-                raise RuntimeError(f"unhandled step {step}")
+            _STEP_RUNNERS.get(step, _fail_unhandled_step_runner)(job, missing[step])
             job.steps_completed.append(step)
 
         job.phase = "done"
@@ -384,13 +452,12 @@ def _refresh_worker(job: _RefreshJob) -> None:
 class RefreshIn(BaseModel):
     # Optional scope: run only over freshly staged files in this dir (must
     # live under the ingest inbox). Absent = whole-library coverage sweep.
-    batch_dir: Optional[str] = None
+    batch_dir: str | None = None
 
 
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
-def start_refresh(body: Optional[RefreshIn] = None) -> RefreshStatusOut:
-    global _job
-    batch_dir: Optional[Path] = None
+def start_refresh(body: RefreshIn | None = None) -> RefreshStatusOut:
+    batch_dir: Path | None = None
     if body is not None and body.batch_dir is not None:
         batch_dir = Path(body.batch_dir).resolve()
         if not batch_dir.is_dir():
@@ -398,20 +465,24 @@ def start_refresh(body: Optional[RefreshIn] = None) -> RefreshStatusOut:
         if not batch_dir.is_relative_to(INGEST_INBOX.resolve()):
             raise HTTPException(422, f"batch_dir must live under {INGEST_INBOX}")
     with _job_lock:
-        if _job is not None and _job.phase in ("queued", "running"):
+        if _JOBS.current is not None and _JOBS.current.phase in ("queued", "running"):
             raise HTTPException(409, "a refresh job is already running")
         enabled = _load_enabled()
         steps = [s["id"] for s in STEPS if enabled[s["id"]]]
         if not steps:
             raise HTTPException(422, "no steps enabled in ingest config")
-        _job = _RefreshJob(started_at=time.time(), steps=steps, batch_dir=batch_dir)
-        threading.Thread(target=_refresh_worker, args=(_job,), daemon=True).start()
+        _JOBS.current = _RefreshJob(
+            started_at=time.time(), steps=steps, batch_dir=batch_dir
+        )
+        threading.Thread(
+            target=_refresh_worker, args=(_JOBS.current,), daemon=True
+        ).start()
     return refresh_status()
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)
 def refresh_status() -> RefreshStatusOut:
-    job = _job
+    job = _JOBS.current
     if job is None:
         return RefreshStatusOut(
             running=False, phase="idle", steps=[], current_step=None,
@@ -432,121 +503,3 @@ def refresh_status() -> RefreshStatusOut:
         log_tail=list(job.log)[-60:],
         recently_done_ids=list(job.recently_done_ids),
     )
-
-
-# ----- upload + duplicate check ---------------------------------------------
-class UploadFileResult(BaseModel):
-    filename: str
-    staged_path: Optional[str]
-    skipped_duplicate: bool
-    duplicate_of: Optional[dict]     # {stable_id, title, artist, method, score}
-    duration_s: Optional[float]
-    fingerprint_method: str          # "chromaprint" | "duration"
-
-
-class UploadOut(BaseModel):
-    batch: str
-    dest_dir: str
-    results: list[UploadFileResult]
-
-
-def _duration_s(path: Path) -> Optional[float]:
-    from apps.shared._mutagen import require as require_mutagen
-
-    require_mutagen()
-    import mutagen
-
-    mf = mutagen.File(path)
-    if mf is None or mf.info is None:
-        return None
-    return float(mf.info.length)
-
-
-def _dup_candidates(duration_s: float) -> list[tuple[str, str, str, str]]:
-    """(stable_id, title, artist, file_path) within duration tolerance."""
-    lo = int(duration_s * 1000) - DUP_DURATION_TOLERANCE_MS
-    hi = int(duration_s * 1000) + DUP_DURATION_TOLERANCE_MS
-    conn = open_ro()
-    try:
-        return conn.execute(
-            "SELECT stable_id, title, artists_json, file_path FROM tracks "
-            "WHERE duration_ms BETWEEN ? AND ? AND file_path IS NOT NULL",
-            (lo, hi),
-        ).fetchall()
-    finally:
-        conn.close()
-
-
-def _best_duplicate(staged: Path, duration_s: float) -> tuple[Optional[dict], str]:
-    """Best duplicate candidate and the method actually used."""
-    candidates = [
-        c for c in _dup_candidates(duration_s) if Path(c[3]).exists()
-    ][:DUP_MAX_FP_CANDIDATES]
-    if not candidates:
-        return None, "duration"
-    try:
-        new_fp = compute(staged)
-    except ChromaprintMissing:
-        # No fingerprint available: report the closest duration match but say
-        # so explicitly - the client decides, nothing silently passes as dup.
-        sid, title, artist, _ = candidates[0]
-        return (
-            {"stable_id": sid, "title": title, "artist": artist,
-             "method": "duration", "score": None},
-            "duration",
-        )
-    best: Optional[dict] = None
-    for sid, title, artist, fp_path in candidates:
-        score = compare(new_fp, compute(Path(fp_path)))
-        if best is None or score > best["score"]:
-            best = {"stable_id": sid, "title": title, "artist": artist,
-                    "method": "chromaprint", "score": round(score, 4)}
-    return best, "chromaprint"
-
-
-@router.post("/upload", response_model=UploadOut)
-async def upload(
-    files: list[UploadFile] = File(...),
-    batch: str = Form(...),
-    force: bool = Form(False),
-) -> UploadOut:
-    if not BATCH_RE.match(batch):
-        raise HTTPException(422, f"invalid batch name {batch!r} (need {BATCH_RE.pattern})")
-    dest_dir = INGEST_INBOX / batch
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    results: list[UploadFileResult] = []
-    for up in files:
-        name = Path(up.filename or "").name
-        if not name or Path(name).suffix.lower() not in AUDIO_EXTENSIONS:
-            raise HTTPException(422, f"not an audio file: {up.filename!r}")
-        tmp = dest_dir / (name + ".part")
-        with tmp.open("wb") as fh:
-            shutil.copyfileobj(up.file, fh)
-        if tmp.stat().st_size == 0:
-            tmp.unlink()
-            raise HTTPException(422, f"empty upload: {name}")
-
-        duration = _duration_s(tmp)
-        dup, method = (None, "duration")
-        if duration is not None:
-            dup, method = _best_duplicate(tmp, duration)
-        is_dup = (
-            dup is not None
-            and dup["method"] == "chromaprint"
-            and dup["score"] >= DUP_FP_THRESHOLD
-        )
-        if is_dup and not force:
-            tmp.unlink()
-            results.append(UploadFileResult(
-                filename=name, staged_path=None, skipped_duplicate=True,
-                duplicate_of=dup, duration_s=duration, fingerprint_method=method,
-            ))
-            continue
-        final = dest_dir / name
-        tmp.rename(final)
-        results.append(UploadFileResult(
-            filename=name, staged_path=str(final), skipped_duplicate=False,
-            duplicate_of=dup, duration_s=duration, fingerprint_method=method,
-        ))
-    return UploadOut(batch=batch, dest_dir=str(dest_dir), results=results)

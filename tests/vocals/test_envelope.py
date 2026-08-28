@@ -155,7 +155,10 @@ def test_envelope_never_lands_in_the_cache_entry(tmp_path: Path) -> None:
     """if the envelope lands in the entry then every listing row pays for it"""
     from apps.vocals import cache as vcache
     from scripts.modal_vocal_farm import (
-        GapTrack, PRESETS, _signature_of, _write_result,
+        PRESETS,
+        GapTrack,
+        _signature_of,
+        _write_result,
     )
 
     audio = tmp_path / "track.mp3"

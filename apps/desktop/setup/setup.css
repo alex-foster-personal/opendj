@@ -1,0 +1,164 @@
+/* Open DJ shell bootstrap styling.
+ *
+ * Self-contained on purpose: no webfonts, no CDN, no imports. This page
+ * has to render correctly on a machine where nothing else works yet.
+ */
+
+:root {
+	--bg: #14151a;
+	--panel: #1c1e26;
+	--ink: #e9eaef;
+	--ink-dim: #a4a8b6;
+	--rule: #2e313d;
+	--accent: #f26b21;
+	--code-bg: #0f1015;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	padding: 3rem 1.5rem;
+	background: var(--bg);
+	color: var(--ink);
+	font: 15px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+main {
+	max-width: 46rem;
+	margin: 0 auto;
+}
+
+h1 {
+	margin: 0 0 0.5rem;
+	font-size: 1.6rem;
+	letter-spacing: -0.01em;
+}
+
+h2 {
+	margin: 2rem 0 0.6rem;
+	font-size: 1rem;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--ink-dim);
+}
+
+.lede {
+	margin: 0 0 1.5rem;
+	color: var(--ink-dim);
+	font-size: 1.05rem;
+}
+
+p {
+	margin: 0 0 0.9rem;
+}
+
+.note {
+	color: var(--ink-dim);
+	border-left: 2px solid var(--accent);
+	padding-left: 0.8rem;
+}
+
+code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.88em;
+	background: var(--code-bg);
+	border: 1px solid var(--rule);
+	border-radius: 4px;
+	padding: 0.1em 0.35em;
+}
+
+pre {
+	margin: 0.6rem 0;
+	overflow-x: auto;
+}
+
+pre code {
+	display: block;
+	padding: 0.8rem 1rem;
+	white-space: pre;
+	line-height: 1.5;
+}
+
+.facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 0.4rem 1.2rem;
+	margin: 0 0 1.5rem;
+	padding: 1rem 1.2rem;
+	background: var(--panel);
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+}
+
+.facts dt {
+	color: var(--ink-dim);
+	font-size: 0.85rem;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.facts dd {
+	margin: 0;
+	word-break: break-all;
+}
+
+.steps {
+	margin: 0;
+	padding-left: 1.3rem;
+}
+
+.steps li {
+	margin-bottom: 0.8rem;
+}
+
+.actions {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	margin: 1.8rem 0 0;
+}
+
+button {
+	font: inherit;
+	font-weight: 600;
+	color: #14151a;
+	background: var(--accent);
+	border: 0;
+	border-radius: 6px;
+	padding: 0.55rem 1.2rem;
+	cursor: pointer;
+}
+
+button:hover {
+	filter: brightness(1.1);
+}
+
+.countdown {
+	color: var(--ink-dim);
+	font-size: 0.9rem;
+}
+
+.probe-explainer {
+	margin-top: 2rem;
+	padding-top: 1.2rem;
+	border-top: 1px solid var(--rule);
+	color: var(--ink-dim);
+	font-size: 0.9rem;
+}
+
+.probe-explainer summary {
+	cursor: pointer;
+	color: var(--ink);
+}
+
+.probe-explainer p {
+	margin-top: 0.8rem;
+}
+
+[hidden] {
+	display: none !important;
+}

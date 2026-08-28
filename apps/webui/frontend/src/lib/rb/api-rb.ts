@@ -300,6 +300,8 @@ export interface PlaylistTrackRowWire {
 	preview_max: number | null;
 	file_exists: boolean;
 	is_streaming: boolean;
+	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
+	spotify_pending?: boolean;
 	quality: TrackQuality;
 	play_count: number;
 	/** Same four-status vocals as /anlz - drives PreviewStrip blue bars. */

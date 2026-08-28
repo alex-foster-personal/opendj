@@ -36,7 +36,14 @@
 	// Five explicit UI states, none invented: idle (no deck-1 track),
 	// loading, insufficient-data (names the missing fields), error, and
 	// loaded (candidate chips OR an explicit "no compatible tracks" empty).
-	import { RB_API_BASE } from '$lib/rb/api-rb';
+	//
+	// CONVERTED onto the generated OpenAPI client (src/lib/api/client.ts),
+	// in place per the conversion pattern: transport only, the wire
+	// interfaces, StripState machine and the $effect/requestSeq guard are
+	// untouched. The copilot router answers errors as TOP-LEVEL
+	// {error, message, ...} bodies (ErrorBody, not the detail envelope),
+	// so the mapping below reads them off ApiError.body.
+	import { ApiError, api, unwrap } from '$lib/api/client';
 
 	interface SuggestionWire {
 		stable_id: string;
@@ -132,26 +139,28 @@
 
 	async function _fetchSuggestions(sid: string, session: string[]): Promise<StripState> {
 		try {
-			const r = await fetch(`${RB_API_BASE}/api/v1/copilot/suggest-next`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-				body: JSON.stringify({ stable_id: sid, session_ids: session, top_n: topN })
-			});
-			if (r.status === 422) {
-				const body = (await r.json()) as InsufficientWire;
-				const missing = Object.entries(body.details?.missing ?? {})
+			// explain: false is the server default the old raw fetch relied on;
+			// the generated SuggestNextIn requires the field, so it is explicit.
+			const data = await unwrap(
+				api.POST('/api/v1/copilot/suggest-next', {
+					body: { stable_id: sid, session_ids: session, top_n: topN, explain: false }
+				})
+			);
+			return { kind: 'loaded', data: data as unknown as SuggestNextWire };
+		} catch (e) {
+			if (e instanceof ApiError && e.status === 422) {
+				const body = e.body as InsufficientWire | null;
+				const missing = Object.entries(body?.details?.missing ?? {})
 					.filter(([, ids]) => ids.length > 0)
 					.map(([fieldName]) => fieldName);
-				return { kind: 'insufficient', missing, message: body.message };
-			} else if (!r.ok) {
-				const body = (await r.json()) as { error?: string; message?: string };
+				return { kind: 'insufficient', missing, message: body?.message ?? e.message };
+			} else if (e instanceof ApiError) {
+				const body = e.body as { error?: string; message?: string } | null;
 				return {
 					kind: 'error',
-					message: `${body.error ?? `HTTP_${r.status}`}: ${body.message ?? r.statusText}`
+					message: `${body?.error ?? `HTTP_${e.status}`}: ${body?.message ?? e.message}`
 				};
 			}
-			return { kind: 'loaded', data: (await r.json()) as SuggestNextWire };
-		} catch (e) {
 			return { kind: 'error', message: e instanceof Error ? e.message : String(e) };
 		}
 	}

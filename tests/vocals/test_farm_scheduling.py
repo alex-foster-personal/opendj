@@ -193,16 +193,27 @@ def test_default_preset_model_is_baked() -> None:
     assert PRESETS[DEFAULT_PRESET].model in BAKED_MODELS
 
 
-def test_unbaked_model_is_refused_without_the_flag() -> None:
+def test_unbaked_model_is_refused_without_the_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """if an unbaked model runs unflagged then cold downloads are paid silently"""
-    from scripts.modal_vocal_farm import _resolve_preset
+    from scripts import modal_vocal_farm as farm
+
+    # Exercised against a bake list with the model removed, NOT against whichever
+    # preset happens to be unbaked today. Naming one is what rotted this test:
+    # it pinned "htdemucs_ft-ov0.25", dfde3eb3 baked htdemucs_ft, the guard then
+    # correctly stopped firing, and the assertion quietly became untrue. Nothing
+    # noticed because the module needs `modal` and CI never collected the file.
+    tag = "htdemucs_ft-ov0.25"
+    model = farm.PRESETS[tag].model
+    monkeypatch.setattr(
+        farm, "BAKED_MODELS", tuple(m for m in farm.BAKED_MODELS if m != model)
+    )
 
     with pytest.raises(SystemExit, match="not baked into the image"):
-        _resolve_preset("htdemucs_ft-ov0.25", allow_unbaked=False)
+        farm._resolve_preset(tag, allow_unbaked=False)
     # ...and is still reachable when the caller accepts the cost.
-    assert _resolve_preset("htdemucs_ft-ov0.25", allow_unbaked=True).model == (
-        "htdemucs_ft"
-    )
+    assert farm._resolve_preset(tag, allow_unbaked=True).model == model
 
 
 def test_every_baked_model_has_a_preset() -> None:
@@ -211,6 +222,17 @@ def test_every_baked_model_has_a_preset() -> None:
 
     have = {preset.model for preset in PRESETS.values()}
     assert set(BAKED_MODELS) <= have
+
+
+# NOTE: an earlier revision added test_every_preset_model_is_baked here, pinning
+# {preset models} == set(BAKED_MODELS). It was removed on review. Combined with
+# test_every_baked_model_has_a_preset it outlawed the very design --allow-unbaked-model
+# exists to serve: before dfde3eb3, scripts/modal_vocal_farm.py deliberately shipped
+# htdemucs_ft presets with htdemucs_ft UNBAKED ("htdemucs_ft is deliberately absent"),
+# gated behind that flag. The invariant would have been RED before dfde3eb3 and turned
+# GREEN by it -- the opposite of the drift-detection it was claimed to provide -- and
+# would have made the flag permanently unreachable in production. Whether to retire
+# --allow-unbaked-model is a design decision, not a side effect of a test repair.
 
 
 def test_old_rungs_stay_selectable() -> None:
@@ -225,7 +247,9 @@ def test_old_rungs_stay_selectable() -> None:
 def test_preset_stamp_records_the_model_that_actually_ran() -> None:
     """if the stamp does not name the real model then selective re-runs are blind"""
     from scripts.modal_vocal_farm import (
-        DEFAULT_PRESET, PRESETS, region_params,
+        DEFAULT_PRESET,
+        PRESETS,
+        region_params,
     )
 
     preset = PRESETS[DEFAULT_PRESET]

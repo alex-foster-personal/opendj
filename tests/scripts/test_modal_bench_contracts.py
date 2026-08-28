@@ -66,7 +66,7 @@ def _module_constants(path: Path) -> dict[str, object]:
         if not all(isinstance(sub, _SAFE_NODES) for sub in ast.walk(value)):
             continue
         try:
-            evaluated = eval(  # noqa: S307 -- gated to _SAFE_NODES above
+            evaluated = eval(
                 compile(ast.Expression(body=value), str(path), "eval"),
                 {"__builtins__": {}},
                 dict(out),

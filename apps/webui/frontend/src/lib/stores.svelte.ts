@@ -2,6 +2,7 @@
  * Uses Svelte 5 runes so components can `$derive` and re-render cheaply.
  */
 import { getHealth, type HealthOut } from './api';
+import { reportClientError } from './client-error-reporting';
 
 export type Toast = { id: number; message: string; kind: 'info' | 'error' };
 
@@ -14,7 +15,8 @@ export const TOAST_DEFAULT_MS = 5000;
 export function pushToast(
 	message: string,
 	kind: 'info' | 'error' = 'info',
-	dismissMs: number = TOAST_DEFAULT_MS
+	dismissMs: number = TOAST_DEFAULT_MS,
+	cause?: unknown
 ): void {
 	if (!Number.isFinite(dismissMs) || dismissMs <= 0) {
 		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
@@ -26,6 +28,9 @@ export function pushToast(
 	// actually due to expire.
 	const id = ++_toastSeq;
 	toasts.push({ id, message, kind });
+	if (kind === 'error') {
+		reportClientError(cause ?? new Error(message), { source: 'toast', toast_id: id });
+	}
 	setTimeout(() => {
 		const i = toasts.findIndex((t) => t.id === id);
 		if (i >= 0) toasts.splice(i, 1);

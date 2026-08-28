@@ -1,13 +1,24 @@
 """Shared-state writes for Phase 9 Spotify imports.
 
 Phase 5 state layer has ``playlists(vendor, vendor_pl_id, ...)``
-already. Phase 9 adds two additive tables (created IF NOT EXISTS at
+already. Phase 9 adds additive tables (created IF NOT EXISTS at
 first call) for concepts Phase 5 doesn't own:
 
 * ``spotify_playlist_meta`` -- per-playlist snapshot_id for idempotent
   re-imports.
 * ``pending_tracks`` -- one row per unmatched Spotify track, with
   suggested purchase sources (acquisition queue).
+* ``spotify_playlist_links`` -- durable ODJ (webui) playlist ↔ Spotify
+  playlist link. Unlinked imports create a same-name ODJ twin.
+
+Live writes also:
+
+* set ``track_vendor_ids`` (vendor=spotify) for matched local tracks so
+  re-imports do not duplicate identity;
+* upsert synthetic ``tracks`` rows for unmatched Spotify tracks
+  (``file_path = spotify:track:...``) and put them on both the Spotify
+  vendor playlist and the linked ODJ twin so the browser can render
+  lightly-green pending rows inline.
 
 Every live write:
     1. backup the state DB via the SQLite ``.backup`` API.
@@ -20,8 +31,10 @@ importer emits artifacts only. See CONTEXT D6.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +43,7 @@ from urllib.parse import quote_plus
 
 from apps.shared.state import db as state_db
 from apps.shared.state import paths as state_paths
-from apps.shared.state.writer import next_playlist_revision
+from apps.shared.state.writer import compute_playlist_id, next_playlist_revision
 
 from .client import SpotifyPlaylist, SpotifyTrack
 from .matcher_adapter import MatchResult
@@ -39,19 +52,26 @@ __all__ = [
     "AUX_MIGRATIONS",
     "WriteSummary",
     "PendingRow",
+    "PlaylistLink",
     "ensure_aux_tables",
     "backup_state_db",
     "emit_reversal_script",
     "write_playlist_and_pending",
     "already_imported_snapshot",
     "fetch_pending_tracks",
+    "fetch_playlist_link",
+    "link_odj_playlist",
+    "ensure_odj_link",
+    "synthetic_stable_id",
     "mark_pending_abandoned",
     "open_state_rw_with_aux",
     "SUGGESTED_SOURCE_KEYS",
     "VENDOR",
+    "ODJ_VENDOR",
 ]
 
-
+VENDOR: str = "spotify"
+ODJ_VENDOR: str = "webui"
 VENDOR: str = "spotify"
 
 
@@ -105,12 +125,31 @@ _AUX_IDX_PENDING_STATUS = (
     "ON pending_tracks(status)"
 )
 
+_AUX_DDL_PLAYLIST_LINKS = """
+CREATE TABLE IF NOT EXISTS spotify_playlist_links (
+    vendor_pl_id          TEXT PRIMARY KEY,
+    spotify_playlist_id   TEXT NOT NULL REFERENCES playlists(playlist_id)
+                            ON DELETE CASCADE,
+    odj_playlist_id       TEXT NOT NULL REFERENCES playlists(playlist_id)
+                            ON DELETE CASCADE,
+    created_at            TEXT NOT NULL,
+    updated_at            TEXT NOT NULL
+)
+"""
+
+_AUX_IDX_PLAYLIST_LINKS_ODJ = (
+    "CREATE INDEX IF NOT EXISTS idx_spotify_playlist_links_odj "
+    "ON spotify_playlist_links(odj_playlist_id)"
+)
+
 AUX_MIGRATIONS: tuple[str, ...] = (
     _AUX_DDL_PLAYLIST_META,
     _AUX_DDL_PENDING,
     _AUX_IDX_PENDING_PLAYLIST,
     _AUX_IDX_PENDING_ISRC,
     _AUX_IDX_PENDING_STATUS,
+    _AUX_DDL_PLAYLIST_LINKS,
+    _AUX_IDX_PLAYLIST_LINKS_ODJ,
 )
 
 
@@ -139,6 +178,19 @@ class WriteSummary:
     matched_written: int
     pending_written: int
     skipped_existing_snapshot: bool = False
+    odj_playlist_id: str | None = None
+    odj_created: bool = False
+    vendor_ids_set: int = 0
+    synthetic_tracks_written: int = 0
+
+
+@dataclass(frozen=True)
+class PlaylistLink:
+    vendor_pl_id: str
+    spotify_playlist_id: str
+    odj_playlist_id: str
+    created_at: str
+    updated_at: str
 
 
 def backup_state_db(
@@ -221,6 +273,26 @@ def _state_playlist_id(vendor_pl_id: str) -> str:
     return f"spotify:{vendor_pl_id}"
 
 
+def synthetic_stable_id(spotify_uri: str) -> str:
+    """Stable id for an unmatched Spotify track (no local file yet).
+
+    Deterministic so re-imports reuse the same row and membership instead of
+    spawning duplicates. Prefix keeps these easy to grep in the DB.
+    """
+    digest = hashlib.sha1(spotify_uri.encode("utf-8")).hexdigest()
+    return f"spotify-pending:{digest}"
+
+
+def _spotify_vendor_track_id(src: SpotifyTrack) -> str | None:
+    """Canonical vendor id for track_vendor_ids (bare Spotify track id)."""
+    if src.spotify_id:
+        return src.spotify_id
+    uri = src.spotify_uri or ""
+    if uri.startswith("spotify:track:"):
+        return uri.split(":", 2)[2] or None
+    return None
+
+
 def already_imported_snapshot(
     conn: sqlite3.Connection,
     vendor_pl_id: str,
@@ -232,6 +304,206 @@ def already_imported_snapshot(
         (vendor_pl_id,),
     ).fetchone()
     return row[0] if row else None
+
+
+def fetch_playlist_link(
+    conn: sqlite3.Connection,
+    vendor_pl_id: str,
+) -> PlaylistLink | None:
+    """Return the ODJ↔Spotify link for ``vendor_pl_id``, or None."""
+    ensure_aux_tables(conn)
+    row = conn.execute(
+        "SELECT vendor_pl_id, spotify_playlist_id, odj_playlist_id, "
+        "created_at, updated_at FROM spotify_playlist_links "
+        "WHERE vendor_pl_id = ?",
+        (vendor_pl_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return PlaylistLink(*row)
+
+
+def link_odj_playlist(
+    conn: sqlite3.Connection,
+    *,
+    vendor_pl_id: str,
+    spotify_playlist_id: str,
+    odj_playlist_id: str,
+    now: str | None = None,
+) -> PlaylistLink:
+    """Register / refresh an ODJ playlist link for a Spotify playlist."""
+    ensure_aux_tables(conn)
+    ts = now or datetime.now(timezone.utc).isoformat()
+    existing = fetch_playlist_link(conn, vendor_pl_id)
+    if existing is not None and existing.odj_playlist_id == odj_playlist_id:
+        conn.execute(
+            "UPDATE spotify_playlist_links SET updated_at = ?, "
+            "spotify_playlist_id = ? WHERE vendor_pl_id = ?",
+            (ts, spotify_playlist_id, vendor_pl_id),
+        )
+        return PlaylistLink(
+            vendor_pl_id=vendor_pl_id,
+            spotify_playlist_id=spotify_playlist_id,
+            odj_playlist_id=odj_playlist_id,
+            created_at=existing.created_at,
+            updated_at=ts,
+        )
+    conn.execute(
+        """
+        INSERT INTO spotify_playlist_links
+          (vendor_pl_id, spotify_playlist_id, odj_playlist_id,
+           created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(vendor_pl_id) DO UPDATE SET
+          spotify_playlist_id = excluded.spotify_playlist_id,
+          odj_playlist_id = excluded.odj_playlist_id,
+          updated_at = excluded.updated_at
+        """,
+        (vendor_pl_id, spotify_playlist_id, odj_playlist_id, ts, ts),
+    )
+    return PlaylistLink(
+        vendor_pl_id=vendor_pl_id,
+        spotify_playlist_id=spotify_playlist_id,
+        odj_playlist_id=odj_playlist_id,
+        created_at=ts if existing is None else existing.created_at,
+        updated_at=ts,
+    )
+
+
+def ensure_odj_link(
+    conn: sqlite3.Connection,
+    *,
+    vendor_pl_id: str,
+    spotify_playlist_id: str,
+    playlist_name: str,
+    now: str | None = None,
+) -> tuple[PlaylistLink, bool]:
+    """Return existing ODJ link, or create a same-name webui playlist + link.
+
+    Returns ``(link, created)`` where ``created`` is True only when a new
+    ODJ playlist row was inserted.
+    """
+    ensure_aux_tables(conn)
+    ts = now or datetime.now(timezone.utc).isoformat()
+    existing = fetch_playlist_link(conn, vendor_pl_id)
+    if existing is not None:
+        # Confirm the ODJ playlist still exists; recreate if deleted.
+        still = conn.execute(
+            "SELECT 1 FROM playlists WHERE playlist_id = ?",
+            (existing.odj_playlist_id,),
+        ).fetchone()
+        if still is not None:
+            refreshed = link_odj_playlist(
+                conn,
+                vendor_pl_id=vendor_pl_id,
+                spotify_playlist_id=spotify_playlist_id,
+                odj_playlist_id=existing.odj_playlist_id,
+                now=ts,
+            )
+            return refreshed, False
+
+    vendor_pl_uuid = uuid.uuid4().hex
+    odj_id = compute_playlist_id(ODJ_VENDOR, vendor_pl_uuid)
+    name = (playlist_name or "").strip() or f"Spotify {vendor_pl_id}"
+    revision = next_playlist_revision(conn, odj_id, ts)
+    conn.execute(
+        """
+        INSERT INTO playlists
+          (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (odj_id, name, ODJ_VENDOR, vendor_pl_uuid, ts, revision),
+    )
+    link = link_odj_playlist(
+        conn,
+        vendor_pl_id=vendor_pl_id,
+        spotify_playlist_id=spotify_playlist_id,
+        odj_playlist_id=odj_id,
+        now=ts,
+    )
+    return link, True
+
+
+def _upsert_synthetic_track(
+    conn: sqlite3.Connection,
+    src: SpotifyTrack,
+    *,
+    now: str,
+) -> str:
+    """Insert/update a placeholder track row for an unmatched Spotify track.
+
+    ``file_path`` is the Spotify URI so ``is_streaming_path`` marks the row
+    streaming (not broken-missing) in the browser.
+    """
+    sid = synthetic_stable_id(src.spotify_uri)
+    artists_json = json.dumps(
+        list(src.artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
+    )
+    tier = "isrc" if src.isrc else "inferred"
+    file_path = src.spotify_uri or f"spotify:track:{src.spotify_id or sid}"
+    existing = conn.execute(
+        "SELECT stable_id FROM tracks WHERE stable_id = ?", (sid,)
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO tracks
+              (stable_id, stable_id_tier, title, artists_json, album, isrc,
+               duration_ms, file_path, content_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            """,
+            (
+                sid,
+                tier,
+                src.title,
+                artists_json,
+                src.album or None,
+                src.isrc,
+                src.duration_ms or None,
+                file_path,
+                now,
+                now,
+            ),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?,
+              album=?, isrc=?, duration_ms=?, file_path=?, updated_at=?
+            WHERE stable_id=?
+            """,
+            (
+                tier,
+                src.title,
+                artists_json,
+                src.album or None,
+                src.isrc,
+                src.duration_ms or None,
+                file_path,
+                now,
+                sid,
+            ),
+        )
+    vendor_id = _spotify_vendor_track_id(src)
+    if vendor_id:
+        conn.execute(
+            "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
+            "VALUES (?, ?, ?)",
+            (sid, VENDOR, vendor_id),
+        )
+    return sid
+
+
+def _set_track_vendor_id(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    vendor_id: str,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO track_vendor_ids(stable_id, vendor, vendor_id) "
+        "VALUES (?, ?, ?)",
+        (stable_id, VENDOR, vendor_id),
+    )
 
 
 _SUGGESTED_SOURCES_TEMPLATE: tuple[tuple[str, str], ...] = (
@@ -260,18 +532,30 @@ def write_playlist_and_pending(
     backup_path: Path,
     reversal_script_path: Path,
     force: bool = False,
+    link_odj: bool = True,
 ) -> WriteSummary:
-    """Insert / refresh playlist + memberships + pending rows.
+    """Insert / refresh playlist + memberships + pending + ODJ twin.
 
     All writes happen inside one transaction. Caller must have taken
     the backup + written the reversal script BEFORE calling (so a
     mid-commit crash is still recoverable) and must pass those paths
     in as ``backup_path`` / ``reversal_script_path`` so the returned
     :class:`WriteSummary` is self-consistent and free of sentinels.
+
+    When ``link_odj`` is True (default), an unlinked Spotify playlist
+    gets a same-name ``webui`` ODJ twin and a ``spotify_playlist_links``
+    row; memberships (matched + synthetic pending) are mirrored onto the
+    ODJ playlist so the main browser shows green unmatched rows.
     """
     ensure_aux_tables(conn)
 
     playlist_id = _state_playlist_id(playlist.id)
+    matched_rows: list[tuple[str, str, int]] = []
+    pending_rows: list[tuple] = []
+    odj_playlist_id: str | None = None
+    odj_created = False
+    vendor_ids_set = 0
+    synthetic_tracks_written = 0
 
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -280,6 +564,7 @@ def write_playlist_and_pending(
         # both observe the old snapshot and each rewrite the same playlist.
         prior_snapshot = already_imported_snapshot(conn, playlist.id)
         if prior_snapshot == playlist.snapshot_id and not force:
+            existing_link = fetch_playlist_link(conn, playlist.id)
             conn.execute("COMMIT")
             return WriteSummary(
                 playlist_id=playlist_id,
@@ -290,6 +575,9 @@ def write_playlist_and_pending(
                 matched_written=0,
                 pending_written=0,
                 skipped_existing_snapshot=True,
+                odj_playlist_id=(
+                    existing_link.odj_playlist_id if existing_link else None
+                ),
             )
 
         now = datetime.now(timezone.utc).isoformat()
@@ -306,46 +594,53 @@ def write_playlist_and_pending(
             (playlist_id, playlist.name, VENDOR, playlist.id, now, revision),
         )
 
+        # Build membership in Spotify order: matched local OR synthetic pending.
+        membership: list[tuple[str, str, int]] = []
+        for idx, pair in enumerate(result.pairs):
+            if pair.status == "matched" and pair.target is not None:
+                sid = pair.target.stable_id
+                membership.append((playlist_id, sid, idx))
+                matched_rows.append((playlist_id, sid, idx))
+                vendor_id = _spotify_vendor_track_id(pair.source)
+                if vendor_id:
+                    _set_track_vendor_id(conn, sid, vendor_id)
+                    vendor_ids_set += 1
+            else:
+                src = pair.source
+                sid = _upsert_synthetic_track(conn, src, now=now)
+                synthetic_tracks_written += 1
+                membership.append((playlist_id, sid, idx))
+                pending_rows.append(
+                    (
+                        playlist_id,
+                        idx,
+                        src.spotify_uri,
+                        src.isrc,
+                        src.title,
+                        src.artists_joined,
+                        src.album,
+                        src.duration_ms,
+                        json.dumps(_suggested_sources(src), ensure_ascii=False),
+                        "pending",
+                        now,
+                    )
+                )
+
         conn.execute(
             "DELETE FROM playlist_memberships WHERE playlist_id = ?",
             (playlist_id,),
         )
-        matched_rows = [
-            (playlist_id, pair.target.stable_id, idx)
-            for idx, pair in enumerate(result.pairs)
-            if pair.status == "matched" and pair.target is not None
-        ]
-        if matched_rows:
+        if membership:
             conn.executemany(
                 "INSERT INTO playlist_memberships (playlist_id, stable_id, position)"
                 " VALUES (?, ?, ?)",
-                matched_rows,
+                membership,
             )
 
         conn.execute(
             "DELETE FROM pending_tracks WHERE playlist_id = ? AND status = 'pending'",
             (playlist_id,),
         )
-        pending_rows = []
-        for idx, pair in enumerate(result.pairs):
-            if pair.status == "matched":
-                continue
-            src = pair.source
-            pending_rows.append(
-                (
-                    playlist_id,
-                    idx,
-                    src.spotify_uri,
-                    src.isrc,
-                    src.title,
-                    src.artists_joined,
-                    src.album,
-                    src.duration_ms,
-                    json.dumps(_suggested_sources(src), ensure_ascii=False),
-                    "pending",
-                    now,
-                )
-            )
         if pending_rows:
             conn.executemany(
                 """
@@ -381,6 +676,35 @@ def write_playlist_and_pending(
             ),
         )
 
+        if link_odj:
+            link, odj_created = ensure_odj_link(
+                conn,
+                vendor_pl_id=playlist.id,
+                spotify_playlist_id=playlist_id,
+                playlist_name=playlist.name,
+                now=now,
+            )
+            odj_playlist_id = link.odj_playlist_id
+            # Mirror full membership onto the ODJ twin (matched + pending).
+            odj_membership = [
+                (odj_playlist_id, sid, pos) for (_pl, sid, pos) in membership
+            ]
+            conn.execute(
+                "DELETE FROM playlist_memberships WHERE playlist_id = ?",
+                (odj_playlist_id,),
+            )
+            if odj_membership:
+                conn.executemany(
+                    "INSERT INTO playlist_memberships "
+                    "(playlist_id, stable_id, position) VALUES (?, ?, ?)",
+                    odj_membership,
+                )
+            odj_revision = next_playlist_revision(conn, odj_playlist_id, now)
+            conn.execute(
+                "UPDATE playlists SET name = ?, updated_at = ? WHERE playlist_id = ?",
+                (playlist.name, odj_revision, odj_playlist_id),
+            )
+
         conn.execute(
             """
             INSERT INTO adapters (adapter_id, last_run_at, last_ok, notes)
@@ -411,6 +735,10 @@ def write_playlist_and_pending(
         matched_written=len(matched_rows),
         pending_written=len(pending_rows),
         skipped_existing_snapshot=False,
+        odj_playlist_id=odj_playlist_id,
+        odj_created=odj_created,
+        vendor_ids_set=vendor_ids_set,
+        synthetic_tracks_written=synthetic_tracks_written,
     )
 
 

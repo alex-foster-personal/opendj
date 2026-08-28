@@ -6,7 +6,6 @@ import pytest
 
 from apps.voice import wake
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 

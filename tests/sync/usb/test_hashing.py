@@ -68,8 +68,9 @@ class TestHashCacheConnLeak:
 
     def test_conn_closed_when_ensure_schema_raises(self, tmp_path) -> None:
         """if HashCache.__init__ _ensure_schema raises then conn is leaked - broken"""
-        import apps.shared.hashing as hashing_mod
         from unittest.mock import patch
+
+        import apps.shared.hashing as hashing_mod
 
         cache_db = tmp_path / "cache.sqlite"
         spy: _SpyConnection | None = None

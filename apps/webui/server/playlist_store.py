@@ -142,7 +142,7 @@ class PlaylistStore:
     def __enter__(self) -> "PlaylistStore":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+    def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
     # --- internal helpers -------------------------------------------------

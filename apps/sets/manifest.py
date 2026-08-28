@@ -6,7 +6,7 @@ Written by :mod:`apps.sets.record` at stop-time; consumed by
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any

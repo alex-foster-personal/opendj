@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from apps.voice import confirm, tts as tts_mod
-
+from apps.voice import confirm
+from apps.voice import tts as tts_mod
 
 pytestmark = pytest.mark.requirement("VOICE-01")
 

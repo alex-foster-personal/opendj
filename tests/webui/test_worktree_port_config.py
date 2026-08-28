@@ -200,3 +200,31 @@ def test_unclaimed_or_foreign_pair_fails_before_binding(tmp_path: Path) -> None:
             common_dir=common_dir,
             environ={},
         )
+
+
+def test_repeat_claim_leaves_dotenv_untouched(tmp_path: Path) -> None:
+    """If a claim changes nothing then .env must not be rewritten.
+
+    vite watches the root .env and re-runs claim on every config load, so an
+    unconditional rewrite feeds vite its own change event and wedges the dev
+    server in a restart loop (hit live Sun 17 Aug 2026: boot 200, then 504
+    forever with "frontend port ... already in use" against itself).
+    """
+    repo_root = tmp_path / "repo-a"
+    common_dir = tmp_path / "common"
+    repo_root.mkdir()
+    common_dir.mkdir()
+    backend = _free_port()
+    frontend = _free_port()
+    _write_env(repo_root, backend, frontend)
+
+    claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+    dotenv = repo_root / ".env"
+    first_text = dotenv.read_text(encoding="utf-8")
+    first_stat = dotenv.stat()
+
+    claim_ports(repo_root=repo_root, common_dir=common_dir, environ={})
+
+    assert dotenv.read_text(encoding="utf-8") == first_text
+    assert dotenv.stat().st_mtime_ns == first_stat.st_mtime_ns
+    assert dotenv.stat().st_ino == first_stat.st_ino

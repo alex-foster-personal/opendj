@@ -24,7 +24,13 @@ from .matcher_adapter import (
     load_local_tracks,
     match_spotify_tracks,
 )
-from .state_writer import PendingRow, ensure_aux_tables, fetch_pending_tracks
+from .state_writer import (
+    PendingRow,
+    ensure_aux_tables,
+    fetch_pending_tracks,
+    fetch_playlist_link,
+    synthetic_stable_id,
+)
 
 __all__ = ["RematchOutcome", "rematch_playlist"]
 
@@ -89,7 +95,8 @@ def rematch_playlist(
 
     resolved_pairs: list[tuple[PendingRow, MatchedPair, LocalTrack]] = []
     still: list[PendingRow] = []
-    for pending, pair in zip(pendings, result.pairs):
+    # strict: match_spotify_tracks returns one pair per synthetic source.
+    for pending, pair in zip(pendings, result.pairs, strict=True):
         if pair.status == "matched" and pair.target is not None:
             resolved_pairs.append((pending, pair, pair.target))
         else:
@@ -103,16 +110,47 @@ def rematch_playlist(
 
     with immediate_transaction(conn):
         now = datetime.now(timezone.utc).isoformat()
+        # Linked ODJ twin (if any) must swap the same positions.
+        vendor_pl_id = (
+            playlist_id.split(":", 1)[1]
+            if playlist_id.startswith("spotify:")
+            else playlist_id
+        )
+        link = fetch_playlist_link(conn, vendor_pl_id)
+        odj_id = link.odj_playlist_id if link is not None else None
+
         for pending, _pair, target in resolved_pairs:
-            conn.execute(
-                """
-                INSERT INTO playlist_memberships
-                  (playlist_id, stable_id, position)
-                VALUES (?, ?, ?)
-                ON CONFLICT DO NOTHING
-                """,
-                (playlist_id, target.stable_id, pending.position),
-            )
+            synth_sid = synthetic_stable_id(pending.spotify_uri)
+            # Drop the synthetic placeholder at this position (Spotify + ODJ).
+            for pl_id in (playlist_id, odj_id):
+                if pl_id is None:
+                    continue
+                conn.execute(
+                    "DELETE FROM playlist_memberships "
+                    "WHERE playlist_id = ? AND stable_id = ? AND position = ?",
+                    (pl_id, synth_sid, pending.position),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO playlist_memberships
+                      (playlist_id, stable_id, position)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(playlist_id, position) DO UPDATE SET
+                      stable_id = excluded.stable_id
+                    """,
+                    (pl_id, target.stable_id, pending.position),
+                )
+            # Link local track -> Spotify id for future de-dup.
+            vendor_track = None
+            uri = pending.spotify_uri or ""
+            if uri.startswith("spotify:track:"):
+                vendor_track = uri.split(":", 2)[2] or None
+            if vendor_track:
+                conn.execute(
+                    "INSERT OR REPLACE INTO track_vendor_ids"
+                    "(stable_id, vendor, vendor_id) VALUES (?, 'spotify', ?)",
+                    (target.stable_id, vendor_track),
+                )
             conn.execute(
                 """
                 UPDATE pending_tracks
@@ -123,13 +161,16 @@ def rematch_playlist(
                 """,
                 (target.stable_id, now, pending.pending_id),
             )
-        revision = next_playlist_revision(conn, playlist_id, now)
-        updated = conn.execute(
-            "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
-            (revision, playlist_id),
-        )
-        if updated.rowcount != 1:
-            raise RuntimeError(f"playlist not found during rematch: {playlist_id}")
+        for pl_id in (playlist_id, odj_id):
+            if pl_id is None:
+                continue
+            revision = next_playlist_revision(conn, pl_id, now)
+            updated = conn.execute(
+                "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
+                (revision, pl_id),
+            )
+            if pl_id == playlist_id and updated.rowcount != 1:
+                raise RuntimeError(f"playlist not found during rematch: {playlist_id}")
 
     return outcome
 

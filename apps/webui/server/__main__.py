@@ -19,11 +19,13 @@ from pathlib import Path
 from apps.webui.port_config import (
     BACKEND_ENV,
     FRONTEND_ENV,
-    WEBUI_ENV_FILE as DEFAULT_WEBUI_ENV_FILE,
     PortConfigError,
     check_reservation,
     claim_ports,
     resolve_backend_port,
+)
+from apps.webui.port_config import (
+    WEBUI_ENV_FILE as DEFAULT_WEBUI_ENV_FILE,
 )
 
 WEBUI_ENV_FILE = DEFAULT_WEBUI_ENV_FILE
@@ -73,6 +75,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dump_openapi:
         return _dump_openapi(args.dump_openapi)
+
+    from apps.shared import platform_paths
+    from apps.shared.library_mode import apply_library_env, assert_ready
+
+    apply_library_env()
+    platform_paths.refresh_share_root()
+    assert_ready()
 
     try:
         if (

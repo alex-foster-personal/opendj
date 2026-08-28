@@ -18,7 +18,6 @@ from apps.shared.smartlists import (
     walk,
 )
 
-
 pytestmark = pytest.mark.requirement("SMART-01")
 
 

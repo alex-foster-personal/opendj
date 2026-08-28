@@ -15,11 +15,10 @@ import io
 import json
 import os
 import struct
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
-
 
 DEFAULT_WHISPER_URL: str = "http://127.0.0.1:2022/inference"
 DEFAULT_WHISPER_TIMEOUT_S: float = 15.0

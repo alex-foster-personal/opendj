@@ -88,8 +88,14 @@ export async function getIngestCoverage(): Promise<IngestCoverage> {
 	return (await r.json()) as IngestCoverage;
 }
 
-export async function startIngestRefresh(): Promise<RefreshStatus> {
-	const r = await fetch(`${API_BASE}/api/v1/ingest/refresh`, { method: 'POST' });
+export async function startIngestRefresh(batchDir?: string): Promise<RefreshStatus> {
+	// batchDir scopes the refresh to freshly staged files (server validates it
+	// lives under the ingest inbox); omitted = whole-library coverage sweep.
+	const r = await fetch(`${API_BASE}/api/v1/ingest/refresh`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(batchDir ? { batch_dir: batchDir } : {})
+	});
 	if (!r.ok) await _err(r);
 	return (await r.json()) as RefreshStatus;
 }

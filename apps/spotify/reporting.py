@@ -27,7 +27,7 @@ from .acquisition import (
     render_markdown_file,
 )
 from .client import SpotifyPlaylist
-from .matcher_adapter import MatchResult, MatchedPair
+from .matcher_adapter import MatchedPair, MatchResult
 
 __all__ = [
     "ReportPaths",

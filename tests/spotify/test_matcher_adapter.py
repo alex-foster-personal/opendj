@@ -6,6 +6,7 @@ import sqlite3
 
 import pytest
 
+from apps.spotify.client import _parse_track_item
 from apps.spotify.matcher_adapter import (
     DURATION_TOLERANCE_MS,
     LocalTrack,
@@ -14,7 +15,6 @@ from apps.spotify.matcher_adapter import (
     normalise_artist,
     normalise_title,
 )
-from apps.spotify.client import _parse_track_item
 
 from .fake_spotipy import make_track
 

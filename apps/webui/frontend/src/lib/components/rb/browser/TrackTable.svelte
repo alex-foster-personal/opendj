@@ -12,7 +12,8 @@
 	// INLINE (contract 1/4); the IntersectionObserver now only reveals rows
 	// (one-time canvas draw) and triggers the lazy rb-meta fetch (artwork).
 	// Row states: yellow title+artist = loaded on a non-master deck; gold =
-	// master; faint green wash = Camelot-compatible suggested next; blue =
+	// master; faint green wash = Camelot-compatible suggested next; slightly
+	// stronger light-green = Spotify unmatched/pending placeholder; blue =
 	// selected; grayed row = audio file missing on disk (FR-1).
 	// Rows arrive via the RowProvider contract (pane-contract.svelte.ts).
 	// The provider materializes the full result set (parent no longer caps
@@ -24,6 +25,7 @@
 	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
 	import { analysisIssuesFor } from '$lib/rb/analysis-issues';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
+	import { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 	import { bpmHeatColor, bpmHeatLabel, classifyBpmHeat } from '$lib/rb/bpm-heat';
 	import { genreHoverColor } from '$lib/rb/genre-color';
 	import { highlightSpans, rowMatchesFind } from '$lib/rb/find-highlight';
@@ -641,7 +643,7 @@
 	}
 </script>
 
-{#snippet sortableTh(key: SortKey, label: string, col: ColId)}
+{#snippet sortableTh(key: SortKey, label: string, col: ColId & LibraryColTipId)}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<th
@@ -651,7 +653,7 @@
 			if ((e.target as HTMLElement).closest('.col-resize')) return;
 			onsort(key);
 		}}
-		title={`Sort by ${label} (asc → desc → clear)`}
+		title={columnHeaderTitle(col, `Sort by ${label} (asc → desc → clear)`)}
 	>
 		<span class="th-label">
 			<span>{label}</span>
@@ -768,7 +770,11 @@
 						></span>
 					</th>
 					{@render sortableTh('order', '#', 'order')}
-					<th class="h-preview" style={`width:${colWidths.preview}px`}>
+					<th
+						class="h-preview"
+						style={`width:${colWidths.preview}px`}
+						title={columnHeaderTitle('preview')}
+					>
 						Preview
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
@@ -779,7 +785,11 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
-					<th class="h-art" style={`width:${colWidths.art}px`}>
+					<th
+						class="h-art"
+						style={`width:${colWidths.art}px`}
+						title={columnHeaderTitle('art')}
+					>
 						Artwork
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<span
@@ -801,9 +811,12 @@
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('key');
 						}}
-						title={masterKey !== null
-							? `Master key ${masterKey} - sort by key (asc → desc → clear)`
-							: 'Sort by key (asc → desc → clear)'}
+						title={columnHeaderTitle(
+							'key',
+							masterKey !== null
+								? `Master key ${masterKey} - sort by key (asc → desc → clear)`
+								: 'Sort by key (asc → desc → clear)'
+						)}
 					>
 						<span class="th-label">
 							{#if masterKey !== null}
@@ -836,9 +849,12 @@
 							if ((e.target as HTMLElement).closest('.col-resize')) return;
 							onsort('bpm');
 						}}
-						title={masterBpm !== null
-							? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
-							: 'Sort by BPM (asc → desc → clear)'}
+						title={columnHeaderTitle(
+							'bpm',
+							masterBpm !== null
+								? `Master BPM ${_fmtBpm(masterBpm)} - sort by BPM (asc → desc → clear)`
+								: 'Sort by BPM (asc → desc → clear)'
+						)}
 					>
 						<span class="th-label">
 							{#if masterBpm !== null}
@@ -955,6 +971,8 @@
 						class:rb-row-selected={selectedIdSet.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
+						class:rb-row-spotify-pending={row.spotify_pending === true ||
+							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}
 						class:rb-row-master={masterStableId !== null && row.stable_id === masterStableId}
 						class:rb-row-deck-hover={hoverStableId !== null &&
@@ -963,7 +981,10 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={!row.file_exists}
+						class:broken={!row.file_exists &&
+							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
+							row.spotify_pending !== true &&
+							!row.stable_id.startsWith('spotify-pending:')}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
@@ -1558,13 +1579,28 @@
 		}
 	}
 	/* Camelot-compatible / suggested-next: faint green (go / mixable). */
-	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master) {
+	tbody tr.rb-row-key-compat:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(.rb-row-master):not(
+			.rb-row-spotify-pending
+		) {
 		background: color-mix(in srgb, var(--rb-green) 9%, transparent);
 	}
 	tbody tr.rb-row-key-compat:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
 			.rb-row-master
-		) {
+		):not(.rb-row-spotify-pending) {
 		background: color-mix(in srgb, var(--rb-green) 15%, var(--rb-panel-raised));
+	}
+	/* Spotify unmatched / pending acquisition: light green tint (stronger than
+	 * Camelot-compat so the missing-local rows read as intentional placeholders). */
+	tbody tr.rb-row-spotify-pending:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+			.rb-row-master
+		) {
+		background: color-mix(in srgb, var(--rb-green) 18%, transparent);
+		box-shadow: inset 3px 0 0 color-mix(in srgb, var(--rb-green) 55%, transparent);
+	}
+	tbody tr.rb-row-spotify-pending:hover:not(.rb-row-selected):not(.rb-row-menu):not(.loaded):not(
+			.rb-row-master
+		) {
+		background: color-mix(in srgb, var(--rb-green) 26%, var(--rb-panel-raised));
 	}
 
 	.master-fold {

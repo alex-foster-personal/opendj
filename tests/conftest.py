@@ -19,6 +19,11 @@ import pytest
 # SKIP (the extra is deliberately opt-in), never a silent pass or a failure.
 _HAS_MUTAGEN: bool = importlib.util.find_spec("mutagen") is not None
 _HAS_JOBLIB: bool = importlib.util.find_spec("joblib") is not None
+# madmom is not installable from PyPI on Python 3.10+ (0.16.1 imports the
+# long-removed collections.MutableSequence), so requirements.txt pulls the
+# git HEAD with --no-build-isolation and no pyproject extra can supply it.
+# CI installs it and runs these tests; a plain `uv sync` venv cannot.
+_HAS_MADMOM: bool = importlib.util.find_spec("madmom") is not None
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -26,6 +31,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     skip_darwin = pytest.mark.skip(reason="macOS-only")
     skip_mutagen = pytest.mark.skip(reason="needs the tags extra (mutagen)")
     skip_joblib = pytest.mark.skip(reason="needs joblib")
+    skip_madmom = pytest.mark.skip(
+        reason="needs madmom (git HEAD; `pip install -r requirements.txt`)"
+    )
     for item in items:
         if sys.platform != "darwin" and "requires_darwin" in item.keywords:
             item.add_marker(skip_darwin)
@@ -33,3 +41,5 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_mutagen)
         if not _HAS_JOBLIB and "requires_joblib" in item.keywords:
             item.add_marker(skip_joblib)
+        if not _HAS_MADMOM and "requires_madmom" in item.keywords:
+            item.add_marker(skip_madmom)

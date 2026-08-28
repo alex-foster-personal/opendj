@@ -1,5 +1,11 @@
 """librosa+madmom backend tests (META-01).
 
+The three tests that actually call ``LibrosaMadmomBackend.analyze`` are
+marked ``requires_madmom``: madmom is a git-HEAD install (requirements.txt,
+--no-build-isolation) that no pyproject extra can supply, so a `uv sync`
+venv has librosa but no beat tracker. CI installs it and runs them; the
+pure helper tests below need neither and always run.
+
 We tolerate madmom's +/- few-BPM noise on short synthetic clicks + the
 half / double tempo ambiguity it sometimes falls into.
 """
@@ -27,6 +33,7 @@ def test_registry_has_both_backends() -> None:
 
 
 @pytest.mark.requirement("META-01")
+@pytest.mark.requires_madmom
 def test_click_120_bpm(click_120_path: Path) -> None:
     rec = LibrosaMadmomBackend.analyze(click_120_path, "sid120")
     assert isinstance(rec, AnalysisRecord)
@@ -39,12 +46,14 @@ def test_click_120_bpm(click_120_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-01")
+@pytest.mark.requires_madmom
 def test_click_90_bpm(click_90_path: Path) -> None:
     rec = LibrosaMadmomBackend.analyze(click_90_path, "sid90")
     assert any(abs(rec.bpm - x) < 3.0 for x in (90.0, 45.0, 180.0)), f"bpm={rec.bpm}"
 
 
 @pytest.mark.requirement("META-01")
+@pytest.mark.requires_madmom
 def test_too_long_track_raises(
     click_120_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

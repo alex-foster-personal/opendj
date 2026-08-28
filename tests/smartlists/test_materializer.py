@@ -6,7 +6,6 @@ import pytest
 from apps.smartlists.materializer import Materializer, MaterializeResult
 from apps.smartlists.writers import FakeWriter
 
-
 pytestmark = pytest.mark.requirement("SMART-02")
 
 
