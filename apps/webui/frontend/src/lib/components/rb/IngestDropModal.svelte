@@ -94,7 +94,10 @@
 			const dups = result.results.length - staged;
 			pushToast(`staged ${staged}, skipped ${dups} duplicate(s)`, 'info');
 			if (staged > 0) {
-				await startIngestRefresh();
+				// Batch-scoped: staged files have no tracks rows yet, so a plain
+				// whole-library refresh would never select them (and could start
+				// unrelated stems/vocals work instead).
+				await startIngestRefresh(result.dest_dir);
 			}
 		} catch (err) {
 			pushToast(`ingest failed: ${err instanceof Error ? err.message : err}`, 'error');
