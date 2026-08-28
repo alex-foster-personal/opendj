@@ -2,7 +2,7 @@ name: CI Cost Guard
 
 on:
   workflow_run:
-    workflows: [CI, Build docs, Release Check, Windows Parity (on-demand)]
+    workflows: [CI, Build docs, Release Check, Windows Parity (on-demand), Full CI (on-demand)]
     types: [completed]
 
 # workflow_run executes this file from the default branch. Never check out or
