@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from apps.analysis import store as analysis_store
 from apps.shared.state.db import open_rw as open_state_rw
 from apps.webui.server.routes import ingest as ingest_mod
+from apps.webui.server.routes import ingest_upload as ingest_upload_mod
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
@@ -51,10 +52,11 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(ingest_mod, "VOCAL_CACHE_DIR", tmp_path / "vocal-cache")
     monkeypatch.setattr(ingest_mod, "DEFAULT_STEMS_DIR", tmp_path / "stems")
     monkeypatch.setattr(ingest_mod, "open_ro", lambda: sqlite3.connect(state_db))
-    monkeypatch.setattr(ingest_mod, "_job", None)
+    monkeypatch.setattr(ingest_mod._JOBS, "current", None)
 
     app = FastAPI()
     app.include_router(ingest_mod.router, prefix="/api/v1")
+    app.include_router(ingest_upload_mod.router, prefix="/api/v1")
     app.state.state_db = state_db
     return app
 

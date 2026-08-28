@@ -42,6 +42,7 @@ from .routes import dedup_review as dedup_review_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_upload as ingest_upload_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
 from .routes import play_it as play_it_routes
@@ -254,6 +255,7 @@ def create_app(
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
     app.include_router(ingest_routes.router, prefix=api_prefix)
+    app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
