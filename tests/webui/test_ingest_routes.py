@@ -229,6 +229,7 @@ def test_upload_stages_new_file(client, app):
 
 
 @pytest.mark.requires_audio_stack
+@pytest.mark.requires_fpcalc
 def test_upload_skips_exact_duplicate_unless_forced(client, app):
     src = FIXTURES / "src-128.mp3"
     import mutagen
