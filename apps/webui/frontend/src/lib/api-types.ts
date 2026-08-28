@@ -3112,6 +3112,11 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Rating */
             rating: number | null;
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
             /** Stable Id */
             stable_id: string;
             /** Stems */
@@ -3616,6 +3621,11 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Rating */
             rating: number | null;
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
             /** Stable Id */
             stable_id: string;
             /** Stems */

@@ -440,6 +440,19 @@ _SPOTIFY: tuple[str, ...] = (
     "ON pending_tracks(isrc) WHERE isrc IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_pending_tracks_status "
     "ON pending_tracks(status)",
+    """
+    CREATE TABLE IF NOT EXISTS spotify_playlist_links (
+        vendor_pl_id          TEXT PRIMARY KEY,
+        spotify_playlist_id   TEXT NOT NULL REFERENCES playlists(playlist_id)
+                                ON DELETE CASCADE,
+        odj_playlist_id       TEXT NOT NULL REFERENCES playlists(playlist_id)
+                                ON DELETE CASCADE,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_spotify_playlist_links_odj "
+    "ON spotify_playlist_links(odj_playlist_id)",
 )
 
 
@@ -684,7 +697,11 @@ TABLES: dict[str, tuple[str, ...]] = {
     "analysis": ("analysis", "analysis_events"),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
-    "spotify": ("spotify_playlist_meta", "pending_tracks"),
+    "spotify": (
+        "spotify_playlist_meta",
+        "pending_tracks",
+        "spotify_playlist_links",
+    ),
     "sets": ("sets", "set_events"),
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),
