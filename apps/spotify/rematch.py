@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from apps.shared.state.writer import immediate_transaction, next_playlist_revision
 
@@ -33,6 +33,8 @@ from .state_writer import (
 )
 
 __all__ = ["RematchOutcome", "rematch_playlist"]
+
+_ResolvedTriple = tuple[PendingRow, MatchedPair, LocalTrack]
 
 
 @dataclass
@@ -72,6 +74,106 @@ def _pending_as_source(row: PendingRow) -> SpotifyTrack:
     )
 
 
+def _partition_matches(
+    pendings: list[PendingRow],
+    result: MatchResult,
+) -> tuple[list[_ResolvedTriple], list[PendingRow]]:
+    """Split pending rows into (resolved triples, still-pending rows)."""
+    resolved_pairs: list[_ResolvedTriple] = []
+    still: list[PendingRow] = []
+    for pending, pair in zip(pendings, result.pairs):
+        if pair.status == "matched" and pair.target is not None:
+            resolved_pairs.append((pending, pair, pair.target))
+        else:
+            still.append(pending)
+    return resolved_pairs, still
+
+
+def _linked_odj_playlist_id(
+    conn: sqlite3.Connection,
+    playlist_id: str,
+) -> str | None:
+    """ODJ twin id linked to this Spotify playlist, if any."""
+    vendor_pl_id = (
+        playlist_id.split(":", 1)[1]
+        if playlist_id.startswith("spotify:")
+        else playlist_id
+    )
+    link = fetch_playlist_link(conn, vendor_pl_id)
+    return link.odj_playlist_id if link is not None else None
+
+
+def _promote_pending_row(
+    conn: sqlite3.Connection,
+    playlist_ids: tuple[str | None, ...],
+    pending: PendingRow,
+    target: LocalTrack,
+    now: str,
+) -> None:
+    """Swap the synthetic placeholder for the matched local track."""
+    synth_sid = synthetic_stable_id(pending.spotify_uri)
+    # Drop the synthetic placeholder at this position (Spotify + ODJ).
+    for pl_id in playlist_ids:
+        if pl_id is None:
+            continue
+        conn.execute(
+            "DELETE FROM playlist_memberships "
+            "WHERE playlist_id = ? AND stable_id = ? AND position = ?",
+            (pl_id, synth_sid, pending.position),
+        )
+        conn.execute(
+            """
+            INSERT INTO playlist_memberships
+              (playlist_id, stable_id, position)
+            VALUES (?, ?, ?)
+            ON CONFLICT(playlist_id, position) DO UPDATE SET
+              stable_id = excluded.stable_id
+            """,
+            (pl_id, target.stable_id, pending.position),
+        )
+    # Link local track -> Spotify id for future de-dup.
+    vendor_track = None
+    uri = pending.spotify_uri or ""
+    if uri.startswith("spotify:track:"):
+        vendor_track = uri.split(":", 2)[2] or None
+    if vendor_track:
+        conn.execute(
+            "INSERT OR REPLACE INTO track_vendor_ids"
+            "(stable_id, vendor, vendor_id) VALUES (?, 'spotify', ?)",
+            (target.stable_id, vendor_track),
+        )
+    conn.execute(
+        """
+        UPDATE pending_tracks
+        SET status = 'resolved',
+            resolved_stable_id = ?,
+            resolved_at = ?
+        WHERE pending_id = ?
+        """,
+        (target.stable_id, now, pending.pending_id),
+    )
+
+
+def _bump_playlist_revisions(
+    conn: sqlite3.Connection,
+    playlist_ids: tuple[str | None, ...],
+    primary_playlist_id: str,
+    now: str,
+) -> None:
+    for pl_id in playlist_ids:
+        if pl_id is None:
+            continue
+        revision = next_playlist_revision(conn, pl_id, now)
+        updated = conn.execute(
+            "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
+            (revision, pl_id),
+        )
+        if pl_id == primary_playlist_id and updated.rowcount != 1:
+            raise RuntimeError(
+                f"playlist not found during rematch: {primary_playlist_id}"
+            )
+
+
 def rematch_playlist(
     conn: sqlite3.Connection,
     playlist_id: str,
@@ -93,14 +195,7 @@ def rematch_playlist(
     synthetic_sources = [_pending_as_source(p) for p in pendings]
     result: MatchResult = match_spotify_tracks(synthetic_sources, local_tracks)
 
-    resolved_pairs: list[tuple[PendingRow, MatchedPair, LocalTrack]] = []
-    still: list[PendingRow] = []
-    for pending, pair in zip(pendings, result.pairs):
-        if pair.status == "matched" and pair.target is not None:
-            resolved_pairs.append((pending, pair, pair.target))
-        else:
-            still.append(pending)
-
+    resolved_pairs, still = _partition_matches(pendings, result)
     outcome.resolved = [(p, tgt) for p, _pair, tgt in resolved_pairs]
     outcome.still_pending = still
 
@@ -108,68 +203,12 @@ def rematch_playlist(
         return outcome
 
     with immediate_transaction(conn):
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         # Linked ODJ twin (if any) must swap the same positions.
-        vendor_pl_id = (
-            playlist_id.split(":", 1)[1]
-            if playlist_id.startswith("spotify:")
-            else playlist_id
-        )
-        link = fetch_playlist_link(conn, vendor_pl_id)
-        odj_id = link.odj_playlist_id if link is not None else None
-
+        target_playlists = (playlist_id, _linked_odj_playlist_id(conn, playlist_id))
         for pending, _pair, target in resolved_pairs:
-            synth_sid = synthetic_stable_id(pending.spotify_uri)
-            # Drop the synthetic placeholder at this position (Spotify + ODJ).
-            for pl_id in (playlist_id, odj_id):
-                if pl_id is None:
-                    continue
-                conn.execute(
-                    "DELETE FROM playlist_memberships "
-                    "WHERE playlist_id = ? AND stable_id = ? AND position = ?",
-                    (pl_id, synth_sid, pending.position),
-                )
-                conn.execute(
-                    """
-                    INSERT INTO playlist_memberships
-                      (playlist_id, stable_id, position)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(playlist_id, position) DO UPDATE SET
-                      stable_id = excluded.stable_id
-                    """,
-                    (pl_id, target.stable_id, pending.position),
-                )
-            # Link local track -> Spotify id for future de-dup.
-            vendor_track = None
-            uri = pending.spotify_uri or ""
-            if uri.startswith("spotify:track:"):
-                vendor_track = uri.split(":", 2)[2] or None
-            if vendor_track:
-                conn.execute(
-                    "INSERT OR REPLACE INTO track_vendor_ids"
-                    "(stable_id, vendor, vendor_id) VALUES (?, 'spotify', ?)",
-                    (target.stable_id, vendor_track),
-                )
-            conn.execute(
-                """
-                UPDATE pending_tracks
-                SET status = 'resolved',
-                    resolved_stable_id = ?,
-                    resolved_at = ?
-                WHERE pending_id = ?
-                """,
-                (target.stable_id, now, pending.pending_id),
-            )
-        for pl_id in (playlist_id, odj_id):
-            if pl_id is None:
-                continue
-            revision = next_playlist_revision(conn, pl_id, now)
-            updated = conn.execute(
-                "UPDATE playlists SET updated_at = ? WHERE playlist_id = ?",
-                (revision, pl_id),
-            )
-            if pl_id == playlist_id and updated.rowcount != 1:
-                raise RuntimeError(f"playlist not found during rematch: {playlist_id}")
+            _promote_pending_row(conn, target_playlists, pending, target, now)
+        _bump_playlist_revisions(conn, target_playlists, playlist_id, now)
 
     return outcome
 

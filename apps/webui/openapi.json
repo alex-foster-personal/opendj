@@ -4495,6 +4495,11 @@
             ],
             "title": "Rating"
           },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
+          },
           "stable_id": {
             "title": "Stable Id",
             "type": "string"
@@ -5845,6 +5850,11 @@
               }
             ],
             "title": "Rating"
+          },
+          "spotify_pending": {
+            "default": false,
+            "title": "Spotify Pending",
+            "type": "boolean"
           },
           "stable_id": {
             "title": "Stable Id",
