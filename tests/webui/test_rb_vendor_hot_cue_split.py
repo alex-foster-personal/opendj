@@ -112,7 +112,7 @@ def test_no_hot_cue_sidecar_ddl_outside_the_schema_module() -> None:
         for tree in trees
         for path in sorted(tree.rglob("*.py"))
         for table in SIDECAR_TABLES
-        if f"CREATE TABLE IF NOT EXISTS {table}" in path.read_text()
+        if f"CREATE TABLE IF NOT EXISTS {table}" in path.read_text(encoding="utf-8")
     ]
     assert offenders == [], (
         "hot-cue sidecar DDL must only live in apps/engine_core/store/schema.py "

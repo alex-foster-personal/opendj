@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,13 @@ def test_open_localhost_refuses_non_loopback() -> None:
 
 
 def test_service_command_stays_in_the_repo(tmp_path: Path) -> None:
+    if os.name == "nt":
+        # No Terminal.app and no tmux on Windows, so the contract there is an
+        # explicit refusal naming what to run by hand -- not a shell line that
+        # cmd.exe could never execute.
+        with pytest.raises(PortConfigError, match="POSIX shell host"):
+            service_command("backend", repo=tmp_path, just="just")
+        return
     cmd = service_command("backend", repo=tmp_path, just="/opt/homebrew/bin/just")
     assert cmd.startswith(f"cd {tmp_path}")
     assert cmd.endswith("exec /opt/homebrew/bin/just webui-backend")

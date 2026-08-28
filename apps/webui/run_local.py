@@ -1,13 +1,15 @@
 """Start this worktree's web UI from one terminal, then open loopback.
 
 macOS: one Terminal.app window per server. Linux: a detached tmux session
-with one window per server. Never binds off loopback; the browser URL is
-always ``http://127.0.0.1:<frontend>``.
+with one window per server. Windows has neither host, so this launcher
+refuses there instead of half-working. Never binds off loopback; the
+browser URL is always ``http://127.0.0.1:<frontend>``.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shlex
 import shutil
@@ -36,6 +38,20 @@ def just_bin() -> str:
 
 
 def service_command(service: str, *, repo: Path, just: str) -> str:
+    """One POSIX shell line that runs a service from the repo.
+
+    Both hosts this launcher has -- Terminal.app and tmux -- take a POSIX
+    shell line, and ``cd ... && exec ...`` is not something cmd.exe or
+    PowerShell can run. Windows gets an explicit refusal naming the two
+    commands to run by hand, rather than a string that cannot work and a
+    failure further downstream.
+    """
+    if os.name == "nt":
+        raise PortConfigError(
+            "run-local needs a POSIX shell host (Terminal.app or tmux) and "
+            "Windows has neither; run 'just webui-backend' and "
+            "'just webui-frontend' in two shells instead"
+        )
     if service not in {"backend", "frontend"}:
         raise PortConfigError(f"unknown service {service!r}")
     return (

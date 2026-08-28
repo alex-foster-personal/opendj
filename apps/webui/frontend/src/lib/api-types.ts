@@ -2424,6 +2424,7 @@ export interface components {
             syncthing?: components["schemas"]["HealthSyncthing"] | null;
             /** Version */
             version: string;
+            waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
         };
         /** ErrorBody */
         ErrorBody: {
@@ -2719,6 +2720,17 @@ export interface components {
              * @default 0
              */
             peers_connected: number;
+        };
+        /** HealthWaveformMaterialization */
+        HealthWaveformMaterialization: {
+            /** Native Available */
+            native_available: boolean;
+            /** Native Import Error */
+            native_import_error?: string | null;
+            /** Requested */
+            requested: string;
+            /** Selected */
+            selected: string;
         };
         /** HeartbeatIn */
         HeartbeatIn: {
@@ -3767,6 +3779,11 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Rating */
             rating: number | null;
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
             /** Stable Id */
             stable_id: string;
             /** Stems */
@@ -4432,6 +4449,11 @@ export interface components {
             quality: components["schemas"]["QualityOut"];
             /** Rating */
             rating: number | null;
+            /**
+             * Spotify Pending
+             * @default false
+             */
+            spotify_pending: boolean;
             /** Stable Id */
             stable_id: string;
             /** Stems */

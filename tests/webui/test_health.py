@@ -15,6 +15,10 @@ def test_health_happy_path(client):
     assert body["state_db"]["playlists"] == 2
     assert body["state_db"]["pairings"] == 1
     assert body["cloud"]["lock_holder"] is None
+    waveform = body["waveform_materialization"]
+    assert waveform["selected"] in {"rust-pyo3", "python-numpy"}
+    assert waveform["native_available"] == (waveform["selected"] == "rust-pyo3")
+    assert waveform["native_import_error"] is None or waveform["selected"] == "python-numpy"
     assert body["version"]
 
 

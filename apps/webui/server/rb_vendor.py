@@ -20,6 +20,8 @@ Where the implementation went:
     rb_vendor_pkg/track_rows.py         browser read model (C5)
     rb_vendor_pkg/anlz_cache.py         anlz JSON cache (C7)
     rb_vendor_pkg/beatgrid_issue_cache.py  beatgrid-issue sidecar (C8)
+    rb_vendor_pkg/waveform_native.py    optional Rust waveform backend gate
+                                        (ported from main, not a T3b cluster)
 
 The five ``rb_vendor_pkg`` modules are still under ``apps.webui`` because
 each imports a module that has not left it yet: ``beatgrid_diagnostics``,
@@ -81,6 +83,7 @@ from apps.webui.server.rb_vendor_pkg.anlz import (
     VOCAL_MERGE_GAP_S,
     VOCAL_MIN_REGION_S,
     _bands_payload,
+    _bands_payload_python,
     _beatgrid_payload,
     _downsample_max,
     _first_tags,
@@ -123,6 +126,14 @@ from apps.webui.server.rb_vendor_pkg.track_rows import (
     bulk_file_size,
     bulk_quality,
     bulk_rb_meta,
+)
+from apps.webui.server.rb_vendor_pkg.waveform_native import (
+    _WAVEFORM_BACKEND_REQUEST,
+    _WAVEFORM_NATIVE,
+    _WAVEFORM_NATIVE_IMPORT_ERROR,
+    waveform_materialization_backend,
+    waveform_materialization_backend_request,
+    waveform_materialization_status,
 )
 
 log = logging.getLogger(__name__)
@@ -225,12 +236,16 @@ __all__ = [
     "_PVDI_RATE",
     "_PWAV_HEIGHT_MASK",
     "_PWV4_LUMINANCE_BYTE",
+    "_WAVEFORM_BACKEND_REQUEST",
+    "_WAVEFORM_NATIVE",
+    "_WAVEFORM_NATIVE_IMPORT_ERROR",
     "HotCueSlotError",
     "RbContent",
     "RbRowMeta",
     "_anlz_mtime",
     "_asset_sibling",
     "_bands_payload",
+    "_bands_payload_python",
     "_beatgrid_issue_cache_path",
     "_beatgrid_payload",
     "_cache_lock",
@@ -288,4 +303,7 @@ __all__ = [
     "save_hot_cue",
     "vocals_for_content",
     "vocals_payload",
+    "waveform_materialization_backend",
+    "waveform_materialization_backend_request",
+    "waveform_materialization_status",
 ]

@@ -79,6 +79,9 @@ export interface BrowserRow {
 	/** Inline streaming flag (playlist rows only, contract 4); null =
 	 * not provided inline -> fall back to rb_meta. */
 	is_streaming: boolean | null;
+	/** Spotify-unmatched placeholder (light green row). True when the
+	 * row is a synthetic spotify-pending track or wire spotify_pending. */
+	spotify_pending?: boolean;
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;
@@ -397,10 +400,15 @@ export function resolveBootPlaylist(args: {
  * Genre demos (search box / chip clicks):
  *   `genre:House`  - strict: a comma-split genre token equals the tag
  *   `genre:~House` - loose: genre field contains the tag as a substring
- * Plain queries still match across title/artist/comments/key/genre. */
+ * Plain queries still match across title/artist/comments/key/genre.
+ *
+ * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
+ * hide-broken: they are intentional unmatched placeholders, not broken links. */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
-	const base = hideBroken ? rows.filter((r) => r.file_exists) : rows;
+	const base = hideBroken
+		? rows.filter((r) => r.file_exists || r.is_streaming === true || r.spotify_pending === true)
+		: rows;
 	const raw = query.trim();
 	if (raw === '') return base;
 
