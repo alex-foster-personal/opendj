@@ -40,6 +40,8 @@ Requirements (mini-PRD):
     file removed
     [if] fingerprint >= threshold match exists and force is not set
     [then] file skipped with duplicate_of reported
+    [if] the destination filename already exists in the batch [then ⛔️] 409,
+    existing staged file untouched
 """
 from __future__ import annotations
 
@@ -48,6 +50,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
@@ -62,7 +65,12 @@ from apps.shared import fs_residency
 from apps.shared.fingerprints import ChromaprintMissing, compare, compute
 from apps.shared.paths import AUDIO_EXTENSIONS, HOME, PROJECT_ROOT, STATE_DB
 from apps.shared.state.db import open_ro
-from apps.webui.server.stem_artifacts import DEFAULT_STEMS_DIR
+from apps.webui.server.stem_artifacts import (
+    DEFAULT_STEMS_DIR,
+    StemArtifactError,
+    StemBundleNotFoundError,
+    load_stem_bundle,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -191,6 +199,28 @@ def _tracks_on_disk() -> tuple[list[tuple[str, str]], int]:
     return ok, unreachable
 
 
+def _valid_stem_bundle_ids() -> set[str]:
+    """stable_ids with a COMPLETE stems bundle under DEFAULT_STEMS_DIR.
+
+    A directory alone is not done: an interrupted worker can leave it without
+    a manifest or with missing/corrupt stem files, and counting it as covered
+    would exclude the track from refresh targets forever. Invalid bundles
+    count as missing so refresh can repair them.
+    """
+    if not DEFAULT_STEMS_DIR.is_dir():
+        return set()
+    done: set[str] = set()
+    for p in DEFAULT_STEMS_DIR.iterdir():
+        if not p.is_dir():
+            continue
+        try:
+            load_stem_bundle(p.name, stems_dir=DEFAULT_STEMS_DIR)
+        except (StemArtifactError, StemBundleNotFoundError):
+            continue
+        done.add(p.name)
+    return done
+
+
 def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str, str]]]:
     conn = open_ro()
     try:
@@ -207,11 +237,7 @@ def _missing_by_step(on_disk: list[tuple[str, str]]) -> dict[str, list[tuple[str
         )
     finally:
         conn.close()
-    stems_done = (
-        {p.name for p in DEFAULT_STEMS_DIR.iterdir() if p.is_dir()}
-        if DEFAULT_STEMS_DIR.is_dir()
-        else set()
-    )
+    stems_done = _valid_stem_bundle_ids()
     vocals_done = (
         {p.stem for p in VOCAL_CACHE_DIR.glob("*.json")}
         if VOCAL_CACHE_DIR.is_dir()
@@ -339,11 +365,34 @@ def _refresh_worker(job: _RefreshJob) -> None:
                 _log(job, f"analysis: {len(targets)} tracks missing")
                 for i in range(0, len(targets), ANALYSIS_CHUNK):
                     chunk = targets[i : i + ANALYSIS_CHUNK]
-                    _run_cli(
-                        job,
-                        [sys.executable, "-m", "apps.analysis.run", "--workers", "2",
-                         "--files", *[f for _, f in chunk]],
-                    )
+                    if all(sid for sid, _ in chunk):
+                        # Library scope: hand the runner the CANONICAL
+                        # state-layer stable_ids. With --files it derives
+                        # pathid_* keys, so the row lands under a key
+                        # coverage never matches and the track re-analyzes
+                        # on every refresh.
+                        with tempfile.NamedTemporaryFile(
+                            "w", suffix=".pairs.json", delete=False
+                        ) as fh:
+                            json.dump([[sid, f] for sid, f in chunk], fh)
+                            pairs_path = fh.name
+                        try:
+                            _run_cli(
+                                job,
+                                [sys.executable, "-m", "apps.analysis.run",
+                                 "--workers", "2", "--pairs-json", pairs_path],
+                            )
+                        finally:
+                            Path(pairs_path).unlink(missing_ok=True)
+                    else:
+                        # Batch scope: freshly staged files have no tracks
+                        # rows yet, so the runner's pathid_* placeholder is
+                        # the intended pre-ingest identity.
+                        _run_cli(
+                            job,
+                            [sys.executable, "-m", "apps.analysis.run",
+                             "--workers", "2", "--files", *[f for _, f in chunk]],
+                        )
                     job.step_done += len(chunk)
                     for sid, _ in chunk:
                         job.recently_done_ids.append(sid)
@@ -520,6 +569,16 @@ async def upload(
         name = Path(up.filename or "").name
         if not name or Path(name).suffix.lower() not in AUDIO_EXTENSIONS:
             raise HTTPException(422, f"not an audio file: {up.filename!r}")
+        final = dest_dir / name
+        if final.exists():
+            # Path.rename() on POSIX would replace the previously staged file
+            # silently; a reused batch name or a double-drop must fail loud,
+            # never destroy staged bytes.
+            raise HTTPException(
+                409,
+                f"{name!r} is already staged in batch {batch!r} ({final}); "
+                "remove it or pick a new batch name",
+            )
         tmp = dest_dir / (name + ".part")
         with tmp.open("wb") as fh:
             shutil.copyfileobj(up.file, fh)
@@ -543,7 +602,6 @@ async def upload(
                 duplicate_of=dup, duration_s=duration, fingerprint_method=method,
             ))
             continue
-        final = dest_dir / name
         tmp.rename(final)
         results.append(UploadFileResult(
             filename=name, staged_path=str(final), skipped_duplicate=False,

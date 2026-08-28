@@ -11,8 +11,12 @@ Flags
 ``--limit N``            Cap the queue at ``N`` tracks.
 ``--backend NAME``       Backend to use (default: ``librosa+madmom``).
 ``--workers N``          Process-pool worker count (default: 1).
-``--files PATH [..]``    Explicit audio file list.  Required until Phase 5's
-                         track table ingest lands.
+``--files PATH [..]``    Explicit audio file list; stable_ids are DERIVED
+                         (``pathid_*``/``bytesid_*``) per the strategy flag.
+``--pairs-json PATH``    JSON file ``[[stable_id, path], ...]`` carrying the
+                         CANONICAL state-layer stable_ids, so analysis rows
+                         land under the same key coverage reads. Mutually
+                         exclusive with ``--files``.
 ``--all``                Disable the only-missing filter (default is on).
 ``--stable-id-strategy`` ``file-path`` (default) or ``sha256``.
 ``--verbose``            Log per-track progress.
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -89,6 +94,25 @@ def build_queue(
     return refs
 
 
+def build_queue_from_pairs(pairs: Iterable[tuple[str, str]]) -> list[TrackRef]:
+    """Queue from caller-supplied canonical ``(stable_id, path)`` pairs.
+
+    No identity derivation: the caller (e.g. the webui refresh job) already
+    knows the state-layer stable_id, and deriving a ``pathid_*`` here would
+    store the analysis row under a key coverage never matches.
+    """
+    refs: list[TrackRef] = []
+    for sid, path_str in pairs:
+        if not sid:
+            raise ValueError(f"empty stable_id for {path_str!r} in pairs input")
+        path = Path(path_str)
+        if not path.exists():
+            log.warning("skip (missing): %s", path)
+            continue
+        refs.append(TrackRef(stable_id=sid, path=path))
+    return refs
+
+
 def filter_missing(
     refs: list[TrackRef],
     *,
@@ -147,12 +171,16 @@ def run(
     stable_id_strategy: str = "file-path",
     verbose: bool = False,
     db_path: Path | None = None,
+    pairs: list[tuple[str, str]] | None = None,
 ) -> RunSummary:
     """Run the analysis pipeline."""
     if verbose:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    queue = build_queue(files, strategy=stable_id_strategy)
+    if pairs is not None:
+        queue = build_queue_from_pairs(pairs)
+    else:
+        queue = build_queue(files, strategy=stable_id_strategy)
 
     if only_missing and not dry_run:
         queue = filter_missing(queue, backend_name=backend_name, db_path=db_path)
@@ -272,11 +300,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="file-path",
     )
     parser.add_argument("--verbose", action="store_true")
-    parser.add_argument(
-        "--files", nargs="+", required=True,
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--files", nargs="+",
         help=(
-            "Audio file paths.  Phase-6 default queue source until Phase 5's "
-            "ingest populates the tracks table."
+            "Audio file paths; stable_ids derived per --stable-id-strategy "
+            "(pathid_*/bytesid_* placeholders)."
+        ),
+    )
+    source.add_argument(
+        "--pairs-json", type=Path,
+        help=(
+            "JSON file [[stable_id, path], ...] carrying canonical "
+            "state-layer stable_ids (no derivation)."
         ),
     )
     return parser.parse_args(argv)
@@ -284,7 +320,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    files = [Path(p) for p in args.files]
+    pairs: list[tuple[str, str]] | None = None
+    files: list[Path] = []
+    if args.pairs_json is not None:
+        raw = json.loads(args.pairs_json.read_text())
+        if not isinstance(raw, list) or not all(
+            isinstance(e, list) and len(e) == 2 for e in raw
+        ):
+            raise SystemExit(
+                f"--pairs-json {args.pairs_json}: expected [[stable_id, path], ...]"
+            )
+        pairs = [(sid, path) for sid, path in raw]
+    else:
+        files = [Path(p) for p in args.files]
     summary = run(
         files,
         backend_name=args.backend,
@@ -294,6 +342,7 @@ def main(argv: list[str] | None = None) -> int:
         only_missing=args.only_missing,
         stable_id_strategy=args.stable_id_strategy,
         verbose=args.verbose,
+        pairs=pairs,
     )
     return 0 if summary.failed == 0 else 1
 
