@@ -9,7 +9,7 @@ Flags
 
 ``--dry-run``            Do not write to the state DB; print a summary only.
 ``--limit N``            Cap the queue at ``N`` tracks.
-``--backend NAME``       Backend to use (default: ``librosa+madmom``).
+``--backend NAME``       Backend to use (default: ``librosa``).
 ``--workers N``          Process-pool worker count (default: 1).
 ``--files PATH [..]``    Explicit audio file list; stable_ids are DERIVED
                          (``pathid_*``/``bytesid_*``) per the strategy flag.
@@ -36,7 +36,7 @@ from typing import Iterable
 from rich.console import Console
 from rich.table import Table
 
-from .backends import get_backend
+from .backends import DEFAULT_BACKEND, get_backend
 from .backends.base import BackendNotAvailable, TrackTooLong
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, open_conn, upsert_record
@@ -163,7 +163,7 @@ class RunSummary:
 def run(
     queue: list[TrackRef],
     *,
-    backend_name: str = "librosa+madmom",
+    backend_name: str = DEFAULT_BACKEND,
     dry_run: bool = False,
     limit: int | None = None,
     workers: int = 1,
@@ -280,7 +280,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         prog="python -m apps.analysis.run",
         description="Run the analyser pipeline over a set of audio files.",
     )
-    parser.add_argument("--backend", default="librosa+madmom")
+    parser.add_argument("--backend", default=DEFAULT_BACKEND)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=1)

@@ -19,7 +19,8 @@ def test_mik_not_installed_raises(
     with pytest.raises(BackendNotAvailable) as exc:
         MikBackend.analyze(tmp_path / "fake.mp3", "sid_x")
     assert "mixed-in-key-cli" in str(exc.value)
-    assert "librosa+madmom" in str(exc.value) or "PATH" in str(exc.value)
+    assert "--backend librosa." in str(exc.value)
+    assert "librosa+madmom" not in str(exc.value)
 
 
 @pytest.mark.requirement("META-01")

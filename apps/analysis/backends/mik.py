@@ -35,7 +35,7 @@ class MikBackend:
         if not binary:
             raise BackendNotAvailable(
                 f"{_BIN!r} not found on PATH; install Mixed In Key or use "
-                "--backend librosa+madmom."
+                "--backend librosa."
             )
         result = subprocess.run(
             [binary, "--json", str(path)],

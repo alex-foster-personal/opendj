@@ -38,6 +38,7 @@ from rich.table import Table
 from apps.shared.paths import DATA_DIR
 
 from . import config as _analysis_config
+from .backends import DEFAULT_BACKEND
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, publish_event
 
@@ -313,7 +314,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--stable-ids", nargs="+", default=None)
     p.add_argument("--label-filter", nargs="+", default=None)
-    p.add_argument("--backend", default="librosa+madmom")
+    p.add_argument("--backend", default=DEFAULT_BACKEND)
     p.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     p.add_argument("--verbose", action="store_true")
     return p.parse_args(argv)
