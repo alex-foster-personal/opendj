@@ -4,7 +4,7 @@
  * never derives a purchase URL or infers a missing track from playlist counts.
  */
 
-import { API_BASE } from '$lib/api';
+import { ApiError, api, unwrap } from '$lib/api/client';
 
 export const SPOTIFY_PURCHASE_SOURCES = [
 	'beatport',
@@ -100,14 +100,21 @@ function _pendingTrack(value: unknown, index: number): SpotifyPendingTrack {
 /** GET the persisted, ordered acquisition rows for one imported Spotify playlist. */
 export async function getSpotifyPendingTracks(playlistId: string): Promise<SpotifyPendingTrack[]> {
 	if (playlistId.trim() === '') throw new Error('Spotify playlist id must not be empty');
-	const response = await fetch(
-		`${API_BASE}/api/v1/spotify/playlists/${encodeURIComponent(playlistId)}/pending-tracks`,
-		{ headers: { Accept: 'application/json' } }
-	);
-	if (!response.ok) {
-		throw new Error(`Spotify pending tracks request failed with error ${response.status}: ${response.statusText}`);
+	let body: unknown;
+	try {
+		body = await unwrap(
+			api.GET('/api/v1/spotify/playlists/{playlist_id}/pending-tracks', {
+				params: { path: { playlist_id: playlistId } }
+			})
+		);
+	} catch (error) {
+		if (error instanceof ApiError) {
+			throw new Error(
+				`Spotify pending tracks request failed with error ${error.status}: ${error.response.statusText}`
+			);
+		}
+		throw error;
 	}
-	const body: unknown = await response.json();
 	if (!Array.isArray(body)) {
 		throw new Error('Spotify pending-track contract violation: expected a top-level list');
 	}

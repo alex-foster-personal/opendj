@@ -589,100 +589,6 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
-      "BuildPatchIn": {
-        "additionalProperties": false,
-        "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
-        "properties": {
-          "branch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch"
-          },
-          "pr": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pr"
-          },
-          "stage": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stage"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "enum": [
-                  "active",
-                  "idle",
-                  "blocked",
-                  "hanging"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State"
-          },
-          "worktree": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worktree"
-          }
-        },
-        "title": "BuildPatchIn",
-        "type": "object"
-      },
-      "BuildableIn": {
-        "additionalProperties": false,
-        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
-        "properties": {
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "tier": {
-            "enum": [
-              "cloud",
-              "hybrid",
-              "local"
-            ],
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "reason"
-        ],
-        "title": "BuildableIn",
-        "type": "object"
-      },
       "BulkEditIn": {
         "properties": {
           "expected_etags": {
@@ -1122,25 +1028,6 @@
         "title": "ClustersOut",
         "type": "object"
       },
-      "CommitIn": {
-        "additionalProperties": false,
-        "properties": {
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "sha": {
-            "title": "Sha",
-            "type": "string"
-          }
-        },
-        "required": [
-          "sha",
-          "note"
-        ],
-        "title": "CommitIn",
-        "type": "object"
-      },
       "CopilotTrackOut": {
         "properties": {
           "artist": {
@@ -1322,6 +1209,67 @@
           "revision"
         ],
         "title": "DecisionRecordOut",
+        "type": "object"
+      },
+      "EngineHealthOut": {
+        "description": "Legacy health plus the handshake fields. Extension, not a rewrite.",
+        "properties": {
+          "bind_host": {
+            "title": "Bind Host",
+            "type": "string"
+          },
+          "boot_id": {
+            "title": "Boot Id",
+            "type": "string"
+          },
+          "cloud": {
+            "$ref": "#/components/schemas/HealthCloud"
+          },
+          "contract_rev": {
+            "title": "Contract Rev",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/HealthStateDb"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "syncthing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthSyncthing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "waveform_materialization": {
+            "$ref": "#/components/schemas/HealthWaveformMaterialization"
+          }
+        },
+        "required": [
+          "state_db",
+          "cloud",
+          "waveform_materialization",
+          "bind_host",
+          "version",
+          "contract_rev",
+          "engine_version",
+          "boot_id"
+        ],
+        "title": "EngineHealthOut",
         "type": "object"
       },
       "ErrorBody": {
@@ -1725,51 +1673,6 @@
         "title": "HealthCloud",
         "type": "object"
       },
-      "HealthOut": {
-        "properties": {
-          "bind_host": {
-            "title": "Bind Host",
-            "type": "string"
-          },
-          "cloud": {
-            "$ref": "#/components/schemas/HealthCloud"
-          },
-          "state_db": {
-            "$ref": "#/components/schemas/HealthStateDb"
-          },
-          "status": {
-            "default": "ok",
-            "title": "Status",
-            "type": "string"
-          },
-          "syncthing": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HealthSyncthing"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          },
-          "waveform_materialization": {
-            "$ref": "#/components/schemas/HealthWaveformMaterialization"
-          }
-        },
-        "required": [
-          "state_db",
-          "cloud",
-          "waveform_materialization",
-          "bind_host",
-          "version"
-        ],
-        "title": "HealthOut",
-        "type": "object"
-      },
       "HealthStateDb": {
         "properties": {
           "last_writer_at": {
@@ -2020,6 +1923,213 @@
         "title": "HotCueSlotOut",
         "type": "object"
       },
+      "JobIn": {
+        "properties": {
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "JobIn",
+        "type": "object"
+      },
+      "JobKindsOut": {
+        "properties": {
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds"
+        ],
+        "title": "JobKindsOut",
+        "type": "object"
+      },
+      "JobOut": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "owner_boot_id": {
+            "title": "Owner Boot Id",
+            "type": "string"
+          },
+          "owner_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Pid"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "worker_argv": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Argv"
+          },
+          "worker_pgid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Pgid"
+          },
+          "worker_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Pid"
+          },
+          "worker_started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Started At"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "payload",
+          "status",
+          "progress",
+          "attempt",
+          "created_at",
+          "owner_boot_id"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
       "LabelRequest": {
         "description": "Body for the relabel endpoint.",
         "properties": {
@@ -2040,56 +2150,6 @@
           "class"
         ],
         "title": "LabelRequest",
-        "type": "object"
-      },
-      "LinksPatchIn": {
-        "additionalProperties": false,
-        "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
-        "properties": {
-          "issues": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Issues"
-          },
-          "refs": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Refs"
-          },
-          "specs": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Specs"
-          }
-        },
-        "title": "LinksPatchIn",
         "type": "object"
       },
       "MemberOut": {
@@ -2497,133 +2557,6 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
-        "type": "object"
-      },
-      "NodePatch": {
-        "additionalProperties": false,
-        "properties": {
-          "build": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuildPatchIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "buildable": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuildableIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "commits_append": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CommitIn"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Commits Append"
-          },
-          "links": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LinksPatchIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "missing",
-                  "spiked",
-                  "building",
-                  "partial",
-                  "built",
-                  "verified",
-                  "merged",
-                  "user-finalized",
-                  "working"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          },
-          "tests_append": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tests Append"
-          },
-          "verified": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VerifiedIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "NodePatch",
-        "type": "object"
-      },
-      "NodePatchOut": {
-        "properties": {
-          "meta_updated": {
-            "title": "Meta Updated",
-            "type": "string"
-          },
-          "node": {
-            "additionalProperties": true,
-            "title": "Node",
-            "type": "object"
-          }
-        },
-        "required": [
-          "node",
-          "meta_updated"
-        ],
-        "title": "NodePatchOut",
         "type": "object"
       },
       "PairingCreate": {
@@ -6412,25 +6345,6 @@
         "title": "VendorCapabilityOut",
         "type": "object"
       },
-      "VerifiedIn": {
-        "additionalProperties": false,
-        "properties": {
-          "by": {
-            "title": "By",
-            "type": "string"
-          },
-          "method": {
-            "title": "Method",
-            "type": "string"
-          }
-        },
-        "required": [
-          "by",
-          "method"
-        ],
-        "title": "VerifiedIn",
-        "type": "object"
-      },
       "VoiceProbeRequest": {
         "properties": {
           "text": {
@@ -7907,22 +7821,258 @@
     },
     "/api/v1/health": {
       "get": {
-        "operationId": "health_api_v1_health_get",
+        "operationId": "engine_health_api_v1_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthOut"
+                  "$ref": "#/components/schemas/EngineHealthOut"
                 }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Health",
+        "summary": "Engine Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobOut"
+                  },
+                  "title": "Response List Jobs Api V1 Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "operationId": "enqueue_job_api_v1_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/kinds": {
+      "get": {
+        "description": "The registered worker kinds. Empty until a kind registers one.",
+        "operationId": "list_kinds_api_v1_jobs_kinds_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobKindsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Kinds",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/reenqueue": {
+      "post": {
+        "operationId": "reenqueue_job_api_v1_jobs__job_id__reenqueue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reenqueue Job",
+        "tags": [
+          "jobs"
         ]
       }
     },
@@ -9008,156 +9158,6 @@
         "summary": "Get Writeback Targets",
         "tags": [
           "playlist-writeback"
-        ]
-      }
-    },
-    "/api/v1/progress": {
-      "get": {
-        "description": "Full parsed tree + ledger-file git provenance + per-area rollups.",
-        "operationId": "get_progress_api_v1_progress_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Progress Api V1 Progress Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong validator for the exact progress ledger bytes",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Get Progress",
-        "tags": [
-          "progress"
-        ]
-      }
-    },
-    "/api/v1/progress/nodes/{node_id}": {
-      "patch": {
-        "description": "Guarded partial update of one node; atomic YAML rewrite, no git commit.",
-        "operationId": "patch_progress_node_api_v1_progress_nodes__node_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NodePatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NodePatchOut"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong validator for the exact progress ledger bytes",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "If-Match is stale; refresh the ledger before retrying",
-            "headers": {
-              "ETag": {
-                "description": "Strong validator for the exact progress ledger bytes",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "428": {
-            "description": "If-Match header is required for every progress write"
-          },
-          "503": {
-            "description": "Writes are disabled because the cloud lock is unavailable or held by a peer"
-          }
-        },
-        "summary": "Patch Progress Node",
-        "tags": [
-          "progress"
-        ]
-      }
-    },
-    "/api/v1/progress/schema": {
-      "get": {
-        "description": "Agent-discoverable node schema, allowed statuses, and PATCH rules.",
-        "operationId": "get_progress_schema_api_v1_progress_schema_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Progress Schema Api V1 Progress Schema Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Progress Schema",
-        "tags": [
-          "progress"
         ]
       }
     },

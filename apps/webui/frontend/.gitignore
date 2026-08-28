@@ -6,3 +6,6 @@ build/
 !.env.example
 .vite/
 storybook-static/
+
+# Playwright artifacts from e2e/savepoint runs
+test-results/

@@ -38,6 +38,17 @@ const api = requireLoopbackOrigin(
 );
 const dataDir = requireRealLibraryDataDir(REPOSITORY_ROOT);
 
+// ENGINE_CMD seam: the backend boot command is a template so the same spec
+// runs against either engine. Placeholders {host} {port} {data_dir} are
+// substituted here; unset means the legacy webui server, verbatim as before.
+const engineCmd = (
+	process.env.ENGINE_CMD ??
+	'uv run --no-sync python -m apps.webui.server --host {host} --port {port} --prod'
+)
+	.replaceAll('{host}', api.hostname)
+	.replaceAll('{port}', String(api.port))
+	.replaceAll('{data_dir}', dataDir);
+
 // Playwright re-evaluates this config inside every worker, so exporting the
 // resolved origins here is what makes them visible to the spec itself.
 process.env.SAVEPOINT_SMOKE_BASE_URL = frontend.origin;
@@ -55,7 +66,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: `uv run --no-sync python -m apps.webui.server --host ${api.hostname} --port ${api.port} --prod`,
+			command: engineCmd,
 			cwd: REPOSITORY_ROOT,
 			url: `${api.origin}/api/v1/health`,
 			reuseExistingServer: false,

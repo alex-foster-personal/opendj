@@ -9,7 +9,7 @@
  * wrong TYPE anywhere is an explicit error rather than a junk tile.
  */
 
-import { API_BASE } from '$lib/api';
+import { ApiError, api, unwrap } from '$lib/api/client';
 
 export interface KpiDef {
 	label: string;
@@ -121,10 +121,14 @@ export const _parseLedgerForTests = parseLedger;
 //----- fetch ----------------------------------------------------------------
 
 export async function fetchKpiLedger(): Promise<KpiLedger> {
-	const resp = await fetch(`${API_BASE}/api/v1/bench/kpi`, { cache: 'no-store' });
-	if (!resp.ok) {
-		const body = await resp.text();
-		throw new Error(`GET /api/v1/bench/kpi failed (HTTP ${resp.status}): ${body}`);
+	try {
+		const data = await unwrap(api.GET('/api/v1/bench/kpi', { cache: 'no-store' }));
+		return parseLedger(data);
+	} catch (error) {
+		if (error instanceof ApiError) {
+			const bodyText = await error.response.text();
+			throw new Error(`GET /api/v1/bench/kpi failed (HTTP ${error.status}): ${bodyText}`);
+		}
+		throw error;
 	}
-	return parseLedger(await resp.json());
 }

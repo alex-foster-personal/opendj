@@ -81,7 +81,13 @@ soundfile>=0.12  # test fixtures generate click/WAV files for analysis tests
 # keep both explicit rather than masking either supported generation.
 # boto3 (Apache-2) is opt-in, used only by apps.cloud.replicate in
 # production (lazy-imported so tests run without it).
-fastapi>=0.115
+# Pinned exactly: the engine chassis inspects app.router.routes to drop the
+# legacy progress/health routes, and fastapi 0.141/starlette 1.6 changed the
+# include_router representation (_IncludedRouter, no flattened APIRoutes), so
+# an unpinned CI resolve diverged from the locally-proven pair and broke the
+# engine boot guard in CI only. Bump deliberately, with the engine tests.
+fastapi==0.136.3
+starlette==1.2.1
 uvicorn[standard]>=0.30
 regex==2026.7.19
 httpx>=0.28,<1

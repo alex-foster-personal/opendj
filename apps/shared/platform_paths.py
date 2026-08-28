@@ -115,7 +115,47 @@ MUSIC_ROOTS: list[Path] = (
     else [HOME / "Music"]
 )
 
-STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
+# ----- Streaming / non-local path classification --------------------------
+#
+# ONE prefix set and ONE URI test for the whole repo (T3b map D1). Before
+# this, four copies disagreed: rb_vendor and crate_sync knew "soundcloud:"
+# but not "http(s)://", rekordbox_db knew "http(s)://" but not
+# "soundcloud:". Neither omission was deliberate -- both sets were just
+# incomplete -- so the union is strictly more correct for every caller.
+#
+# Two predicates, because callers genuinely ask two different questions and
+# collapsing them corrupts data in both directions (see the T3b commit body):
+#   is_streaming_uri  -- "is this a streaming-service URI?"   ""/None -> False
+#   is_unplayable_path -- "is there no local file here?"      ""/None -> True
+STREAMING_PREFIXES: tuple[str, ...] = (
+    "tidal:",
+    "soundcloud:",
+    "spotify:",
+    "http://",
+    "https://",
+)
+
+
+def is_streaming_uri(path: str | None) -> bool:
+    """True iff ``path`` is a non-empty streaming-service URI.
+
+    An empty/None path is NOT a streaming URI -- it is an absent path. Wire
+    fields that report "this track streams" (the browser read model's
+    ``is_streaming``) must use this, or a track with no FolderPath at all
+    gets rendered as a Spotify row.
+    """
+    return bool(path) and str(path).startswith(STREAMING_PREFIXES)
+
+
+def is_unplayable_path(path: str | None) -> bool:
+    """True iff ``path`` names no local file: empty/None, or a streaming URI.
+
+    This is the "skip it, there is nothing on disk" predicate. An empty path
+    must answer True here, or callers build ``Path("")`` -- which is
+    ``Path(".")``, an existing directory -- and classify a pathless track as
+    a present local file.
+    """
+    return not path or is_streaming_uri(path)
 
 
 # ----- Path map (explicit Mac -> Windows library relocation) ---------------
@@ -341,7 +381,7 @@ def resolve_library_path(
     if path_map is None:
         path_map = load_path_map()
 
-    if not folder_path or folder_path.startswith(STREAMING_PREFIXES):
+    if is_unplayable_path(folder_path):
         return MappedPath(original=folder_path, resolved=None, mapped=False, reason="streaming")
 
     if folder_path.startswith("/PIONEER/"):

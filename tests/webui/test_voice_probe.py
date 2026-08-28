@@ -152,10 +152,26 @@ def test_openapi_lists_voice_probe(client):
     assert "/api/v1/voice/probe" in r.json()["paths"]
 
 
-def test_committed_openapi_matches_live_app(client):
+def test_committed_openapi_covers_the_legacy_surface(client):
+    """The committed document is dumped from the ENGINE app (T5 contract
+    cutover), so exact-match against the engine lives in CI's drift step
+    and `just openapi-determinism`. What this test protects is the
+    compatibility property: every legacy route must still exist in the
+    committed contract, except the surfaces the engine drops on purpose
+    (the progress ledger, and /health which the engine re-owns).
+    """
     committed_path = (
         Path(__file__).resolve().parents[2] / "apps" / "webui" / "openapi.json"
     )
     committed = json.loads(committed_path.read_text(encoding="utf-8"))
 
-    assert committed == client.get("/openapi.json").json()
+    legacy_paths = set(client.get("/openapi.json").json()["paths"])
+    dropped_on_purpose = {
+        path
+        for path in legacy_paths
+        if path.startswith("/api/v1/progress") or path == "/api/v1/health"
+    }
+    missing = legacy_paths - dropped_on_purpose - set(committed["paths"])
+    assert not missing, (
+        f"legacy routes absent from the committed engine contract: {sorted(missing)}"
+    )

@@ -28,6 +28,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.shared.state import db as state_db
 from apps.webui.server import rb_vendor
 from apps.webui.server.routes.rb_hot_cues import router
@@ -114,7 +115,7 @@ def _clear(slot: str) -> dict[str, Any]:
 def master_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "master.plain.db"
     _make_master_plain_db(path, VENDOR_ID)
-    monkeypatch.setattr(rb_vendor, "MASTER_PLAIN_DB", path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", path)
     return path
 
 
@@ -305,8 +306,8 @@ def client(
         state.commit()
     finally:
         state.close()
-    monkeypatch.setattr(rb_vendor, "MASTER_PLAIN_DB", master_path)
-    monkeypatch.setattr(rb_vendor, "STATE_DB", state_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", master_path)
+    monkeypatch.setattr(rb_config, "STATE_DB", state_path)
 
     app = FastAPI()
     app.state.backend = make_backend()

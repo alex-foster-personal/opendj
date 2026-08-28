@@ -36,6 +36,7 @@
     "node": ">=22.14.0"
   },
   "dependencies": {
+    "openapi-fetch": "0.17.0",
     "signalsmith-stretch": "1.3.2"
   }
 }

@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.webui.server import rb_vendor
 from apps.webui.server.routes.tracks import keep_by_availability
 
@@ -153,7 +154,7 @@ def test_peak_downsample_rejects_too_few_columns() -> None:
 def test_store_cached_payload_roundtrips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    monkeypatch.setattr(rb_config, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
     rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
     assert rb_vendor._load_cached_payload("sid", 111.0, 300) == {"marker": "v1"}
     assert list((tmp_path / "anlz-cache").glob("*.tmp")) == [], (
@@ -165,7 +166,7 @@ def test_interrupted_cache_write_never_truncates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Kill mid-write -> old entry intact (or absent), never truncated JSON."""
-    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    monkeypatch.setattr(rb_config, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
     cache_file = rb_vendor._cache_path("sid")
     real_write_text = Path.write_text
 
@@ -197,7 +198,7 @@ def test_interrupted_cache_write_never_truncates(
 def test_store_cached_payload_allows_concurrent_writers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    monkeypatch.setattr(rb_config, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
     real_write_text = Path.write_text
     writers_ready = threading.Barrier(2)
 
@@ -225,7 +226,7 @@ def test_cache_publication_waits_for_concurrent_reader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A Windows reader handle must close before atomic publication starts."""
-    monkeypatch.setattr(rb_vendor, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    monkeypatch.setattr(rb_config, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
     rb_vendor._store_cached_payload("sid", 111.0, 300, {"marker": "v1"})
     real_read_text = Path.read_text
     real_write_text = Path.write_text
@@ -310,6 +311,6 @@ def test_bulk_file_exists_treats_dataless_stub_as_missing(
             original=path, resolved=Path(path), mapped=False, reason="test",
         ),
     )
-    rb_vendor._FILE_EXISTS_CACHE.clear()
+    rb_config._FILE_EXISTS_CACHE.clear()
     assert rb_vendor.bulk_file_exists([str(stub)]) == {str(stub): False}
     assert rb_vendor.bulk_file_size([str(stub)]) == {str(stub): None}

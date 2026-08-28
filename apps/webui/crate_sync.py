@@ -45,7 +45,8 @@ from apps.webui.run_agentbox import (
     ssh_agentbox_argv,
 )
 
-STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
+# Re-export, not a copy: the one prefix set lives in platform_paths (T3b D1).
+STREAMING_PREFIXES: tuple[str, ...] = platform_paths.STREAMING_PREFIXES
 PRELOAD1_PRESET: Path = (
     PROJECT_ROOT
     / "apps"
@@ -269,7 +270,7 @@ def _scope_name(
 
 
 def _is_streaming(path: Optional[str]) -> bool:
-    return bool(path) and path.startswith(STREAMING_PREFIXES)
+    return platform_paths.is_streaming_uri(path)
 
 
 def _materialised_source(raw: Optional[str]) -> Optional[Path]:
