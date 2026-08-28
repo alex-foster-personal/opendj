@@ -33,6 +33,7 @@ from .backend import (BackendError, ConflictError, InMemoryBackend,
 from .cloud_sync import probe_syncthing_status
 from .errors import (handle_backend_error, handle_conflict, handle_not_found)
 from .routes import analysis as analysis_routes
+from .routes import auth as auth_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import copilot as copilot_routes
@@ -216,6 +217,7 @@ def create_app(
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
+    app.include_router(auth_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)
