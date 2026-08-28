@@ -47,9 +47,11 @@ sqlalchemy>=2.0,<3
 Pillow>=10.0
 
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
-# numpy<2 for madmom compat.  librosa (ISC) + madmom (MIT) + scipy for the
-# default backend; PyYAML drives ``apps/analysis/config.yaml``.
-numpy<2
+# numpy floor matches pyproject's core `numpy>=1.26` (PyO3 waveform runtime,
+# PR #493); the <2 ceiling is madmom compat only.  librosa (ISC) + madmom
+# (MIT) + scipy for the default backend; PyYAML drives
+# ``apps/analysis/config.yaml``.
+numpy>=1.26,<2
 scipy>=1.13
 librosa==0.10.*
 # madmom 0.16.1 still imports ``collections.MutableSequence`` (removed in
