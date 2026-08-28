@@ -5,9 +5,16 @@ from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, Request
 
+from .. import rb_vendor
 from ..backend import StateBackend
 from ..deps import get_read_state
-from ..models import HealthCloud, HealthOut, HealthStateDb, HealthSyncthing
+from ..models import (
+    HealthCloud,
+    HealthOut,
+    HealthStateDb,
+    HealthSyncthing,
+    HealthWaveformMaterialization,
+)
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -55,5 +62,8 @@ def health(
         cloud=cloud,
         syncthing=(HealthSyncthing(**syncthing)
                    if isinstance(syncthing, dict) else None),
+        waveform_materialization=HealthWaveformMaterialization(
+            **rb_vendor.waveform_materialization_status()
+        ),
         bind_host=bind_host, version=version,
     )

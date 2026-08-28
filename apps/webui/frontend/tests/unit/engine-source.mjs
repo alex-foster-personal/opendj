@@ -1,6 +1,6 @@
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /**
  * The engine's SOURCE-TEXT surface, as a list of files rather than one path.
@@ -30,33 +30,42 @@ import { fileURLToPath } from 'node:url';
  *   guard could pin the wrong body
  */
 
-const SRC = fileURLToPath(new URL('../../src', import.meta.url));
+const SRC = fileURLToPath(new URL("../../src", import.meta.url));
 
 /**
  * Every file that together holds what used to be audio-engine.svelte.ts.
  * Seeded with today's single path; T4 appends `lib/player/*` entries.
  */
-export const ENGINE_SOURCE_PATHS = ['lib/rb/audio-engine.svelte.ts'];
+export const ENGINE_SOURCE_PATHS = ["lib/rb/audio-engine.svelte.ts"];
 
 //-----------------------------------------------------------------------------
 // reading
 //-----------------------------------------------------------------------------
 
 function _readEngineSources() {
-	return ENGINE_SOURCE_PATHS.map((path) => {
-		const text = readFileSync(`${SRC}/${path}`, 'utf8');
-		assert.ok(
-			text.trim().length > 0,
-			`if ${path} reads empty then every source-text guard below silently asserts nothing`
-		);
-		return { path, text };
-	});
+  return ENGINE_SOURCE_PATHS.map((path) => {
+    // LF-normalize so multi-line shape guards survive a CRLF checkout.
+    const text = readFileSync(`${SRC}/${path}`, "utf8").replaceAll(
+      "\r\n",
+      "\n",
+    );
+    assert.ok(
+      text.trim().length > 0,
+      `if ${path} reads empty then every source-text guard below silently asserts nothing`,
+    );
+    return { path, text };
+  });
 }
 
 function _countOccurrences(text, needle) {
-	let count = 0;
-	for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) count += 1;
-	return count;
+  let count = 0;
+  for (
+    let at = text.indexOf(needle);
+    at !== -1;
+    at = text.indexOf(needle, at + 1)
+  )
+    count += 1;
+  return count;
 }
 
 //-----------------------------------------------------------------------------
@@ -72,39 +81,44 @@ function _countOccurrences(text, needle) {
  * across the whole engine surface.
  */
 export function engineBlockAfter(anchor) {
-	assert.ok(
-		anchor.endsWith('{'),
-		`engine anchors must end at the block's opening brace, got: ${anchor}`
-	);
+  assert.ok(
+    anchor.endsWith("{"),
+    `engine anchors must end at the block's opening brace, got: ${anchor}`,
+  );
 
-	const sources = _readEngineSources();
-	const total = sources.reduce((sum, file) => sum + _countOccurrences(file.text, anchor), 0);
-	assert.equal(
-		total,
-		1,
-		`if "${anchor}" does not occur exactly once across ` +
-			`[${ENGINE_SOURCE_PATHS.join(', ')}] (found ${total}) then this drift guard is ` +
-			'pointed at nothing and must be re-pointed, not deleted'
-	);
+  const sources = _readEngineSources();
+  const total = sources.reduce(
+    (sum, file) => sum + _countOccurrences(file.text, anchor),
+    0,
+  );
+  assert.equal(
+    total,
+    1,
+    `if "${anchor}" does not occur exactly once across ` +
+      `[${ENGINE_SOURCE_PATHS.join(", ")}] (found ${total}) then this drift guard is ` +
+      "pointed at nothing and must be re-pointed, not deleted",
+  );
 
-	const file = sources.find((entry) => entry.text.includes(anchor));
-	const { text } = file;
-	const open = text.indexOf(anchor) + anchor.length - 1;
+  const file = sources.find((entry) => entry.text.includes(anchor));
+  const { text } = file;
+  const open = text.indexOf(anchor) + anchor.length - 1;
 
-	let depth = 0;
-	for (let i = open; i < text.length; i += 1) {
-		if (text[i] === '{') depth += 1;
-		else if (text[i] === '}') {
-			depth -= 1;
-			if (depth === 0) {
-				const body = text.slice(open + 1, i);
-				assert.ok(
-					body.trim().length > 0,
-					`if the block after "${anchor}" is empty then the guard asserts nothing`
-				);
-				return body;
-			}
-		}
-	}
-	throw new Error(`unbalanced braces after engine anchor in ${file.path}: ${anchor}`);
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    if (text[i] === "{") depth += 1;
+    else if (text[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const body = text.slice(open + 1, i);
+        assert.ok(
+          body.trim().length > 0,
+          `if the block after "${anchor}" is empty then the guard asserts nothing`,
+        );
+        return body;
+      }
+    }
+  }
+  throw new Error(
+    `unbalanced braces after engine anchor in ${file.path}: ${anchor}`,
+  );
 }

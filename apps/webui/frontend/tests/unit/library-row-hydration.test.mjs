@@ -175,7 +175,9 @@ test('a row with no listing hydration at all is still answered for', () => {
 test('only O(1)-per-view call sites can reach an /anlz fetch', () => {
 	const offenders = [];
 	for (const path of sourceFiles(SRC)) {
-		const rel = path.slice(SRC.length + 1);
+		// The allowlist is keyed by POSIX-shaped paths; join() hands back
+		// backslashes on Windows, where every file then read as unlisted.
+		const rel = path.slice(SRC.length + 1).replaceAll('\\', '/');
 		if (ALLOWED_ANLZ_CALLERS.has(rel)) continue;
 		const text = readFileSync(path, 'utf8');
 		for (const entry of ANLZ_ENTRY_POINTS) {

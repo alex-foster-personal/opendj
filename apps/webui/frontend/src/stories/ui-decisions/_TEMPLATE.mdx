@@ -1,0 +1,54 @@
+import { Meta } from '@storybook/addon-docs/blocks';
+
+<Meta title="UI decisions/_TEMPLATE" />
+
+# TEMPLATE: the rule, stated as a rule
+
+Copy this file to `<kebab-case-name>.mdx` in this folder, retitle it, fill every
+section, and delete this paragraph. Keep it short: a decision nobody reads is
+not a record.
+
+MDX treats a bare `<` as the start of a JSX tag, so angle-bracket placeholders
+must sit inside backticks or the build fails to index the page.
+
+## The decision
+
+One or two sentences, phrased as a rule someone can follow or break. State it
+so that a reviewer can point at a diff and say "this violates it".
+
+## Why
+
+The failure this prevents. Concrete beats abstract: name the confusion, the
+support question, or the bug that made the rule necessary. If the rule came
+from a real incident, say so and date it (`Thu 20 Aug 2026`).
+
+## What to do when adding new UI
+
+A checklist a contributor can run through without reading the rest of this
+page. Cover the ordinary case, then the edge case people get wrong.
+
+- [ ] ...
+- [ ] ...
+
+## What this is not
+
+Where the rule stops. Rules without stated limits get cargo-culted into
+places they do not belong.
+
+## Visual example
+
+Point at a real story. Import its full set of exports, never the component:
+
+```mdx
+import * as SomeStories from '../../lib/components/path/Some.stories';
+
+<Canvas of={SomeStories.SomeVariant} />
+```
+
+Add `Canvas` to the import at the top of the file when you use it.
+
+## Enforcement
+
+How a breach is actually caught: a test, a lint rule, a grep, or "review
+only". Be honest -- "review only" is a valid answer and tells the reader how
+much the rule is really worth.

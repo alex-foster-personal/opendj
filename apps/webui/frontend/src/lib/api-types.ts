@@ -1969,6 +1969,7 @@ export interface components {
             syncthing?: components["schemas"]["HealthSyncthing"] | null;
             /** Version */
             version: string;
+            waveform_materialization: components["schemas"]["HealthWaveformMaterialization"];
         };
         /** ErrorBody */
         ErrorBody: {
@@ -2162,6 +2163,17 @@ export interface components {
              * @default 0
              */
             peers_connected: number;
+        };
+        /** HealthWaveformMaterialization */
+        HealthWaveformMaterialization: {
+            /** Native Available */
+            native_available: boolean;
+            /** Native Import Error */
+            native_import_error?: string | null;
+            /** Requested */
+            requested: string;
+            /** Selected */
+            selected: string;
         };
         /** HotCueMutationOut */
         HotCueMutationOut: {

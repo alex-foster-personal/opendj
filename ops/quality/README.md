@@ -52,6 +52,35 @@ switched off. To re-gate it, make the measurement host-independent (run deptry
 in a pinned container, or record a per-platform baseline) and then remove it
 from `REPORT_ONLY` in `scripts/quality_gate.py` -- do not just delete the entry.
 
+## Allowances raised by hand, and why
+
+Two entries in `baseline.json` are above where they stood on Sun 17 Aug 2026.
+Both were raised deliberately in one diff, and both are debts with a named
+owner rather than a number that drifted.
+
+CI was fail-open between the default-branch rename and PR #464, so the
+`fix(agentbox)` crate-reconcile train (`6287d7c1`, `58dbfc13`, `bfa33dec`,
+`5dc2664c`) landed nine new complexity findings unmeasured. Five of them are
+paid back in the same PR as this note. These two are not:
+
+| metric | was | now | what is in the gap |
+| ------ | --- | --- | ------------------ |
+| `ruff.complexity` | 140 | 144 | `apps/webui/crate_sync.py::_run`, which `6287d7c1`, `58dbfc13` and `5dc2664c` grew until it tripped four rules at once: C901 (18 > 12), PLR0911 (9 returns > 8), PLR0912 (18 branches > 15), PLR0915 (96 statements > 60). |
+| `complexity.blocks_over_limit` | 142 | 143 | `apps/webui/crate_sync.py::_rsync_manifest_from_host`, added by `6287d7c1` over the mccabe limit of 12. |
+
+Both live in `apps/webui/crate_sync.py`, which was under concurrent edit by the
+Windows parity lane when this was recovered, so refactoring it here would have
+collided with live work rather than fixed anything. That file is already the
+worst maintainability score in the tree (`complexity.low_maintainability_files`
+names it at MI 0.0), and it grew from 910 to 1556 lines across that same train.
+It is the single highest-value Python refactor available right now.
+
+Paying this down means splitting `_run` into per-subcommand handlers and
+lifting the manifest fetch out of `_rsync_manifest_from_host`. Doing that takes
+`ruff.complexity` back to 140 and `complexity.blocks_over_limit` to 142, and
+both should be re-recorded the moment it lands. Do not raise either number
+again without adding a row above.
+
 ## What each evaluator answers
 
 | evaluator | tool | the question it answers |
