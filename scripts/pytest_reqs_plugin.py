@@ -243,6 +243,20 @@ def _run_scope(config, n_items: int) -> tuple[bool, str]:  # type: ignore[no-unt
     if getattr(opt, "lf", False) or getattr(opt, "failedfirst", False):
         filters.append("`--last-failed`/`--failed-first`")
 
+    # --ignore / --ignore-glob / --deselect drop items during collection while
+    # leaving config.args equal to testpaths, so without these the run reports
+    # itself as a full suite while whole files' markers are missing. Not a
+    # hypothetical: .claude/rules/python-backend.md tells contributors to run
+    # `--ignore=` for the two tests/vocals modules that need modal.
+    for dest, flag in (
+        ("ignore", "--ignore"),
+        ("ignore_glob", "--ignore-glob"),
+        ("deselect", "--deselect"),
+    ):
+        values = getattr(opt, dest, None)
+        if values:
+            filters.append(f"`{flag}=" + f"`, `{flag}=".join(values) + "`")
+
     # pytest backfills ``config.args`` from ``testpaths`` when no path is
     # given, so an unfiltered `pytest` and `pytest tests` both compare equal.
     testpaths = [str(p) for p in (config.getini("testpaths") or [])]
