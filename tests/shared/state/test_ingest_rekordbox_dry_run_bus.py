@@ -10,7 +10,6 @@ never landed.
 from __future__ import annotations
 
 import shutil
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,6 @@ from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.ingest import rekordbox as rb_ingest
 from apps.shared.state.writer import StateWriter
-
 
 pytestmark = pytest.mark.requirement("INFRA-03")
 

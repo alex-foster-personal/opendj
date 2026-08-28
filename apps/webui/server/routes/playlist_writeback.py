@@ -7,6 +7,8 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from apps.shared.events import publish
+
 from ..backend import StateBackend
 from ..deps import get_read_state, get_write_state
 from ..playlist_writeback import (
@@ -188,6 +190,8 @@ def apply_writeback(
         raise _unavailable(exc) from exc
     except WritebackConflict as exc:
         raise _conflict(exc) from exc
+    if not body.dry_run:
+        publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return WritebackApplyOut(playlist_id=playlist_id, **result.__dict__)
 
 
@@ -203,6 +207,7 @@ def rollback_writeback(
         raise _unavailable(exc) from exc
     except WritebackConflict as exc:
         raise _conflict(exc) from exc
+    publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
     return WritebackRollbackOut(playlist_id=playlist_id, **result.__dict__)
 
 

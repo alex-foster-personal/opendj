@@ -16,7 +16,6 @@ Spec references: ID3v2.4.0-structure, ID3v2.4.0-frames (id3.org).
 """
 from __future__ import annotations
 
-import struct
 from pathlib import Path
 
 PRIVACY_NOTE_DEFAULT = (

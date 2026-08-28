@@ -19,13 +19,12 @@ Covers:
 """
 from __future__ import annotations
 
-import io
 import sys
 from pathlib import Path
+
 import pytest
 
 from apps.dj_copilot.session_context import (
-    SessionContext,
     load_session_context,
 )
 
@@ -61,11 +60,14 @@ def test_p13_f02_auto_still_falls_through_to_empty() -> None:
 # -- P14-F03 --------------------------------------------------------------
 
 
+# VOICE-02 does not exist: .planning/phases/14-voice-commands/14-CONTEXT.md
+# reserves "VOICE-02+" for future backlog items. The shipped requirement
+# this CLI-flag test defends is VOICE-01.
 @pytest.mark.requirement("VOICE-01")
 def test_p14_f03_run_honours_enable_destructive_and_dry_bus(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from apps.voice.__main__ import build_parser, _cmd_run
+    from apps.voice.__main__ import _cmd_run, build_parser
 
     args = build_parser().parse_args(
         ["run", "--enable-destructive", "--dry-bus"]

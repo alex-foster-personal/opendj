@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -27,12 +28,19 @@ def test_localhost_url_is_loopback_only() -> None:
 
 def test_open_localhost_refuses_non_loopback() -> None:
     with pytest.raises(PortConfigError, match="non-loopback"):
-        open_localhost("http://agentbox.example-tailnet.ts.net:8080")
+        open_localhost("https://agentbox.example-tailnet.ts.net")
     with pytest.raises(PortConfigError, match="non-loopback"):
         open_localhost("http://127.0.0.1:9400/../")
 
 
 def test_service_command_stays_in_the_repo(tmp_path: Path) -> None:
+    if os.name == "nt":
+        # No Terminal.app and no tmux on Windows, so the contract there is an
+        # explicit refusal naming what to run by hand -- not a shell line that
+        # cmd.exe could never execute.
+        with pytest.raises(PortConfigError, match="POSIX shell host"):
+            service_command("backend", repo=tmp_path, just="just")
+        return
     cmd = service_command("backend", repo=tmp_path, just="/opt/homebrew/bin/just")
     assert cmd.startswith(f"cd {tmp_path}")
     assert cmd.endswith("exec /opt/homebrew/bin/just webui-backend")

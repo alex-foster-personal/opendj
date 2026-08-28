@@ -12,16 +12,17 @@ from typing import Iterator
 
 from pyrekordbox import Rekordbox6Database
 
-from . import paths
-
-_STREAMING_PREFIXES = ("spotify:", "tidal:", "http://", "https://")
+from . import paths, platform_paths
 
 
 def is_streaming_path(p: str | None) -> bool:
-    """True if ``p`` is empty/None or looks like a streaming service URI."""
-    if not p:
-        return True
-    return p.startswith(_STREAMING_PREFIXES)
+    """True if ``p`` is empty/None or looks like a streaming service URI.
+
+    Alias of :func:`apps.shared.platform_paths.is_unplayable_path`, which is
+    the one definition (T3b map D1). Kept under this name because it is
+    exported here and imported by reconcile/relocate/sync call sites.
+    """
+    return platform_paths.is_unplayable_path(p)
 
 
 @dataclass(slots=True)

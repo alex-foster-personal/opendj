@@ -20,12 +20,9 @@ from apps.shared.normalised import NormalisedCue
 from apps.sync.djay_writer import (
     encode_cue_array,
     encode_cue_point,
-    encode_loop_array,
-    encode_loop_region,
     patch_cue_points,
     patch_loop_regions,
 )
-
 
 pytestmark = pytest.mark.requirement("SYNC-04")
 

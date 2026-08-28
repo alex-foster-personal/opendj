@@ -6,6 +6,9 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 
+from apps.shared import audio_quality
+from apps.shared.events import publish
+
 from .. import rb_vendor
 from ..backend import StateBackend, Track, TrackFilter
 from ..deps import get_read_state, get_write_state
@@ -19,7 +22,6 @@ from ..models import (
     TrackPatch,
     TracksPage,
 )
-from apps.shared import audio_quality
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
@@ -165,4 +167,5 @@ def patch_track(
         stable_id, patch_dict, expected_etag=if_match, source="webui"
     )
     response.headers["ETag"] = compute_etag(updated.stable_id, updated.updated_at)
+    publish("library.changed", {"kind": "tracks", "ids": [updated.stable_id]})
     return _track_to_out(updated)

@@ -18,11 +18,17 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.webui.server.backend import (
-    InMemoryBackend, MyTagScopeConflictError, NotFoundError, Pairing,
-    QueueItem, Track, TrackFilter, compute_mytag_catalog_revision,
-)
 from apps.webui.server import sqlite_backend as sb_mod
+from apps.webui.server.backend import (
+    InMemoryBackend,
+    MyTagScopeConflictError,
+    NotFoundError,
+    Pairing,
+    QueueItem,
+    Track,
+    TrackFilter,
+    compute_mytag_catalog_revision,
+)
 from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
 
 pytestmark = pytest.mark.requirement("CAT-05")
@@ -395,6 +401,7 @@ class TestFallbackPaths:
         succeeds and the durable sqlite state reflects the winner.
         """
         import threading
+
         from apps.webui.server.backend import ConflictError
         from apps.webui.server.etag import compute_etag
 
@@ -454,7 +461,7 @@ class TestFallbackPaths:
         original_set_field = sb_mod.StateWriter.set_field
         calls = 0
 
-        def fail_second_write(self, *args, **kwargs):  # noqa: ANN001
+        def fail_second_write(self, *args, **kwargs):
             nonlocal calls
             calls += 1
             if calls == 2:
@@ -482,7 +489,7 @@ class TestFallbackPaths:
         original_open_rw = sb_mod._state_db.open_rw
         injected = False
 
-        def open_rw_after_racing_add(*args, **kwargs):  # noqa: ANN002, ANN003
+        def open_rw_after_racing_add(*args, **kwargs):
             nonlocal injected
             if not injected:
                 injected = True

@@ -8,8 +8,10 @@ It does not bind, serve, or rewrite Tailscale config on the caller.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -32,11 +34,16 @@ from apps.webui.port_config import (
 )
 
 ALLOWED_HOSTS_ENV = "MUSIC_DJ_ALLOWED_HOSTS"
-SERVE_HTTP_PORT = 8080
+SERVE_HTTPS_PORT = 443
+SERVE_HTTP_PORT = 80
+LEGACY_SERVE_HTTP_PORT = 8080
+HTTP_REDIRECT_PORT = 9080
 BACKEND_WAIT_SECONDS = 30.0
 FRONTEND_WAIT_SECONDS = 45.0
 STOP_WAIT_SECONDS = 5.0
 PID_RE = re.compile(r"pid=(\d+)")
+# netstat's foreign-address column for a socket with no peer: a listener.
+WINDOWS_IDLE_PEERS = frozenset({"0.0.0.0:0", "[::]:0", "*:*"})
 LOG_DIR = Path.home() / ".local/share/music-dj-tools/webui"
 SCRATCH_DIR = PROJECT_ROOT / ".tmp"
 EPHEMERAL_LOG_DIR = Path(tempfile.gettempdir()) / "music-dj-tools"
@@ -46,6 +53,7 @@ ALLOWED_SSH_HOSTS = frozenset({"agentbox", "agentbox.example-tailnet.ts.net"})
 SSH_HOST = "agentbox"
 REMOTE_REPO = "/root/music-dj-tools"
 SSH_CONNECT_TIMEOUT = "8"
+CLIENT_LOG_NAMES = frozenset({"webui-client-errors", "webui-visitors"})
 
 
 def resolve_allowed_hosts(
@@ -78,28 +86,95 @@ def public_host(hosts: Sequence[str]) -> str:
     return hosts[0]
 
 
-def listener_pids(port: int) -> list[int]:
-    """PIDs listening on port, from ``ss`` (no guessed occupants)."""
+def _windows_listener_pids(port: int) -> list[int]:
+    """PIDs listening on ``port``, read from ``netstat -ano``.
+
+    Windows ships neither ``ss`` nor ``lsof``; ``netstat`` is in System32 on
+    every install. Rows read ``TCP <local> <foreign> LISTENING <pid>``, and a
+    listener is identified by its empty foreign address rather than by the
+    state word, which netstat translates on a localised Windows. A row for a
+    CONNECTION to this port carries a real peer there, so the same test also
+    keeps established sockets out of the answer.
+    """
     result = subprocess.run(
-        ["ss", "-ltnpH", f"sport = :{port}"],
-        check=False,
-        capture_output=True,
-        text=True,
+        ["netstat", "-ano"], check=False, capture_output=True, text=True
     )
     if result.returncode != 0:
-        raise PortConfigError(f"ss failed for port {port}: {result.stderr.strip()}")
+        detail = result.stderr.strip() or f"exit {result.returncode}"
+        raise PortConfigError(f"netstat failed for port {port}: {detail}")
     pids: list[int] = []
     for line in result.stdout.splitlines():
-        for match in PID_RE.finditer(line):
-            pid = int(match.group(1))
+        fields = line.split()
+        if len(fields) != 5 or not fields[0].upper().startswith("TCP"):
+            continue
+        _protocol, local, foreign, _state, raw_pid = fields
+        if not local.endswith(f":{port}") or foreign not in WINDOWS_IDLE_PEERS:
+            continue
+        if not raw_pid.isdigit():
+            continue
+        pid = int(raw_pid)
+        if pid not in pids:
+            pids.append(pid)
+    return pids
+
+
+def listener_pids(port: int) -> list[int]:
+    """PIDs listening on port, from ``ss``, ``lsof`` or ``netstat``.
+
+    The agentbox itself is Linux, where ``ss`` is the right tool. The same
+    launcher is driven from macOS during development, which has no ``ss``
+    at all, and from Windows, which has neither -- an undecorated
+    ``FileNotFoundError`` from the subprocess is a worse diagnostic than
+    "the port is busy", so dispatch on whichever probe the host actually has
+    and fail loudly when it has none.
+    """
+    if os.name == "nt":
+        return _windows_listener_pids(port)
+    if shutil.which("ss"):
+        argv = ["ss", "-ltnpH", f"sport = :{port}"]
+    elif shutil.which("lsof"):
+        # -b is not optional: without it lsof stats every mounted filesystem,
+        # which on a Mac carrying iCloud or network mounts blocks for tens of
+        # seconds, trips lsof's own 15s alarm and makes it abandon the scan
+        # and print NOTHING -- an occupied port silently reported as free.
+        # -b skips those blocking kernel calls; a network query never needed
+        # them. Measured 30.1s/17.6s/0.05s unflagged vs a flat 0.03s with -b.
+        argv = ["lsof", "-b", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"]
+    else:
+        raise PortConfigError(
+            f"cannot read listeners on port {port}: neither 'ss' nor 'lsof' "
+            "is on PATH"
+        )
+    result = subprocess.run(argv, check=False, capture_output=True, text=True)
+    # lsof exits 1 with no output when nothing holds the port; that is an
+    # empty answer, not a failure. ss reports the same state with exit 0.
+    # An empty answer that came WITH a warning is not an answer at all --
+    # that is the under-report case, so refuse it rather than call the port
+    # free.
+    stderr = result.stderr.strip()
+    if not result.stdout.strip() and stderr:
+        raise PortConfigError(f"{argv[0]} could not read port {port}: {stderr}")
+    if result.returncode != 0 and (argv[0] != "lsof" or stderr):
+        raise PortConfigError(f"{argv[0]} failed for port {port}: {stderr}")
+    pids: list[int] = []
+    for line in result.stdout.splitlines():
+        # ss tags the holder as ``pid=1234``; lsof -t prints the bare PID.
+        found = PID_RE.findall(line) or ([line.strip()] if line.strip().isdigit() else [])
+        for raw in found:
+            pid = int(raw)
             if pid not in pids:
                 pids.append(pid)
     return pids
 
 
 def can_bind(port: int) -> bool:
-    """True when a new loopback listener could take the port."""
+    """True when a new server listener could take the port.
+
+    Match uvicorn/Vite's address-reuse behavior so a clean restart is not
+    blocked by the previous listener's harmless TCP TIME_WAIT sockets.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(("127.0.0.1", port))
         except OSError:
@@ -173,10 +248,19 @@ def _is_our_frontend(pid: int) -> bool:
     return False
 
 
+def _is_our_redirect(pid: int) -> bool:
+    return any(
+        "apps.agentbox.http_redirect" in _proc_text(current, "cmdline")
+        for current in _walk_ancestors(pid)
+    )
+
+
 def _stoppable_ancestor(pid: int) -> bool:
     cmdline = _proc_text(pid, "cmdline")
     cwd = _proc_cwd(pid)
     if "apps.webui.server" in cmdline:
+        return True
+    if "apps.agentbox.http_redirect" in cmdline:
         return True
     if "vite" in cmdline and (
         str(PROJECT_ROOT) in cwd or str(PROJECT_ROOT) in cmdline
@@ -186,9 +270,10 @@ def _stoppable_ancestor(pid: int) -> bool:
 
 
 def stop_worktree_listeners(ports: WebuiPorts) -> list[str]:
-    """Stop this worktree's backend/frontend. Refuse a foreign occupant."""
+    """Stop this worktree's web listeners. Refuse a foreign occupant."""
     notes: list[str] = []
     for service, port, ours in (
+        ("HTTP redirect", HTTP_REDIRECT_PORT, _is_our_redirect),
         ("backend", ports.backend, _is_our_backend),
         ("frontend", ports.frontend, _is_our_frontend),
     ):
@@ -244,6 +329,36 @@ def http_status(url: str, *, host: str | None = None, timeout: float = 2.0) -> i
         return 0
 
 
+def https_status(
+    url: str, *, resolve_host: str, resolve_ip: str, timeout: float = 3.0
+) -> int:
+    """Probe Serve with real TLS/SNI even when the box cannot resolve itself."""
+    result = subprocess.run(
+        [
+            "curl",
+            "--silent",
+            "--output",
+            "/dev/null",
+            "--write-out",
+            "%{http_code}",
+            "--max-time",
+            str(timeout),
+            "--resolve",
+            f"{resolve_host}:{SERVE_HTTPS_PORT}:{resolve_ip}",
+            url,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return 0
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return 0
+
+
 def _wait_http(url: str, *, host: str | None, seconds: float, label: str) -> int:
     deadline = time.monotonic() + seconds
     last = 0
@@ -253,6 +368,72 @@ def _wait_http(url: str, *, host: str | None, seconds: float, label: str) -> int
             return last
         time.sleep(0.2)
     raise PortConfigError(f"{label} did not reach 200 (last {last}) at {url}")
+
+
+def _wait_https(
+    url: str, *, resolve_host: str, resolve_ip: str, seconds: float, label: str
+) -> int:
+    deadline = time.monotonic() + seconds
+    last = 0
+    while time.monotonic() < deadline:
+        last = https_status(
+            url, resolve_host=resolve_host, resolve_ip=resolve_ip
+        )
+        if last == 200:
+            return last
+        time.sleep(0.2)
+    raise PortConfigError(f"{label} did not reach 200 (last {last}) at {url}")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+def redirect_response(
+    url: str, *, host: str | None = None, timeout: float = 2.0
+) -> tuple[int, str | None]:
+    """Return a real HTTP response without following its redirect."""
+    request = urllib.request.Request(url, method="GET")
+    if host is not None:
+        request.add_header("Host", host)
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            return int(response.status), response.headers.get("Location")
+    except urllib.error.HTTPError as exc:
+        return int(exc.code), exc.headers.get("Location")
+    except (OSError, urllib.error.URLError, ValueError):
+        return 0, None
+
+
+def _wait_redirect(
+    url: str,
+    *,
+    host: str | None,
+    expected_location: str,
+    seconds: float,
+    label: str,
+) -> None:
+    deadline = time.monotonic() + seconds
+    last: tuple[int, str | None] = (0, None)
+    while time.monotonic() < deadline:
+        last = redirect_response(url, host=host)
+        if last == (307, expected_location):
+            return
+        time.sleep(0.2)
+    raise PortConfigError(
+        f"{label} did not redirect to {expected_location} (last {last}) at {url}"
+    )
 
 
 def log_home(*, hostname: str | None = None) -> Path:
@@ -267,6 +448,13 @@ def log_home(*, hostname: str | None = None) -> Path:
     return EPHEMERAL_LOG_DIR
 
 
+def log_dir_for(name: str, *, hostname: str | None = None) -> Path:
+    """Browser-originated diagnostics persist; process logs are host-scoped."""
+    if name in CLIENT_LOG_NAMES:
+        return LOG_DIR
+    return log_home(hostname=hostname)
+
+
 def dated_log_path(
     name: str,
     *,
@@ -275,7 +463,7 @@ def dated_log_path(
 ) -> Path:
     """One append-only file per process per local day."""
     day = time.strftime("%Y-%m-%d", now or time.localtime())
-    return (durable_dir or log_home()) / f"{name}-{day}.log"
+    return (durable_dir or log_dir_for(name)) / f"{name}-{day}.log"
 
 
 def prepare_log_path(
@@ -325,11 +513,11 @@ def _tailscale_ipv4() -> str:
     return ip
 
 
-def ensure_serve(frontend_port: int) -> str:
-    """Point tailscale serve :8080 at this worktree's Vite loopback."""
+def ensure_serve(frontend_port: int, redirect_port: int = HTTP_REDIRECT_PORT) -> str:
+    """Serve secure Vite plus a tailnet-only HTTP-to-HTTPS redirect."""
     target = f"http://127.0.0.1:{frontend_port}"
     result = subprocess.run(
-        ["tailscale", "serve", "--bg", f"--http={SERVE_HTTP_PORT}", target],
+        ["tailscale", "serve", "--bg", f"--https={SERVE_HTTPS_PORT}", target],
         check=False,
         capture_output=True,
         text=True,
@@ -338,6 +526,56 @@ def ensure_serve(frontend_port: int) -> str:
         raise PortConfigError(
             f"tailscale serve failed: {result.stderr.strip() or result.stdout.strip()}"
         )
+    redirect_target = f"http://127.0.0.1:{redirect_port}"
+    redirect = subprocess.run(
+        [
+            "tailscale",
+            "serve",
+            "--bg",
+            f"--http={SERVE_HTTP_PORT}",
+            redirect_target,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if redirect.returncode != 0:
+        raise PortConfigError(
+            "tailscale HTTP redirect serve failed: "
+            f"{redirect.stderr.strip() or redirect.stdout.strip()}"
+        )
+    status = subprocess.run(
+        ["tailscale", "serve", "status", "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if status.returncode != 0:
+        raise PortConfigError(
+            f"tailscale serve status failed: {status.stderr.strip()}"
+        )
+    try:
+        active_ports = json.loads(status.stdout).get("TCP", {})
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise PortConfigError("tailscale serve status returned invalid JSON") from exc
+    if str(LEGACY_SERVE_HTTP_PORT) in active_ports:
+        legacy = subprocess.run(
+            [
+                "tailscale",
+                "serve",
+                "--yes",
+                f"--http={LEGACY_SERVE_HTTP_PORT}",
+                "off",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if legacy.returncode != 0:
+            raise PortConfigError(
+                "failed to disable insecure legacy Serve endpoint: "
+                f"{legacy.stderr.strip() or legacy.stdout.strip()}"
+            )
     return target
 
 
@@ -379,7 +617,27 @@ def remote_run_command() -> str:
     )
 
 
-def run_via_ssh(*, ssh_host: str = SSH_HOST) -> int:
+def _validated_stem_track(stable_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", stable_id):
+        raise PortConfigError(f"invalid stem stable id {stable_id!r}")
+    return stable_id
+
+
+def remote_check_command(stem_track: str | None = None) -> str:
+    """Constant remote browser-check payload. --local prevents a second hop."""
+    command = (
+        f"test \"$(hostname)\" = {AGENTBOX_HOSTNAME} && "
+        f"cd {REMOTE_REPO} && "
+        "exec uv run --no-sync python -m apps.webui.run_agentbox --local --check"
+    )
+    if stem_track is not None:
+        command += f" --stem-track {_validated_stem_track(stem_track)}"
+    return command
+
+
+def run_via_ssh(
+    *, ssh_host: str = SSH_HOST, remote_command: str | None = None
+) -> int:
     """Start the box from a Mac. Does not bind or serve on the caller."""
     check = subprocess.run(
         ssh_agentbox_argv("hostname", ssh_host=ssh_host),
@@ -394,9 +652,41 @@ def run_via_ssh(*, ssh_host: str = SSH_HOST) -> int:
             f"ssh {ssh_host} did not reach {AGENTBOX_HOSTNAME} ({detail})"
         )
     print(f"[OK] hop ssh {ssh_host} -> {remote_name}")
-    hopped = subprocess.run(ssh_agentbox_argv(remote_run_command(), ssh_host=ssh_host))
+    command = remote_run_command() if remote_command is None else remote_command
+    hopped = subprocess.run(ssh_agentbox_argv(command, ssh_host=ssh_host))
     if hopped.returncode != 0:
         raise PortConfigError(f"remote run-agentbox exited {hopped.returncode}")
+    return 0
+
+
+def check_agentbox(stem_track: str | None = None) -> int:
+    """Prove HTTP aliases, TLS, browser JS, AudioWorklet, IPC, API and telemetry."""
+    hosts = resolve_allowed_hosts()
+    host = public_host(hosts)
+    serve_ip = _tailscale_ipv4()
+    command = [
+            "pnpm",
+            "exec",
+            "node",
+            "scripts/agentbox-check.mjs",
+            "--host",
+            host,
+            "--ip",
+            serve_ip,
+        ]
+    if stem_track is not None:
+        command.extend(["--stem-track", _validated_stem_track(stem_track)])
+    result = subprocess.run(
+        command,
+        cwd=FRONTEND_DIR,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise PortConfigError(f"agentbox browser check failed: {detail}")
+    print(f"[OK] browser {result.stdout.strip()}")
     return 0
 
 
@@ -409,11 +699,18 @@ def run_agentbox() -> int:
         print(f"[OK] {note}")
     wait_bindable(ports.backend, STOP_WAIT_SECONDS + 10.0, "backend")
     wait_bindable(ports.frontend, STOP_WAIT_SECONDS + 10.0, "frontend")
+    wait_bindable(HTTP_REDIRECT_PORT, STOP_WAIT_SECONDS + 10.0, "HTTP redirect")
 
     backend_log = prepare_log_path("webui-backend")
     frontend_log = prepare_log_path("webui-frontend")
+    client_error_log = prepare_log_path("webui-client-errors")
+    visitor_log = prepare_log_path("webui-visitors")
+    redirect_log = prepare_log_path("agentbox-http-redirect")
     print(f"[OK] logs {backend_log}")
     print(f"[OK] logs {frontend_log}")
+    print(f"[OK] logs {client_error_log}")
+    print(f"[OK] logs {visitor_log}")
+    print(f"[OK] logs {redirect_log}")
 
     backend_pid = _start_detached(
         [
@@ -452,12 +749,52 @@ def run_agentbox() -> int:
     )
     print(f"[OK] proxy {frontend_health}")
 
+    secure_origin = f"https://{host}"
+    redirect_pid = _start_detached(
+        [
+            sys.executable,
+            "-m",
+            "apps.agentbox.http_redirect",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(HTTP_REDIRECT_PORT),
+            "--target-origin",
+            secure_origin,
+        ],
+        cwd=PROJECT_ROOT,
+        log_path=redirect_log,
+    )
+    expected_redirect = f"{secure_origin}/performance"
+    _wait_redirect(
+        f"http://127.0.0.1:{HTTP_REDIRECT_PORT}/performance",
+        host="agentbox",
+        expected_location=expected_redirect,
+        seconds=10.0,
+        label="loopback HTTP redirect",
+    )
+    print(f"[OK] HTTP redirect pid {redirect_pid} -> {secure_origin}")
+
     serve_target = ensure_serve(ports.frontend)
     serve_ip = _tailscale_ipv4()
-    serve_url = f"http://{serve_ip}:{SERVE_HTTP_PORT}/"
-    _wait_http(serve_url, host=host, seconds=10.0, label="tailscale serve")
-    print(f"[OK] serve {serve_target} -> {serve_url} Host={host}")
-    print(f"open http://{host}:{SERVE_HTTP_PORT}")
+    serve_url = f"https://{host}/"
+    _wait_https(
+        serve_url,
+        resolve_host=host,
+        resolve_ip=serve_ip,
+        seconds=15.0,
+        label="tailscale HTTPS serve",
+    )
+    print(f"[OK] serve {serve_target} -> {serve_url} via {serve_ip}")
+    _wait_redirect(
+        f"http://{serve_ip}/performance",
+        host="agentbox",
+        expected_location=expected_redirect,
+        seconds=10.0,
+        label="tailscale short-host HTTP redirect",
+    )
+    print(f"[OK] http://agentbox/performance -> {expected_redirect}")
+    check_agentbox()
     return 0
 
 
@@ -466,18 +803,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--prepare-log",
         metavar="NAME",
-        help="create today's append log and print its path (webui-backend|webui-frontend)",
+        help="create today's append log and print its path",
     )
     parser.add_argument(
         "--local",
         action="store_true",
         help="run on this machine (used by the SSH hop; implied on agentbox)",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="prove the existing tailnet Serve path in a real browser",
+    )
+    parser.add_argument(
+        "--stem-track",
+        help="with --check, load this real track and prove its stem graph",
+    )
     args = parser.parse_args(argv)
     try:
         if args.prepare_log:
             print(prepare_log_path(args.prepare_log))
             return 0
+        if args.check:
+            if args.local or is_agentbox():
+                return check_agentbox(args.stem_track)
+            return run_via_ssh(
+                remote_command=remote_check_command(args.stem_track)
+            )
+        if args.stem_track:
+            raise PortConfigError("--stem-track requires --check")
         if args.local or is_agentbox():
             return run_agentbox()
         return run_via_ssh()

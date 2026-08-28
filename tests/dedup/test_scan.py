@@ -11,7 +11,6 @@ import pytest
 from apps.dedup import scan as scan_mod
 from apps.shared.fingerprints import ChromaprintMissing, FingerprintCache
 
-
 # ---------------------------------------------------------------- smoke
 
 

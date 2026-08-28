@@ -13,7 +13,6 @@ from typing import Any
 from . import paths as sets_paths
 from .manifest import read_manifest
 
-
 PathTraversalError = sets_paths.SessionPathError
 """Backward-compatible alias for rejected audio path inputs."""
 

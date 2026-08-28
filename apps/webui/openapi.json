@@ -589,100 +589,6 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
-      "BuildPatchIn": {
-        "additionalProperties": false,
-        "description": "Partial 'build' object; only supplied fields are merged (see PATCH_RULES).\n\n'updated' is never accepted from the client -- the server always stamps\nit on any build PATCH, so there is no ambiguity about who wrote it.",
-        "properties": {
-          "branch": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch"
-          },
-          "pr": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pr"
-          },
-          "stage": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stage"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "enum": [
-                  "active",
-                  "idle",
-                  "blocked",
-                  "hanging"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State"
-          },
-          "worktree": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Worktree"
-          }
-        },
-        "title": "BuildPatchIn",
-        "type": "object"
-      },
-      "BuildableIn": {
-        "additionalProperties": false,
-        "description": "Buildability classification; both fields required, replaces wholesale.\n\ntier says WHERE the node's iterative build loop can run (cloud/hybrid/\nlocal); reason is a one-line justification grounded in what the node\ntouches. See .planning/rekordbox-parity/CLOUD-BUILDABILITY.md.",
-        "properties": {
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "tier": {
-            "enum": [
-              "cloud",
-              "hybrid",
-              "local"
-            ],
-            "title": "Tier",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tier",
-          "reason"
-        ],
-        "title": "BuildableIn",
-        "type": "object"
-      },
       "BulkEditIn": {
         "properties": {
           "expected_etags": {
@@ -797,6 +703,241 @@
         "title": "BulkEditRowOut",
         "type": "object"
       },
+      "ClientErrorIn": {
+        "properties": {
+          "audio_worklet_available": {
+            "title": "Audio Worklet Available",
+            "type": "boolean"
+          },
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 32,
+            "title": "Context",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "window-error",
+              "unhandled-rejection",
+              "sveltekit",
+              "ui-error"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "url": {
+            "maxLength": 4096,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "message",
+          "url",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "audio_worklet_available"
+        ],
+        "title": "ClientErrorIn",
+        "type": "object"
+      },
+      "ClientErrorOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "stored"
+        ],
+        "title": "ClientErrorOut",
+        "type": "object"
+      },
+      "ClientEventIn": {
+        "properties": {
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "kind": {
+            "const": "page-view",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "url": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "url",
+          "path",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "viewport_width",
+          "viewport_height"
+        ],
+        "title": "ClientEventIn",
+        "type": "object"
+      },
+      "ClientEventOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "stored"
+        ],
+        "title": "ClientEventOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -885,25 +1026,6 @@
           "revision"
         ],
         "title": "ClustersOut",
-        "type": "object"
-      },
-      "CommitIn": {
-        "additionalProperties": false,
-        "properties": {
-          "note": {
-            "title": "Note",
-            "type": "string"
-          },
-          "sha": {
-            "title": "Sha",
-            "type": "string"
-          }
-        },
-        "required": [
-          "sha",
-          "note"
-        ],
-        "title": "CommitIn",
         "type": "object"
       },
       "CopilotTrackOut": {
@@ -1087,6 +1209,67 @@
           "revision"
         ],
         "title": "DecisionRecordOut",
+        "type": "object"
+      },
+      "EngineHealthOut": {
+        "description": "Legacy health plus the handshake fields. Extension, not a rewrite.",
+        "properties": {
+          "bind_host": {
+            "title": "Bind Host",
+            "type": "string"
+          },
+          "boot_id": {
+            "title": "Boot Id",
+            "type": "string"
+          },
+          "cloud": {
+            "$ref": "#/components/schemas/HealthCloud"
+          },
+          "contract_rev": {
+            "title": "Contract Rev",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/HealthStateDb"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "syncthing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthSyncthing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "waveform_materialization": {
+            "$ref": "#/components/schemas/HealthWaveformMaterialization"
+          }
+        },
+        "required": [
+          "state_db",
+          "cloud",
+          "waveform_materialization",
+          "bind_host",
+          "version",
+          "contract_rev",
+          "engine_version",
+          "boot_id"
+        ],
+        "title": "EngineHealthOut",
         "type": "object"
       },
       "ErrorBody": {
@@ -1490,47 +1673,6 @@
         "title": "HealthCloud",
         "type": "object"
       },
-      "HealthOut": {
-        "properties": {
-          "bind_host": {
-            "title": "Bind Host",
-            "type": "string"
-          },
-          "cloud": {
-            "$ref": "#/components/schemas/HealthCloud"
-          },
-          "state_db": {
-            "$ref": "#/components/schemas/HealthStateDb"
-          },
-          "status": {
-            "default": "ok",
-            "title": "Status",
-            "type": "string"
-          },
-          "syncthing": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/HealthSyncthing"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "state_db",
-          "cloud",
-          "bind_host",
-          "version"
-        ],
-        "title": "HealthOut",
-        "type": "object"
-      },
       "HealthStateDb": {
         "properties": {
           "last_writer_at": {
@@ -1606,6 +1748,40 @@
           }
         },
         "title": "HealthSyncthing",
+        "type": "object"
+      },
+      "HealthWaveformMaterialization": {
+        "properties": {
+          "native_available": {
+            "title": "Native Available",
+            "type": "boolean"
+          },
+          "native_import_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Import Error"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "string"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "selected",
+          "native_available"
+        ],
+        "title": "HealthWaveformMaterialization",
         "type": "object"
       },
       "HotCueMutationOut": {
@@ -1747,6 +1923,213 @@
         "title": "HotCueSlotOut",
         "type": "object"
       },
+      "JobIn": {
+        "properties": {
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "JobIn",
+        "type": "object"
+      },
+      "JobKindsOut": {
+        "properties": {
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds"
+        ],
+        "title": "JobKindsOut",
+        "type": "object"
+      },
+      "JobOut": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "owner_boot_id": {
+            "title": "Owner Boot Id",
+            "type": "string"
+          },
+          "owner_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Pid"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "worker_argv": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Argv"
+          },
+          "worker_pgid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Pgid"
+          },
+          "worker_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Pid"
+          },
+          "worker_started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Started At"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "payload",
+          "status",
+          "progress",
+          "attempt",
+          "created_at",
+          "owner_boot_id"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
       "LabelRequest": {
         "description": "Body for the relabel endpoint.",
         "properties": {
@@ -1767,56 +2150,6 @@
           "class"
         ],
         "title": "LabelRequest",
-        "type": "object"
-      },
-      "LinksPatchIn": {
-        "additionalProperties": false,
-        "description": "Partial 'links' object; each supplied key REPLACES that key's list.",
-        "properties": {
-          "issues": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Issues"
-          },
-          "refs": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Refs"
-          },
-          "specs": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Specs"
-          }
-        },
-        "title": "LinksPatchIn",
         "type": "object"
       },
       "MemberOut": {
@@ -2224,133 +2557,6 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
-        "type": "object"
-      },
-      "NodePatch": {
-        "additionalProperties": false,
-        "properties": {
-          "build": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuildPatchIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "buildable": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BuildableIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "commits_append": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CommitIn"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Commits Append"
-          },
-          "links": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LinksPatchIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "enum": [
-                  "missing",
-                  "spiked",
-                  "building",
-                  "partial",
-                  "built",
-                  "verified",
-                  "merged",
-                  "user-finalized",
-                  "working"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status"
-          },
-          "tests_append": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tests Append"
-          },
-          "verified": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VerifiedIn"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "NodePatch",
-        "type": "object"
-      },
-      "NodePatchOut": {
-        "properties": {
-          "meta_updated": {
-            "title": "Meta Updated",
-            "type": "string"
-          },
-          "node": {
-            "additionalProperties": true,
-            "title": "Node",
-            "type": "object"
-          }
-        },
-        "required": [
-          "node",
-          "meta_updated"
-        ],
-        "title": "NodePatchOut",
         "type": "object"
       },
       "PairingCreate": {
@@ -5865,6 +6071,194 @@
         "title": "UiPrefsPatch",
         "type": "object"
       },
+      "UsbVolumeOut": {
+        "properties": {
+          "hide_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_music": {
+            "default": false,
+            "title": "Is Music",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "unknown",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "music",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount Path"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "default": true,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "role": {
+            "default": "other",
+            "enum": [
+              "usb_stick",
+              "mounted_drive",
+              "disk_image",
+              "other"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "simulated": {
+            "default": false,
+            "title": "Simulated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "UsbVolumeOut",
+        "type": "object"
+      },
+      "UsbVolumePost": {
+        "description": "DEV / simulate: inject a fake present volume (never touches disk).",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "default": "music",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "music",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "/Volumes/FAKE-USB",
+            "title": "Mount Path"
+          },
+          "name": {
+            "default": "FAKE USB",
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "default": true,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "USB",
+            "title": "Protocol"
+          },
+          "role": {
+            "default": "usb_stick",
+            "enum": [
+              "usb_stick",
+              "mounted_drive",
+              "disk_image",
+              "other"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "title": "UsbVolumePost",
+        "type": "object"
+      },
+      "UsbVolumesOut": {
+        "properties": {
+          "scanned_at": {
+            "title": "Scanned At",
+            "type": "number"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/UsbVolumeOut"
+            },
+            "title": "Volumes",
+            "type": "array"
+          },
+          "watching": {
+            "title": "Watching",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "volumes",
+          "scanned_at",
+          "watching"
+        ],
+        "title": "UsbVolumesOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -5949,25 +6343,6 @@
           "target_mode"
         ],
         "title": "VendorCapabilityOut",
-        "type": "object"
-      },
-      "VerifiedIn": {
-        "additionalProperties": false,
-        "properties": {
-          "by": {
-            "title": "By",
-            "type": "string"
-          },
-          "method": {
-            "title": "Method",
-            "type": "string"
-          }
-        },
-        "required": [
-          "by",
-          "method"
-        ],
-        "title": "VerifiedIn",
         "type": "object"
       },
       "VoiceProbeRequest": {
@@ -7113,6 +7488,88 @@
         ]
       }
     },
+    "/api/v1/client-errors": {
+      "post": {
+        "operationId": "capture_client_error_api_v1_client_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Client Error",
+        "tags": [
+          "client-errors"
+        ]
+      }
+    },
+    "/api/v1/client-events": {
+      "post": {
+        "operationId": "capture_client_event_api_v1_client_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientEventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientEventOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Client Event",
+        "tags": [
+          "client-events"
+        ]
+      }
+    },
     "/api/v1/copilot/suggest-next": {
       "post": {
         "operationId": "suggest_next_route_api_v1_copilot_suggest_next_post",
@@ -7364,22 +7821,258 @@
     },
     "/api/v1/health": {
       "get": {
-        "operationId": "health_api_v1_health_get",
+        "operationId": "engine_health_api_v1_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthOut"
+                  "$ref": "#/components/schemas/EngineHealthOut"
                 }
               }
             },
             "description": "Successful Response"
           }
         },
-        "summary": "Health",
+        "summary": "Engine Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobOut"
+                  },
+                  "title": "Response List Jobs Api V1 Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "operationId": "enqueue_job_api_v1_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enqueue Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/kinds": {
+      "get": {
+        "description": "The registered worker kinds. Empty until a kind registers one.",
+        "operationId": "list_kinds_api_v1_jobs_kinds_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobKindsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Kinds",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/reenqueue": {
+      "post": {
+        "operationId": "reenqueue_job_api_v1_jobs__job_id__reenqueue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reenqueue Job",
+        "tags": [
+          "jobs"
         ]
       }
     },
@@ -8465,156 +9158,6 @@
         "summary": "Get Writeback Targets",
         "tags": [
           "playlist-writeback"
-        ]
-      }
-    },
-    "/api/v1/progress": {
-      "get": {
-        "description": "Full parsed tree + ledger-file git provenance + per-area rollups.",
-        "operationId": "get_progress_api_v1_progress_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Progress Api V1 Progress Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong validator for the exact progress ledger bytes",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Get Progress",
-        "tags": [
-          "progress"
-        ]
-      }
-    },
-    "/api/v1/progress/nodes/{node_id}": {
-      "patch": {
-        "description": "Guarded partial update of one node; atomic YAML rewrite, no git commit.",
-        "operationId": "patch_progress_node_api_v1_progress_nodes__node_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NodePatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NodePatchOut"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong validator for the exact progress ledger bytes",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "If-Match is stale; refresh the ledger before retrying",
-            "headers": {
-              "ETag": {
-                "description": "Strong validator for the exact progress ledger bytes",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "428": {
-            "description": "If-Match header is required for every progress write"
-          },
-          "503": {
-            "description": "Writes are disabled because the cloud lock is unavailable or held by a peer"
-          }
-        },
-        "summary": "Patch Progress Node",
-        "tags": [
-          "progress"
-        ]
-      }
-    },
-    "/api/v1/progress/schema": {
-      "get": {
-        "description": "Agent-discoverable node schema, allowed statuses, and PATCH rules.",
-        "operationId": "get_progress_schema_api_v1_progress_schema_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Progress Schema Api V1 Progress Schema Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Progress Schema",
-        "tags": [
-          "progress"
         ]
       }
     },
@@ -10771,6 +11314,87 @@
         "summary": "Readback Export",
         "tags": [
           "usb-export"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes": {
+      "get": {
+        "operationId": "get_usb_volumes_api_v1_usb_volumes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Usb Volumes",
+        "tags": [
+          "usb"
+        ]
+      },
+      "post": {
+        "description": "Inject or update a simulated volume (manual test without a stick).",
+        "operationId": "post_usb_volume_api_v1_usb_volumes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsbVolumePost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Usb Volume",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes/events": {
+      "get": {
+        "description": "SSE: keep the scanner warm while a client is subscribed.",
+        "operationId": "usb_volume_events_api_v1_usb_volumes_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Usb Volume Events",
+        "tags": [
+          "usb"
         ]
       }
     },

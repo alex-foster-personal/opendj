@@ -29,7 +29,6 @@ from apps.smartlists.repo import SmartlistsRepo
 from apps.smartlists.triggers import StateEvent, TriggerRunner
 from apps.smartlists.writers import FakeWriter
 
-
 _PHASE5_DDL: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS tracks (

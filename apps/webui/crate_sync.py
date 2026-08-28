@@ -1,14 +1,19 @@
-"""Copy a present-library crate to agentbox. Mac is the owner; box is the replica.
+"""Reconcile a present-library crate between the Mac owner and agentbox.
 
-Same code path for a one-playlist spike and the full present library. The
-selection filter is the only difference. Never rsync into a leftover
-``/Users/dev`` tree on the box.
+The owner database is never copied.  Instead the owner writes a stable-ID
+ledger from its live database and files, while the replica independently stats
+the declared destinations and must reproduce the same digest.  Rsync remains
+the transfer engine, so files whose size and mtime already agree are not sent
+again.
 
 Usage:
   python -m apps.webui.crate_sync --dry-run --preload1
-  python -m apps.webui.crate_sync --live --preload1
+  python -m apps.webui.crate_sync --live --local --preload1
+  python -m apps.webui.crate_sync --live --remote --preload1
+  python -m apps.webui.crate_sync --audit --remote
   python -m apps.webui.crate_sync --status
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,12 +29,14 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Optional, Sequence
+from typing import Literal, Optional
 
 from apps.shared import fs_residency, library_mode, platform_paths
+from apps.shared.crate_index import audit_manifest, ledger_digest
 from apps.shared.platform_paths import PROJECT_ROOT
 from apps.webui.run_agentbox import (
     AGENTBOX_HOSTNAME,
@@ -38,7 +45,8 @@ from apps.webui.run_agentbox import (
     ssh_agentbox_argv,
 )
 
-STREAMING_PREFIXES: tuple[str, ...] = ("tidal:", "soundcloud:", "spotify:")
+# Re-export, not a copy: the one prefix set lives in platform_paths (T3b D1).
+STREAMING_PREFIXES: tuple[str, ...] = platform_paths.STREAMING_PREFIXES
 PRELOAD1_PRESET: Path = (
     PROJECT_ROOT
     / "apps"
@@ -52,7 +60,18 @@ PRELOAD1_PRESET: Path = (
 )
 DEFAULT_CRATE_ROOT: Path = Path("/data/mdt-crate")
 DEFAULT_USER_PREFIXES: tuple[str, ...] = ("/Users/dev", "/Users/dev")
+OWNER_MEDIA_SUBTREES: frozenset[str] = frozenset({"Documents", "Music"})
 REMOTE_REPO: Path = Path("/root/music-dj-tools")
+OWNER_SSH_DEFAULT = "dev@192.0.2.1"
+OWNER_REPO_DEFAULT = Path("/Users/dev/Music/music-dj-tools")
+OWNER_SSH_KEY = Path("/root/.ssh/agentbox_mac_sync_ed25519")
+ALLOWED_OWNER_SSH: frozenset[str] = frozenset(
+    {
+        "dev@192.0.2.1",
+        "dev@air",
+        "dev@air.example-tailnet.ts.net",
+    }
+)
 ANLZ_SIBLING_SUFFIXES: frozenset[str] = frozenset({".DAT", ".EXT", ".2EX"})
 ARTWORK_SIBLINGS: tuple[str, ...] = ("artwork.jpg", "artwork_s.jpg", "artwork_m.jpg")
 FileKind = Literal["audio", "anlz", "artwork"]
@@ -65,6 +84,8 @@ class CrateFile:
     dest: Path
     kind: FileKind
     size_bytes: int
+    mtime_s: int = 0
+    stable_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -82,7 +103,11 @@ def preload1_stable_ids(preset_path: Path = PRELOAD1_PRESET) -> tuple[str, ...]:
     """Read the four preload1 deck ids from the TypeScript preset. No copy."""
     if not preset_path.is_file():
         raise RuntimeError(f"preload1 preset missing: {preset_path}")
-    ids = tuple(re.findall(r"stable_id:\s*'([0-9a-f]{40})'", preset_path.read_text(encoding="utf-8")))
+    ids = tuple(
+        re.findall(
+            r"stable_id:\s*'([0-9a-f]{40})'", preset_path.read_text(encoding="utf-8")
+        )
+    )
     if len(ids) != 4:
         raise RuntimeError(
             f"preload1 preset {preset_path} must declare 4 stable_id values, got {len(ids)}"
@@ -101,36 +126,58 @@ def default_user_maps(crate_root: Path) -> tuple[tuple[str, str], ...]:
 
 
 def parse_map_entry(raw: str) -> tuple[str, str]:
+    """Parse one ``FROM=TO`` map entry, in either OS's absolute syntax.
+
+    ``startswith("/")`` is not what "absolute" means on Windows, where the
+    owner tree arrives as ``D:\\music`` or ``\\\\nas\\music``. The shared
+    two-syntax test lives in :mod:`apps.shared.platform_paths` so the CLI
+    and the on-disk path map agree on what they will accept.
+    """
     if "=" not in raw:
         raise argparse.ArgumentTypeError(f"--map must be FROM=TO, got {raw!r}")
     from_prefix, to_prefix = raw.split("=", 1)
-    from_prefix = from_prefix.strip().rstrip("/")
-    to_prefix = to_prefix.strip().rstrip("/")
+    from_prefix = platform_paths.normalise_path_prefix(from_prefix.strip())
+    to_prefix = platform_paths.normalise_path_prefix(to_prefix.strip())
     if not from_prefix or not to_prefix:
         raise argparse.ArgumentTypeError(f"--map must be FROM=TO, got {raw!r}")
-    if not from_prefix.startswith("/") or not to_prefix.startswith("/"):
+    if not platform_paths.is_any_absolute(
+        from_prefix
+    ) or not platform_paths.is_any_absolute(to_prefix):
         raise argparse.ArgumentTypeError(f"--map paths must be absolute, got {raw!r}")
     return from_prefix, to_prefix
 
 
-def crate_dest(source: Path, *, crate_root: Path, user_maps: Sequence[tuple[str, str]]) -> Path:
+def _relative_to_prefix(source: Path, prefix: str) -> Path | None:
+    """``source`` under ``prefix``, or ``None`` when it is not under it.
+
+    Compared as paths rather than strings: a Windows prefix carries
+    backslashes and a drive letter, which no ``str.startswith`` test against
+    ``Path.as_posix()`` will ever match.
+    """
+    try:
+        return source.relative_to(Path(prefix))
+    except ValueError:
+        return None
+
+
+def crate_dest(
+    source: Path, *, crate_root: Path, user_maps: Sequence[tuple[str, str]]
+) -> Path:
     """Map one owner-machine path onto the replica crate. Fail if unmapped."""
     posix = source.as_posix()
     if posix.startswith("/PIONEER/"):
         return crate_root / "pioneer-share" / posix.lstrip("/")
-    share = platform_paths.SHARE_ROOT
-    try:
-        rel = source.resolve(strict=False).relative_to(share)
-    except ValueError:
-        rel = None
+    # Normalised on both sides, and by the same rule ``_source_group`` uses:
+    # a share root that only matches after symlink resolution would map here
+    # and then trip the mapping-drift check there.
+    share = platform_paths.resolve_local(platform_paths.SHARE_ROOT)
+    rel = _relative_to_prefix(platform_paths.resolve_local(source), str(share))
     if rel is not None:
         return crate_root / "pioneer-share" / rel
     for from_prefix, to_prefix in user_maps:
-        if posix == from_prefix:
-            return Path(to_prefix)
-        prefix = from_prefix.rstrip("/")
-        if posix.startswith(prefix + "/"):
-            return Path(to_prefix) / posix[len(prefix) + 1 :]
+        relative = _relative_to_prefix(source, from_prefix)
+        if relative is not None:
+            return Path(to_prefix) / relative
     raise RuntimeError(f"no crate mapping for {source}")
 
 
@@ -140,7 +187,19 @@ def path_map_document(user_maps: Sequence[tuple[str, str]]) -> dict[str, object]
 
 def write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    encoded = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(encoded)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
 
 
 # ----- sqlite -------------------------------------------------------------
@@ -159,7 +218,10 @@ def _playlist_stable_ids(state: sqlite3.Connection, name: str) -> tuple[str, ...
         "SELECT playlist_id, name FROM playlists WHERE name = ?", (name,)
     ).fetchall()
     if not rows:
-        known = [r[0] for r in state.execute("SELECT DISTINCT name FROM playlists ORDER BY name")]
+        known = [
+            r[0]
+            for r in state.execute("SELECT DISTINCT name FROM playlists ORDER BY name")
+        ]
         raise RuntimeError(
             f"unknown playlist {name!r}. Known: {', '.join(known) or '(none)'}"
         )
@@ -195,7 +257,9 @@ def _selected_stable_ids(
     return None
 
 
-def _scope_name(*, playlist: Optional[str], stable_ids: Optional[Sequence[str]], preload1: bool) -> str:
+def _scope_name(
+    *, playlist: Optional[str], stable_ids: Optional[Sequence[str]], preload1: bool
+) -> str:
     if preload1:
         return "preload1"
     if playlist is not None:
@@ -206,7 +270,7 @@ def _scope_name(*, playlist: Optional[str], stable_ids: Optional[Sequence[str]],
 
 
 def _is_streaming(path: Optional[str]) -> bool:
-    return bool(path) and path.startswith(STREAMING_PREFIXES)
+    return platform_paths.is_streaming_uri(path)
 
 
 def _materialised_source(raw: Optional[str]) -> Optional[Path]:
@@ -310,13 +374,24 @@ def collect_plan(
     skipped_streaming = 0
     skipped_absent = 0
 
-    def _add(source: Path, kind: FileKind) -> None:
+    def _add(source: Path, kind: FileKind, stable_id: str) -> None:
         dest = crate_dest(source, crate_root=crate_root, user_maps=user_maps)
         key = dest.as_posix()
         size = fs_residency.materialised_size(source)
         if size is None:
             raise RuntimeError(f"source vanished during plan: {source}")
-        files[key] = CrateFile(source=source, dest=dest, kind=kind, size_bytes=size)
+        existing = files.get(key)
+        stable_ids = tuple(
+            sorted({stable_id, *(existing.stable_ids if existing else ())})
+        )
+        files[key] = CrateFile(
+            source=source,
+            dest=dest,
+            kind=kind,
+            size_bytes=size,
+            mtime_s=int(source.stat().st_mtime),
+            stable_ids=stable_ids,
+        )
 
     for row in rows:
         file_path = row["file_path"]
@@ -332,11 +407,12 @@ def collect_plan(
         if audio is None:
             skipped_absent += 1
             continue
-        _add(audio, "audio")
+        stable_id = str(row["stable_id"])
+        _add(audio, "audio", stable_id)
         for anlz in _anlz_sources(analysis):
-            _add(anlz, "anlz")
+            _add(anlz, "anlz", stable_id)
         for art in _artwork_sources(image):
-            _add(art, "artwork")
+            _add(art, "artwork", stable_id)
 
     ordered = tuple(sorted(files.values(), key=lambda item: item.dest.as_posix()))
     return SyncPlan(
@@ -356,9 +432,7 @@ def plan_bytes(plan: SyncPlan) -> int:
 
 def _rsync_to_host(source: Path, dest_host: str, dest: Path) -> None:
     parent = dest.parent.as_posix()
-    mkdir = ssh_agentbox_argv(
-        f"mkdir -p {shlex.quote(parent)}", ssh_host=dest_host
-    )
+    mkdir = ssh_agentbox_argv(f"mkdir -p {shlex.quote(parent)}", ssh_host=dest_host)
     made = subprocess.run(mkdir, check=False, capture_output=True, text=True)
     if made.returncode != 0:
         detail = made.stderr.strip() or made.stdout.strip() or f"exit {made.returncode}"
@@ -375,13 +449,29 @@ def _rsync_to_host(source: Path, dest_host: str, dest: Path) -> None:
         text=True,
     )
     if copied.returncode != 0:
-        detail = copied.stderr.strip() or copied.stdout.strip() or f"exit {copied.returncode}"
+        detail = (
+            copied.stderr.strip()
+            or copied.stdout.strip()
+            or f"exit {copied.returncode}"
+        )
         raise RuntimeError(f"rsync {source} -> {dest_host}:{dest} failed: {detail}")
 
 
-def _copy_local(source: Path, dest: Path) -> None:
+def _copy_local(source: Path, dest: Path) -> bool:
+    if dest.is_file():
+        source_stat = source.stat()
+        dest_stat = dest.stat()
+        if source_stat.st_size == dest_stat.st_size and int(
+            source_stat.st_mtime
+        ) == int(dest_stat.st_mtime):
+            return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, dest)
+    return True
+
+
+def _changed_file_count(output: bytes) -> int:
+    return sum(1 for raw in output.splitlines() if len(raw) >= 2 and raw[1:2] == b"f")
 
 
 def _source_group(
@@ -389,18 +479,50 @@ def _source_group(
     *,
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
+    share_root: Optional[Path] = None,
 ) -> tuple[Path, Path, Path]:
-    """Return source root, destination root, and relative file path."""
-    source = item.source.resolve(strict=False)
+    """Return source root, destination root, and relative file path.
+
+    Roots are normalised with :func:`platform_paths.resolve_local` rather
+    than ``Path.resolve``: the owner prefixes are Mac paths, and resolving
+    one on Windows would anchor it to the current drive and hand the caller
+    back a root (``D:/Users/dev``) that names nothing.
+    """
+    source = platform_paths.resolve_local(item.source)
+    pioneer_source_root = platform_paths.resolve_local(
+        share_root if share_root is not None else platform_paths.SHARE_ROOT
+    )
+    try:
+        relative = source.relative_to(pioneer_source_root)
+    except ValueError:
+        relative = None
+    if relative is not None:
+        dest_root = crate_root / "pioneer-share"
+        if dest_root / relative != item.dest:
+            raise RuntimeError(
+                f"Pioneer crate mapping drift for {item.source}: expected "
+                f"{dest_root / relative}, planned {item.dest}"
+            )
+        return pioneer_source_root, dest_root, relative
+
     for source_raw, dest_raw in sorted(
         user_maps, key=lambda pair: len(pair[0]), reverse=True
     ):
-        source_root = Path(source_raw).resolve(strict=False)
+        source_root = platform_paths.resolve_local(Path(source_raw))
         try:
             relative = source.relative_to(source_root)
         except ValueError:
             continue
         dest_root = Path(dest_raw)
+        if (
+            source_raw in DEFAULT_USER_PREFIXES
+            and relative.parts
+            and relative.parts[0] in OWNER_MEDIA_SUBTREES
+        ):
+            subtree = relative.parts[0]
+            source_root /= subtree
+            dest_root /= subtree
+            relative = Path(*relative.parts[1:])
         if dest_root / relative != item.dest:
             raise RuntimeError(
                 f"crate mapping drift for {item.source}: expected "
@@ -408,18 +530,7 @@ def _source_group(
             )
         return source_root, dest_root, relative
 
-    share_root = platform_paths.SHARE_ROOT.resolve(strict=False)
-    try:
-        relative = source.relative_to(share_root)
-    except ValueError as exc:
-        raise RuntimeError(f"no rsync source group for {item.source}") from exc
-    dest_root = crate_root / "pioneer-share"
-    if dest_root / relative != item.dest:
-        raise RuntimeError(
-            f"Pioneer crate mapping drift for {item.source}: expected "
-            f"{dest_root / relative}, planned {item.dest}"
-        )
-    return share_root, dest_root, relative
+    raise RuntimeError(f"no rsync source group for {item.source}")
 
 
 def _rsync_plan_to_host(
@@ -428,7 +539,7 @@ def _rsync_plan_to_host(
     dest_host: str,
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
-) -> None:
+) -> int:
     """Copy a plan in one NUL-safe rsync batch per source root."""
     groups: dict[tuple[Path, Path], list[Path]] = {}
     for item in plan.files:
@@ -437,6 +548,7 @@ def _rsync_plan_to_host(
         )
         groups.setdefault((source_root, dest_root), []).append(relative)
 
+    changed = 0
     for (source_root, dest_root), relative_paths in sorted(
         groups.items(), key=lambda pair: str(pair[0][1])
     ):
@@ -447,9 +559,7 @@ def _rsync_plan_to_host(
         made = subprocess.run(mkdir, check=False, capture_output=True, text=True)
         if made.returncode != 0:
             detail = (
-                made.stderr.strip()
-                or made.stdout.strip()
-                or f"exit {made.returncode}"
+                made.stderr.strip() or made.stdout.strip() or f"exit {made.returncode}"
             )
             raise RuntimeError(f"remote mkdir failed for {dest_root}: {detail}")
 
@@ -462,11 +572,12 @@ def _rsync_plan_to_host(
                 "rsync",
                 "-a",
                 "--relative",
+                "--itemize-changes",
+                "--out-format=%i\t%n%L",
                 "--from0",
                 "--files-from=-",
                 f"{source_root.as_posix().rstrip('/')}/",
-                f"{dest_host}:"
-                f"{shlex.quote(dest_root.as_posix().rstrip('/') + '/')}",
+                f"{dest_host}:{shlex.quote(dest_root.as_posix().rstrip('/') + '/')}",
             ],
             input=file_list,
             check=False,
@@ -481,6 +592,308 @@ def _rsync_plan_to_host(
             raise RuntimeError(
                 f"rsync batch {source_root} -> {dest_host}:{dest_root} failed: {detail}"
             )
+        changed += _changed_file_count(copied.stdout)
+    return changed
+
+
+def allowed_owner_ssh(owner: str) -> bool:
+    return owner in ALLOWED_OWNER_SSH
+
+
+def ssh_owner_argv(command: str, *, owner: str) -> list[str]:
+    if not allowed_owner_ssh(owner):
+        raise RuntimeError(
+            f"refusing owner SSH target {owner!r}; allowed {sorted(ALLOWED_OWNER_SSH)}"
+        )
+    if not OWNER_SSH_KEY.is_file():
+        raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
+    return [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=8",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-i",
+        str(OWNER_SSH_KEY),
+        owner,
+        command,
+    ]
+
+
+def _manifest_files(manifest: dict[str, object]) -> list[dict[str, object]]:
+    raw = manifest.get("files")
+    if not isinstance(raw, list):
+        raise TypeError("owner manifest files must be a list")
+    entries: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise TypeError("owner manifest file entry must be an object")
+        required = {
+            "bytes",
+            "dest",
+            "dest_root",
+            "kind",
+            "mtime_s",
+            "relative",
+            "source",
+            "source_root",
+            "stable_ids",
+        }
+        missing = required - item.keys()
+        if missing:
+            raise RuntimeError(
+                "owner manifest file entry lacks " + ", ".join(sorted(missing))
+            )
+        entries.append(item)
+    return entries
+
+
+def _rsync_manifest_from_host(
+    manifest: dict[str, object], *, owner: str, crate_root: Path
+) -> int:
+    """Pull one owner ledger in NUL-safe batches; rsync skips unchanged files."""
+
+    if not allowed_owner_ssh(owner):
+        raise RuntimeError(
+            f"refusing owner SSH target {owner!r}; allowed "
+            f"{sorted(ALLOWED_OWNER_SSH)}"
+        )
+    if not OWNER_SSH_KEY.is_file():
+        raise RuntimeError(f"owner SSH key missing: {OWNER_SSH_KEY}")
+    groups: dict[tuple[Path, Path], list[Path]] = {}
+    resolved_crate = crate_root.resolve()
+    for entry in _manifest_files(manifest):
+        source = Path(str(entry["source"]))
+        source_root = Path(str(entry["source_root"]))
+        dest = Path(str(entry["dest"]))
+        dest_root = Path(str(entry["dest_root"]))
+        relative = Path(str(entry["relative"]))
+        if not (source_root.is_absolute() and dest_root.is_absolute()):
+            raise RuntimeError("owner manifest roots must be absolute")
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError(f"unsafe owner relative path: {relative}")
+        if source_root / relative != source:
+            raise RuntimeError(f"owner source mapping drift: {source}")
+        if dest_root / relative != dest:
+            raise RuntimeError(f"owner destination mapping drift: {dest}")
+        if not dest.resolve(strict=False).is_relative_to(resolved_crate):
+            raise RuntimeError(f"owner destination escapes crate: {dest}")
+        groups.setdefault((source_root, dest_root), []).append(relative)
+
+    changed = 0
+    for (source_root, dest_root), relative_paths in sorted(
+        groups.items(), key=lambda pair: str(pair[0][1])
+    ):
+        dest_root.mkdir(parents=True, exist_ok=True)
+        file_list = b"".join(
+            relative.as_posix().encode("utf-8") + b"\0"
+            for relative in sorted(set(relative_paths))
+        )
+        copied = subprocess.run(
+            [
+                "rsync",
+                "-a",
+                "--relative",
+                "--itemize-changes",
+                "--out-format=%i\t%n%L",
+                "--from0",
+                "--files-from=-",
+                "-e",
+                "ssh -o BatchMode=yes -o ConnectTimeout=8 "
+                f"-o IdentitiesOnly=yes -i {OWNER_SSH_KEY}",
+                f"{owner}:{shlex.quote(source_root.as_posix().rstrip('/') + '/')}",
+                dest_root.as_posix().rstrip("/") + "/",
+            ],
+            input=file_list,
+            check=False,
+            capture_output=True,
+        )
+        if copied.returncode != 0:
+            detail = (
+                copied.stderr.decode("utf-8", errors="replace").strip()
+                or copied.stdout.decode("utf-8", errors="replace").strip()
+                or f"exit {copied.returncode}"
+            )
+            raise RuntimeError(
+                f"rsync pull {owner}:{source_root} -> {dest_root} failed: {detail}"
+            )
+        changed += _changed_file_count(copied.stdout)
+    return changed
+
+
+def owner_manifest(
+    *, owner: str, owner_repo: Path, forwarded_args: Sequence[str]
+) -> dict[str, object]:
+    if owner_repo != OWNER_REPO_DEFAULT:
+        raise RuntimeError(
+            f"refusing owner repo {owner_repo}; expected {OWNER_REPO_DEFAULT}"
+        )
+    command = shlex.join(["mdt-crate-plan", *forwarded_args])
+    result = subprocess.run(
+        ssh_owner_argv(command, owner=owner),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit {result.returncode}"
+        )
+        raise RuntimeError(f"owner plan failed: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"owner plan returned invalid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise TypeError("owner plan JSON must be an object")
+    _manifest_files(payload)
+    if "library" in payload:
+        from apps.agentbox.crate_state import normalise_manifest
+
+        normalise_manifest(payload)
+    return payload
+
+
+def audit_payload(
+    manifest: dict[str, object], *, crate_root: Path, state_db: Path | None = None
+) -> dict[str, object]:
+    audit = audit_manifest(manifest, crate_root=crate_root)
+    payload = audit.as_dict()
+    payload["source_host"] = manifest.get("source_host")
+    payload["scope"] = manifest.get("scope")
+    payload["track_count"] = len(manifest.get("track_files", {}))
+    if "library" in manifest:
+        if state_db is None:
+            raise RuntimeError("library ledger audit requires state.db")
+        from apps.agentbox.crate_state import audit_snapshot, snapshot_from_manifest
+
+        library = audit_snapshot(state_db, snapshot_from_manifest(manifest))
+        payload["library"] = library
+        payload["ok"] = payload["ok"] is True and library["ok"] is True
+    return payload
+
+
+def assert_audit_ok(payload: dict[str, object], *, label: str) -> None:
+    if payload.get("ok") is True:
+        return
+    raise RuntimeError(
+        f"{label} ledger mismatch: "
+        f"missing={len(payload.get('missing', []))}, "
+        f"size={len(payload.get('size_mismatches', []))}, "
+        f"mtime={len(payload.get('mtime_mismatches', []))}"
+        + (
+            ", library=false"
+            if isinstance(payload.get("library"), dict)
+            and payload["library"].get("ok") is not True
+            else ""
+        )
+    )
+
+
+def reconcile_library_manifest(
+    manifest: dict[str, object], *, state_db: Path, crate_root: Path
+) -> dict[str, object]:
+    """Apply owner records only on the explicit remote replica."""
+    if library_mode.library_mode() != "remote":
+        raise RuntimeError(
+            "crate library reconciliation requires MDT_LIBRARY_MODE=remote"
+        )
+    from apps.agentbox.crate_state import (
+        normalise_manifest,
+        reconcile_snapshot,
+        snapshot_from_manifest,
+    )
+
+    normalise_manifest(manifest)
+    snapshot = snapshot_from_manifest(manifest)
+    return reconcile_snapshot(
+        state_db,
+        snapshot,
+        backup_dir=crate_root / "state-backups",
+    )
+
+
+def remote_audit(*, dest_host: str, crate_root: Path) -> dict[str, object]:
+    command = f"cd {shlex.quote(str(REMOTE_REPO))} && exec " + shlex.join(
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-m",
+            "apps.webui.crate_sync",
+            "--audit",
+            "--remote",
+            "--json",
+            "--crate-root",
+            str(crate_root),
+        ]
+    )
+    result = subprocess.run(
+        ssh_agentbox_argv(command, ssh_host=dest_host),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit {result.returncode}"
+        )
+        raise RuntimeError(f"replica audit failed: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"replica audit returned invalid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise TypeError("replica audit JSON must be an object")
+    assert_audit_ok(payload, label="replica")
+    return payload
+
+
+def remote_reconcile(*, dest_host: str, crate_root: Path) -> dict[str, object]:
+    command = f"cd {shlex.quote(str(REMOTE_REPO))} && exec " + shlex.join(
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-m",
+            "apps.webui.crate_sync",
+            "--reconcile-state",
+            "--remote",
+            "--json",
+            "--crate-root",
+            str(crate_root),
+        ]
+    )
+    result = subprocess.run(
+        ssh_agentbox_argv(command, ssh_host=dest_host),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit {result.returncode}"
+        )
+        raise RuntimeError(f"replica state reconciliation failed: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"replica state reconciliation returned invalid JSON: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise TypeError("replica state reconciliation JSON must be an object")
+    return payload
 
 
 def apply_plan(
@@ -490,18 +903,19 @@ def apply_plan(
     dest_host: str,
     crate_root: Path,
     user_maps: Sequence[tuple[str, str]],
-) -> None:
+) -> int:
     if dest_kind == "ssh":
-        _rsync_plan_to_host(
+        return _rsync_plan_to_host(
             plan,
             dest_host=dest_host,
             crate_root=crate_root,
             user_maps=user_maps,
         )
-        return
+    changed = 0
     for item in plan.files:
         if dest_kind == "local":
-            _copy_local(item.source, item.dest)
+            changed += int(_copy_local(item.source, item.dest))
+    return changed
 
 
 def manifest_payload(
@@ -509,27 +923,59 @@ def manifest_payload(
     *,
     source_host: str,
     crate_root: Path,
+    user_maps: Sequence[tuple[str, str]],
     spike_verified: bool,
+    library_snapshot: dict[str, object],
 ) -> dict[str, object]:
+    files: list[dict[str, object]] = []
+    for item in plan.files:
+        source_root, dest_root, relative = _source_group(
+            item,
+            crate_root=crate_root,
+            user_maps=user_maps,
+        )
+        files.append(
+            {
+                "bytes": item.size_bytes,
+                "dest": str(item.dest),
+                "dest_root": str(dest_root),
+                "kind": item.kind,
+                "mtime_s": item.mtime_s,
+                "relative": relative.as_posix(),
+                "source": str(item.source),
+                "source_root": str(source_root),
+                "stable_ids": list(item.stable_ids),
+            }
+        )
+    track_files: dict[str, str] = {}
+    for item in plan.files:
+        if item.kind != "audio":
+            continue
+        for stable_id in item.stable_ids:
+            prior = track_files.setdefault(stable_id, str(item.dest))
+            if prior != str(item.dest):
+                raise RuntimeError(
+                    f"stable_id {stable_id} maps to two crate audio files: "
+                    f"{prior} and {item.dest}"
+                )
+    from apps.agentbox.crate_state import snapshot_digest
+
     return {
         "bytes": plan_bytes(plan),
         "count": len(plan.files),
         "crate_root": str(crate_root),
-        "files": [
-            {
-                "bytes": item.size_bytes,
-                "dest": str(item.dest),
-                "kind": item.kind,
-                "source": str(item.source),
-            }
-            for item in plan.files
-        ],
+        "files": files,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ledger_digest": ledger_digest(files),
+        "library": library_snapshot,
+        "library_digest": snapshot_digest(library_snapshot),
+        "schema_version": 3,
         "scope": plan.scope,
         "skipped_absent": plan.skipped_absent,
         "skipped_streaming": plan.skipped_streaming,
         "source_host": source_host,
         "spike_verified": spike_verified,
+        "track_files": track_files,
     }
 
 
@@ -642,7 +1088,9 @@ def status_report(
                 continue
             total += 1
             result = platform_paths.resolve_asset_path(file_path, path_map=path_map)
-            if result.resolved is not None and fs_residency.is_materialised(result.resolved):
+            if result.resolved is not None and fs_residency.is_materialised(
+                result.resolved
+            ):
                 resolved += 1
     return {
         "crate_root": str(crate_root),
@@ -663,9 +1111,7 @@ def verify_spike(
     base_url: str,
 ) -> dict[str, object]:
     """GET audio + anlz for each spike id. Real HTTP, no mocked status."""
-    performance_status = _http_status(
-        f"{base_url.rstrip('/')}/performance/preload1"
-    )
+    performance_status = _http_status(f"{base_url.rstrip('/')}/performance/preload1")
     results: list[dict[str, object]] = []
     for stable_id in stable_ids:
         audio_url = f"{base_url.rstrip('/')}/api/v1/tracks/{stable_id}/audio"
@@ -694,7 +1140,7 @@ def verify_spike(
 def _http_status(url: str) -> int:
     request = urllib.request.Request(url)
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310 - operator-chosen origin
+        with urllib.request.urlopen(request) as response:
             return int(response.status)
     except urllib.error.HTTPError as exc:
         return int(exc.code)
@@ -705,7 +1151,7 @@ def _http_status(url: str) -> int:
 def _http_json(url: str) -> tuple[int, str]:
     request = urllib.request.Request(url)
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310 - operator-chosen origin
+        with urllib.request.urlopen(request) as response:
             return int(response.status), response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -720,13 +1166,29 @@ def _http_json(url: str) -> tuple[int, str]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m apps.webui.crate_sync")
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--dry-run", action="store_true", help="print count + bytes, copy nothing")
-    mode.add_argument("--live", action="store_true", help="copy the selected present files")
-    mode.add_argument("--status", action="store_true", help="box-side mode / crate / resolve counts")
+    mode.add_argument(
+        "--dry-run", action="store_true", help="print count + bytes, copy nothing"
+    )
+    mode.add_argument(
+        "--live", action="store_true", help="copy the selected present files"
+    )
+    mode.add_argument(
+        "--status", action="store_true", help="box-side mode / crate / resolve counts"
+    )
+    mode.add_argument(
+        "--audit",
+        action="store_true",
+        help="independently stat the replica and reconcile it with manifest.json",
+    )
     mode.add_argument(
         "--verify-spike",
         action="store_true",
         help="GET audio+anlz for the spike set and record spike_verified",
+    )
+    mode.add_argument(
+        "--reconcile-state",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     filt = parser.add_mutually_exclusive_group()
     filt.add_argument("--playlist", default=None, help="spike one playlist by name")
@@ -735,13 +1197,38 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="comma-separated stable_id list",
     )
-    filt.add_argument("--preload1", action="store_true", help="spike the four preload1 deck ids")
+    filt.add_argument(
+        "--preload1", action="store_true", help="spike the four preload1 deck ids"
+    )
+    side = parser.add_mutually_exclusive_group()
+    side.add_argument(
+        "--local",
+        action="store_true",
+        help="run on the owner Mac; live mode pushes to agentbox",
+    )
+    side.add_argument(
+        "--remote",
+        action="store_true",
+        help="run on agentbox; dry/live modes obtain the owner plan over SSH and pull",
+    )
     parser.add_argument(
         "--full",
         action="store_true",
         help="select every currently-present row (refused until spike_verified)",
     )
-    parser.add_argument("--to", default=AGENTBOX_HOSTNAME, help="rsync destination host")
+    parser.add_argument(
+        "--to", default=AGENTBOX_HOSTNAME, help="rsync destination host"
+    )
+    parser.add_argument(
+        "--owner",
+        default=OWNER_SSH_DEFAULT,
+        help="fixed SSH owner used only by --remote pull mode",
+    )
+    parser.add_argument(
+        "--owner-repo",
+        default=str(OWNER_REPO_DEFAULT),
+        help="owner checkout used only by --remote pull mode",
+    )
     parser.add_argument(
         "--dest",
         choices=("ssh", "local"),
@@ -749,7 +1236,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="ssh (Air -> agentbox) or local copy into --crate-root (tests)",
     )
     parser.add_argument("--crate-root", default=None, help="replica crate root")
-    parser.add_argument("--data-dir", default=None, help="owner data dir (state.db + path-map.json)")
+    parser.add_argument(
+        "--data-dir", default=None, help="owner data dir (state.db + path-map.json)"
+    )
     parser.add_argument(
         "--map",
         action="append",
@@ -761,6 +1250,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--base-url",
         default="http://127.0.0.1:9400",
         help="Vite/Serve origin for --verify-spike",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit one machine-readable object instead of the human plan",
     )
     return parser
 
@@ -774,8 +1268,77 @@ def _stable_ids_arg(raw: Optional[str]) -> Optional[tuple[str, ...]]:
     return ids
 
 
+def _owner_library_snapshot(
+    state_db: Path,
+    *,
+    playlist: str | None,
+    stable_ids: Sequence[str] | None,
+    preload1: bool,
+) -> dict[str, object]:
+    from apps.agentbox.crate_state import build_snapshot
+
+    selected = preload1_stable_ids() if preload1 else stable_ids
+    return build_snapshot(
+        state_db,
+        playlist_name=playlist,
+        stable_ids=selected,
+    )
+
+
 def _filtered(args: argparse.Namespace) -> bool:
     return bool(args.playlist or args.stable_ids or args.preload1)
+
+
+def _operation_side(args: argparse.Namespace) -> Literal["local", "remote"]:
+    if args.local:
+        return "local"
+    if args.remote:
+        return "remote"
+    return "remote" if library_mode.library_mode() == "remote" else "local"
+
+
+def _forwarded_plan_args(
+    args: argparse.Namespace,
+    *,
+    crate_root: Path,
+    user_maps: Sequence[tuple[str, str]],
+) -> list[str]:
+    forwarded = ["--crate-root", str(crate_root)]
+    for source, destination in user_maps:
+        forwarded.extend(["--map", f"{source}={destination}"])
+    if args.playlist:
+        forwarded.extend(["--playlist", args.playlist])
+    elif args.stable_ids:
+        forwarded.extend(["--stable-ids", args.stable_ids])
+    elif args.preload1:
+        forwarded.append("--preload1")
+    if args.full:
+        forwarded.append("--full")
+    return forwarded
+
+
+def _print_manifest_plan(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        return
+    summary = {
+        key: payload.get(key)
+        for key in (
+            "bytes",
+            "count",
+            "crate_root",
+            "ledger_digest",
+            "scope",
+            "skipped_absent",
+            "skipped_streaming",
+        )
+    }
+    summary["track_count"] = len(payload.get("track_files", {}))
+    sys.stdout.write(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    for item in _manifest_files(payload):
+        sys.stdout.write(
+            f"{item['kind']}\t{item['bytes']}\t{item['source']} -> {item['dest']}\n"
+        )
 
 
 def _run(argv: Optional[Sequence[str]] = None) -> int:
@@ -784,10 +1347,14 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
     platform_paths.refresh_share_root()
 
     data_dir = Path(args.data_dir) if args.data_dir else platform_paths.DATA_DIR
-    crate_root = Path(args.crate_root) if args.crate_root else (
-        library_mode.crate_root()
-        if os.environ.get(library_mode.CRATE_ROOT_ENV, "").strip()
-        else DEFAULT_CRATE_ROOT
+    crate_root = (
+        Path(args.crate_root)
+        if args.crate_root
+        else (
+            library_mode.crate_root()
+            if os.environ.get(library_mode.CRATE_ROOT_ENV, "").strip()
+            else DEFAULT_CRATE_ROOT
+        )
     )
     user_maps = tuple(args.map) if args.map else default_user_maps(crate_root)
     dest_kind: DestKind = args.dest or "ssh"
@@ -795,7 +1362,10 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
     master_db = data_dir / "master.plain.db"
     manifest_path = crate_root / "manifest.json"
     path_map_path = data_dir / "path-map.json"
-    to_explicit = any(a == "--to" or a.startswith("--to=") for a in (argv or sys.argv[1:]))
+    to_explicit = any(
+        a == "--to" or a.startswith("--to=") for a in (argv or sys.argv[1:])
+    )
+    side = _operation_side(args)
 
     if args.status:
         report = status_report(
@@ -804,7 +1374,45 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             user_maps=user_maps,
             manifest_path=manifest_path,
         )
+        report["operation_side"] = side
         sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        return 0
+
+    if args.audit:
+        manifest = load_manifest(manifest_path)
+        if not manifest:
+            raise RuntimeError(f"no crate manifest at {manifest_path}")
+        payload = audit_payload(
+            manifest,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
+        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        return 0 if payload["ok"] is True else 1
+
+    if args.reconcile_state:
+        if side != "remote":
+            raise RuntimeError("--reconcile-state is a remote-only operation")
+        manifest = load_manifest(manifest_path)
+        if not manifest:
+            raise RuntimeError(f"no crate manifest at {manifest_path}")
+        state_reconciliation = reconcile_library_manifest(
+            manifest,
+            state_db=state_db,
+            crate_root=crate_root,
+        )
+        write_json(manifest_path, manifest)
+        reconciliation = audit_payload(
+            manifest,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
+        assert_audit_ok(reconciliation, label="replica")
+        result = {
+            "state_reconciliation": state_reconciliation,
+            "reconciliation": reconciliation,
+        }
+        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
         return 0
 
     if args.verify_spike:
@@ -815,13 +1423,72 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
             return 1
         manifest = load_manifest(manifest_path)
         if not manifest:
-            raise RuntimeError(f"no crate manifest at {manifest_path}; run --live --preload1 first")
+            raise RuntimeError(
+                f"no crate manifest at {manifest_path}; run --live --preload1 first"
+            )
         manifest["spike_verified"] = True
         write_json(manifest_path, manifest)
         return 0
 
     if args.full and _filtered(args):
-        raise RuntimeError("--full cannot combine with --playlist / --stable-ids / --preload1")
+        raise RuntimeError(
+            "--full cannot combine with --playlist / --stable-ids / --preload1"
+        )
+
+    if side == "remote":
+        if library_mode.library_mode() != "remote":
+            raise RuntimeError(
+                "--remote pull requires MDT_LIBRARY_MODE=remote; refusing to "
+                "write a replica into a local-library process"
+            )
+        payload = owner_manifest(
+            owner=args.owner,
+            owner_repo=Path(args.owner_repo),
+            forwarded_args=_forwarded_plan_args(
+                args,
+                crate_root=crate_root,
+                user_maps=user_maps,
+            ),
+        )
+        if str(payload.get("crate_root")) != str(crate_root):
+            raise RuntimeError(
+                f"owner planned crate {payload.get('crate_root')}; expected {crate_root}"
+            )
+        if args.dry_run:
+            _print_manifest_plan(payload, as_json=args.json)
+            return 0
+        existing = load_manifest(manifest_path)
+        assert_full_allowed(
+            filtered=_filtered(args),
+            spike_ok=spike_verified(existing),
+        )
+        payload["spike_verified"] = spike_verified(existing)
+        transferred = _rsync_manifest_from_host(
+            payload,
+            owner=args.owner,
+            crate_root=crate_root,
+        )
+        write_json(path_map_path, path_map_document(user_maps))
+        state_reconciliation = reconcile_library_manifest(
+            payload,
+            state_db=state_db,
+            crate_root=crate_root,
+        )
+        write_json(manifest_path, payload)
+        reconciliation = audit_payload(
+            payload,
+            crate_root=crate_root,
+            state_db=state_db,
+        )
+        assert_audit_ok(reconciliation, label="replica")
+        result = {
+            "direction": "pull",
+            "transferred_files": transferred,
+            "state_reconciliation": state_reconciliation,
+            "reconciliation": reconciliation,
+        }
+        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        return 0
 
     plan = collect_plan(
         state_db=state_db,
@@ -832,70 +1499,82 @@ def _run(argv: Optional[Sequence[str]] = None) -> int:
         stable_ids=_stable_ids_arg(args.stable_ids),
         preload1=args.preload1,
     )
-    summary = {
-        "bytes": plan_bytes(plan),
-        "count": len(plan.files),
-        "crate_root": str(crate_root),
-        "scope": plan.scope,
-        "skipped_absent": plan.skipped_absent,
-        "skipped_streaming": plan.skipped_streaming,
-    }
-    sys.stdout.write(json.dumps(summary, indent=2, sort_keys=True) + "\n")
-    for item in plan.files:
-        sys.stdout.write(f"{item.kind}\t{item.size_bytes}\t{item.source} -> {item.dest}\n")
+    payload = manifest_payload(
+        plan,
+        source_host=socket.gethostname(),
+        crate_root=crate_root,
+        user_maps=user_maps,
+        spike_verified=False,
+        library_snapshot=_owner_library_snapshot(
+            state_db,
+            playlist=args.playlist,
+            stable_ids=_stable_ids_arg(args.stable_ids),
+            preload1=args.preload1,
+        ),
+    )
 
     if args.dry_run:
+        _print_manifest_plan(payload, as_json=args.json)
         return 0
 
-    try:
-        assert_push_host(dest_kind=dest_kind, dest_host=args.to, to_explicit=to_explicit)
-        existing = load_destination_manifest(
-            dest_kind=dest_kind,
-            dest_host=args.to,
-            manifest_path=manifest_path,
-        )
-        assert_full_allowed(
-            filtered=_filtered(args),
-            spike_ok=spike_verified(existing),
-        )
-        apply_plan(
-            plan,
-            dest_kind=dest_kind,
-            dest_host=args.to,
+    assert_push_host(dest_kind=dest_kind, dest_host=args.to, to_explicit=to_explicit)
+    existing = load_destination_manifest(
+        dest_kind=dest_kind,
+        dest_host=args.to,
+        manifest_path=manifest_path,
+    )
+    assert_full_allowed(
+        filtered=_filtered(args),
+        spike_ok=spike_verified(existing),
+    )
+    payload["spike_verified"] = spike_verified(existing)
+    transferred = apply_plan(
+        plan,
+        dest_kind=dest_kind,
+        dest_host=args.to,
+        crate_root=crate_root,
+        user_maps=user_maps,
+    )
+    map_doc = path_map_document(user_maps)
+    if dest_kind == "local":
+        write_json(path_map_path, map_doc)
+        if library_mode.library_mode() == "remote":
+            reconcile_library_manifest(
+                payload,
+                state_db=state_db,
+                crate_root=crate_root,
+            )
+        write_json(manifest_path, payload)
+        reconciliation = audit_payload(
+            payload,
             crate_root=crate_root,
-            user_maps=user_maps,
+            state_db=state_db,
         )
-        map_doc = path_map_document(user_maps)
-        payload = manifest_payload(
-            plan,
-            source_host=socket.gethostname(),
-            crate_root=crate_root,
-            spike_verified=spike_verified(existing),
-        )
-        if dest_kind == "local":
-            write_json(path_map_path, map_doc)
-            write_json(manifest_path, payload)
-        else:
-            with tempfile.TemporaryDirectory(prefix="mdt-crate-") as tmp:
-                tmp_root = Path(tmp)
-                tmp_map = tmp_root / "path-map.json"
-                tmp_manifest = tmp_root / "manifest.json"
-                write_json(tmp_map, map_doc)
-                write_json(tmp_manifest, payload)
-                _rsync_to_host(tmp_map, args.to, REMOTE_REPO / "data" / "path-map.json")
-                _rsync_to_host(tmp_manifest, args.to, crate_root / "manifest.json")
-        sys.stdout.write(f"wrote path-map ({dest_kind})\n")
-        sys.stdout.write(f"wrote manifest ({dest_kind}) {manifest_path}\n")
-        return 0
-    except RuntimeError as exc:
-        sys.stderr.write(f"crate-sync: {exc}\n")
-        return 2
+        assert_audit_ok(reconciliation, label="replica")
+    else:
+        with tempfile.TemporaryDirectory(prefix="mdt-crate-") as tmp:
+            tmp_root = Path(tmp)
+            tmp_map = tmp_root / "path-map.json"
+            tmp_manifest = tmp_root / "manifest.json"
+            write_json(tmp_map, map_doc)
+            write_json(tmp_manifest, payload)
+            _rsync_to_host(tmp_map, args.to, REMOTE_REPO / "data" / "path-map.json")
+            _rsync_to_host(tmp_manifest, args.to, crate_root / "manifest.json")
+        remote_result = remote_reconcile(dest_host=args.to, crate_root=crate_root)
+        reconciliation = remote_result["reconciliation"]
+    result = {
+        "direction": "push",
+        "transferred_files": transferred,
+        "reconciliation": reconciliation,
+    }
+    sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    return 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return _run(argv)
-    except RuntimeError as exc:
+    except (RuntimeError, TypeError, ValueError) as exc:
         sys.stderr.write(f"crate-sync: {exc}\n")
         return 2
 

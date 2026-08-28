@@ -12,14 +12,6 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from apps.open_dj import (
-    AdapterReport,
-    Capabilities,
-    CuePoint,
-    OpenDjLibrary,
-    Playlist,
-    Track,
-)
 from apps.adapters.traktor.capabilities import TRAKTOR_CAPABILITIES
 from apps.adapters.traktor.mappers import (
     camelot_to_traktor_key,
@@ -31,7 +23,14 @@ from apps.adapters.traktor.mappers import (
     traktor_rating_to_stars,
 )
 from apps.adapters.traktor.nml import NMLDocument, NMLEntry
-
+from apps.open_dj import (
+    AdapterReport,
+    Capabilities,
+    CuePoint,
+    OpenDjLibrary,
+    Playlist,
+    Track,
+)
 
 # --------------------------------------------------------------- options
 

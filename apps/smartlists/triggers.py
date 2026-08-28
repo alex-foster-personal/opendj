@@ -21,9 +21,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from apps.smartlists.debounce import Debouncer
-from apps.smartlists.materializer import MaterializeResult, Materializer
+from apps.smartlists.materializer import Materializer, MaterializeResult
 from apps.smartlists.repo import SmartlistsRepo
-
 
 _MEMBERSHIP_KINDS: frozenset[str] = frozenset({
     "track.added",

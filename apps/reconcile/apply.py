@@ -52,8 +52,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from apps.shared import paths
 from apps.reconcile import locate as _locate
+from apps.shared import paths
 
 console = Console(width=120)
 
@@ -213,7 +213,7 @@ def _backup_db(backup_dir: Path) -> Path:
 
 def _open_live_db():
     """Import + open the live RB DB. Imported lazily to keep dry-run cheap."""
-    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+    from pyrekordbox import Rekordbox6Database
 
     return Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
 

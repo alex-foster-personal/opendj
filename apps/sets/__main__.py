@@ -11,17 +11,14 @@ import json
 import signal
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
-from . import paths as sets_paths
 from . import record as record_mod
 from . import retention as retention_mod
 from .classify import classify_session
 from .classify import model as classify_model
 from .label import label_session
 from .replay import replay as replay_cmd
-from .sessions import list_sessions, summary_to_dict
 from .state import SetsState
 
 

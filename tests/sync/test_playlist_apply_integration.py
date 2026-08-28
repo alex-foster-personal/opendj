@@ -240,7 +240,7 @@ def test_dry_run_does_not_open_rw_connection(
     calls: list[str] = []
     original = sqlite3.connect
 
-    def _tracking_connect(database, *args, **kwargs):  # noqa: ANN001
+    def _tracking_connect(database, *args, **kwargs):
         calls.append(str(database))
         return original(database, *args, **kwargs)
 

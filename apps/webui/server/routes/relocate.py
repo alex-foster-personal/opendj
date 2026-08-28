@@ -47,8 +47,8 @@ Endpoints
 from __future__ import annotations
 
 import os
-import stat
 import shutil
+import stat
 import subprocess
 import threading
 import uuid
@@ -62,6 +62,7 @@ from pydantic import BaseModel, Field
 
 from apps.reconcile import locate
 from apps.shared import audio_files, fs_residency, paths
+from apps.shared.events import publish
 from apps.shared.rekordbox_db import is_streaming_path as _rb_app_is_streaming
 
 from .. import rb_vendor
@@ -434,7 +435,7 @@ def _write_rekordbox_folder_path(
             ),
         })
     try:
-        from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+        from pyrekordbox import Rekordbox6Database
     except ImportError as exc:
         raise HTTPException(status_code=503, detail={
             "code": "PYREKORDBOX_UNAVAILABLE",
@@ -577,6 +578,7 @@ def apply_relocate(
             candidate,
             body.expected_candidate_identity,
         )
+        publish("library.changed", {"kind": "reconcile", "ids": [stable_id]})
         return RelocateApplyOut(
             stable_id=stable_id, new_path=candidate.path, target="rekordbox",
             vendor_id=vendor_id, backup_path=backup_path,
@@ -601,6 +603,7 @@ def apply_relocate(
             "code": "RELOCATE_STATE_READBACK_FAILED",
             "message": "state-layer file_path did not read back after update",
         })
+    publish("library.changed", {"kind": "reconcile", "ids": [stable_id]})
     return RelocateApplyOut(
         stable_id=stable_id, new_path=candidate.path, target="state",
         vendor_id=None, backup_path=None,

@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from apps.sync.matcher import MatchResult, MatchedPair
+from apps.sync.matcher import MatchedPair, MatchResult
 
 
 @dataclass(slots=True)

@@ -65,8 +65,10 @@ after(() => {
 test('fetchDedupClusters uses configured base and forwards cancellation', async () => {
 	const controller = new AbortController();
 	let request;
-	globalThis.fetch = async (input, init) => {
-		request = { input: String(input), init };
+	// openapi-fetch calls fetch(request) with one Request object, so the URL,
+	// headers, body and signal are read off the request rather than an init bag.
+	globalThis.fetch = async (input) => {
+		request = input;
 		return new Response(JSON.stringify(clusterPayload()), {
 			status: 200,
 			headers: { 'content-type': 'application/json', etag: INITIAL_REVISION }
@@ -75,8 +77,10 @@ test('fetchDedupClusters uses configured base and forwards cancellation', async 
 
 	const response = await dedupApi.fetchDedupClusters(controller.signal);
 
-	assert.equal(request.input, `${API_BASE}/api/v1/dedup/clusters`);
-	assert.equal(request.init.signal, controller.signal);
+	assert.equal(request.url, `${API_BASE}/api/v1/dedup/clusters`);
+	assert.equal(request.signal.aborted, false);
+	controller.abort();
+	assert.equal(request.signal.aborted, true, 'caller cancellation must reach the request');
 	assert.equal(response.revision, INITIAL_REVISION);
 	assert.equal(response.clusters[0].cluster_key, CLUSTER_KEY);
 	assert.equal(dedupApi.dedupArtworkUrl('track/id'), `${API_BASE}/api/v1/tracks/track%2Fid/artwork?size=s`);
@@ -85,8 +89,10 @@ test('fetchDedupClusters uses configured base and forwards cancellation', async 
 test('postDedupDecision binds stable identity and CAS revision', async () => {
 	const controller = new AbortController();
 	let request;
-	globalThis.fetch = async (input, init) => {
-		request = { input: String(input), init };
+	let body;
+	globalThis.fetch = async (input) => {
+		request = input;
+		body = await input.clone().json();
 		return new Response(
 			JSON.stringify({
 				cluster_id: 7,
@@ -113,15 +119,45 @@ test('postDedupDecision binds stable identity and CAS revision', async () => {
 		controller.signal
 	);
 
-	assert.equal(request.input, `${API_BASE}/api/v1/dedup/clusters/7/decision`);
-	assert.equal(request.init.signal, controller.signal);
-	assert.equal(new Headers(request.init.headers).get('if-match'), INITIAL_REVISION);
-	assert.deepEqual(JSON.parse(request.init.body), {
+	assert.equal(request.url, `${API_BASE}/api/v1/dedup/clusters/7/decision`);
+	assert.equal(request.method, 'POST');
+	assert.equal(request.headers.get('if-match'), INITIAL_REVISION);
+	assert.equal(request.signal.aborted, false);
+	controller.abort();
+	assert.equal(request.signal.aborted, true, 'caller cancellation must reach the request');
+	assert.deepEqual(body, {
 		cluster_key: CLUSTER_KEY,
 		survivor: 'track-canon',
 		action: 'merge'
 	});
 	assert.equal(record.revision, NEXT_REVISION);
+});
+
+test('a 409 becomes a conflict carrying the daemon revision to retry against', async () => {
+	globalThis.fetch = async () =>
+		new Response(null, {
+			status: 409,
+			statusText: 'Conflict',
+			headers: { etag: NEXT_REVISION }
+		});
+
+	const caught = await dedupApi
+		.postDedupDecision(7, CLUSTER_KEY, 'track-canon', 'merge', INITIAL_REVISION)
+		.then(
+			() => null,
+			(error) => error
+		);
+
+	assert.ok(caught instanceof dedupApi.DedupConflictError, 'expected a DedupConflictError');
+	assert.equal(caught.revision, NEXT_REVISION);
+});
+
+test('an unreachable daemon is reported as unreachable, not as a bad response', async () => {
+	globalThis.fetch = async () => {
+		throw new TypeError('fetch failed');
+	};
+
+	await assert.rejects(dedupApi.fetchDedupClusters(), /daemon unreachable \(fetch failed\)/);
 });
 
 test('response validation rejects an unknown irreversible action', async () => {

@@ -9,7 +9,6 @@ from apps.shared.state import db as state_db
 from apps.shared.state import locations
 from apps.shared.state.writer import StateWriter
 
-
 pytestmark = pytest.mark.requirement("INFRA-01")
 
 SID = "d" * 40
@@ -108,6 +107,26 @@ def test_pick_returns_none_when_nothing_works(state_conn, tmp_path: Path) -> Non
         assert locations.pick_playable(state_conn, SID) is None
     finally:
         writer.close()
+
+
+def test_pick_accepts_an_explicit_replica_ledger_path(
+    state_conn, tmp_path: Path,
+) -> None:
+    missing_owner_path = tmp_path / "owner-missing.flac"
+    replica = _flac(tmp_path / "crate" / "indexed.flac")
+    writer = _init_track(state_conn, file_path=str(missing_owner_path))
+    try:
+        picked = locations.pick_playable(
+            state_conn,
+            SID,
+            extra_paths=((str(replica), "crate-index", "local"),),
+        )
+    finally:
+        writer.close()
+
+    assert picked is not None
+    assert picked.path == replica
+    assert picked.source == "crate-index"
 
 
 def test_unknown_venue_env_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:

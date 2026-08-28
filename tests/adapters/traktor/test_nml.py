@@ -6,7 +6,6 @@ import pytest
 
 from apps.adapters.traktor.nml import NMLDocument
 
-
 SAMPLE_NML = b"""<?xml version='1.0' encoding='utf-8'?>
 <NML VERSION="20">
   <HEAD></HEAD>

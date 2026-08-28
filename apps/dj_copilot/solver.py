@@ -12,8 +12,10 @@ from apps.shared.harmonic import (
     TrackFeature,
     bpm_compatibility,
     camelot_compatibility,
-    camelot_distance as _camelot_distance,
     key_to_camelot,
+)
+from apps.shared.harmonic import (
+    camelot_distance as _camelot_distance,
 )
 
 from .energy_curve import target_energy_at

@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol, runtime_checkable
 
-
 DEFAULT_CONFIRM_PHRASE = "APPLY SMARTLIST"
 
 

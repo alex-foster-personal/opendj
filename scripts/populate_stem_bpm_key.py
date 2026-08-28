@@ -11,7 +11,11 @@ columns render and key-matching works. Source 'inferred' (derived from the
 source track, not measured on the stem). Fail-fast on any rank/title mismatch.
 """
 from __future__ import annotations
-import hashlib, json, re, sqlite3
+
+import hashlib
+import json
+import re
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 

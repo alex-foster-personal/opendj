@@ -22,7 +22,8 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any, AsyncIterator, Iterable, Literal
 
-from fastapi import APIRouter, HTTPException, Path as FPath, Request
+from fastapi import APIRouter, HTTPException, Request
+from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 

@@ -1,6 +1,14 @@
-/** Typed HTTP client for the duplicate-review decision workflow. */
+/**
+ * Typed HTTP client for the duplicate-review decision workflow.
+ *
+ * CONVERTED onto the generated OpenAPI client (`src/lib/api/client.ts`).
+ * Transport only: the hand-written runtime validators below are deliberately
+ * kept. Generated types are a compile-time contract, and a merge decision is
+ * irreversible, so the response is still parsed field by field at runtime and
+ * the ETag is still cross-checked against the body revision.
+ */
 
-import { API_BASE } from '$lib/api';
+import { API_BASE, ApiError, api } from '$lib/api/client';
 
 import type { ClustersResponse, Decision, DecisionAction, DecisionRecord } from './types';
 
@@ -151,23 +159,26 @@ function requireMatchingRevision(response: Response, bodyRevision: string): void
 	}
 }
 
+/** Keep this module's two failure shapes after the conversion: a daemon that
+ * answered (status + its own message) and a daemon that could not be reached
+ * at all. An aborted request lands in the second bucket, exactly as it did
+ * when this module called fetch directly. */
+function asDedupError(error: unknown, route: string): Error {
+	if (error instanceof ApiError) {
+		return new Error(`${route} failed: ${error.status} ${error.message}`);
+	}
+	return new Error(`daemon unreachable (${error instanceof Error ? error.message : String(error)})`);
+}
+
 export async function fetchDedupClusters(signal?: AbortSignal): Promise<ClustersResponse> {
+	let data: unknown;
 	let response: Response;
 	try {
-		response = await fetch(`${API_BASE}/api/v1/dedup/clusters`, {
-			headers: { Accept: 'application/json' },
-			signal
-		});
+		({ data, response } = await api.GET('/api/v1/dedup/clusters', { signal }));
 	} catch (error) {
-		throw new Error(
-			`daemon unreachable (${error instanceof Error ? error.message : String(error)})`
-		);
+		throw asDedupError(error, 'GET /api/v1/dedup/clusters');
 	}
-	if (!response.ok) {
-		const body = await response.text();
-		throw new Error(`GET /api/v1/dedup/clusters failed: ${response.status} ${body.slice(0, 300)}`);
-	}
-	const result = validateClustersResponse(await response.json());
+	const result = validateClustersResponse(data);
 	requireMatchingRevision(response, result.revision);
 	return result;
 }
@@ -180,34 +191,26 @@ export async function postDedupDecision(
 	revision: string,
 	signal?: AbortSignal
 ): Promise<DecisionRecord> {
+	let data: unknown;
 	let response: Response;
 	try {
-		response = await fetch(`${API_BASE}/api/v1/dedup/clusters/${clusterId}/decision`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json',
-				'If-Match': revision
-			},
-			body: JSON.stringify({ cluster_key: clusterKey, survivor, action }),
+		({ data, response } = await api.POST('/api/v1/dedup/clusters/{cluster_id}/decision', {
+			params: { path: { cluster_id: clusterId }, header: { 'If-Match': revision } },
+			body: { cluster_key: clusterKey, survivor, action },
 			signal
-		});
+		}));
 	} catch (error) {
-		throw new Error(
-			`daemon unreachable (${error instanceof Error ? error.message : String(error)})`
-		);
+		// 409 is the CAS outcome, not a fault: the caller refreshes and retries
+		// against the revision the daemon reports in its ETag.
+		if (error instanceof ApiError && error.status === 409) {
+			throw new DedupConflictError(
+				'duplicate review changed; refresh before retrying',
+				error.response.headers.get('etag') ?? ''
+			);
+		}
+		throw asDedupError(error, `POST /api/v1/dedup/clusters/${clusterId}/decision`);
 	}
-	if (response.status === 409) {
-		const currentRevision = response.headers.get('etag') ?? '';
-		throw new DedupConflictError('duplicate review changed; refresh before retrying', currentRevision);
-	}
-	if (!response.ok) {
-		const body = await response.text();
-		throw new Error(
-			`POST /api/v1/dedup/clusters/${clusterId}/decision failed: ${response.status} ${body.slice(0, 300)}`
-		);
-	}
-	const result = validateDecisionRecord(await response.json());
+	const result = validateDecisionRecord(data);
 	requireMatchingRevision(response, result.revision);
 	return result;
 }

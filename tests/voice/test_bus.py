@@ -8,7 +8,6 @@ import pytest
 
 from apps.voice import bus
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 
@@ -66,7 +65,6 @@ class TestMakeBus:
         # The module-level constant used by db.open_rw's default path
         # lives in apps.shared.state.paths; the db module re-imports it,
         # so patch both spellings to be safe.
-        from apps.shared.state import db as state_db
         from apps.shared.state import paths as state_paths
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         warnings: list[str] = []
@@ -79,7 +77,7 @@ class TestMakeBus:
 
     def test_falls_back_when_state_db_cannot_open(self, monkeypatch):
         """A broken state layer must fall back to JSONL with one warning."""
-        def _boom(*a, **kw):  # noqa: ANN001,ANN002,ANN003
+        def _boom(*a, **kw):
             raise RuntimeError("state DB not available")
 
         monkeypatch.setattr(
@@ -91,7 +89,7 @@ class TestMakeBus:
         assert any("JSONL stub" in w for w in warnings)
 
     def test_warning_is_once_per_run(self, monkeypatch):
-        def _boom(*a, **kw):  # noqa: ANN001,ANN002,ANN003
+        def _boom(*a, **kw):
             raise RuntimeError("state DB not available")
 
         monkeypatch.setattr(
@@ -164,6 +162,7 @@ class TestStateBackedBus:
         the event.
         """
         import logging
+
         from apps.shared.state import paths as state_paths
         monkeypatch.setattr(state_paths, "STATE_DB", tmp_path / "state.db")
         b = bus.StateBackedBus()
@@ -171,7 +170,7 @@ class TestStateBackedBus:
             # Force the in-process fanout to raise. We monkey-patch the
             # bound EventBus instance's publish so the real Phase 5 code
             # path fires but the fanout call explodes.
-            def _boom(_event):  # noqa: ANN001
+            def _boom(_event):
                 raise RuntimeError("fanout exploded")
             monkeypatch.setattr(b._bus, "publish", _boom)
 
@@ -229,7 +228,9 @@ class TestRecentSeesAllActors:
             b.publish({"kind": "READ_BPM", "slots": {}, "bpm": 128})
             # Simulate a Phase-5/12 producer inserting directly with a
             # different actor. We use the same sqlite file the bus owns.
-            import sqlite3 as _sqlite3, json as _json, time as _time
+            import json as _json
+            import sqlite3 as _sqlite3
+            import time as _time
             with _sqlite3.connect(str(tmp_path / "state.db")) as conn:
                 conn.execute(
                     "INSERT INTO events (ts, kind, stable_id, payload_json, actor) "

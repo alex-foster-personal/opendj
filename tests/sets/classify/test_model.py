@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from apps.sets.classify import MIN_MACRO_F1_FOR_TRAINED, model as model_mod
+from apps.sets.classify import MIN_MACRO_F1_FOR_TRAINED
+from apps.sets.classify import model as model_mod
 
 
 def _make_labeled_session(

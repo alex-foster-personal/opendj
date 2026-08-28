@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from apps.voice import context as ctx_mod
 from apps.voice import bus as bus_mod
+from apps.voice import context as ctx_mod
 from apps.voice import settings as settings_mod
 from apps.voice import tts as tts_mod
-
 
 pytestmark = pytest.mark.requirement("VOICE-01")
 

@@ -9,6 +9,8 @@
 	// PATCH + If-Match; client-side search + sort; FR-1 broken-link
 	// graying + 'Hide broken links' toggle persisted in prefs.svelte.ts.
 	import { onMount } from 'svelte';
+	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
+	import { api, unwrap } from '$lib/api/client';
 	import {
 		ConflictError,
 		RbApiError,
@@ -22,8 +24,7 @@
 		searchCollection,
 		parseStemSummary,
 		parseVocals,
-		vocalsOf,
-		RB_API_BASE
+		vocalsOf
 	} from '$lib/rb/api-rb';
 	import type {
 		PlaylistSummaryHydrated,
@@ -36,6 +37,8 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
+	import { resolveRowVocals } from '$lib/rb/row-vocals';
+	import { coalesce } from '$lib/rb/coalesce';
 	import {
 		ANALYSIS_COLORS,
 		jobProgress
@@ -205,28 +208,22 @@
 	// Vocals for PreviewStrip blue bars: listing hydrate (row.vocals) is
 	// the base; loaded-deck / client anlz overwrite only when analyzed.
 	// Strips never fan-out /anlz themselves.
-	const vocalsById = $derived.by((): Record<string, Vocals> => {
-		const out: Record<string, Vocals> = {};
-		for (const row of pane.rows) {
-			out[row.stable_id] = row.vocals;
-		}
-		const preferAnalyzed = (sid: string, v: Vocals): void => {
-			if (v.status !== 'not_analyzed') out[sid] = v;
-		};
-		for (const d of DECK_IDS) {
-			const st = decks[d];
-			if (st.stable_id !== null && st.anlz !== null) {
-				preferAnalyzed(st.stable_id, vocalsOf(st.anlz));
+	const vocalsById = $derived.by((): Record<string, Vocals> =>
+		resolveRowVocals({
+			rows: pane.rows,
+			deckVocals: DECK_IDS.flatMap((d) => {
+				const st = decks[d];
+				if (st.stable_id === null || st.anlz === null) return [];
+				return [{ stable_id: st.stable_id, vocals: vocalsOf(st.anlz) }];
+			}),
+			// getAnlzEntry is a PURE read - swapping it for ensureAnlz here is the
+			// per-row fan-out this contract exists to prevent.
+			cachedVocals: (stable_id: string): Vocals | undefined => {
+				const entry = getAnlzEntry(stable_id);
+				return entry !== undefined && entry.status === 'ready' ? vocalsOf(entry.data) : undefined;
 			}
-		}
-		for (const row of pane.rows) {
-			const entry = getAnlzEntry(row.stable_id);
-			if (entry !== undefined && entry.status === 'ready') {
-				preferAnalyzed(row.stable_id, vocalsOf(entry.data));
-			}
-		}
-		return out;
-	});
+		})
+	);
 	const treeNodes = $derived(
 		playlists
 			.slice()
@@ -403,10 +400,34 @@
 			() => void _sweepBlankPlaylists(),
 			BLANK_PLAYLIST_GRACE_MS
 		);
+
+		// ---- library listing freshness -------------------------------------
+		// FAST PATH: the engine tells us the moment a track changes, from any
+		// writer (this tab, another tab, the CLI, an agent). One targeted
+		// refetch, no idle polling.
+		const unsubscribeTracks = subscribeKind('tracks', () => void _refreshLibraryRows());
+		// A resync means the bus knows it missed events but not which, so the
+		// only sound response is to refetch as if everything changed.
+		const unsubscribeResync = subscribeResync(() => void _refreshLibraryRows());
+		// DEGRADED PATH: the poll is deliberately kept, not deleted. When the
+		// WS is down (daemon restarting, engine built without the hub) it is
+		// the only thing keeping this pane honest. It is 60s rather than
+		// aggressive because it is a fallback, and it stands down entirely
+		// while the bus is open, where it would only duplicate work the
+		// subscriptions above already do on demand.
+		const LIBRARY_FALLBACK_POLL_MS = 60_000;
+		const libraryFallbackTimer = setInterval(() => {
+			if (getConnectionState() === 'open') return;
+			void _refreshLibraryRows();
+		}, LIBRARY_FALLBACK_POLL_MS);
+
 		return () => {
 			connAlive = false;
 			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
+			clearInterval(libraryFallbackTimer);
+			unsubscribeTracks();
+			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
 		};
@@ -414,13 +435,12 @@
 
 	async function _pingHealth(): Promise<{ be: boolean; lib: boolean }> {
 		try {
-			const r = await fetch(`${RB_API_BASE}/api/v1/health`, {
-				method: 'GET',
-				cache: 'no-store',
-				signal: AbortSignal.timeout(2000)
-			});
-			if (!r.ok) return { be: false, lib: false };
-			const body = (await r.json()) as { state_db?: { tracks?: number } };
+			const body = await unwrap(
+				api.GET('/api/v1/health', {
+					cache: 'no-store',
+					signal: AbortSignal.timeout(2000)
+				})
+			);
 			return { be: true, lib: (body.state_db?.tracks ?? 0) > 0 };
 		} catch {
 			return { be: false, lib: false };
@@ -690,6 +710,76 @@
 		playlists = await listPlaylistsHydrated();
 		await _sweepBlankPlaylists(playlists);
 	}
+
+	/**
+	 * Re-read the library listing WITHOUT disturbing the user: the all-tracks
+	 * count plus every loaded pane's rows, replaced in place so selection and
+	 * scroll survive.
+	 *
+	 * Deliberately NOT routed through _loadPane: beginLoad() clears
+	 * selected_id, selected_ids and scroll_top, which is correct for a
+	 * user-initiated playlist switch and destructive for a background
+	 * invalidation. Editing one track's rating must not scroll the pane back
+	 * to the top and drop a 40-row multi-selection.
+	 *
+	 * Failures log rather than toast: this runs unattended (WS events and a
+	 * 60s timer), so a toast per failure during a daemon restart would bury
+	 * the UI in noise. The stale rows stay on screen and the next event or
+	 * tick retries.
+	 *
+	 * Never call this directly: go through `_refreshLibraryRows`, which
+	 * coalesces overlapping triggers. See the comment on that binding.
+	 */
+	async function _refreshLibraryRowsOnce(): Promise<void> {
+		try {
+			const healthRes = await getHealth();
+			allTracksCount = healthRes.health.state_db.tracks;
+		} catch (exc) {
+			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
+		}
+		for (const p of panes) {
+			// A blank pane has nothing to refresh, and a pane mid-load already
+			// has a newer load token that owns its rows.
+			if (p.playlist_id === null || p.loading) continue;
+			// Snapshotted BEFORE the await, then rechecked after it: the user
+			// can switch this pane to another playlist while the fetch is in
+			// flight, and writing the response then would paint pane B with
+			// pane A's rows. The ETag design means the next WRITE 412s rather
+			// than corrupting anything, so this is a display-level fix, but a
+			// pane showing another playlist's tracks is still wrong on screen.
+			const requestedPlaylistId = p.playlist_id;
+			try {
+				const result =
+					requestedPlaylistId === 'all'
+						? await _fetchAllRows()
+						: await _fetchPlaylistRows(requestedPlaylistId);
+				if (p.playlist_id !== requestedPlaylistId) continue;
+				p.rows = result.rows;
+				p.truncated = result.truncated;
+				p.etag = result.etag;
+				// A selection pointing at a row the change deleted cannot
+				// survive; everything still present stays selected.
+				const present = new Set(result.rows.map((row) => row.stable_id));
+				p.selected_ids = p.selected_ids.filter((id) => present.has(id));
+				if (p.selected_id !== null && !present.has(p.selected_id)) p.selected_id = null;
+			} catch (exc) {
+				console.error(
+					`[library-refresh] pane ${requestedPlaylistId} refresh failed: ${String(exc)}`
+				);
+			}
+		}
+	}
+
+	/**
+	 * The only entry point for a background library refresh.
+	 *
+	 * Three triggers feed it (`subscribeKind('tracks')`, `subscribeResync` and
+	 * the 60s fallback poll) and a single gap-revealing `library.changed` frame
+	 * fires the first two for ONE event. Unguarded that is two concurrent full
+	 * library reads racing to write the same panes; coalesced it is one run
+	 * plus one trailing run. See `$lib/rb/coalesce`.
+	 */
+	const _refreshLibraryRows = coalesce(_refreshLibraryRowsOnce);
 
 	/** Auto-delete blank untitled empties (never renamed / non-empty). */
 	async function _sweepBlankPlaylists(

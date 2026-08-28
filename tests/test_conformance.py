@@ -206,6 +206,14 @@ def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | Non
     # yet in the current tree). All other errors must propagate so real
     # adapter regressions surface in CI instead of silently turning into
     # a pytest.skip.
+    #
+    # "Not implemented" used to be expressible as "the package does not
+    # exist", because nothing else lived at apps.adapters.<vendor>. T3b wave 4
+    # moved the rekordbox hot-cue surface into apps/adapters/rekordbox/, so the
+    # package now exists while the Protocol implementation still does not.
+    # The unimplemented adapters are therefore probed by attribute rather than
+    # by import: a missing class is the skip signal, and a genuinely broken
+    # adapter still raises past the narrow catch below.
     try:
         if name == "serato":
             from apps.adapters.serato import SeratoAdapter, SeratoAdapterOptions
@@ -225,14 +233,27 @@ def _load_adapter(name: str, *, audio_root: Path | None = None) -> Adapter | Non
             from apps.adapters.traktor import TraktorAdapter
             return TraktorAdapter()
         if name == "rekordbox":
-            from apps.adapters.rekordbox import RekordboxAdapter  # type: ignore
-            return RekordboxAdapter()
+            import apps.adapters.rekordbox as rekordbox_pkg
+
+            return _instantiate(rekordbox_pkg, "RekordboxAdapter")
         if name == "djay":
-            from apps.adapters.djay import DjayAdapter  # type: ignore
-            return DjayAdapter()
+            import apps.adapters.djay as djay_pkg  # type: ignore[import-not-found]
+
+            return _instantiate(djay_pkg, "DjayAdapter")
     except ModuleNotFoundError:
         return None
     return None
+
+
+def _instantiate(module: Any, class_name: str) -> Adapter | None:
+    """Build ``module.class_name()``, or None when the class is not there yet.
+
+    Absence is the "adapter not implemented in this phase" signal that the
+    caller turns into a skip. Anything the constructor itself raises still
+    propagates, which is the P16-F03 property.
+    """
+    adapter_cls = getattr(module, class_name, None)
+    return None if adapter_cls is None else adapter_cls()
 
 
 def _stage_fixture_audio(fixture_root: Path, tmp_path: Path) -> Path | None:

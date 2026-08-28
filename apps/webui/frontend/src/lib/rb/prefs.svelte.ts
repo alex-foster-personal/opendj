@@ -11,6 +11,8 @@
  * the typeof guard only protects unit tests.
  */
 
+import { api, unwrap } from '../api/client';
+
 const STORAGE_KEY = 'mdt.rb.ui-prefs.v1';
 
 /** Library track-table row density (browser list only - not decks/mixer). */
@@ -283,11 +285,7 @@ type DiskPrefsPatch = {
 
 async function _syncDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
 	try {
-		await fetch('/api/v1/ui-prefs', {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-			body: JSON.stringify(patch)
-		});
+		await api.PUT('/api/v1/ui-prefs', { body: patch });
 	} catch {
 		/* localStorage remains authoritative if daemon is down */
 	}
@@ -386,9 +384,7 @@ export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
 export async function hydrateConfirmPrefsFromDisk(): Promise<void> {
 	try {
-		const r = await fetch('/api/v1/ui-prefs', { headers: { Accept: 'application/json' } });
-		if (!r.ok) return;
-		const body = (await r.json()) as {
+		const body = await unwrap(api.GET('/api/v1/ui-prefs')) as {
 			confirm?: RbUiPrefs['confirm'];
 			theme?: UiTheme;
 			hide_todo_settings?: boolean;

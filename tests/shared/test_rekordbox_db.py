@@ -12,7 +12,6 @@ import pytest
 
 from apps.shared import rekordbox_db
 
-
 # ------------------------------------------------------------------ pure helpers
 
 

@@ -56,8 +56,7 @@ from apps.dj_copilot.session_context import PlayedTrack, SessionContext
 from apps.dj_copilot.suggester import RankedSuggestion, suggest_next
 from apps.shared.harmonic import TrackFeature, key_to_camelot
 
-from ..backend import (MAX_LIMIT, NotFoundError, StateBackend, Track,
-                       TrackFilter)
+from ..backend import MAX_LIMIT, NotFoundError, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
 from ..errors import ErrorBody
 

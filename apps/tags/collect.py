@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from apps.shared.tag_writer import TagRead, read_tags
-from .unify import TagSources
 
+from .unify import TagSources
 
 _LOG = logging.getLogger(__name__)
 _FILENAME_RE = re.compile(r"^(?P<artist>[^-]+?)\s*-\s*(?P<title>.+?)(?:\s*\[.*\])?$")
@@ -151,7 +151,8 @@ _DJAY_UNAVAILABLE: bool = False
 def _djay_build_index() -> Optional[dict[str, TagRead]]:
     """Open the djay MediaLibrary.db and build a path -> TagRead index."""
     try:
-        from apps.shared import djay_db, paths as shared_paths
+        from apps.shared import djay_db
+        from apps.shared import paths as shared_paths
     except Exception as exc:  # pragma: no cover
         _LOG.debug("djay_db import failed: %s", exc)
         return None

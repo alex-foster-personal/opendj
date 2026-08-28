@@ -1,5 +1,5 @@
 /**
- * Typed fetch client for the smartlists read router
+ * Typed client for the smartlists read router
  * (LANE smartlists-router -- apps/webui/server/routes/smartlists.py).
  *
  * Lives in its OWN module: api-rb.ts and types.ts are wave hotspots owned
@@ -11,9 +11,17 @@
  * Known codes: SMARTLISTS_DB_UNAVAILABLE (503), SMARTLIST_NOT_FOUND (404),
  * SMARTLIST_EVAL_UNAVAILABLE (503), SMARTLIST_RULE_INVALID (500),
  * SMARTLIST_MEMBER_MISSING (500).
+ *
+ * CONVERTED onto the generated OpenAPI client (src/lib/api/client.ts).
+ * Transport only: the exported types below stay hand-written rather than
+ * aliasing the generated schemas, because generated SmartlistSummary types
+ * `rule` as an untyped {[key: string]: unknown} map while this module
+ * keeps the SmartlistRule AST union the rule editor depends on.
  */
 
-import { RB_API_BASE, RbApiError, type StemSummary, type Vocals } from './api-rb';
+import { RbApiError, type StemSummary, type Vocals } from './api-rb';
+
+import { ApiError, api, unwrap } from '../api/client';
 
 // ----------------------------------------------------------- types
 
@@ -72,27 +80,48 @@ export interface SmartlistTracks {
 
 // ----------------------------------------------------------- _helpers
 
-async function _fetchJson<T>(path: string): Promise<T> {
-	const r = await fetch(`${RB_API_BASE}${path}`, { headers: { Accept: 'application/json' } });
-	if (!r.ok) {
-		const body = (await r.json()) as { detail?: { code?: string; message?: string } | string };
-		const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail : undefined;
-		throw new RbApiError(r.status, detail?.code ?? `HTTP_${r.status}`, detail?.message ?? r.statusText);
+/** Keep this module's error contract after the conversion: a daemon answer
+ * still throws RbApiError with the route's {code, message} (ApiError already
+ * decoded the detail envelope, with the same HTTP_<status>/statusText
+ * fallbacks the old _fetchJson applied); anything else rethrows untouched. */
+function _throwSmartlistError(error: unknown): never {
+	if (error instanceof ApiError) {
+		throw new RbApiError(error.status, error.code, error.message);
 	}
-	return (await r.json()) as T;
+	throw error;
 }
 
 // ----------------------------------------------------------- fetchers
 
 export async function listSmartlists(): Promise<SmartlistSummary[]> {
-	return _fetchJson<SmartlistSummary[]>('/api/v1/smartlists');
+	try {
+		const data = await unwrap(api.GET('/api/v1/smartlists', {}));
+		return data as unknown as SmartlistSummary[];
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
 }
 
 export async function getSmartlist(id: string): Promise<SmartlistSummary> {
-	return _fetchJson<SmartlistSummary>(`/api/v1/smartlists/${encodeURIComponent(id)}`);
+	try {
+		const data = await unwrap(
+			api.GET('/api/v1/smartlists/{smartlist_id}', { params: { path: { smartlist_id: id } } })
+		);
+		return data as unknown as SmartlistSummary;
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
 }
 
 export async function getSmartlistTracks(id: string, limit?: number): Promise<SmartlistTracks> {
-	const qs = limit !== undefined ? `?limit=${limit}` : '';
-	return _fetchJson<SmartlistTracks>(`/api/v1/smartlists/${encodeURIComponent(id)}/tracks${qs}`);
+	try {
+		const data = await unwrap(
+			api.GET('/api/v1/smartlists/{smartlist_id}/tracks', {
+				params: { path: { smartlist_id: id }, query: { limit } }
+			})
+		);
+		return data as unknown as SmartlistTracks;
+	} catch (error) {
+		_throwSmartlistError(error);
+	}
 }

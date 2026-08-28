@@ -11,7 +11,7 @@ import csv
 from pathlib import Path
 
 from apps.shared import paths
-from apps.shared.tag_writer import TagRead, UnifiedTags
+from apps.shared.tag_writer import TagRead
 
 from . import collect as tag_collect
 from . import unify as tag_unify

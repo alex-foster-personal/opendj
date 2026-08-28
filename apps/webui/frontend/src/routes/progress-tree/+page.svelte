@@ -9,8 +9,14 @@
 	 * Auto-refetches every REFRESH_INTERVAL_MS while the tab is visible.
 	 * Errors are loud (daemon down renders a banner, stale data stays up,
 	 * never a blank page).
+	 *
+	 * The ledger is a LEGACY-DAEMON surface: apps/engine_core/app.py drops the
+	 * progress router. Served by the engine, this route renders one inert panel
+	 * and issues NOTHING -- no first load, no refresh timer, no visibility
+	 * refetch. It used to retry a 404 every 30 seconds instead.
 	 */
 	import { onMount, tick } from 'svelte';
+	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import AreaSection from './AreaSection.svelte';
 	import DepGraph from './DepGraph.svelte';
 	import TierIcon from './TierIcon.svelte';
@@ -58,6 +64,9 @@
 
 	//----- data loading -----------------------------------------------------
 
+	/** Why this route is inert, or null when the daemon serves the ledger. */
+	const ledgerRefusal = $derived(progressRefusal());
+
 	async function load(): Promise<void> {
 		try {
 			data = await fetchProgress();
@@ -71,6 +80,17 @@
 	onMount(() => {
 		const stored = localStorage.getItem(TAB_KEY);
 		if (stored === 'tree' || stored === 'graph') activeTab = stored;
+		// Cheap when the layout already probed: the answer is memoized. Probing
+		// here too means a deep link to this route resolves on its own.
+		void capabilities.probe();
+	});
+
+	// Loading lives in an effect keyed on the capability, so an engine-served
+	// boot never starts the timer at all, and a probe that resolves late still
+	// starts it exactly once. The teardown runs when the capability flips or
+	// the route unmounts.
+	$effect(() => {
+		if (ledgerRefusal !== null) return;
 		void load();
 		const intervalId = setInterval(() => {
 			if (!document.hidden) void load();
@@ -233,7 +253,7 @@
 </svelte:head>
 
 <div class="pt-page">
-{#if error}
+{#if ledgerRefusal === null && error}
 	<div class="error-banner">
 		Progress ledger error: {error}
 		{#if data}
@@ -242,7 +262,18 @@
 	</div>
 {/if}
 
-{#if data}
+{#if ledgerRefusal !== null}
+	<!-- INERT: no request was made and no refresh timer is running. -->
+	<section class="pt-inert" aria-label="Progress ledger unavailable">
+		<h2>Progress tree</h2>
+		<p class="inert-note" title={ledgerRefusal}>{ledgerRefusal}</p>
+		<p class="inert-detail">
+			The fan-out ledger lives on the legacy daemon. Nothing was fetched for this page, so
+			there is no ledger data to show and no stale data to mistake for live.
+			<code>data/progress-tree.yaml</code>
+		</p>
+	</section>
+{:else if data}
 	<div class="pt-header">
 		<div class="header-row">
 			<h2>Progress tree</h2>
@@ -378,6 +409,20 @@
 		font-weight: 400;
 		opacity: 0.85;
 		margin-left: 0.5rem;
+	}
+	.pt-inert h2 {
+		margin: 0 0 0.4rem 0;
+		font-size: 1.05rem;
+	}
+	.inert-note {
+		color: var(--muted);
+		font-weight: 600;
+		margin: 0 0 0.35rem 0;
+	}
+	.inert-detail {
+		color: var(--muted);
+		max-width: 46rem;
+		margin: 0;
 	}
 	.pt-header {
 		position: sticky;
