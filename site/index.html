@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-dj</title>
+<meta name="description" content="open-dj is local-first DJ library tooling and an open format for DJ track metadata.">
+<style>
+  :root {
+    --bg: #0b0d11;
+    --surface: #121720;
+    --border: #232c3a;
+    --fg: #e6e9ef;
+    --muted: #9aa4b2;
+    --accent: #ffb43a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 2rem; margin-bottom: 2.5rem; }
+  h1 {
+    margin: 0 0 .4rem;
+    font-size: clamp(2rem, 6vw, 3rem);
+    letter-spacing: -0.02em;
+  }
+  h1 .dash { color: var(--accent); }
+  .tagline { margin: 0; color: var(--muted); font-size: 1.1rem; }
+  h2 {
+    font-size: 1.05rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 2.5rem 0 .75rem;
+  }
+  p { margin: 0 0 1rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .4rem; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  a:hover { text-decoration: none; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem 1.4rem;
+    margin: 1.5rem 0;
+  }
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: .9rem;
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>open<span class="dash">-</span>dj</h1>
+    <p class="tagline">Local-first DJ library tooling, and an open format for track metadata.</p>
+  </header>
+
+  <p>
+    open-dj is a personal toolkit for managing a DJ music library across the
+    apps and hardware that refuse to agree with each other. It reads and writes
+    rekordbox, djay, Serato and Traktor libraries, keeps analysis and cue points
+    consistent between them, and keeps the whole thing on your own machines.
+  </p>
+
+  <h2>What it does</h2>
+  <ul>
+    <li>Reconciles one library across rekordbox, djay, Serato and Traktor.</li>
+    <li>Keeps analysed values (BPM, key, cues, ratings) wrapped with their provenance, so the next app's auto-analysis cannot silently clobber them.</li>
+    <li>Runs stem separation and vocal detection, and keeps the results addressable across machines.</li>
+    <li>Ships a performance view for actually playing the result.</li>
+  </ul>
+
+  <h2>The format</h2>
+  <p>
+    The <strong>open-dj</strong> format is a published specification for exchanging
+    DJ track metadata between applications without losing provenance. Every
+    analysed value carries where it came from and when, so merging two libraries
+    is a decision rather than a coin toss.
+  </p>
+
+  <div class="card">
+    <p class="muted" style="margin:0">
+      open-dj is a personal project, run locally by its author. It is not affiliated
+      with Pioneer DJ, Algoriddim, Serato or Native Instruments, nor with the
+      OpenDJ LDAP directory server, which is an unrelated project that shares a name.
+    </p>
+  </div>
+
+  <h2>Accounts and data</h2>
+  <p>
+    open-dj runs on your own computer and stores its library data there. Signing in
+    with Google is optional and is used only to identify you across your own
+    machines. It reads nothing from your Google account beyond your name, email
+    address and profile picture, and sends your data to no one.
+    See the <a href="/privacy.html">privacy policy</a> for specifics.
+  </p>
+
+  <footer>
+    <a href="/privacy.html">Privacy</a>
+    <a href="mailto:owner@example.com">Contact</a>
+    <span>&copy; 2026 Alex Foster</span>
+  </footer>
+
+</div>
+</body>
+</html>
