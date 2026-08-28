@@ -1,0 +1,84 @@
+import { Canvas, Meta } from '@storybook/addon-docs/blocks';
+
+import * as AnalysisDotsStories from '../../lib/components/rb/browser/AnalysisDots.stories';
+import * as QualityBadgeStories from '../../lib/components/rb/QualityBadge.stories';
+
+<Meta title="UI decisions/Numeric readouts carry hover titles" />
+
+# Every numeric readout carries a hover title explaining what the number is
+
+## The decision
+
+Any number rendered in the UI - a count, a Hz, a ms, a ratio, a bitrate, a
+rung - must carry a `title` attribute that says what the number is and what
+units it is in. This extends to graphical readouts that encode a count
+without printing it, such as a dot grid or a meter.
+
+This is a repo house rule, not a Storybook convention. It is stated in
+`CLAUDE.md` and applies to every surface in the app.
+
+## Why
+
+The UI is dense and deliberately imitates rekordbox, so it is full of tiny
+unlabelled figures sitting in 9px type. A bare `256` could be a bitrate, a
+buffer size, a track count, or a MIDI value. Without the hover, the only way
+to find out is to read the source, and the person hovering is usually the
+person least able to do that.
+
+The rule also protects against a subtler failure: a number with no stated
+denominator. `4655` matched tracks sounds like a result until you learn it
+was measured against 8355 rows of which only 1199 had audio. Hover text is
+where the denominator goes.
+
+## What to do when adding new UI
+
+- [ ] Every element that renders a figure gets a `title`.
+- [ ] The title names the quantity AND its units: "Effective 256 kbps", not
+      "256".
+- [ ] Where a figure is a share of something, the title carries the
+      denominator explicitly.
+- [ ] Where the number is unavailable, do not print a placeholder that could
+      be mistaken for a measurement. Print `--` or `...` and let the title
+      explain why it is missing.
+- [ ] Where the readout is graphical rather than textual, the container
+      carries the title, and each sub-element carries its own where it has a
+      distinct meaning.
+
+## What this is not
+
+This is not a licence to skip a visible label where there is room for one. A
+hover is the floor, not the ceiling: it is what a cramped 9px cell gets when
+a real label will not fit. Anywhere with space should be labelled outright.
+
+Nor does it apply to numbers that are self-evidently their own label, such as
+the digits inside a clock readout or the numerals on a fader scale.
+
+## Visual example
+
+`QualityBadge` shows the pattern at its fullest. The badge prints a rung name
+and a container, and pushes every measured number into the hover: the
+effective kbps, the rung index out of the total, and whether the container is
+lossless (which changes how the rung was derived at all).
+
+<Canvas of={QualityBadgeStories.Stadium} />
+
+Note the honest-failure case. When the backend cannot measure quality, the
+badge says `Unknown` and the hover carries the backend's reason rather than a
+guessed rung, because a guessed rung would be fabricated data:
+
+<Canvas of={QualityBadgeStories.Unknown} />
+
+`AnalysisDots` is the graphical case. The grid encodes "how many of the nine
+analyses have run" purely as lit dots, so the count exists only in the
+container's title (`analysis coverage: 4/9`), while each dot separately
+titles its own kind and state:
+
+<Canvas of={AnalysisDotsStories.PartialCoverage} />
+
+## Enforcement
+
+Review only, plus these stories as the reference. There is no lint rule that
+can tell a number from any other text node, so the check is human. If that
+ever stops working, the cheapest mechanical proxy is a test that renders each
+readout component and asserts a non-empty `title` on the elements that
+contain digits.

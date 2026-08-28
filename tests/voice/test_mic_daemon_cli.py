@@ -18,7 +18,6 @@ import pytest
 
 from apps.voice import mic_daemon
 
-
 pytestmark = pytest.mark.requirement("VOICE-01")
 
 

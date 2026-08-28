@@ -12,7 +12,7 @@
 	 * the same typed command path used by browser IPC and presets.
 	 */
 	import { onMount } from 'svelte';
-	import { engine, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { engine, isMasterMuted, mixerState, setMasterMuted } from '$lib/rb/audio-engine.svelte';
 	import type { AudioEngine } from '$lib/rb/types';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
@@ -31,6 +31,9 @@
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import VibeMeter from './VibeMeter.svelte';
+	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
+	import { jobsRefusal } from '$lib/api/capabilities.svelte';
+	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
 	import MidiPanel from '$lib/components/rb/MidiPanel.svelte';
 	import MidiLearnLogPopout from '$lib/components/rb/midi/MidiLearnLogPopout.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
@@ -42,6 +45,11 @@
 	}
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
+
+	/** Why the JOBS toggle is inert, or null when the daemon offers jobs. A
+	 * different category from INERT_TITLE above: the feature is built, this
+	 * daemon simply does not serve it. */
+	const jobsUnavailable = $derived(jobsRefusal());
 
 	let pairingOpen = $state(false);
 	let autoPlayMenuOpen = $state(false);
@@ -363,6 +371,21 @@
 		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
 	</button>
 
+	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
+	     Inert on a daemon with no jobs API, and the title says which. -->
+	<button
+		class="midi-label"
+		class:rb-inert={jobsUnavailable !== null}
+		disabled={jobsUnavailable !== null}
+		title={jobsUnavailable ??
+			'Engine jobs: what the daemon is running right now (live over the jobs.updated topic)'}
+		aria-label="Jobs drawer"
+		aria-expanded={jobsStore.drawerOpen}
+		onclick={toggleJobsDrawer}
+	>
+		JOBS
+	</button>
+
 	<!-- text-command entry: closest rekordbox-parity hook for apps/voice
 	     (no mic UI in rekordbox); REAL -> POST /api/v1/voice/probe -->
 	<CommandEntry />
@@ -432,6 +455,21 @@
 		<div class="master-thumb" style={`left: calc(${mixerState.master * 100}% - 4px);`}></div>
 	</div>
 
+	<!-- master mute: REAL -> gain 0 on the last node before the destination.
+	     Opt-in at startup with ?muted=1 for headless UI-test agents. -->
+	<button
+		class="tb-icon mute-btn"
+		class:muted={isMasterMuted()}
+		aria-label="master mute"
+		aria-pressed={isMasterMuted()}
+		title={isMasterMuted()
+			? 'Master MUTED - final output gain forced to 0. The whole audio graph still runs, only the speaker feed is silent. Click to unmute (or ?muted=1 to start muted).'
+			: 'Master audible. Click to mute the speaker feed - the audio graph keeps running, so nothing else changes.'}
+		onclick={() => setMasterMuted(!isMasterMuted())}
+	>
+		{isMasterMuted() ? 'MUTE' : 'VOL'}
+	</button>
+
 	<!-- clock: REAL, local time HH:MM -->
 	<span class="clock">{clock}</span>
 
@@ -445,6 +483,9 @@
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
+
+<!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
+<JobsDrawer />
 
 <!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
      panel's "pop out" button. Only visible while midiUi.logPopoutOpen. -->
@@ -589,6 +630,20 @@
 	.tb-icon.fx {
 		border: 1px solid var(--rb-border);
 		padding: 2px 4px;
+	}
+	.tb-icon.mute-btn {
+		border: 1px solid var(--rb-border);
+		cursor: pointer;
+		letter-spacing: 0.06em;
+		padding: 2px 4px;
+	}
+	.tb-icon.mute-btn:hover {
+		color: var(--rb-text);
+	}
+	/* Muted is a loud state on purpose: a silent app must never look normal. */
+	.tb-icon.mute-btn.muted {
+		border-color: var(--rb-danger, #d24b4b);
+		color: var(--rb-danger, #d24b4b);
 	}
 
 	.link-btn {

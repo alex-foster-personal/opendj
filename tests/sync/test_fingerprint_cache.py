@@ -17,7 +17,6 @@ import pytest
 from apps.sync import fingerprint as fp_mod
 from apps.sync.fingerprint import FingerprintCache, compare_pair
 
-
 pytestmark = pytest.mark.requirement("SYNC-02")
 
 
@@ -43,7 +42,7 @@ class _FakeAcoustid(types.ModuleType):
         self.calls: list[str] = []
         self.compare_calls: list[tuple] = []
 
-    def fingerprint_file(self, path: str):  # noqa: D401
+    def fingerprint_file(self, path: str):
         self.calls.append(path)
         return (180.0, f"FAKE_FP:{Path(path).name}")
 

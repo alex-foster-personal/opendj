@@ -60,7 +60,7 @@ def test_probe_parses_connections_and_folder_state(monkeypatch):
         def read(self):
             return json.dumps(self._payload).encode("utf-8")
 
-    def _fake_urlopen(request, timeout):  # noqa: ARG001
+    def _fake_urlopen(request, timeout):
         return _FakeResponse(responses[request.full_url])
 
     monkeypatch.setattr(cloud_sync.urllib.request, "urlopen", _fake_urlopen)

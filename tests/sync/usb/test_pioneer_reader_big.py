@@ -19,7 +19,6 @@ import pytest
 from apps.sync.usb.pioneer import read_usb_export
 from apps.sync.usb.pioneer.reader import validate_invariants
 
-
 pytestmark = [
     pytest.mark.requirement("CAT-06"),
     pytest.mark.slow,

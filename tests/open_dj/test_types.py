@@ -32,7 +32,6 @@ from apps.open_dj import (
 )
 from apps.open_dj.canon import to_canonical_bytes
 
-
 # ------------------------------------------------------------- builders
 
 

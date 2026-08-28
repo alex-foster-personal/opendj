@@ -31,7 +31,6 @@ from typing import Iterable
 from apps.shared.normalised import NormalisedCue
 from apps.shared.rb_color_palette import rgb_to_color_index
 
-
 _CUE_CLASS = b"ADCMediaItemCuePoint"
 _LOOP_CLASS = b"ADCMediaItemLoopRegion"
 

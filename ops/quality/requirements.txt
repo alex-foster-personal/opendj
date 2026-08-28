@@ -1,0 +1,16 @@
+# Pinned toolchain for `python -m scripts.quality_gate`.
+#
+# These are deliberately NOT in pyproject.toml's dependency groups. They are
+# measurement tools, not things apps/* imports, and they get installed into a
+# throwaway uv environment (`uv run --no-project --with-requirements`) so that
+# a quality run can never perturb the app venv or the resolved app deps.
+#
+# Exact pins, not floors: a quality gate that ratchets on counts has to make
+# the same measurement today and next month, and every one of these tools
+# changes its default rule set between minor versions. Bumping a pin is a
+# deliberate act that reprints the baseline (see ops/quality/README.md).
+
+ruff==0.16.3
+radon==6.0.1
+import-linter==2.3
+deptry==0.25.1

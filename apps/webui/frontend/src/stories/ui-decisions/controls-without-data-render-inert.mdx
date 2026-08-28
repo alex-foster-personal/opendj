@@ -1,0 +1,94 @@
+import { Canvas, Meta } from '@storybook/addon-docs/blocks';
+
+import * as IconRailStories from '../../lib/components/rb/browser/IconRail.stories';
+
+<Meta title="UI decisions/Controls without data render inert" />
+
+# UI controls without a real data source render inert
+
+## The decision
+
+A control that has no real data source behind it is rendered in place,
+visually faithful, but disabled and non-interactive, carrying the tooltip:
+
+```
+not implemented - see PARITY-TODO
+```
+
+It is never wired to a placeholder value, a stubbed response, or a handler
+that quietly does nothing.
+
+This is a repo house rule from `CLAUDE.md`, and the exact tooltip string
+matters: it is greppable. `INERT_TITLE`, `INERT_TIP` and `TIP` constants
+across the codebase all hold this same string.
+
+## Why
+
+This app is a parity clone of a large piece of commercial software, so the
+chrome is built well ahead of the behaviour. That leaves a standing risk: a
+button that looks live but does nothing is indistinguishable from a bug, and
+it costs someone a debugging session every time they meet one.
+
+Rendering the control inert converts that ambiguity into information. The
+user learns three things at once - the feature is planned, it is not built,
+and where the backlog entry lives - without filing an issue.
+
+The alternative approaches were both rejected. Hiding unbuilt controls loses
+the visual parity that is the point of the clone, and makes the gap invisible
+to anyone auditing progress. Wiring them to fake data violates the
+no-mocked-data rule and produces screenshots that lie about what works.
+
+## What to do when adding new UI
+
+- [ ] Ship the control in its correct visual position, styled as the real
+      thing.
+- [ ] Set `disabled` on it, so it is inert to keyboard and pointer alike,
+      not merely styled to look dim.
+- [ ] Add the `rb-inert` class, which supplies the shared dimmed treatment
+      (`opacity: 0.75` and a default cursor) from `theme.css`.
+- [ ] Set both `title` and `aria-label` to the tooltip string, so the state
+      reaches assistive technology and not only a mouse hover.
+- [ ] Where several controls in one component are inert, hold the string in a
+      single local constant rather than repeating the literal.
+- [ ] Where a useful specific reason exists, extend the string rather than
+      replacing it, keeping the greppable stem intact.
+- [ ] Add the matching entry to `PARITY-TODO.md`, so the tooltip's promise is
+      real.
+
+## What this is not
+
+This is not for controls that are merely unavailable right now. A control
+that is disabled because nothing is selected, because a device is
+disconnected, or because a job is mid-flight is a normal disabled control and
+should say so in its own words. This rule is only for behaviour that does not
+exist yet in the product at all.
+
+Nor does it cover a whole unbuilt panel. When an entire surface is missing,
+say so in prose in situ rather than rendering a grid of dead controls.
+
+## Visual example
+
+The browser icon rail is the clearest instance. Spotify is the only wired
+source, so it alone is interactive; every other glyph renders in its correct
+position, dimmed and disabled, with the PARITY-TODO tooltip. Hover any dimmed
+icon in the canvas below to see it.
+
+<Canvas of={IconRailStories.Collection} />
+
+The one live control shows the contrast, taking the active inset-accent
+treatment when it is the selected source:
+
+<Canvas of={IconRailStories.SpotifyActive} />
+
+## Enforcement
+
+Review, plus grep. Because the string is fixed, the current inventory is one
+command:
+
+```bash
+grep -rn "not implemented - see PARITY-TODO" apps/webui/frontend/src
+```
+
+That inventory is also the audit: anything listed there should have a
+matching line in `PARITY-TODO.md`, and anything removed from the backlog
+should have lost its tooltip in the same change.

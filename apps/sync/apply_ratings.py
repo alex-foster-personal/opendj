@@ -10,7 +10,6 @@ from pathlib import Path
 from apps.shared import paths
 from apps.sync.safety import LiveWriteSession, SafetyAbort
 
-
 # ----- Path resolution (mirrors playlist_apply._live_db_path) -----------
 
 

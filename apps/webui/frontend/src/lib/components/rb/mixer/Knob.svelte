@@ -4,10 +4,33 @@
 	 * Real knobs: drag-vertical to turn, double-click resets to 0.5, arrow
 	 * keys nudge, mouse wheel nudges. Inert knobs render identically but
 	 * ignore input and carry the standard tooltip.
+	 *
+	 * All input routes through $lib/rb/knob-control (H5): shift+click selects
+	 * a dial so the global scroll wheel keeps nudging it wherever the pointer
+	 * goes, alt+click links two dials so one turn moves them inversely with the
+	 * rising side over-boosted by KNOB_CFG.linkStagger - which is what stops the
+	 * bass dipping through a crossover. Sensitivity lives in KNOB_CFG, not here,
+	 * so horizontal drag stays the fine-adjust axis.
 	 */
-	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
+	import {
+		KNOB_CFG,
+		altClickKnob,
+		isKnobLinked,
+		isKnobSelected,
+		linkedPartnerId,
+		readKnobValue,
+		registerKnob,
+		setKnobAbsolute,
+		setKnobFromDrag,
+		setKnobHovered,
+		shiftClickKnob,
+		unregisterKnob
+	} from '$lib/rb/knob-control.svelte';
+	import { wheelAdjust } from '$lib/rb/wheel-adjust';
 
 	interface Props {
+		/** Stable control id from knobId(deckId, role) - the knob-control registry key. */
+		knobId: string;
 		/** Small caps label under the knob (TRIM / HI / MID / LOW / FILTER ...). */
 		label: string;
 		/** Position 0..1; 0.5 = center detent (unity / flat). */
@@ -20,17 +43,29 @@
 		tone?: 'accent' | 'white' | 'rainbow';
 	}
 
-	let { label, value, onchange, inert = false, tone = 'accent' }: Props = $props();
+	let { knobId, label, value, onchange, inert = false, tone = 'accent' }: Props = $props();
 
 	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
-	const DRAG_RANGE_PX = 150; // full 0..1 sweep over 150px of vertical drag
-	const KEY_STEP = 0.02;
 	const SIZE = 30;
 
+	const live = $derived(!inert && onchange !== undefined);
+
+	let dragStartX = 0;
 	let dragStartY = 0;
 	let dragStartValue = 0;
+	let dragPartnerId: string | null = null;
+	let dragStartPartnerValue: number | null = null;
 	let dragging = false;
+
+	$effect(() => {
+		if (!live) return;
+		registerKnob({ id: knobId, getValue: () => value, setValue: (next) => onchange?.(next) });
+		return () => unregisterKnob(knobId);
+	});
+
+	const selected = $derived(live && isKnobSelected(knobId));
+	const linked = $derived(live && isKnobLinked(knobId));
 
 	const angleDeg = $derived((value - 0.5) * SWEEP_DEG);
 	/** |offset| from center: >0.15 (~30% of half-throw) orange, >0.25 (~50%) red. */
@@ -41,48 +76,80 @@
 		return 'none';
 	});
 
-	function _clamp01(v: number): number {
-		return Math.min(1, Math.max(0, v));
-	}
-
 	function handlePointerDown(e: PointerEvent): void {
-		if (inert || !onchange) return;
+		if (!live) return;
+		// Shift = select for the global wheel; Alt = arm/complete a link pair.
+		// Neither starts a drag, so a modifier click never also turns the dial.
+		if (e.shiftKey) {
+			e.preventDefault();
+			shiftClickKnob(knobId);
+			return;
+		}
+		if (e.altKey) {
+			e.preventDefault();
+			altClickKnob(knobId);
+			return;
+		}
 		dragging = true;
+		dragStartX = e.clientX;
 		dragStartY = e.clientY;
 		dragStartValue = value;
+		// Baselines are captured ONCE so the link stagger cannot accumulate
+		// across pointermove frames.
+		dragPartnerId = linkedPartnerId(knobId);
+		dragStartPartnerValue = dragPartnerId === null ? null : readKnobValue(dragPartnerId);
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 
 	function handlePointerMove(e: PointerEvent): void {
-		if (!dragging || !onchange) return;
+		if (!dragging || !live) return;
 		const dy = dragStartY - e.clientY; // up = clockwise = increase
-		onchange(_clamp01(dragStartValue + dy / DRAG_RANGE_PX));
+		const dx = e.clientX - dragStartX; // right = increase, far less sensitive
+		const target =
+			dragStartValue + dy / KNOB_CFG.dragVerticalPx + dx / KNOB_CFG.dragHorizontalPx;
+		setKnobFromDrag(knobId, dragStartValue, target, dragPartnerId, dragStartPartnerValue);
 	}
 
 	function handlePointerUp(e: PointerEvent): void {
 		if (!dragging) return;
 		dragging = false;
+		dragPartnerId = null;
+		dragStartPartnerValue = null;
 		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
 	}
 
 	function handleDblClick(): void {
-		if (inert || !onchange) return;
-		onchange(0.5); // center detent reset
+		if (!live) return;
+		setKnobAbsolute(knobId, 0.5); // center detent reset
 	}
 
 	function handleKeyDown(e: KeyboardEvent): void {
-		if (inert || !onchange) return;
+		if (!live) return;
 		if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
 			e.preventDefault();
-			onchange(_clamp01(value + KEY_STEP));
+			setKnobAbsolute(knobId, value + KNOB_CFG.keyStep);
 		} else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
 			e.preventDefault();
-			onchange(_clamp01(value - KEY_STEP));
+			setKnobAbsolute(knobId, value - KNOB_CFG.keyStep);
 		}
 	}
 </script>
 
-<div class="knob" class:rb-inert={inert} class:warn-orange={warn === 'orange'} class:warn-red={warn === 'red'} title={inert ? INERT_TITLE : label}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="knob"
+	class:rb-inert={inert}
+	class:knob-selected={selected}
+	class:knob-linked={linked}
+	class:warn-orange={warn === 'orange'}
+	class:warn-red={warn === 'red'}
+	data-knob-id={knobId}
+	onpointerenter={() => setKnobHovered(live ? knobId : null)}
+	onpointerleave={() => setKnobHovered(null)}
+	title={inert
+		? INERT_TITLE
+		: `${label}${selected ? ' - selected: the scroll wheel nudges this dial from anywhere' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
+>
 	<svg
 		width={SIZE}
 		height={SIZE}
@@ -100,10 +167,11 @@
 		ondblclick={handleDblClick}
 		onkeydown={handleKeyDown}
 		use:wheelAdjust={{
-			step: WHEEL_STEP.knob,
+			step: KNOB_CFG.scrollStep,
 			get: () => value,
-			set: (next) => onchange?.(next),
-			disabled: inert || !onchange
+			// Through the registry, so a linked partner moves with it.
+			set: (next) => setKnobAbsolute(knobId, next),
+			disabled: !live
 		}}
 	>
 		<circle cx="15" cy="15" r="14" class="ring" />
@@ -155,6 +223,16 @@
 	}
 	.rb-inert svg {
 		cursor: default;
+	}
+	/* Selected (shift+click) and linked (alt+click) must read without hovering,
+	 * or the DJ cannot tell what the global wheel is about to move. */
+	.knob.knob-selected .ring {
+		stroke: var(--rb-accent);
+		stroke-width: 1.5;
+	}
+	.knob.knob-linked .ring {
+		stroke: var(--rb-orange);
+		stroke-dasharray: 3 2;
 	}
 	.ring {
 		fill: #0b0d10;

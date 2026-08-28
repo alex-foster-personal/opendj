@@ -1,15 +1,12 @@
 /** Thin client for settings AI search / apply endpoints. */
 
-export interface AiSearchOut {
-	ids: string[];
-	model: string;
-}
+import type { components } from '../api-types';
+import { ApiError, api, unwrap } from '../api/client';
 
-export interface AiApplyProposal {
-	key: string;
-	value: boolean | string;
-	rationale: string;
-}
+// Generated schemas match field-for-field for search/proposal; AiApplyOut
+// keeps the hand-written required nullables (schema marks error/proposal optional).
+export type AiSearchOut = components['schemas']['AiSearchOut'];
+export type AiApplyProposal = components['schemas']['AiApplyProposal'];
 
 export interface AiApplyOut {
 	ok: boolean;
@@ -18,33 +15,44 @@ export interface AiApplyOut {
 	model: string;
 }
 
-async function _post<T>(path: string, body: unknown): Promise<T> {
-	const r = await fetch(path, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-		body: JSON.stringify(body)
-	});
-	const text = await r.text();
-	let parsed: unknown = null;
-	try {
-		parsed = text ? JSON.parse(text) : null;
-	} catch {
-		throw new Error(`${path} returned non-JSON (${r.status}): ${text.slice(0, 200)}`);
-	}
-	if (!r.ok) {
+function _mapError(path: string, error: unknown): never {
+	if (error instanceof ApiError) {
 		const detail =
-			parsed && typeof parsed === 'object' && parsed !== null && 'detail' in parsed
-				? JSON.stringify((parsed as { detail: unknown }).detail)
-				: text.slice(0, 300);
-		throw new Error(`${path} failed (${r.status}): ${detail}`);
+			error.body && typeof error.body === 'object' && error.body !== null && 'detail' in error.body
+				? JSON.stringify((error.body as { detail: unknown }).detail)
+				: error.message;
+		throw new Error(`${path} failed (${error.status}): ${detail}`);
 	}
-	return parsed as T;
+	throw error;
 }
 
-export function aiSearchSettings(query: string, catalogIds: string[]): Promise<AiSearchOut> {
-	return _post<AiSearchOut>('/api/v1/settings/ai-search', { query, catalog_ids: catalogIds });
+export async function aiSearchSettings(query: string, catalogIds: string[]): Promise<AiSearchOut> {
+	try {
+		return await unwrap(
+			api.POST('/api/v1/settings/ai-search', {
+				body: { query, catalog_ids: catalogIds }
+			})
+		);
+	} catch (error) {
+		_mapError('/api/v1/settings/ai-search', error);
+	}
 }
 
-export function aiApplySetting(instruction: string): Promise<AiApplyOut> {
-	return _post<AiApplyOut>('/api/v1/settings/ai-apply', { instruction });
+export async function aiApplySetting(instruction: string): Promise<AiApplyOut> {
+	try {
+		const data = await unwrap(
+			api.POST('/api/v1/settings/ai-apply', {
+				body: { instruction }
+			})
+		);
+		// Schema marks error/proposal optional; callers expect explicit nulls.
+		return {
+			ok: data.ok,
+			model: data.model,
+			proposal: data.proposal ?? null,
+			error: data.error ?? null
+		};
+	} catch (error) {
+		_mapError('/api/v1/settings/ai-apply', error);
+	}
 }

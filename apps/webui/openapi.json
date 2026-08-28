@@ -797,6 +797,241 @@
         "title": "BulkEditRowOut",
         "type": "object"
       },
+      "ClientErrorIn": {
+        "properties": {
+          "audio_worklet_available": {
+            "title": "Audio Worklet Available",
+            "type": "boolean"
+          },
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "context": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 32,
+            "title": "Context",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "window-error",
+              "unhandled-rejection",
+              "sveltekit",
+              "ui-error"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "url": {
+            "maxLength": 4096,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "message",
+          "url",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "audio_worklet_available"
+        ],
+        "title": "ClientErrorIn",
+        "type": "object"
+      },
+      "ClientErrorOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "stored"
+        ],
+        "title": "ClientErrorOut",
+        "type": "object"
+      },
+      "ClientEventIn": {
+        "properties": {
+          "client_event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Event Id",
+            "type": "string"
+          },
+          "client_timestamp": {
+            "maxLength": 128,
+            "title": "Client Timestamp",
+            "type": "string"
+          },
+          "kind": {
+            "const": "page-view",
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          },
+          "secure_context": {
+            "title": "Secure Context",
+            "type": "boolean"
+          },
+          "url": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          },
+          "user_agent": {
+            "maxLength": 2048,
+            "title": "User Agent",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_event_id",
+          "kind",
+          "url",
+          "path",
+          "client_timestamp",
+          "user_agent",
+          "secure_context",
+          "viewport_width",
+          "viewport_height"
+        ],
+        "title": "ClientEventIn",
+        "type": "object"
+      },
+      "ClientEventOut": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event_id",
+          "stored"
+        ],
+        "title": "ClientEventOut",
+        "type": "object"
+      },
       "ClusterOut": {
         "properties": {
           "cluster_id": {
@@ -1520,11 +1755,15 @@
           "version": {
             "title": "Version",
             "type": "string"
+          },
+          "waveform_materialization": {
+            "$ref": "#/components/schemas/HealthWaveformMaterialization"
           }
         },
         "required": [
           "state_db",
           "cloud",
+          "waveform_materialization",
           "bind_host",
           "version"
         ],
@@ -1606,6 +1845,40 @@
           }
         },
         "title": "HealthSyncthing",
+        "type": "object"
+      },
+      "HealthWaveformMaterialization": {
+        "properties": {
+          "native_available": {
+            "title": "Native Available",
+            "type": "boolean"
+          },
+          "native_import_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Import Error"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "string"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "selected",
+          "native_available"
+        ],
+        "title": "HealthWaveformMaterialization",
         "type": "object"
       },
       "HotCueMutationOut": {
@@ -5952,6 +6225,194 @@
         "title": "UiPrefsPatch",
         "type": "object"
       },
+      "UsbVolumeOut": {
+        "properties": {
+          "hide_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_music": {
+            "default": false,
+            "title": "Is Music",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "unknown",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "music",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mount Path"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "default": true,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "role": {
+            "default": "other",
+            "enum": [
+              "usb_stick",
+              "mounted_drive",
+              "disk_image",
+              "other"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "simulated": {
+            "default": false,
+            "title": "Simulated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "UsbVolumeOut",
+        "type": "object"
+      },
+      "UsbVolumePost": {
+        "description": "DEV / simulate: inject a fake present volume (never touches disk).",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "default": "music",
+            "enum": [
+              "rekordbox",
+              "djay",
+              "music",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "/Volumes/FAKE-USB",
+            "title": "Mount Path"
+          },
+          "name": {
+            "default": "FAKE USB",
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "default": true,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "USB",
+            "title": "Protocol"
+          },
+          "role": {
+            "default": "usb_stick",
+            "enum": [
+              "usb_stick",
+              "mounted_drive",
+              "disk_image",
+              "other"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "title": "UsbVolumePost",
+        "type": "object"
+      },
+      "UsbVolumesOut": {
+        "properties": {
+          "scanned_at": {
+            "title": "Scanned At",
+            "type": "number"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/UsbVolumeOut"
+            },
+            "title": "Volumes",
+            "type": "array"
+          },
+          "watching": {
+            "title": "Watching",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "volumes",
+          "scanned_at",
+          "watching"
+        ],
+        "title": "UsbVolumesOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -7338,6 +7799,88 @@
         "summary": "Bulk Edit",
         "tags": [
           "bulk-edit"
+        ]
+      }
+    },
+    "/api/v1/client-errors": {
+      "post": {
+        "operationId": "capture_client_error_api_v1_client_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Client Error",
+        "tags": [
+          "client-errors"
+        ]
+      }
+    },
+    "/api/v1/client-events": {
+      "post": {
+        "operationId": "capture_client_event_api_v1_client_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientEventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientEventOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture Client Event",
+        "tags": [
+          "client-events"
         ]
       }
     },
@@ -9255,6 +9798,58 @@
         ]
       }
     },
+    "/api/v1/share/session": {
+      "get": {
+        "description": "Set the share cookie when the query token matches, then redirect.",
+        "operationId": "share_session_api_v1_share_session_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "share",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Share",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "next",
+            "required": false,
+            "schema": {
+              "default": "/",
+              "title": "Next",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Share Session",
+        "tags": [
+          "share"
+        ]
+      }
+    },
     "/api/v1/smartlists": {
       "get": {
         "operationId": "list_smartlists_api_v1_smartlists_get",
@@ -10209,7 +10804,7 @@
     },
     "/api/v1/tracks/{stable_id}/audio": {
       "get": {
-        "description": "Stream the local audio file. FileResponse handles Range/206 natively.\n\nRekordbox tracks resolve via the vendor mapping; locally imported tracks\n(no djmdContent row, e.g. vocal stems) fall back to ``tracks.file_path``.",
+        "description": "Stream the single best working file. FileResponse handles Range/206.\n\nThe backend picks among ``track_locations`` plus the legacy\n``file_path`` / FolderPath. The frontend never sees the alternatives.\nShare-host requests use the share venue cap (lossy ceiling by default).",
         "operationId": "get_track_audio_api_v1_tracks__stable_id__audio_get",
         "parameters": [
           {
@@ -10947,6 +11542,87 @@
         "summary": "Readback Export",
         "tags": [
           "usb-export"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes": {
+      "get": {
+        "operationId": "get_usb_volumes_api_v1_usb_volumes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Usb Volumes",
+        "tags": [
+          "usb"
+        ]
+      },
+      "post": {
+        "description": "Inject or update a simulated volume (manual test without a stick).",
+        "operationId": "post_usb_volume_api_v1_usb_volumes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsbVolumePost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbVolumesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Usb Volume",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes/events": {
+      "get": {
+        "description": "SSE: keep the scanner warm while a client is subscribed.",
+        "operationId": "usb_volume_events_api_v1_usb_volumes_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Usb Volume Events",
+        "tags": [
+          "usb"
         ]
       }
     },

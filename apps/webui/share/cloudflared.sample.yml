@@ -1,0 +1,17 @@
+# Named Cloudflare tunnel. Origin stays loopback.
+# Friends authenticate with Cloudflare Access on this hostname.
+# You keep Tailscale for admin. Do not bind the app to 0.0.0.0.
+#
+#   cloudflared tunnel create music-dj-share
+#   cloudflared tunnel route dns music-dj-share odj.example.com
+#   cloudflared tunnel --config apps/webui/share/cloudflared.sample.yml run
+#
+# Then an Access application on odj.example.com with an email allowlist.
+
+tunnel: music-dj-share
+credentials-file: /root/.cloudflared/REPLACE-TUNNEL-ID.json
+
+ingress:
+  - hostname: odj.example.com
+    service: http://127.0.0.1:9400
+  - service: http_status:404

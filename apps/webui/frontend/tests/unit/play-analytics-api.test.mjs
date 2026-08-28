@@ -44,7 +44,7 @@ before(async () => {
 beforeEach(() => {
 	requestedUrl = undefined;
 	globalThis.fetch = async (input) => {
-		requestedUrl = String(input);
+		requestedUrl = input.url;
 		return new Response(JSON.stringify(VALID_RESPONSE), {
 			status: 200,
 			headers: { 'content-type': 'application/json' }
@@ -82,4 +82,23 @@ test('fetchPlayAnalytics fails loudly on a non-OK response', async () => {
 		analyticsApi.fetchPlayAnalytics(null, 50),
 		/GET \/api\/play-analytics failed: 503 schema missing/
 	);
+});
+
+test('fetchPlayAnalytics propagates validator failures without daemon-unreachable wrap', async () => {
+	// openapi-fetch calls fetch(request) with one Request object.
+	globalThis.fetch = async (request) => {
+		requestedUrl = request.url;
+		const body = structuredClone(VALID_RESPONSE);
+		body.schema_version = 2;
+		return new Response(JSON.stringify(body), {
+			status: 200,
+			headers: { 'content-type': 'application/json' }
+		});
+	};
+
+	await assert.rejects(analyticsApi.fetchPlayAnalytics(null, 50), (error) => {
+		assert.match(error.message, /play-analytics: unsupported schema_version '2'/);
+		assert.equal(/daemon unreachable/.test(error.message), false);
+		return true;
+	});
 });

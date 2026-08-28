@@ -17,7 +17,6 @@ import pytest
 from apps.analysis import write_tags as wt
 from apps.analysis.record import AnalysisRecord
 
-
 pytestmark = pytest.mark.requirement("META-02")
 
 

@@ -1,7 +1,7 @@
 """Unit tests for the six-signal scorer (SYNC-02)."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -10,11 +10,10 @@ from apps.shared.djay_db import DjayTrack
 from apps.sync.matcher import (
     MIN_CONFIDENCE_FOR_ACCEPT,
     MIN_SIGNALS_FOR_ACCEPT,
-    Signal,
     WEIGHTS,
+    Signal,
     score_pair,
 )
-
 
 pytestmark = pytest.mark.requirement("SYNC-02")
 

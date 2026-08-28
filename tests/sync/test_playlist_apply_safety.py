@@ -29,7 +29,7 @@ def _fake_pgrep(found: bool):
         returncode = 0 if found else 1
         stdout = "123\n" if found else ""
 
-    def _run(cmd, check=False, capture_output=True, text=True):  # noqa: ANN001
+    def _run(cmd, check=False, capture_output=True, text=True):
         return _Result()
 
     return _run

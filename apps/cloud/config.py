@@ -21,7 +21,6 @@ import os
 import socket
 from dataclasses import dataclass
 
-
 REQUIRED_VARS: tuple[str, ...] = (
     "R2_ACCOUNT_ID",
     "R2_ACCESS_KEY_ID",

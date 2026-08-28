@@ -21,7 +21,6 @@ from typing import Any
 
 from apps.sync.matcher import WEIGHTS, Signal
 
-
 DEFAULT_FP_THRESHOLD: float = 0.90
 
 _BACKEND_WARNED: bool = False

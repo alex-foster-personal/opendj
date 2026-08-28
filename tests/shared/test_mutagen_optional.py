@@ -15,7 +15,6 @@ Simulated by monkeypatching ``apps.shared._mutagen.HAS_MUTAGEN`` to
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 
 import pytest
 
@@ -120,9 +119,9 @@ def test_analysis_write_tags_raise_without_mutagen(tmp_path, no_mutagen):
 
 def test_fingerprint_bitrate_soft_fails_without_mutagen(tmp_path, no_mutagen, monkeypatch):
     # Simulate the ImportError at ``import mutagen`` inside _safe_bitrate.
-    from apps.shared import fingerprints
-
     import builtins
+
+    from apps.shared import fingerprints
 
     real_import = builtins.__import__
 
@@ -140,9 +139,9 @@ def test_fingerprint_bitrate_soft_fails_without_mutagen(tmp_path, no_mutagen, mo
 def test_matcher_read_id3_soft_fails_without_mutagen(tmp_path, no_mutagen, monkeypatch):
     # Same trick as fingerprints: simulate ``from mutagen import File``
     # raising so the caller hits its except branch.
-    from apps.sync import matcher
-
     import builtins
+
+    from apps.sync import matcher
 
     real_import = builtins.__import__
 

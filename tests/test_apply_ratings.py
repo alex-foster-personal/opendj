@@ -13,7 +13,6 @@ Covers:
 from __future__ import annotations
 
 import csv
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +23,6 @@ from apps.sync.apply_ratings import (
     _live_djay_db_path,
     _live_rb_db_path,
     _summarise_plan,
-    _verify_djay_rating,
     _verify_rb_rating,
     dry_run,
     live_run,

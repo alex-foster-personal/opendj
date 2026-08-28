@@ -33,9 +33,10 @@ import os
 import re
 import stat
 import struct
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Annotated, Any, Iterable, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -218,7 +219,10 @@ def validate_stable_id(stable_id: str) -> None:
 
 
 def load_stem_bundle(
-    stable_id: str, *, stems_dir: Path = DEFAULT_STEMS_DIR
+    stable_id: str,
+    *,
+    stems_dir: Path = DEFAULT_STEMS_DIR,
+    roots: Sequence[Path] | None = None,
 ) -> StemBundle:
     """Load one complete, aligned bundle from the first root that has it.
 
@@ -228,14 +232,20 @@ def load_stem_bundle(
     surfaces as an error instead of silently degrading the deck to 2 parts.
     """
     validate_stable_id(stable_id)
-    roots = stem_roots(stems_dir)
-    for root in roots:
+    search_roots = (
+        tuple(Path(root) for root in roots)
+        if roots is not None
+        else stem_roots(stems_dir)
+    )
+    if not search_roots:
+        raise StemArtifactError("at least one stem root is required")
+    for root in search_roots:
         candidate = root.resolve() / stable_id
         if candidate.is_dir() and not candidate.is_symlink():
             return _load_from_root(stable_id, root.resolve())
     raise StemBundleNotFoundError(
         f"no stem bundle exists for {stable_id!r} in any of "
-        f"{', '.join(str(r) for r in roots)}"
+        f"{', '.join(str(r) for r in search_roots)}"
     )
 
 

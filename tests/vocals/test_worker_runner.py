@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 import scripts.vocal_worker_runner as runner
 
 pytestmark = pytest.mark.requirement("CAT-05")

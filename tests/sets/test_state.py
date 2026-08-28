@@ -128,8 +128,8 @@ def test_list_sessions_orders_by_started_at_desc(sets_state: SetsState):
 
 def test_phase5_backend_uses_shared_state_db_and_aliased_table(tmp_path):
     """SetsState(backend=apps.shared.state.db.open_rw) runs on state.db."""
-    from apps.shared.state import db as state_db
     from apps.sets.state import Event, SetsState
+    from apps.shared.state import db as state_db
 
     db = tmp_path / "state.db"
     ss = SetsState(db, backend=state_db.open_rw)

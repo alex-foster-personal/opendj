@@ -14,8 +14,8 @@ import pytest
 
 from apps.sync import apply_analysis
 from apps.sync.apply_analysis import (
-    UnsupportedRbFieldError,
     _SUPPORTED_RB_WRITE_FIELDS,
+    UnsupportedRbFieldError,
     _write_rb_field,
     live_run,
     main,

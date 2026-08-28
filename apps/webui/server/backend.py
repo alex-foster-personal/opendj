@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass, field, asdict, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Callable, Literal, Protocol, Sequence

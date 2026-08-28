@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Callable
 
 from .client import (
-    MissingCredentialsError,
     SpotifyClient,
     SpotifyPlaylist,
 )

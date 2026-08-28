@@ -124,8 +124,13 @@ before(async () => {
 });
 
 after(async () => {
-	webmidi._resetMidiForTests();
-	await vite.close();
+	try {
+		webmidi?._resetMidiForTests();
+	} finally {
+		// Setup can fail before webmidi is assigned. Always close a Vite server
+		// that was created so Node does not retain its listeners indefinitely.
+		await vite?.close();
+	}
 });
 
 // ------------------------------------------------------------ device resolve

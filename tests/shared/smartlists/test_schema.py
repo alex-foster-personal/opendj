@@ -12,7 +12,6 @@ from apps.shared.smartlists import (
     validate_rule,
 )
 
-
 pytestmark = pytest.mark.requirement("SMART-01")
 
 

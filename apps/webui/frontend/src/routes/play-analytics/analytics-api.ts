@@ -1,5 +1,5 @@
 /** Fail-fast route-local client for the read-only play-analytics contract. */
-import { API_BASE } from '$lib/api';
+import { API_BASE, ApiError, api, unwrap } from '$lib/api/client';
 import {
 	SHARE_STATES,
 	type AnalyticsSession,
@@ -107,17 +107,23 @@ export async function fetchPlayAnalytics(
 	if (shareState !== null) query.set('share_state', shareState);
 	query.set('limit', String(limit));
 	const endpoint = `${API_BASE}/api/play-analytics?${query.toString()}`;
-	let response: Response;
+	let data: unknown;
 	try {
-		response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+		data = await unwrap(
+			api.GET('/api/play-analytics', {
+				params: { query: { share_state: shareState ?? undefined, limit } }
+			})
+		);
 	} catch (error) {
+		if (error instanceof ApiError) {
+			const bodyText = await error.response.text();
+			throw new Error(
+				`GET /api/play-analytics failed: ${error.status} ${bodyText.slice(0, 300)}`
+			);
+		}
 		throw new Error(
 			`daemon unreachable at ${endpoint} (${error instanceof Error ? error.message : String(error)})`
 		);
 	}
-	if (!response.ok) {
-		const body = await response.text();
-		throw new Error(`GET /api/play-analytics failed: ${response.status} ${body.slice(0, 300)}`);
-	}
-	return validatePlayAnalyticsResponse(await response.json());
+	return validatePlayAnalyticsResponse(data);
 }

@@ -76,7 +76,7 @@ class EventBus:
             for cb in self._subscribers_for(item.kind):
                 try:
                     cb(item)
-                except Exception:  # noqa: BLE001 - isolation guaranteed
+                except Exception:
                     log.exception("EventBus subscriber raised for kind=%s", item.kind)
 
 
@@ -96,7 +96,7 @@ class FakeEventBus:
         for cb in list(self._subs.get(event.kind, [])) + list(self._subs.get("*", [])):
             try:
                 cb(event)
-            except Exception:  # noqa: BLE001 - isolation guaranteed
+            except Exception:
                 log.exception(
                     "FakeEventBus subscriber raised for kind=%s", event.kind
                 )

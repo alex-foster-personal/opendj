@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-
 YES_PATTERN = re.compile(
     r"^\s*(?:yes|yeah|yep|yup|confirm|affirmative|ok|okay|sure|do it)\b",
     flags=re.IGNORECASE,

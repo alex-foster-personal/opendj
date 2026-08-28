@@ -33,9 +33,9 @@ from rich.table import Table
 from apps.shared.paths import DATA_DIR
 
 from . import config as _analysis_config
+from .backends import BACKENDS  # noqa: F401  (ensures registry populated)
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids, publish_event
-from .backends import BACKENDS  # noqa: F401  (ensures registry populated)
 
 log = logging.getLogger("apps.analysis.detect_bad_beatgrid")
 console = Console()
