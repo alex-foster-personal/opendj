@@ -29,7 +29,6 @@ from apps.shared.smartlists import SmartlistRuleError
 from apps.shared.smartlists.schema import validate_rule
 from apps.tags import apply as tags_apply
 
-
 # Requirement markers are per-test, NOT module-scoped: a module-level
 # ``pytestmark`` credits EVERY test here with EVERY id, so the traceability
 # matrix fills with false "covered by" links and an unrelated test keeps a

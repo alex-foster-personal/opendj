@@ -22,7 +22,6 @@ from apps.sync.usb.diff import Plan
 from apps.sync.usb.preflight import preflight
 from apps.sync.usb.profile import load_from_string
 
-
 # Requirement markers are per-test, NOT module-scoped: a module-level
 # ``pytestmark`` credits EVERY test here with EVERY id, so the traceability
 # matrix fills with false "covered by" links and an unrelated test keeps a
