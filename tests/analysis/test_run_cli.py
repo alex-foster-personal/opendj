@@ -67,7 +67,7 @@ def test_run_dry_run_no_writes(
 ) -> None:
     audio = tmp_path / "a.wav"; audio.write_bytes(b"x" * 100)
     db = tmp_path / "state.db"
-    s = run_mod.run([audio], backend_name="mock", dry_run=True, db_path=db)
+    s = run_mod.run(run_mod.build_queue([audio]), backend_name="mock", dry_run=True, db_path=db)
     assert s.analysed == 1
     assert not db.exists()
 
@@ -79,10 +79,10 @@ def test_run_persists_and_is_idempotent(
     audio = tmp_path / "a.wav"; audio.write_bytes(b"x" * 100)
     db = tmp_path / "state.db"
 
-    s1 = run_mod.run([audio], backend_name="mock", dry_run=False, db_path=db, only_missing=False)
+    s1 = run_mod.run(run_mod.build_queue([audio]), backend_name="mock", dry_run=False, db_path=db, only_missing=False)
     assert s1.analysed == 1 and s1.failed == 0
 
-    s2 = run_mod.run([audio], backend_name="mock", dry_run=False, db_path=db, only_missing=True)
+    s2 = run_mod.run(run_mod.build_queue([audio]), backend_name="mock", dry_run=False, db_path=db, only_missing=True)
     # Queue is empty after only-missing filter; nothing happens.
     assert s2.analysed == 0 and s2.skipped_existing == 0 and s2.failed == 0
 

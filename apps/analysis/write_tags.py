@@ -39,6 +39,7 @@ from rich.table import Table
 
 from apps.shared.paths import DATA_DIR
 
+from .backends import DEFAULT_BACKEND
 from .record import AnalysisRecord
 from .store import fetch_records_by_ids
 
@@ -683,7 +684,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--stable-id-strategy", default="file-path",
                         choices=["file-path", "sha256"])
-    parser.add_argument("--backend", default="librosa+madmom")
+    parser.add_argument("--backend", default=DEFAULT_BACKEND)
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
 

@@ -19,6 +19,9 @@ pyacoustid>=1.3.0
 # and its tests skip wholesale on the Ubuntu CI runner.
 pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
 
+# fastapi Form/File (POST /api/v1/ingest/upload) parse multipart bodies.
+python-multipart>=0.0.9
+
 # Phase 7 -- process-alive checks for the live-write abort rail.
 psutil>=5.9
 

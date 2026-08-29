@@ -31,16 +31,8 @@ class SessionPathError(ValueError):
     """Raised when a session ID cannot name one contained session directory."""
 
 
-def session_dir(session_id: str, root: Path | None = None) -> Path:
-    """Return the resolved, direct-child directory for ``session_id``.
-
-    Session IDs are filesystem boundary inputs. They must name exactly one
-    direct child of the resolved sets root, with no path separators, absolute
-    paths, traversal segments, or Windows drive prefixes. Existing symlinks
-    that resolve outside the root are also rejected.
-
-    ``root`` lets tests inject a tmp dir in place of :data:`SETS_DIR`.
-    """
+def _validate_session_id_syntax(session_id: str) -> None:
+    """Reject session ids with path syntax before any filesystem resolution."""
     if not isinstance(session_id, str) or not session_id:
         raise SessionPathError("session_id must be a non-empty string")
     if (
@@ -53,6 +45,18 @@ def session_dir(session_id: str, root: Path | None = None) -> Path:
     if windows_path.drive or windows_path.root:
         raise SessionPathError(f"absolute path not allowed for session_id {session_id!r}")
 
+
+def session_dir(session_id: str, root: Path | None = None) -> Path:
+    """Return the resolved, direct-child directory for ``session_id``.
+
+    Session IDs are filesystem boundary inputs. They must name exactly one
+    direct child of the resolved sets root, with no path separators, absolute
+    paths, traversal segments, or Windows drive prefixes. Existing symlinks
+    that resolve outside the root are also rejected.
+
+    ``root`` lets tests inject a tmp dir in place of :data:`SETS_DIR`.
+    """
+    _validate_session_id_syntax(session_id)
     base = (Path(root) if root is not None else SETS_DIR).resolve()
     candidate = (base / session_id).resolve()
     try:

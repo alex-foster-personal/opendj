@@ -47,6 +47,8 @@ from .routes import copilot as copilot_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
+from .routes import ingest as ingest_routes
+from .routes import ingest_upload as ingest_upload_routes
 from .routes import mytag as mytag_routes
 from .routes import pairings as pairings_routes
 from .routes import play_it as play_it_routes
@@ -74,7 +76,7 @@ from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import voice_probe as voice_probe_routes
-from .share_gate import share_gate_middleware, share_host
+from .share_gate import ShareConfig, share_gate_middleware
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
@@ -136,6 +138,7 @@ def create_app(
     client_event_log_dir: Path | None = None,
     stem_roots: Sequence[Path] | None = None,
     usage_store: UsageStore | None = None,
+    share_config: ShareConfig | None = None,
 ) -> FastAPI:
     """Build a configured FastAPI app."""
 
@@ -174,6 +177,7 @@ def create_app(
     app.state.syncthing_status_fn = syncthing_status_fn
     app.state.state_db_path = state_db_path
     app.state.version = version
+    app.state.share_config = share_config or ShareConfig.from_environ()
     app.state.client_error_log_dir = (
         client_error_log_dir
         if client_error_log_dir is not None
@@ -216,8 +220,8 @@ def create_app(
             else []
         )
         share_origin = os.environ.get("MUSIC_DJ_SHARE_ORIGIN", "").strip()
-        if not share_origin and share_host():
-            share_origin = f"https://{share_host()}"
+        if not share_origin and app.state.share_config.host:
+            share_origin = f"https://{app.state.share_config.host}"
         share_origins = [share_origin] if share_origin else []
         app.add_middleware(
             CORSMiddleware,
@@ -299,6 +303,8 @@ def create_app(
     app.include_router(relocate_routes.router, prefix=api_prefix)
     app.include_router(copilot_routes.router, prefix=api_prefix)
     app.include_router(analysis_routes.router, prefix=api_prefix)
+    app.include_router(ingest_routes.router, prefix=api_prefix)
+    app.include_router(ingest_upload_routes.router, prefix=api_prefix)
     app.include_router(health_routes.router, prefix=api_prefix)
     app.include_router(settings_routes.router, prefix=api_prefix)
     app.include_router(settings_ai_routes.router, prefix=api_prefix)

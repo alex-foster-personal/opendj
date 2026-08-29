@@ -1,22 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
-import { claimAndCheckWebuiDevConfig, claimWebuiDevConfig } from './webui-port-config';
+import { claimAndCheckWebuiDevConfigOnce } from './webui-port-config';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-
-/**
- * Playwright re-loads this config inside every worker process, and it does so
- * AFTER the runner's webServer has bound the frontend port. Re-running the
- * "is this port free" guard there asserts against the server this very run
- * just started, so the guard runs once, in the runner. A genuine collision
- * with somebody else's dev server is still caught, by the guard on the first
- * load and by `reuseExistingServer: false` below.
- */
-const IS_TEST_WORKER = process.env.TEST_WORKER_INDEX !== undefined;
-const ports = IS_TEST_WORKER
-	? claimWebuiDevConfig(REPOSITORY_ROOT)
-	: claimAndCheckWebuiDevConfig(REPOSITORY_ROOT, 'frontend');
+// Once = claim/check in the main process only; workers reuse its payload
+// (they re-import this config after vite has bound the claimed port).
+const ports = claimAndCheckWebuiDevConfigOnce(REPOSITORY_ROOT, 'frontend');
 
 export default defineConfig({
 	testDir: './tests/e2e',

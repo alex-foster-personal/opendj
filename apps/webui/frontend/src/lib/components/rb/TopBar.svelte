@@ -39,6 +39,7 @@
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { maybeAutoEnableMidi, midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
+	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 
 	interface MasterCapableEngine extends AudioEngine {
 		setMaster(value: number): void;
@@ -427,12 +428,8 @@
 		</svg>
 	</button>
 
-	<button class="tb-icon rb-inert" disabled title={INERT_TITLE} aria-label="refresh">
-		<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-			<path d="M9.8 6 a3.8 3.8 0 1 1 -1.1 -2.7" fill="none" stroke="currentColor" stroke-width="1.2" />
-			<path d="M9.9 0.8 L9.9 3.6 L7.1 3.6 Z" fill="currentColor" />
-		</svg>
-	</button>
+	<!-- refresh analysis: REAL -> /api/v1/ingest refresh job (was inert chrome) -->
+	<RefreshAnalysisButton />
 
 	<!-- master volume: REAL -> engine master GainNode -->
 	<div

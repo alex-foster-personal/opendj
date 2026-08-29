@@ -17,12 +17,12 @@ from apps.shared.paths import DATA_DIR
 from .url_parse import parse_playlist_identifier
 
 __all__ = [
-    "WatchedPlaylist",
-    "WATCHED_PATH",
     "DEFAULT_WATCHED",
+    "WATCHED_PATH",
+    "WatchedPlaylist",
+    "ensure_watched_defaults",
     "load_watched",
     "save_watched",
-    "ensure_watched_defaults",
     "watched_ids",
 ]
 
@@ -92,17 +92,17 @@ def load_watched(path: Path | None = None) -> list[WatchedPlaylist]:
         return []
     data = json.loads(target.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError(f"watched registry must be an object: {target}")
+        raise TypeError(f"watched registry must be an object: {target}")
     items = data.get("playlists")
     if items is None:
         return []
     if not isinstance(items, list):
-        raise ValueError(f"watched.playlists must be a list: {target}")
+        raise TypeError(f"watched.playlists must be a list: {target}")
     out: list[WatchedPlaylist] = []
     seen: set[str] = set()
     for raw in items:
         if not isinstance(raw, dict):
-            raise ValueError(f"watched entry must be an object: {raw!r}")
+            raise TypeError(f"watched entry must be an object: {raw!r}")
         entry = _entry_from_dict(raw)
         if entry.id in seen:
             continue

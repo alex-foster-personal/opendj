@@ -6,7 +6,7 @@ import hmac
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
-from ..share_gate import SHARE_COOKIE, share_token
+from ..share_gate import AUTH_TOKEN, SHARE_COOKIE, configured_share
 
 router = APIRouter(tags=["share"])
 
@@ -18,8 +18,9 @@ def share_session(
     next: str = Query(default="/"),
 ) -> RedirectResponse:
     """Set the share cookie when the query token matches, then redirect."""
-    token = share_token()
-    if not token:
+    config = configured_share(request)
+    token = config.token
+    if config.auth != AUTH_TOKEN or not token:
         raise HTTPException(
             status_code=404,
             detail={"code": "SHARE_DISABLED", "message": "no share token configured"},

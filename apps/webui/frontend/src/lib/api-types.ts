@@ -460,6 +460,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Config */
+        get: operations["get_config_api_v1_ingest_config_get"];
+        /** Put Config */
+        put: operations["put_config_api_v1_ingest_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Coverage */
+        get: operations["get_coverage_api_v1_ingest_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Refresh */
+        post: operations["start_refresh_api_v1_ingest_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/refresh/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Refresh Status */
+        get: operations["refresh_status_api_v1_ingest_refresh_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload */
+        post: operations["upload_api_v1_ingest_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs": {
         parameters: {
             query?: never;
@@ -2059,6 +2145,18 @@ export interface components {
              */
             severity: "warning" | "error";
         };
+        /** Body_upload_api_v1_ingest_upload_post */
+        Body_upload_api_v1_ingest_upload_post: {
+            /** Batch */
+            batch: string;
+            /** Files */
+            files: string[];
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
         /** BrokenTrackList */
         BrokenTrackList: {
             /** Total */
@@ -2337,6 +2435,22 @@ export interface components {
             /** Revision */
             revision: string;
         };
+        /** ConfigIn */
+        ConfigIn: {
+            /** Enabled */
+            enabled: {
+                [key: string]: boolean;
+            };
+        };
+        /** ConfigOut */
+        ConfigOut: {
+            /** Path */
+            path: string;
+            /** Steps */
+            steps: {
+                [key: string]: unknown;
+            }[];
+        };
         /** CopilotTrackOut */
         CopilotTrackOut: {
             /** Artist */
@@ -2351,6 +2465,21 @@ export interface components {
             stable_id: string;
             /** Title */
             title: string | null;
+        };
+        /** CoverageOut */
+        CoverageOut: {
+            /** Generated At */
+            generated_at: number;
+            /** Missing */
+            missing: {
+                [key: string]: number;
+            };
+            /** On Disk */
+            on_disk: number;
+            /** Total Tracks */
+            total_tracks: number;
+            /** Unreachable */
+            unreachable: number;
         };
         /** DecisionIn */
         DecisionIn: {
@@ -3648,6 +3777,38 @@ export interface components {
             /** Session Id */
             session_id: string | null;
         };
+        /** RefreshIn */
+        RefreshIn: {
+            /** Batch Dir */
+            batch_dir?: string | null;
+        };
+        /** RefreshStatusOut */
+        RefreshStatusOut: {
+            /** Current Step */
+            current_step: string | null;
+            /** Error */
+            error: string | null;
+            /** Finished At */
+            finished_at: number | null;
+            /** Log Tail */
+            log_tail: string[];
+            /** Phase */
+            phase: string;
+            /** Recently Done Ids */
+            recently_done_ids: string[];
+            /** Running */
+            running: boolean;
+            /** Started At */
+            started_at: number | null;
+            /** Step Done */
+            step_done: number;
+            /** Step Total */
+            step_total: number;
+            /** Steps */
+            steps: string[];
+            /** Steps Completed */
+            steps_completed: string[];
+        };
         /**
          * RekordboxDetectionOut
          * @description The 'detect rekordbox' step, reported without touching the install.
@@ -4519,6 +4680,32 @@ export interface components {
             hide_todo_settings?: boolean | null;
             /** Theme */
             theme?: ("dark" | "light") | null;
+        };
+        /** UploadFileResult */
+        UploadFileResult: {
+            /** Duplicate Of */
+            duplicate_of: {
+                [key: string]: unknown;
+            } | null;
+            /** Duration S */
+            duration_s: number | null;
+            /** Filename */
+            filename: string;
+            /** Fingerprint Method */
+            fingerprint_method: string;
+            /** Skipped Duplicate */
+            skipped_duplicate: boolean;
+            /** Staged Path */
+            staged_path: string | null;
+        };
+        /** UploadOut */
+        UploadOut: {
+            /** Batch */
+            batch: string;
+            /** Dest Dir */
+            dest_dir: string;
+            /** Results */
+            results: components["schemas"]["UploadFileResult"][];
         };
         /** UsageClientsOut */
         UsageClientsOut: {
@@ -5742,6 +5929,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EngineHealthOut"];
+                };
+            };
+        };
+    };
+    get_config_api_v1_ingest_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigOut"];
+                };
+            };
+        };
+    };
+    put_config_api_v1_ingest_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_coverage_api_v1_ingest_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+        };
+    };
+    start_refresh_api_v1_ingest_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_status_api_v1_ingest_refresh_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshStatusOut"];
+                };
+            };
+        };
+    };
+    upload_api_v1_ingest_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_api_v1_ingest_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
