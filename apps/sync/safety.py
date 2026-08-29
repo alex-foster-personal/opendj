@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Literal
 
+from apps.shared.rekordbox_writeback import require_writeback_enabled
+
 TargetName = Literal["rekordbox", "djay"]
 
 
@@ -210,6 +212,11 @@ class LiveWriteSession:
     _written_tracks: list[str] = field(init=False, default_factory=list)
 
     def __enter__(self) -> "LiveWriteSession":
+        # Backstop rail 0: one-way import mode. Every seven-rail live write
+        # aimed at rekordbox passes through here, so a caller that forgets its
+        # own guard still cannot reach the real library.
+        if self.target == "rekordbox":
+            require_writeback_enabled("module.sync.safety.live_write_session")
         require_typed_confirm(self.flag_ok)
         if self.process_gate_override is not None:
             self.process_gate_override(self.target)

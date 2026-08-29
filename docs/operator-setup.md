@@ -160,7 +160,7 @@ Do not put either key in a `.env` file.
 ## Feature: Open-dj adapters (Phase 15 / 16)
 
 - Nothing extra. Pure Python. `jsonschema[format]` and `rfc8785` come from `requirements.txt`.
-- Entry point: `python -m apps.open_dj ...` (see `apps/open_dj/cli.py`).
+- Entry point: `python -m apps.open_dj.cli ...` (see `apps/open_dj/cli.py`).
 
 ## Feature: Launcher (Phase 17 / 18)
 

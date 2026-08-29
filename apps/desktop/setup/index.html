@@ -61,37 +61,37 @@
 
 				<h2>What Open DJ is</h2>
 				<p>
-					Open DJ is a native window onto a local engine process. The
-					window ships in this app. The engine does not: it runs from
-					a source checkout on this machine and serves the whole user
-					interface over HTTP. No engine means no interface, which is
-					what you are looking at.
+					Open DJ is a native window onto a local engine process, and
+					both ship inside this app: the engine, its Python runtime
+					and the whole user interface live in the app bundle. The app
+					starts the engine itself, on a free local port, before it
+					opens a window. No source checkout is needed.
 				</p>
 				<p class="note">
-					Bundling the engine inside this app is not implemented yet.
-					See PARITY-TODO.md.
+					Which makes this screen specific rather than generic. A
+					bundled engine that fails to start raises a system error
+					dialog and the app quits; it never reaches here. Reaching
+					here means this window was pointed at an engine address by
+					hand, through the <code>OPENDJ_ENGINE_ORIGIN</code>
+					environment variable or a <code>?engine=</code> query, and
+					nothing is answering at that address.
 				</p>
 
-				<h2>Start the engine</h2>
+				<h2>What to do</h2>
 				<ol class="steps">
-					<li>Open Terminal.</li>
 					<li>
-						Install <code>uv</code> if you do not have it (one
-						binary, no Python required first):
-						<pre><code>curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+						To use the engine that ships inside this app: quit it,
+						unset <code>OPENDJ_ENGINE_ORIGIN</code>, and open the
+						app again from Finder.
 					</li>
 					<li>
-						Change into the <code>music-dj-tools</code> checkout you
-						were given.
-					</li>
-					<li>
-						Start the engine, pointing it at an absolute data
-						directory:
+						To keep using your own engine, start it on the address
+						named above:
 						<pre><code id="engine-command">(resolving)</code></pre>
 					</li>
 					<li>
-						Leave that Terminal window open. This window retries on
-						its own, or press <strong>Check now</strong>.
+						Leave it running. This window retries on its own, or
+						press <strong>Check now</strong>.
 					</li>
 				</ol>
 

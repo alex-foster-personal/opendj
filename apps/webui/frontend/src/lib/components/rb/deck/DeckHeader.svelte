@@ -7,6 +7,7 @@
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { effectiveCamelotKey, pitchRanges } from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
+	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckId, DeckState } from '$lib/rb/types';
 	import ControlExplainer from './ControlExplainer.svelte';
 
@@ -44,15 +45,22 @@
 
 	const bpmText: string = $derived(deck.bpm === null ? '--.--' : deck.bpm.toFixed(2));
 	const syncBounds = $derived(tempoBoundsFromPitchRange(pitchRanges[deckId]));
+	// A loaded track with no real PQTZ grid has nothing to phase-lock with, so
+	// BEAT SYNC is inert rather than lit-but-dead. Transport is deliberately
+	// NOT gated the same way - play, pause and cue always run.
+	const gridless: boolean = $derived(gridFeaturesInert(deck));
 	const beatSyncTitle: string = $derived(
-		deck.beat_sync_enabled
-			? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (strict BAR 1-4)'
-			: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
+		gridless
+			? GRID_FEATURE_TIP
+			: deck.beat_sync_enabled
+				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (strict BAR 1-4)'
+				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
 	);
 	const beatSyncBullets: readonly string[] = $derived([
 		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4).',
 		`Needs a real PQTZ grid on both decks. BAR tempo must land in pitch range [${syncBounds.min}, ${syncBounds.max}] (default +-16%).`,
 		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
+		'No grid on this track: the button is inert and transport runs unsynced.',
 		'Half/double tempo matching needs Sync mode BEAT (explicit opt-out), not BAR.'
 	]);
 	const masterTitle: string = $derived(
@@ -207,11 +215,11 @@
 				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets}>
 					<button
 						class="rb-lit-button"
-						class:lit={deck.beat_sync_enabled}
-						disabled={pending}
+						class:lit={deck.beat_sync_enabled && !gridless}
+						disabled={pending || gridless}
 						aria-pressed={deck.beat_sync_enabled}
 						data-performance-control="beat-sync"
-						data-state={deck.beat_sync_enabled ? 'on' : 'off'}
+						data-state={gridless ? 'inert' : deck.beat_sync_enabled ? 'on' : 'off'}
 						title={beatSyncTitle}
 						onclick={async () => await onBeatSync()}
 					>

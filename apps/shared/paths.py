@@ -44,6 +44,7 @@ __all__ = [
     "MUSIC_ROOTS",
     "PROJECT_ROOT",
     "REKORDBOX_LIVE_DB",
+    "REKORDBOX_PLAIN_DB",
     "REKORDBOX_WORKING_DB",
     "STATE_DB",
     "STATE_DIR",
@@ -62,7 +63,14 @@ __all__ = [
 # the identical default.
 
 # ----- Rekordbox ---------------------------------------------------------
+# Byte-for-byte snapshot of the live master.db, so it is still
+# SQLCipher-encrypted and no plain sqlite3 client can read it.
 REKORDBOX_WORKING_DB: Path = DATA_DIR / "master.db.copy"
+# The decrypted working copy every reader in this repo actually consumes.
+# Static by convention: refresh means re-decrypt (see
+# ``apps.shared.rekordbox_db.ensure_plain_db``) and then
+# ``rm -rf data/state/anlz-cache/``.
+REKORDBOX_PLAIN_DB: Path = DATA_DIR / "master.plain.db"
 
 # ----- djay Pro ----------------------------------------------------------
 DJAY_WORKING_DB: Path = DATA_DIR / "djay_MediaLibrary.db.copy"

@@ -1,0 +1,16 @@
+{
+  "name": "C0-C8",
+  "note": "RECONSTRUCTED, NOT QUOTED. The reconciled spec says 'Condition grid C0-C8 stands', but lane B's base proposal that defined C0-C8 is not present in this repo or its history -- see ops/quality/stretch/README.md, open question Q1. This grid is a reconstruction chosen to be a strict SUPERSET of lane A's shipped six (0.92, 1.00, 1.08, 1.16 at semis 0, plus +2 and -2 at rate 1.00), so the two lanes remain directly comparable on the shared six whatever the real C0-C8 turns out to be. Replace this file to change the grid; nothing here is compiled in.",
+  "rate_basis": "PITCH_RANGES in apps/webui/frontend/src/lib/player/constants.ts is [8, 16, 100] percent, so +-8 and +-16 percent are the deck's real fader extremes and the grid is anchored on them.",
+  "conditions": [
+    { "id": "C0", "rate": 1.0, "semitones": 0, "role": "unity, the D1 transparency row" },
+    { "id": "C1", "rate": 0.92, "semitones": 0, "role": "-8 percent, fader extreme down" },
+    { "id": "C2", "rate": 0.96, "semitones": 0, "role": "-4 percent, everyday beatmatch" },
+    { "id": "C3", "rate": 1.04, "semitones": 0, "role": "+4 percent, everyday beatmatch" },
+    { "id": "C4", "rate": 1.08, "semitones": 0, "role": "+8 percent, fader extreme up" },
+    { "id": "C5", "rate": 1.16, "semitones": 0, "role": "+16 percent, wide-range extreme" },
+    { "id": "C6", "rate": 1.0, "semitones": 2, "role": "key nudge up, rate held at unity" },
+    { "id": "C7", "rate": 1.0, "semitones": -2, "role": "key nudge down, rate held at unity" },
+    { "id": "C8", "rate": 1.08, "semitones": 1, "role": "rate and key together, the real mixing case" }
+  ]
+}

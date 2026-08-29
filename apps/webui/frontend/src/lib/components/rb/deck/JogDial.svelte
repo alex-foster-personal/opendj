@@ -6,6 +6,7 @@
 	import { DECK_IDS, deckEffectiveBpm, deckStates } from '$lib/rb/audio-engine.svelte';
 	import type { PitchRange } from '$lib/rb/audio-engine.svelte';
 	import { isTempoLockedToMaster, playbackBpm } from '$lib/rb/beat-sync-math';
+	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
 	import type { DeckState } from '$lib/rb/types';
 	import ControlExplainer from './ControlExplainer.svelte';
 
@@ -86,10 +87,16 @@
 		'Exit the loop or turn SLIP off: jump to that hidden position.',
 		'Pause clears active SLIP without jumping to the hidden position.'
 	];
+	// A loaded track with no real PQTZ grid has nothing to snap to, so Q is
+	// inert rather than lying about what a click will do. Transport is
+	// deliberately NOT gated the same way - play, pause and cue always run.
+	const gridless: boolean = $derived(gridFeaturesInert(deck));
 	const qTitle: string = $derived(
-		deck.quantize_enabled
-			? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
-			: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'
+		gridless
+			? GRID_FEATURE_TIP
+			: deck.quantize_enabled
+				? 'Quantize ON - snaps seeks, cue, and loop ends to the beatgrid'
+				: 'Quantize OFF - seeks, cue, and loop ends use exact playhead times'
 	);
 	const mtTitle: string = $derived(
 		deck.master_tempo_enabled
@@ -124,11 +131,11 @@
 	<div class="side-buttons">
 		<button
 			class="rb-lit-button"
-			class:lit={deck.quantize_enabled}
-			disabled={pending}
+			class:lit={deck.quantize_enabled && !gridless}
+			disabled={pending || gridless}
 			aria-pressed={deck.quantize_enabled}
 			data-performance-control="quantize"
-			data-state={deck.quantize_enabled ? 'on' : 'off'}
+			data-state={gridless ? 'inert' : deck.quantize_enabled ? 'on' : 'off'}
 			title={qTitle}
 			onclick={async () => await onQuantize()}
 		>

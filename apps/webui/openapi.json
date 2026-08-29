@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "AccessProbeOut": {
+        "description": "One folder, and whether this process can actually read it.\n\n``exists`` true with ``readable`` false and ``denied`` true is the macOS\nTCC case: the folder is there and full of music, and the listing is\nrefused, so anything that counted files inside it would report zero.",
+        "properties": {
+          "denied": {
+            "title": "Denied",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "readable",
+          "denied",
+          "detail"
+        ],
+        "title": "AccessProbeOut",
+        "type": "object"
+      },
       "AiApplyIn": {
         "properties": {
           "instruction": {
@@ -241,6 +275,25 @@
           "confirmation"
         ],
         "title": "ApplyRequest",
+        "type": "object"
+      },
+      "AssistantStatusOut": {
+        "description": "Enough for the sidebar to render an honest panel without a request.\n\nFiring a chat to discover there is no key would cost a round trip and\nshow the user a failed message they did not send.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "model"
+        ],
+        "title": "AssistantStatusOut",
         "type": "object"
       },
       "AutoCueOut": {
@@ -616,6 +669,118 @@
         "title": "BrokenTrackOut",
         "type": "object"
       },
+      "BuildInfoOut": {
+        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "built_at_kind": {
+            "enum": [
+              "payload-build",
+              "head-commit"
+            ],
+            "title": "Built At Kind",
+            "type": "string"
+          },
+          "built_at_utc": {
+            "title": "Built At Utc",
+            "type": "string"
+          },
+          "bundle_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Identifier"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "git_branch": {
+            "title": "Git Branch",
+            "type": "string"
+          },
+          "git_dirty": {
+            "title": "Git Dirty",
+            "type": "boolean"
+          },
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
+          },
+          "git_sha_full": {
+            "title": "Git Sha Full",
+            "type": "string"
+          },
+          "lane_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lane Label"
+          },
+          "manifest_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Path"
+          },
+          "product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Name"
+          },
+          "source": {
+            "enum": [
+              "payload",
+              "repo"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "engine_version",
+          "git_sha",
+          "git_sha_full",
+          "git_branch",
+          "git_dirty",
+          "built_at_utc",
+          "built_at_kind"
+        ],
+        "title": "BuildInfoOut",
+        "type": "object"
+      },
       "BulkEditIn": {
         "properties": {
           "expected_etags": {
@@ -728,6 +893,49 @@
           "etag"
         ],
         "title": "BulkEditRowOut",
+        "type": "object"
+      },
+      "ChatIn": {
+        "description": "A whole conversation, resent every turn -- the engine stores none of it.",
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "ChatIn",
+        "type": "object"
+      },
+      "ChatMessage": {
+        "description": "One turn. Same three roles OpenRouter accepts, no tool calls.",
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessage",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -963,6 +1171,62 @@
           "stored"
         ],
         "title": "ClientEventOut",
+        "type": "object"
+      },
+      "ClientOut": {
+        "properties": {
+          "app_version": {
+            "title": "App Version",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "in_use": {
+            "description": "Open AND the page is visible on screen.",
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "is_open": {
+            "description": "Checked in within the in-use window.",
+            "title": "Is Open",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "description": "Server wall-clock time of the last heartbeat.",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "page_visible": {
+            "title": "Page Visible",
+            "type": "boolean"
+          },
+          "seconds_since_seen": {
+            "description": "Server monotonic seconds since it checked in.",
+            "title": "Seconds Since Seen",
+            "type": "number"
+          },
+          "surface": {
+            "enum": [
+              "desktop-shell",
+              "browser"
+            ],
+            "title": "Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "surface",
+          "page_visible",
+          "app_version",
+          "last_seen_at",
+          "seconds_since_seen",
+          "is_open",
+          "in_use"
+        ],
+        "title": "ClientOut",
         "type": "object"
       },
       "ClusterOut": {
@@ -1470,6 +1734,47 @@
         "title": "FallbackBeatgridOut",
         "type": "object"
       },
+      "FileProbeOut": {
+        "description": "One real path and whether it is actually there.",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "required": [
+          "path",
+          "exists"
+        ],
+        "title": "FileProbeOut",
+        "type": "object"
+      },
       "FindReplaceApplyIn": {
         "properties": {
           "case_sensitive": {
@@ -1703,6 +2008,173 @@
         "title": "FindReplaceRowOut",
         "type": "object"
       },
+      "FolderImportIn": {
+        "description": "Point at one or more folders of audio files. No rekordbox involved.",
+        "properties": {
+          "folders": {
+            "description": "absolute paths to walk; at least one",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Folders",
+            "type": "array"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "import at most N files",
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "FolderImportIn",
+        "type": "object"
+      },
+      "FolderLastImportOut": {
+        "description": "What the previous FOLDER import did. Mirrors ``FolderImportOutcome``.\n\nA different model rather than optional fields on the rekordbox one,\nbecause the two describe different work: there is no decrypt here, no\nplaylists, and -- the field that matters --\n``tracks_without_analysis``, which equals the tracks written.",
+        "properties": {
+          "analysis_available": {
+            "default": false,
+            "title": "Analysis Available",
+            "type": "boolean"
+          },
+          "analysis_detail": {
+            "title": "Analysis Detail",
+            "type": "string"
+          },
+          "files_dataless": {
+            "title": "Files Dataless",
+            "type": "integer"
+          },
+          "files_seen": {
+            "title": "Files Seen",
+            "type": "integer"
+          },
+          "files_without_tags": {
+            "title": "Files Without Tags",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "folder",
+            "default": "folder",
+            "title": "Kind",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "tracks_without_analysis": {
+            "title": "Tracks Without Analysis",
+            "type": "integer"
+          },
+          "tracks_written": {
+            "title": "Tracks Written",
+            "type": "integer"
+          },
+          "unreadable_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "files_seen",
+          "files_dataless",
+          "files_without_tags",
+          "tracks",
+          "tracks_written",
+          "tracks_without_analysis",
+          "analysis_detail"
+        ],
+        "title": "FolderLastImportOut",
+        "type": "object"
+      },
+      "FolderScanOut": {
+        "description": "What a candidate folder actually holds, before anything is imported.\n\n``audio_files`` counts what could be READ. When ``denied`` is true that\nnumber is not a count of the folder, it is a count of nothing, and\n``detail`` says so -- which is the difference between \"this folder is\nempty\" and \"macOS would not let me look\".",
+        "properties": {
+          "audio_files": {
+            "title": "Audio Files",
+            "type": "integer"
+          },
+          "denied": {
+            "title": "Denied",
+            "type": "boolean"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "how_to_grant": {
+            "title": "How To Grant",
+            "type": "string"
+          },
+          "icloud_placeholders": {
+            "title": "Icloud Placeholders",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "sample": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "exists",
+          "readable",
+          "denied",
+          "detail",
+          "audio_files",
+          "icloud_placeholders",
+          "how_to_grant"
+        ],
+        "title": "FolderScanOut",
+        "type": "object"
+      },
       "GenerateIn": {
         "properties": {
           "stable_id": {
@@ -1883,6 +2355,42 @@
           "native_available"
         ],
         "title": "HealthWaveformMaterialization",
+        "type": "object"
+      },
+      "HeartbeatIn": {
+        "properties": {
+          "app_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "App Version",
+            "type": "string"
+          },
+          "client_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "page_visible": {
+            "title": "Page Visible",
+            "type": "boolean"
+          },
+          "surface": {
+            "enum": [
+              "desktop-shell",
+              "browser"
+            ],
+            "title": "Surface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "surface",
+          "page_visible",
+          "app_version"
+        ],
+        "title": "HeartbeatIn",
         "type": "object"
       },
       "HotCueMutationOut": {
@@ -2251,6 +2759,88 @@
           "class"
         ],
         "title": "LabelRequest",
+        "type": "object"
+      },
+      "LastImportOut": {
+        "description": "What the previous rekordbox import did. Mirrors ``ImportOutcome``.\n\nTyped rather than a free-form object: a caller reading a track count off\nan untyped dict has no contract, and the wizard's \"done\" screen is built\nentirely out of these numbers.",
+        "properties": {
+          "analyses_expected": {
+            "title": "Analyses Expected",
+            "type": "integer"
+          },
+          "analyses_linked": {
+            "title": "Analyses Linked",
+            "type": "integer"
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string"
+          },
+          "ingested_from": {
+            "title": "Ingested From",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rekordbox",
+            "default": "rekordbox",
+            "title": "Kind",
+            "type": "string"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "rekordbox_tracks": {
+            "title": "Rekordbox Tracks",
+            "type": "integer"
+          },
+          "rekordbox_was_running": {
+            "title": "Rekordbox Was Running",
+            "type": "boolean"
+          },
+          "share_root": {
+            "title": "Share Root",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_was_encrypted": {
+            "title": "Source Was Encrypted",
+            "type": "boolean"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          },
+          "unreadable_music_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Music Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "started_at",
+          "finished_at",
+          "source",
+          "source_was_encrypted",
+          "ingested_from",
+          "tracks",
+          "playlists",
+          "analyses_linked",
+          "analyses_expected",
+          "rekordbox_tracks",
+          "share_root",
+          "rekordbox_was_running"
+        ],
+        "title": "LastImportOut",
         "type": "object"
       },
       "MemberOut": {
@@ -2772,6 +3362,47 @@
         "title": "PairingOut",
         "type": "object"
       },
+      "PassiveActivityOut": {
+        "description": "Backstop signal: ordinary traffic classified by User-Agent.\n\nTelemetry and health paths are excluded, so an agent polling this\nendpoint cannot manufacture the activity it is asking about.",
+        "properties": {
+          "by_surface": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SurfaceActivityOut"
+            },
+            "title": "By Surface",
+            "type": "object"
+          },
+          "last_request_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Request At"
+          },
+          "seconds_since_last_request": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Last Request"
+          }
+        },
+        "required": [
+          "last_request_at",
+          "seconds_since_last_request",
+          "by_surface"
+        ],
+        "title": "PassiveActivityOut",
+        "type": "object"
+      },
       "PendingTrackOut": {
         "description": "One persisted, unmatched Spotify playlist entry.",
         "properties": {
@@ -2860,6 +3491,39 @@
           "added_at"
         ],
         "title": "PendingTrackOut",
+        "type": "object"
+      },
+      "PermissionsOut": {
+        "description": "The folder-access answer, and what to do about a refusal.",
+        "properties": {
+          "all_readable": {
+            "title": "All Readable",
+            "type": "boolean"
+          },
+          "denied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Denied",
+            "type": "array"
+          },
+          "how_to_grant": {
+            "title": "How To Grant",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/AccessProbeOut"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "all_readable",
+          "how_to_grant"
+        ],
+        "title": "PermissionsOut",
         "type": "object"
       },
       "PlanModel": {
@@ -4410,6 +5074,80 @@
         "title": "RefreshStatusOut",
         "type": "object"
       },
+      "RekordboxDetectionOut": {
+        "description": "The 'detect rekordbox' step, reported without touching the install.",
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "import_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source"
+          },
+          "import_source_encrypted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Source Encrypted"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "key_available": {
+            "title": "Key Available",
+            "type": "boolean"
+          },
+          "key_detail": {
+            "title": "Key Detail",
+            "type": "string"
+          },
+          "live_db": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "plain_copy": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "rekordbox_running": {
+            "title": "Rekordbox Running",
+            "type": "boolean"
+          },
+          "share_dir": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "working_copy": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          }
+        },
+        "required": [
+          "installed",
+          "live_db",
+          "share_dir",
+          "working_copy",
+          "plain_copy",
+          "key_available",
+          "key_detail",
+          "rekordbox_running"
+        ],
+        "title": "RekordboxDetectionOut",
+        "type": "object"
+      },
       "RelocateApplyIn": {
         "properties": {
           "confirm": {
@@ -4881,6 +5619,152 @@
         "title": "SettingsOut",
         "type": "object"
       },
+      "SetupDismissIn": {
+        "properties": {
+          "dismissed": {
+            "default": true,
+            "title": "Dismissed",
+            "type": "boolean"
+          }
+        },
+        "title": "SetupDismissIn",
+        "type": "object"
+      },
+      "SetupImportIn": {
+        "description": "Import options. Both are the same knobs the CLI exposes.",
+        "properties": {
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ingest at most N tracks (smoke-test aid)",
+            "title": "Limit"
+          },
+          "refresh_decrypt": {
+            "default": false,
+            "description": "re-decrypt the encrypted snapshot instead of reusing an existing master.plain.db; the wizard's half of the ingest-rb CLI's --refresh-decrypt",
+            "title": "Refresh Decrypt",
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "explicit rekordbox database to read; omit to auto-detect",
+            "title": "Source"
+          }
+        },
+        "title": "SetupImportIn",
+        "type": "object"
+      },
+      "SetupStatusOut": {
+        "description": "Everything the wizard needs to decide whether to show itself.",
+        "properties": {
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "dev_mode": {
+            "title": "Dev Mode",
+            "type": "boolean"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "folder_stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Folder Stages",
+            "type": "array"
+          },
+          "last_import": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "folder": "#/components/schemas/FolderLastImportOut",
+                    "rekordbox": "#/components/schemas/LastImportOut"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LastImportOut"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FolderLastImportOut"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import"
+          },
+          "library_empty": {
+            "title": "Library Empty",
+            "type": "boolean"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/PermissionsOut"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "rekordbox": {
+            "$ref": "#/components/schemas/RekordboxDetectionOut"
+          },
+          "should_show_wizard": {
+            "title": "Should Show Wizard",
+            "type": "boolean"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "state_db": {
+            "$ref": "#/components/schemas/FileProbeOut"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "library_empty",
+          "tracks",
+          "playlists",
+          "state_db",
+          "data_dir",
+          "dismissed",
+          "should_show_wizard",
+          "dev_mode",
+          "stages",
+          "folder_stages",
+          "rekordbox",
+          "permissions"
+        ],
+        "title": "SetupStatusOut",
+        "type": "object"
+      },
       "SmartlistConflictBody": {
         "description": "Structured stale-write response with current state and fresh ETag.",
         "properties": {
@@ -5146,6 +6030,160 @@
         "title": "StemPartOut",
         "type": "object"
       },
+      "StemTierOut": {
+        "description": "One real separation rung, straight out of apps.stems.tiers.",
+        "properties": {
+          "availability": {
+            "title": "Availability",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unavailable_because": {
+            "title": "Unavailable Because",
+            "type": "string"
+          },
+          "where": {
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "where",
+          "availability",
+          "unavailable_because"
+        ],
+        "title": "StemTierOut",
+        "type": "object"
+      },
+      "StemsPlanOut": {
+        "description": "What separating this library at this tier would take.",
+        "properties": {
+          "estimate_seconds": {
+            "description": "wall-clock floor for the pending batch, GPU side only",
+            "title": "Estimate Seconds",
+            "type": "number"
+          },
+          "estimate_usd": {
+            "description": "GPU cost of the pending batch",
+            "title": "Estimate Usd",
+            "type": "number"
+          },
+          "pending": {
+            "description": "audio on disk, no bundle yet: the work",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "already has a stem bundle on disk",
+            "title": "Ready",
+            "type": "integer"
+          },
+          "tier": {
+            "title": "Tier",
+            "type": "string"
+          },
+          "tier_name": {
+            "title": "Tier Name",
+            "type": "string"
+          },
+          "total": {
+            "description": "library rows carrying a file path",
+            "title": "Total",
+            "type": "integer"
+          },
+          "transport": {
+            "description": "how this build reaches a GPU: relay or direct",
+            "title": "Transport",
+            "type": "string"
+          },
+          "transport_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "why a run cannot start on this build; null when it can",
+            "title": "Transport Refusal"
+          },
+          "unavailable": {
+            "description": "library row exists, its file does not",
+            "title": "Unavailable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tier",
+          "tier_name",
+          "total",
+          "pending",
+          "ready",
+          "unavailable",
+          "estimate_seconds",
+          "estimate_usd",
+          "transport"
+        ],
+        "title": "StemsPlanOut",
+        "type": "object"
+      },
+      "StemsSetupOut": {
+        "description": "Whether a library-wide separation pass can be started here.\n\nThe agent-facing half of the wizard's stems step. The browser mounts\naf--stems-modal's StemsPrompt component, which asks\n``/api/v1/stems/plan`` itself; an agent asks this instead, gets the same\nverdict, and is told exactly which two calls drive the flow.\n\n``available`` is EVIDENCE, not a constant: it reports whether the\n``stems.separate`` job kind is actually registered in this engine. The\n``tiers`` list is real data either way, never a placeholder.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "enqueue_endpoint": {
+            "title": "Enqueue Endpoint",
+            "type": "string"
+          },
+          "job_kind": {
+            "title": "Job Kind",
+            "type": "string"
+          },
+          "per_track_endpoint": {
+            "title": "Per Track Endpoint",
+            "type": "string"
+          },
+          "plan_endpoint": {
+            "title": "Plan Endpoint",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/StemTierOut"
+            },
+            "title": "Tiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "reason",
+          "job_kind",
+          "plan_endpoint",
+          "enqueue_endpoint",
+          "per_track_endpoint",
+          "tiers"
+        ],
+        "title": "StemsSetupOut",
+        "type": "object"
+      },
       "SuggestNextIn": {
         "properties": {
           "explain": {
@@ -5349,6 +6387,38 @@
           "explain_text"
         ],
         "title": "SuggestionOut",
+        "type": "object"
+      },
+      "SurfaceActivityOut": {
+        "properties": {
+          "last_request_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Request At"
+          },
+          "seconds_since_request": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Request"
+          }
+        },
+        "required": [
+          "last_request_at",
+          "seconds_since_request"
+        ],
+        "title": "SurfaceActivityOut",
         "type": "object"
       },
       "TierEstimateOut": {
@@ -6393,6 +7463,58 @@
         "title": "UploadOut",
         "type": "object"
       },
+      "UsageClientsOut": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientOut"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "in_use_window_seconds": {
+            "title": "In Use Window Seconds",
+            "type": "number"
+          },
+          "passive_activity": {
+            "$ref": "#/components/schemas/PassiveActivityOut"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/UsageSummaryOut"
+          }
+        },
+        "required": [
+          "clients",
+          "summary",
+          "passive_activity",
+          "in_use_window_seconds"
+        ],
+        "title": "UsageClientsOut",
+        "type": "object"
+      },
+      "UsageSummaryOut": {
+        "properties": {
+          "any_client_in_use": {
+            "title": "Any Client In Use",
+            "type": "boolean"
+          },
+          "any_client_open": {
+            "title": "Any Client Open",
+            "type": "boolean"
+          },
+          "desktop_shell_open": {
+            "title": "Desktop Shell Open",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "any_client_open",
+          "any_client_in_use",
+          "desktop_shell_open"
+        ],
+        "title": "UsageSummaryOut",
+        "type": "object"
+      },
       "UsbVolumeOut": {
         "properties": {
           "hide_reason": {
@@ -6755,6 +7877,34 @@
         "title": "VoiceProbeResponse",
         "type": "object"
       },
+      "WriteSurfaceOut": {
+        "properties": {
+          "entrypoint": {
+            "title": "Entrypoint",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "surface_id": {
+            "title": "Surface Id",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "surface_id",
+          "kind",
+          "entrypoint",
+          "target"
+        ],
+        "title": "WriteSurfaceOut",
+        "type": "object"
+      },
       "WritebackApplyIn": {
         "properties": {
           "confirmed": {
@@ -6915,6 +8065,47 @@
         "title": "WritebackCapabilitiesOut",
         "type": "object"
       },
+      "WritebackGateOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env_var": {
+            "title": "Env Var",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "surfaces": {
+            "items": {
+              "$ref": "#/components/schemas/WriteSurfaceOut"
+            },
+            "title": "Surfaces",
+            "type": "array"
+          },
+          "ui_title": {
+            "title": "Ui Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "code",
+          "message",
+          "ui_title",
+          "env_var",
+          "surfaces"
+        ],
+        "title": "WritebackGateOut",
+        "type": "object"
+      },
       "WritebackPlanOut": {
         "properties": {
           "added": {
@@ -7015,6 +8206,7 @@
       "WritebackRollbackIn": {
         "properties": {
           "backup_id": {
+            "pattern": "^[0-9a-f]{32}$",
             "title": "Backup Id",
             "type": "string"
           },
@@ -7638,6 +8830,72 @@
         ]
       }
     },
+    "/api/v1/assistant/chat": {
+      "post": {
+        "description": "Stream one completion from OpenRouter, or explain why there is none.\n\nThe upstream status is checked BEFORE the response starts, so a refusal\narrives as a real HTTP error with a code rather than as a 200 whose body\nturns out to be empty.",
+        "operationId": "assistant_chat_api_v1_assistant_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {}
+            },
+            "description": "The completion, streamed as plain UTF-8 text."
+          },
+          "409": {
+            "description": "No OPENROUTER_API_KEY is configured."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "OpenRouter refused or could not be reached."
+          }
+        },
+        "summary": "Assistant Chat",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/assistant/status": {
+      "get": {
+        "description": "Whether a chat can work at all, and which model would answer it.",
+        "operationId": "assistant_status_api_v1_assistant_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Status",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/bench/kpi": {
       "get": {
         "operationId": "get_kpi_ledger_api_v1_bench_kpi_get",
@@ -7766,6 +9024,30 @@
         "summary": "Get Ratings File",
         "tags": [
           "bench"
+        ]
+      }
+    },
+    "/api/v1/build-info": {
+      "get": {
+        "operationId": "build_info_api_v1_build_info_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildInfoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "this build cannot state its own identity"
+          }
+        },
+        "summary": "Build Info",
+        "tags": [
+          "health"
         ]
       }
     },
@@ -9788,6 +11070,27 @@
         ]
       }
     },
+    "/api/v1/rekordbox/writeback-gate": {
+      "get": {
+        "operationId": "read_writeback_gate_api_v1_rekordbox_writeback_gate_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WritebackGateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read Writeback Gate",
+        "tags": [
+          "rekordbox-gate"
+        ]
+      }
+    },
     "/api/v1/relocate/candidates/{stable_id}": {
       "get": {
         "operationId": "get_candidates_api_v1_relocate_candidates__stable_id__get",
@@ -10080,6 +11383,272 @@
         "summary": "Ai Search",
         "tags": [
           "settings-ai"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/folder": {
+      "get": {
+        "description": "Look inside a candidate folder WITHOUT importing it.\n\nThis is the no-rekordbox branch's version of the detect step. The count\nit returns is only meaningful when ``denied`` is false: macOS answers a\nblocked listing with an empty one, so \"0 audio files\" from a denied\nfolder would be a fabrication.",
+        "operationId": "detect_folder_api_v1_setup_detect_folder_get",
+        "parameters": [
+          {
+            "description": "absolute folder path to inspect",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "description": "absolute folder path to inspect",
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detect Folder",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/detect/rekordbox": {
+      "get": {
+        "description": "Report the rekordbox install WITHOUT opening or copying anything.",
+        "operationId": "detect_rekordbox_endpoint_api_v1_setup_detect_rekordbox_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RekordboxDetectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Detect Rekordbox Endpoint",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/dismiss": {
+      "post": {
+        "description": "Skip the wizard, or re-arm it. Persisted engine-side, not in a tab.",
+        "operationId": "dismiss_api_v1_setup_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupDismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
+          }
+        },
+        "summary": "Dismiss",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/import": {
+      "post": {
+        "description": "Queue the import as a job, so progress streams over the events bus.\n\nRefuses BEFORE enqueueing on anything detection can already see: a job\nthat is certain to fail is worse than a 409, because it turns a clear\nrefusal into a failed row somebody has to go and read.",
+        "operationId": "start_import_api_v1_setup_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/import/folder": {
+      "post": {
+        "description": "Queue a folder import: tags only, no analysis, and it says so.\n\nIts own endpoint rather than a mode flag on /import, because its\nrefusals are different ones: a folder can be absent, unreadable, or\ngenuinely empty, and none of those is a rekordbox problem.",
+        "operationId": "start_folder_import_api_v1_setup_import_folder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderImportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Folder Import",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/permissions": {
+      "get": {
+        "description": "Can this process read the folders the music lives in?\n\nReported, never refused on. macOS answers a blocked listing with an\nEMPTY one rather than an error, which is how a library with 40,000\ntracks in it becomes a library with none and nobody is told. Every\ncount this API reports afterwards has to be read against the ``denied``\nlist here: zero files in a folder we were not allowed to open is not\nzero files.",
+        "operationId": "permissions_api_v1_setup_permissions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Permissions",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/status": {
+      "get": {
+        "description": "Is this a first run? Counts come from state.db, not from memory.",
+        "operationId": "setup_status_api_v1_setup_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "this build cannot state its own identity, so the wizard gate cannot be decided"
+          }
+        },
+        "summary": "Setup Status",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/stems": {
+      "get": {
+        "description": "Can a library-wide stems pass be started from setup?\n\nANSWERED FROM EVIDENCE, never from a constant. The verdict is whether\nthis engine actually has a worker registered for ``stems.separate``: a\nlegacy boot, or a chassis whose composition root never wired the kind,\ngenuinely cannot run one and says so in the tester's own words.\n\nThe tier ladder is real either way. An unavailable rung carries the\nreason it is unavailable, so the wizard renders true choices rather\nthan a placeholder list.",
+        "operationId": "stems_availability_api_v1_setup_stems_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stems Availability",
+        "tags": [
+          "setup"
         ]
       }
     },
@@ -10644,6 +12213,51 @@
         ]
       }
     },
+    "/api/v1/stems/plan": {
+      "get": {
+        "operationId": "get_stems_plan_api_v1_stems_plan_get",
+        "parameters": [
+          {
+            "description": "Modal rung: S, M or L",
+            "in": "query",
+            "name": "tier",
+            "required": false,
+            "schema": {
+              "default": "M",
+              "description": "Modal rung: S, M or L",
+              "title": "Tier",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemsPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stems Plan",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
     "/api/v1/stems/tiers": {
       "get": {
         "operationId": "list_tiers_api_v1_stems_tiers_get",
@@ -10666,6 +12280,70 @@
         "summary": "List Tiers",
         "tags": [
           "stem-tiers"
+        ]
+      }
+    },
+    "/api/v1/telemetry/clients": {
+      "get": {
+        "description": "Every client seen since engine boot, plus the one-glance summary.",
+        "operationId": "list_clients_api_v1_telemetry_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageClientsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/api/v1/telemetry/heartbeat": {
+      "post": {
+        "description": "Upsert one client's liveness. Server-stamped; the client sends no time.",
+        "operationId": "record_heartbeat_api_v1_telemetry_heartbeat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Heartbeat",
+        "tags": [
+          "telemetry"
         ]
       }
     },

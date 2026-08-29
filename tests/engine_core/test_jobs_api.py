@@ -33,6 +33,7 @@ from fastapi.testclient import TestClient
 from apps.engine_core.jobs.api import MAX_LIST_LIMIT, router
 from apps.engine_core.jobs.runner import (
     JobRunner,
+    known_kinds,
     register_worker,
     unregister_worker,
 )
@@ -100,9 +101,19 @@ def live_client(store: JobStore) -> Iterator[TestClient]:
 
 # ----- happy paths -------------------------------------------------------
 def test_list_kinds_reports_the_registry(client: TestClient, kinds: None) -> None:
+    """The endpoint mirrors the registry, whatever else has registered.
+
+    Exact equality against the two test kinds held only while the engine
+    shipped none of its own. It ships setup.import-rekordbox now, registered
+    at import time, so pinning the literal list would start failing for a
+    reason that has nothing to do with this endpoint. What the endpoint owes
+    a caller is the registry, so that is what is asserted -- plus the two
+    kinds this module put there.
+    """
     response = client.get(f"{API}/kinds")
     assert response.status_code == 200
-    assert response.json() == {"kinds": ["test-echo", "test-sleeper"]}
+    assert response.json() == {"kinds": list(known_kinds())}
+    assert {"test-echo", "test-sleeper"} <= set(response.json()["kinds"])
 
 
 def test_enqueue_returns_201_and_the_queued_row(

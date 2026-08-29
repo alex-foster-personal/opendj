@@ -1,0 +1,31 @@
+{
+  "note": "The builds under test. 'baseline' is the STRETCH_BLOCK_MS null path: configure() is never called, so the worklet keeps its {preset:'default'} construction default. That is the byte-identical pre-round-2 code path, which is what the flip is measured against. 'anchor_cheaper' is carried because the spec records it as the KNOWN-WORSE build (loses 6/6 on LSD while scoring ~7 dB BETTER on residual), so it is the sign check on the ranking metrics themselves -- if an arm ever ranks 'cheaper' above 'baseline' on LSD, the instrument is wrong, not the build.",
+  "arms": [
+    {
+      "id": "baseline",
+      "block_ms": null,
+      "preset": null,
+      "label": "baseline (never configured, preset default)",
+      "is_baseline": true
+    },
+    {
+      "id": "block60",
+      "block_ms": 60,
+      "preset": null,
+      "label": "candidate blockMs 60"
+    },
+    {
+      "id": "block30",
+      "block_ms": 30,
+      "preset": null,
+      "label": "candidate blockMs 30"
+    },
+    {
+      "id": "anchor_cheaper",
+      "block_ms": null,
+      "preset": "cheaper",
+      "label": "anchor (preset cheaper, known worse)",
+      "is_anchor": true
+    }
+  ]
+}

@@ -41,17 +41,22 @@ def test_separate_reader_backup_completes_while_writer_holds_immediate_lock(monk
         assert copied.execute("SELECT stable_id FROM membership").fetchall() == [("a",)]
 
 
+# backup ids are uuid4().hex and are joined into a path, so the format is
+# enforced now; a short label like "r1" is no longer a legal id.
+REVERSAL_ID = "a" * 32
+
+
 def test_reversal_metadata_is_bound_to_one_exact_vendor_target_and_revision(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(writeback_backup, "WRITEBACK_BACKUP_DIR", tmp_path / "backups")
     writeback_backup.WRITEBACK_BACKUP_DIR.mkdir()
     target = tmp_path / "live.db"
     target.touch()
-    writeback_backup.write_reversal("djay", "r1", target, "playlist-a", ["a"], ["native-a"], "post-revision")
-    assert writeback_backup.read_reversal("djay", "r1", target, "playlist-a", "post-revision") == (["a"], ["native-a"])
+    writeback_backup.write_reversal("djay", REVERSAL_ID, target, "playlist-a", ["a"], ["native-a"], "post-revision")
+    assert writeback_backup.read_reversal("djay", REVERSAL_ID, target, "playlist-a", "post-revision") == (["a"], ["native-a"])
     try:
         other = tmp_path / "other.db"
         other.touch()
-        writeback_backup.read_reversal("djay", "r1", other, "playlist-a", "post-revision")
+        writeback_backup.read_reversal("djay", REVERSAL_ID, other, "playlist-a", "post-revision")
     except RuntimeError as exc:
         assert "does not bind" in str(exc)
     else:

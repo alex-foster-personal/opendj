@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 from apps.sync.djay_writer import (
     patch_color_index,
     patch_key_signature_index,
@@ -40,7 +41,10 @@ def _live_rb_db_path(live: bool) -> Path:
     ``--live`` MUST resolve to :data:`paths.REKORDBOX_LIVE_DB`; otherwise
     we open the working copy under ``data/``.
     """
-    return paths.REKORDBOX_LIVE_DB if live else paths.REKORDBOX_WORKING_DB
+    if live:
+        require_writeback_enabled("module.sync.apply_analysis")
+        return paths.REKORDBOX_LIVE_DB
+    return paths.REKORDBOX_WORKING_DB
 
 
 def _live_djay_db_path(live: bool) -> Path:

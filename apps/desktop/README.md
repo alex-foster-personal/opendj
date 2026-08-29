@@ -118,6 +118,57 @@ tracked separately and is not this shell's work.
 
 Non-loopback or malformed values are refused, never silently replaced.
 
+## Real-shell e2e (tier 2)
+
+`just real-shell-e2e` drives THIS window's actual WKWebView:
+`apps/desktop/wdio.conf.ts` plus `tests/real-shell-smoke.e2e.ts`. It boots its
+own engine on `:8691` over a generated fixture library, so it never touches a
+real data dir (the engine lock is singleton, so sharing one is not an option
+anyway).
+
+It is deliberately small, because the sibling tier already covers the fault
+class. `just webkit-deckload-e2e` runs Playwright's webkit -- the same
+WKWebView core -- against the production build served by the engine, which is
+what caught the worklet defect that shipped broken. This tier covers only what
+that structurally cannot see: the Rust `initialization_script` injecting
+`OPENDJ_ENGINE_ORIGIN`, the bootstrap page, and the navigation off
+`tauri://localhost`.
+
+**Driver.** macOS has no WKWebView WebDriver, so `tauri-driver` is Windows and
+Linux only. `@wdio/tauri-service` with `driverProvider: 'embedded'` compiles a
+W3C WebDriver server into the binary and drives the webview through a
+`WKScriptMessageHandler`. `tauri-plugin-playwright` was evaluated and rejected:
+it returns every command result through `__TAURI_INTERNALS__.invoke`, and Tauri
+v2 classifies this shell's engine origin as `Origin::Remote` and denies it IPC,
+so it would time out on every command the moment `setup.js` navigates. Using it
+would mean granting the http origin permission to invoke Tauri commands, which
+is the thin-shell rule above inverted.
+
+**What the driver can drive.** A click reaches the app (the row it clicks
+becomes the selection, asserted in the smoke). A synthesized double-click does
+not reach `ondblclick`, and `moveTo()` does not produce a CSS `:hover` state,
+so the hover-revealed per-row load buttons never display. Both work in
+Playwright's webkit against the same build, so they are driver limits rather
+than product defects. Gesture coverage therefore stays in tier 1, and the deck
+load here goes through the agent-native IPC. Do not "fix" that back into a
+double-click without re-measuring.
+
+**The fixture engine runs with a sandboxed HOME.** `platform_paths.py` derives
+both `~/Library/Pioneer/rekordbox` and `~/Music` from HOME. Without the
+sandbox, a `setup.import-rekordbox` job reached the live rekordbox database,
+decrypted a copy into the fixture dir and wrote 32 real tracks into a two-track
+generated library (Wed 19 Aug 2026, read-only toward rekordbox). Both e2e tiers
+now point HOME at an empty dir inside their own fixture, so a real library is
+unreachable by construction.
+
+**It cannot reach a dmg.** `tauri-plugin-wdio-webdriver` is declared under
+`[target.'cfg(debug_assertions)'.dependencies]`, so a release build cannot
+compile it in. Verified on the artifacts rather than assumed: a release binary
+contains 0 occurrences of `wdioEvalResult` (debug: 3), 0 of
+`tauri-plugin-wdio-webdriver` (debug: 27), 0 of `TAURI_WEBDRIVER_PORT`
+(debug: 1) and 0 of `/session` (debug: 4). The one surviving `wdio` string is
+the plugin name inside Tauri's ACL blob, with no backing code.
+
 ## Build
 
 ```sh

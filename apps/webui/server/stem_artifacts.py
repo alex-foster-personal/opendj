@@ -48,6 +48,7 @@ from pydantic import (
 )
 
 from apps.shared.paths import STATE_DIR
+from apps.shared.stable_id import is_safe_stable_id_segment
 
 STEM_PARTS: tuple[str, str, str, str] = ("vocals", "drums", "bass", "other")
 """The complete standard Demucs 4-part output, in API presentation order."""
@@ -69,7 +70,8 @@ STEM_LAYOUTS: dict[str, tuple[str, ...]] = {
 }
 
 StemPart = Literal["vocals", "drums", "bass", "other", "instrumental"]
-_STABLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+# The stable-id segment rule now lives in apps.shared.stable_id; see
+# validate_stable_id below for why it had to move out of this module.
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _MEDIA_TYPES: dict[str, str] = {
     ".wav": "audio/wav",
@@ -211,8 +213,14 @@ class StemBundle:
 
 
 def validate_stable_id(stable_id: str) -> None:
-    """Reject IDs that could select a different artifact directory."""
-    if not _STABLE_ID_RE.fullmatch(stable_id) or stable_id in {".", ".."}:
+    """Reject IDs that could select a different artifact directory.
+
+    The rule itself moved to ``apps.shared.stable_id`` because the stems JOB
+    has to apply the identical rule at enqueue time and cannot import this
+    module without a domain->webui cycle. This stays as the raiser so every
+    existing caller keeps catching ``StemArtifactError``.
+    """
+    if not is_safe_stable_id_segment(stable_id):
         raise StemArtifactError(
             "stable_id must use 1-128 URL-safe identifier characters"
         )

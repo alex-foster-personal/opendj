@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from apps.shared import paths
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from . import schema as dedup_schema
 
@@ -230,6 +231,11 @@ def _apply_rewrites_live(
 ) -> tuple[int, list[str]]:
     from pyrekordbox import Rekordbox6Database  # local import
 
+    # Defence in depth: ``rb_db_path`` arrives as an argument, so a future
+    # caller that reaches this helper without going through run_apply still
+    # cannot write toward the real library.
+    require_writeback_enabled("module.dedup.apply")
+
     errors: list[str] = []
     count = 0
     db = Rekordbox6Database(path=str(rb_db_path), unlock=False)
@@ -287,6 +293,13 @@ def run_apply(
     backup_dir: Path | None = None,
     allow_rb_running: bool = False,
 ) -> dict:
+    if live:
+        # Rail 0, and it must fire FIRST. Every other rail below happens after
+        # something has already opened ``rb_db``; against an encrypted
+        # master.db that raises sqlite3.DatabaseError, which is a crash, not a
+        # refusal. Refusing here means the one-way gate answers before any
+        # handle exists, whatever ``--rb-db`` was aimed at.
+        require_writeback_enabled("module.dedup.apply")
     dedup_db = dedup_db_path or paths.DEDUP_FALLBACK_DB
     rb_db = rb_db_path or paths.REKORDBOX_WORKING_DB
     plan_csv = plan_csv or paths.DEDUP_REWRITE_PLAN_CSV

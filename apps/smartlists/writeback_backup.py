@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -17,13 +18,30 @@ from apps.shared import paths
 
 WRITEBACK_BACKUP_DIR = paths.DATA_DIR / "writeback-backups"
 
+#: Every backup id this module mints is ``uuid4().hex``. Anything else is not
+#: ours and must never reach a path join: ``backup_id`` arrives from an HTTP
+#: body, and a value containing ``../`` walks straight out of
+#: WRITEBACK_BACKUP_DIR onto an attacker-chosen file. The naming scheme was
+#: documented but never enforced.
+_BACKUP_ID_PATTERN = re.compile(r"[0-9a-f]{32}")
+
+
+def _require_backup_id(backup_id: str) -> str:
+    if _BACKUP_ID_PATTERN.fullmatch(backup_id) is None:
+        raise ValueError(
+            "backup_id must be 32 lowercase hex characters (uuid4().hex), got "
+            f"{backup_id!r}"
+        )
+    return backup_id
+
 
 def backup_path(vendor: str, backup_id: str) -> Path:
-    return WRITEBACK_BACKUP_DIR / f"{vendor}.{backup_id}.db"
+    return WRITEBACK_BACKUP_DIR / f"{vendor}.{_require_backup_id(backup_id)}.db"
 
 
 def reversal_path(vendor: str, backup_id: str) -> Path:
-    return WRITEBACK_BACKUP_DIR / f"{vendor}.{backup_id}.reversal.json"
+    name = f"{vendor}.{_require_backup_id(backup_id)}.reversal.json"
+    return WRITEBACK_BACKUP_DIR / name
 
 
 def write_reversal(

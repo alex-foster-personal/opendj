@@ -23,7 +23,9 @@ from apps.sync.usb.pioneer import export_workflow as workflow
 from apps.sync.usb.pioneer import writer_rbox
 from apps.sync.usb.pioneer.writer_rbox import PlaylistSpec, TrackUpdate
 
-pytestmark = [pytest.mark.requirement("CAT-06")]
+# Live-write MECHANICS against tmp fixtures: runs with the one-way rekordbox
+# import gate ON (root conftest reads the marker). Never a real rb target.
+pytestmark = [pytest.mark.requirement("CAT-06"), pytest.mark.rekordbox_writeback]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_DB = (

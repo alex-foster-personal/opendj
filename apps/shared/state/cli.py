@@ -111,6 +111,13 @@ def _cmd_ingest_rb(args: argparse.Namespace) -> int:
     return _rb.run_cli(args)
 
 
+def _cmd_ingest_folder(args: argparse.Namespace) -> int:
+    """Run the folder ingest adapter (dry-run unless ``--write``)."""
+    from .ingest import folder as _folder
+
+    return _folder.run_cli(args)
+
+
 def _table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
     for name in state_schema.TABLES:
@@ -159,11 +166,25 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stats", help="print table counts + source breakdown")
     ins = sub.add_parser("inspect", help="print one track as open-dj JSON")
     ins.add_argument("stable_id", help="40-char hex stable_id to inspect")
-    ing = sub.add_parser("ingest-rb", help="Rekordbox -> state.db adapter")
+    ing = sub.add_parser(
+        "ingest-rb",
+        help="Rekordbox -> state.db adapter",
+        description=(
+            "Ingest the decrypted Rekordbox working copy "
+            f"({state_paths.REKORDBOX_PLAIN_DB}) into the state DB. That copy "
+            "is static by convention: when it is already present it is reused "
+            "as-is, and when it is absent the encrypted snapshot "
+            f"({state_paths.REKORDBOX_WORKING_DB}) is decrypted into it first. "
+            "Pass --refresh-decrypt to re-decrypt an existing copy."
+        ),
+    )
     ing.add_argument(
         "--rb-db",
         default=None,
-        help="override Rekordbox DB (default: paths.REKORDBOX_WORKING_DB)",
+        help=(
+            "ingest this plain-SQLite Rekordbox DB verbatim, skipping the "
+            f"decrypt step (default: {state_paths.REKORDBOX_PLAIN_DB})"
+        ),
     )
     ing.add_argument(
         "--write",
@@ -176,10 +197,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="allow running against a working copy older than the live DB",
     )
     ing.add_argument(
+        "--refresh-decrypt",
+        action="store_true",
+        help=(
+            "re-decrypt the encrypted snapshot even when a plain copy exists "
+            "(then rm -rf data/state/anlz-cache/, which embeds djmdCue data)"
+        ),
+    )
+    ing.add_argument(
         "--limit",
         type=int,
         default=None,
         help="process at most N tracks (debug / smoke-test aid)",
+    )
+
+    fol = sub.add_parser(
+        "ingest-folder",
+        help="filesystem folder -> state.db adapter (no rekordbox needed)",
+        description=(
+            "Walk one or more folders of audio files into state.db. Reads "
+            "tags only: no BPM, no key, no beatgrid, and the summary says "
+            "how many tracks that leaves with no analysis. A folder macOS "
+            "refuses to list is reported as unreadable, never as empty."
+        ),
+    )
+    fol.add_argument(
+        "--root",
+        action="append",
+        required=True,
+        help="folder to walk; repeat for several",
+    )
+    fol.add_argument(
+        "--write",
+        action="store_true",
+        help="persist changes (default: dry-run, rolled back)",
+    )
+    fol.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="process at most N files (debug / smoke-test aid)",
     )
     return parser
 
@@ -189,6 +246,7 @@ _COMMANDS = {
     "stats": _cmd_stats,
     "inspect": _cmd_inspect,
     "ingest-rb": _cmd_ingest_rb,
+    "ingest-folder": _cmd_ingest_folder,
 }
 
 

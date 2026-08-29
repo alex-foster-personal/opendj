@@ -44,6 +44,7 @@ from pyrekordbox import Rekordbox6Database
 
 from apps.shared import paths
 from apps.shared import rekordbox_db as rb
+from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 # Prefix grammar: "[dead] " or "[half] " (single trailing space, ASCII only).
 DEAD_PREFIX = "[dead] "
@@ -283,6 +284,7 @@ def _print_plan(plan: list[PlaylistHealth]) -> None:
 
 
 def _apply(plan: list[PlaylistHealth]) -> int:
+    require_writeback_enabled("module.reconcile.prefix_dead_playlists")
     """Write and verify every rename in one transaction before committing."""
     db = Rekordbox6Database(path=str(paths.REKORDBOX_LIVE_DB))
     try:

@@ -33,8 +33,23 @@ declare module 'signalsmith-stretch' {
 		stop(when?: number): Promise<SignalsmithStretchSchedule>;
 	}
 
-	export default function createSignalsmithStretch(
-		audioContext: AudioContext,
-		options?: AudioWorkletNodeOptions
-	): Promise<SignalsmithStretchNode>;
+	interface CreateSignalsmithStretch {
+		(
+			audioContext: AudioContext,
+			options?: AudioWorkletNodeOptions
+		): Promise<SignalsmithStretchNode>;
+		/**
+		 * When set, audioWorklet.addModule loads this URL instead of the
+		 * package's Function.toString blob of its own bundled code.
+		 */
+		moduleUrl?: string;
+	}
+
+	const createSignalsmithStretch: CreateSignalsmithStretch;
+	export default createSignalsmithStretch;
+}
+
+declare module '*/SignalsmithStretch.mjs?url' {
+	const url: string;
+	export default url;
 }

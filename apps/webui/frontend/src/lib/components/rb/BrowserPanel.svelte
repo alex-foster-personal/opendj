@@ -66,6 +66,7 @@
 		hydrateConfirmPrefsFromDisk,
 		setConfirmPref,
 		setHideBrokenLinks,
+		setLastPlaylist,
 		setLibraryDensity,
 		setNextOnlyFilter,
 		uiPrefs
@@ -73,6 +74,7 @@
 	import { isAppropriateNext, type NextOnlyRef } from '$lib/rb/next-only-filter';
 	import { pushToast } from '$lib/stores.svelte';
 	import { subscribeBrowserSearch } from '$lib/rb/browser-search';
+	import BuildIdentity from './BuildIdentity.svelte';
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import { setAutoPlayTrackFeed } from '$lib/rb/auto-play';
@@ -89,6 +91,7 @@
 		filterRows,
 		makeClientRowProvider,
 		reorderPanesInPlace,
+		resolveBootPlaylist,
 		resolveNewTabIndex,
 		sortRows,
 		visibleRowsOf
@@ -478,6 +481,8 @@
 				} else {
 					_selectSpotifyPlaylist(selected, false);
 				}
+			} else {
+				await _restoreBootPane();
 			}
 		} catch (exc) {
 			playlistsError = String(exc);
@@ -485,6 +490,41 @@
 			throw exc;
 		} finally {
 			playlistsLoading = false;
+		}
+	}
+
+	/**
+	 * Open the first pane on boot instead of leaving it blank.
+	 *
+	 * /performance used to launch with playlist_id=null on every pane, so the
+	 * track table was empty until a human clicked a playlist - indistinguishable
+	 * from a load that failed. This restores the pane the user last had, falling
+	 * back to All Tracks, and deliberately does NOTHING when the library is empty:
+	 * an empty table there is the honest state, not a default worth faking.
+	 *
+	 * _navRestoring suppresses the back-stack entry, matching goBack(): booting
+	 * into a pane is not a navigation the user can go "back" from.
+	 */
+	async function _restoreBootPane(): Promise<void> {
+		const target = panes[0];
+		if (target.playlist_id !== null) return; // a deep link already claimed it
+		const choice = resolveBootPlaylist({
+			remembered: uiPrefs.last_playlist,
+			known_playlist_ids: treeNodes.map((n) => n.playlist_id),
+			all_tracks_count: allTracksCount ?? 0
+		});
+		if (choice === null) return; // empty library - keep the explicit empty state
+		_navRestoring = true;
+		try {
+			await _loadPane(target, {
+				playlist_id: choice.playlist_id,
+				name: choice.name,
+				track_count: choice.kind === 'all_tracks' ? (allTracksCount ?? 0) : 0,
+				kind: choice.kind,
+				children: []
+			});
+		} finally {
+			_navRestoring = false;
 		}
 	}
 
@@ -894,6 +934,17 @@
 	}
 
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
+		// Every route into a pane funnels through here (tree click, new tab,
+		// back-stack, post-mutation refresh), so this is the one place that
+		// needs to remember the selection for the next boot. Folders are not
+		// loadable panes, so only the two real kinds are recorded.
+		if (p === panes[0] && node.kind !== 'folder') {
+			setLastPlaylist({
+				playlist_id: node.playlist_id,
+				name: node.name,
+				kind: node.kind
+			});
+		}
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name);
@@ -1494,9 +1545,9 @@
 	}
 </script>
 
-<section class="rb-browser">
+<section class="rb-browser" data-testid="browser-panel">
 	<IconRail {source} onspotify={selectSpotifySource} />
-	<div class="tree-panel">
+	<div class="tree-panel" data-testid="playlist-tree">
 		{#if source === 'spotify'}
 			<SpotifySourcePanel
 				playlists={spotifyPlaylists}
@@ -1738,6 +1789,12 @@
 				<span class="job-ribbon-label">{ribbon.label}</span>
 			</span>
 		{/if}
+		<!-- The build identity lives at the RIGHT end of this tray on
+		     /performance. It used to be position:fixed bottom-left, sitting on
+		     top of the connectivity dots. The root layout mounts it in the app
+		     shell's own tray instead, and that branch never renders for this
+		     route, so exactly one is ever on screen. -->
+		<BuildIdentity />
 		<span class="grip" aria-hidden="true">
 			<svg viewBox="0 0 12 12" width="10" height="10">
 				<path d="M11 1L1 11M11 5L5 11M11 9L9 11" stroke="currentColor" stroke-width="1" />
@@ -1950,7 +2007,10 @@
 		letter-spacing: 0.5px;
 	}
 	.grip {
-		margin-left: auto;
+		/* No auto margin: the build identity that now precedes it already
+		   carries one, and TWO auto margins split the free space between them
+		   instead of pushing the pair to the right. The chip absorbs the gap;
+		   the grip stays welded to its right, in the corner. */
 		color: var(--rb-text-dim);
 	}
 </style>

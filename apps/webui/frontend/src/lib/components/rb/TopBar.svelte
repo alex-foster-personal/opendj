@@ -29,6 +29,7 @@
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import PerfMeters from './PerfMeters.svelte';
+	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
@@ -185,6 +186,11 @@
 	style={vibeState.display >= 0.9 ? `--vr:${vibeState.rainbow_index}` : undefined}
 >	<!-- left: live audio health + prefetch count, then mode dropdown -->
 	<PerfMeters />
+
+	<!-- Stems separation, aggregate and live off jobs.updated. Renders nothing
+	     while no stems job is active, so it costs no space the rest of the
+	     time; clicking it opens the JOBS drawer for the per-job detail. -->
+	<StemsProgress />
 
 	<button class="mode-dd rb-inert" disabled title={INERT_TITLE}>
 		PERFORMANCE
@@ -777,52 +783,5 @@
 		font-size: 11px;
 		color: var(--rb-text);
 		font-variant-numeric: tabular-nums;
-	}
-
-	/* MIDI label: LIVE status button. grey = unsupported/denied/idle,
-	 * amber pulse = permission prompt pending, green = mapped device up. */
-	.midi-label {
-		background: transparent;
-		border: none;
-		padding: 0;
-		font-family: var(--rb-font);
-		font-size: var(--rb-fs-label);
-		letter-spacing: 0.08em;
-		line-height: 1;
-		cursor: pointer;
-	}
-	.midi-label.st-grey {
-		color: var(--rb-text-dim);
-		opacity: 0.6;
-	}
-	.midi-label.st-grey:hover {
-		opacity: 1;
-	}
-	.midi-label.st-green {
-		color: var(--rb-green);
-		opacity: 1;
-	}
-	.midi-label.st-red {
-		color: var(--rb-red);
-		opacity: 1;
-	}
-	.midi-glyph {
-		margin-left: 3px;
-		font-size: 10px;
-		font-weight: 700;
-	}
-	.midi-label.st-amber {
-		color: var(--rb-orange);
-		opacity: 1;
-		animation: midi-pulse 1s ease-in-out infinite;
-	}
-	@keyframes midi-pulse {
-		0%,
-		100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.35;
-		}
 	}
 </style>

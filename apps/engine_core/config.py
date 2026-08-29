@@ -56,6 +56,16 @@ class EngineConfig:
     def lock_path(self) -> Path:
         return self.data_dir / ".engine.lock"
 
+    @property
+    def logs_dir(self) -> Path:
+        """Browser-originated diagnostics, scoped to THIS engine.
+
+        These used to land in ``~/.local/share/music-dj-tools/webui``, a
+        process-global path, so an engine started with --data-dir was not
+        actually sandboxed and two parallel lanes appended to one file.
+        """
+        return self.data_dir / "logs"
+
 
 def build_config(data_dir: str | Path, host: str, port: int) -> EngineConfig:
     """Validate CLI input into a config. Relative data dirs are rejected."""
@@ -121,12 +131,29 @@ def apply_env_contract(
 
 
 def prepare_layout(cfg: EngineConfig) -> None:
-    """Create ONLY what the chassis itself owns: the state dir for jobs.db.
+    """Create ONLY what the chassis itself owns: the state dir for jobs.db
+    and the logs dir for browser diagnostics.
 
     Library data is never fabricated here -- an empty data dir stays empty
-    apart from the lock file and the jobs db.
+    apart from the lock file, the jobs db and the logs dir.
+
+    The logs dir is proved writable at BOOT rather than discovered to be
+    unwritable by the first browser error at 3am. An engine that cannot
+    write its own diagnostics refuses to start; it never falls back to a
+    path outside the data dir, because that fallback is the sandbox leak
+    this dir exists to close.
     """
     cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        cfg.logs_dir.mkdir(parents=True, exist_ok=True)
+        probe = cfg.logs_dir / ".writable"
+        probe.touch()
+        probe.unlink()
+    except OSError as exc:
+        raise EngineBootError(
+            f"logs dir {cfg.logs_dir} is not writable ({exc}). Fix the "
+            "permissions or pass a --data-dir this user owns."
+        ) from exc
 
 
 __all__ = [

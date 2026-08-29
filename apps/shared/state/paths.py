@@ -6,6 +6,20 @@ goes in ``apps/shared/paths.py`` (single source of truth).
 """
 from __future__ import annotations
 
-from apps.shared.paths import DATA_DIR, PROJECT_ROOT, STATE_DB, STATE_DIR
+from apps.shared.paths import (
+    DATA_DIR,
+    PROJECT_ROOT,
+    REKORDBOX_PLAIN_DB,
+    REKORDBOX_WORKING_DB,
+    STATE_DB,
+    STATE_DIR,
+)
 
-__all__ = ["DATA_DIR", "PROJECT_ROOT", "STATE_DB", "STATE_DIR"]
+__all__ = [
+    "DATA_DIR",
+    "PROJECT_ROOT",
+    "REKORDBOX_PLAIN_DB",
+    "REKORDBOX_WORKING_DB",
+    "STATE_DB",
+    "STATE_DIR",
+]

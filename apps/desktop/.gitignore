@@ -1,6 +1,18 @@
 node_modules/
 dist/
+
+# Real-shell (tier 2) fixture library: generated audio plus a state.db built by
+# the real folder ingest at test setup. Reproducible in seconds, never shared
+# with another data dir, and never a snapshot of anyone's real library.
+tests/fixtures/
+
 src-tauri/target/
 src-tauri/gen/
+# The engine payload the bundler copies into Contents/Resources/payload.
+# ~174MB of relocatable CPython, the locked dependency closure, the engine
+# source and the built SPA -- all of it derived, all of it rebuilt by
+# scripts/build_engine_payload.py. tauri.conf.json names this exact path, so
+# a build without it fails rather than shipping a hollow shell.
+src-tauri/payload/
 *.log
 .DS_Store

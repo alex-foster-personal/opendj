@@ -10,6 +10,11 @@ import pytest
 from apps.dedup import apply as apply_mod
 from apps.dedup import schema as dedup_schema
 
+# This module exercises live-write MECHANICS against tmp fixtures, so it runs
+# with the one-way rekordbox import gate ON (root conftest reads the marker).
+# It never touches a real rekordbox target.
+pytestmark = pytest.mark.rekordbox_writeback
+
 
 def _seed_cluster(dedup_db: Path, *, canonical: str, alias: str, cluster_id: int = 1) -> None:
     conn = dedup_schema.ensure_schema(dedup_db)

@@ -4,6 +4,13 @@
 	 * Opens like a command palette, expands for results; RHS rows ARE the settings.
 	 */
 	import { tick } from 'svelte';
+	import { goto } from '$app/navigation';
+	import {
+		RUN_SETUP_LABEL,
+		RUN_SETUP_TITLE,
+		runSetup,
+		runSetupBlocked
+	} from '$lib/setup/run-setup';
 	import {
 		SETTING_GROUPS,
 		SETTINGS_CATALOG,
@@ -235,6 +242,33 @@
 	function groupLabel(id: SettingGroupId): string {
 		return SETTING_GROUPS.find((g) => g.id === id)?.label ?? id;
 	}
+
+	// ----- setup entry point -------------------------------------------------
+	/**
+	 * "Run setup" lives in the ACTIONS bar rather than in the settings list,
+	 * because it is not a setting: it navigates and changes engine-side state.
+	 * The bar is outside `.so-body`, which is display:none until the panel
+	 * expands -- an entry point you can only reach by typing a search term
+	 * first is not an entry point.
+	 */
+	let setupBusy = $state(false);
+	let setupError = $state<string | null>(null);
+	/** Why setup is unreachable, or null. Only a FINAL refusal disables; an
+	 * unfinished health probe leaves the button live and is resolved by the
+	 * click itself. */
+	const setupBlocked = $derived(runSetupBlocked());
+
+	async function onRunSetup(): Promise<void> {
+		if (setupBusy) return;
+		setupBusy = true;
+		setupError = null;
+		try {
+			setupError = await runSetup(goto);
+			if (setupError === null) closeSettings();
+		} finally {
+			setupBusy = false;
+		}
+	}
 </script>
 
 {#if settingsOverlay.open}
@@ -294,6 +328,27 @@
 					Esc
 				</button>
 			</header>
+
+			<!-- Actions, not settings: they navigate or change engine-side state
+			     rather than flipping a pref. Outside .so-body on purpose, which
+			     is display:none until the panel expands. -->
+			<div class="so-actions">
+				<button
+					type="button"
+					class="so-action"
+					onclick={() => void onRunSetup()}
+					disabled={setupBusy || setupBlocked !== null}
+					title={setupBlocked ?? RUN_SETUP_TITLE}
+				>
+					{setupBusy ? 'Opening setup...' : RUN_SETUP_LABEL}
+				</button>
+				<span class="so-action-note">
+					Re-open the first-run library import wizard.
+				</span>
+				{#if setupError !== null}
+					<span class="so-action-err" title={setupError}>{setupError}</span>
+				{/if}
+			</div>
 
 			<div class="so-body" class:expanded>
 				<aside class="so-lhs" aria-label="Setting categories">
@@ -513,6 +568,35 @@
 	}
 	.so-search:focus {
 		border-color: var(--accent, #ffb43a);
+	}
+	.so-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--border, #1c222c);
+	}
+	.so-action {
+		padding: 6px 12px;
+		border-radius: 8px;
+		border: 1px solid var(--border, #1c222c);
+		background: var(--surface-hover, #1a212c);
+		color: var(--fg, #e6e9ef);
+		cursor: pointer;
+		font-size: 0.85rem;
+	}
+	.so-action:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.so-action-note {
+		font-size: 0.78rem;
+		color: var(--muted, #9aa4b2);
+	}
+	.so-action-err {
+		font-size: 0.78rem;
+		color: var(--danger, #ff5a5a);
 	}
 	.so-body {
 		display: none;
