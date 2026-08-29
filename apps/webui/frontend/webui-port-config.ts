@@ -97,19 +97,16 @@ export function claimAndCheckWebuiDevConfig(
 	repositoryRoot: string,
 	service: Service
 ): WebuiDevConfig {
-	parseWebuiDevConfigPayload(runPortConfig(repositoryRoot, ['claim']));
-	return parseWebuiDevConfigPayload(runPortConfig(repositoryRoot, ['check', '--service', service]));
-}
+	const moduleArgs = ['run', '--no-sync', 'python', '-m', 'apps.webui.port_config'];
+	const runCommand = (commandArgs: string[]): string =>
+		execFileSync('uv', [...moduleArgs, ...commandArgs, '--json'], {
+			cwd: repositoryRoot,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'inherit']
+		});
 
-/**
- * Reserve this worktree's ports and read them back, WITHOUT the in-use check.
- *
- * For the one caller that must not assert the port is free: a Playwright
- * worker process, which re-loads the test config after the runner's own
- * webServer has already bound it. Reserving is idempotent; asserting is not.
- */
-export function claimWebuiDevConfig(repositoryRoot: string): WebuiDevConfig {
-	return parseWebuiDevConfigPayload(runPortConfig(repositoryRoot, ['claim']));
+	parseWebuiDevConfigPayload(runCommand(['claim']));
+	return parseWebuiDevConfigPayload(runCommand(['check', '--service', service]));
 }
 
 function requirePortValue(value: unknown, name: string): number {
