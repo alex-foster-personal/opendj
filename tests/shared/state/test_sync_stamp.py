@@ -165,6 +165,36 @@ def test_an_in_memory_connection_has_no_identity() -> None:
         conn.close()
 
 
+def test_a_rewritten_machine_id_file_is_not_served_stale(tmp_path: Path) -> None:
+    """Round 3 finding N8c: the cache must not outlive the file on disk.
+
+    ``[observed]`` in the round 3 review: ``first=57853cc2 on_disk=550fbd02
+    cached=57853cc2 stale=True`` after the id file was rewritten out from
+    under a live process (a restore, an operator re-mint). A bare
+    ``functools.cache`` kept the FIRST id it ever read for the life of the
+    process; the fix keys the cache on the id file's mtime so a rewrite is
+    picked up on the very next call, no restart required.
+    """
+    conn = state_db.open_rw(tmp_path / "state" / "state.db")
+    try:
+        sync_stamp.reset_machine_id_cache()
+        first = sync_stamp.local_machine_id(conn)
+
+        rewritten = "5" * 32
+        assert rewritten != first
+        id_path = mid.machine_id_path(tmp_path)
+        id_path.unlink()
+        id_path.write_text(rewritten, encoding="utf-8")
+        id_path.chmod(mid.MACHINE_ID_MODE)
+
+        assert sync_stamp.local_machine_id(conn) == rewritten, (
+            "the cache kept serving the id read on the FIRST call"
+        )
+    finally:
+        conn.close()
+        sync_stamp.reset_machine_id_cache()
+
+
 def test_ensure_local_machine_registers_once(state_conn: sqlite3.Connection,
                                              state_db_path: Path) -> None:
     first = sync_stamp.ensure_local_machine(state_conn)

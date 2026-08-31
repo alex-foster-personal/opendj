@@ -18,9 +18,14 @@ import sqlite3
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# sync_stamp imports THIS module (identity comes from the data dir), so this
+# binds the module object rather than a specific name off it -- that is safe
+# under the resulting cycle because canonical_now() is only READ inside
+# register_machine(), by which point both modules have finished executing.
+from . import sync_stamp
 
 MACHINE_ID_FILENAME: str = "machine-id"
 MACHINE_ID_MODE: int = 0o600
@@ -135,9 +140,9 @@ def is_hub_from_env(env: Optional[dict[str, str]] = None) -> bool:
     raw = source.get(IS_HUB_ENV)
     if raw is None or raw == "":
         return False
-    elif raw == "1":
+    if raw == "1":
         return True
-    elif raw == "0":
+    if raw == "0":
         return False
     raise MachineIdentityError(
         f"{IS_HUB_ENV}={raw!r} is not understood; use 1 or 0."
@@ -153,10 +158,6 @@ def default_machine_name() -> str:
             "to register_machine()."
         )
     return hostname.split(".")[0]
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # ----- registration --------------------------------------------------------
@@ -177,6 +178,13 @@ def register_machine(
     ``machines.name`` is UNIQUE: two machines sharing a hostname raise
     :class:`sqlite3.IntegrityError` here instead of quietly overwriting each
     other's fleet row.
+
+    ``last_seen`` is stamped through :func:`apps.shared.state.sync_stamp.
+    canonical_now`, not a local ``datetime.isoformat()`` call (round 3 finding
+    R8): the two disagree on a zero-microsecond tick, where ``isoformat()``
+    omits the field entirely and its bare ``+00:00`` then sorts BELOW a
+    canonical ``.000000+00:00`` stamp naming the same instant, making a fresh
+    heartbeat look a fraction of a second older than it is.
     """
     identity = MachineIdentity(
         machine_id=get_or_create_machine_id(data_dir),
@@ -185,7 +193,7 @@ def register_machine(
         is_hub=is_hub_from_env(),
         data_root=str(Path(data_dir)),
     )
-    stamp = now or _now_iso()
+    stamp = now or sync_stamp.canonical_now()
     conn.execute(
         """
         INSERT INTO machines(
