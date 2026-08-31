@@ -7,6 +7,13 @@ nothing. The one subprocess it makes (``git log -1`` for watchdog checkout fresh
 pointed at a real throwaway repository for the same reason.
 
 The checks take their sink paths as arguments, so no module global is patched here.
+
+perf_health_check.py is imported after putting ``scripts/`` on ``sys.path``, which is
+what actually happens when it runs (launchd, ``just perf-health``): Python prepends a
+directly-run script's own directory to ``sys.path[0]``, which is how it resolves the
+sibling ``perf_health`` package with no venv and no repo root on the path. This mirrors
+that real invocation instead of importing it as ``scripts.perf_health_check``, which
+would put the repo root on the path instead and defeat the whole point of the test.
 """
 
 from __future__ import annotations
@@ -14,12 +21,18 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from scripts import perf_health_check as mod
+_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+import perf_health_check as mod  # noqa: E402 - path bootstrap above must run first
+from perf_health.config import CLIENT_ERROR_PREFIX, PROBE_INSTALL_DOC  # noqa: E402
 
 NOW = datetime(2026, 8, 31, 12, 0, 0, tzinfo=UTC)
 
@@ -41,7 +54,7 @@ def _row(**overrides) -> str:
 
 def _write_log(directory: Path, day: str, rows: list[str], prefix: str | None = None) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    name = f"{prefix or mod.CLIENT_ERROR_PREFIX}-{day}.log"
+    name = f"{prefix or CLIENT_ERROR_PREFIX}-{day}.log"
     path = directory / name
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
     return path
@@ -159,7 +172,7 @@ def test_malformed_row_is_counted_and_the_scan_continues(log_root: Path):
     scanned, or broken.
     """
     log_root.mkdir(parents=True)
-    path = log_root / f"{mod.CLIENT_ERROR_PREFIX}-2026-08-30.log"
+    path = log_root / f"{CLIENT_ERROR_PREFIX}-2026-08-30.log"
     path.write_text(
         "\n".join(
             [
@@ -419,7 +432,7 @@ def test_absent_probe_dir_points_at_the_install_runbook(tmp_path: Path):
     assert result.severity == mod.SEVERITY_WARN
     assert result.classification == "not-installed"
     assert "probe not installed" in result.detail
-    assert mod.PROBE_INSTALL_DOC in result.remediation
+    assert PROBE_INSTALL_DOC in result.remediation
 
 
 def test_probe_dir_with_no_samples_warns(tmp_path: Path):
