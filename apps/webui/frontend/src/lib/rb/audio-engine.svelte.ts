@@ -74,7 +74,7 @@ import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { copyPrefetchedAudio } from '$lib/rb/audio-prefetch-cache.svelte';
 import { reportDeckLoadFailure } from '$lib/rb/deck-load-failure-context';
-import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { recordDeckLoadTiming, recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
 import {
 	armXrunSentinel,
 	disarmContextInstrumentation,
@@ -2887,7 +2887,7 @@ class RbAudioEngine implements AudioEngine {
 		} catch (exc) {
 			stages.failedAt = perfMs();
 			st.last_load_stages = { ...stages };
-			recordPerfTiming('deck-load-fail', stages, deck);
+			recordDeckLoadTiming('deck-load-fail', stages, deck, candidateStemState);
 			if (processor !== null) processor.disconnect();
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
@@ -2985,7 +2985,7 @@ class RbAudioEngine implements AudioEngine {
 		stages.total = perfMs();
 		st.last_load_latency_ms = stages.total;
 		st.last_load_stages = { ...stages };
-		recordPerfTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck);
+		recordDeckLoadTiming(`deck-load sid=${stable_id.slice(0, 12)}`, stages, deck, candidateStemState);
 	}
 
 	/** Re-read hot cues + display loop from the backend after a SAVE/CLEAR

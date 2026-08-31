@@ -31,6 +31,16 @@ export interface PerfEvent {
 	message: string;
 	/** Present for timing rows (ms per stage). */
 	stages?: Record<string, number>;
+	/**
+	 * Non-numeric facts about the row, e.g. which stem layout a deck load
+	 * actually played. Optional and additive: rows written before this field
+	 * existed stay valid, and readers must treat it as possibly absent.
+	 *
+	 * Kept SEPARATE from `stages` rather than stringly-typed into it, because
+	 * `stages` is a ms-per-stage map and anything summing or charting it must
+	 * never trip over a value that is not a duration.
+	 */
+	labels?: Record<string, string>;
 }
 
 const STORAGE_KEY = 'mdt.perfEventLog';
@@ -203,18 +213,120 @@ export function recordPerfEvent(
 export function recordPerfTiming(
 	kind: string,
 	stages: Record<string, number>,
-	deck: 1 | 2 | 3 | 4 | null = null
+	deck: 1 | 2 | 3 | 4 | null = null,
+	labels?: Record<string, string>
 ): void {
-	const message = _stageSummary(stages);
+	const stageBits = _stageSummary(stages);
+	const labelBits =
+		labels === undefined
+			? ''
+			: Object.entries(labels)
+					.map(([k, v]) => `${k}=${v}`)
+					.join(' ');
+	const message = labelBits === '' ? stageBits : `${stageBits} ${labelBits}`;
 	_push({
 		t: new Date().toISOString(),
 		kind,
 		deck,
 		message,
-		stages: { ...stages }
+		stages: { ...stages },
+		...(labels === undefined ? {} : { labels: { ...labels } })
 	});
 	const deckBit = deck === null ? '' : ` deck=${deck}`;
 	console.info(`[perf] ${kind}${deckBit} ${message}`);
+}
+
+// ------------------------------------------------- deck-load stem telemetry
+
+/**
+ * The subset of a deck's StemDeckState a ring row needs, declared structurally
+ * rather than imported.
+ *
+ * Deliberate: `types.ts` is already the most-imported module in the frontend
+ * and the quality ratchet caps its fan-in, so this module stays off it - the
+ * same reason the deck id above is an inline union rather than an imported
+ * DeckId. A real StemDeckState satisfies this shape, and if its status union
+ * ever widens, the call site in audio-engine stops compiling, so the
+ * exhaustive switch below cannot silently fall behind.
+ */
+export interface StemLoadFacts {
+	status: 'unavailable' | 'ready' | 'error';
+	source: string | null;
+	model: string | null;
+	layout: string | null;
+	error: string | null;
+}
+
+interface _StemLoadTelemetry {
+	/** 1 stemmed, 0 mix-only, null when the probe never resolved. */
+	stemmed: number | null;
+	labels: Record<string, string>;
+}
+
+/** Derive a row's stem facts from the state the deck actually published.
+ *
+ * Exhaustive over the status union: an unrecognized status throws rather than
+ * defaulting to mix-only, because a row that quietly claims stemmed=0 for an
+ * unknown state is worse than no row at all. */
+function _stemLoadTelemetry(stems: StemLoadFacts): _StemLoadTelemetry {
+	switch (stems.status) {
+		case 'ready':
+			// Read from the bundle the deck published, never assumed to be the
+			// 4-part default: a row claiming demucs4 for a 2-part RoFormer bundle
+			// would misreport which controls the deck could actually drive.
+			return {
+				stemmed: 1,
+				labels: {
+					stemLayout: stems.layout ?? 'unknown',
+					stemSource: stems.source ?? 'unknown',
+					stemModel: stems.model ?? 'unknown'
+				}
+			};
+		case 'unavailable':
+			// A null error means the probe never answered - the load failed before
+			// it resolved. That is NOT mix-only, so the flag is withheld rather
+			// than fabricated; only a real probe answer earns stemmed=0.
+			if (stems.error === null) return { stemmed: null, labels: { stemLayout: 'unresolved' } };
+			// Explicit 'none', not an absent key: that is what lets a reader tell a
+			// mix-only load apart from a row written before this field existed.
+			return { stemmed: 0, labels: { stemLayout: 'none' } };
+		case 'error':
+			// Stems existed but were unusable, so the deck played the mix. The
+			// layout records WHY rather than losing the distinction.
+			return { stemmed: 0, labels: { stemLayout: 'error' } };
+		default: {
+			const _exhaustive: never = stems.status;
+			throw new Error(`deck-load telemetry: unhandled stem status ${String(_exhaustive)}`);
+		}
+	}
+}
+
+/**
+ * Write one deck-load timing row carrying the stem facts alongside the ms.
+ *
+ * A deck-load row used to carry stage DURATIONS only, so "was that load
+ * stemmed or mix-only?" had no answer in the row, and classifying a run of
+ * loads meant re-deriving it by hand from which stage names happened to appear
+ * (fetchStems/decodeStems present => stemmed). This states it at write time.
+ *
+ * Lives here beside `lastDeckLoadEvents`, the ring's other deck-load-specific
+ * helper, rather than in the engine: audio-engine.svelte.ts is the largest
+ * hand-written frontend module and sits AT the ratchet's file_size.max_frontend
+ * cap, which ops/quality/baseline.json says must never be raised for
+ * hand-written code, so it can absorb no new lines at all.
+ *
+ * `stages` is copied, never mutated: the engine snapshots it into DeckState
+ * BEFORE the ring write, and a mutating recorder would make those two disagree
+ * depending on statement order.
+ */
+export function recordDeckLoadTiming(
+	kind: string,
+	stages: Record<string, number>,
+	deck: 1 | 2 | 3 | 4 | null,
+	stems: StemLoadFacts
+): void {
+	const { stemmed, labels } = _stemLoadTelemetry(stems);
+	recordPerfTiming(kind, stemmed === null ? stages : { ...stages, stemmed }, deck, labels);
 }
 
 export function readPerfEvents(): readonly PerfEvent[] {
