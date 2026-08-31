@@ -85,7 +85,7 @@ class _FakeVendorWriter:
 def state_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE track_vendor_ids (stable_id TEXT, vendor TEXT, vendor_id TEXT)")
-    conn.executemany("INSERT INTO track_vendor_ids VALUES (?, 'rekordbox', ?)", [(item, f"rb-{item}") for item in ("a", "b", "c", "d")])
+    conn.executemany("INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)", [(item, f"rb-{item}") for item in ("a", "b", "c", "d")])
     yield conn
     conn.close()
 
@@ -197,12 +197,12 @@ def test_source_lock_blocks_source_edit_and_remap_after_mapping_cas(tmp_path) ->
             "INSERT INTO tracks (stable_id, stable_id_tier, created_at, updated_at) VALUES (?, 'inferred', 't', 't')",
             [("a",), ("b",), ("c",)],
         )
-        conn.execute("INSERT INTO playlists VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
+        conn.execute("INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
         conn.executemany(
-            "INSERT INTO playlist_memberships VALUES ('source', ?, ?)", [("a", 0), ("b", 1)],
+            "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('source', ?, ?)", [("a", 0), ("b", 1)],
         )
         conn.executemany(
-            "INSERT INTO track_vendor_ids VALUES (?, 'rekordbox', ?)", [("a", "rb-a"), ("b", "rb-b"), ("c", "rb-c")],
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'rekordbox', ?)", [("a", "rb-a"), ("b", "rb-b"), ("c", "rb-c")],
         )
     state_conn = sqlite3.connect(state_path, isolation_level=None)
     writer = _FakeVendorWriter("rekordbox", state_conn, {"one": ("Set", ["a", "c"]), "two": ("Set", ["b"])})
@@ -253,13 +253,13 @@ def test_production_service_binds_mapping_reads_to_locked_custom_state_db(
                 [("a",), ("b",), ("c",)],
             )
             conn.executemany(
-                "INSERT INTO track_vendor_ids VALUES (?, 'djay', ?)",
+                "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES (?, 'djay', ?)",
                 [(stable_id, f"{prefix}-{stable_id}") for stable_id in ("a", "b", "c")],
             )
             if path == state_path:
-                conn.execute("INSERT INTO playlists VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
+                conn.execute("INSERT INTO playlists (playlist_id, name, vendor, vendor_pl_id, created_at, updated_at) VALUES ('source', 'Source', 'webui', 'source', 't', 't')")
                 conn.executemany(
-                    "INSERT INTO playlist_memberships VALUES ('source', ?, ?)",
+                    "INSERT INTO playlist_memberships (playlist_id, stable_id, position) VALUES ('source', ?, ?)",
                     [("a", 0), ("b", 1)],
                 )
 
@@ -382,7 +382,7 @@ def test_service_closes_real_bound_mapping_connection_after_success(
                 "VALUES ('a', 'inferred', 't', 't')"
             )
             connection.execute(
-                "INSERT INTO track_vendor_ids VALUES ('a', 'djay', ?)",
+                "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) VALUES ('a', 'djay', ?)",
                 (vendor_id,),
             )
 
