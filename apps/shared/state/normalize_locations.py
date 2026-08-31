@@ -31,7 +31,7 @@ group, and:
   the survivor's path is stored NFC.
 
 The loser is hard-deleted, not tombstoned, for the reason
-``apps.sync_hub.engine._drop_superseded`` gives: a partial UNIQUE index cannot
+``apps.sync_hub.engine_apply._drop_superseded`` gives: a partial UNIQUE index cannot
 hold a tombstone and its NFC replacement at once, and a tombstone still
 carries the path so it would still collide. The survivor's ``local_changelog``
 entry (carrying its EXISTING ``updated_at``, never a fresh one -- the winner
@@ -66,7 +66,7 @@ from . import sync_stamp
 
 #: The synced table this pass repairs, and the two changelog tables whose
 #: dangling entries for a dropped loser must be pruned alongside it. Mirrors
-#: ``apps.sync_hub.engine._drop_superseded``; duplicated rather than imported
+#: ``apps.sync_hub.engine_apply._drop_superseded``; duplicated rather than imported
 #: because ``apps.shared`` must not depend on ``apps.sync_hub``.
 LOCATIONS_TABLE: str = "track_locations"
 CHANGELOG_TABLES: tuple[str, ...] = ("hub_changelog", sync_stamp.LOCAL_CHANGELOG_TABLE)

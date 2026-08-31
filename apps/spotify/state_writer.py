@@ -336,7 +336,7 @@ def write_playlist_and_pending(
         #
         # The membership replace below is the established whole-playlist
         # pattern (matches StateWriter.set_playlist_memberships and
-        # apps.sync_hub.engine._replace_members): every position is
+        # apps.sync_hub.engine_apply._replace_members): every position is
         # overwritten on every import, so there is no independent "this one
         # membership row was removed" event to tombstone -- the fresh INSERT
         # below is what makes the current state correct either way. The

@@ -39,297 +39,55 @@ Five decisions worth reading before changing anything:
    one would make two peers disagree about which row they are talking about.
    Every pk in the sync set is machine-generated ASCII (sha1 hex, uuid hex,
    or a CHECK-constrained enum), so there is nothing there to normalize.
+
+Split into :mod:`apps.sync_hub.protocol_common` (quality-gate file_size
+ratchet, round 4): the table specs and the canonicalization/introspection/
+sort-key rules above moved there, dependency-free of the rest of this
+package. This module keeps the wire payload dataclasses (``RowChange``,
+``MachineRow``, ``SyncDigest``), the digest functions, and the small
+``from_wire`` parsing helpers, and re-exports everything from
+``protocol_common`` so every caller that already does
+``from apps.sync_hub import protocol`` and reads ``protocol.X`` keeps the
+surface it had.
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
-import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from apps.shared.state import sync_stamp
-
-# A row whose ``updated_at`` is NULL predates migration v6. ADR 04 c7 says it
-# syncs as epoch-old. This literal sorts before any real ISO8601 timestamp
-# under plain string comparison, which is the only ordering the protocol uses.
-EPOCH: str = "0000-01-01T00:00:00+00:00"
-
-# Same idea for a NULL origin: it must never win the tiebreak.
-NO_ORIGIN: str = ""
-
-
-class SyncProtocolError(ValueError):
-    """A payload could not be read as this protocol. Never swallowed."""
-
-
-# ----- table specs ---------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TableSpec:
-    """One table in the LWW sync set."""
-
-    name: str
-    pk: tuple[str, ...]
-
-
-# Order is the APPLY order and is FK-safe: parents before children. Callers
-# must not reorder without re-checking the REFERENCES clauses in
-# apps/shared/state/schema.py.
-SYNC_TABLES: tuple[TableSpec, ...] = (
-    TableSpec("tracks", ("stable_id",)),
-    TableSpec("playlists", ("playlist_id",)),
-    TableSpec("track_vendor_ids", ("stable_id", "vendor")),
-    TableSpec("track_fields", ("stable_id", "field_name")),
-    TableSpec("track_locations", ("location_id",)),
-    TableSpec("sync_policies", ("machine_id", "asset_kind")),
-    TableSpec("playlist_pins", ("machine_id", "playlist_id")),
+from apps.sync_hub.protocol_common import (
+    DELETED_AT,
+    DIGEST_TABLES,
+    EPOCH,
+    MEMBERSHIP_SPEC,
+    MEMBERSHIP_TABLE,
+    NATURAL_KEYS,
+    NO_ORIGIN,
+    ORIGIN_DEVICE_ID,
+    REGISTRY_TABLE,
+    SPEC_BY_TABLE,
+    SYNC_COLUMNS,
+    SYNC_TABLES,
+    UPDATED_AT,
+    SyncProtocolError,
+    TableSpec,
+    canonical_bytes,
+    canonical_row,
+    canonical_timestamp,
+    canonical_values,
+    decode_row_pk,
+    encode_row_pk,
+    lww_key,
+    natural_keys,
+    nfc,
+    pk_columns,
+    table_columns,
 )
 
-SPEC_BY_TABLE: dict[str, TableSpec] = {spec.name: spec for spec in SYNC_TABLES}
-
-# Where a table's LOGICAL identity is not its primary key, the natural key is
-# the tuple its partial UNIQUE indexes assert (ADR 08 point 1). Only
-# ``track_locations`` has one: ``location_id`` is a random uuid minted
-# independently on each machine, so two machines can hold the same logical row
-# under different keys. The engine resolves against this tuple, which is what
-# makes round 1 finding 1 (a UNIQUE violation the push could never retry past)
-# unreachable rather than merely unlikely.
-#
-# EVERY tuple whose columns are all non-NULL is in force at once, mirroring
-# the ``WHERE file_path IS NOT NULL`` / ``WHERE remote_url IS NOT NULL``
-# partial indexes: a row carrying both columns is subject to both indexes.
-# SQLite treats NULLs as distinct in a UNIQUE index, so a NULL anywhere in a
-# tuple means that index does not apply and there is nothing to resolve
-# against for it. Round 2 finding N5: resolving against the FIRST applicable
-# tuple only left the other index unresolved, and its violation was round 1
-# finding 1's exact shape one index over -- a 409 that re-fired forever.
-NATURAL_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "track_locations": (
-        ("stable_id", "machine_id", "kind", "file_path"),
-        ("stable_id", "machine_id", "kind", "remote_url"),
-    ),
-}
-
-# Whole-playlist granularity (ADR 04 c5): membership rows are never pushed on
-# their own. They travel attached to their ``playlists`` row and replace the
-# peer's copy wholesale when that row wins LWW. A writer that edits membership
-# MUST stamp ``playlists.updated_at`` or the change will not propagate.
-MEMBERSHIP_TABLE: str = "playlist_memberships"
-MEMBERSHIP_SPEC: TableSpec = TableSpec(MEMBERSHIP_TABLE, ("playlist_id", "position"))
-
-# Fleet registry. See point 3 in the module docstring.
-REGISTRY_TABLE: str = "machines"
-
-# The digest set: every table whose content must be byte-identical on two
-# converged peers. Tombstones are included -- a peer that has forgotten a
-# delete has diverged, and the digest is the only thing that would say so.
-DIGEST_TABLES: tuple[str, ...] = tuple(
-    sorted([spec.name for spec in SYNC_TABLES] + [MEMBERSHIP_TABLE])
-)
-
-# Columns that carry sync semantics rather than domain data.
-UPDATED_AT: str = "updated_at"
-ORIGIN_DEVICE_ID: str = "origin_device_id"
-DELETED_AT: str = "deleted_at"
-SYNC_COLUMNS: tuple[str, ...] = (UPDATED_AT, ORIGIN_DEVICE_ID, DELETED_AT)
-
-
-# ----- canonical serialization --------------------------------------------
-
-
-def canonical_bytes(payload: Any) -> bytes:
-    """Formatting-independent JSON bytes, matching the crate-sync precedent.
-
-    Mirrors ``apps.agentbox.crate_state._canonical_bytes`` so two digests in
-    this repo cannot disagree about what "canonical" means.
-    """
-    return json.dumps(
-        payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
-
-
-def nfc(value: str) -> str:
-    """NFC-normalize one string (module docstring point 5)."""
-    return unicodedata.normalize("NFC", value)
-
-
-def canonical_timestamp(table: str, column: str, value: Any) -> str:
-    """Re-emit one timestamp in the single canonical format, or raise.
-
-    Module docstring point 4. Delegates to
-    :mod:`apps.shared.state.sync_stamp` so the format has exactly one
-    definition in the repo, and converts its error type so every caller in
-    this module raises :class:`SyncProtocolError`.
-    """
-    try:
-        return sync_stamp.to_canonical(str(value))
-    except sync_stamp.SyncStampError as exc:
-        raise SyncProtocolError(
-            f"{table}.{column} = {value!r} is not an orderable timestamp: "
-            f"{exc}. Sync stamps must be offset-bearing ISO8601; see "
-            f"apps.shared.state.sync_stamp.CANONICAL_FORMAT."
-        ) from exc
-
-
-def pk_columns(table: str) -> tuple[str, ...]:
-    """Primary key columns of a sync-set (or membership) table."""
-    spec = SPEC_BY_TABLE.get(table)
-    if spec is not None:
-        return spec.pk
-    if table == MEMBERSHIP_TABLE:
-        return MEMBERSHIP_SPEC.pk
-    if table == REGISTRY_TABLE:
-        return ("machine_id",)
-    raise SyncProtocolError(f"{table!r} is not in the sync set")
-
-
-def _checked_value(table: str, column: str, value: Any, *, is_pk: bool) -> Any:
-    """Return ``value`` as a canonical JSON-safe scalar, or raise.
-
-    Three normalizations, all of them load-bearing:
-
-    * BLOB columns have no place in the sync set; one appearing means the
-      schema grew a column this protocol cannot transport, and guessing an
-      encoding would put unreadable rows on the wire.
-    * ``updated_at`` AND ``deleted_at`` are re-emitted canonical (point 4).
-      Round 3 finding R8 caught the asymmetry: this special-cased
-      ``updated_at`` only, so a push carrying ``deleted_at: "not-a-timestamp"``
-      was accepted, stored verbatim and hashed into the digest -- the one
-      column a tombstone's correctness depends on was the one column this
-      boundary never checked. A NULL value (not deleted) still short-circuits
-      above and is never passed here, so this only ever validates a REAL
-      tombstone stamp.
-    * every other non-pk string is NFC-normalized (point 5).
-    """
-    if value is None:
-        return None
-    if not isinstance(value, (str, int, float, bool)):
-        raise SyncProtocolError(
-            f"{table}.{column} holds {type(value).__name__}, which the sync wire "
-            f"format cannot carry (only null/text/integer/real)."
-        )
-    if column in (UPDATED_AT, DELETED_AT):
-        return canonical_timestamp(table, column, value)
-    if isinstance(value, str) and not is_pk:
-        return nfc(value)
-    return value
-
-
-def canonical_row(
-    table: str, columns: Sequence[str], row: Sequence[Any]
-) -> dict[str, Any]:
-    """One DB row as a column->scalar mapping, ready to hash or serialize."""
-    if len(columns) != len(row):
-        raise SyncProtocolError(
-            f"{table}: {len(columns)} columns declared but {len(row)} values read"
-        )
-    keys = set(pk_columns(table))
-    return {
-        column: _checked_value(table, column, value, is_pk=column in keys)
-        for column, value in zip(columns, row, strict=True)
-    }
-
-
-def canonical_values(table: str, values: Mapping[str, Any]) -> dict[str, Any]:
-    """:func:`canonical_row` for a mapping that arrived off the wire."""
-    keys = set(pk_columns(table))
-    return {
-        column: _checked_value(table, column, value, is_pk=column in keys)
-        for column, value in values.items()
-    }
-
-
-def natural_keys(
-    table: str, values: Mapping[str, Any]
-) -> tuple[tuple[tuple[str, Any], ...], ...]:
-    """Every (column, value) tuple that logically identifies this row.
-
-    One entry per partial UNIQUE index whose columns are all non-NULL on
-    this row, in :data:`NATURAL_KEYS` order. Empty means the table has no
-    natural key beyond its primary key, or that a NULL leaves every index
-    inapplicable.
-
-    All of them, not the first (round 2 finding N5): a ``track_locations``
-    row carrying both ``file_path`` and ``remote_url`` is subject to both
-    indexes at once, and resolving only the first left the second to fail as
-    an unrecoverable ``UNIQUE constraint failed`` inside the apply.
-    """
-    return tuple(
-        tuple((column, values[column]) for column in columns)
-        for columns in NATURAL_KEYS.get(table, ())
-        if all(values.get(column) is not None for column in columns)
-    )
-
-
-def encode_row_pk(values: Sequence[Any]) -> str:
-    """``hub_changelog.row_pk`` for a composite primary key.
-
-    A canonical JSON array rather than a delimiter join, so a value that
-    itself contains the delimiter cannot forge another row's key.
-    """
-    return canonical_bytes([None if v is None else str(v) for v in values]).decode("utf-8")
-
-
-def decode_row_pk(raw: str) -> tuple[str | None, ...]:
-    """Inverse of :func:`encode_row_pk`."""
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SyncProtocolError(f"row_pk {raw!r} is not canonical JSON: {exc}") from exc
-    if not isinstance(parsed, list):
-        raise SyncProtocolError(f"row_pk {raw!r} is not a JSON array")
-    return tuple(None if item is None else str(item) for item in parsed)
-
-
-# ----- schema introspection ------------------------------------------------
-
-
-def table_columns(conn: sqlite3.Connection, table: str) -> tuple[str, ...]:
-    """Declared columns of ``table``, in declaration order.
-
-    ``table`` must be a known sync-set name; the value is interpolated into
-    the PRAGMA (SQLite does not bind identifiers), so the allowlist check is
-    load-bearing, not decorative.
-    """
-    if table not in SPEC_BY_TABLE and table not in (MEMBERSHIP_TABLE, REGISTRY_TABLE):
-        raise SyncProtocolError(f"{table!r} is not in the sync set")
-    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    if not rows:
-        raise SyncProtocolError(
-            f"table {table!r} does not exist; the DB is below migration v6 "
-            f"(see specs/design_decision_05.md)"
-        )
-    return tuple(str(row[1]) for row in rows)
-
-
-# ----- sort keys -----------------------------------------------------------
-
-
-def lww_key(values: Mapping[str, Any]) -> tuple[str, str]:
-    """The ``(updated_at, origin_device_id)`` pair ADR 04 c3 compares.
-
-    NULLs collapse to :data:`EPOCH` / :data:`NO_ORIGIN` so the comparison is
-    total and a legacy row always loses. The timestamp is normalized first
-    (module docstring point 4): this function is called on rows read straight
-    out of a local table as well as on rows off the wire, and a locally
-    stored ``2026-08-30T10:00:00Z`` must compare EQUAL to the same instant
-    written ``2026-08-30T10:00:00.000000+00:00``, not above it.
-    """
-    updated_at = values.get(UPDATED_AT)
-    origin = values.get(ORIGIN_DEVICE_ID)
-    return (
-        EPOCH
-        if updated_at is None
-        else canonical_timestamp("<row>", UPDATED_AT, updated_at),
-        NO_ORIGIN if origin is None else str(origin),
-    )
-
-
-# ----- wire payloads -------------------------------------------------------
+# ----- wire payloads -----------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -538,7 +296,7 @@ def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
     return SyncDigest(tables=tables, overall=overall, seq=seq)
 
 
-# ----- small parsing helpers ----------------------------------------------
+# ----- small parsing helpers ------------------------------------------------
 
 
 def _require_str(payload: Mapping[str, Any], key: str) -> str:

@@ -4,106 +4,52 @@ Every write is a small transaction that appends one row to ``events`` and
 publishes a matching in-process event on :class:`EventBus`. Callers MUST
 NOT ``INSERT`` into the state tables directly; this class is the chokepoint
 that guarantees the durable log + in-process fanout stay in sync.
+
+The track-level writes (tracks, locations, vendor ids, wrapped fields) and
+the playlist writes (insert, membership replace, tombstone) moved to
+:mod:`apps.shared.state.writer_tracks` and
+:mod:`apps.shared.state.writer_playlists` (quality-gate file_size ratchet,
+round 4), as mixins :class:`StateWriter` composes below. Both assume the
+infrastructure this class defines -- ``_tx``, ``_stamp``, ``_now_iso``,
+``machine_id``, ``bus`` -- so neither is usable on its own. The constants
+and free helpers both mixins ALSO need (table names,
+``immediate_transaction``, ``next_playlist_revision``) live in
+:mod:`apps.shared.state.writer_common` rather than here, so this module can
+import the two mixins without a cycle: this module and both mixins import
+only ``writer_common``, never each other. An earlier version of this split
+had the mixins import their constants back from this module instead, which
+worked when this module happened to be the first of the three imported and
+broke -- reproducibly -- whenever anything imported a mixin module first
+(``python -m`` re-importing a package under its real name is one such path;
+so is any test collector that imports alphabetically).
 """
 from __future__ import annotations
 
-import hashlib
 import itertools
 import json
 import sqlite3
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterable, Iterator
+from datetime import datetime
+from typing import Any
 
-from . import locations as _locations
-from . import provenance as _prov
 from . import sync_stamp as _sync_stamp
 from .events import EventBus, FakeEventBus
-from .types import Event, Source
+from .types import Event
+from .writer_common import (
+    _default_clock,
+    _iso,
+    compute_playlist_id,
+    immediate_transaction,
+    next_playlist_revision,
+)
+from .writer_playlists import _PlaylistWriterMixin
+from .writer_tracks import _TrackWriterMixin
 
 _Clock = Callable[[], datetime]
 
-# The synced tables this class writes, and the primary key columns whose
-# values become the ``local_changelog`` row_pk. Kept beside the writes rather
-# than imported from apps.sync_hub: apps.shared must not depend on the sync
-# app, and tests/shared/state/test_sync_stamp.py pins the two lists together.
-TRACKS_TABLE: str = "tracks"
-VENDOR_IDS_TABLE: str = "track_vendor_ids"
-PLAYLISTS_TABLE: str = "playlists"
-MEMBERSHIPS_TABLE: str = "playlist_memberships"
 
-
-def _default_clock() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(dt: datetime) -> str:
-    """Canonical sync timestamp for ``dt``.
-
-    A naive datetime is read as UTC (long-standing behaviour of the injected
-    test clocks) and then rendered in the one format the LWW comparison can
-    order -- fixed-width microseconds, explicit ``+00:00`` (ADR 08 point 2).
-    """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return _sync_stamp.canonical_from(dt)
-
-
-def compute_playlist_id(vendor: str, vendor_pl_id: str) -> str:
-    """Stable playlist id: ``sha1('<vendor>:<vendor_pl_id>')``.
-
-    Lets us round-trip a playlist between vendors without collisions while
-    keeping the id deterministic.
-    """
-    return hashlib.sha1(f"{vendor}:{vendor_pl_id}".encode("utf-8")).hexdigest()
-
-
-@contextmanager
-def immediate_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """Acquire SQLite's writer lock before an authoritative read-modify-write.
-
-    Membership replacement is destructive, so an ETag, member validation, and
-    replacement must all happen after this lock is held.  Nested callers use a
-    SAVEPOINT through :meth:`StateWriter._tx`; this outer primitive fails fast
-    if a caller attempts to upgrade an already-open deferred transaction.
-    """
-    if conn.in_transaction:
-        raise RuntimeError(
-            "immediate transaction requires an idle connection; acquire it "
-            "before reading membership state"
-        )
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        yield conn
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    else:
-        conn.execute("COMMIT")
-
-
-def next_playlist_revision(
-    conn: sqlite3.Connection, playlist_id: str, candidate: str,
-) -> str:
-    """Return a revision distinct from the playlist's current ``updated_at``.
-
-    Wall-clock timestamps normally differ at microsecond precision.  A fixed
-    clock used by a deterministic caller must still rotate an ETag, so advance
-    an equal ISO timestamp by one microsecond instead of silently reusing it.
-    """
-    row = conn.execute(
-        "SELECT updated_at FROM playlists WHERE playlist_id = ?", (playlist_id,),
-    ).fetchone()
-    if row is None:
-        return candidate
-    previous = datetime.fromisoformat(row[0])
-    requested = datetime.fromisoformat(candidate)
-    if requested > previous:
-        return candidate
-    return _iso(previous + timedelta(microseconds=1))
-
-
-class StateWriter:
+class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin):
     """Write-serialised facade over the state DB.
 
     Owns its own event bus unless one is injected. Tests can pass in a
@@ -196,7 +142,7 @@ class StateWriter:
         if self._own_bus:
             self.bus.close()
 
-    def __enter__(self) -> "StateWriter":
+    def __enter__(self) -> StateWriter:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -261,441 +207,6 @@ class StateWriter:
             payload=payload,
             actor=self._actor,
         )
-
-    # --- tracks -----------------------------------------------------
-
-    def upsert_track(
-        self,
-        *,
-        stable_id: str,
-        stable_id_tier: str,
-        title: str | None,
-        artists: Iterable[str],
-        album: str | None,
-        isrc: str | None,
-        duration_ms: int | None,
-        file_path: str | None,
-        content_hash: str | None = None,
-    ) -> bool:
-        """Insert/update ``tracks``. Returns True on change, False on no-op.
-
-        A byte-equal repeat is a no-op (no history, no event) -- unless the
-        row is tombstoned, in which case it is reactivated the same way
-        ``insert_playlist`` reactivates a playlist: a stable_id is
-        deterministic, so a re-ingest (round 2 finding 4b,
-        apps/shared/state/ingest/rekordbox.py) can land on a row this
-        machine previously soft-deleted. Reactivation clears ``deleted_at``
-        and is stamped through ``sync_stamp`` like any other write, so the
-        undelete itself propagates instead of leaving a tombstoned row
-        silently refreshed underneath its own dead marker.
-        """
-        artists_json = json.dumps(
-            list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
-        )
-        now = self._now_iso()
-        with self._tx() as conn:
-            existing = conn.execute(
-                "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                "duration_ms, file_path, content_hash, deleted_at FROM tracks "
-                "WHERE stable_id = ?",
-                (stable_id,),
-            ).fetchone()
-            new_row = (
-                stable_id_tier,
-                title,
-                artists_json,
-                album,
-                isrc,
-                duration_ms,
-                file_path,
-                content_hash,
-            )
-            existing_deleted_at = existing[-1] if existing is not None else None
-            if (
-                existing is not None
-                and tuple(existing[:-1]) == new_row
-                and existing_deleted_at is None
-            ):
-                return False
-            stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
-            if existing is None:
-                conn.execute(
-                    "INSERT INTO tracks(stable_id, stable_id_tier, title, "
-                    "artists_json, album, isrc, duration_ms, file_path, "
-                    "content_hash, created_at, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        stable_id,
-                        stable_id_tier,
-                        title,
-                        artists_json,
-                        album,
-                        isrc,
-                        duration_ms,
-                        file_path,
-                        content_hash,
-                        now,
-                        stamp.updated_at,
-                        stamp.origin_device_id,
-                    ),
-                )
-                kind = "track.insert"
-            else:
-                reactivated = existing_deleted_at is not None
-                conn.execute(
-                    "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
-                    "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, "
-                    "updated_at=?, origin_device_id=?, deleted_at=NULL "
-                    "WHERE stable_id=?",
-                    (*new_row, stamp.updated_at, stamp.origin_device_id, stable_id),
-                )
-                kind = "track.undelete" if reactivated else "track.update"
-            ev = self._append_event(
-                kind=kind,
-                stable_id=stable_id,
-                payload={"tier": stable_id_tier, "had_isrc": bool(isrc)},
-                ts=now,
-            )
-            self.bus.publish(ev)
-            _locations.sync_primary_local(
-                conn,
-                stable_id=stable_id,
-                file_path=file_path,
-                now=now,
-                machine_id=self.machine_id(),
-            )
-        return True
-
-    def upsert_track_location(
-        self,
-        *,
-        stable_id: str,
-        kind: _locations.Kind,
-        file_path: str | None = None,
-        remote_url: str | None = None,
-        role: _locations.Role = "alternate",
-        content_hash: str | None = None,
-    ) -> str:
-        """Record an extra playable copy on THIS machine.
-
-        Does not change ``tracks.file_path``. Returns the ``location_id``
-        (uuid4 hex): schema v6 dropped the INTEGER rowid key because it
-        collided across machines.
-        """
-        now = self._now_iso()
-        with self._tx() as conn:
-            loc_id = _locations.upsert_location(
-                conn,
-                stable_id=stable_id,
-                kind=kind,
-                file_path=file_path,
-                remote_url=remote_url,
-                role=role,
-                content_hash=content_hash,
-                now=now,
-                machine_id=self.machine_id(),
-            )
-            ev = self._append_event(
-                kind="track.location.upsert",
-                stable_id=stable_id,
-                payload={"location_id": loc_id, "kind": kind, "role": role},
-                ts=now,
-            )
-            self.bus.publish(ev)
-        return loc_id
-
-    # --- vendor ids -------------------------------------------------
-
-    def set_vendor_id(
-        self, stable_id: str, vendor: str, vendor_id: str
-    ) -> None:
-        now = self._now_iso()
-        with self._tx() as conn:
-            stamp = self._stamp(VENDOR_IDS_TABLE, (stable_id, vendor), now)
-            # Upsert rather than INSERT OR REPLACE: the latter is a
-            # delete-then-insert, which would silently drop ``deleted_at``
-            # (and fire ON DELETE cascades) on every vendor-id refresh.
-            conn.execute(
-                "INSERT INTO track_vendor_ids(stable_id, vendor, vendor_id, "
-                "updated_at, origin_device_id) VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(stable_id, vendor) DO UPDATE SET "
-                "vendor_id=excluded.vendor_id, "
-                "updated_at=excluded.updated_at, "
-                "origin_device_id=excluded.origin_device_id",
-                (
-                    stable_id,
-                    vendor,
-                    vendor_id,
-                    stamp.updated_at,
-                    stamp.origin_device_id,
-                ),
-            )
-            ev = self._append_event(
-                kind="track.vendor_id.set",
-                stable_id=stable_id,
-                payload={"vendor": vendor, "vendor_id": vendor_id},
-                ts=now,
-            )
-            self.bus.publish(ev)
-
-    # --- wrapped fields --------------------------------------------
-
-    def set_field(
-        self,
-        stable_id: str,
-        field_name: str,
-        value: Any,
-        *,
-        source: Source,
-        modified_at: str,
-        confidence: float | None = None,
-    ) -> bool:
-        """Set a provenance-wrapped field. Returns True on change.
-
-        The DB mutation and the bus publish are ordered inside one outer
-        SAVEPOINT: if ``bus.publish`` raises, the mutation is rolled back so
-        subscribers and the ``track_fields`` row can never drift. This keeps
-        the durable log + in-process fanout invariant the module docstring
-        promises -- addresses Codex P05 finding on mutation/publish ordering.
-        """
-        with self._tx():
-            changed = _prov.write_field(
-                self._conn,
-                stable_id=stable_id,
-                field_name=field_name,
-                value=value,
-                source=source,
-                modified_at=modified_at,
-                confidence=confidence,
-                actor=self._actor,
-                now=self._now_iso(),
-                machine_id=self.machine_id(),
-            )
-            if changed:
-                payload: dict[str, Any] = {
-                    "field_name": field_name,
-                    "value": value,
-                    "source": source,
-                    "modified_at": modified_at,
-                }
-                if confidence is not None:
-                    payload["confidence"] = confidence
-                # Publish inside the SAVEPOINT: a raising bus propagates out
-                # of ``_tx`` and triggers ROLLBACK TO, reverting write_field's
-                # already-RELEASEd inner SAVEPOINT.
-                self.bus.publish(
-                    Event(
-                        ts=self._now_iso(),
-                        kind="track.field.set",
-                        stable_id=stable_id,
-                        payload=payload,
-                        actor=self._actor,
-                    )
-                )
-        return changed
-
-    # --- playlists --------------------------------------------------
-
-    def insert_playlist(
-        self,
-        *,
-        playlist_id: str,
-        name: str,
-        vendor: str,
-        vendor_pl_id: str,
-    ) -> bool:
-        """Insert, rename, or reactivate a playlist. Returns True on change.
-
-        A ``playlist_id`` is deterministic (``compute_playlist_id``), so a
-        vendor re-ingest can land on a row this machine previously
-        soft-deleted (ADR 08 point 5): a rekordbox playlist deleted locally
-        and still present on the next scan must come back, not stay a
-        permanent tombstone. Reactivation is therefore keyed on
-        ``deleted_at`` being set, not only on the name having changed --
-        replaying an identical name onto a tombstoned row must still clear
-        it.
-        """
-        now = self._now_iso()
-        with self._tx() as conn:
-            existing = conn.execute(
-                "SELECT name, deleted_at FROM playlists WHERE playlist_id = ?",
-                (playlist_id,),
-            ).fetchone()
-            if existing is None:
-                stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
-                conn.execute(
-                    "INSERT INTO playlists(playlist_id, name, vendor, vendor_pl_id, "
-                    "created_at, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        playlist_id,
-                        name,
-                        vendor,
-                        vendor_pl_id,
-                        now,
-                        stamp.updated_at,
-                        stamp.origin_device_id,
-                    ),
-                )
-                kind = "playlist.insert"
-            elif existing[0] != name or existing[1] is not None:
-                reactivated = existing[1] is not None
-                revision = next_playlist_revision(conn, playlist_id, now)
-                stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), revision)
-                conn.execute(
-                    "UPDATE playlists SET name=?, updated_at=?, "
-                    "origin_device_id=?, deleted_at=NULL WHERE playlist_id=?",
-                    (name, stamp.updated_at, stamp.origin_device_id, playlist_id),
-                )
-                kind = "playlist.undelete" if reactivated else "playlist.update"
-            else:
-                return False
-            ev = self._append_event(
-                kind=kind,
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "vendor": vendor,
-                    "vendor_pl_id": vendor_pl_id,
-                    "name": name,
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
-        return True
-
-    def set_playlist_memberships(
-        self, playlist_id: str, stable_ids: list[str]
-    ) -> None:
-        """Full-replace playlist memberships. Positions become 0..N-1.
-
-        Also bumps ``playlists.updated_at`` so row-version etags derived
-        from it (webui optimistic concurrency) observe membership-only
-        changes, not just renames. That bump is load-bearing for sync too:
-        membership rows travel attached to their playlist row (ADR 04 c5), so
-        a membership edit that left ``playlists.updated_at`` alone would
-        never propagate and would strand the fleet on a permanent digest
-        mismatch (round 1 finding 5b).
-        """
-        transaction = self._tx() if self._conn.in_transaction else immediate_transaction(self._conn)
-        with transaction as conn:
-            now = next_playlist_revision(conn, playlist_id, self._now_iso())
-            conn.execute(
-                "DELETE FROM playlist_memberships WHERE playlist_id = ?",
-                (playlist_id,),
-            )
-            for position, sid in enumerate(stable_ids):
-                member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
-                )
-                conn.execute(
-                    "INSERT INTO playlist_memberships(playlist_id, stable_id, "
-                    "position, updated_at, origin_device_id) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        playlist_id,
-                        sid,
-                        position,
-                        member_stamp.updated_at,
-                        member_stamp.origin_device_id,
-                    ),
-                )
-            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
-            conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
-                (stamp.updated_at, stamp.origin_device_id, playlist_id),
-            )
-            ev = self._append_event(
-                kind="playlist.memberships.set",
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "count": len(stable_ids),
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
-
-    def delete_playlist(self, playlist_id: str) -> bool:
-        """Tombstone a playlist and its memberships. Returns True when a live row existed.
-
-        ADR 08 point 5 (round 1 finding 4a): a hard ``DELETE`` on a synced
-        table has no way to tell a peer a row is gone -- a spoke that had
-        already pushed the row finds nothing left to offer, and a hub that
-        gets hard-deleted under it 409s every future pull permanently
-        (``hub_changes_since`` refuses to serve a changelog entry for a row
-        that no longer exists). Stamping ``deleted_at`` instead keeps the row
-        alive for the merge and lets deletion itself propagate as an
-        ordinary LWW-losable write.
-
-        Memberships are stamped explicitly rather than left for an
-        ``ON DELETE CASCADE`` (there is no cascade to leave -- this is an
-        ``UPDATE``, not a ``DELETE``) so each membership row's tombstone gets
-        its own ``local_changelog`` entry and travels with the playlist
-        bundle (``apps.sync_hub.engine._replace_members`` reads whatever
-        currently sits in the table, deleted or not). Already-tombstoned
-        memberships are left alone -- re-stamping them would move their
-        ``updated_at`` without a real change. Appends one ``playlist.delete``
-        event on success.
-        """
-        with self._tx() as conn:
-            existing = conn.execute(
-                "SELECT name, vendor, vendor_pl_id FROM playlists "
-                "WHERE playlist_id = ? AND deleted_at IS NULL",
-                (playlist_id,),
-            ).fetchone()
-            if existing is None:
-                return False
-            # Advance past the row's own stored updated_at, the same guard
-            # insert_playlist and set_playlist_memberships use: a frozen test
-            # clock (or two writes in the same wall-clock tick) must not
-            # stamp the tombstone with a sort key equal to what is already
-            # stored, which the strict LWW "<=" comparison would then never
-            # let this delete overwrite on its own hub.
-            now = next_playlist_revision(conn, playlist_id, self._now_iso())
-            member_positions = [
-                row[0]
-                for row in conn.execute(
-                    "SELECT position FROM playlist_memberships "
-                    "WHERE playlist_id = ? AND deleted_at IS NULL",
-                    (playlist_id,),
-                )
-            ]
-            for position in member_positions:
-                member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
-                )
-                conn.execute(
-                    "UPDATE playlist_memberships SET deleted_at=?, updated_at=?, "
-                    "origin_device_id=? WHERE playlist_id=? AND position=?",
-                    (
-                        member_stamp.updated_at,
-                        member_stamp.updated_at,
-                        member_stamp.origin_device_id,
-                        playlist_id,
-                        position,
-                    ),
-                )
-            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
-            conn.execute(
-                "UPDATE playlists SET updated_at=?, origin_device_id=?, "
-                "deleted_at=? WHERE playlist_id=?",
-                (stamp.updated_at, stamp.origin_device_id, stamp.updated_at, playlist_id),
-            )
-            ev = self._append_event(
-                kind="playlist.delete",
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "name": existing[0],
-                    "vendor": existing[1],
-                    "vendor_pl_id": existing[2],
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
-        return True
 
     # --- adapters ---------------------------------------------------
 
