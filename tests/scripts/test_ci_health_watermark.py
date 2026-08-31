@@ -243,6 +243,38 @@ def test_busy_prior_day_past_the_bound_is_overlap_not_a_gap(monkeypatch):
     assert outcome.note is None
 
 
+def test_rerun_of_a_run_older_than_the_lookback_is_swept_from_page_one(monkeypatch):
+    """If the created filter alone chose candidates
+    then a rerun keeping its original created date would slip past the catch-up without
+    even a truncation note, or broken.
+    """
+
+    def _page_one_run(run_id: int, *, updated_offset_minutes: float) -> mod.Run:
+        return mod.Run(
+            run_id=run_id,
+            name="CI",
+            event="push",
+            head_branch="main",
+            conclusion="success",
+            started_at=WATERMARK - timedelta(days=9),
+            updated_at=WATERMARK + timedelta(minutes=updated_offset_minutes),
+        )
+
+    listing = [_run_item(7070, created=_stamp(1), updated=_stamp(2))]
+    fake = _FakeGh([listing])
+    monkeypatch.setattr(mod, "_gh_api_json", fake)
+    page_one = [
+        _page_one_run(7070, updated_offset_minutes=2),  # already listed: must not double
+        _page_one_run(6060, updated_offset_minutes=5),  # the old-created rerun
+        _page_one_run(5050, updated_offset_minutes=-60 * 24 * 9),  # stale: must not join
+    ]
+
+    outcome = mod._fetch_jobs(page_one, [_ci_record(WATERMARK_TS, 1)])
+
+    assert {job.job_id for job in outcome.jobs} == {7070, 6060}
+    assert len(fake.job_paths) == 2
+
+
 def test_boundary_run_is_refetched_and_deduped_by_job_id(monkeypatch, tmp_path):
     """If the inclusive watermark boundary double-recorded its own run
     then the median would describe the polling cadence, not the build, or broken.

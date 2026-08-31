@@ -77,6 +77,10 @@ MINI-PRD
          [if] a run was created before the watermark but completed after it
               [then] it is included - the created filter only bounds the listing, the
               watermark comparison is on updated_at (*)
+         [if] a run created before the lookback is rerun after the watermark
+              [then] it is still swept up when it appears in the checker's page-1 runs (*)
+         [if] the catch-up appended an older-completed job after a newer record
+              [then] check 5 windows in ts order, never append order (*)
 
 -Claude
 """
@@ -288,8 +292,9 @@ def _fetch_jobs(runs: list[Run], existing: list[Metric]) -> JobFetchOutcome:
 
     Two paths. With no CI records in the store this is a fresh machine, so it seeds from the
     newest JOB_FETCH_BOOTSTRAP_RUN_COUNT of the runs checks 1-4 already fetched - no extra
-    listing calls, and history starts accruing from now. With a watermark it ignores those
-    runs entirely and does its own filtered listing, because the passed-in runs are one page
+    listing calls, and history starts accruing from now. With a watermark it does its own
+    filtered listing (then unions in any passed-in run updated since the watermark that the
+    created filter missed, see below), because the passed-in runs are one page
     of the NEWEST completed runs and a burst can push a poll's whole backlog off it: on
     Sun 31 Aug 2026 this repo completed 391 runs between 09:00 and 12:10 UTC, so a fixed
     newest-10 window against a 4-hourly poll silently dropped most of them.
@@ -311,6 +316,16 @@ def _fetch_jobs(runs: list[Run], existing: list[Metric]) -> JobFetchOutcome:
         candidates, note = runs[:JOB_FETCH_BOOTSTRAP_RUN_COUNT], None
     else:
         candidates, note = _fetch_completed_runs_since(watermark)
+        # A rerun keeps its run's ORIGINAL created date, so a rerun of a run older than
+        # the created lookback is invisible to the filtered listing above. The page-1 runs
+        # checks 1-4 already fetched cost zero extra API calls and cover the likely case,
+        # a recently rerun older run still among the newest 100. A rerun older than both
+        # windows is an accepted miss: rare, manual, and it re-measures steps the sample
+        # already describes.
+        listed = {run.run_id for run in candidates}
+        candidates += [
+            run for run in runs if run.updated_at >= watermark and run.run_id not in listed
+        ]
 
     jobs: list[Job] = []
     for run in candidates:
@@ -449,6 +464,13 @@ def _check_iteration_speed(metrics: list[Metric]) -> CheckResult:
     by_step: dict[str, list[Metric]] = {}
     for metric in metrics:
         by_step.setdefault(metric.step, []).append(metric)
+    # The store is append-ordered, not time-ordered: the watermark catch-up can append a
+    # job that completed BEFORE an already-recorded record (a run straddling the watermark),
+    # and 'newest' must mean newest by completion, not newest by append. Both writers stamp
+    # ts in the same %Y-%m-%dT%H:%M:%SZ shape, so the lexicographic sort is chronological,
+    # and it is stable, so records sharing a ts keep their append order.
+    for records in by_step.values():
+        records.sort(key=lambda metric: metric.ts)
 
     factor = ITERATION_SPEED_REGRESSION_FACTOR
     recent_window = ITERATION_SPEED_RECENT_WINDOW

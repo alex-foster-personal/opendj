@@ -152,6 +152,29 @@ def test_fast_steps_are_never_judged():
     assert result.classification == "insufficient-data"
 
 
+def test_check_windows_in_ts_order_not_append_order():
+    """If check 5 trusted append order
+    then a catch-up that appended an older-completed job after a newer record would judge
+    stale samples as the newest ones, or broken.
+    """
+
+    def _at(minute: int, seconds: float) -> mod.Metric:
+        return mod.Metric(
+            ts=f"2026-08-20T00:{minute:02d}:00Z",
+            step="ci:CI/pytest",
+            seconds=seconds,
+            source="ci",
+            job_id=None,
+        )
+
+    slow_newest = [_at(50 + index, 40.0) for index in range(mod.ITERATION_SPEED_RECENT_WINDOW)]
+    baseline = [_at(index, 20.0) for index in range(20)]
+    # Append order puts the newest-by-ts records FIRST, as a straddling-run catch-up can.
+    result = mod._check_iteration_speed([*slow_newest, *baseline])
+    assert not result.ok
+    assert "2.00x" in result.detail
+
+
 def test_median_window_ignores_records_older_than_the_window():
     """If more than ITERATION_SPEED_MEDIAN_WINDOW records fed the median
     then ancient timings would anchor it forever, or broken.
