@@ -43,6 +43,8 @@ Acceptance criteria, one test each:
   each other -- broken.
 - if a second ``provenance.write_field`` edit does not converge, the writers
   are not stamping and ``track_fields`` sync is dead -- broken.
+- if a membership write in the changelog is offered as itself rather than as
+  its playlist row, the push raises on a table that is not pushable -- broken.
 """
 from __future__ import annotations
 
@@ -55,9 +57,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.state import locations, provenance
+from apps.shared.state import locations, provenance, sync_stamp
 from apps.shared.state import schema as state_schema
-from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, protocol, service
 from tests.cloudsync.test_hub_sync import (
     _DEV_A,
@@ -66,13 +67,16 @@ from tests.cloudsync.test_hub_sync import (
     _T1,
     _T2,
     _T3,
-    _TestClientTransport,
+    _insert_playlist,
     _insert_track,
     _log,
+    _members,
     _open,
     _seed_common_track,
+    _set_members,
     _set_track_title,
     _sync,
+    _TestClientTransport,
     _track_title,
 )
 
@@ -426,6 +430,58 @@ def test_an_unstamped_edit_is_never_silently_offered(
 
     with pytest.raises(client.SyncDigestMismatch):
         _sync(spoke_a, hub, "spoke-a")
+
+
+def test_a_membership_write_is_offered_as_its_playlist_row(
+    hub: _TestClientTransport, spoke_a: Path, spoke_b: Path
+) -> None:
+    """A logged membership row is pushable only through its parent.
+
+    ``StateWriter.set_playlist_memberships`` stamps and logs the membership
+    rows it touches -- it must, or the fence cannot see the write -- but
+    ``playlist_memberships`` is not a pushable table (ADR 04 c5), so the
+    push resolves each entry back to the ``playlists`` row that carries the
+    whole bundle. Offering it as itself raises ``'playlist_memberships' is
+    not in the sync set`` and the spoke stops syncing entirely.
+    """
+    _seed_common_track((spoke_a, spoke_b), "trk-1")
+    _seed_common_track((spoke_a, spoke_b), "trk-2")
+    conn_a = _open(spoke_a)
+    try:
+        _insert_playlist(conn_a, "pl-1", name="OLTF", updated_at=_T1, origin=_DEV_A)
+        _set_members(conn_a, "pl-1", ("trk-1",), updated_at=_T1, origin=_DEV_A)
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+    _sync(spoke_b, hub, "spoke-b")
+
+    conn_a = _open(spoke_a)
+    try:
+        # Only the membership rows are logged; the playlist row is stamped in
+        # place, exactly as the writer leaves it.
+        conn_a.execute("DELETE FROM playlist_memberships WHERE playlist_id = 'pl-1'")
+        stamped = _log(conn_a, "playlist_memberships", ("pl-1", 0), _DEV_A, _T2)
+        conn_a.execute(
+            "INSERT INTO playlist_memberships("
+            "playlist_id, stable_id, position, updated_at, origin_device_id) "
+            "VALUES ('pl-1', 'trk-2', 0, ?, ?)",
+            (stamped, _DEV_A),
+        )
+        conn_a.execute(
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+            "WHERE playlist_id = 'pl-1'",
+            (stamped, _DEV_A),
+        )
+    finally:
+        conn_a.close()
+
+    assert _sync(spoke_a, hub, "spoke-a").accepted == 1
+    _sync(spoke_b, hub, "spoke-b")
+    conn_b = _open(spoke_b)
+    try:
+        assert _members(conn_b, "pl-1") == ("trk-2",)
+    finally:
+        conn_b.close()
 
 
 # ----- finding 2: timestamp normalization ----------------------------------

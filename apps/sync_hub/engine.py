@@ -303,13 +303,33 @@ def _changelog_rows(
     change carrying its newest content -- the same thing LWW would have
     converged on, at a fraction of the payload.
 
+    A ``playlist_memberships`` entry resolves to its ``playlists`` row. A
+    writer that edits membership logs the membership rows it touched -- it
+    has to, or the fence could not see the write at all -- but membership
+    never travels on its own (ADR 04 c5): the parent row carries the whole
+    bundle. Resolving it here rather than at the writer keeps that rule in
+    one place, and it holds even for a writer that forgot to bump
+    ``playlists.updated_at`` (ADR 08 point 8b, still an open question).
+
     Rows are returned in ``_APPLY_ORDER`` (parents before children), which
     the batching in :mod:`apps.sync_hub.client` depends on: a chunk boundary
     must never put a child row in an earlier request than its parent.
     """
     latest: dict[tuple[str, str], int] = {}
     for seq, table_name, row_pk in entries:
-        latest[(str(table_name), str(row_pk))] = int(seq)
+        table = str(table_name)
+        key = str(row_pk)
+        if table == MEMBERSHIP_TABLE:
+            playlist_id = protocol.decode_row_pk(key)[0]
+            if playlist_id is None:
+                raise SyncApplyError(
+                    f"{changelog} has a {MEMBERSHIP_TABLE} entry with a NULL "
+                    f"playlist_id ({key}); it cannot name the row that carries "
+                    f"it."
+                )
+            table = "playlists"
+            key = protocol.encode_row_pk((playlist_id,))
+        latest[(table, key)] = int(seq)
 
     changes: list[RowChange] = []
     for table_name, row_pk in latest:

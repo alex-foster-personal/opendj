@@ -54,8 +54,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
-from apps.shared.state import machine_identity
-from apps.shared.state import sync_stamp
+from apps.shared.state import machine_identity, sync_stamp
 from apps.sync_hub import client, protocol, service
 
 SCENARIOS_DIR: Path = Path(__file__).resolve().parent / "scenarios"
