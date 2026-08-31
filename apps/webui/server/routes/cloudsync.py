@@ -287,11 +287,20 @@ def _require_playlist(conn: sqlite3.Connection, playlist_id: str) -> None:
 
 
 # ----------------------------------------------------------- machines
+#
+# ``Depends(...)`` in a parameter default below (every route in this file) is
+# the standard FastAPI DI idiom; ruff's B008 rule flags any function call in
+# a default and does not special-case it. Each occurrence carries a targeted
+# per-line lint suppression rather than a repo-wide ruff config change: the
+# identical pattern already sits unsuppressed as accepted debt in 23 other
+# route modules (81 hits of this same rule total, round 1 quality-gate
+# output), so a config change belongs to whichever lane owns pyproject.toml's
+# ruff block, not this one.
 
 @router.get("/machines", response_model=list[MachineOut])
 def list_machines(
     request: Request,
-    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),
+    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> list[MachineOut]:
     register_machine(conn, data_dir=_data_dir(request))
     rows = conn.execute(
@@ -306,7 +315,7 @@ def list_machines(
 @router.get("/policies", response_model=list[SyncPolicyOut])
 def list_policies(
     machine_id: str | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_cloudsync_conn),
+    conn: sqlite3.Connection = Depends(get_cloudsync_conn),  # noqa: B008
 ) -> list[SyncPolicyOut]:
     if not _table_exists(conn, "sync_policies"):
         return []
@@ -327,7 +336,7 @@ def list_policies(
 def put_policy(
     body: SyncPolicyPut,
     request: Request,
-    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),
+    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> SyncPolicyOut:
     _require_machine(conn, body.machine_id)
     now = _now_iso()
@@ -364,7 +373,7 @@ def put_policy(
 @router.get("/playlist-pins", response_model=list[PlaylistPinOut])
 def list_playlist_pins(
     machine_id: str | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_cloudsync_conn),
+    conn: sqlite3.Connection = Depends(get_cloudsync_conn),  # noqa: B008
 ) -> list[PlaylistPinOut]:
     if not _table_exists(conn, "playlist_pins"):
         return []
@@ -388,7 +397,7 @@ def list_playlist_pins(
 def put_playlist_pin(
     body: PlaylistPinPut,
     request: Request,
-    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),
+    conn: sqlite3.Connection = Depends(get_cloudsync_write_conn),  # noqa: B008
 ) -> PlaylistPinOut:
     _require_machine(conn, body.machine_id)
     _require_playlist(conn, body.playlist_id)
@@ -469,7 +478,7 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
 
 @router.get("/overview", response_model=OverviewOut)
 def get_overview(
-    conn: sqlite3.Connection = Depends(get_cloudsync_conn),
+    conn: sqlite3.Connection = Depends(get_cloudsync_conn),  # noqa: B008
 ) -> OverviewOut:
     total_row = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()
     total_tracks = int(total_row[0]) if total_row else 0
