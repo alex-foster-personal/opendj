@@ -828,6 +828,63 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		}
 	});
 
+	test('the deck critical path carries no stem work, and settles it afterwards', async () => {
+		// LAZY-STEMS, in WebKit against the production build. the maintainer, in-app
+		// feedback 2026-08-31T14:50:06Z: "stems and other secondary items should
+		// be lazy loaded". This is the behavioural half of
+		// tests/unit/deck-lazy-stems.test.mjs (which is structural).
+		//
+		// The fixture library carries no stem bundles, so the settled answer here
+		// is `unavailable`. That is the point: the deck must reach a PLAYABLE
+		// state without ever having asked, and only then find out.
+		await _dblClickLoad(page, 0);
+		await _waitForDeckLoaded(page, 1);
+
+		const state = await _query(page);
+		const stages = state.decks[1].last_load_stages;
+		expect(stages, 'deck 1 reported no load stages').not.toBeNull();
+		// Each of these is a stage a DJ used to wait through before the deck
+		// could play. Any one reappearing is the regression.
+		for (const deferred of [
+			'probeStem',
+			'fetchStems',
+			'decodeStems',
+			'stemProcessorCreate'
+		]) {
+			expect(
+				stages?.[deferred],
+				`${deferred} is back in the deck-load critical path`
+			).toBeUndefined();
+		}
+		// The mix path really did run: the deck is playable, not merely fast.
+		expect(stages?.decodeMix).toBeGreaterThanOrEqual(0);
+		expect(stages?.stretchCreate).toBeGreaterThanOrEqual(0);
+		expect(state.decks[1].processor_error).toBeNull();
+
+		// The secondary load settles off the critical path rather than hanging
+		// in `loading` for ever.
+		await page.waitForFunction(
+			() => window.musicDjToolsPerformance?.query().decks[1].stems.status !== 'loading',
+			undefined,
+			{ timeout: 30_000 }
+		);
+		const settled = await _query(page);
+		expect(['unavailable', 'ready', 'error']).toContain(settled.decks[1].stems.status);
+
+		// AGENT-NATIVE PARITY (house rule): the bottom-left badge and the IPC
+		// must never disagree about the same fact. A settled non-error deck
+		// shows no badge; whenever a badge IS shown its data-stem-load must be
+		// exactly the status the IPC reports.
+		const badge = page.locator(
+			'section.rb-deck[data-deck="1"] [data-testid="deck-secondary-load"]'
+		);
+		if (settled.decks[1].stems.status === 'error') {
+			await expect(badge).toHaveAttribute('data-stem-load', 'error');
+		} else {
+			await expect(badge).toHaveCount(0);
+		}
+	});
+
 	test('the wave row exposes the decoded duration of the loaded audio', async () => {
 		// The fixture has no rekordbox ANLZ, so there are no waveform BANDS to
 		// paint (see the file header). What the wave row still derives from the
