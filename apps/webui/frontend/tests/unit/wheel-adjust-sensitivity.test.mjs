@@ -161,6 +161,16 @@ describe('scaledWheelStep', () => {
 		assert.equal(mod.WHEEL_SENSITIVITY.mouse, 1);
 		assert.equal(mod.WHEEL_TRACKPAD_EVENTS_PER_DETENT, 3);
 	});
+
+	it('derives the multiplier from the one named knob, not a second literal', () => {
+		// The events-per-detent constant is the single number the maintainer retunes. If
+		// the multiplier ever stops being its reciprocal there are two sources
+		// of truth and changing the knob silently does nothing.
+		assert.equal(
+			mod.WHEEL_SENSITIVITY.trackpad,
+			1 / mod.WHEEL_TRACKPAD_EVENTS_PER_DETENT
+		);
+	});
 });
 
 //-----------------------------------------------------------------------------
@@ -300,5 +310,15 @@ describe('wheel sensitivity storage policy', () => {
 		installFakeWindow();
 		const fresh = await loadTypeScriptModule('src/lib/rb/wheel-adjust.ts');
 		assert.deepEqual(fresh.wheelSensitivity(), { ...fresh.WHEEL_SENSITIVITY });
+	});
+
+	it('survives a window with no localStorage at all', async () => {
+		// Real state, not a swallowed failure: SSR, a privacy mode that removes
+		// the API, and any consumer module unit-tested without a storage fake.
+		// Importing must not throw and must land on the declared defaults.
+		globalThis.window = {};
+		const fresh = await loadTypeScriptModule('src/lib/rb/wheel-adjust.ts');
+		assert.deepEqual(fresh.wheelSensitivity(), { ...fresh.WHEEL_SENSITIVITY });
+		installFakeWindow();
 	});
 });

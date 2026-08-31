@@ -67,28 +67,33 @@ export const WHEEL_STEP = {
 export type WheelInputKind = 'mouse' | 'trackpad';
 
 /**
- * Per-input-kind multiplier applied to EVERY control's wheel step. This is the
- * single global sensitivity knob: change a number here and all dials, faders,
- * the crossfader, the pitch faders and the headphone controls follow.
+ * THE SENSITIVITY KNOB. Trackpad wheel events that add up to one mouse detent's
+ * worth of travel. Change this one number and every wheel-adjustable control
+ * retunes together: all dials, the channel level faders, the crossfader, the
+ * pitch faders, the headphone mix/level, and the shift-selected dial driven by
+ * the page-level wheel in knob-control.
  *
- * mouse = 1 is the reference: one detent, one full step, unchanged behavior.
- *
- * trackpad = 1/3 comes from the maintainer's own calibration on the Air, Mon 31 Aug 2026:
- * "currently should be I think 3x less sensitive for trackpads". It is his
- * measured feel rather than a derived constant, which is why it lives here as
- * a one-line change instead of being buried in the handler.
+ * Derivation: the wheel handlers are direction-only, so one wheel EVENT moves a
+ * control by one full step. A notched mouse wheel emits one event per physical
+ * detent, which is the assumption that was built for. A macOS trackpad emits a
+ * dense burst of events for a single two-finger movement, so the same gesture
+ * walked the control several steps and read as hypersensitive. the maintainer calibrated
+ * the ratio by hand on the Air, Mon 31 Aug 2026: "currently should be I think
+ * 3x less sensitive for trackpads". It is a feel number rather than a derived
+ * one, so it lives here as a single named constant instead of being buried in
+ * a handler.
+ */
+export const WHEEL_TRACKPAD_EVENTS_PER_DETENT = 3;
+
+/**
+ * Per-input-kind multiplier applied to EVERY control's wheel step, derived from
+ * the knob above. mouse = 1 is the reference: one detent, one full step, so
+ * mouse behavior is exactly what it was before this seam existed.
  */
 export const WHEEL_SENSITIVITY: Readonly<Record<WheelInputKind, number>> = {
 	mouse: 1,
-	trackpad: 1 / 3
+	trackpad: 1 / WHEEL_TRACKPAD_EVENTS_PER_DETENT
 };
-
-/**
- * Trackpad wheel events that make up one mouse detent's worth of travel, i.e.
- * the reciprocal of WHEEL_SENSITIVITY.trackpad. Declared so the equivalence
- * test states the gesture it is comparing instead of hard-coding a bare 3.
- */
-export const WHEEL_TRACKPAD_EVENTS_PER_DETENT = Math.round(1 / WHEEL_SENSITIVITY.trackpad);
 
 /** Upper sanity bound for a configured factor. A typo like 300 would make
  * every control unusable in one scroll, so it throws instead. */
@@ -156,8 +161,12 @@ export function detectWheelInputKind(event: WheelEvent): WheelInputKind {
 // sensitivity state
 //-----------------------------------------------------------------------------
 
+/** null means "there is no persistence here", which is a real state during SSR
+ * and in unit tests rather than a swallowed failure: the caller falls back to
+ * the declared defaults and says so. */
 function _storage(): Storage | null {
-	return typeof window === 'undefined' ? null : window.localStorage;
+	if (typeof window === 'undefined') return null;
+	return window.localStorage ?? null;
 }
 
 function _assertFactor(kind: WheelInputKind, factor: number): void {
