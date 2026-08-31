@@ -191,7 +191,7 @@ Prerequisites for `just dmg` (first successful end-to-end build in PR #510, Fri 
 - Clean working tree. Release builds are cut from clean trees only; any dirty file aborts.
 - Lane label: plain `just dmg` builds the real product (Open DJ). A lane build requires double intent: `MDT_LANE_LABEL=X` in the env AND `just dmg X` together (OPS-08; a lone env var or a lone recipe arg is refused).
 - arm64 only (v1 decision). The artifact does not run on Intel Macs.
-- Unsigned until `MDT_MACOS_SIGNING_IDENTITY` (Developer ID) plus `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` (an `xcrun notarytool store-credentials` profile) are set in the env. Until then a downloaded image arrives quarantined; testers must run `xattr -dr com.apple.quarantine "/Applications/Open DJ.app"` after copying.
+- Signing is required, not optional. `MDT_MACOS_SIGNING_IDENTITY` (a Developer ID Application identity) and `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` (an `xcrun notarytool store-credentials` profile) must both be set, or the build is refused before it starts. The one deliberate way past that is `MDT_SHIP_UNSIGNED=1`, which builds an unsigned dev image and says so loudly; a downloaded unsigned image arrives quarantined, and `ship_dmg.sh` clears the attribute on install for that case only. Setting `MDT_SHIP_UNSIGNED=1` together with an identity is refused as contradictory. This is the Developer ID direct-download path; `scripts/ship_appstore.sh` is a separate path with a different certificate off the same Team ID.
 
 ## Safety rail updates in the v1.0 ship window
 

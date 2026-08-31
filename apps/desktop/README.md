@@ -109,12 +109,12 @@ tracked separately and is not this shell's work.
 
 ### Engine origin
 
-| Source | When | Wins over |
-| --- | --- | --- |
-| `?engine=` query param | tests | everything |
-| `OPENDJ_ENGINE_ORIGIN` env var | runtime, road-tests | the baked default |
-| `OPENDJ_DEFAULT_ENGINE_ORIGIN` | compile time, via `just dmg` | the constant |
-| `http://127.0.0.1:8685` | shipped default | -- |
+| Source                         | When                         | Wins over         |
+| ------------------------------ | ---------------------------- | ----------------- |
+| `?engine=` query param         | tests                        | everything        |
+| `OPENDJ_ENGINE_ORIGIN` env var | runtime, road-tests          | the baked default |
+| `OPENDJ_DEFAULT_ENGINE_ORIGIN` | compile time, via `just dmg` | the constant      |
+| `http://127.0.0.1:8685`        | shipped default              | --                |
 
 Non-loopback or malformed values are refused, never silently replaced.
 
@@ -193,33 +193,76 @@ checkout:
 The window title is `productName`, so the overlay labels the window with no
 second place to edit.
 
-### Signing: parameterized now, unsigned today
+### Signing and notarization
 
-Signing is wired but switched off, because this Mac has zero codesigning
-identities (`security find-identity -v -p codesigning` -> 0 valid) while
-Developer ID enrollment is in motion. When the cert lands, only `.env`
-changes -- no code edit:
+This is the **Developer ID** path: a dmg a tester downloads and opens by
+double-click, cleared by Gatekeeper because it is notarized and stapled. It
+is not the Mac App Store path. `scripts/ship_appstore.sh` uses a Mac App
+Distribution certificate, a provisioning profile and sandbox entitlements,
+off the **same Team ID**. Same account, different certificates, and they are
+not interchangeable.
+
+Two values, never committed:
 
 - `MDT_MACOS_SIGNING_IDENTITY` -> exported as `APPLE_SIGNING_IDENTITY`,
   which tauri-cli reads as the override for `bundle.macOS.signingIdentity`
   (verified in tauri-cli 2.11.4 `interface/rust.rs`).
 - `MDT_MACOS_NOTARY_KEYCHAIN_PROFILE` -> an `xcrun notarytool
-  store-credentials` profile name. Tauri's bundler **cannot** consume one:
+store-credentials` profile name. Tauri's bundler **cannot** consume one:
   it accepts only `APPLE_API_*` or `APPLE_ID`/`APPLE_PASSWORD`/
   `APPLE_TEAM_ID` (verified in tauri-bundler 2.9.4), so `just dmg` runs
   `notarytool submit --wait` then `stapler staple` itself.
 
-Neither value is ever committed. Setting the notary profile without an
-identity is refused before the build starts, because notarizing an unsigned
-app is impossible. A signing identity that does not resolve fails the
-build; it never silently degrades to unsigned. The recipe reports the
-`Authority=` actually found on the artifact, not the one requested.
+**They are all-or-nothing, and refusal is the default.** Either both are set,
+or the build stops. Setting one without the other is refused before the build
+starts: a notary profile with no identity because notarizing an unsigned app
+is impossible, and an identity with no notary profile because a Developer ID
+signature that is never notarized is still refused by Gatekeeper on download,
+so it buys nothing. Neither set at all is also refused, and the error prints
+the identities that do exist on the machine.
 
-Until then: `codesign` reports `adhoc, linker-signed` with `Sealed
-Resources=none`, and `spctl -a` already rejects the bundle on the machine
+`MDT_SHIP_UNSIGNED=1` is the single deliberate way to build unsigned. It
+prints a loud warning block, and it is refused if a signing identity is also
+set, because that combination is contradictory intent rather than something
+to guess at.
+
+#### Where the signing happens, and why it is in three places
+
+The app carries a relocatable CPython under `Contents/Resources/payload` --
+91 Mach-O files including the interpreter. Tauri's bundler signs the `.app`
+but does not walk into a resource directory, so those files have to be signed
+before the bundle is sealed around them. `scripts/sign_macos_developer_id.sh`
+holds each stage and `just dmg` calls it at three points:
+
+1. `payload` -- after `build_engine_payload` stages the directory and before
+   `cargo tauri build` seals it. Every Mach-O gets `--options runtime`
+   (hardened runtime) and `--timestamp`. Skipping this is what makes the
+   notary service return `Invalid`.
+2. `verify-dmg-app` -- mounts the built image and asserts the `.app` really
+   carries a `Developer ID Application` authority, the hardened runtime flag
+   and a secure timestamp. These are checked here because the notary service
+   reports them slowly and confusingly, and because `cargo tauri build`
+   deletes the staged `.app` once the image exists, making the image the only
+   surviving copy.
+3. `dmg` then `notarize` -- signs the image itself (Gatekeeper assesses the
+   dmg a tester double-clicks, not only the app inside it), submits, staples,
+   and runs `spctl -a` to confirm the ticket takes.
+
+`notarytool submit --wait` **exits 0 on an `Invalid` status**, so the helper
+parses the status line and requires `Accepted`. Trusting the exit code alone
+ships un-notarized images that report success.
+
+#### Unsigned builds
+
+With `MDT_SHIP_UNSIGNED=1`: `codesign` reports `adhoc, linker-signed` with
+`Sealed Resources=none`, and `spctl -a` rejects the bundle on the machine
 that built it. A tester who downloads the dmg also gets
-`com.apple.quarantine`, so Finder refuses to open the app at all. A tester
-must run:
+`com.apple.quarantine`, so Finder refuses to open the app at all.
+`ship_dmg.sh` clears the attribute on install for this case only -- it probes
+the artifact with `stapler validate` rather than reading the build
+environment, because the artifact-reuse path can install a dmg built in a
+different shell under different variables. A tester installing by hand must
+run:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Open DJ.app"
