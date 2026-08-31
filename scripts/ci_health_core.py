@@ -7,7 +7,10 @@ way only:
     ci_health_core  <-  ci_health_metrics  <-  ci_health_check
 
 Nothing here talks to the iteration-metrics store or decides a verdict; it is the vocabulary
-the checks are written in plus the subprocess layer they read GitHub through.
+the checks are written in plus the subprocess layer they read GitHub through, including how
+one page of the actions/runs listing is validated and turned into Run objects. Both the
+checker (page 1, newest-first) and the metrics catch-up (paged, filtered by `created`) read
+that listing, so the parse lives here rather than in either caller.
 
 -Claude
 """
@@ -39,6 +42,15 @@ STALENESS_REMEDIATION = (
     "Pushes are landing but nothing runs. Check Actions is enabled for the repo "
     f"-> https://github.com/{REPO}/settings/actions"
 )
+
+# GitHub synthesizes 'dynamic' runs for Dependency Graph and Copilot submissions. They do
+# not consume Actions runners and they succeed even while every real workflow is refused,
+# so leaving them in would mask the exact billing signature R1 exists to catch.
+EXCLUDED_RUN_EVENTS = ("dynamic",)
+
+# GitHub's per_page ceiling for actions/runs. One page is one gh API call, whichever caller
+# asks for it.
+RUN_FETCH_COUNT = 100
 
 # ----- data ------------------------------------------------------------------------
 
@@ -124,3 +136,47 @@ def _parse_github_timestamp(value: str, field: str, run_id: object) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (AttributeError, ValueError) as exc:
         raise PreconditionError(f"run {run_id} has an unparseable {field}: {value!r}") from exc
+
+
+# ----- actions/runs listing --------------------------------------------------------
+
+
+def _completed_runs_page(payload: object) -> dict:
+    """Validate one actions/runs page body and hand it back as a mapping.
+
+    Separate from _parse_completed_runs because a paging caller also needs the RAW
+    workflow_runs length and the listing's total_count off the same body, and re-deriving
+    either from the filtered Run list would be a different number.
+    """
+    if not isinstance(payload, dict) or "workflow_runs" not in payload:
+        raise PreconditionError("actions/runs response has no workflow_runs key")
+    return payload
+
+
+def _parse_completed_runs(payload: object) -> list[Run]:
+    """One actions/runs page as Run objects, in whatever order GitHub returned them.
+
+    Deliberately does NOT sort: the checker wants newest-first by started_at, while the
+    metrics catch-up cares only about the set it has to fetch jobs for. Sorting here would
+    impose one caller's ordering on the other for no reason.
+    """
+    runs: list[Run] = []
+    for item in _completed_runs_page(payload)["workflow_runs"]:
+        event = str(item["event"])
+        if event in EXCLUDED_RUN_EVENTS:
+            continue
+        run_id = item["id"]
+        runs.append(
+            Run(
+                run_id=int(run_id),
+                name=str(item["name"]),
+                event=event,
+                head_branch=str(item["head_branch"]),
+                conclusion=str(item["conclusion"]),
+                started_at=_parse_github_timestamp(
+                    item["run_started_at"], "run_started_at", run_id
+                ),
+                updated_at=_parse_github_timestamp(item["updated_at"], "updated_at", run_id),
+            )
+        )
+    return runs

@@ -52,6 +52,36 @@ MINI-PRD
               [then] raise PreconditionError, never drop it quietly (*)
          [if] the same job is seen twice by the 4-hourly poll
               [then] it is recorded once - a median must describe the build, not the cadence (*)
+    R4 Watermark catch-up ........................................ done + ran + regression
+       Job recording is cursored on the store itself: the newest `source: ci` record's ts
+       is the watermark, and every run whose jobs completed at or after it is fetched, up
+       to JOB_FETCH_MAX_PAGES pages. This replaced a fixed newest-10-runs window whose
+       stated assumption ("10 covers the 4-hour window several times over") was false at
+       this repo's burst velocity - 391 runs completed between 09:00 and 12:10 UTC on
+       Sun 31 Aug 2026, so most of a burst scrolled past unrecorded.
+       Acceptance tests:
+         [if] a burst completed more runs since the watermark than the bootstrap count
+              [then] every one of them is job-fetched, none scrolls past unrecorded (*)
+         [if] no run has completed since the watermark
+              [then] zero per-run job API calls are made - a quiet window costs nothing (*)
+         [if] the backlog is deeper than JOB_FETCH_MAX_PAGES pages
+              [then] the bounded window is still recorded AND the permanent gap is named
+              in the log and in --json, never silently dropped and never fatal (*)
+         [if] a busy prior day fills the created lookback past the page bound and the
+              deepest page holds nothing newer than the watermark
+              [then] the note names the unexamined older-created remainder as a possible
+              long-runner loss - never a definite gap, and never silence (*)
+         [if] a `source: ci` record carries an unparseable ts
+              [then] raise PreconditionError naming it, never guess a watermark (*)
+         [if] a local `just` record is newer than every ci record
+              [then] the watermark is unmoved - local timings say nothing about GitHub (*)
+         [if] a run was created before the watermark but completed after it
+              [then] it is included - the created filter only bounds the listing, the
+              watermark comparison is on updated_at (*)
+         [if] a run created before the lookback is rerun after the watermark
+              [then] it is still swept up when it appears in the checker's page-1 runs (*)
+         [if] the catch-up appended an older-completed job after a newer record
+              [then] check 5 windows in ts order, never append order (*)
 
 -Claude
 """
@@ -61,17 +91,20 @@ from __future__ import annotations
 import json
 import statistics
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from scripts.ci_health_core import (
     EXIT_ITERATION_SPEED,
     EXIT_OK,
     REPO,
+    RUN_FETCH_COUNT,
     CheckResult,
     PreconditionError,
     Run,
+    _completed_runs_page,
     _gh_api_json,
+    _parse_completed_runs,
     _parse_github_timestamp,
 )
 
@@ -96,9 +129,22 @@ ITERATION_SPEED_MIN_SAMPLE = 5
 # 1.5x of a 2s step is 3s, which is runner scheduling jitter, not a regression. Only steps
 # whose median is genuinely slow enough to cost iteration time are judged.
 ITERATION_SPEED_MIN_SECONDS = 10.0
-# How many of the newest completed runs to pull job durations for. Each one costs a gh API
-# call, and the 4-hourly cadence means 10 covers the window several times over.
-JOB_FETCH_RUN_COUNT = 10
+# How many of the newest completed runs to seed from on a machine whose store holds no CI
+# records yet. Used ONLY on that first run: from then on the store's own newest CI record is
+# the watermark, and the catch-up below fetches everything completed since it.
+JOB_FETCH_BOOTSTRAP_RUN_COUNT = 10
+# Catch-up bound, in pages of RUN_FETCH_COUNT runs = 1000 runs per poll. Sizing evidence:
+# the observed peak on this repo was ~130 completed runs/hour (391 runs between 09:00 and
+# 12:10 UTC on Sun 31 Aug 2026, counted live via gh api), so a 4h poll window peaks around
+# ~520 runs. 10 pages is roughly 2x headroom over that peak. The cost of the bound being
+# generous is small: each page is ONE API call, while the expensive per-run job calls scale
+# with the actual backlog, not with this number, against a 5000/hour rate limit.
+JOB_FETCH_MAX_PAGES = 10
+# The actions/runs listing filters by `created`, but a run is swept up here by when its jobs
+# COMPLETED (updated_at), and a run can be created well before it completes. Looking back a
+# day from the watermark covers any plausible run duration in this repo with huge headroom.
+# Over-fetching is harmless: recording dedups by job_id.
+JOB_FETCH_CREATED_LOOKBACK_HOURS = 24
 CI_METRIC_SOURCE = "ci"
 CI_METRIC_HOST = "github-actions"
 # Jobs that never executed. GitHub still stamps them completed, and for a skipped job it
@@ -145,11 +191,130 @@ class Metric:
     job_id: int | None
 
 
+@dataclass
+class JobFetchOutcome:
+    """What one poll's job fetch produced, and whether the catch-up window was truncated."""
+
+    jobs: list[Job]
+    note: str | None
+
+
 # ----- CI job durations --------------------------------------------------------------
 
 
-def _fetch_jobs(runs: list[Run]) -> list[Job]:
-    """Completed jobs for the newest JOB_FETCH_RUN_COUNT runs, newest run first.
+def _ci_watermark(existing: list[Metric]) -> datetime | None:
+    """Newest completed_at already recorded from CI, or None on a store with no CI records.
+
+    This is the cursor the catch-up pages back to. Only `source: ci` records count: the
+    local `just` timings written by scripts/iteration_metrics.sh share the store but say
+    nothing about which GitHub jobs have been seen, and letting one of them set the
+    watermark would skip every CI run that completed before the maintainer's last local build.
+
+    A ci record whose ts will not parse raises rather than being skipped. Skipping it would
+    silently move the watermark backwards (or forwards) by an unknown amount, which is
+    exactly the quiet thinning of the sample this module exists to prevent.
+    """
+    stamps = [
+        _parse_github_timestamp(metric.ts, "ts", metric.job_id)
+        for metric in existing
+        if metric.source == CI_METRIC_SOURCE
+    ]
+    return max(stamps) if stamps else None
+
+
+def _fetch_completed_runs_since(watermark: datetime) -> tuple[list[Run], str | None]:
+    """Every completed run whose jobs finished at or after `watermark`, plus a gap note.
+
+    Pages the actions/runs listing filtered by `created`, oldest boundary set
+    JOB_FETCH_CREATED_LOOKBACK_HOURS before the watermark, and keeps the runs whose
+    updated_at is at or after it. The boundary is inclusive on purpose: the run that set the
+    watermark is re-fetched, and _record_job_metrics dedups its jobs by job_id, which is
+    cheaper than reasoning about sub-second ties.
+
+    Paging stops on the first page GitHub does not fill. Fullness is judged on the RAW
+    workflow_runs length, BEFORE EXCLUDED_RUN_EVENTS filtering: a full page of 100 that
+    filters down to 98 is still a full page, and treating it as short would end the
+    catch-up one page early and lose the backlog behind it.
+
+    WHY HITTING JOB_FETCH_MAX_PAGES RETURNS A NOTE RATHER THAN RAISING
+        Raising would abort all five checks with exit 10 on every poll. Worse, it would
+        never self-heal: the watermark only advances when recording happens, so a backlog
+        deep enough to trip the bound once would trip it forever, paging the maintainer every 4 hours
+        until someone hand-edited the store. Recording the bounded window advances the
+        watermark past the hole, names the hole once in the log and in --json, and moves on.
+        This module already has the precedent - see the 'insufficient-data is ok=True'
+        reasoning above: visible, not silent, is the bar, and fatal is not required to meet
+        it. A backlog that deep also means the watchdog itself was down for a long time,
+        which has already alerted through other paths.
+    """
+    lookback = (watermark - timedelta(hours=JOB_FETCH_CREATED_LOOKBACK_HOURS)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    fetched: list[Run] = []
+    note: str | None = None
+    raw_seen = 0
+    total_count = 0
+    page_runs: list[Run] = []
+    for page in range(1, JOB_FETCH_MAX_PAGES + 1):
+        body = _completed_runs_page(
+            _gh_api_json(
+                f"repos/{REPO}/actions/runs?status=completed&per_page={RUN_FETCH_COUNT}"
+                f"&page={page}&created=%3E%3D{lookback}"
+            )
+        )
+        total_count = int(body.get("total_count", 0))
+        raw_seen += len(body["workflow_runs"])
+        page_runs = _parse_completed_runs(body)
+        fetched.extend(page_runs)
+        if len(body["workflow_runs"]) < RUN_FETCH_COUNT:
+            break
+    else:
+        # An exhausted bound with runs left behind is ALWAYS noted, in one of two shapes.
+        # A remainder of zero (exactly JOB_FETCH_MAX_PAGES full pages) is complete, not a
+        # hole. Beyond that, the deepest page picks the wording, never silence: updated_at
+        # is non-monotonic in the listing's newest-created-first order, so even a deepest
+        # page with nothing at or after the watermark cannot PROVE the unseen remainder is
+        # stale - an older-created long-runner beyond the bound could have finished after
+        # the watermark. What it does change is what is honestly claimable: post-watermark
+        # runs on the deepest page mean the backlog itself was cut (a definite gap), while
+        # a stale deepest page means the remainder is mostly the already-recorded prior
+        # day swept in by the created lookback (a possible long-runner loss, named as
+        # exactly that - total_count cannot size a definite gap there).
+        remainder = total_count - raw_seen
+        if remainder > 0:
+            if any(run.updated_at >= watermark for run in page_runs):
+                note = (
+                    f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound while still "
+                    f"finding runs newer than the watermark; {remainder} more runs "
+                    "matched the created window beyond the bound, and any of them newer "
+                    "than the watermark are permanently unrecorded"
+                )
+            else:
+                note = (
+                    f"catch-up hit the {JOB_FETCH_MAX_PAGES}-page bound; the deepest "
+                    f"page held nothing newer than the watermark, but {remainder} "
+                    "older-created runs in the lookback window were never examined, so "
+                    "a long-runner among them that finished after the watermark would "
+                    "be permanently unrecorded"
+                )
+    return [run for run in fetched if run.updated_at >= watermark], note
+
+
+def _fetch_jobs(runs: list[Run], existing: list[Metric]) -> JobFetchOutcome:
+    """Completed jobs for every run finished since the store's newest CI record.
+
+    Two paths. With no CI records in the store this is a fresh machine, so it seeds from the
+    newest JOB_FETCH_BOOTSTRAP_RUN_COUNT of the runs checks 1-4 already fetched - no extra
+    listing calls, and history starts accruing from now. With a watermark it does its own
+    filtered listing (then unions in any passed-in run updated since the watermark that the
+    created filter missed, see below), because the passed-in runs are one page
+    of the NEWEST completed runs and a burst can push a poll's whole backlog off it: on
+    Sun 31 Aug 2026 this repo completed 391 runs between 09:00 and 12:10 UTC, so a fixed
+    newest-10 window against a 4-hourly poll silently dropped most of them.
+
+    Selecting by updated_at rather than by the listing's newest-first started_at order also
+    fixes a second, quieter miss: a long-running run that STARTED before ten faster runs but
+    finished after them was never in the old newest-10 slice at all.
 
     Jobs still queued or in progress have a null completed_at and are skipped: they have no
     duration yet, and inventing one would put a fictional number into the median. Jobs that
@@ -159,8 +324,24 @@ def _fetch_jobs(runs: list[Run]) -> list[Job]:
     raises rather than being quietly dropped: silently discarding it would hide a real
     change in how GitHub reports timings behind a thinning sample nobody noticed.
     """
+    watermark = _ci_watermark(existing)
+    if watermark is None:
+        candidates, note = runs[:JOB_FETCH_BOOTSTRAP_RUN_COUNT], None
+    else:
+        candidates, note = _fetch_completed_runs_since(watermark)
+        # A rerun keeps its run's ORIGINAL created date, so a rerun of a run older than
+        # the created lookback is invisible to the filtered listing above. The page-1 runs
+        # checks 1-4 already fetched cost zero extra API calls and cover the likely case,
+        # a recently rerun older run still among the newest 100. A rerun older than both
+        # windows is an accepted miss: rare, manual, and it re-measures steps the sample
+        # already describes.
+        listed = {run.run_id for run in candidates}
+        candidates += [
+            run for run in runs if run.updated_at >= watermark and run.run_id not in listed
+        ]
+
     jobs: list[Job] = []
-    for run in runs[:JOB_FETCH_RUN_COUNT]:
+    for run in candidates:
         payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run.run_id}/jobs?per_page=100")
         if not isinstance(payload, dict) or "jobs" not in payload:
             raise PreconditionError(f"runs/{run.run_id}/jobs response has no jobs key")
@@ -186,7 +367,7 @@ def _fetch_jobs(runs: list[Run]) -> list[Job]:
                     f"{item['completed_at']} but started at {item['started_at']}"
                 )
             jobs.append(job)
-    return jobs
+    return JobFetchOutcome(jobs=jobs, note=note)
 
 
 # ----- iteration metrics store -----------------------------------------------------
@@ -296,6 +477,13 @@ def _check_iteration_speed(metrics: list[Metric]) -> CheckResult:
     by_step: dict[str, list[Metric]] = {}
     for metric in metrics:
         by_step.setdefault(metric.step, []).append(metric)
+    # The store is append-ordered, not time-ordered: the watermark catch-up can append a
+    # job that completed BEFORE an already-recorded record (a run straddling the watermark),
+    # and 'newest' must mean newest by completion, not newest by append. Both writers stamp
+    # ts in the same %Y-%m-%dT%H:%M:%SZ shape, so the lexicographic sort is chronological,
+    # and it is stable, so records sharing a ts keep their append order.
+    for records in by_step.values():
+        records.sort(key=lambda metric: metric.ts)
 
     factor = ITERATION_SPEED_REGRESSION_FACTOR
     recent_window = ITERATION_SPEED_RECENT_WINDOW
