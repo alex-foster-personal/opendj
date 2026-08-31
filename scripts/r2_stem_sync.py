@@ -54,11 +54,11 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.b2listing import remote_dirs, remote_sizes
-from scripts.b2store import Store
+from scripts.b2store import RemotePathMissing, Store
 
 R2_ENV_KEYS: tuple[str, str, str] = (
     "R2_ACCOUNT_ID",
@@ -85,19 +85,27 @@ class Bundle:
 
 def r2_client() -> Any:
     """S3 client for R2. Fails naming the missing key, not with a bare
-    NoCredentialsError from three frames deeper."""
-    import boto3
-    from botocore.config import Config
+    NoCredentialsError from three frames deeper.
 
+    The credential check runs BEFORE the boto3 import: boto3 is a PEP 723
+    inline dependency, so importing first turns a forgotten `doppler run` into
+    a ModuleNotFoundError that says nothing about the real problem.
+    """
     missing = [key for key in R2_ENV_KEYS if not os.environ.get(key)]
     if missing:
         raise SystemExit(
             f"error: {missing} not in the environment. Run under:\n"
             "  doppler run --project general --config dev_personal -- "
             "uv run scripts/r2_stem_sync.py ...\n"
-            "If those secrets do not exist, R2 must first be enabled on the "
-            "Cloudflare account and an R2 API token created."
+            "If those secrets do not exist, mint an R2 API token (Object Read "
+            "& Write, scoped to the music-dj-audio bucket) at\n"
+            "  Cloudflare dashboard > R2 > API > Manage API tokens\n"
+            "and store it in Doppler general/dev_personal under those names."
         )
+
+    import boto3
+    from botocore.config import Config
+
     return boto3.client(
         "s3",
         endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
@@ -136,14 +144,12 @@ def archived_ids(store: Store, preset: str) -> set[str]:
     bundles the SSH handshakes would cost more than the transfers.
 
     A missing directory means nothing archived yet, which is a normal first
-    run, not an error - hence the narrow catch on that one message.
+    run, not an error - hence the narrow catch on that one condition.
     """
     try:
         listing = store.ls(f"{STEMS_REMOTE_ROOT}/{preset}")
-    except RuntimeError as exc:
-        if "File Not Found" in str(exc) or "cannot find" in str(exc).lower():
-            return set()
-        raise
+    except RemotePathMissing:
+        return set()
     return remote_dirs(listing)
 
 
@@ -225,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     client = r2_client()
 

@@ -4,8 +4,15 @@ All R2 credentials come from Doppler. Never put them in ``.env`` files.
 
 Invocation pattern for production::
 
-    doppler run -p music-dj-tools -c prod -- \
+    doppler run -p general -c dev_personal -- \
         python -m apps.cloud.replicate
+
+The Doppler home is the PERSONAL workplace (``agent-secrets``), project
+``general``, config ``dev_personal``. The project/config this docstring used to
+name (``music-dj-tools`` / ``prod``) has never existed, which sent every reader
+looking for credentials in a project that cannot be created without work
+account access. ``scripts/r2_stem_sync.py`` already reads from
+``general``/``dev_personal``; this is now consistent with it.
 
 The three required env vars are:
   * ``R2_ACCOUNT_ID``
