@@ -17,6 +17,7 @@ from typing import Iterator
 
 from . import paths as state_paths
 from . import schema as _schema
+from . import sync_stamp as _sync_stamp
 
 # PRAGMA values used for every writable handle. WAL + NORMAL is the usual
 # recommendation for OLTP-ish workloads; foreign_keys enforces our
@@ -54,6 +55,12 @@ def open_rw(
     behind their own lock but are invoked from a thread pool (e.g. the webui
     ``PlaylistStore`` under FastAPI's sync-endpoint executor). Such callers
     MUST serialise all access themselves.
+
+    When migrations run, the post-migration hook
+    :func:`apps.shared.state.sync_stamp.backfill_local_machine_id` claims any
+    ``track_locations`` row that migration v6 could not stamp (schema.py
+    reading 3). It is a no-op on a DB with nothing to claim, so an ordinary
+    open still mints no identity file and writes no ``machines`` row.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
     _ensure_parent(target)
@@ -65,6 +72,7 @@ def open_rw(
         _apply_rw_pragmas(conn)
         if apply_schema:
             _schema.apply_migrations(conn)
+            _sync_stamp.backfill_local_machine_id(conn)
     except Exception:
         conn.close()
         raise

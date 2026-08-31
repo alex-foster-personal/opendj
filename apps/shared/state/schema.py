@@ -244,8 +244,11 @@ _V5: list[str] = _V4
 # policy tables. Pure SQL, no Python, so it rides the existing MIGRATIONS
 # machinery.
 #
-# Two deliberate readings of the ADR, recorded here so a reader does not have
-# to diff the doc:
+# Amended IN PLACE for round 2 by specs/design_decision_08.md points 1 and 2
+# (v6 has never touched a real database; v7 is reserved for the auth branch).
+#
+# Four deliberate readings of the ADRs, recorded here so a reader does not
+# have to diff the docs:
 # 1. tracks, playlists and track_locations ALREADY carry ``updated_at TEXT
 #    NOT NULL`` from v1/v4, so v6 adds only the two missing sync columns
 #    there. SQLite has no ALTER TABLE ADD COLUMN IF NOT EXISTS; re-adding
@@ -257,6 +260,22 @@ _V5: list[str] = _V4
 #    NULL (legacy quirk), so any writer that does not name the column would
 #    silently insert unsyncable NULL-keyed rows. NOT NULL + DEFAULT makes
 #    that impossible instead of merely unlikely.
+# 3. ``track_locations.machine_id`` is DDL-NULLABLE, against ADR 08 point 1's
+#    "NOT NULL". A pure-SQL migration cannot know this machine's id (it lives
+#    in ``<data-dir>/machine-id``, deliberately outside the DB), so the
+#    v5 -> v6 INSERT ... SELECT has no value to copy for pre-existing rows.
+#    Real NOT NULL would therefore make ``apply_migrations`` unusable on its
+#    own, and it is called directly by the CLI, the webui and ~20 test
+#    modules. The column is instead backfilled immediately after migration by
+#    :func:`apps.shared.state.sync_stamp.backfill_local_machine_id`, which
+#    ``db.open_rw`` invokes on every writable open, and the NOT NULL
+#    invariant is enforced by the tripwire in
+#    ``tests/shared/state/test_writer_sync_stamps.py`` rather than by DDL.
+#    Every writer in this package supplies the column explicitly.
+# 4. ``local_changelog`` is the spoke-side twin of ``hub_changelog``
+#    (ADR 08 point 3): same shape, machine-local, never synced. It is what
+#    ``sync_state.last_push_seq`` fences against, replacing the wall-clock
+#    push watermark that lost rows under clock skew (round 1 finding 3).
 _V6: list[str] = [
     # --- fleet identity + per-machine policy (synced set, ADR 04 c8) ------
     """
@@ -321,6 +340,22 @@ _V6: list[str] = [
         received_at      TEXT NOT NULL
     )
     """,
+    # Spoke-local. Appended by apps.shared.state.sync_stamp on every write to
+    # a synced table; ``sync_state.last_push_seq`` is the floor into it, so a
+    # skewed wall clock can no longer raise the push watermark past a local
+    # edit and lose it (round 1 finding 3). Never crosses a machine boundary.
+    """
+    CREATE TABLE IF NOT EXISTS local_changelog (
+        seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name       TEXT NOT NULL,
+        row_pk           TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        origin_device_id TEXT NOT NULL,
+        received_at      TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
+    "ON local_changelog(table_name, row_pk)",
     # --- sync columns on the existing synced tables ----------------------
     "ALTER TABLE tracks ADD COLUMN origin_device_id TEXT",
     "ALTER TABLE tracks ADD COLUMN deleted_at TEXT",
@@ -336,13 +371,18 @@ _V6: list[str] = [
     "ALTER TABLE playlist_memberships ADD COLUMN origin_device_id TEXT",
     "ALTER TABLE playlist_memberships ADD COLUMN deleted_at TEXT",
     # --- track_locations PK rebuild: INTEGER AUTOINCREMENT -> uuid4 hex --
-    # Same columns, same CHECKs, plus the sync trio. Nothing references
-    # track_locations, so the drop-and-rename needs no FK dance.
+    # Same columns, same CHECKs, plus the sync trio and ``machine_id``.
+    # Nothing references track_locations, so the drop-and-rename needs no FK
+    # dance. ``machine_id`` makes each machine's view of where a file lives
+    # its own row (ADR 08 point 1): ``file_path``, ``available``,
+    # ``probed_at`` and ``venue_*`` are per-machine facts, and forcing them
+    # into one global row is what produced round 1 findings 1 and 7a.
     """
     CREATE TABLE track_locations_v6 (
         location_id      TEXT PRIMARY KEY NOT NULL
                            DEFAULT (lower(hex(randomblob(16)))),
         stable_id        TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
+        machine_id       TEXT REFERENCES machines(machine_id),
         kind             TEXT NOT NULL CHECK (kind IN ('local', 'remote')),
         role             TEXT NOT NULL DEFAULT 'alternate'
                            CHECK (role IN ('primary', 'alternate')),
@@ -363,6 +403,8 @@ _V6: list[str] = [
         )
     )
     """,
+    # machine_id is left NULL here and backfilled by
+    # sync_stamp.backfill_local_machine_id -- see reading 3 above.
     """
     INSERT INTO track_locations_v6(
         location_id, stable_id, kind, role, file_path, remote_url,
@@ -378,11 +420,14 @@ _V6: list[str] = [
     "ALTER TABLE track_locations_v6 RENAME TO track_locations",
     "CREATE INDEX IF NOT EXISTS idx_track_locations_stable "
     "ON track_locations(stable_id)",
+    # machine_id joins the logical identity: two machines holding the same
+    # (stable_id, kind, path) now hold two rows, so the hub upsert merges by
+    # LWW instead of wedging the push with a UNIQUE-violation 409.
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_path "
-    "ON track_locations(stable_id, kind, file_path) "
+    "ON track_locations(stable_id, machine_id, kind, file_path) "
     "WHERE file_path IS NOT NULL",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_url "
-    "ON track_locations(stable_id, kind, remote_url) "
+    "ON track_locations(stable_id, machine_id, kind, remote_url) "
     "WHERE remote_url IS NOT NULL",
 ]
 
@@ -456,6 +501,7 @@ TABLES: tuple[str, ...] = (
     "playlist_pins",
     "sync_state",
     "hub_changelog",
+    "local_changelog",
 )
 """Domain tables created by :data:`MIGRATIONS`. ``schema_meta`` is
 intentionally excluded -- it is infrastructure, not domain data."""

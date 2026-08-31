@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sqlite3
 import stat
+import uuid
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,10 @@ _LAUNCHER_DDL: tuple[str, ...] = (
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _index_columns(conn: sqlite3.Connection, index: str) -> list[str]:
+    return [row[2] for row in conn.execute(f"PRAGMA index_info({index})")]
 
 
 def _indexes(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -223,10 +228,11 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
         # The colliding INTEGER AUTOINCREMENT key is gone (ADR 05 c3).
         assert "id" not in _columns(conn, "track_locations")
 
-        # FK to tracks survived the drop-and-rename, and is enforced.
+        # Both FKs survived the drop-and-rename, and are enforced.
         fks = conn.execute("PRAGMA foreign_key_list(track_locations)").fetchall()
-        assert [(row[2], row[3], row[4]) for row in fks] == [
-            ("tracks", "stable_id", "stable_id")
+        assert sorted((row[2], row[3], row[4]) for row in fks) == [
+            ("machines", "machine_id", "machine_id"),
+            ("tracks", "stable_id", "stable_id"),
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         with pytest.raises(sqlite3.IntegrityError):
@@ -236,20 +242,161 @@ def test_v5_track_locations_migrate_with_minted_text_keys(tmp_path: Path) -> Non
                 (_TS, _TS),
             )
 
-        # All three indexes are back, and the partial UNIQUE ones still bite.
+        # All three indexes are back, and the partial UNIQUE ones still bite
+        # for one machine writing the same logical row twice.
         assert _indexes(conn, "track_locations") >= {
             "idx_track_locations_stable",
             "idx_track_locations_path",
             "idx_track_locations_url",
         }
+        local_machine = mid.get_or_create_machine_id(db_path.parent)
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO track_locations(stable_id, kind, file_path, "
-                "created_at, updated_at) VALUES (?, 'local', ?, ?, ?)",
-                (f"{0:040d}", seeded[0], _TS, _TS),
+                "INSERT INTO track_locations(stable_id, machine_id, kind, "
+                "file_path, created_at, updated_at) "
+                "VALUES (?, ?, 'local', ?, ?, ?)",
+                (f"{0:040d}", local_machine, seeded[0], _TS, _TS),
             )
     finally:
         conn.close()
+
+
+def test_v6_indexes_lead_with_stable_id_then_machine_id(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """ADR 08 point 1: machine_id joins the logical identity of a location."""
+    assert "machine_id" in _columns(state_conn, "track_locations")
+    assert _index_columns(state_conn, "idx_track_locations_path") == [
+        "stable_id",
+        "machine_id",
+        "kind",
+        "file_path",
+    ]
+    assert _index_columns(state_conn, "idx_track_locations_url") == [
+        "stable_id",
+        "machine_id",
+        "kind",
+        "remote_url",
+    ]
+
+
+def test_two_machines_hold_the_same_path_without_colliding(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """Regression for round 1 finding 1 (critical).
+
+    Two machines that both migrated a v4-seeded location row mint different
+    ``location_id`` values for the same logical row. Before machine_id joined
+    the unique index that pair violated
+    ``UNIQUE(stable_id, kind, file_path)``, the hub returned 409, the whole
+    push rolled back, and the second spoke could never sync again.
+    """
+    state_conn.execute(
+        "INSERT INTO tracks(stable_id, stable_id_tier, created_at, updated_at) "
+        "VALUES ('trk-1', 'isrc', ?, ?)",
+        (_TS, _TS),
+    )
+    for machine_id, name in (("m-air", "air"), ("m-silver", "silver")):
+        state_conn.execute(
+            "INSERT INTO machines(machine_id, name, platform, is_hub, "
+            "first_seen, last_seen) VALUES (?, ?, 'macos', 0, ?, ?)",
+            (machine_id, name, _TS, _TS),
+        )
+        state_conn.execute(
+            "INSERT INTO track_locations(location_id, stable_id, machine_id, "
+            "kind, file_path, created_at, updated_at) "
+            "VALUES (?, 'trk-1', ?, 'local', '/Music/a.mp3', ?, ?)",
+            (uuid.uuid4().hex, machine_id, _TS, _TS),
+        )
+    rows = state_conn.execute(
+        "SELECT machine_id FROM track_locations WHERE stable_id = 'trk-1' "
+        "ORDER BY machine_id"
+    ).fetchall()
+    assert [row[0] for row in rows] == ["m-air", "m-silver"]
+
+    # And the same machine still cannot hold the row twice.
+    with pytest.raises(sqlite3.IntegrityError):
+        state_conn.execute(
+            "INSERT INTO track_locations(location_id, stable_id, machine_id, "
+            "kind, file_path, created_at, updated_at) "
+            "VALUES (?, 'trk-1', 'm-air', 'local', '/Music/a.mp3', ?, ?)",
+            (uuid.uuid4().hex, _TS, _TS),
+        )
+
+
+def test_local_changelog_mirrors_hub_changelog(
+    state_conn: sqlite3.Connection,
+) -> None:
+    """ADR 08 point 3: the spoke-side fence needs its own monotonic seq."""
+    assert "local_changelog" in state_schema.TABLES
+    assert _columns(state_conn, "local_changelog") == _columns(
+        state_conn, "hub_changelog"
+    )
+    for row_pk in ('["a"]', '["b"]'):
+        state_conn.execute(
+            "INSERT INTO local_changelog(table_name, row_pk, updated_at, "
+            "origin_device_id, received_at) VALUES ('tracks', ?, ?, 'dev', ?)",
+            (row_pk, _TS, _TS),
+        )
+    seqs = [
+        row[0]
+        for row in state_conn.execute("SELECT seq FROM local_changelog ORDER BY seq")
+    ]
+    assert seqs == [1, 2], "local_changelog seq must be monotonic"
+
+
+def test_v5_locations_are_claimed_by_this_machine_on_open(tmp_path: Path) -> None:
+    """The post-migration hook backfills what pure SQL could not know."""
+    db_path = tmp_path / "claimed.db"
+    seeded = _seed_v5_db(db_path, locations=3)
+
+    conn = state_db.open_rw(db_path)
+    try:
+        expected = mid.get_or_create_machine_id(tmp_path)
+        rows = conn.execute(
+            "SELECT machine_id, origin_device_id FROM track_locations"
+        ).fetchall()
+        assert len(rows) == len(seeded)
+        assert {row[0] for row in rows} == {expected}
+        assert {row[1] for row in rows} == {expected}, (
+            "a claimed row with no origin loses every LWW tiebreak"
+        )
+        # The machines row the FK points at exists, and the claim is offerable.
+        assert conn.execute(
+            "SELECT COUNT(*) FROM machines WHERE machine_id = ?", (expected,)
+        ).fetchone()[0] == 1
+        logged = conn.execute(
+            "SELECT COUNT(*) FROM local_changelog WHERE table_name = ?",
+            ("track_locations",),
+        ).fetchone()[0]
+        assert logged == len(seeded)
+    finally:
+        conn.close()
+
+    # Re-opening claims nothing further: the hook is idempotent.
+    conn = state_db.open_rw(db_path)
+    try:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM local_changelog"
+        ).fetchone()[0] == len(seeded)
+    finally:
+        conn.close()
+
+
+def test_opening_a_fresh_db_mints_no_identity(state_db_path: Path) -> None:
+    """A DB with nothing to claim must not write an id file or a machines row.
+
+    Guards the blast radius of the post-migration hook: ``open_rw`` is called
+    by most of this repo, and an unconditional register would put a hostname
+    row in every test DB.
+    """
+    conn = state_db.open_rw(state_db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM machines").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM local_changelog").fetchone()[0] == 0
+    finally:
+        conn.close()
+    assert not mid.machine_id_path(state_db_path.parent).exists()
 
 
 def test_insert_without_location_id_mints_one(state_conn: sqlite3.Connection) -> None:
