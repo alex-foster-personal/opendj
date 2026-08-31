@@ -4,7 +4,7 @@ Contract: ``specs/design_decision_04.md``. Everything here is pure -- it
 reads a connection to introspect columns and to hash rows, and never
 writes. The merge rules live in :mod:`apps.sync_hub.engine`.
 
-Three decisions worth reading before changing anything:
+Five decisions worth reading before changing anything:
 
 1. **Columns are introspected, never hardcoded.** ``PRAGMA table_info`` is
    the single source of truth so this module cannot drift from
@@ -21,15 +21,36 @@ Three decisions worth reading before changing anything:
    differ between peers. It therefore rides the pull response as a snapshot
    (so the FKs from ``sync_policies`` / ``playlist_pins`` resolve) and is
    excluded from the digest. Recorded as an ADR gap, not papered over.
+4. **Every ``updated_at`` crossing this boundary is normalized** (ADR 08
+   point 2, round 1 finding 2). Plain string comparison of ISO8601 is not an
+   ordering over instants -- a ``Z`` suffix outsorts an identical
+   ``+00:00`` instant, microsecond precision outsorts second precision, and
+   a ``+01:00`` offset makes an EARLIER instant sort LATER. So the value is
+   parsed with :func:`apps.shared.state.sync_stamp.parse_canonical` and
+   re-emitted in the one canonical format everywhere it is read: on the
+   wire, in :func:`lww_key`, and in the digest. Anything unparseable or
+   naive raises :class:`SyncProtocolError`, which the service turns into a
+   422 rather than storing a row nothing can order.
+5. **Strings are NFC-normalized before hashing** (ADR 08 point 6a, round 1
+   finding 6a). macOS hands back NFD paths, Windows and Linux NFC; both are
+   correct spellings of one string and neither the digest nor a UNIQUE index
+   saw them as equal. Primary key columns are deliberately EXCLUDED from
+   that normalization: a pk is an identity, not text, and silently re-spelling
+   one would make two peers disagree about which row they are talking about.
+   Every pk in the sync set is machine-generated ASCII (sha1 hex, uuid hex,
+   or a CHECK-constrained enum), so there is nothing there to normalize.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from apps.shared.state import sync_stamp
 
 # A row whose ``updated_at`` is NULL predates migration v6. ADR 04 c7 says it
 # syncs as epoch-old. This literal sorts before any real ISO8601 timestamp
@@ -70,6 +91,26 @@ SYNC_TABLES: tuple[TableSpec, ...] = (
 
 SPEC_BY_TABLE: dict[str, TableSpec] = {spec.name: spec for spec in SYNC_TABLES}
 
+# Where a table's LOGICAL identity is not its primary key, the natural key is
+# the tuple its partial UNIQUE indexes assert (ADR 08 point 1). Only
+# ``track_locations`` has one: ``location_id`` is a random uuid minted
+# independently on each machine, so two machines can hold the same logical row
+# under different keys. The engine resolves against this tuple, which is what
+# makes round 1 finding 1 (a UNIQUE violation the push could never retry past)
+# unreachable rather than merely unlikely.
+#
+# Order matters: the first tuple whose columns are ALL non-NULL is the one in
+# force, mirroring the ``WHERE file_path IS NOT NULL`` / ``WHERE remote_url IS
+# NOT NULL`` partial indexes. SQLite treats NULLs as distinct in a UNIQUE
+# index, so a NULL anywhere in the tuple means no constraint applies and there
+# is nothing to resolve against.
+NATURAL_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "track_locations": (
+        ("stable_id", "machine_id", "kind", "file_path"),
+        ("stable_id", "machine_id", "kind", "remote_url"),
+    ),
+}
+
 # Whole-playlist granularity (ADR 04 c5): membership rows are never pushed on
 # their own. They travel attached to their ``playlists`` row and replace the
 # peer's copy wholesale when that row wins LWW. A writer that edits membership
@@ -108,19 +149,64 @@ def canonical_bytes(payload: Any) -> bytes:
     ).encode("utf-8")
 
 
-def _checked_value(table: str, column: str, value: Any) -> Any:
-    """Return ``value`` as a JSON-safe scalar, or raise.
+def nfc(value: str) -> str:
+    """NFC-normalize one string (module docstring point 5)."""
+    return unicodedata.normalize("NFC", value)
 
-    BLOB columns have no place in the sync set; one appearing means the
-    schema grew a column this protocol cannot transport, and guessing an
-    encoding would put unreadable rows on the wire.
+
+def canonical_timestamp(table: str, column: str, value: Any) -> str:
+    """Re-emit one timestamp in the single canonical format, or raise.
+
+    Module docstring point 4. Delegates to
+    :mod:`apps.shared.state.sync_stamp` so the format has exactly one
+    definition in the repo, and converts its error type so every caller in
+    this module raises :class:`SyncProtocolError`.
     """
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    raise SyncProtocolError(
-        f"{table}.{column} holds {type(value).__name__}, which the sync wire "
-        f"format cannot carry (only null/text/integer/real)."
-    )
+    try:
+        return sync_stamp.to_canonical(str(value))
+    except sync_stamp.SyncStampError as exc:
+        raise SyncProtocolError(
+            f"{table}.{column} = {value!r} is not an orderable timestamp: "
+            f"{exc}. Sync stamps must be offset-bearing ISO8601; see "
+            f"apps.shared.state.sync_stamp.CANONICAL_FORMAT."
+        ) from exc
+
+
+def pk_columns(table: str) -> tuple[str, ...]:
+    """Primary key columns of a sync-set (or membership) table."""
+    spec = SPEC_BY_TABLE.get(table)
+    if spec is not None:
+        return spec.pk
+    if table == MEMBERSHIP_TABLE:
+        return MEMBERSHIP_SPEC.pk
+    if table == REGISTRY_TABLE:
+        return ("machine_id",)
+    raise SyncProtocolError(f"{table!r} is not in the sync set")
+
+
+def _checked_value(table: str, column: str, value: Any, *, is_pk: bool) -> Any:
+    """Return ``value`` as a canonical JSON-safe scalar, or raise.
+
+    Three normalizations, all of them load-bearing:
+
+    * BLOB columns have no place in the sync set; one appearing means the
+      schema grew a column this protocol cannot transport, and guessing an
+      encoding would put unreadable rows on the wire.
+    * ``updated_at`` is re-emitted canonical (point 4).
+    * every other non-pk string is NFC-normalized (point 5).
+    """
+    if value is None:
+        return None
+    if not isinstance(value, (str, int, float, bool)):
+        raise SyncProtocolError(
+            f"{table}.{column} holds {type(value).__name__}, which the sync wire "
+            f"format cannot carry (only null/text/integer/real)."
+        )
+    if column == UPDATED_AT:
+        return canonical_timestamp(table, column, value)
+    if isinstance(value, str) and not is_pk:
+        return nfc(value)
+    return value
 
 
 def canonical_row(
@@ -131,10 +217,35 @@ def canonical_row(
         raise SyncProtocolError(
             f"{table}: {len(columns)} columns declared but {len(row)} values read"
         )
+    keys = set(pk_columns(table))
     return {
-        column: _checked_value(table, column, value)
+        column: _checked_value(table, column, value, is_pk=column in keys)
         for column, value in zip(columns, row, strict=True)
     }
+
+
+def canonical_values(table: str, values: Mapping[str, Any]) -> dict[str, Any]:
+    """:func:`canonical_row` for a mapping that arrived off the wire."""
+    keys = set(pk_columns(table))
+    return {
+        column: _checked_value(table, column, value, is_pk=column in keys)
+        for column, value in values.items()
+    }
+
+
+def natural_key(
+    table: str, values: Mapping[str, Any]
+) -> tuple[tuple[str, Any], ...] | None:
+    """The (column, value) pairs identifying this row logically, or None.
+
+    None means the table has no natural key beyond its primary key, or that
+    a NULL in the key tuple leaves every partial UNIQUE index inapplicable.
+    See :data:`NATURAL_KEYS`.
+    """
+    for columns in NATURAL_KEYS.get(table, ()):
+        if all(values.get(column) is not None for column in columns):
+            return tuple((column, values[column]) for column in columns)
+    return None
 
 
 def encode_row_pk(values: Sequence[Any]) -> str:
@@ -185,12 +296,18 @@ def lww_key(values: Mapping[str, Any]) -> tuple[str, str]:
     """The ``(updated_at, origin_device_id)`` pair ADR 04 c3 compares.
 
     NULLs collapse to :data:`EPOCH` / :data:`NO_ORIGIN` so the comparison is
-    total and a legacy row always loses.
+    total and a legacy row always loses. The timestamp is normalized first
+    (module docstring point 4): this function is called on rows read straight
+    out of a local table as well as on rows off the wire, and a locally
+    stored ``2026-08-30T10:00:00Z`` must compare EQUAL to the same instant
+    written ``2026-08-30T10:00:00.000000+00:00``, not above it.
     """
     updated_at = values.get(UPDATED_AT)
     origin = values.get(ORIGIN_DEVICE_ID)
     return (
-        EPOCH if updated_at is None else str(updated_at),
+        EPOCH
+        if updated_at is None
+        else canonical_timestamp("<row>", UPDATED_AT, updated_at),
         NO_ORIGIN if origin is None else str(origin),
     )
 
@@ -270,11 +387,20 @@ class RowChange:
             members = tuple(_require_mapping(item, "members[]") for item in raw_members)
         else:
             raise SyncProtocolError(f"{table}: 'members' must be an array or absent")
+        # Canonicalize BEFORE the row can reach a comparison or a table:
+        # what this peer sent is the last chance to reject a timestamp that
+        # cannot be ordered (module docstring point 4).
         return cls(
             table=table,
             pk=tuple(str(item) for item in raw_pk),
-            values=dict(values),
-            members=members,
+            values=canonical_values(table, values),
+            members=(
+                None
+                if members is None
+                else tuple(
+                    canonical_values(MEMBERSHIP_TABLE, member) for member in members
+                )
+            ),
         )
 
 
@@ -351,6 +477,19 @@ def table_digest(conn: sqlite3.Connection, table: str) -> str:
 
     Tombstones included: a peer that dropped a ``deleted_at`` row has
     diverged, and this is the only check that would notice.
+
+    Rows are hashed through :func:`canonical_row`, so two peers holding the
+    same instant spelled differently, or the same path in NFD and NFC, agree
+    (module docstring points 4 and 5). That is not a weakening of the check:
+    those rows ARE the same content, and before ADR 08 the difference halted
+    a machine that had done nothing wrong. A timestamp that cannot be parsed
+    at all still raises rather than hashing.
+
+    Callers that compare two digests MUST hold a read transaction open
+    across the whole comparison (ADR 08 point 6b): without one, a table read
+    late in :func:`sync_digest` can reflect a writer that landed after an
+    earlier table was read, and the rollup describes a state that never
+    existed.
     """
     spec = SPEC_BY_TABLE.get(table)
     if spec is None and table == MEMBERSHIP_TABLE:
@@ -398,6 +537,7 @@ __all__ = [
     "EPOCH",
     "MEMBERSHIP_SPEC",
     "MEMBERSHIP_TABLE",
+    "NATURAL_KEYS",
     "NO_ORIGIN",
     "ORIGIN_DEVICE_ID",
     "REGISTRY_TABLE",
@@ -412,9 +552,14 @@ __all__ = [
     "TableSpec",
     "canonical_bytes",
     "canonical_row",
+    "canonical_timestamp",
+    "canonical_values",
     "decode_row_pk",
     "encode_row_pk",
     "lww_key",
+    "natural_key",
+    "nfc",
+    "pk_columns",
     "sync_digest",
     "table_columns",
     "table_digest",

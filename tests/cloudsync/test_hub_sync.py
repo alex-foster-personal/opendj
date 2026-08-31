@@ -21,6 +21,12 @@ Acceptance criteria, one test each:
   clean sync, the digest is not verifying anything -- broken.
 - if a legacy row with NULL ``updated_at`` beats a real edit, migration-era
   rows overwrite live data on first sync -- broken.
+
+Since ADR 08 the helpers below write the way a real writer does: canonical
+timestamps, and every synced-table write appended to ``local_changelog``
+through :func:`apps.shared.state.sync_stamp.stamp_and_log`. That is not
+ceremony -- the push fence reads that changelog, so a fixture that skipped it
+would test a spoke whose edits are invisible to its own push.
 """
 from __future__ import annotations
 
@@ -35,15 +41,20 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
+from apps.shared.state import sync_stamp
 from apps.sync_hub import client, engine, protocol, service
 from apps.webui.server.app import create_app
 
 pytestmark = pytest.mark.requirement("CAT-04")
 
-_T0 = "2026-08-30T09:00:00+00:00"
-_T1 = "2026-08-30T10:00:00+00:00"
-_T2 = "2026-08-30T11:00:00+00:00"
-_T3 = "2026-08-30T12:00:00+00:00"
+# Canonical stamps (apps.shared.state.sync_stamp.CANONICAL_FORMAT): UTC,
+# fixed-width microseconds, explicit offset. Anything else is re-emitted in
+# this form at the protocol boundary, so writing the fixtures in it keeps the
+# stored value and the wire value identical and the assertions literal.
+_T0 = "2026-08-30T09:00:00.000000+00:00"
+_T1 = "2026-08-30T10:00:00.000000+00:00"
+_T2 = "2026-08-30T11:00:00.000000+00:00"
+_T3 = "2026-08-30T12:00:00.000000+00:00"
 
 _DEV_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 _DEV_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -127,6 +138,23 @@ def _sync(
     return client.run_sync(data_dir, "http://hub.invalid", transport=hub, name=name)
 
 
+def _log(
+    conn: sqlite3.Connection,
+    table: str,
+    row_pk: tuple[Any, ...],
+    origin: str,
+    updated_at: str,
+) -> str:
+    """Stamp one synced-table write and append it to ``local_changelog``.
+
+    What every in-repo writer now does (ADR 08 points 2 and 3). Returns the
+    canonical stamp the row must store.
+    """
+    return sync_stamp.stamp_and_log(
+        conn, table, row_pk, origin, now=updated_at
+    ).updated_at
+
+
 def _insert_track(
     conn: sqlite3.Connection,
     stable_id: str,
@@ -136,6 +164,7 @@ def _insert_track(
     origin: str,
     deleted_at: str | None = None,
 ) -> None:
+    stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
     conn.execute(
         """
         INSERT INTO tracks(
@@ -144,7 +173,7 @@ def _insert_track(
         )
         VALUES (?, 'inferred', ?, ?, ?, ?, ?)
         """,
-        (stable_id, title, _T0, updated_at, origin, deleted_at),
+        (stable_id, title, _T0, stamped, origin, deleted_at),
     )
 
 
@@ -156,10 +185,22 @@ def _set_track_title(
     updated_at: str,
     origin: str,
 ) -> None:
+    stamped = _log(conn, "tracks", (stable_id,), origin, updated_at)
     conn.execute(
         "UPDATE tracks SET title = ?, updated_at = ?, origin_device_id = ? "
         "WHERE stable_id = ?",
-        (title, updated_at, origin, stable_id),
+        (title, stamped, origin, stable_id),
+    )
+
+
+def _soft_delete_track(
+    conn: sqlite3.Connection, stable_id: str, *, deleted_at: str, origin: str
+) -> None:
+    stamped = _log(conn, "tracks", (stable_id,), origin, deleted_at)
+    conn.execute(
+        "UPDATE tracks SET deleted_at = ?, updated_at = ?, "
+        "origin_device_id = ? WHERE stable_id = ?",
+        (stamped, stamped, origin, stable_id),
     )
 
 
@@ -178,6 +219,7 @@ def _insert_playlist(
     updated_at: str,
     origin: str,
 ) -> None:
+    stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
     conn.execute(
         """
         INSERT INTO playlists(
@@ -186,7 +228,7 @@ def _insert_playlist(
         )
         VALUES (?, ?, 'open-dj', ?, ?, ?, ?)
         """,
-        (playlist_id, name, playlist_id, _T0, updated_at, origin),
+        (playlist_id, name, playlist_id, _T0, stamped, origin),
     )
 
 
@@ -199,6 +241,7 @@ def _set_members(
     origin: str,
 ) -> None:
     """Replace membership locally AND stamp the playlist, as a writer must."""
+    stamped = _log(conn, "playlists", (playlist_id,), origin, updated_at)
     conn.execute(
         "DELETE FROM playlist_memberships WHERE playlist_id = ?", (playlist_id,)
     )
@@ -210,12 +253,12 @@ def _set_members(
             )
             VALUES (?, ?, ?, ?, ?)
             """,
-            (playlist_id, stable_id, position, updated_at, origin),
+            (playlist_id, stable_id, position, stamped, origin),
         )
     conn.execute(
         "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
         "WHERE playlist_id = ?",
-        (updated_at, origin, playlist_id),
+        (stamped, origin, playlist_id),
     )
 
 
@@ -326,11 +369,7 @@ def test_tombstone_propagates(
 
     conn_a = _open(spoke_a)
     try:
-        conn_a.execute(
-            "UPDATE tracks SET deleted_at = ?, updated_at = ?, "
-            "origin_device_id = ? WHERE stable_id = ?",
-            (_T2, _T2, _DEV_A, "trk-dead"),
-        )
+        _soft_delete_track(conn_a, "trk-dead", deleted_at=_T2, origin=_DEV_A)
     finally:
         conn_a.close()
 
@@ -470,6 +509,7 @@ def test_legacy_null_updated_at_loses_to_a_real_edit(
 
     conn_a = _open(spoke_a)
     try:
+        stamped = _log(conn_a, "track_fields", ("trk-1", "bpm"), _DEV_A, _T1)
         conn_a.execute(
             """
             INSERT INTO track_fields(
@@ -478,7 +518,7 @@ def test_legacy_null_updated_at_loses_to_a_real_edit(
             )
             VALUES ('trk-1', 'bpm', '128.0', 'webui', ?, ?, ?)
             """,
-            (_T1, _T1, _DEV_A),
+            (_T1, stamped, _DEV_A),
         )
     finally:
         conn_a.close()
@@ -516,9 +556,11 @@ def test_status_and_digest_endpoints_answer(
 ) -> None:
     """Agent parity: the hub's read surface works without a spoke driving it."""
     _seed_common_track((spoke_a,), "trk-1")
-    _sync(spoke_a, hub, "spoke-a")
+    result = _sync(spoke_a, hub, "spoke-a")
 
-    status = hub.get(f"{client.API_PREFIX}/status", {})
+    status = hub.get(
+        f"{client.API_PREFIX}/status", {"machine_id": result.machine_id}
+    )
     assert status["seq"] >= 1
     assert status["row_counts"]["tracks"] == 1
     assert {machine["name"] for machine in status["machines"]} >= {"hub", "spoke-a"}

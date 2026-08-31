@@ -4,13 +4,20 @@ Mounted by the webui at ``/api/v1/sync/*``:
 
     POST /api/v1/sync/hello    register a spoke, learn the hub id and seq
     POST /api/v1/sync/push     offer rows; the hub merges them under LWW
-    GET  /api/v1/sync/pull     rows accepted after ``since_seq``
+    GET  /api/v1/sync/pull     one chunk of the rows accepted after ``since_seq``
     GET  /api/v1/sync/status   hub identity, seq, fleet, row counts
     GET  /api/v1/sync/digest   per-table digests for the post-sync compare
 
 Trust in v1 is tailnet membership (ADR 04 c7): any process that can reach the
 daemon can push. That is deliberate for a personal fleet and must be revisited
 before any multi-user deployment.
+
+``push``, ``pull`` and ``status`` all take a ``machine_id`` and all refuse a
+machine that never said hello (ADR 08 point 6, round 1 finding 7b). That is a
+consistency guard rather than authentication, and round 1 applied it only to
+``push`` -- an asymmetry that looked accidental, since an unregistered
+``pull`` returned the entire changelog history plus every machine's absolute
+``data_root``.
 
 The hub DB is opened per request from ``app.state.state_db_path`` and closed
 again, so the router holds no connection across requests and needs no lock of
@@ -34,6 +41,10 @@ from apps.shared.state import schema as state_schema
 from apps.sync_hub import engine, protocol
 
 router = APIRouter(prefix="/sync", tags=["sync"])
+
+#: Hard ceiling on ``/pull?limit=``. A spoke asking for more than this is
+#: asking the hub to hold an unbounded response in memory on its behalf.
+MAX_PULL_LIMIT: int = 5000
 
 
 # ----- request / response models ------------------------------------------
@@ -88,6 +99,10 @@ class PullResponse(BaseModel):
     rows: list[RowModel]
     seq: int
     machines: list[MachineModel]
+    #: True when the hub still holds changelog entries above ``seq``. The
+    #: client loops on it rather than inferring "done" from an empty page:
+    #: dedup means a chunk can legitimately return fewer rows than entries.
+    has_more: bool = False
 
 
 class StatusResponse(BaseModel):
@@ -214,14 +229,20 @@ def _to_changes(rows: list[RowModel]) -> list[protocol.RowChange]:
     try:
         return [protocol.RowChange.from_wire(row.model_dump()) for row in rows]
     except protocol.SyncProtocolError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "SYNC_PROTOCOL", "message": str(exc)},
-        ) from exc
+        raise _protocol_error(exc) from exc
+
+
+def _protocol_error(exc: protocol.SyncProtocolError) -> HTTPException:
+    """422: the payload is not this protocol. Includes an ``updated_at``
+    that cannot be placed on the UTC line (ADR 08 point 2)."""
+    return HTTPException(
+        status_code=422,
+        detail={"code": "SYNC_PROTOCOL", "message": str(exc)},
+    )
 
 
 def _require_registered(conn: sqlite3.Connection, machine_id: str) -> None:
-    """Refuse a push from a machine that never said hello.
+    """Refuse a call from a machine that never said hello.
 
     Not authentication -- v1 trust is the tailnet (ADR 04 c7). It is a
     consistency guard: an unregistered pusher means the caller skipped the
@@ -292,6 +313,8 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                 result = engine.hub_apply(conn, changes)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
+        except protocol.SyncProtocolError as exc:
+            raise _protocol_error(exc) from exc
         return PushResponse(
             accepted=result.accepted, rejected=result.rejected, seq=result.seq
         )
@@ -300,51 +323,83 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
 @router.get("/pull", response_model=PullResponse)
 def pull(
     request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
     since_seq: int = Query(0, ge=0, description="last hub_changelog.seq applied"),
+    limit: int = Query(
+        engine.DEFAULT_PULL_LIMIT,
+        ge=1,
+        le=MAX_PULL_LIMIT,
+        description="max changelog entries to consume in this chunk",
+    ),
 ) -> PullResponse:
-    """Rows the hub accepted after ``since_seq``, plus the fleet registry."""
+    """One chunk of the rows the hub accepted after ``since_seq``.
+
+    Chunked because a first sync of a real library is megabytes of JSON held
+    twice in memory on both sides (round 1 finding A2). ``has_more`` tells
+    the client to come back with the ``seq`` this response reports.
+    """
     with _hub_conn(request) as conn:
+        _require_registered(conn, machine_id)
         try:
-            batch = engine.hub_changes_since(conn, since_seq)
+            batch = engine.hub_changes_since(conn, since_seq, limit=limit)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
+        except protocol.SyncProtocolError as exc:
+            raise _protocol_error(exc) from exc
         return PullResponse(
             rows=_row_models(batch.rows),
             seq=batch.seq,
             machines=_machine_models(conn),
+            has_more=batch.has_more,
         )
 
 
 @router.get("/status", response_model=StatusResponse)
-def status(request: Request) -> StatusResponse:
+def status(
+    request: Request,
+    machine_id: str = Query(min_length=1, description="the calling spoke"),
+) -> StatusResponse:
     """Hub identity, current seq, known machines and synced row counts."""
     with _hub_conn(request) as conn:
         with _transaction(conn):
             hub_machine_id = _hub_identity(request, conn)
-        counts = {
-            name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
-            for name in protocol.DIGEST_TABLES
-        }
+        _require_registered(conn, machine_id)
+        # One read transaction so the counts, the seq and the fleet all
+        # describe the same instant rather than three consecutive ones.
+        with _transaction(conn):
+            counts = {
+                name: int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+                for name in protocol.DIGEST_TABLES
+            }
+            seq = engine.current_seq(conn)
+            machines = _machine_models(conn)
         return StatusResponse(
             hub_machine_id=hub_machine_id,
             schema_version=state_schema.SCHEMA_VERSION,
-            seq=engine.current_seq(conn),
-            machines=_machine_models(conn),
+            seq=seq,
+            machines=machines,
             row_counts=counts,
         )
 
 
 @router.get("/digest", response_model=DigestResponse)
 def digest(request: Request) -> DigestResponse:
-    """Per-table digests over the sync set, tombstones included (ADR 04 c6)."""
+    """Per-table digests over the sync set, tombstones included (ADR 04 c6).
+
+    Computed inside one read transaction (ADR 08 point 6b): without it a
+    table read late in the walk can include a push that landed after an
+    earlier table was read, and the answer describes a hub state that never
+    existed. It still answers as of request time, so a spoke comparing
+    against its own strictly earlier commit can see a legitimate difference
+    if a third machine pushes in the gap; narrowing that window further is a
+    protocol change (a ``seq`` parameter) the ADR did not take.
+    """
     with _hub_conn(request) as conn:
         try:
-            computed = protocol.sync_digest(conn)
+            with _transaction(conn):
+                computed = protocol.sync_digest(conn)
         except protocol.SyncProtocolError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "SYNC_PROTOCOL", "message": str(exc)},
-            ) from exc
+            raise _protocol_error(exc) from exc
         return DigestResponse(tables=computed.tables, overall=computed.overall)
 
 

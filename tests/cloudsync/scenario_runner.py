@@ -55,6 +55,7 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.shared.state import machine_identity
+from apps.shared.state import sync_stamp
 from apps.sync_hub import client, protocol, service
 
 SCENARIOS_DIR: Path = Path(__file__).resolve().parent / "scenarios"
@@ -284,6 +285,27 @@ def _stamp(args: Mapping[str, Any], run: SimRun) -> str:
     return str(explicit) if explicit is not None else run.next_tick()
 
 
+def _log_edit(
+    conn,  # sqlite3.Connection
+    table: str,
+    row_pk: tuple[Any, ...],
+    origin: str,
+    updated_at: str,
+) -> str:
+    """Append this edit to ``local_changelog`` and return its canonical stamp.
+
+    An edit step is standing in for a real writer, and since ADR 08 point 3
+    a real writer does not just set ``updated_at`` -- it logs the write to
+    the spoke's own changelog, which is what ``sync_state.last_push_seq``
+    fences against. A step that skipped this would edit a row that the next
+    push could not see, which is a harness bug that would read exactly like
+    a sync bug.
+    """
+    return sync_stamp.stamp_and_log(
+        conn, table, row_pk, origin, now=updated_at
+    ).updated_at
+
+
 @contextmanager
 def _sim_run(scenario: Scenario, tmp_path: Path) -> Iterator[SimRun]:
     hub_decl = scenario.hub
@@ -429,6 +451,9 @@ def _write_policy(
         if kind == "sync_policy":
             if asset_kind is None:
                 raise ScenarioError("sync_policy needs 'asset_kind'")
+            updated_at = _log_edit(
+                conn, "sync_policies", (origin, asset_kind), origin, updated_at
+            )
             conn.execute(
                 """
                 INSERT INTO sync_policies(
@@ -447,6 +472,9 @@ def _write_policy(
         elif kind == "playlist_pin":
             if playlist_id is None:
                 raise ScenarioError("playlist_pin needs 'playlist_id'")
+            updated_at = _log_edit(
+                conn, "playlist_pins", (origin, playlist_id), origin, updated_at
+            )
             conn.execute(
                 """
                 INSERT INTO playlist_pins(
@@ -527,8 +555,10 @@ def _edit_track(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
     conn = run.conn(machine)
     try:
         _validate_editable_columns(conn, "tracks", changes)
-        updated_at = _stamp(args, run)
         origin = run.machine_ids[machine]
+        updated_at = _log_edit(
+            conn, "tracks", (stable_id,), origin, _stamp(args, run)
+        )
         assignments = ", ".join(f"{col} = ?" for col in changes)
         cursor = conn.execute(
             f"UPDATE tracks SET {assignments}, updated_at = ?, "
@@ -551,8 +581,10 @@ def _edit_playlist(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
         raise ScenarioError("edit playlists: 'members' must be a list of stable_ids")
     conn = run.conn(machine)
     try:
-        updated_at = _stamp(args, run)
         origin = run.machine_ids[machine]
+        updated_at = _log_edit(
+            conn, "playlists", (playlist_id,), origin, _stamp(args, run)
+        )
         if changes:
             _validate_editable_columns(conn, "playlists", changes)
             assignments = ", ".join(f"{col} = ?" for col in changes)

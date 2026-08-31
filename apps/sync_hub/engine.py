@@ -6,14 +6,27 @@ timestamp onto a domain row -- rows carry the ``updated_at`` /
 only thing the merge looks at. The single clock this module reads is
 ``hub_changelog.received_at``, which is hub bookkeeping and never syncs.
 
-Two behaviours that look surprising until you know why:
+Four behaviours that look surprising until you know why:
 
-* **Push selection is inclusive** (``updated_at >= watermark``, not ``>``).
-  Two writes landing on the same ISO timestamp are unlikely in production and
-  routine in tests with a frozen clock; an exclusive comparison would drop
-  the second one forever. Re-offering the boundary rows costs one rejected
-  row per sync, because :func:`hub_apply` accepts only a strictly greater
-  ``(updated_at, origin_device_id)``. Redundant, never lossy.
+* **Push selection is a sequence fence, never a clock** (ADR 08 point 3,
+  round 1 finding 3). A spoke offers the rows its own ``local_changelog``
+  recorded above ``sync_state.last_push_seq``. The round 1 push floor was a
+  wall clock maximum taken over rows the machine had just *pulled*, so a
+  single peer with a skewed clock could raise the floor past every local
+  edit and those edits were never offered again -- not rejected, never sent.
+  ``updated_at`` now resolves conflicts and nothing else.
+* **A spoke that has never completed a sync against this peer offers
+  everything.** Migration v6 cannot retro-log the rows that already existed,
+  so there is no changelog entry to fence against; ``last_sync_at`` records
+  that a full offer has happened at least once. It is a completion marker,
+  not a watermark: nothing ever compares it to a row's ``updated_at``.
+* **``track_locations`` resolves on its natural key, not its primary key**
+  (ADR 08 point 1). ``location_id`` is a random uuid minted per machine, so
+  the same logical row can arrive under a key this DB has never seen; keying
+  the upsert on ``location_id`` alone turned that into a UNIQUE violation,
+  an HTTP 409, and a spoke that could never sync again (finding 1). The
+  duplicate is resolved by LWW like any other conflict, with the smaller
+  ``location_id`` as the tiebreak so both peers converge on the same one.
 * **A losing playlist row discards its membership bundle.** Membership is
   whole-playlist (ADR 04 c5): it replaces the peer's copy only when the
   ``playlists`` row itself wins, so a reorder and an add in the same window
@@ -27,9 +40,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
 from apps.sync_hub import protocol
 from apps.sync_hub.protocol import (
-    EPOCH,
     MEMBERSHIP_TABLE,
     SPEC_BY_TABLE,
     SYNC_TABLES,
@@ -37,6 +50,13 @@ from apps.sync_hub.protocol import (
     RowChange,
     TableSpec,
 )
+
+HUB_CHANGELOG_TABLE: str = "hub_changelog"
+
+#: Hub-side cap on one ``/pull`` response. A first sync of a real library is
+#: 6.6 MB+ of JSON (round 1 finding A2), held twice in memory on each side;
+#: the client loops until the hub reports no more.
+DEFAULT_PULL_LIMIT: int = 500
 
 
 class SyncApplyError(RuntimeError):
@@ -61,11 +81,18 @@ def _now_iso() -> str:
 
 @dataclass(frozen=True)
 class Watermark:
-    """This machine's position against one peer.
+    """This machine's position against one peer. Machine-local, never synced.
 
-    ``last_sync_at`` is the push high-water mark: the greatest local
-    ``updated_at`` this machine has already offered. ``last_pull_seq`` is the
-    greatest ``hub_changelog.seq`` already applied.
+    * ``last_push_seq`` is the greatest ``local_changelog.seq`` this machine
+      has already offered to ``peer``. The push fence (ADR 08 point 3).
+    * ``last_pull_seq`` is the greatest ``hub_changelog.seq`` already applied
+      from ``peer``.
+    * ``last_sync_at`` records that a sync against ``peer`` has completed at
+      least once, and when. It is an operator readout and the "already
+      seeded" flag behind :attr:`needs_full_offer` -- deliberately NOT a
+      watermark. Round 1 lost rows precisely because a wall clock was one
+      (finding 3), so nothing here compares it against a row's
+      ``updated_at``.
     """
 
     peer: str
@@ -74,9 +101,15 @@ class Watermark:
     last_sync_at: str | None = None
 
     @property
-    def push_floor(self) -> str:
-        """The value push selection compares against."""
-        return EPOCH if self.last_sync_at is None else self.last_sync_at
+    def needs_full_offer(self) -> bool:
+        """True until one sync against this peer has completed.
+
+        Rows that predate ``local_changelog`` (anything migrated in from v5,
+        which on a real library is the whole library) have no changelog entry
+        to fence against, so the first offer has to be a full scan. It is
+        also what a hub-restore reset falls back to (ADR 08 point 4).
+        """
+        return self.last_sync_at is None
 
 
 def read_watermark(conn: sqlite3.Connection, peer: str) -> Watermark:
@@ -116,30 +149,29 @@ def write_watermark(conn: sqlite3.Connection, watermark: Watermark) -> None:
     )
 
 
-def local_high_water(conn: sqlite3.Connection) -> str:
-    """Greatest ``updated_at`` across the local sync set (NULL reads as epoch).
-
-    Used as the next push floor after a sync, so the following push offers
-    only rows at or beyond the newest thing this machine has already shown
-    the hub.
-    """
-    high = EPOCH
-    for spec in SYNC_TABLES:
-        row = conn.execute(
-            f"SELECT MAX(COALESCE({protocol.UPDATED_AT}, ?)) FROM {spec.name}",
-            (EPOCH,),
-        ).fetchone()
-        if row is not None and row[0] is not None and str(row[0]) > high:
-            high = str(row[0])
-    return high
-
-
-# ----- hub sequence --------------------------------------------------------
+# ----- sequences -----------------------------------------------------------
 
 
 def current_seq(conn: sqlite3.Connection) -> int:
     """Greatest ``hub_changelog.seq``; 0 on a machine that has never been a hub."""
-    row = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM hub_changelog").fetchone()
+    row = conn.execute(
+        f"SELECT COALESCE(MAX(seq), 0) FROM {HUB_CHANGELOG_TABLE}"
+    ).fetchone()
+    return 0 if row is None else int(row[0])
+
+
+def local_seq(conn: sqlite3.Connection) -> int:
+    """Greatest ``local_changelog.seq``: this machine's own write counter.
+
+    Read BEFORE selecting the rows to offer, and stored as the new
+    ``last_push_seq`` only after the push lands. A local write that commits
+    during the round trip therefore lands ABOVE the recorded fence and is
+    offered on the next sync, instead of falling into the gap that lost rows
+    in round 1.
+    """
+    row = conn.execute(
+        f"SELECT COALESCE(MAX(seq), 0) FROM {LOCAL_CHANGELOG_TABLE}"
+    ).fetchone()
     return 0 if row is None else int(row[0])
 
 
@@ -236,43 +268,108 @@ def _members_for_playlist(
     )
 
 
-def _rows_for_table(
-    conn: sqlite3.Connection, spec: TableSpec, *, floor: str
-) -> list[RowChange]:
+def _row_change(
+    conn: sqlite3.Connection,
+    table: str,
+    columns: Sequence[str],
+    spec: TableSpec,
+    row: Sequence[Any],
+) -> RowChange:
+    values = protocol.canonical_row(table, columns, row)
+    pk = tuple(str(values[column]) for column in spec.pk)
+    members = _members_for_playlist(conn, pk[0]) if table == "playlists" else None
+    return RowChange(table=table, pk=pk, values=values, members=members)
+
+
+def _rows_for_table(conn: sqlite3.Connection, spec: TableSpec) -> list[RowChange]:
     columns = protocol.table_columns(conn, spec.name)
     order_by = ", ".join(spec.pk)
     cursor = conn.execute(
-        f"SELECT {', '.join(columns)} FROM {spec.name} "
-        f"WHERE COALESCE({protocol.UPDATED_AT}, ?) >= ? ORDER BY {order_by}",
-        (EPOCH, floor),
+        f"SELECT {', '.join(columns)} FROM {spec.name} ORDER BY {order_by}"
     )
+    return [_row_change(conn, spec.name, columns, spec, row) for row in cursor]
+
+
+def _changelog_rows(
+    conn: sqlite3.Connection,
+    entries: Sequence[tuple[Any, Any, Any]],
+    *,
+    changelog: str,
+) -> list[RowChange]:
+    """Read the current state of every row named by ``entries``.
+
+    A changelog records THAT a row changed, not what it looked like, so each
+    row is read live and several entries for one row collapse to a single
+    change carrying its newest content -- the same thing LWW would have
+    converged on, at a fraction of the payload.
+
+    Rows are returned in ``_APPLY_ORDER`` (parents before children), which
+    the batching in :mod:`apps.sync_hub.client` depends on: a chunk boundary
+    must never put a child row in an earlier request than its parent.
+    """
+    latest: dict[tuple[str, str], int] = {}
+    for seq, table_name, row_pk in entries:
+        latest[(str(table_name), str(row_pk))] = int(seq)
+
     changes: list[RowChange] = []
-    for row in cursor:
-        values = protocol.canonical_row(spec.name, columns, row)
-        pk = tuple(str(values[column]) for column in spec.pk)
-        members = (
-            _members_for_playlist(conn, pk[0]) if spec.name == "playlists" else None
-        )
-        changes.append(
-            RowChange(table=spec.name, pk=pk, values=values, members=members)
-        )
+    for table_name, row_pk in latest:
+        spec = SPEC_BY_TABLE.get(table_name)
+        if spec is None:
+            raise SyncApplyError(
+                f"{changelog} references table {table_name!r}, which is not "
+                f"in the sync set"
+            )
+        pk = protocol.decode_row_pk(row_pk)
+        columns = protocol.table_columns(conn, table_name)
+        row = conn.execute(
+            f"SELECT {', '.join(columns)} FROM {table_name} "
+            f"WHERE {_pk_predicate(spec)}",
+            tuple(pk),
+        ).fetchone()
+        if row is None:
+            raise SyncApplyError(
+                f"{changelog} points at {table_name} row {row_pk} which no "
+                f"longer exists. Deletes in the sync set are soft (ADR 04 c4); "
+                f"something hard-deleted a synced row."
+            )
+        changes.append(_row_change(conn, table_name, columns, spec, row))
+    changes.sort(key=lambda change: (_APPLY_ORDER[change.table], change.pk))
     return changes
 
 
 def spoke_push(
-    conn: sqlite3.Connection, *, watermark: Watermark | None = None
+    conn: sqlite3.Connection,
+    *,
+    watermark: Watermark | None = None,
+    ceiling: int | None = None,
 ) -> list[RowChange]:
-    """Rows this machine offers the hub: everything at or beyond the floor.
+    """The rows this machine offers its peer.
+
+    Two selections, and which one runs is the whole of ADR 08 point 3:
+
+    * **full offer** when no sync against this peer has completed yet -- the
+      library predates ``local_changelog``, so a fence would offer nothing.
+    * **fenced offer** afterwards: exactly the rows ``local_changelog``
+      recorded in ``(last_push_seq, ceiling]``. ``ceiling`` is
+      :func:`local_seq` read before selection, so a write that commits during
+      the round trip lands above the fence rather than in a gap.
 
     ``playlist_memberships`` never appears as a top-level change -- each
     ``playlists`` row carries its complete membership bundle instead
     (ADR 04 c5).
     """
-    floor = EPOCH if watermark is None else watermark.push_floor
-    changes: list[RowChange] = []
-    for spec in SYNC_TABLES:
-        changes.extend(_rows_for_table(conn, spec, floor=floor))
-    return changes
+    if watermark is None or watermark.needs_full_offer:
+        changes: list[RowChange] = []
+        for spec in SYNC_TABLES:
+            changes.extend(_rows_for_table(conn, spec))
+        return changes
+    top = local_seq(conn) if ceiling is None else int(ceiling)
+    entries = conn.execute(
+        f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
+        f"WHERE seq > ? AND seq <= ? ORDER BY seq",
+        (watermark.last_push_seq, top),
+    ).fetchall()
+    return _changelog_rows(conn, entries, changelog=LOCAL_CHANGELOG_TABLE)
 
 
 # ----- apply ---------------------------------------------------------------
@@ -304,6 +401,71 @@ def _stored_sort_key(
     return protocol.lww_key(
         {protocol.UPDATED_AT: row[0], protocol.ORIGIN_DEVICE_ID: row[1]}
     )
+
+
+def _natural_conflict_pk(
+    conn: sqlite3.Connection, spec: TableSpec, change: RowChange
+) -> tuple[str, ...] | None:
+    """Primary key of a DIFFERENT local row holding this row's natural key.
+
+    None when the table has no natural key, when nothing local holds it, or
+    when the row that holds it IS this row. Anything else is the round 1
+    finding 1 shape: one logical row, two ``location_id`` values, and a
+    partial UNIQUE index that will not let both exist.
+    """
+    key = protocol.natural_key(change.table, change.values)
+    if key is None:
+        return None
+    predicate = " AND ".join(f"{column} = ?" for column, _ in key)
+    row = conn.execute(
+        f"SELECT {', '.join(spec.pk)} FROM {change.table} WHERE {predicate}",
+        tuple(value for _, value in key),
+    ).fetchone()
+    if row is None:
+        return None
+    found = tuple(str(value) for value in row)
+    return None if found == change.pk else found
+
+
+def _duplicate_incoming_wins(
+    change: RowChange, stored: tuple[str, str], conflict_pk: tuple[str, ...]
+) -> bool:
+    """LWW between two rows that share a natural key under different pks.
+
+    The tie is broken on the primary key itself rather than on arrival
+    order: both peers evaluate the same rule over the same two rows, so both
+    converge on the same survivor. Without it, two rows with identical
+    ``(updated_at, origin_device_id)`` reject each other forever and the
+    digest never matches (the shape of round 1 finding 5b).
+    """
+    if change.sort_key != stored:
+        return change.sort_key > stored
+    return change.pk < conflict_pk
+
+
+def _drop_superseded(
+    conn: sqlite3.Connection, spec: TableSpec, pk: Sequence[str]
+) -> None:
+    """Remove the losing duplicate, and every changelog entry naming it.
+
+    The row is hard-deleted rather than tombstoned because the partial
+    UNIQUE index would refuse to hold a tombstone and its replacement at
+    once. Pruning the changelogs is what keeps that safe: a dangling entry
+    would make ``hub_changes_since`` raise for EVERY spoke (round 1 finding
+    4a's blast radius), and a dangling ``local_changelog`` entry would do the
+    same to this machine's next push. Peers still converge without a
+    tombstone -- they receive the winner, resolve it against their own copy
+    on the same natural key, and drop their duplicate by this same path.
+    """
+    row_pk = protocol.encode_row_pk(pk)
+    conn.execute(
+        f"DELETE FROM {spec.name} WHERE {_pk_predicate(spec)}", tuple(pk)
+    )
+    for changelog in (HUB_CHANGELOG_TABLE, LOCAL_CHANGELOG_TABLE):
+        conn.execute(
+            f"DELETE FROM {changelog} WHERE table_name = ? AND row_pk = ?",
+            (spec.name, row_pk),
+        )
 
 
 def _checked_values(
@@ -407,10 +569,24 @@ def _apply(
         if spec is None:
             raise SyncApplyError(f"{change.table!r} is not in the sync set")
         columns, values = _checked_values(conn, change.table, spec, change)
-        stored = _stored_sort_key(conn, spec, change.pk)
-        if stored is not None and change.sort_key <= stored:
-            rejected += 1
-            continue
+        conflict_pk = _natural_conflict_pk(conn, spec, change)
+        if conflict_pk is None:
+            stored = _stored_sort_key(conn, spec, change.pk)
+            if stored is not None and change.sort_key <= stored:
+                rejected += 1
+                continue
+        else:
+            duplicate = _stored_sort_key(conn, spec, conflict_pk)
+            if duplicate is None:
+                raise SyncApplyError(
+                    f"{change.table}: row {list(conflict_pk)} holds the natural "
+                    f"key of {list(change.pk)} but has no sort key; the table "
+                    f"was written by something that bypassed the sync columns."
+                )
+            if not _duplicate_incoming_wins(change, duplicate, conflict_pk):
+                rejected += 1
+                continue
+            _drop_superseded(conn, spec, conflict_pk)
         _upsert(conn, change.table, spec, columns, values)
         if change.table == "playlists" and change.members is not None:
             _replace_members(conn, change.pk[0], change.members)
@@ -460,70 +636,49 @@ def spoke_apply(
 
 @dataclass(frozen=True)
 class ChangeBatch:
-    """Rows a spoke should apply, plus the seq that consumed them."""
+    """Rows a spoke should apply, the seq that consumed them, and whether
+    the hub still holds entries above that seq."""
 
     rows: list[RowChange]
     seq: int
+    has_more: bool = False
 
 
-def hub_changes_since(conn: sqlite3.Connection, since_seq: int) -> ChangeBatch:
-    """Every row touched after ``since_seq``, deduped to its current state.
+def hub_changes_since(
+    conn: sqlite3.Connection, since_seq: int, *, limit: int | None = None
+) -> ChangeBatch:
+    """One chunk of the rows touched after ``since_seq``, read live.
 
-    The changelog records that a row changed, not what it looked like at the
-    time, so this reads each row live. Several entries for one row collapse
-    to a single change carrying its newest content -- which is the same thing
-    LWW would have converged on anyway, at a fraction of the payload.
+    ``limit`` caps the number of CHANGELOG ENTRIES consumed, not the number
+    of rows returned, so :attr:`ChangeBatch.seq` is always a resume point the
+    caller can hand back verbatim -- deduping first and then cutting would
+    leave entries below the reported seq unsent. Entries stay in seq order,
+    so a client that applies chunk after chunk sees parents before children.
     """
-    entries = conn.execute(
-        "SELECT seq, table_name, row_pk FROM hub_changelog "
-        "WHERE seq > ? ORDER BY seq",
-        (int(since_seq),),
-    ).fetchall()
-    latest: dict[tuple[str, str], int] = {}
-    max_seq = int(since_seq)
-    for seq, table_name, row_pk in entries:
-        latest[(str(table_name), str(row_pk))] = int(seq)
-        max_seq = max(max_seq, int(seq))
-
-    rows: list[RowChange] = []
-    for (table_name, row_pk), _seq in sorted(latest.items(), key=lambda item: item[1]):
-        spec = SPEC_BY_TABLE.get(table_name)
-        if spec is None:
-            raise SyncApplyError(
-                f"hub_changelog references table {table_name!r}, which is not "
-                f"in the sync set"
-            )
-        pk = protocol.decode_row_pk(row_pk)
-        columns = protocol.table_columns(conn, table_name)
-        row = conn.execute(
-            f"SELECT {', '.join(columns)} FROM {table_name} "
-            f"WHERE {_pk_predicate(spec)}",
-            tuple(pk),
-        ).fetchone()
-        if row is None:
-            raise SyncApplyError(
-                f"hub_changelog points at {table_name} row {row_pk} which no "
-                f"longer exists. Deletes in the sync set are soft (ADR 04 c4); "
-                f"something hard-deleted a synced row."
-            )
-        values = protocol.canonical_row(table_name, columns, row)
-        members = (
-            _members_for_playlist(conn, str(pk[0]))
-            if table_name == "playlists"
-            else None
-        )
-        rows.append(
-            RowChange(
-                table=table_name,
-                pk=tuple(str(item) for item in pk),
-                values=values,
-                members=members,
-            )
-        )
-    return ChangeBatch(rows=rows, seq=max_seq)
+    sql = (
+        f"SELECT seq, table_name, row_pk FROM {HUB_CHANGELOG_TABLE} "
+        f"WHERE seq > ? ORDER BY seq"
+    )
+    params: list[Any] = [int(since_seq)]
+    if limit is not None:
+        if limit < 1:
+            raise SyncApplyError(f"pull limit must be >= 1, got {limit}")
+        sql += " LIMIT ?"
+        params.append(int(limit))
+    entries = conn.execute(sql, tuple(params)).fetchall()
+    max_seq = max((int(entry[0]) for entry in entries), default=int(since_seq))
+    remaining = conn.execute(
+        f"SELECT 1 FROM {HUB_CHANGELOG_TABLE} WHERE seq > ? LIMIT 1", (max_seq,)
+    ).fetchone()
+    return ChangeBatch(
+        rows=_changelog_rows(conn, entries, changelog=HUB_CHANGELOG_TABLE),
+        seq=max_seq,
+        has_more=remaining is not None,
+    )
 
 
 __all__ = [
+    "DEFAULT_PULL_LIMIT",
     "ApplyResult",
     "ChangeBatch",
     "SyncApplyError",
@@ -532,7 +687,7 @@ __all__ = [
     "current_seq",
     "hub_apply",
     "hub_changes_since",
-    "local_high_water",
+    "local_seq",
     "machines_snapshot",
     "merge_machines",
     "read_watermark",
