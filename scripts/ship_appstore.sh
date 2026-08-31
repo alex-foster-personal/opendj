@@ -16,10 +16,14 @@
 #   --upload      deliver the .pkg to App Store Connect
 #   --all         build + package + upload, each gated on a clean preflight
 #
-# Configuration is environment only, never committed. Every value is REQUIRED
-# for its phase and unset is a hard error, never a guess:
+# Configuration is environment only, never committed. RUN THIS UNDER DOPPLER:
 #
-#   MDT_MAS_TEAM_ID           10-character Apple team id
+#   doppler run --project general --config dev_personal -- scripts/ship_appstore.sh
+#
+# MDT_MAS_TEAM_ID already lives there. Every value is REQUIRED for its phase
+# and unset is a hard error, never a guess:
+#
+#   MDT_MAS_TEAM_ID           10-character Apple team id (in Doppler)
 #   MDT_MAS_APP_CERT          "Apple Distribution: NAME (TEAMID)"
 #   MDT_MAS_INSTALLER_CERT    "3rd Party Mac Developer Installer: NAME (TEAMID)"
 #   MDT_MAS_PROVISION_PROFILE path to the .provisionprofile for this bundle id
@@ -104,6 +108,20 @@ check_toolchain() {
         dev_dir="$(xcode-select -p 2>/dev/null || echo unset)"
         blocker "altool not found (active developer dir: $dev_dir)" \
                 "Install the full Xcode from the Mac App Store, then run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer. The Command Line Tools alone ship notarytool and productbuild but NOT altool, so uploads cannot run."
+
+        # Checked only when Xcode is the thing missing, because it is the
+        # step that needs the space. Reported as a separate line rather than
+        # folded into the fix above: "install Xcode" and "you cannot install
+        # Xcode yet" are different problems, and discovering the second one
+        # halfway through a 10 GB download is how a disk gets filled.
+        local free_gib
+        free_gib="$(df -g / | tail -1 | awk '{print $4}')"
+        if [ "${free_gib:-0}" -lt 25 ]; then
+            blocker "only ${free_gib} GiB free on / but Xcode needs roughly 25 GiB to download and expand" \
+                    "Free space before starting the download. Stale apps/desktop/src-tauri/target directories in the sibling worktrees under ~/code are usually the largest reclaimable items; they are pure build artifacts, but confirm no agent is mid-build before deleting one."
+        else
+            ok "${free_gib} GiB free on /, enough for the Xcode install"
+        fi
     fi
 
     for tool in codesign productbuild; do
