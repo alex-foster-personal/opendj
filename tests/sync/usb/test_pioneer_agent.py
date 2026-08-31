@@ -51,6 +51,7 @@ from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     capture_window,
     ensure_frontmost,
     is_point_inside_window,
+    quit_app,
     scaled_to_points,
     take_screenshot,
     window_scaled_to_global_points,
@@ -529,6 +530,69 @@ class TestEnsureFrontmost:
             _activate=lambda: None,
         )
         assert ok is True
+
+
+class TestQuitApp:
+    """Quit-after (MDT_RB_QUIT_AFTER=1): close Rekordbox once the export
+    is confirmed done. Offline - we inject the quit + running probes.
+
+    Regression lines:
+    - if quit_app quits an app that is not running then broken
+    - if quit_app returns True while the process survives then broken
+    - if quit_app never sends the AppleScript quit then broken
+    """
+
+    def test_noop_when_not_running(self) -> None:
+        """App already gone: return True without sending quit."""
+        calls = {"quit": 0}
+
+        def do_quit() -> None:
+            calls["quit"] += 1
+
+        ok = quit_app(
+            "rekordbox",
+            max_wait_s=0.0,
+            poll_s=0.0,
+            _quit=do_quit,
+            _running_probe=lambda: False,
+        )
+        assert ok is True
+        assert calls["quit"] == 0
+
+    def test_quits_and_waits_for_exit(self) -> None:
+        """Running, then gone after the quit: one quit call, True."""
+        states = iter([True, False])
+        calls = {"quit": 0}
+
+        def do_quit() -> None:
+            calls["quit"] += 1
+
+        ok = quit_app(
+            "rekordbox",
+            max_wait_s=5.0,
+            poll_s=0.0,
+            _quit=do_quit,
+            _running_probe=lambda: next(states),
+        )
+        assert ok is True
+        assert calls["quit"] == 1
+
+    def test_returns_false_when_process_survives(self) -> None:
+        """Process refuses to die (e.g. export-in-progress prompt)."""
+        calls = {"quit": 0}
+
+        def do_quit() -> None:
+            calls["quit"] += 1
+
+        ok = quit_app(
+            "rekordbox",
+            max_wait_s=0.05,
+            poll_s=0.01,
+            _quit=do_quit,
+            _running_probe=lambda: True,
+        )
+        assert ok is False
+        assert calls["quit"] == 1
 
 
 # --------------------------------------------------------------------------- #
