@@ -8,7 +8,7 @@
 		performanceCommandStatus,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 	import { getDeckState, DECK_IDS, mixerState } from './engine-accessor';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';

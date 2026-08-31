@@ -54,8 +54,8 @@ import {
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import { pushToast } from '$lib/stores.svelte';
-import type { AnlzBeat } from '$lib/rb/types';
-import type { DeckId } from '$lib/rb/types';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
+import type { DeckId } from '$lib/rb/deck-slots';
 
 const POLL_MS = 250;
 /** Synthetic schedule horizon for preflight only (plan needs syncAt > now). */

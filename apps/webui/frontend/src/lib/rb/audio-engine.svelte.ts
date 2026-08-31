@@ -1,7 +1,7 @@
 /**
  * Client-side Web Audio engine for the /performance rekordbox-parity build
  * (build unit: audio-engine). Implements the AudioEngine contract from
- * $lib/rb/types and owns the per-deck DeckState rune stores.
+ * $lib/rb/audio-engine-types and owns the per-deck DeckState rune stores.
  *
  * Graph per deck (COMPONENT-MAP 1.6):
  *   AudioBufferSourceNode -> TRIM gain -> lowshelf (250 Hz) ->
@@ -123,24 +123,13 @@ import {
 	unavailableStemDeckState,
 	type StemBuffers
 } from '$lib/rb/stem-graph';
-import type {
-	AnlzBeat,
-	AnlzCue,
-	AudioEngine,
-	CrossfaderAssign,
-	DeckAudioSnapshot,
-	DeckId,
-	DeckState,
-	EqBand,
-	HotCue,
-	HotCueSlot,
-	LoopState,
-	MixerChannelState,
-	MixerState,
-	StemControl,
-	StemDeckState,
-	SyncMode
-} from '$lib/rb/types';
+import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
+import type { AudioEngine } from '$lib/rb/audio-engine-types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckAudioSnapshot, DeckState, LoopState, SyncMode } from '$lib/rb/deck-state-types';
+import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
+import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
+import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
 	ANALYSER_FFT_SIZE,
 	AUDIO_CONTEXT_OPTIONS,

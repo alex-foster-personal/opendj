@@ -7,7 +7,8 @@
 	 */
 	import { getDeckState } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
-	import type { DeckId, EqBand } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { EqBand } from '$lib/rb/mixer-types';
 	import { knobId } from '$lib/rb/knob-control.svelte';
 	import Knob from './Knob.svelte';
 	import VFader from './VFader.svelte';

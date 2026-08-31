@@ -13,7 +13,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { engine, isMasterMuted, mixerState, setMasterMuted } from '$lib/rb/audio-engine.svelte';
-	import type { AudioEngine } from '$lib/rb/types';
+	import type { AudioEngine } from '$lib/rb/audio-engine-types';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 	import {
 		setAutoPlayEnabled,

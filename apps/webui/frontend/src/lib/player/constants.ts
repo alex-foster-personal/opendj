@@ -7,7 +7,7 @@
  * you. Nothing in this module imports from the player, so it is a leaf.
  */
 
-import type { DeckId } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
 
 export const DECK_IDS: readonly DeckId[] = [1, 2, 3, 4] as const;
 

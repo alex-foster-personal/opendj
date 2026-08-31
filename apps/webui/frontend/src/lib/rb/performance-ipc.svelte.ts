@@ -40,21 +40,16 @@ import {
 	ScopedCommandInvalidatedError,
 	ScopedCommandScheduler
 } from '$lib/rb/performance-command-scheduler';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckAudioSnapshot, DeckState, LoopState, SyncMode } from '$lib/rb/deck-state-types';
+import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import type {
 	CrossfaderAssign,
-	DeckAudioSnapshot,
-	DeckId,
-	DeckState,
 	EqBand,
 	HeadphoneState,
-	HotCue,
-	HotCueSlot,
-	LoopState,
-	MixerChannelState,
-	StemControl,
-	StemDeckState,
-	SyncMode
-} from '$lib/rb/types';
+	MixerChannelState
+} from '$lib/rb/mixer-types';
+import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import type { PerformancePresetPhase } from '$lib/rb/performance-preset';
 import { noteRecentDeck } from '$lib/rb/recent-deck';
 

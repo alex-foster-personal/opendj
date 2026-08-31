@@ -16,7 +16,9 @@ import type {
 	PerformanceCommand,
 	PerformanceState
 } from '$lib/rb/performance-ipc.svelte';
-import type { CrossfaderAssign, DeckId, SyncMode } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { SyncMode } from '$lib/rb/deck-state-types';
+import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 
 const PRESET_DECK_IDS = [1, 2, 3, 4] as const;
 const LOOP_BOUNDARY_TOLERANCE_MS = 0.01;

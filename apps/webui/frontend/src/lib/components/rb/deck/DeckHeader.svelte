@@ -8,7 +8,8 @@
 	import { effectiveCamelotKey, pitchRanges } from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 	import { GRID_FEATURE_TIP, gridFeaturesInert } from '$lib/player/grid-features';
-	import type { DeckId, DeckState } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {

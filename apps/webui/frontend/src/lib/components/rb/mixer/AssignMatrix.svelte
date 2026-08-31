@@ -5,7 +5,8 @@
 	 * channel to this matrix's bus; clicking again releases it to THRU.
 	 * Pure gain-math routing in the audio engine, no backend.
 	 */
-	import type { CrossfaderAssign, DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 
 	interface Props {
 		/** Which crossfader bus this matrix assigns to (A = left, B = right). */

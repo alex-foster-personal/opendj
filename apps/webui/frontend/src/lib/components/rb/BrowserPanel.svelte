@@ -33,7 +33,8 @@
 		TrackListItemWire,
 		Vocals
 	} from '$lib/rb/api-rb';
-	import type { DeckId, PlaylistNode, RbMeta } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { PlaylistNode, RbMeta } from '$lib/rb/library-types';
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
@@ -83,7 +84,7 @@
 	import RecommendedSection from './RecommendedSection.svelte';
 	import SuggestNextStrip from './SuggestNextStrip.svelte';
 	import { createAutoPlayFeedSnapshot, setAutoPlayTrackFeed } from '$lib/rb/auto-play';
-	import { pickDoubleClickDeck } from '$lib/rb/double-click-deck-pick';
+	import { pickDoubleClickDeck } from '$lib/rb/deck-slots';
 	import BulkEditModal from './BulkEditModal.svelte';
 	import FindReplaceModal from './FindReplaceModal.svelte';
 	import MyTagEditorModal from './MyTagEditorModal.svelte';
@@ -1275,7 +1276,7 @@
 		deckLoadSeq = { ...deckLoadSeq, [deck]: deckLoadTick };
 	}
 
-	/** Wires the pure picker (double-click-deck-pick.ts) to live deck state. */
+	/** Wires the pure picker (deck-slots.ts) to live deck state. */
 	function pickDoubleDeck(
 		_row: LoadableRow,
 		opts: { shift?: boolean; replace?: boolean } = {}

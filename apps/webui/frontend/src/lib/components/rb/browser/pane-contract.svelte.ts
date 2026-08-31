@@ -28,7 +28,7 @@
  */
 
 import type { PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
-import type { RbMeta, TrackQuality } from '$lib/rb/types';
+import type { RbMeta, TrackQuality } from '$lib/rb/library-types';
 
 // ------------------------------------------------------------ row types
 

@@ -30,7 +30,9 @@
  *     traffic is never silently dropped.
  */
 
-import type { DeckId, EqBand, HotCueSlot } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+import type { EqBand } from '$lib/rb/mixer-types';
 
 // ------------------------------------------------------------- midi source
 

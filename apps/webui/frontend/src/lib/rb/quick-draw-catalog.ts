@@ -2,7 +2,8 @@
 // this module owns PerformanceCommand builders so menu ids cannot drift from IPC/CLI.
 // Source inventory: explore agent review of PerformanceCommand + QuickDrawMenu.
 import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
-import type { DeckId, SyncMode } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { SyncMode } from '$lib/rb/deck-state-types';
 
 /** Stable action ids referenced by quick-draw-menu.yaml. */
 export type QuickDrawActionId =

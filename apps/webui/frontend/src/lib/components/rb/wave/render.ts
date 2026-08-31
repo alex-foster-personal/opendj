@@ -12,14 +12,8 @@
  * band arrays the server filled - bands are NEVER synthesised.
  */
 import { vocalsOf } from '$lib/rb/api-rb';
-import type {
-	AnlzBeat,
-	AnlzCue,
-	AnlzData,
-	AnlzPhrase,
-	AnlzWaveform,
-	LoopState
-} from '$lib/rb/types';
+import type { AnlzBeat, AnlzCue, AnlzData, AnlzPhrase, AnlzWaveform } from '$lib/rb/anlz-types';
+import type { LoopState } from '$lib/rb/deck-state-types';
 import { LOOP_MIN_BAND_PX, loopBandPx, visibleBeatLines, type LoopBandSource } from './wave-math';
 
 /** Vocal-region bar colour (SPIKE-B1 blue bars). A literal on purpose:

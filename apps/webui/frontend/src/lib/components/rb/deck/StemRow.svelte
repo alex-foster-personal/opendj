@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Real precomputed Demucs controls. Click toggles mute; Shift+click toggles
 	// solo. Both paths dispatch through the typed browser-agent command surface.
-	import type { DeckState, StemControl } from '$lib/rb/types';
+	import type { DeckState } from '$lib/rb/deck-state-types';
+	import type { StemControl } from '$lib/rb/stem-types';
 
 	let {
 		deck,

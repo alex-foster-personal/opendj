@@ -8,7 +8,7 @@ import { DECK_IDS, getDeckState } from '$lib/rb/audio-engine.svelte';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
 import { getRecentDeck, noteRecentDeck } from '$lib/rb/recent-deck';
 import { toggleNextOnlyFilter } from '$lib/rb/prefs.svelte';
-import type { DeckId } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
 
 const HOVER_ARM_MS = 250;

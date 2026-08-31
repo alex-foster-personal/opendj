@@ -29,7 +29,7 @@
 	import { onMount } from 'svelte';
 	import { listTracksHydrated, RbApiError } from '$lib/rb/api-rb';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 	import {
 		albumBuckets,
 		artistBuckets,

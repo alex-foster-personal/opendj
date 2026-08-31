@@ -4,7 +4,7 @@
 	// return-to-cue semantics, play toggles transport. Disabled while no
 	// track is loaded (engine throws on empty decks; we never swallow that
 	// by pretending to play).
-	import type { DeckState } from '$lib/rb/types';
+	import type { DeckState } from '$lib/rb/deck-state-types';
 	import ControlExplainer from './ControlExplainer.svelte';
 
 	let {

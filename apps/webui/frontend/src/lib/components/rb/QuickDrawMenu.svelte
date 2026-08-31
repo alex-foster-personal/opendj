@@ -9,7 +9,7 @@
 		quickDrawCommand,
 		type QuickDrawActionId
 	} from '$lib/rb/quick-draw-catalog';
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 	import { setMenuHighlightStableId } from '$lib/rb/quick-draw-ui.svelte';
 	import {
 		fetchStemEstimates,

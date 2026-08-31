@@ -9,7 +9,8 @@
 	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
 	// dropdown selector below-left is visual-only (inert).
 	import type { HotCueMutation } from '$lib/rb/api-rb';
-	import type { DeckState, HotCue, HotCueSlot } from '$lib/rb/types';
+	import type { DeckState } from '$lib/rb/deck-state-types';
+	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 
 	let {
 		deck,

@@ -6,7 +6,8 @@
 	// 1.5). The Column View tab (column-view lane) swaps this panel's body
 	// for ColumnBrowser - self-contained (own library fetch), same pattern
 	// as the smartlist self-fetch below.
-	import type { DeckId, PlaylistNode } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { PlaylistNode } from '$lib/rb/library-types';
 	import { listSmartlists, type SmartlistSummary } from '$lib/rb/api-smartlists';
 	import { RbApiError } from '$lib/rb/api-rb';
 	import { tick } from 'svelte';

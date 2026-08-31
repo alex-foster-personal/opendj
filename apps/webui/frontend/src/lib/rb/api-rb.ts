@@ -15,15 +15,9 @@
 
 import { API_BASE } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
-import type {
-	AnlzCue,
-	AnlzData,
-	ArtworkSize,
-	HotCueSlot,
-	QualityRung,
-	RbMeta,
-	TrackQuality
-} from './types';
+import type { AnlzCue, AnlzData } from './anlz-types';
+import type { HotCueSlot } from './hot-cue-types';
+import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {

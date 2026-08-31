@@ -15,10 +15,10 @@ import { recordPerfEvent } from '$lib/rb/perf-event-log';
 /**
  * A deck, exactly as the perf ring accepts one.
  *
- * Derived from `recordPerfEvent` rather than imported from `$lib/rb/types` on
- * purpose: types.ts already carries the highest fan-in in the frontend, and an
- * instrument whose only use for a deck is to forward it to the ring has no
- * business widening that edge count.
+ * Derived from `recordPerfEvent` rather than imported from
+ * `$lib/rb/deck-slots` on purpose: an instrument whose only use for a deck is
+ * to forward it to the ring has no business widening that module's importer
+ * count.
  */
 type PerfDeck = NonNullable<Parameters<typeof recordPerfEvent>[2]>;
 

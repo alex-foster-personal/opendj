@@ -13,9 +13,9 @@ import QualityBadge from './QualityBadge.svelte';
  * pure props, so the args ARE the contract.
  *
  * The rung shape is read back off the component's own props rather than
- * imported from $lib/rb/types. A story should be pinned to the contract of
- * the thing it documents, and types.ts is already the highest-fan-in module
- * in the frontend, so stories are not the place to widen it further.
+ * imported from $lib/rb/library-types. A story should be pinned to the
+ * contract of the thing it documents, so stories are not the place to widen
+ * a shared type module's importer count.
  */
 type TrackQuality = NonNullable<ComponentProps<typeof QualityBadge>['quality']>;
 

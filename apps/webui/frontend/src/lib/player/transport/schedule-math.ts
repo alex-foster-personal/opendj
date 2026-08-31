@@ -22,7 +22,7 @@ import {
 	SYNC_SCHEDULE_SAFETY_S,
 	TRANSPORT_IMMEDIATE_SAFETY_S
 } from '$lib/player/constants';
-import type { LoopState } from '$lib/rb/types';
+import type { LoopState } from '$lib/rb/deck-state-types';
 
 export function supersedingScheduleTime(
 	requestedContextTime: number,

@@ -3,7 +3,7 @@
 	// Four rows, one per deck 1-4, each a canvas scrolling window centered
 	// on a fixed playhead. All per-row logic lives in wave/WaveRow.svelte;
 	// painters and math in wave/render.ts + wave/wave-math.ts.
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 	import WaveRow from './wave/WaveRow.svelte';
 
 	const deckIds: DeckId[] = [1, 2, 3, 4];

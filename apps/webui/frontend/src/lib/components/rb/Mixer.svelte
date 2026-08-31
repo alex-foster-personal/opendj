@@ -13,7 +13,8 @@
 	 */
 	import { mixerState } from '$lib/rb/audio-engine.svelte';
 	import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
-	import type { CrossfaderAssign, DeckId, EqBand } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { CrossfaderAssign, EqBand } from '$lib/rb/mixer-types';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';

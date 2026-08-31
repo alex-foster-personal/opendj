@@ -1,4 +1,4 @@
-import type { DeckId } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
 
 /** Most recently loaded / played / loop-targeted deck for Space play/pause. */
 let lastRecentDeck: DeckId | null = null;

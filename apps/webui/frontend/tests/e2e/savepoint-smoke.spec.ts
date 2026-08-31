@@ -29,7 +29,7 @@ import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Browser, Page } from '@playwright/test';
 
 import type { PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
-import type { DeckId } from '../../src/lib/rb/types';
+import type { DeckId } from '../../src/lib/rb/deck-slots';
 
 interface LoadableTrack {
 	stable_id: string;

@@ -12,7 +12,7 @@
 	mid-rungs, to the lit blue/white of stadium.
 -->
 <script lang="ts">
-	import type { TrackQuality } from '$lib/rb/types';
+	import type { TrackQuality } from '$lib/rb/library-types';
 
 	interface Props {
 		quality: TrackQuality | null;

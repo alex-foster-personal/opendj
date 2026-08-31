@@ -43,7 +43,10 @@
 		endTrackDrag,
 		primaryDroppedStableId
 	} from '$lib/rb/track-drag.svelte';
-	import type { DeckId, DeckState, HotCueSlot, StemControl } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
+	import type { DeckState } from '$lib/rb/deck-state-types';
+	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
+	import type { StemControl } from '$lib/rb/stem-types';
 	import DeckHeader from './deck/DeckHeader.svelte';
 	import HotCueBank from './deck/HotCueBank.svelte';
 	import JogDial from './deck/JogDial.svelte';

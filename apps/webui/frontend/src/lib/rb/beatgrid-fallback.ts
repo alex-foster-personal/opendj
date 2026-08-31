@@ -4,7 +4,7 @@
  * testable in isolation. ANLZ always preferred, never invented.
  */
 import type { BeatgridFallbackOut } from './beatgrid-fallback-api';
-import type { AnlzData } from './types';
+import type { AnlzData } from './anlz-types';
 
 /** True only once GET /anlz has confirmed no rekordbox ANLZ exists for
  * this track. This is the single gate a caller should check before ever

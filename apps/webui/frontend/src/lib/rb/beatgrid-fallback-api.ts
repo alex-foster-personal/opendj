@@ -11,11 +11,11 @@
  */
 import { ApiError, api, unwrap } from '../api/client';
 import { RbApiError } from './api-rb';
-import type { AnlzBeatgrid } from './types';
+import type { AnlzBeatgrid } from './anlz-types';
 
 /** GET /tracks/{sid}/beatgrid-fallback response (analysis.py::BeatgridFallbackOut).
  * Kept hand-written: generated BeatgridFallbackOut.beatgrid is FallbackBeatgridOut,
- * while callers consume AnlzBeatgrid from './types'. */
+ * while callers consume AnlzBeatgrid from './anlz-types'. */
 export interface BeatgridFallbackOut {
 	stable_id: string;
 	source: string;

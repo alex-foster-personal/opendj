@@ -19,7 +19,8 @@
  */
 
 import { validateBeatGrid } from '$lib/rb/beat-sync-math';
-import type { AnlzBeat, DeckState } from '$lib/rb/types';
+import type { AnlzBeat } from '$lib/rb/anlz-types';
+import type { DeckState } from '$lib/rb/deck-state-types';
 
 /**
  * The one sentence every inert sync / quantize control shows on hover.

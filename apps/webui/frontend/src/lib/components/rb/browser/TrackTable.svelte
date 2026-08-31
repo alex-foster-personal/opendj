@@ -38,7 +38,7 @@
 	import { quickDrawUi } from '$lib/rb/quick-draw-ui.svelte';
 	import { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 	import { beginTrackDrag, endTrackDrag, TRACK_STABLE_MIME } from '$lib/rb/track-drag.svelte';
-	import type { DeckId } from '$lib/rb/types';
+	import type { DeckId } from '$lib/rb/deck-slots';
 	import type { BrowserRow, RowProvider, SortDir, SortKey } from './pane-contract.svelte';
 	import AutoPlayExplainer from './AutoPlayExplainer.svelte';
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';

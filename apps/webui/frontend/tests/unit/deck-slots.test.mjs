@@ -22,7 +22,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 //   audio out from under the DJ -- broken
 
 async function _mod() {
-	return loadTypeScriptModule('src/lib/rb/double-click-deck-pick.ts');
+	return loadTypeScriptModule('src/lib/rb/deck-slots.ts');
 }
 
 function seq(overrides = {}) {

@@ -1,5 +1,5 @@
 /** Cross-panel deck hover focus (deck / mixer / wavestack / library). */
-import type { DeckId } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
 
 export const deckHoverUi = $state({
 	deckId: null as DeckId | null

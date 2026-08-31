@@ -65,7 +65,8 @@
  */
 
 import type { ControlHint, DeviceMap, LedRule, MidiBinding } from '$lib/rb/midi/midi-types';
-import type { DeckId, HotCueSlot } from '$lib/rb/types';
+import type { DeckId } from '$lib/rb/deck-slots';
+import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 
 // -------------------------------------------------------------- constants
 

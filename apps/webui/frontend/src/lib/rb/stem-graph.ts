@@ -25,7 +25,7 @@ import type {
 	StemControlState,
 	StemDeckState,
 	StemLayout
-} from '$lib/rb/types';
+} from '$lib/rb/stem-types';
 
 export const STEM_CONTROLS: readonly StemControl[] = ['vocal', 'instrumental', 'drums'];
 export const DEMUCS_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;

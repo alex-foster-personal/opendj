@@ -31,10 +31,9 @@ import { mixerState } from '$lib/player/state.svelte';
 
 /**
  * One enumerated headphone output -- structurally the `HeadphoneOutputDevice`
- * of `$lib/rb/types`, derived from the mixer read model rather than imported
- * from it. types.ts already carries the frontend's highest fan-in, and a module
- * whose only use for the shape is to filter and merge a list has no business
- * widening that edge count.
+ * of `$lib/rb/mixer-types`, derived from the mixer read model rather than
+ * imported from it. A module whose only use for the shape is to filter and
+ * merge a list has no business widening that module's importer count.
  */
 export type HeadphoneOutput = (typeof mixerState)['headphones']['outputs'][number];
 
