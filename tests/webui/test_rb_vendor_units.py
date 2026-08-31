@@ -31,7 +31,6 @@ import pytest
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.webui.server import rb_vendor
-from apps.webui.server.rb_vendor_pkg import anlz as rb_anlz
 from apps.webui.server.routes.tracks import keep_by_availability
 
 pytestmark = pytest.mark.requirement("CAT-05")
@@ -201,7 +200,7 @@ def test_vocals_for_content_reuses_cache_until_mtime_changes(
     twoex = tmp_path / "ANLZ0000.2EX"
     twoex.write_bytes(_synthetic_2ex(bytes([3] * _frames(10.0))))
     content = _content_for_2ex(monkeypatch, twoex)
-    rb_anlz._VOCALS_CACHE.clear()
+    rb_vendor._VOCALS_CACHE.clear()
     reads = _count_2ex_reads(monkeypatch, twoex)
 
     cold = rb_vendor.vocals_for_content(content)
@@ -227,7 +226,7 @@ def test_vocals_payload_cache_hands_out_isolated_payloads(
     """A caller mutating its row payload must not poison the next caller."""
     twoex = tmp_path / "ANLZ0000.2EX"
     twoex.write_bytes(_synthetic_2ex(bytes([3] * _frames(10.0))))
-    rb_anlz._VOCALS_CACHE.clear()
+    rb_vendor._VOCALS_CACHE.clear()
 
     first = rb_vendor.vocals_payload(twoex)
     first["regions"][0]["intensity"] = 99

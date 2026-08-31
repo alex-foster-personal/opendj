@@ -9,7 +9,7 @@ named home instead of growing ``anlz.py`` past the 600-line gate.
 The selection runs ONCE at import. ``MDT_WAVEFORM_BACKEND`` policy values:
 
     auto    (default) use the native extension when importable, else the
-            exact NumPy fallback in ``anlz._bands_payload_python``
+            exact NumPy fallback in ``waveform_bands._bands_payload_python``
     python  never import the extension
     native  fail closed at import when the extension is unavailable
 
