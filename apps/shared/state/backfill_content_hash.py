@@ -98,7 +98,7 @@ def _candidate_rows(
     sql = (
         "SELECT stable_id, stable_id_tier, title, artists_json, album, "
         "isrc, duration_ms, file_path FROM tracks "
-        "WHERE content_hash IS NULL ORDER BY stable_id"
+        "WHERE content_hash IS NULL AND deleted_at IS NULL ORDER BY stable_id"
     )
     if limit is not None:
         sql += f" LIMIT {int(limit)}"

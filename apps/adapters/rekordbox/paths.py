@@ -41,13 +41,14 @@ def resolve_content(stable_id: str) -> RbContent:
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         track_row = state.execute(
-            "SELECT 1 FROM tracks WHERE stable_id = ?", (stable_id,)
+            "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
         ).fetchone()
         if track_row is None:
             raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")
         vendor_row = state.execute(
             "SELECT vendor_id FROM track_vendor_ids "
-            "WHERE stable_id = ? AND vendor = 'rekordbox'",
+            "WHERE stable_id = ? AND vendor = 'rekordbox' AND deleted_at IS NULL",
             (stable_id,),
         ).fetchone()
         if vendor_row is None:
@@ -186,7 +187,8 @@ def local_audio_file(stable_id: str) -> tuple[Path, str]:
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         row = state.execute(
-            "SELECT file_path FROM tracks WHERE stable_id = ?", (stable_id,)
+            "SELECT file_path FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
         ).fetchone()
     finally:
         state.close()
@@ -246,7 +248,8 @@ def resolve_playable_audio(
     state = _open_ro(config.STATE_DB, "STATE_DB")
     try:
         exists = state.execute(
-            "SELECT 1 FROM tracks WHERE stable_id = ?", (stable_id,)
+            "SELECT 1 FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+            (stable_id,),
         ).fetchone()
         if exists is None:
             raise not_found("TRACK_NOT_FOUND", f"unknown stable_id {stable_id}")

@@ -365,7 +365,8 @@ def read_log(path: Path) -> list[RelinkEntry]:
 
 def _read_track(conn: sqlite3.Connection, stable_id: str) -> dict[str, object] | None:
     cur = conn.execute(
-        f"SELECT {', '.join(TRACK_COLUMNS)} FROM tracks WHERE stable_id = ?",
+        f"SELECT {', '.join(TRACK_COLUMNS)} FROM tracks "
+        "WHERE stable_id = ? AND deleted_at IS NULL",
         (stable_id,),
     )
     row = cur.fetchone()
@@ -525,7 +526,9 @@ def measure_availability(db_path: Path) -> Availability:
     """
     conn = state_db_mod.open_ro(db_path)
     try:
-        rows = conn.execute("SELECT file_path FROM tracks").fetchall()
+        rows = conn.execute(
+            "SELECT file_path FROM tracks WHERE deleted_at IS NULL"
+        ).fetchall()
     finally:
         conn.close()
     mounted = match.mounted_volume_names()
@@ -697,7 +700,8 @@ def cmd_relink_undo(argv: list[str] | None = None) -> int:
             preview: dict[str, int] = {"revert": 0, "already": 0, "conflict": 0}
             for entry in entries:
                 row = conn.execute(
-                    "SELECT file_path FROM tracks WHERE stable_id = ?",
+                    "SELECT file_path FROM tracks "
+                    "WHERE stable_id = ? AND deleted_at IS NULL",
                     (entry.stable_id,),
                 ).fetchone()
                 if row is None:

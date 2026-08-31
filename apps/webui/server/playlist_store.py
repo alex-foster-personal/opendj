@@ -150,7 +150,7 @@ class PlaylistStore:
         row = self._conn.execute(
             "SELECT playlist_id, name, vendor, vendor_pl_id, "
             "       created_at, updated_at "
-            "FROM playlists WHERE playlist_id = ?",
+            "FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
             (playlist_id,),
         ).fetchone()
         if row is None:
@@ -158,7 +158,7 @@ class PlaylistStore:
         items = [
             r[0] for r in self._conn.execute(
                 "SELECT stable_id FROM playlist_memberships "
-                "WHERE playlist_id = ? ORDER BY position",
+                "WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY position",
                 (playlist_id,),
             )
         ]
@@ -190,7 +190,7 @@ class PlaylistStore:
             known.update(
                 r[0] for r in self._conn.execute(
                     f"SELECT stable_id FROM tracks "
-                    f"WHERE stable_id IN ({placeholders})",
+                    f"WHERE stable_id IN ({placeholders}) AND deleted_at IS NULL",
                     tuple(sub),
                 )
             )

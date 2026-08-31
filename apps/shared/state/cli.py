@@ -121,24 +121,24 @@ def _table_counts(conn: sqlite3.Connection) -> dict[str, int]:
 
 def _tier_breakdown(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
-        "SELECT stable_id_tier, COUNT(*) FROM tracks GROUP BY stable_id_tier "
-        "ORDER BY stable_id_tier"
+        "SELECT stable_id_tier, COUNT(*) FROM tracks WHERE deleted_at IS NULL "
+        "GROUP BY stable_id_tier ORDER BY stable_id_tier"
     ).fetchall()
     return {tier: int(count) for tier, count in rows}
 
 
 def _vendor_breakdown(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
-        "SELECT vendor, COUNT(*) FROM track_vendor_ids GROUP BY vendor "
-        "ORDER BY vendor"
+        "SELECT vendor, COUNT(*) FROM track_vendor_ids WHERE deleted_at IS NULL "
+        "GROUP BY vendor ORDER BY vendor"
     ).fetchall()
     return {vendor: int(count) for vendor, count in rows}
 
 
 def _source_breakdown(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
-        "SELECT source, COUNT(*) FROM track_fields GROUP BY source "
-        "ORDER BY source"
+        "SELECT source, COUNT(*) FROM track_fields WHERE deleted_at IS NULL "
+        "GROUP BY source ORDER BY source"
     ).fetchall()
     return {source: int(count) for source, count in rows}
 

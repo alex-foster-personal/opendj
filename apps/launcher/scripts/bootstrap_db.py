@@ -276,6 +276,11 @@ def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
                 def _col_or_empty(name: str) -> str:
                     return f"COALESCE({name}, '')" if name in cols else "''"
 
+                # v6 added ``deleted_at`` (ADR 08 point 5); a launcher
+                # migration run against a pre-v6 DB has no tombstones to
+                # exclude, so the filter is conditional the same way the
+                # optional display columns above are.
+                where_sql = " WHERE deleted_at IS NULL" if "deleted_at" in cols else ""
                 conn.execute(
                     f"""INSERT INTO tracks_fts(rowid, title, artist, album,
                                                genre, key, tags)
@@ -286,7 +291,7 @@ def apply_launcher_migration(db_path: Path) -> dict[str, bool]:
                                {_col_or_empty('genre')},
                                {_col_or_empty('key')},
                                ''
-                          FROM tracks"""
+                          FROM tracks{where_sql}"""
                 )
                 conn.commit()
                 result["tracks_fts_backfilled"] = tracks_count

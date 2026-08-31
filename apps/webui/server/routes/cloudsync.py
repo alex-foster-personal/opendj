@@ -278,7 +278,8 @@ def _require_machine(conn: sqlite3.Connection, machine_id: str) -> None:
 
 def _require_playlist(conn: sqlite3.Connection, playlist_id: str) -> None:
     row = conn.execute(
-        "SELECT 1 FROM playlists WHERE playlist_id = ?", (playlist_id,),
+        "SELECT 1 FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
+        (playlist_id,),
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={
@@ -420,7 +421,8 @@ def put_playlist_pin(
         "kind": "cloudsync_playlist_pin", "ids": [f"{body.machine_id}:{body.playlist_id}"],
     })
     name_row = conn.execute(
-        "SELECT name FROM playlists WHERE playlist_id = ?", (body.playlist_id,),
+        "SELECT name FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
+        (body.playlist_id,),
     ).fetchone()
     return PlaylistPinOut(
         machine_id=body.machine_id, playlist_id=body.playlist_id,
@@ -439,6 +441,7 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
             FROM playlist_pins pp
             JOIN playlist_memberships pm ON pm.playlist_id = pp.playlist_id
             WHERE pp.machine_id = ? AND pp.mode = ? AND pp.deleted_at IS NULL
+              AND pm.deleted_at IS NULL
             """,
             (machine_id, mode),
         ).fetchone()
@@ -450,6 +453,7 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
         FROM playlist_pins pp
         JOIN playlist_memberships pm ON pm.playlist_id = pp.playlist_id
         WHERE pp.machine_id = ? AND pp.mode = 'pinned' AND pp.deleted_at IS NULL
+          AND pm.deleted_at IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM track_locations tl
             WHERE tl.stable_id = pm.stable_id AND tl.kind = 'local'
@@ -480,7 +484,9 @@ def _machine_overview_row(conn: sqlite3.Connection, machine_id: str, name: str) 
 def get_overview(
     conn: sqlite3.Connection = Depends(get_cloudsync_conn),  # noqa: B008
 ) -> OverviewOut:
-    total_row = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()
+    total_row = conn.execute(
+        "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL"
+    ).fetchone()
     total_tracks = int(total_row[0]) if total_row else 0
 
     if not _table_exists(conn, "machines") or not _table_exists(conn, "playlist_pins"):
