@@ -221,6 +221,10 @@ async function _handoff(source: AutoPlayDeckSnap, follower: DeckId, nextId: stri
 	}
 	await _applyBeatSyncDecision(source, follower);
 	await dispatchPerformanceCommand({ type: 'play', deck: follower, playing: true });
+	// pickSourceDeck only ever arms off the master, so AutoPlay must move
+	// master to the deck it just started - otherwise the next tick still
+	// sees the (now trailing/finished) old master as source and stalls.
+	await dispatchPerformanceCommand({ type: 'master', deck: follower });
 	if (source.stable_id !== null) _playedIds.add(source.stable_id);
 	_playedIds.add(nextId);
 }
