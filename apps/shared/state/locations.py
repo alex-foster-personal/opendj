@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import unicodedata
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -135,6 +136,37 @@ def _venue_rank(key: str) -> int:
     return venue.rank
 
 
+def normalize_stored_text(value: str | None) -> str | None:
+    """NFC-normalize a path or URL on its way into ``track_locations``.
+
+    Round 2 finding N2. ADR 08 point 6a normalizes strings on the WIRE and in
+    the digest, deliberately not in storage -- which left the natural-key
+    lookup below comparing raw bytes. macOS hands back NFD from the
+    filesystem while rekordbox and the Windows/Linux machines hand back NFC,
+    so one file acquired two ``track_locations`` rows on ONE machine; both
+    canonicalized to the same bytes on the wire, the hub collapsed them to
+    one and pruned the loser's changelog entries, the spoke kept two, and
+    every later sync failed its digest compare on ``track_locations``
+    permanently with no repair path.
+
+    Normalizing here, at the storage boundary, makes the two spellings one
+    row before the UNIQUE index ever sees them. It is the same normalization
+    ``apps/reconcile/locate.py``, ``apps/reconcile/index_disk.py`` and
+    ``apps/sync/matcher.py`` already apply for matching; this module was the
+    outlier.
+
+    Caveat worth knowing: on a byte-exact filesystem (Linux) a file created
+    with NFD bytes will not open under its NFC spelling. That is why
+    :func:`_probe_file` probes the NORMALIZED path -- the row's stored path
+    and its ``available`` flag then describe the same string, so a spelling
+    the machine cannot open reads as unavailable rather than as a path that
+    lies.
+    """
+    if value is None:
+        return None
+    return unicodedata.normalize("NFC", value)
+
+
 def locations_table_ready(conn: sqlite3.Connection) -> bool:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='track_locations'"
@@ -215,6 +247,11 @@ def upsert_location(
     file updates its row instead of minting a second ``location_id`` that the
     hub would reject with a UNIQUE-violation 409 (round 1 finding 1).
     Every write is stamped and appended to ``local_changelog``.
+
+    ``file_path`` and ``remote_url`` are NFC-normalized before the lookup AND
+    before the insert (:func:`normalize_stored_text`, round 2 finding N2), so
+    two Unicode spellings of one path resolve to one row rather than two the
+    hub will later collapse behind this machine's back.
     """
     if kind not in ("local", "remote"):
         raise LocationError(f"kind must be local or remote, got {kind!r}")
@@ -222,6 +259,8 @@ def upsert_location(
         raise LocationError(f"role must be primary or alternate, got {role!r}")
     if not file_path and not remote_url:
         raise LocationError("location needs file_path or remote_url")
+    file_path = normalize_stored_text(file_path)
+    remote_url = normalize_stored_text(remote_url)
     owner = machine_id or _sync_stamp.ensure_local_machine(conn)
     venue_key, venue_rank, available = _probe_file(file_path)
     existing = _find_existing(conn, stable_id, owner, kind, file_path, remote_url)
