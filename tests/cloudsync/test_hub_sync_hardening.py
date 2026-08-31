@@ -45,6 +45,9 @@ Acceptance criteria, one test each:
   are not stamping and ``track_fields`` sync is dead -- broken.
 - if a membership write in the changelog is offered as itself rather than as
   its playlist row, the push raises on a table that is not pushable -- broken.
+- if a push carrying a row for a machine the hub has not met is refused, the
+  fleet snapshot is not travelling with the push and hub restore wedges the
+  recovery it is supposed to be (round 2 N4/A4) -- broken.
 """
 from __future__ import annotations
 
@@ -356,6 +359,192 @@ def test_a_duplicate_natural_key_tie_resolves_the_same_way_on_both_peers(
         ], "the higher key won on a tie; two peers would disagree"
     finally:
         conn.close()
+
+
+def _insert_machine(
+    conn: sqlite3.Connection, machine_id: str, *, name: str, platform: str = "linux"
+) -> None:
+    """A ``machines`` row for a peer this machine knows about."""
+    conn.execute(
+        "INSERT INTO machines(machine_id, name, platform, is_hub, data_root, "
+        "first_seen, last_seen) VALUES (?, ?, ?, 0, NULL, ?, ?)",
+        (machine_id, name, platform, _T0, _T0),
+    )
+
+
+def _insert_policy(
+    conn: sqlite3.Connection,
+    *,
+    machine_id: str,
+    asset_kind: str,
+    mode: str,
+    origin: str,
+    updated_at: str,
+) -> None:
+    stamped = _log(conn, "sync_policies", (machine_id, asset_kind), origin, updated_at)
+    conn.execute(
+        "INSERT INTO sync_policies(machine_id, asset_kind, mode, updated_at, "
+        "origin_device_id) VALUES (?, ?, ?, ?, ?)",
+        (machine_id, asset_kind, mode, stamped, origin),
+    )
+
+
+# ----- N4 / A4: the pusher's machines snapshot ------------------------------
+
+
+def test_a_policy_row_for_a_machine_the_hub_has_not_met_is_accepted(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """A4's sketch: a row whose ``machine_id`` the hub has never seen.
+
+    Round 2 observed ``a4 HTTP 409 ... FOREIGN KEY constraint failed`` on
+    every retry: ``sync_policies.machine_id`` REFERENCES ``machines``, and
+    ``push`` merged only the caller's own row (at hello), never the fleet it
+    knows. The push carries the snapshot now, so the parent row lands first.
+    """
+    conn_a = _open(spoke_a)
+    try:
+        machine_a = sync_stamp.ensure_local_machine(conn_a)
+        _insert_machine(conn_a, "peer-x" + "0" * 26, name="peer-x")
+        _insert_policy(
+            conn_a,
+            machine_id="peer-x" + "0" * 26,
+            asset_kind="audio",
+            mode="pinned",
+            origin=machine_a,
+            updated_at=_T1,
+        )
+    finally:
+        conn_a.close()
+
+    result = _sync(spoke_a, hub, "spoke-a")
+    assert result.accepted >= 1
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert hub_conn.execute(
+            "SELECT mode FROM sync_policies WHERE machine_id = ?",
+            ("peer-x" + "0" * 26,),
+        ).fetchone() == ("pinned",)
+        assert hub_conn.execute(
+            "SELECT name FROM machines WHERE machine_id = ?", ("peer-x" + "0" * 26,)
+        ).fetchone() == ("peer-x",), "the pusher's fleet snapshot was not merged"
+    finally:
+        hub_conn.close()
+
+
+def test_push_merges_the_snapshot_it_carries_and_refuses_without_one(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
+) -> None:
+    """``POST /push`` is the endpoint under test, not the client that calls it.
+
+    Both halves matter: without the snapshot the FOREIGN KEY still bites (so
+    the constraint is real and the test is not vacuous), and with it the same
+    payload lands.
+    """
+    result = _sync(spoke_a, hub, "spoke-a")
+    unknown = "peer-y" + "0" * 26
+    policy = {
+        "table": "sync_policies",
+        "pk": [unknown, "audio"],
+        "values": {
+            "machine_id": unknown,
+            "asset_kind": "audio",
+            "mode": "cached",
+            "cache_budget_mb": None,
+            "updated_at": _T1,
+            "origin_device_id": result.machine_id,
+            "deleted_at": None,
+        },
+    }
+    fleet = {
+        "machine_id": unknown,
+        "name": "peer-y",
+        "platform": "linux",
+        "is_hub": False,
+        "data_root": None,
+        "first_seen": _T0,
+        "last_seen": _T0,
+    }
+    body: dict[str, object] = {
+        "machine_id": result.machine_id,
+        "schema_version": state_schema.SCHEMA_VERSION,
+        "rows": [policy],
+    }
+
+    with pytest.raises(client.SyncTransportError) as excinfo:
+        hub.post(f"{client.API_PREFIX}/push", body)
+    assert "FOREIGN KEY" in str(excinfo.value)
+
+    accepted = hub.post(f"{client.API_PREFIX}/push", dict(body, machines=[fleet]))
+    assert accepted["accepted"] == 1
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert hub_conn.execute(
+            "SELECT mode FROM sync_policies WHERE machine_id = ?", (unknown,)
+        ).fetchone() == ("cached",)
+    finally:
+        hub_conn.close()
+
+
+def test_restore_recovery_carrying_a_peers_location_rows_lands(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, spoke_b: Path
+) -> None:
+    """N4's sketch: the recovery push is the one that wedged.
+
+    ADR 08 point 1 gave ``track_locations`` a ``machine_id`` FK and every
+    spoke holds its peers' rows (that is what the fleet overview reads), and
+    ADR 08 point 4 makes a restored hub trigger a full re-offer. Round 2
+    observed ``n6 B re-offer after restore -> HTTP 409 ... FOREIGN KEY
+    constraint failed`` on every retry: the recovery mechanism triggered the
+    wedge.
+    """
+    _seed_common_track((spoke_a, spoke_b), "trk-1")
+    conn_a = _open(spoke_a)
+    try:
+        machine_a = sync_stamp.ensure_local_machine(conn_a)
+        locations.upsert_location(
+            conn_a,
+            stable_id="trk-1",
+            kind="local",
+            file_path="/Music/a.mp3",
+            role="primary",
+        )
+    finally:
+        conn_a.close()
+    _sync(spoke_a, hub, "spoke-a")
+    _sync(spoke_b, hub, "spoke-b")
+
+    conn_b = _open(spoke_b)
+    try:
+        held = [row[1] for row in _locations(conn_b)]
+    finally:
+        conn_b.close()
+    assert machine_a in held, "B never received A's location row; probe is void"
+
+    # The hub is restored to a point before machine A ever said hello: no
+    # rows of A's, no registration for A, no changelog.
+    hub_conn = _open(hub_dir)
+    try:
+        hub_conn.execute("DELETE FROM track_locations")
+        hub_conn.execute("DELETE FROM tracks")
+        hub_conn.execute("DELETE FROM machines WHERE machine_id = ?", (machine_a,))
+        hub_conn.execute("DELETE FROM hub_changelog")
+    finally:
+        hub_conn.close()
+
+    recovered = _sync(spoke_b, hub, "spoke-b")
+    assert recovered.hub_restore_detected is True
+    assert recovered.rejected == 0, "the recovery push was refused"
+
+    hub_conn = _open(hub_dir)
+    try:
+        assert hub_conn.execute(
+            "SELECT COUNT(*) FROM track_locations WHERE machine_id = ?", (machine_a,)
+        ).fetchone() == (1,), "A's location row did not survive the recovery"
+    finally:
+        hub_conn.close()
 
 
 # ----- finding 3: the push fence -------------------------------------------

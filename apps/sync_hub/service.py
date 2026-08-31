@@ -74,6 +74,11 @@ class RowModel(BaseModel):
 class HelloRequest(BaseModel):
     machine: MachineModel
     schema_version: int
+    #: The fleet as the caller knows it (round 2 finding N4). Merged after
+    #: ``machine`` so a hub restored to a point before some peer first said
+    #: hello learns that peer from whoever still remembers it, instead of
+    #: 409ing every row that references it.
+    machines: list[MachineModel] = Field(default_factory=list)
 
 
 class HelloResponse(BaseModel):
@@ -87,6 +92,15 @@ class PushRequest(BaseModel):
     machine_id: str = Field(min_length=1)
     schema_version: int
     rows: list[RowModel]
+    #: The pusher's ``machines`` snapshot, merged before the rows are applied
+    #: (round 2 finding N4, round 1 A4). ``sync_policies``, ``playlist_pins``
+    #: and ``track_locations`` all carry a ``machine_id`` REFERENCES
+    #: ``machines``, and every spoke holds rows belonging to its peers, so a
+    #: hub that has not met one of them refused the whole push with a
+    #: FOREIGN KEY 409 that re-fired on every retry. Empty means the caller
+    #: offered no snapshot, which is only safe when its rows name machines
+    #: this hub already knows.
+    machines: list[MachineModel] = Field(default_factory=list)
 
 
 class PushResponse(BaseModel):
@@ -221,6 +235,13 @@ def _machine_models(conn: sqlite3.Connection) -> list[MachineModel]:
     ]
 
 
+def _to_machines(models: list[MachineModel]) -> list[protocol.MachineRow]:
+    try:
+        return [protocol.MachineRow.from_wire(model.model_dump()) for model in models]
+    except protocol.SyncProtocolError as exc:
+        raise _protocol_error(exc) from exc
+
+
 def _row_models(rows: list[protocol.RowChange]) -> list[RowModel]:
     return [RowModel(**row.to_wire()) for row in rows]
 
@@ -284,7 +305,9 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
             with _transaction(conn):
                 hub_machine_id = _hub_identity(request, conn)
                 engine.merge_machines(
-                    conn, [protocol.MachineRow.from_wire(payload.machine.model_dump())]
+                    conn,
+                    [protocol.MachineRow.from_wire(payload.machine.model_dump())]
+                    + _to_machines(payload.machines),
                 )
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
@@ -303,13 +326,21 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
 
 @router.post("/push", response_model=PushResponse)
 def push(request: Request, payload: PushRequest) -> PushResponse:
-    """Merge offered rows under last-writer-wins; append to ``hub_changelog``."""
+    """Merge offered rows under last-writer-wins; append to ``hub_changelog``.
+
+    The pusher's ``machines`` snapshot is merged first, in the same
+    transaction (round 2 finding N4): a row this hub has never met is a
+    FOREIGN KEY violation, and the recovery push after a hub restore is
+    exactly the push most likely to carry one.
+    """
     _require_schema_version(payload.schema_version)
     changes = _to_changes(payload.rows)
+    fleet = _to_machines(payload.machines)
     with _hub_conn(request) as conn:
         _require_registered(conn, payload.machine_id)
         try:
             with _transaction(conn):
+                engine.merge_machines(conn, fleet)
                 result = engine.hub_apply(conn, changes)
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
