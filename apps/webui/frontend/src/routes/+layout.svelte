@@ -8,6 +8,7 @@
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import SetupOverlay from '$lib/components/setup/SetupOverlay.svelte';
+	import AccountOverlay from '$lib/components/account/AccountOverlay.svelte';
 	import { resolveFirstRun } from '$lib/setup/first-run';
 	import { openSetupOverlay } from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
@@ -17,6 +18,7 @@
 	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
+	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 
 	let { children } = $props();
@@ -74,6 +76,10 @@
 		// THE capability probe: one health GET, before anything daemon-specific
 		// decides whether it is real. Every other surface reads the answer.
 		void capabilities.probe();
+		// The entitlement set, once, for the same reason: `planRefusal()` is
+		// read synchronously by controls all over the app, so the one request
+		// behind it fires here rather than per surface. Memoized on success.
+		void entitlements.load();
 		raiseSetupOnFirstRun();
 		refreshHealth();
 		void hydrateConfirmPrefsFromDisk();
@@ -167,6 +173,10 @@
      shell, and the one surface a brand new user meets cannot be missing there
      of all places. -->
 <SetupOverlay />
+<!-- The account panel, mounted at the root for the same reason as the two
+     above: the user bauble is drawn on /performance too, and its Account door
+     must open something there. -->
+<AccountOverlay />
 
 <div class="toast-stack">
 	{#each toasts as toast (toast.id)}

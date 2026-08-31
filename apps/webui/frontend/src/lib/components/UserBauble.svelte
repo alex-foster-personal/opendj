@@ -11,6 +11,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth, logout, refreshUser, startLogin } from '$lib/auth.svelte';
+	import { openAccountOverlay } from '$lib/account/overlay.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
 	// The performance route's topbar is ~28px tall, so the shell's 32px bauble
@@ -56,6 +57,14 @@
 			pushToast(exc instanceof Error ? exc.message : 'sign-in failed', 'error', 12000);
 			busy = false;
 		}
+	}
+
+	/** THE door into the account panel (ACCT-01). This menu used to offer only
+	 * "Sign out", which left identity, plan and everything stored locally
+	 * reachable by terminal only. */
+	function onOpenAccount(): void {
+		menuOpen = false;
+		openAccountOverlay();
 	}
 
 	async function onSignOut(): Promise<void> {
@@ -125,6 +134,15 @@
 					>{auth.user.email}</span
 				>
 			</div>
+			<button
+				type="button"
+				class="menu-item"
+				role="menuitem"
+				onclick={onOpenAccount}
+				title="Open the account panel: your identity, your plan, and exactly what is stored about you on this machine."
+			>
+				Account
+			</button>
 			<button type="button" class="menu-item" role="menuitem" disabled={busy} onclick={onSignOut}>
 				Sign out
 			</button>
