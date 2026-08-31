@@ -20,7 +20,12 @@
  * tracks / mapping 404s cannot permanently disarm AutoPlay for the source -
  * but ONLY while nothing has landed on the follower deck (matrix rows 16/17).
  */
-import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import {
+	DECK_IDS,
+	deckAudioClockPositionMs,
+	deckStates,
+	pitchRanges
+} from '$lib/rb/audio-engine.svelte';
 import {
 	AUTO_PLAY_THRESHOLD_MS,
 	autoPlayExcludedIds,
@@ -139,7 +144,14 @@ function _snaps(): AutoPlayDeckSnap[] {
 			id,
 			stable_id: d.stable_id,
 			playing: d.playing,
-			position_ms: d.position_ms,
+			// Audio clock, NOT d.position_ms: that mirror is published from
+			// requestAnimationFrame, which the browser stops in a background tab,
+			// and a frozen position never reaches AUTO_PLAY_THRESHOLD_MS. Reading
+			// the clock is what lets a set keep mixing while the user is on
+			// another tab. This poll is a setInterval, which a tab playing audio
+			// keeps running (throttled to ~1s), leaving ~16 chances inside the
+			// 16s window.
+			position_ms: deckAudioClockPositionMs(id),
 			duration_ms: d.duration_ms,
 			is_master: d.is_master,
 			beat_sync_enabled: d.beat_sync_enabled

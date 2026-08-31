@@ -1985,6 +1985,31 @@ function _tempoAt(deck: DeckId, contextTime: number): number {
 	return _controlSegmentAt(_rt[deck], contextTime).tempoRatio;
 }
 
+/**
+ * Transport position read from the AUDIO CLOCK rather than the rAF-published
+ * mirror in `deckStates[deck].position_ms`.
+ *
+ * That mirror only advances inside `_tick`, which runs on requestAnimationFrame
+ * and which the browser stops entirely while the tab is in the background. Any
+ * decision that must keep being made while the user is on another tab has to
+ * read the clock directly, or it silently stalls: the mirror freezes at
+ * whatever it last published, so derived remaining-time never enters its
+ * trigger window and nothing ever fires. AutoPlay's end-of-track handoff is
+ * exactly that shape, and stopped the set dead at the current track whenever
+ * the user tabbed away.
+ *
+ * This is a READ for decisions only. `_currentPosSec` stays unpublished to
+ * DeckState while audio is active, per its own contract: the UI must keep
+ * showing the PRESENTED position, which trails this one by output latency.
+ * A paused deck has no running clock, so its published cursor is the truth -
+ * the same split `_scheduleSeek` already makes.
+ */
+export function deckAudioClockPositionMs(deck: DeckId): number {
+	const st = deckStates[deck];
+	if (!st.playing) return st.position_ms;
+	return _currentPosSec(deck) * 1000;
+}
+
 /** Render/control-clock position in seconds, with manual loop wrap. This is
  * never published directly to DeckState while audio is active. */
 function _currentPosSec(deck: DeckId): number {
