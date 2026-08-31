@@ -733,47 +733,60 @@ def _apply(
         if spec is None:
             raise SyncApplyError(f"{change.table!r} is not in the sync set")
         columns, values = _checked_values(conn, change.table, spec, change)
-        conflict_pks = _natural_conflict_pks(conn, spec, change)
-        if not conflict_pks:
-            stored = _stored_sort_key(conn, spec, change.pk)
-            if stored is not None and change.sort_key <= stored:
-                rejected += 1
-                continue
-        else:
-            # The incoming row has to beat EVERY duplicate it collides with;
-            # losing to one of them means the row it lost to is the survivor
-            # and this one is the stale copy.
-            if not all(
-                _duplicate_incoming_wins(
-                    change, _duplicate_sort_key(conn, spec, change, pk), pk
-                )
-                for pk in conflict_pks
-            ):
-                rejected += 1
-                continue
-            for conflict_pk in conflict_pks:
-                _drop_superseded(conn, spec, conflict_pk)
+        if _loses_to_a_stored_row(conn, spec, change):
+            rejected += 1
+            continue
         _upsert(conn, change.table, spec, columns, values)
         if change.table == "playlists" and change.members is not None:
             _replace_members(conn, change.pk[0], change.members)
         if record_changelog:
-            conn.execute(
-                """
-                INSERT INTO hub_changelog(
-                    table_name, row_pk, updated_at, origin_device_id, received_at
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    change.table,
-                    change.row_pk,
-                    change.updated_at,
-                    change.origin_device_id,
-                    stamp,
-                ),
-            )
+            _log_hub_change(conn, change, stamp)
         accepted += 1
     return ApplyResult(accepted=accepted, rejected=rejected, seq=current_seq(conn))
+
+
+def _loses_to_a_stored_row(
+    conn: sqlite3.Connection, spec: TableSpec, change: RowChange
+) -> bool:
+    """True if ``change`` is stale against what is already stored.
+
+    Drops any duplicate it beats along the way as a side effect. Split out
+    of :func:`_apply` to keep its own branch count under the quality-gate
+    mccabe limit; the two paths are exactly what the loop body inlined
+    before: no natural-key collision means a plain LWW compare against the
+    primary key, a collision means beating EVERY duplicate it collides with.
+    """
+    conflict_pks = _natural_conflict_pks(conn, spec, change)
+    if not conflict_pks:
+        stored = _stored_sort_key(conn, spec, change.pk)
+        return stored is not None and change.sort_key <= stored
+    # The incoming row has to beat EVERY duplicate it collides with; losing
+    # to one of them means the row it lost to is the survivor and this one
+    # is the stale copy.
+    if not all(
+        _duplicate_incoming_wins(
+            change, _duplicate_sort_key(conn, spec, change, pk), pk
+        )
+        for pk in conflict_pks
+    ):
+        return True
+    for conflict_pk in conflict_pks:
+        _drop_superseded(conn, spec, conflict_pk)
+    return False
+
+
+def _log_hub_change(conn: sqlite3.Connection, change: RowChange, stamp: str) -> None:
+    """One ``hub_changelog`` append for an accepted row. Split out of
+    :func:`_apply` for the same reason as :func:`_loses_to_a_stored_row`."""
+    conn.execute(
+        """
+        INSERT INTO hub_changelog(
+            table_name, row_pk, updated_at, origin_device_id, received_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (change.table, change.row_pk, change.updated_at, change.origin_device_id, stamp),
+    )
 
 
 def hub_apply(
