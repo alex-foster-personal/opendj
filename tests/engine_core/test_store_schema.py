@@ -883,6 +883,20 @@ def test_real_state_db_adopts_without_changing_a_single_row(tmp_path: Path) -> N
     shutil.copy2(REAL_STATE_DB, working)
 
     conn = _connect(working)
+    # Legacy v6 REBUILDS track_locations (integer id -> location_id TEXT +
+    # machine_id), and adoption only creates missing objects, so a real
+    # v5-era file must run the legacy ladder first -- the exact remediation
+    # _assert_adoptable names. The ladder must not change a row count either.
+    pre_ladder_counts = _row_counts(conn)
+    legacy_state_migrations(conn)
+    ladder_counts = _row_counts(conn)
+    for name, before in pre_ladder_counts.items():
+        if name in LEDGER_TABLES:
+            continue  # the ladder is SUPPOSED to stamp its own counter
+        assert ladder_counts[name] == before, (
+            f"legacy ladder changed the row count of {name}"
+        )
+
     before_objects = objects(conn)
     before_counts = _row_counts(conn)
     assert before_counts.get("tracks", 0) > 0, "fixture: the live DB should have tracks"

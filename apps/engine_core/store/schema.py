@@ -97,7 +97,7 @@ creating it from scratch. Distinct from the ``VERSION_OFFSET + n`` rows so a
 reader can tell "this file predates consolidation" from "this file was born
 consolidated"."""
 
-LEGACY_SHARED_STATE_VERSION: int = 5
+LEGACY_SHARED_STATE_VERSION: int = 6
 """Terminal version of ``apps/shared/state/schema.py``'s own ladder."""
 
 BUSY_TIMEOUT_MS: int = 5000
@@ -125,32 +125,22 @@ so it cannot repair an already-wrong shape; it raises instead."""
 # ==========================================================================
 
 _STATE_CORE: tuple[str, ...] = (
-    """
-    CREATE TABLE IF NOT EXISTS tracks (
-        stable_id       TEXT PRIMARY KEY,
-        stable_id_tier  TEXT NOT NULL CHECK
-                          (stable_id_tier IN ('isrc','fingerprint','inferred')),
-        title           TEXT,
-        artists_json    TEXT,
-        album           TEXT,
-        isrc            TEXT,
-        duration_ms     INTEGER,
-        file_path       TEXT,
-        content_hash    TEXT,
-        created_at      TEXT NOT NULL,
-        updated_at      TEXT NOT NULL
-    )
-    """,
+    # Flat on purpose, here and below: legacy v6 ALTER-splices the sync
+    # columns into the stored CREATE text, and the parity gate compares the
+    # normalized bytes -- including SQLite's odd " ," splice spacing on
+    # tracks. Pretty-printing these would fail the gate.
+    "CREATE TABLE IF NOT EXISTS tracks ( stable_id TEXT PRIMARY KEY, "
+    "stable_id_tier TEXT NOT NULL CHECK "
+    "(stable_id_tier IN ('isrc','fingerprint','inferred')), title TEXT, "
+    "artists_json TEXT, album TEXT, isrc TEXT, duration_ms INTEGER, "
+    "file_path TEXT, content_hash TEXT, created_at TEXT NOT NULL, "
+    "updated_at TEXT NOT NULL , origin_device_id TEXT, deleted_at TEXT)",
     "CREATE INDEX IF NOT EXISTS idx_tracks_isrc ON tracks(isrc) WHERE isrc IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks(file_path)",
-    """
-    CREATE TABLE IF NOT EXISTS track_vendor_ids (
-        stable_id  TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
-        vendor     TEXT NOT NULL,
-        vendor_id  TEXT NOT NULL,
-        PRIMARY KEY (stable_id, vendor)
-    )
-    """,
+    "CREATE TABLE IF NOT EXISTS track_vendor_ids ( stable_id TEXT NOT NULL "
+    "REFERENCES tracks(stable_id) ON DELETE CASCADE, vendor TEXT NOT NULL, "
+    "vendor_id TEXT NOT NULL, updated_at TEXT, origin_device_id TEXT, "
+    "deleted_at TEXT, PRIMARY KEY (stable_id, vendor) )",
     "CREATE INDEX IF NOT EXISTS idx_track_vendor_ids_vendor "
     "ON track_vendor_ids(vendor, vendor_id)",
     # Legacy shape is the v3 rebuild (``track_fields_v3`` renamed), so the
@@ -166,6 +156,9 @@ _STATE_CORE: tuple[str, ...] = (
         confidence   REAL CHECK (confidence IS NULL OR
                                  (confidence >= 0 AND confidence <= 1)),
         modified_at  TEXT NOT NULL,
+        updated_at   TEXT,
+        origin_device_id TEXT,
+        deleted_at   TEXT,
         PRIMARY KEY (stable_id, field_name)
     )
     """,
@@ -185,25 +178,15 @@ _STATE_CORE: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_track_field_history_lookup "
     "ON track_field_history(stable_id, field_name, superseded_at)",
-    """
-    CREATE TABLE IF NOT EXISTS playlists (
-        playlist_id   TEXT PRIMARY KEY,
-        name          TEXT NOT NULL,
-        vendor        TEXT NOT NULL,
-        vendor_pl_id  TEXT NOT NULL,
-        created_at    TEXT NOT NULL,
-        updated_at    TEXT NOT NULL,
-        UNIQUE (vendor, vendor_pl_id)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS playlist_memberships (
-        playlist_id  TEXT NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE,
-        stable_id    TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
-        position     INTEGER NOT NULL,
-        PRIMARY KEY (playlist_id, position)
-    )
-    """,
+    "CREATE TABLE IF NOT EXISTS playlists ( playlist_id TEXT PRIMARY KEY, "
+    "name TEXT NOT NULL, vendor TEXT NOT NULL, vendor_pl_id TEXT NOT NULL, "
+    "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+    "origin_device_id TEXT, deleted_at TEXT, UNIQUE (vendor, vendor_pl_id) )",
+    "CREATE TABLE IF NOT EXISTS playlist_memberships ( playlist_id TEXT NOT "
+    "NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE, stable_id TEXT "
+    "NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE, position "
+    "INTEGER NOT NULL, updated_at TEXT, origin_device_id TEXT, deleted_at "
+    "TEXT, PRIMARY KEY (playlist_id, position) )",
     """
     CREATE TABLE IF NOT EXISTS adapters (
         adapter_id   TEXT PRIMARY KEY,
@@ -225,36 +208,68 @@ _STATE_CORE: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)",
     "CREATE INDEX IF NOT EXISTS idx_events_stable_id ON events(stable_id) "
     "WHERE stable_id IS NOT NULL",
-    """
-    CREATE TABLE IF NOT EXISTS track_locations (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        stable_id     TEXT NOT NULL REFERENCES tracks(stable_id) ON DELETE CASCADE,
-        kind          TEXT NOT NULL CHECK (kind IN ('local', 'remote')),
-        role          TEXT NOT NULL DEFAULT 'alternate'
-                        CHECK (role IN ('primary', 'alternate')),
-        file_path     TEXT,
-        remote_url    TEXT,
-        venue_key     TEXT,
-        venue_rank    INTEGER,
-        available     INTEGER NOT NULL DEFAULT 0,
-        probed_at     TEXT,
-        content_hash  TEXT,
-        created_at    TEXT NOT NULL,
-        updated_at    TEXT NOT NULL,
-        CHECK (
-            (file_path IS NOT NULL AND file_path != '')
-            OR (remote_url IS NOT NULL AND remote_url != '')
-        )
-    )
-    """,
+    "CREATE TABLE IF NOT EXISTS track_locations ( location_id TEXT PRIMARY "
+    "KEY NOT NULL DEFAULT (lower(hex(randomblob(16)))), stable_id TEXT NOT "
+    "NULL REFERENCES tracks(stable_id) ON DELETE CASCADE, machine_id TEXT "
+    "REFERENCES machines(machine_id), kind TEXT NOT NULL CHECK (kind IN "
+    "('local', 'remote')), role TEXT NOT NULL DEFAULT 'alternate' CHECK "
+    "(role IN ('primary', 'alternate')), file_path TEXT, remote_url TEXT, "
+    "venue_key TEXT, venue_rank INTEGER, available INTEGER NOT NULL DEFAULT "
+    "0, probed_at TEXT, content_hash TEXT, created_at TEXT NOT NULL, "
+    "updated_at TEXT NOT NULL, origin_device_id TEXT, deleted_at TEXT, "
+    "CHECK ( (file_path IS NOT NULL AND file_path != '') OR (remote_url IS "
+    "NOT NULL AND remote_url != '') ) )",
     "CREATE INDEX IF NOT EXISTS idx_track_locations_stable "
     "ON track_locations(stable_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_path "
-    "ON track_locations(stable_id, kind, file_path) "
+    "ON track_locations(stable_id, machine_id, kind, file_path) "
     "WHERE file_path IS NOT NULL",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_track_locations_url "
-    "ON track_locations(stable_id, kind, remote_url) "
+    "ON track_locations(stable_id, machine_id, kind, remote_url) "
     "WHERE remote_url IS NOT NULL",
+)
+
+
+# ==========================================================================
+# DOMAIN: sync infrastructure (CLOUDSYNC hub sync, legacy v6)
+# Legacy source: apps/shared/state/schema.py  (_V6, amended per
+# specs/design_decision_08.md: per-machine track_locations identity, spoke
+# local_changelog). hub_changelog and local_changelog keep INTEGER
+# AUTOINCREMENT keys because both are machine-local by contract (ADR 04
+# sync set) and never cross machines.
+# ==========================================================================
+
+_SYNC_INFRA: tuple[str, ...] = (
+    "CREATE TABLE IF NOT EXISTS machines ( machine_id TEXT PRIMARY KEY, "
+    "name TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK (platform IN "
+    "('macos','windows','linux')), is_hub INTEGER NOT NULL DEFAULT 0, "
+    "data_root TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL )",
+    "CREATE TABLE IF NOT EXISTS sync_policies ( machine_id TEXT NOT NULL "
+    "REFERENCES machines(machine_id) ON DELETE CASCADE, asset_kind TEXT NOT "
+    "NULL CHECK (asset_kind IN ('audio','stem_bundle','anlz_cache',"
+    "'vocal_cache')), mode TEXT NOT NULL CHECK (mode IN ('pinned','cached',"
+    "'stream','excluded')), cache_budget_mb INTEGER, updated_at TEXT, "
+    "origin_device_id TEXT, deleted_at TEXT, PRIMARY KEY (machine_id, "
+    "asset_kind) )",
+    "CREATE TABLE IF NOT EXISTS playlist_pins ( machine_id TEXT NOT NULL "
+    "REFERENCES machines(machine_id) ON DELETE CASCADE, playlist_id TEXT "
+    "NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE, mode "
+    "TEXT NOT NULL CHECK (mode IN ('pinned','cached','stream','excluded')), "
+    "updated_at TEXT, origin_device_id TEXT, deleted_at TEXT, PRIMARY KEY "
+    "(machine_id, playlist_id) )",
+    "CREATE TABLE IF NOT EXISTS sync_state ( peer TEXT PRIMARY KEY, "
+    "last_push_seq INTEGER NOT NULL DEFAULT 0, last_pull_seq INTEGER NOT "
+    "NULL DEFAULT 0, last_sync_at TEXT )",
+    "CREATE TABLE IF NOT EXISTS hub_changelog ( seq INTEGER PRIMARY KEY "
+    "AUTOINCREMENT, table_name TEXT NOT NULL, row_pk TEXT NOT NULL, "
+    "updated_at TEXT NOT NULL, origin_device_id TEXT NOT NULL, received_at "
+    "TEXT NOT NULL )",
+    "CREATE TABLE IF NOT EXISTS local_changelog ( seq INTEGER PRIMARY KEY "
+    "AUTOINCREMENT, table_name TEXT NOT NULL, row_pk TEXT NOT NULL, "
+    "updated_at TEXT NOT NULL, origin_device_id TEXT NOT NULL, received_at "
+    "TEXT NOT NULL )",
+    "CREATE INDEX IF NOT EXISTS idx_local_changelog_table "
+    "ON local_changelog(table_name, row_pk)",
 )
 
 
@@ -629,6 +644,7 @@ _LAUNCHER: tuple[str, ...] = (
 
 DOMAINS: dict[str, tuple[str, ...]] = {
     "state_core": _STATE_CORE,
+    "sync_infra": _SYNC_INFRA,
     "analysis": _ANALYSIS,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
@@ -654,6 +670,7 @@ wipe. Applied by :func:`apply_cache_migrations`, never by
 
 LEGACY_SOURCES: dict[str, str] = {
     "state_core": "apps/shared/state/schema.py",
+    "sync_infra": "apps/shared/state/schema.py",
     "analysis": "apps/analysis/store.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
@@ -680,6 +697,14 @@ TABLES: dict[str, tuple[str, ...]] = {
         "adapters",
         "events",
         "track_locations",
+    ),
+    "sync_infra": (
+        "machines",
+        "sync_policies",
+        "playlist_pins",
+        "sync_state",
+        "hub_changelog",
+        "local_changelog",
     ),
     "analysis": ("analysis", "analysis_events"),
     "curation": ("pairings", "smartlists"),
@@ -721,6 +746,11 @@ MIGRATIONS: list[list[str]] = [_V1]
 # are safe on a fully-migrated DB and no-ops on a fresh one.
 # Source: apps/shared/state/schema.py _V4.
 _ADOPTION_BACKFILL: tuple[str, ...] = (
+    # OR IGNORE alone stopped being a dedupe at v6: the unique index gained
+    # machine_id, which is NULL until the post-migration stamping hook runs,
+    # and SQLite treats NULLs as distinct -- so OR IGNORE would re-insert
+    # every already-backfilled row. The NOT EXISTS guard dedupes on the
+    # logical identity irrespective of machine_id.
     """
     INSERT OR IGNORE INTO track_locations(
         stable_id, kind, role, file_path, created_at, updated_at
@@ -728,6 +758,12 @@ _ADOPTION_BACKFILL: tuple[str, ...] = (
     SELECT stable_id, 'local', 'primary', file_path, updated_at, updated_at
     FROM tracks
     WHERE file_path IS NOT NULL AND file_path != ''
+      AND NOT EXISTS (
+        SELECT 1 FROM track_locations tl
+        WHERE tl.stable_id = tracks.stable_id
+          AND tl.kind = 'local'
+          AND tl.file_path = tracks.file_path
+      )
     """,
 )
 
@@ -973,6 +1009,18 @@ def _track_field_history_has_surrogate_id(conn: sqlite3.Connection) -> bool:
     return any(str(col[1]) == "id" and int(col[5]) == 1 for col in columns)
 
 
+def _track_locations_has_v6_shape(conn: sqlite3.Connection) -> bool:
+    """True when track_locations carries the v6 rebuild's shape.
+
+    Legacy v6 REBUILDS the table: integer autoincrement id becomes
+    location_id TEXT, and machine_id joins per specs/design_decision_08.md.
+    Adoption only creates missing objects, so a pre-v6 shape must be refused,
+    exactly like the v2/v3 rebuilds above.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(track_locations)")}
+    return "location_id" in cols and "machine_id" in cols
+
+
 _REBUILD_PROBES: tuple[tuple[str, Callable[[sqlite3.Connection], bool], str], ...] = (
     (
         "track_fields",
@@ -985,6 +1033,12 @@ _REBUILD_PROBES: tuple[tuple[str, Callable[[sqlite3.Connection], bool], str], ..
         _track_field_history_has_surrogate_id,
         "existing track_field_history table predates the v2 rebuild "
         "(no surrogate id INTEGER PRIMARY KEY)",
+    ),
+    (
+        "track_locations",
+        _track_locations_has_v6_shape,
+        "existing track_locations table predates the v6 rebuild "
+        "(integer id primary key, no location_id/machine_id)",
     ),
 )
 """Tables the legacy ladder repairs by REBUILDING, paired with a probe that
