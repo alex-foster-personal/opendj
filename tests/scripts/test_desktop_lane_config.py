@@ -342,17 +342,19 @@ def test_notary_profile_without_a_signing_identity_is_refused() -> None:
     just = shutil.which("just")
     if just is None:
         pytest.skip("just is not installed")
+    # Scrub any ambient MDT_LANE_LABEL: this test targets the notary/signing
+    # guard, not OPS-09's lane double-intent gate, and must not depend on
+    # the invoking shell being free of a stray lane label.
+    env = {k: v for k, v in os.environ.items() if k != "MDT_LANE_LABEL"}
+    env["MDT_MACOS_NOTARY_KEYCHAIN_PROFILE"] = "some-profile"
+    env["MDT_MACOS_SIGNING_IDENTITY"] = ""
     result = subprocess.run(
         [just, "dmg"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
-        env={
-            **os.environ,
-            "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE": "some-profile",
-            "MDT_MACOS_SIGNING_IDENTITY": "",
-        },
+        env=env,
     )
     assert result.returncode != 0
     combined = result.stdout + result.stderr
@@ -439,13 +441,14 @@ def test_the_dmg_recipe_stamps_the_shell_from_the_payload_manifest() -> None:
     assert '[ "$shipped_sha" = "$OPENDJ_BUILD_GIT_SHA" ]' in recipe
 
 
-@pytest.mark.requirement("INSTALL-06")
-def test_the_dmg_recipe_refuses_an_unset_lane_label() -> None:
-    """An unlabelled bundled build would share the plain app's library."""
+@pytest.mark.requirement("OPS-08")
+def test_the_dmg_recipe_accepts_an_unset_lane_label() -> None:
+    """OPS-08: unset builds the plain Open DJ; the old refusal is gone.
+
+    The label guard used to protect two bake-off lanes from sharing one
+    library. With the bake-off over, an unset label IS the product build,
+    so the recipe must neither refuse it nor default it to a lane.
+    """
     recipe = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
-    assert 'if [ -z "$label" ]; then' in recipe
-    assert "MDT_LANE_LABEL is unset" in recipe
-    # And it must refuse BEFORE spending a payload build or a cargo build.
-    assert recipe.index("MDT_LANE_LABEL is unset") < recipe.index(
-        "scripts.build_engine_payload"
-    )
+    assert "MDT_LANE_LABEL is unset" not in recipe
+    assert 'label="${MDT_LANE_LABEL:-}"' in recipe  # override survives

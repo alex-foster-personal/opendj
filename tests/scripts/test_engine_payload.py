@@ -34,9 +34,11 @@ from scripts.build_engine_payload import (
     PayloadBuildError,
     RuntimeLoadSite,
     assert_spa_is_fresh,
+    assert_verify_report,
     classify_runtime_load_sites,
     find_runtime_load_sites,
     git_identity,
+    install_waveform_native,
     link_violations,
     parse_locked_export,
     parse_otool,
@@ -44,30 +46,30 @@ from scripts.build_engine_payload import (
     sha256_tree,
     skip_output_tree,
     sole_stretch_asset,
+    sole_waveform_wheel,
 )
-from scripts.desktop_lane_config import LaneLabelError, require_label
+from scripts.desktop_lane_config import LaneLabelError, validate_label
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 
-# ----- lane label is a build input, not a default ------------------------
-@pytest.mark.requirement("INSTALL-06")
+# ----- lane label: optional since OPS-08, unsafe still refused -----------
+@pytest.mark.requirement("OPS-08")
 @pytest.mark.parametrize("raw", [None, "", "   "])
-def test_absent_lane_label_stops_the_build(raw: str | None) -> None:
-    with pytest.raises(LaneLabelError) as excinfo:
-        require_label(raw)
-    assert "MDT_LANE_LABEL" in str(excinfo.value)
+def test_absent_lane_label_builds_the_plain_product(raw: str | None) -> None:
+    """The bake-off is over: unset means Open DJ / com.opendj.desktop."""
+    assert validate_label(raw) is None
 
 
 @pytest.mark.requirement("INSTALL-06")
 def test_a_present_label_is_returned_unchanged() -> None:
-    assert require_label("  B  ") == "B"
+    assert validate_label("  B  ") == "B"
 
 
 @pytest.mark.requirement("INSTALL-06")
 def test_an_unsafe_label_is_still_refused_not_defaulted() -> None:
     with pytest.raises(LaneLabelError):
-        require_label("lane b")
+        validate_label("lane b")
 
 
 # ----- SPA freshness -----------------------------------------------------
@@ -431,9 +433,87 @@ def test_the_launcher_never_writes_bytecode_into_a_read_only_bundle() -> None:
     assert "PYTHONNOUSERSITE=1" in LAUNCHER_TEMPLATE
 
 
+def test_the_launcher_keeps_the_callers_cwd_off_sys_path() -> None:
+    """python -m prepends the caller's cwd; a repo checkout as cwd must never
+    shadow the payload (a repo-built _rb_waveform_native.so did exactly that
+    on the Air, Sun 31 Aug 2026, masking the shipped backend)."""
+    from scripts.build_engine_payload import LAUNCHER_TEMPLATE
+
+    assert "PYTHONSAFEPATH=1" in LAUNCHER_TEMPLATE
+
+
 def test_locked_requirement_is_hashable_for_set_arithmetic() -> None:
     entry = LockedRequirement(name="a", spec="a==1", via=frozenset({"b"}))
     assert {entry, entry} == {entry}
+
+
+# ----- native waveform staging -------------------------------------------
+def _verify_report(**overrides: object) -> dict[str, object]:
+    report: dict[str, object] = {
+        "routes": 110,
+        "missing": [],
+        "frontend_build_dir": "/payload/app/apps/webui/frontend/build",
+        "frontend_build_exists": True,
+        "waveform": {
+            "requested": "auto",
+            "selected": "rust-pyo3",
+            "native_available": True,
+            "native_import_error": None,
+        },
+    }
+    report.update(overrides)
+    return report
+
+
+def test_a_healthy_verify_report_passes() -> None:
+    assert_verify_report(_verify_report())
+
+
+def test_a_payload_on_the_numpy_fallback_stops_the_build() -> None:
+    """The exact regression shipped in the Sat 29 Aug lane-B dmg: auto policy
+    fell back silently and every waveform materialized on the slow path."""
+    with pytest.raises(PayloadBuildError, match="NumPy waveform fallback"):
+        assert_verify_report(
+            _verify_report(
+                waveform={
+                    "requested": "auto",
+                    "selected": "python-numpy",
+                    "native_available": False,
+                    "native_import_error": "ModuleNotFoundError: ...",
+                }
+            )
+        )
+
+
+def test_missing_routes_still_stop_the_build() -> None:
+    with pytest.raises(PayloadBuildError, match="missing routes"):
+        assert_verify_report(_verify_report(missing=["/api/v1/health"]))
+
+
+def test_zero_wheels_is_an_error_not_a_random_pick(tmp_path: Path) -> None:
+    with pytest.raises(PayloadBuildError, match="exactly one waveform wheel"):
+        sole_waveform_wheel(tmp_path)
+
+
+def test_two_wheels_is_an_error_not_a_random_pick(tmp_path: Path) -> None:
+    (tmp_path / "a-1.0-cp311-abi3-macosx_11_0_arm64.whl").write_bytes(b"")
+    (tmp_path / "b-1.0-cp311-abi3-macosx_11_0_arm64.whl").write_bytes(b"")
+    with pytest.raises(PayloadBuildError, match="exactly one waveform wheel"):
+        sole_waveform_wheel(tmp_path)
+
+
+def test_one_wheel_is_returned(tmp_path: Path) -> None:
+    wheel = tmp_path / "only-1.0-cp311-abi3-macosx_11_0_arm64.whl"
+    wheel.write_bytes(b"")
+    assert sole_waveform_wheel(tmp_path) == wheel
+
+
+def test_a_closure_without_numpy_stops_the_waveform_install(tmp_path: Path) -> None:
+    """--no-deps means the closure must already carry numpy; checked, not assumed."""
+    with pytest.raises(PayloadBuildError, match="no longer carries numpy"):
+        install_waveform_native(
+            tmp_path / "w.whl", tmp_path / "python3", tmp_path, ["fastapi==0.136.3"]
+        )
 
 
 # ----- the copy must not eat its own output ------------------------------

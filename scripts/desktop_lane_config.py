@@ -1,11 +1,13 @@
 """Derive the per-lane Tauri bundle overlay for the Open DJ desktop shell.
 
-Both bake-off lanes install their desktop build on the SAME Mac, so every
-macOS-visible name has to differ. The bundle identifier is the clash key:
-macOS derives the per-app Application Support, Caches and WebKit storage
-paths from it, so suffixing the identifier separates all of that for free.
-productName is the second key, because it names the .app on disk, the
-window, and the dmg volume.
+The bake-off is over (agentB lane landed Sat 29 Aug 2026; suffix dropped per
+OPS-08), so the DEFAULT build is the plain product: "Open DJ",
+com.opendj.desktop, and an Application Support dir of the same name. The
+lane machinery stays for future bake-offs: when two lanes install on the
+SAME Mac every macOS-visible name has to differ, and the bundle identifier
+is the clash key (macOS derives the per-app Application Support, Caches and
+WebKit storage paths from it). productName is the second key, because it
+names the .app on disk, the window, and the dmg volume.
 
 The label is NOT hardcoded anywhere in the tree. It comes from
 ``MDT_LANE_LABEL`` in the worktree's .env, the same pattern as
@@ -66,27 +68,6 @@ def validate_label(raw: str | None) -> str | None:
             "title and a filename)"
         )
     return stripped
-
-
-def require_label(raw: str | None) -> str:
-    """Like :func:`validate_label`, but an absent label is itself an error.
-
-    The dmg used to be a pure shell: an unlabelled build was simply the
-    product build. Now that the artifact carries its own engine payload, the
-    label also names the ``Application Support`` directory the installed app
-    writes a library into, so an unset label would silently point a bake-off
-    build at the unlabelled app's data. There is no defensible default for
-    that, so packaging refuses rather than choosing one.
-    """
-    label = validate_label(raw)
-    if label is None:
-        raise LaneLabelError(
-            "MDT_LANE_LABEL is unset; the bundled build has no default lane. "
-            "Set it (for example MDT_LANE_LABEL=B) so the app, its bundle "
-            "identifier and its Application Support directory are named for "
-            "exactly one lane."
-        )
-    return label
 
 
 def lane_identifier(base_identifier: str, label: str | None) -> str:

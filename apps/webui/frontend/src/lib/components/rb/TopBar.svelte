@@ -29,6 +29,7 @@
 	import UserBauble from '$lib/components/UserBauble.svelte';
 	import CommandEntry from './CommandEntry.svelte';
 	import CreatePairingSheet from './CreatePairingSheet.svelte';
+	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import StemsProgress from './StemsProgress.svelte';
 	import VibeMeter from './VibeMeter.svelte';
@@ -280,6 +281,11 @@
 	<div class="vibe-slot">
 		<VibeMeter />
 	</div>
+
+	<!-- review/feedback widget: chevron + comment pin beside the vibe meter
+	     (FB-01..FB-04); REAL -> /api/v1/feedback, inert when the daemon
+	     does not serve it -->
+	<FeedbackWidget />
 
 	<!-- right cluster -->
 	<button

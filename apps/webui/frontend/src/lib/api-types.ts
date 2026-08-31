@@ -191,6 +191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/quality-ratchet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quality Ratchet */
+        get: operations["get_quality_ratchet_api_v1_admin_quality_ratchet_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
@@ -492,6 +509,94 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Feedback */
+        post: operations["archive_feedback_api_v1_feedback_archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Comments */
+        get: operations["list_comments_api_v1_feedback_comments_get"];
+        put?: never;
+        /** Create Comment */
+        post: operations["create_comment_api_v1_feedback_comments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/general": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get General */
+        get: operations["get_general_api_v1_feedback_general_get"];
+        /** Put General */
+        put: operations["put_general_api_v1_feedback_general_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/todos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Todos */
+        get: operations["list_todos_api_v1_feedback_todos_get"];
+        put?: never;
+        /** Create Todo */
+        post: operations["create_todo_api_v1_feedback_todos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feedback/todos/{todo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Todo */
+        patch: operations["patch_todo_api_v1_feedback_todos__todo_id__patch"];
         trace?: never;
     };
     "/api/v1/find-replace/apply": {
@@ -2123,6 +2228,19 @@ export interface components {
             confirmation: string;
             plan: components["schemas"]["PlanModel"];
         };
+        /** ArchiveOut */
+        ArchiveOut: {
+            /** Archived To */
+            archived_to: string | null;
+            /** Comments Archived */
+            comments_archived: number;
+            /** General Archived */
+            general_archived: boolean;
+            /** Todo Feedback Archived */
+            todo_feedback_archived: number;
+            /** Todos Archived */
+            todos_archived: number;
+        };
         /**
          * AssistantStatusOut
          * @description Enough for the sidebar to render an honest panel without a request.
@@ -2337,6 +2455,23 @@ export interface components {
              */
             source: "payload" | "repo";
         };
+        /**
+         * BuildStampOut
+         * @description Provenance of the build that recorded a piece of feedback.
+         *
+         *     Exactly one of the two shapes: a resolved (git_sha, built_at_utc, source)
+         *     triple, or an explicit error naming why resolution failed. Never blank.
+         */
+        BuildStampOut: {
+            /** Built At Utc */
+            built_at_utc?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Git Sha */
+            git_sha?: string | null;
+            /** Source */
+            source?: string | null;
+        };
         /** BulkEditIn */
         BulkEditIn: {
             /** Expected Etags */
@@ -2519,6 +2654,42 @@ export interface components {
             note?: string | null;
             /** Revision */
             revision: string;
+        };
+        /** CommentCreateIn */
+        CommentCreateIn: {
+            /** Anchor */
+            anchor?: string | null;
+            /** Page */
+            page: string;
+            /** Text */
+            text: string;
+            /** X Pct */
+            x_pct: number;
+            /** Y Pct */
+            y_pct: number;
+        };
+        /** CommentListOut */
+        CommentListOut: {
+            /** Comments */
+            comments: components["schemas"]["CommentOut"][];
+        };
+        /** CommentOut */
+        CommentOut: {
+            /** Anchor */
+            anchor: string | null;
+            build: components["schemas"]["BuildStampOut"];
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Page */
+            page: string;
+            /** Text */
+            text: string;
+            /** X Pct */
+            x_pct: number;
+            /** Y Pct */
+            y_pct: number;
         };
         /** ConfigIn */
         ConfigIn: {
@@ -2881,6 +3052,19 @@ export interface components {
             readable: boolean;
             /** Sample */
             sample?: string[];
+        };
+        /** GeneralNoteOut */
+        GeneralNoteOut: {
+            build: components["schemas"]["BuildStampOut"] | null;
+            /** Text */
+            text: string;
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /** GeneralNotePutIn */
+        GeneralNotePutIn: {
+            /** Text */
+            text: string;
         };
         /** GenerateIn */
         GenerateIn: {
@@ -4549,6 +4733,61 @@ export interface components {
             /** Where */
             where: string;
         };
+        /** TodoCreateIn */
+        TodoCreateIn: {
+            /** Detail */
+            detail?: string | null;
+            /** Options */
+            options?: string[];
+            /** Title */
+            title: string;
+        };
+        /** TodoListOut */
+        TodoListOut: {
+            /** Todos */
+            todos: components["schemas"]["TodoOut"][];
+        };
+        /**
+         * TodoOut
+         * @description Response model: every field required, so the generated client types
+         *     say what the server always sends (no `possibly undefined` on the UI).
+         */
+        TodoOut: {
+            build: components["schemas"]["BuildStampOut"];
+            /** Chosen Option */
+            chosen_option: string | null;
+            /** Created At */
+            created_at: string;
+            /** Detail */
+            detail: string | null;
+            /** Done */
+            done: boolean;
+            /** Feedback */
+            feedback: string;
+            /** Id */
+            id: string;
+            /** Options */
+            options: string[];
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** TodoPatchIn */
+        TodoPatchIn: {
+            /** Chosen Option */
+            chosen_option?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Done */
+            done?: boolean | null;
+            /** Feedback */
+            feedback?: string | null;
+            /** Options */
+            options?: string[] | null;
+            /** Title */
+            title?: string | null;
+        };
         /**
          * TrackListItemOut
          * @description TrackOut + parity row fields (shared API contract item 1).
@@ -5531,6 +5770,28 @@ export interface operations {
             };
         };
     };
+    get_quality_ratchet_api_v1_admin_quality_ratchet_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     assistant_chat_api_v1_assistant_chat_post: {
         parameters: {
             query?: never;
@@ -6060,6 +6321,220 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    archive_feedback_api_v1_feedback_archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveOut"];
+                };
+            };
+        };
+    };
+    list_comments_api_v1_feedback_comments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentListOut"];
+                };
+            };
+        };
+    };
+    create_comment_api_v1_feedback_comments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_general_api_v1_feedback_general_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralNoteOut"];
+                };
+            };
+        };
+    };
+    put_general_api_v1_feedback_general_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneralNotePutIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneralNoteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_todos_api_v1_feedback_todos_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoListOut"];
+                };
+            };
+        };
+    };
+    create_todo_api_v1_feedback_todos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TodoCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_todo_api_v1_feedback_todos__todo_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                todo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TodoPatchIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

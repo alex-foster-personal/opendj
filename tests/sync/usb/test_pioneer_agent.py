@@ -51,6 +51,7 @@ from apps.sync.usb.pioneer.agent_actuator import (  # noqa: E402
     capture_window,
     ensure_frontmost,
     is_point_inside_window,
+    quit_app,
     scaled_to_points,
     take_screenshot,
     window_scaled_to_global_points,
@@ -529,6 +530,44 @@ class TestEnsureFrontmost:
             _activate=lambda: None,
         )
         assert ok is True
+
+
+class TestQuitApp:
+    """Quit-after (MDT_RB_QUIT_AFTER=1). Offline; probes injected.
+    Regression: quits a not-running app = broken; returns True while the
+    process survives = broken; never sends the AppleScript quit = broken.
+    """
+
+    @staticmethod
+    def _run(
+        states: list[bool], *, max_wait_s: float, poll_s: float
+    ) -> tuple[bool, int]:
+        seq = iter(states)
+        calls = {"quit": 0}
+
+        def do_quit() -> None:
+            calls["quit"] += 1
+
+        ok = quit_app(
+            "rekordbox",
+            max_wait_s=max_wait_s,
+            poll_s=poll_s,
+            _quit=do_quit,
+            _running_probe=lambda: next(seq),
+        )
+        return ok, calls["quit"]
+
+    def test_noop_when_not_running(self) -> None:
+        ok, quits = self._run([False], max_wait_s=0.0, poll_s=0.0)
+        assert (ok, quits) == (True, 0)
+
+    def test_quits_and_waits_for_exit(self) -> None:
+        ok, quits = self._run([True, False], max_wait_s=5.0, poll_s=0.0)
+        assert (ok, quits) == (True, 1)
+
+    def test_returns_false_when_process_survives(self) -> None:
+        ok, quits = self._run([True] * 60, max_wait_s=0.05, poll_s=0.01)
+        assert (ok, quits) == (False, 1)
 
 
 # --------------------------------------------------------------------------- #

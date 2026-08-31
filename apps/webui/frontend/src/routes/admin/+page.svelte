@@ -1,12 +1,18 @@
 <script lang="ts">
 	/**
-	 * /admin - operator panel. First (and currently only) section is the demucs
-	 * farm KPI ledger, the durable home for what used to be the standalone
-	 * scripts/bench/kpi_chart.html.
+	 * /admin - operator panel. Two data sections on the KPI tab: the demucs
+	 * farm KPI ledger (the durable home for what used to be the standalone
+	 * scripts/bench/kpi_chart.html), and the code-quality ratchet the merge
+	 * gate already enforces on every commit. Both are read-only views of a
+	 * file the repo already maintains for its own reasons; this page is just
+	 * where a human (or a hiring lead evaluating the engineering practice)
+	 * can see them without a checkout.
 	 *
-	 * Data comes from GET /api/v1/bench/kpi, never from the file directly, so an
-	 * agent can curl exactly what is rendered here. Errors are loud: a daemon
-	 * that cannot serve the ledger renders a banner, not an empty grid.
+	 * Farm data comes from GET /api/v1/bench/kpi, ratchet data from
+	 * GET /api/v1/admin/quality-ratchet, never from either file directly, so
+	 * an agent can curl exactly what is rendered here. Errors are loud: a
+	 * daemon that cannot serve either file renders a banner, not an empty
+	 * grid.
 	 *
 	 * TABS. The panel had exactly one section and therefore no tab strip. Setup
 	 * is the second operator surface that belongs here (an operator panel with
@@ -19,6 +25,7 @@
 	import { goto } from '$app/navigation';
 	import { RUN_SETUP_TITLE, runSetup, runSetupBlocked } from '$lib/setup/run-setup';
 	import KpiTile from './KpiTile.svelte';
+	import QualityRatchet from './QualityRatchet.svelte';
 	import RunNotes from './RunNotes.svelte';
 	import TipLayer from './TipLayer.svelte';
 	import { fetchKpiLedger, type KpiLedger } from './kpi-api';
@@ -133,6 +140,8 @@
 		</p>
 	{/if}
 </section>
+
+<QualityRatchet />
 
 <TipLayer />
 
