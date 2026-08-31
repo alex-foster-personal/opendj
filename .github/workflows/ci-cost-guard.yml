@@ -2,10 +2,13 @@ name: CI Cost Guard
 
 on:
   workflow_run:
+    # 'Build docs' was removed Mon 31 Aug 2026: it is a single 10-minute
+    # Linux job that has never approached any threshold, and pricing it
+    # doubled the guard's own run count for no signal. The cumulative view
+    # in ci-budget-watch.yml covers every workflow, this one included.
     workflows:
       [
         CI,
-        Build docs,
         Release Check,
         Windows Parity (on-demand),
         Full CI (on-demand),
@@ -43,6 +46,12 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        # Threshold rationale (Mon 31 Aug 2026): the previous $1.00 was
+        # unreachable. CI's worst case is 20+15+20 min of Linux timeouts =
+        # 55 min x $0.006 = $0.33, so no single run could ever trip it and
+        # the guard only ever fired on unpriced runners. $0.30 sits just
+        # under that ceiling: a CI run that burns its timeouts now alerts,
+        # a normal ~6-minute run (~$0.09) stays quiet.
         run: |
           python scripts/ci_cost_guard.py \
             --repository "$REPOSITORY" \
@@ -50,7 +59,7 @@ jobs:
             --attempt "$RUN_ATTEMPT" \
             --run-url "$RUN_URL" \
             --workflow-name "$WORKFLOW_NAME" \
-            --threshold 1.00
+            --threshold 0.30
 
       - name: Open cost alert issue and fail visibly
         if: steps.guard.outputs.over_threshold == 'true' || steps.guard.outputs.unpriced_jobs == 'true'

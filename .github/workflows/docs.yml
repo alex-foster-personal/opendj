@@ -3,8 +3,26 @@ name: Build docs
 on:
   push:
     branches: [main]
+    # Repeated verbatim under pull_request below. GitHub Actions does not
+    # support YAML anchors/aliases, so the duplication is forced, not sloppy;
+    # keep the two lists in sync.
+    paths:
+      - "**.md"
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs.yml"
   pull_request:
     branches: [main, codex--v2-integration]
+    # ci.yml already skips docs-only changes; without the mirror-image filter
+    # here, every code-only PR still paid for a full mkdocs build. That was
+    # 396 jobs in Aug 2026 for a site that had not changed.
+    paths:
+      - "**.md"
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs.yml"
 
 permissions:
   contents: read
