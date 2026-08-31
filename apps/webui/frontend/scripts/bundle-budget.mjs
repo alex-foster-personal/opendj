@@ -56,7 +56,7 @@ import { join, dirname, normalize, relative } from 'node:path';
 // ---------------------------------------------------------------- budgets ---
 
 // Each limit is a real measurement, not a round number picked for comfort.
-// Baseline build: c3cf9329 (main), Sun 31 Aug 2026, `pnpm build`.
+// Baseline build: c3cf9329 (main), Mon 31 Aug 2026, `pnpm build`.
 //
 // library      256,000 bytes. UNCHANGED from the original gate. This is a bug
 //              fix to what gets counted, not a raise. Measured 93,011 (36.3%).
@@ -72,8 +72,10 @@ import { join, dirname, normalize, relative } from 'node:path';
 //              by construction; widen it deliberately if ordinary feature work
 //              starts tripping it, but widen it visibly rather than by accident.
 //
-// The +5% rule is applied uniformly so that no budget carries slack invented
-// case by case. Raising any number below is a deliberate, reviewable act.
+// The +5% rule applies to the two ratcheted budgets (performance, other-lazy)
+// so neither carries slack invented case by case; library keeps its inherited
+// ceiling as documented above. Raising any number below is a deliberate,
+// reviewable act.
 const BUDGETS = [
   { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
   { name: 'performance', limit: 203776, measured: 193544, note: '/performance and children' },
