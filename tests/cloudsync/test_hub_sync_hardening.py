@@ -1,4 +1,4 @@
-"""Round 2 hardening: the round 1 adversarial findings, as permanent tests.
+"""Round 2 hardening: findings 1/7a, 3 and 2, as permanent tests.
 
 Every test here is one reproduction sketch from
 ``.planning/cloudsync-round1-adversarial.md`` turned into a regression, and
@@ -9,18 +9,11 @@ mapping, so a failure names the defect it just let back in:
   same file wedged the push with a UNIQUE-violation 409 that re-fired on
   every retry. ADR 08 point 1: ``machine_id`` joins the identity and the
   engine resolves on the natural key.
-- finding 2       -> ISO8601 string comparison is not an ordering over
-  instants. ADR 08 point 2: the boundary normalizes, or 422s.
 - finding 3       -> the push watermark was a wall clock taken over PULLED
   rows, so one peer with a skewed clock silently dropped this machine's
   edits. ADR 08 point 3: the fence is ``local_changelog.seq``.
-- finding 6a      -> NFD and NFC spellings of one path diverged the digest.
-- finding 7b      -> ``/pull`` and ``/status`` served anyone.
-- A1              -> no writer stamped ``updated_at``, so the second
-  ``track_fields`` edit ever made bricked the machine.
-- A2              -> ``/pull`` and ``/push`` were unpaginated.
-- A3              -> a hub restored from a point in time never got its rows
-  back, because the spoke's floors survived the restore.
+- finding 2       -> ISO8601 string comparison is not an ordering over
+  instants. ADR 08 point 2: the boundary normalizes, or 422s.
 
 Acceptance criteria, one test each:
 - if two machines holding the same file cannot both sync, per-machine
@@ -33,27 +26,18 @@ Acceptance criteria, one test each:
   do, normalization is not happening at the boundary -- broken.
 - if an unorderable timestamp reaches a table instead of a 422, the boundary
   is not fail-fast -- broken.
-- if a restored hub does not get its rows back, ADR 04 c3 recovery does not
-  exist -- broken.
-- if ``/pull`` or ``/status`` answers a machine that never said hello, the
-  consistency guard is push-only -- broken.
-- if a few hundred rows cross in one request, the wire is unpaginated and a
-  first sync is tens of MB in one body -- broken.
-- if two spellings of one path produce two digests, converged peers halt
-  each other -- broken.
-- if a second ``provenance.write_field`` edit does not converge, the writers
-  are not stamping and ``track_fields`` sync is dead -- broken.
-- if a membership write in the changelog is offered as itself rather than as
-  its playlist row, the push raises on a table that is not pushable -- broken.
 
-The round 2 findings (N4/A4, N5, 4a's hub blast radius, 6b/N7, N6) live in
-:mod:`tests.cloudsync.test_hub_sync_round3`, which imports the helpers
-below.
+The round 1 findings A3, 7b, A2, 6a and A1 live in
+:mod:`tests.cloudsync.test_hub_sync_hardening_recovery` (round 4
+quality-gate ratchet: this file crossed 600 lines). The round 2 findings
+(N4/A4, N5, 4a's hub blast radius) live in
+:mod:`tests.cloudsync.test_hub_sync_round3`, and 6b/N7, N6 in
+:mod:`tests.cloudsync.test_hub_sync_round3_settling` -- both of which import
+``_changelog_pks`` and ``_locations`` from this module.
 """
 from __future__ import annotations
 
 import sqlite3
-import unicodedata
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -61,7 +45,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.state import locations, provenance, sync_stamp
+from apps.shared.state import locations, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import (
     client,
@@ -94,14 +78,6 @@ pytestmark = pytest.mark.requirement("CAT-04")
 # The skewed peer from finding 3's reproduction: a real spoke whose clock is
 # decades ahead, which is all it took to lose another machine's edits.
 _T_SKEWED = "2099-01-01T00:00:00.000000+00:00"
-
-# One file, two correct spellings (finding 6a). macOS hands back the first
-# (o + combining diaeresis), Windows and Linux the second (o-umlaut). Written
-# as an escape so the difference survives any editor that helpfully
-# normalizes this source file.
-_PATH_RAW = "/Music/Bj\u00f6rk - Joga.mp3"
-_PATH_NFD = unicodedata.normalize("NFD", _PATH_RAW)
-_PATH_NFC = unicodedata.normalize("NFC", _PATH_RAW)
 
 
 # ----- fixtures ------------------------------------------------------------
@@ -595,227 +571,3 @@ def test_a_differently_spelled_equal_instant_does_not_win(
         assert _track_title(hub_conn, "trk-1") == "stored"
     finally:
         hub_conn.close()
-
-
-# ----- A3: hub restore ------------------------------------------------------
-
-
-def test_a_restored_hub_resets_the_floors_and_recovers(
-    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path
-) -> None:
-    """A3's sketch: the hub loses rows, the spoke must re-offer everything.
-
-    Round 1 observed ``hub after re-sync: 1 track`` (only the row sitting on
-    the inclusive floor) and a bricked spoke. ``hello`` reports the hub's max
-    seq now, and a spoke whose pull floor is above it drops both floors.
-    """
-    conn_a = _open(spoke_a)
-    try:
-        _insert_track(conn_a, "trk-1", title="one", updated_at=_T0, origin=_DEV_A)
-        _insert_track(conn_a, "trk-2", title="two", updated_at=_T1, origin=_DEV_A)
-    finally:
-        conn_a.close()
-    first = _sync(spoke_a, hub, "spoke-a")
-    assert first.accepted == 2
-    assert first.hub_restore_detected is False
-
-    hub_conn = _open(hub_dir)
-    try:
-        hub_conn.execute("DELETE FROM tracks")
-        hub_conn.execute("DELETE FROM hub_changelog")
-    finally:
-        hub_conn.close()
-
-    recovered = _sync(spoke_a, hub, "spoke-a")
-    assert recovered.hub_restore_detected is True
-    assert recovered.accepted == 2, "the spoke did not re-offer the whole library"
-
-    hub_conn = _open(hub_dir)
-    try:
-        assert _track_title(hub_conn, "trk-1") == "one"
-        assert _track_title(hub_conn, "trk-2") == "two"
-    finally:
-        hub_conn.close()
-
-
-# ----- finding 7b: registration on every endpoint ---------------------------
-
-
-def test_pull_refuses_a_machine_that_never_said_hello(
-    hub: _TestClientTransport,
-) -> None:
-    """An unregistered ``/pull`` returned the whole changelog in round 1."""
-    with pytest.raises(client.SyncTransportError) as excinfo:
-        hub.get(
-            f"{client.API_PREFIX}/pull",
-            {"machine_id": "deadbeef" * 4, "since_seq": "0"},
-        )
-    assert "SYNC_UNKNOWN_MACHINE" in str(excinfo.value)
-
-
-def test_status_refuses_a_machine_that_never_said_hello(
-    hub: _TestClientTransport,
-) -> None:
-    """``/status`` leaks every machine's absolute ``data_root``."""
-    with pytest.raises(client.SyncTransportError) as excinfo:
-        hub.get(f"{client.API_PREFIX}/status", {"machine_id": "deadbeef" * 4})
-    assert "SYNC_UNKNOWN_MACHINE" in str(excinfo.value)
-
-
-def test_pull_without_a_machine_id_is_refused(hub: _TestClientTransport) -> None:
-    """The guard cannot be skipped by omitting the parameter."""
-    with pytest.raises(client.SyncTransportError) as excinfo:
-        hub.get(f"{client.API_PREFIX}/pull", {"since_seq": "0"})
-    assert "422" in str(excinfo.value)
-
-
-# ----- A2: pagination -------------------------------------------------------
-
-
-def test_a_few_hundred_rows_cross_in_several_chunks(
-    hub: _TestClientTransport,
-    spoke_a: Path,
-    spoke_b: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Both directions chunk, and the whole library still converges.
-
-    ``PULL_LIMIT`` is lowered so the loop runs several times over a test-sized
-    library; ``PUSH_BATCH_ROWS`` is left alone and 300 rows split on it
-    naturally. Convergence is the real assertion -- a chunked transfer that
-    dropped a chunk would still make several requests.
-    """
-    monkeypatch.setattr(client, "PULL_LIMIT", 100)
-    total = 300
-    conn_a = _open(spoke_a)
-    try:
-        for index in range(total):
-            _insert_track(
-                conn_a,
-                f"trk-{index:04d}",
-                title=f"track {index}",
-                updated_at=_T1,
-                origin=_DEV_A,
-            )
-    finally:
-        conn_a.close()
-
-    pushed = _sync(spoke_a, hub, "spoke-a")
-    assert pushed.pushed == total
-    assert pushed.accepted == total
-    assert pushed.push_requests == 2, (
-        f"{total} rows at {client.PUSH_BATCH_ROWS}/request should be 2 requests, "
-        f"got {pushed.push_requests}"
-    )
-    assert pushed.pull_requests >= 3, "the pull did not loop"
-
-    received = _sync(spoke_b, hub, "spoke-b")
-    assert received.pull_requests >= 3
-    assert received.applied == total
-
-    conn_b = _open(spoke_b)
-    try:
-        count = conn_b.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
-    finally:
-        conn_b.close()
-    assert count == total, "a chunk went missing"
-
-
-# ----- finding 6a: Unicode ---------------------------------------------------
-
-
-def test_two_spellings_of_one_path_hash_the_same(
-    spoke_a: Path, spoke_b: Path
-) -> None:
-    """NFD on the Mac, NFC on Windows: one file, one digest.
-
-    Round 1 observed ``hub track_locations: 2 rows for ONE file`` and two
-    different digests, so a Mac and a Windows spoke could never agree.
-    """
-    assert _PATH_NFD != _PATH_NFC, "pick a path that actually differs by form"
-    digests: list[str] = []
-    for data_dir, path in ((spoke_a, _PATH_NFD), (spoke_b, _PATH_NFC)):
-        conn = _open(data_dir)
-        try:
-            # Every column except the spelling is pinned identical across the
-            # two DBs, so a difference in the digest can only be the path.
-            conn.execute(
-                "INSERT INTO machines(machine_id, name, platform, is_hub, "
-                "data_root, first_seen, last_seen) "
-                "VALUES ('fixed', 'fixed', 'macos', 0, NULL, ?, ?)",
-                (_T0, _T0),
-            )
-            _insert_track(conn, "trk-1", title="t", updated_at=_T0, origin=_DEV_A)
-            _insert_location(
-                conn,
-                location_id="e" * 32,
-                stable_id="trk-1",
-                machine_id="fixed",
-                file_path=path,
-                updated_at=_T1,
-                origin=_DEV_A,
-            )
-            digests.append(protocol.table_digest(conn, "track_locations"))
-        finally:
-            conn.close()
-    assert digests[0] == digests[1], "NFD and NFC spellings still diverge"
-
-
-# ----- A1: the writers stamp -------------------------------------------------
-
-
-def test_provenance_edits_converge_edit_sync_edit_sync(
-    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, spoke_b: Path
-) -> None:
-    """A1's sketch, end to end: set a field, sync, set it again, sync.
-
-    Round 1 observed ``second sync: BRICKED, SyncDigestMismatch, tables
-    ['track_fields']`` and ``hub value: [('120', None, None)]`` -- the write
-    left ``updated_at`` NULL, so the second edit presented the same LWW key
-    and was rejected forever. The value must now move, and reach B.
-    """
-    _seed_common_track((spoke_a, spoke_b), "trk-1")
-
-    conn_a = _open(spoke_a)
-    try:
-        provenance.write_field(
-            conn_a,
-            stable_id="trk-1",
-            field_name="bpm",
-            value=120.0,
-            source="webui",
-            modified_at=_T1,
-        )
-    finally:
-        conn_a.close()
-    _sync(spoke_a, hub, "spoke-a")
-
-    conn_a = _open(spoke_a)
-    try:
-        provenance.write_field(
-            conn_a,
-            stable_id="trk-1",
-            field_name="bpm",
-            value=174.0,
-            source="webui",
-            modified_at=_T2,
-        )
-    finally:
-        conn_a.close()
-    second = _sync(spoke_a, hub, "spoke-a")
-    assert second.accepted >= 1, "the second edit was rejected; A1 is back"
-
-    _sync(spoke_b, hub, "spoke-b")
-    for data_dir in (hub_dir, spoke_b):
-        conn = _open(data_dir)
-        try:
-            row = conn.execute(
-                "SELECT value_json, updated_at, origin_device_id FROM track_fields "
-                "WHERE stable_id = 'trk-1' AND field_name = 'bpm'"
-            ).fetchone()
-            assert row is not None, data_dir.name
-            assert row[0] == "174.0", data_dir.name
-            assert row[1] is not None, f"{data_dir.name} stored a NULL updated_at"
-            assert row[2] is not None, f"{data_dir.name} stored a NULL origin"
-        finally:
-            conn.close()
