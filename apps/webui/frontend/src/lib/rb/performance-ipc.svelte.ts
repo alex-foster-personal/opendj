@@ -177,7 +177,16 @@ export interface PerformancePresetTransactionDriver {
 
 export interface PerformanceBrowserIpc {
 	readonly version: 1;
-	dispatch(message: unknown): Promise<PerformanceState>;
+	/**
+	 * Q1 agent-native parity: `pressT0Ms` is the same optional input stamp the
+	 * UI boundary takes, on the `performance.now()` epoch. A browser agent
+	 * driving a transport command passes its own stamp and gets the same
+	 * `press_to_schedule_ms` / `input_to_audible_ms` stages a human press
+	 * produces; omitting it (autoplay, preset restore, any command with no
+	 * input behind it) leaves those stages off the row rather than reporting a
+	 * press that never happened.
+	 */
+	dispatch(message: unknown, pressT0Ms?: number): Promise<PerformanceState>;
 	query(): PerformanceState;
 	capture(deck: unknown): DeckAudioSnapshot;
 }
@@ -309,6 +318,23 @@ function _revision(name: string, value: unknown): string {
 		throw new TypeError(`${name} must be a non-empty revision`);
 	}
 	return value;
+}
+
+/**
+ * Q1: the press stamp crosses the browser IPC boundary like any other input,
+ * so it gets the same fail-fast validation every command field gets. A string
+ * or a NaN here would silently disable the two press stages on a row that
+ * still looks complete, which is worse than a rejected command.
+ */
+function _validatedPressStamp(pressT0Ms: unknown): number | undefined {
+	if (pressT0Ms === undefined) return undefined;
+	if (typeof pressT0Ms !== 'number' || !Number.isFinite(pressT0Ms) || pressT0Ms < 0) {
+		throw new TypeError(
+			`press stamp must be a finite non-negative performance.now() reading, got ` +
+				`${String(pressT0Ms)}`
+		);
+	}
+	return pressT0Ms;
 }
 
 function _parseCommand(message: unknown): PerformanceCommand {
@@ -1147,7 +1173,8 @@ export function installPerformanceBrowserIpc(): () => void {
 	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
 		version: 1 as const,
-		dispatch: (message: unknown) => _dispatchUnknown(message, commandGeneration),
+		dispatch: (message: unknown, pressT0Ms?: number) =>
+			_dispatchUnknown(message, commandGeneration, _validatedPressStamp(pressT0Ms)),
 		query: () => {
 			_assertCommandSession(commandGeneration);
 			return queryPerformanceState();

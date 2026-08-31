@@ -185,6 +185,28 @@ test('the UI command boundary stamps the press before anything can queue', () =>
 	);
 });
 
+test('agent-native parity: the browser IPC can carry the same press stamp', () => {
+	// House rule: every UI interaction needs a programmatic equivalent. Without
+	// this, a browser agent driving `dispatch` could never produce the two
+	// stages a human press produces, so the P0 number would be unmeasurable by
+	// exactly the automation that is supposed to measure it.
+	const ipc = readSource('src/lib/rb/performance-ipc.svelte.ts');
+	assert.ok(
+		ipc.includes('dispatch(message: unknown, pressT0Ms?: number): Promise<PerformanceState>;'),
+		'the PerformanceBrowserIpc contract must expose the stamp'
+	);
+	assert.ok(
+		ipc.includes('_dispatchUnknown(message, commandGeneration, _validatedPressStamp(pressT0Ms))'),
+		'and the installed dispatch must actually forward it'
+	);
+	assert.ok(
+		ipc.includes('function _validatedPressStamp('),
+		'a stamp crossing the IPC boundary is untrusted input and must be validated like ' +
+			'every command field; a NaN would silently drop the stages from a row that still ' +
+			'looks complete'
+	);
+});
+
 test('the engine turns the stamp into a delta at the same clock read it reports', () => {
 	const body = engineBlockAfter(`async function _scheduleDeckSerial(
 	deck: DeckId,
