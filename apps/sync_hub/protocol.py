@@ -195,7 +195,14 @@ def _checked_value(table: str, column: str, value: Any, *, is_pk: bool) -> Any:
     * BLOB columns have no place in the sync set; one appearing means the
       schema grew a column this protocol cannot transport, and guessing an
       encoding would put unreadable rows on the wire.
-    * ``updated_at`` is re-emitted canonical (point 4).
+    * ``updated_at`` AND ``deleted_at`` are re-emitted canonical (point 4).
+      Round 3 finding R8 caught the asymmetry: this special-cased
+      ``updated_at`` only, so a push carrying ``deleted_at: "not-a-timestamp"``
+      was accepted, stored verbatim and hashed into the digest -- the one
+      column a tombstone's correctness depends on was the one column this
+      boundary never checked. A NULL value (not deleted) still short-circuits
+      above and is never passed here, so this only ever validates a REAL
+      tombstone stamp.
     * every other non-pk string is NFC-normalized (point 5).
     """
     if value is None:
@@ -205,7 +212,7 @@ def _checked_value(table: str, column: str, value: Any, *, is_pk: bool) -> Any:
             f"{table}.{column} holds {type(value).__name__}, which the sync wire "
             f"format cannot carry (only null/text/integer/real)."
         )
-    if column == UPDATED_AT:
+    if column in (UPDATED_AT, DELETED_AT):
         return canonical_timestamp(table, column, value)
     if isinstance(value, str) and not is_pk:
         return nfc(value)
